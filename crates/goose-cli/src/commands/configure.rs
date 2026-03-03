@@ -768,7 +768,9 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     {
         let supports_thinking = model.to_lowercase().starts_with("gemini-3")
             || model.to_lowercase().contains("claude")
-            || goose::model::ModelConfig::new_or_fail(&model).is_openai_reasoning_model();
+            || goose::model::ModelConfig::new(&model)
+                .map(|c| c.is_openai_reasoning_model())
+                .unwrap_or(false);
 
         if supports_thinking {
             let effort: &str = cliclack::select("Select thinking effort:")

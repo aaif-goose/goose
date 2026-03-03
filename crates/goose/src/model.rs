@@ -339,7 +339,17 @@ impl ModelConfig {
     }
 
     pub fn with_request_params(mut self, params: Option<HashMap<String, Value>>) -> Self {
-        self.request_params = params;
+        match (self.request_params.as_mut(), params) {
+            (Some(existing), Some(new)) => {
+                for (k, v) in new {
+                    existing.insert(k, v);
+                }
+            }
+            (None, Some(new)) => {
+                self.request_params = Some(new);
+            }
+            _ => {}
+        }
         self
     }
 
@@ -371,14 +381,6 @@ impl ModelConfig {
         if !self.is_openai_reasoning_model() {
             return;
         }
-        let has_explicit_effort = self
-            .request_params
-            .as_ref()
-            .and_then(|p| p.get("thinking_effort"))
-            .is_some();
-        if has_explicit_effort {
-            return;
-        }
         let parts: Vec<&str> = self.model_name.split('-').collect();
         let last = match parts.last() {
             Some(l) => *l,
@@ -391,11 +393,18 @@ impl ModelConfig {
             _ => return,
         };
         self.model_name = parts[..parts.len() - 1].join("-");
-        let params = self.request_params.get_or_insert_with(HashMap::new);
-        params.insert(
-            "thinking_effort".to_string(),
-            serde_json::json!(effort.to_string()),
-        );
+        let has_explicit_effort = self
+            .request_params
+            .as_ref()
+            .and_then(|p| p.get("thinking_effort"))
+            .is_some();
+        if !has_explicit_effort {
+            let params = self.request_params.get_or_insert_with(HashMap::new);
+            params.insert(
+                "thinking_effort".to_string(),
+                serde_json::json!(effort.to_string()),
+            );
+        }
     }
 
     pub fn thinking_effort(&self) -> Option<ThinkingEffort> {
