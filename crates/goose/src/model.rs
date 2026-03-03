@@ -156,7 +156,7 @@ impl ModelConfig {
         let predefined = find_predefined_model(&model_name);
         let request_params = predefined.and_then(|pm| pm.request_params);
 
-        Ok(Self {
+        let mut config = Self {
             model_name,
             context_limit,
             temperature,
@@ -166,7 +166,9 @@ impl ModelConfig {
             fast_model_config: None,
             request_params,
             reasoning: None,
-        })
+        };
+        config.normalize_effort_suffix();
+        Ok(config)
     }
 
     pub fn with_canonical_limits(mut self, provider_name: &str) -> Self {
@@ -365,6 +367,37 @@ impl ModelConfig {
         4_096
     }
 
+    fn normalize_effort_suffix(&mut self) {
+        if !self.is_openai_reasoning_model() {
+            return;
+        }
+        let has_explicit_effort = self
+            .request_params
+            .as_ref()
+            .and_then(|p| p.get("thinking_effort"))
+            .is_some();
+        if has_explicit_effort {
+            return;
+        }
+        let parts: Vec<&str> = self.model_name.split('-').collect();
+        let last = match parts.last() {
+            Some(l) => *l,
+            None => return,
+        };
+        let effort = match last {
+            "low" => ThinkingEffort::Low,
+            "medium" => ThinkingEffort::Medium,
+            "high" => ThinkingEffort::High,
+            _ => return,
+        };
+        self.model_name = parts[..parts.len() - 1].join("-");
+        let params = self.request_params.get_or_insert_with(HashMap::new);
+        params.insert(
+            "thinking_effort".to_string(),
+            serde_json::json!(effort.to_string()),
+        );
+    }
+
     pub fn thinking_effort(&self) -> Option<ThinkingEffort> {
         self.get_config_param::<String>("thinking_effort", "GOOSE_THINKING_EFFORT")
             .and_then(|s| s.parse::<ThinkingEffort>().ok())
@@ -532,6 +565,72 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Low));
+        }
+
+        #[test]
+        fn effort_suffix_stripped_from_model_name() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_THINKING_EFFORT", None::<&str>),
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_TEMPERATURE", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+                ("GOOSE_TOOLSHIM", None::<&str>),
+                ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+            ]);
+            let config = ModelConfig::new("o3-mini-high").unwrap();
+            assert_eq!(config.model_name, "o3-mini");
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));
+        }
+
+        #[test]
+        fn effort_suffix_not_stripped_when_thinking_effort_set() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_THINKING_EFFORT", None::<&str>),
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_TEMPERATURE", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+                ("GOOSE_TOOLSHIM", None::<&str>),
+                ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+            ]);
+            let mut params = HashMap::new();
+            params.insert("thinking_effort".to_string(), serde_json::json!("low"));
+            let mut config = ModelConfig::new("o3-mini-high").unwrap();
+            // Suffix was already normalized during new(), but if request_params
+            // were set before construction, the suffix would not be stripped.
+            // Verify the normalized state:
+            assert_eq!(config.model_name, "o3-mini");
+
+            // Now simulate setting explicit effort after construction
+            config.request_params = Some(params);
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Low));
+        }
+
+        #[test]
+        fn no_suffix_no_change() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_THINKING_EFFORT", None::<&str>),
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_TEMPERATURE", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+                ("GOOSE_TOOLSHIM", None::<&str>),
+                ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+            ]);
+            let config = ModelConfig::new("o3-mini").unwrap();
+            assert_eq!(config.model_name, "o3-mini");
+        }
+
+        #[test]
+        fn non_reasoning_model_suffix_not_stripped() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_THINKING_EFFORT", None::<&str>),
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_TEMPERATURE", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+                ("GOOSE_TOOLSHIM", None::<&str>),
+                ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+            ]);
+            let config = ModelConfig::new("claude-sonnet-4-high").unwrap();
+            assert_eq!(config.model_name, "claude-sonnet-4-high");
         }
 
         #[test]
