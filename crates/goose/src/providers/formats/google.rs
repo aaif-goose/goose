@@ -541,39 +541,14 @@ fn get_thinking_config(model_config: &ModelConfig) -> Option<ThinkingConfig> {
         return None;
     }
 
-    // Unified thinking effort takes priority
-    if let Some(effort) = model_config.thinking_effort() {
-        use crate::model::ThinkingEffort;
-        let thinking_level = match effort {
-            ThinkingEffort::Off | ThinkingEffort::Low | ThinkingEffort::Medium => {
-                ThinkingLevel::Low
-            }
-            ThinkingEffort::High | ThinkingEffort::Max => ThinkingLevel::High,
-        };
-        return Some(ThinkingConfig {
-            thinking_level: Some(thinking_level),
-            thinking_budget: None,
-            include_thoughts: true,
-        });
-    }
-
     if is_gemini_3 {
-        let thinking_level_str = model_config
-            .get_config_param::<String>("thinking_level", "GEMINI3_THINKING_LEVEL")
-            .map(|s| s.to_lowercase())
-            .unwrap_or_else(|| "low".to_string());
-
-        let thinking_level = match thinking_level_str.as_str() {
-            "high" => ThinkingLevel::High,
-            "low" => ThinkingLevel::Low,
-            invalid => {
-                tracing::warn!(
-                    "Invalid thinking level '{}' for model '{}'. Valid levels: low, high. Using 'low'.",
-                    invalid,
-                    model_config.model_name,
-                );
-                ThinkingLevel::Low
-            }
+        use crate::model::ThinkingEffort;
+        let effort = model_config
+            .thinking_effort()
+            .unwrap_or(ThinkingEffort::Low);
+        let thinking_level = match effort {
+            ThinkingEffort::Off | ThinkingEffort::Low | ThinkingEffort::Medium => ThinkingLevel::Low,
+            ThinkingEffort::High | ThinkingEffort::Max => ThinkingLevel::High,
         };
 
         Some(ThinkingConfig {
@@ -1394,7 +1369,11 @@ data: [DONE]"#;
     fn test_get_thinking_config() {
         use crate::model::ModelConfig;
 
-        let config = ModelConfig::new("gemini-3-pro").unwrap();
+        // Test 1: Gemini 3 model with low thinking effort
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), serde_json::json!("low"));
+        let mut config = ModelConfig::new("gemini-3-pro").unwrap();
+        config.request_params = Some(params);
         let result = get_thinking_config(&config);
         assert!(result.is_some());
         let thinking_config = result.unwrap();
@@ -1402,9 +1381,18 @@ data: [DONE]"#;
         assert!(thinking_config.thinking_budget.is_none());
         assert!(thinking_config.include_thoughts);
 
-        let config = ModelConfig::new("Gemini-3-Flash").unwrap();
+        // Test 2: Gemini 3 model with high thinking effort
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), serde_json::json!("high"));
+        let mut config = ModelConfig::new("Gemini-3-Flash").unwrap();
+        config.request_params = Some(params);
         let result = get_thinking_config(&config);
         assert!(result.is_some());
+        let thinking_config = result.unwrap();
+        assert!(matches!(
+            thinking_config.thinking_level,
+            ThinkingLevel::High
+        ));
 
         let config = ModelConfig::new("gemini-2.5-flash").unwrap();
         let result = get_thinking_config(&config);

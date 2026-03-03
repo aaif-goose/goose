@@ -24,7 +24,6 @@ use goose::model::ModelConfig;
 use goose::posthog::{get_telemetry_choice, TELEMETRY_ENABLED_KEY};
 use goose::providers::base::ConfigKey;
 use goose::providers::chatgpt_codex::reasoning_levels_for_model;
-use goose::providers::formats::anthropic::supports_adaptive_thinking;
 use goose::providers::provider_test::test_provider_configuration;
 use goose::providers::{create, providers, retry_operation, RetryConfig};
 use goose::session::SessionType;
@@ -766,58 +765,21 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         }
     };
 
-    if model.to_lowercase().starts_with("gemini-3") {
-        let thinking_level: &str = cliclack::select("Select thinking level for Gemini 3:")
-            .item("low", "Low - Better latency, lighter reasoning", "")
-            .item("high", "High - Deeper reasoning, higher latency", "")
-            .interact()?;
-        config.set_gemini3_thinking_level(thinking_level)?;
-    }
+    {
+        let supports_thinking = model.to_lowercase().starts_with("gemini-3")
+            || model.to_lowercase().contains("claude")
+            || goose::model::ModelConfig::new_or_fail(&model).is_openai_reasoning_model();
 
-    if model.to_lowercase().starts_with("claude-") {
-        let supports_adaptive = supports_adaptive_thinking(&model);
-
-        let mut thinking_select = cliclack::select("Select extended thinking mode for Claude:");
-        if supports_adaptive {
-            thinking_select = thinking_select.item(
-                "adaptive",
-                "Adaptive - Claude decides when and how much to think (recommended)",
-                "",
-            );
-        }
-        thinking_select = thinking_select
-            .item("enabled", "Enabled - Fixed token budget for thinking", "")
-            .item("disabled", "Disabled - No extended thinking", "");
-        if supports_adaptive {
-            thinking_select = thinking_select.initial_value("adaptive");
-        } else {
-            thinking_select = thinking_select.initial_value("disabled");
-        }
-        let thinking_type: &str = thinking_select.interact()?;
-        config.set_claude_thinking_type(thinking_type)?;
-
-        if thinking_type == "adaptive" {
-            let effort: &str = cliclack::select("Select adaptive thinking effort level:")
-                .item("low", "Low - Minimal thinking, fastest responses", "")
+        if supports_thinking {
+            let effort: &str = cliclack::select("Select thinking effort:")
+                .item("off", "Off - No extended thinking", "")
+                .item("low", "Low - Better latency, lighter reasoning", "")
                 .item("medium", "Medium - Moderate thinking", "")
-                .item("high", "High - Deep reasoning (default)", "")
-                .item(
-                    "max",
-                    "Max - No constraints on thinking depth (Opus 4.6 only)",
-                    "",
-                )
-                .initial_value("high")
+                .item("high", "High - Deep reasoning", "")
+                .item("max", "Max - No constraints on thinking depth", "")
+                .initial_value("off")
                 .interact()?;
-            config.set_claude_thinking_effort(effort)?;
-        } else if thinking_type == "enabled" {
-            let budget: String = cliclack::input("Enter thinking budget (tokens):")
-                .default_input("16000")
-                .validate(|input: &String| match input.parse::<i32>() {
-                    Ok(n) if n > 0 => Ok(()),
-                    _ => Err("Please enter a valid positive number"),
-                })
-                .interact()?;
-            config.set_claude_thinking_budget(budget.parse::<i32>()?)?;
+            config.set_goose_thinking_effort(effort)?;
         }
     }
 

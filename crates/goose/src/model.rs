@@ -462,13 +462,10 @@ mod tests {
 
     #[test]
     fn test_get_config_param() {
-        let _guard = env_lock::lock_env([
-            ("CLAUDE_THINKING_EFFORT", Some("high")),
-            ("CLAUDE_THINKING_TYPE", None::<&str>),
-        ]);
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
 
         let mut params = HashMap::new();
-        params.insert("effort".to_string(), serde_json::json!("low"));
+        params.insert("thinking_effort".to_string(), serde_json::json!("low"));
 
         let config_with_params = ModelConfig {
             model_name: "test".to_string(),
@@ -482,11 +479,13 @@ mod tests {
         };
 
         assert_eq!(
-            config_with_params.get_config_param::<String>("effort", "CLAUDE_THINKING_EFFORT"),
+            config_with_params
+                .get_config_param::<String>("thinking_effort", "GOOSE_THINKING_EFFORT"),
             Some("low".to_string())
         );
         assert_eq!(
-            config_without_params.get_config_param::<String>("effort", "CLAUDE_THINKING_EFFORT"),
+            config_without_params
+                .get_config_param::<String>("thinking_effort", "GOOSE_THINKING_EFFORT"),
             Some("high".to_string())
         );
         assert_eq!(
@@ -533,16 +532,6 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Low));
-        }
-
-        #[test]
-        fn none_when_not_set() {
-            let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
-            let config = ModelConfig {
-                model_name: "test".to_string(),
-                ..Default::default()
-            };
-            assert_eq!(config.thinking_effort(), None);
         }
 
         #[test]

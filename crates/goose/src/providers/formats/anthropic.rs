@@ -80,43 +80,14 @@ pub fn thinking_type(model_config: &ModelConfig) -> ThinkingType {
     }
 
     let is_adaptive_model = supports_adaptive_thinking(&model_config.model_name);
+    let effort = model_config
+        .thinking_effort()
+        .unwrap_or(crate::model::ThinkingEffort::Off);
 
-    // Unified thinking effort takes priority
-    if let Some(effort) = model_config.thinking_effort() {
-        use crate::model::ThinkingEffort;
-        return match effort {
-            ThinkingEffort::Off => ThinkingType::Disabled,
-            _ if is_adaptive_model => ThinkingType::Adaptive,
-            _ => ThinkingType::Enabled,
-        };
-    }
-
-    if let Some(s) =
-        model_config.get_config_param::<String>("thinking_type", "CLAUDE_THINKING_TYPE")
-    {
-        let tt = s.parse::<ThinkingType>().unwrap_or_else(|e| {
-            tracing::warn!("{e}");
-            ThinkingType::Disabled
-        });
-        if tt == ThinkingType::Adaptive && !is_adaptive_model {
-            tracing::warn!(
-                "Adaptive thinking not supported for {}, disabling thinking",
-                model_config.model_name
-            );
-            return ThinkingType::Disabled;
-        }
-        return tt;
-    }
-
-    if is_adaptive_model {
-        ThinkingType::Adaptive
-    } else if std::env::var("CLAUDE_THINKING_ENABLED").is_ok() {
-        tracing::warn!(
-            "CLAUDE_THINKING_ENABLED is deprecated, use CLAUDE_THINKING_TYPE=enabled instead"
-        );
-        ThinkingType::Enabled
-    } else {
-        ThinkingType::Disabled
+    match effort {
+        crate::model::ThinkingEffort::Off => ThinkingType::Disabled,
+        _ if is_adaptive_model => ThinkingType::Adaptive,
+        _ => ThinkingType::Enabled,
     }
 }
 
@@ -520,46 +491,39 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
 }
 
 pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
-    // Unified thinking effort takes priority
-    if let Some(effort) = model_config.thinking_effort() {
-        return match effort {
-            crate::model::ThinkingEffort::Off => ThinkingEffort::Low,
-            crate::model::ThinkingEffort::Low => ThinkingEffort::Low,
-            crate::model::ThinkingEffort::Medium => ThinkingEffort::Medium,
-            crate::model::ThinkingEffort::High => ThinkingEffort::High,
-            crate::model::ThinkingEffort::Max => ThinkingEffort::Max,
-        };
-    }
-
-    match model_config.get_config_param::<String>("effort", "CLAUDE_THINKING_EFFORT") {
-        Some(s) => s.parse().unwrap_or_else(|e| {
-            tracing::warn!("{e}, defaulting to 'high'");
-            ThinkingEffort::High
-        }),
-        None => ThinkingEffort::High,
+    let effort = model_config
+        .thinking_effort()
+        .unwrap_or(crate::model::ThinkingEffort::High);
+    match effort {
+        crate::model::ThinkingEffort::Off | crate::model::ThinkingEffort::Low => {
+            ThinkingEffort::Low
+        }
+        crate::model::ThinkingEffort::Medium => ThinkingEffort::Medium,
+        crate::model::ThinkingEffort::High => ThinkingEffort::High,
+        crate::model::ThinkingEffort::Max => ThinkingEffort::Max,
     }
 }
 
 fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
-    let request_param = model_config
+    if let Some(request_param) = model_config
         .request_params
         .as_ref()
         .and_then(|params| params.get("budget_tokens"))
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+        .and_then(|v| serde_json::from_value::<i32>(v.clone()).ok())
+    {
+        return request_param.max(1024);
+    }
 
-    request_param
-        .or_else(|| {
-            crate::config::Config::global()
-                .get_param::<i32>("ANTHROPIC_THINKING_BUDGET")
-                .ok()
-        })
-        .or_else(|| {
-            crate::config::Config::global()
-                .get_param::<i32>("CLAUDE_THINKING_BUDGET")
-                .ok()
-        })
-        .unwrap_or(16000)
-        .max(1024)
+    let effort = model_config
+        .thinking_effort()
+        .unwrap_or(crate::model::ThinkingEffort::High);
+    match effort {
+        crate::model::ThinkingEffort::Off => 1024,
+        crate::model::ThinkingEffort::Low => 4000,
+        crate::model::ThinkingEffort::Medium => 10000,
+        crate::model::ThinkingEffort::High => 16000,
+        crate::model::ThinkingEffort::Max => 32000,
+    }
 }
 
 fn apply_thinking_config(
@@ -1202,14 +1166,14 @@ mod tests {
 
     #[test]
     fn test_create_request_adaptive_thinking_for_46_models() -> Result<()> {
-        let _guard = env_lock::lock_env([
-            ("CLAUDE_THINKING_TYPE", Some("adaptive")),
-            ("CLAUDE_THINKING_EFFORT", Some("high")),
-            ("CLAUDE_THINKING_ENABLED", None::<&str>),
-        ]);
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("high"));
 
         let mut config = cfg("claude-opus-4-6");
         config.max_tokens = Some(4096);
+        config.request_params = Some(params);
         let messages = vec![Message::user().with_text("Hello")];
         let payload = create_request(&config, "system", &messages, &[])?;
 
@@ -1223,16 +1187,12 @@ mod tests {
     #[test]
     fn test_create_request_enabled_thinking_with_budget() -> Result<()> {
         let _guard = env_lock::lock_env([
-            ("CLAUDE_THINKING_TYPE", None::<&str>),
-            ("CLAUDE_THINKING_EFFORT", None::<&str>),
-            ("CLAUDE_THINKING_ENABLED", None::<&str>),
-            ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
-            ("CLAUDE_THINKING_BUDGET", None::<&str>),
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+            ("ANTHROPIC_PRESERVE_THINKING_CONTEXT", None::<&str>),
         ]);
 
         let mut params = std::collections::HashMap::new();
-        params.insert("thinking_type".to_string(), json!("enabled"));
-        params.insert("budget_tokens".to_string(), json!(10000));
+        params.insert("thinking_effort".to_string(), json!("high"));
 
         let mut config = cfg("claude-3-7-sonnet-20250219");
         config.max_tokens = Some(4096);
@@ -1242,8 +1202,8 @@ mod tests {
         let payload = create_request(&config, "system", &messages, &[])?;
 
         assert_eq!(payload["thinking"]["type"], "enabled");
-        assert_eq!(payload["thinking"]["budget_tokens"], 10000);
-        assert_eq!(payload["max_tokens"], 4096 + 10000);
+        assert_eq!(payload["thinking"]["budget_tokens"], 16000);
+        assert_eq!(payload["max_tokens"], 4096 + 16000);
 
         Ok(())
     }
@@ -1251,12 +1211,11 @@ mod tests {
     #[test]
     fn test_create_request_disabled_thinking_no_thinking_field() -> Result<()> {
         let _guard = env_lock::lock_env([
-            ("CLAUDE_THINKING_TYPE", None::<&str>),
-            ("CLAUDE_THINKING_ENABLED", None::<&str>),
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
             ("ANTHROPIC_PRESERVE_THINKING_CONTEXT", None::<&str>),
         ]);
 
-        let config = cfg("claude-sonnet-4-20250514");
+        let config = cfg_with_effort("claude-sonnet-4-20250514", "off");
         let messages = vec![Message::user().with_text("Hello")];
         let payload = create_request(&config, "system", &messages, &[])?;
 
@@ -1470,9 +1429,9 @@ mod tests {
         }
     }
 
-    fn cfg_with_thinking(name: &str, tt: &str) -> ModelConfig {
+    fn cfg_with_effort(name: &str, effort: &str) -> ModelConfig {
         let mut params = std::collections::HashMap::new();
-        params.insert("thinking_type".to_string(), json!(tt));
+        params.insert("thinking_effort".to_string(), json!(effort));
         ModelConfig {
             model_name: name.to_string(),
             request_params: Some(params),
@@ -1481,50 +1440,50 @@ mod tests {
     }
 
     #[test]
-    fn test_thinking_type_explicit_params() {
+    fn test_thinking_type_from_effort() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        // Adaptive model with effort → adaptive
         assert_eq!(
-            thinking_type(&cfg_with_thinking("claude-opus-4-6", "adaptive")),
+            thinking_type(&cfg_with_effort("claude-opus-4-6", "high")),
             ThinkingType::Adaptive
         );
+        // Adaptive model with off → disabled
         assert_eq!(
-            thinking_type(&cfg_with_thinking("claude-opus-4-6", "disabled")),
+            thinking_type(&cfg_with_effort("claude-opus-4-6", "off")),
             ThinkingType::Disabled
         );
+        // Non-adaptive Claude with effort → enabled
         assert_eq!(
-            thinking_type(&cfg_with_thinking("claude-3-7-sonnet-20250219", "enabled")),
+            thinking_type(&cfg_with_effort("claude-3-7-sonnet-20250219", "high")),
             ThinkingType::Enabled
         );
+        // Non-adaptive Claude with off → disabled
         assert_eq!(
-            thinking_type(&cfg_with_thinking("claude-3-7-sonnet-20250219", "adaptive")),
-            ThinkingType::Disabled
-        );
-        assert_eq!(
-            thinking_type(&cfg_with_thinking("claude-opus-4-6", "adapttive")),
+            thinking_type(&cfg_with_effort("claude-3-7-sonnet-20250219", "off")),
             ThinkingType::Disabled
         );
     }
 
     #[test]
     fn test_thinking_type_non_claude_always_disabled() {
-        assert_eq!(thinking_type(&cfg("gpt-4o")), ThinkingType::Disabled);
         assert_eq!(
-            thinking_type(&cfg_with_thinking("gpt-4o", "enabled")),
+            thinking_type(&cfg_with_effort("gpt-4o", "off")),
+            ThinkingType::Disabled
+        );
+        assert_eq!(
+            thinking_type(&cfg_with_effort("gpt-4o", "high")),
             ThinkingType::Disabled
         );
     }
 
     #[test]
-    fn test_thinking_type_env_var_override() {
-        let _guard = env_lock::lock_env([
-            ("CLAUDE_THINKING_TYPE", Some("adaptive")),
-            ("CLAUDE_THINKING_ENABLED", None::<&str>),
-        ]);
+    fn test_thinking_type_off_means_disabled() {
         assert_eq!(
-            thinking_type(&cfg("claude-opus-4-6")),
-            ThinkingType::Adaptive
+            thinking_type(&cfg_with_effort("claude-opus-4-6", "off")),
+            ThinkingType::Disabled
         );
         assert_eq!(
-            thinking_type(&cfg("claude-3-7-sonnet-20250219")),
+            thinking_type(&cfg_with_effort("claude-3-7-sonnet-20250219", "off")),
             ThinkingType::Disabled
         );
     }

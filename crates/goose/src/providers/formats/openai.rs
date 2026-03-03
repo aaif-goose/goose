@@ -2087,8 +2087,7 @@ mod tests {
     fn test_create_request_omits_max_tokens_when_unset() -> anyhow::Result<()> {
         // Unknown models on OpenAI-compatible local providers (llama_swap,
         // lmstudio) have no canonical record and no GOOSE_MAX_TOKENS, so the
-        // request must not pin the legacy 4096 default — the server should
-        // pick its own ceiling. See issue #9007.
+        // request must not pin the legacy 4096 default. See issue #9007.
         let model_config = ModelConfig {
             model_name: "some-unknown-local-model".to_string(),
             context_limit: None,
@@ -2181,8 +2180,6 @@ mod tests {
 
     #[test]
     fn test_create_request_o1_default() -> anyhow::Result<()> {
-        // Without an explicit effort suffix the API picks its own default;
-        // we should omit reasoning_effort entirely but still use "developer" role.
         let model_config = ModelConfig {
             model_name: "o1".to_string(),
             context_limit: Some(4096),
@@ -2226,17 +2223,48 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_o3_custom_reasoning_effort() -> anyhow::Result<()> {
-        // Test custom reasoning effort for O3 model
+    fn test_create_request_o1_medium_effort() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("medium"));
         let model_config = ModelConfig {
-            model_name: "o3-mini-high".to_string(),
+            model_name: "o1".to_string(),
             context_limit: Some(4096),
             temperature: None,
             max_tokens: Some(1024),
             toolshim: false,
             toolshim_model: None,
             fast_model_config: None,
-            request_params: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("medium")));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_o3_custom_reasoning_effort() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("high"));
+        let model_config = ModelConfig {
+            model_name: "o3-mini".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
             reasoning: None,
         };
         let request = create_request(
