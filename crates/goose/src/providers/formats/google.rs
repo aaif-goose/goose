@@ -545,7 +545,10 @@ fn get_thinking_config(model_config: &ModelConfig) -> Option<ThinkingConfig> {
         use crate::model::ThinkingEffort;
         let effort = model_config
             .thinking_effort()
-            .unwrap_or(ThinkingEffort::Low);
+            .unwrap_or(ThinkingEffort::Off);
+        if effort == ThinkingEffort::Off {
+            return None;
+        }
         let thinking_level = match effort {
             ThinkingEffort::Off | ThinkingEffort::Low | ThinkingEffort::Medium => ThinkingLevel::Low,
             ThinkingEffort::High | ThinkingEffort::Max => ThinkingLevel::High,

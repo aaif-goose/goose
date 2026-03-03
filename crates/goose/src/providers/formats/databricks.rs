@@ -669,6 +669,9 @@ pub fn create_request(
     if let Some(params) = &model_config.request_params {
         if let Some(obj) = payload.as_object_mut() {
             for (key, value) in params {
+                if key == "thinking_effort" {
+                    continue;
+                }
                 obj.insert(key.clone(), value.clone());
             }
         }
