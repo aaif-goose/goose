@@ -205,8 +205,14 @@ function isGemini3Model(name: string | null | undefined): boolean {
   return !!name && name.toLowerCase().startsWith('gemini-3');
 }
 
-function supportsThinking(name: string | null | undefined): boolean {
-  return isClaudeModel(name) || isOpenAIReasoningModel(name) || isGemini3Model(name);
+const CLAUDE_THINKING_PROVIDERS = new Set(['anthropic', 'databricks']);
+
+function supportsThinking(
+  name: string | null | undefined,
+  provider: string | null | undefined
+): boolean {
+  const claudeSupported = isClaudeModel(name) && CLAUDE_THINKING_PROVIDERS.has(provider ?? '');
+  return claudeSupported || isOpenAIReasoningModel(name) || isGemini3Model(name);
 }
 
 
@@ -317,7 +323,8 @@ export const SwitchModelModal = ({
   const [thinkingEffort, setThinkingEffort] = useState<string | null>(null);
 
   const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
-  const showThinkingControl = supportsThinking(modelName);
+  const effectiveProvider = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
+  const showThinkingControl = supportsThinking(modelName, effectiveProvider);
 
   useEffect(() => {
     (async () => {
@@ -383,12 +390,13 @@ export const SwitchModelModal = ({
         } as Model;
       }
 
-      if (showThinkingControl && thinkingEffort !== null) {
+      if (showThinkingControl) {
+        const effort = thinkingEffort ?? 'off';
         modelObj = {
           ...modelObj,
-          request_params: { ...modelObj.request_params, thinking_effort: thinkingEffort },
+          request_params: { ...modelObj.request_params, thinking_effort: effort },
         };
-        upsert('GOOSE_THINKING_EFFORT', thinkingEffort, false).catch(console.warn);
+        upsert('GOOSE_THINKING_EFFORT', effort, false).catch(console.warn);
       }
 
       const success = await changeModel(sessionId, modelObj);
