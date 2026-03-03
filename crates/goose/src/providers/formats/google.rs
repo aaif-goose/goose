@@ -541,6 +541,22 @@ fn get_thinking_config(model_config: &ModelConfig) -> Option<ThinkingConfig> {
         return None;
     }
 
+    // Unified thinking effort takes priority
+    if let Some(effort) = model_config.thinking_effort() {
+        use crate::model::ThinkingEffort;
+        let thinking_level = match effort {
+            ThinkingEffort::Off | ThinkingEffort::Low | ThinkingEffort::Medium => {
+                ThinkingLevel::Low
+            }
+            ThinkingEffort::High | ThinkingEffort::Max => ThinkingLevel::High,
+        };
+        return Some(ThinkingConfig {
+            thinking_level: Some(thinking_level),
+            thinking_budget: None,
+            include_thoughts: true,
+        });
+    }
+
     if is_gemini_3 {
         let thinking_level_str = model_config
             .get_config_param::<String>("thinking_level", "GEMINI3_THINKING_LEVEL")

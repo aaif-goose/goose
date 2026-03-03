@@ -2,10 +2,48 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt;
+use std::str::FromStr;
 use thiserror::Error;
 use utoipa::ToSchema;
 
 pub const DEFAULT_CONTEXT_LIMIT: usize = 128_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThinkingEffort {
+    Off,
+    Low,
+    Medium,
+    High,
+    Max,
+}
+
+impl FromStr for ThinkingEffort {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "off" | "disabled" | "none" => Ok(Self::Off),
+            "low" => Ok(Self::Low),
+            "medium" | "med" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            "max" => Ok(Self::Max),
+            other => Err(format!("unknown thinking effort: '{other}'")),
+        }
+    }
+}
+
+impl fmt::Display for ThinkingEffort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Off => write!(f, "off"),
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+            Self::Max => write!(f, "max"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 struct PredefinedModel {
@@ -327,6 +365,11 @@ impl ModelConfig {
         4_096
     }
 
+    pub fn thinking_effort(&self) -> Option<ThinkingEffort> {
+        self.get_config_param::<String>("thinking_effort", "GOOSE_THINKING_EFFORT")
+            .and_then(|s| s.parse::<ThinkingEffort>().ok())
+    }
+
     pub fn get_config_param<T: for<'de> serde::Deserialize<'de>>(
         &self,
         request_key: &str,
@@ -451,6 +494,68 @@ mod tests {
                 .get_config_param::<String>("nonexistent", "NONEXISTENT_CONFIG_KEY"),
             None
         );
+    }
+
+    mod thinking_effort_tests {
+        use super::*;
+
+        #[test]
+        fn from_request_params() {
+            let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+            let mut params = HashMap::new();
+            params.insert("thinking_effort".to_string(), serde_json::json!("medium"));
+            let config = ModelConfig {
+                model_name: "test".to_string(),
+                request_params: Some(params),
+                ..Default::default()
+            };
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Medium));
+        }
+
+        #[test]
+        fn from_env_var() {
+            let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+            let config = ModelConfig {
+                model_name: "test".to_string(),
+                ..Default::default()
+            };
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));
+        }
+
+        #[test]
+        fn request_params_override_env() {
+            let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+            let mut params = HashMap::new();
+            params.insert("thinking_effort".to_string(), serde_json::json!("low"));
+            let config = ModelConfig {
+                model_name: "test".to_string(),
+                request_params: Some(params),
+                ..Default::default()
+            };
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Low));
+        }
+
+        #[test]
+        fn none_when_not_set() {
+            let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+            let config = ModelConfig {
+                model_name: "test".to_string(),
+                ..Default::default()
+            };
+            assert_eq!(config.thinking_effort(), None);
+        }
+
+        #[test]
+        fn parse_aliases() {
+            assert_eq!("off".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Off));
+            assert_eq!(
+                "disabled".parse::<ThinkingEffort>(),
+                Ok(ThinkingEffort::Off)
+            );
+            assert_eq!("med".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Medium));
+            assert_eq!("max".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Max));
+            assert!("invalid".parse::<ThinkingEffort>().is_err());
+        }
     }
 
     mod with_canonical_limits {

@@ -23,6 +23,10 @@ import { ProviderType } from '../../../../api';
 import { trackModelChanged } from '../../../../utils/analytics';
 
 const i18n = defineMessages({
+  thinkingEffortOff: {
+    id: 'switchModelModal.thinkingEffortOff',
+    defaultMessage: 'Off - No extended thinking',
+  },
   thinkingLevelLow: {
     id: 'switchModelModal.thinkingLevelLow',
     defaultMessage: 'Low - Better latency, lighter reasoning',
@@ -185,16 +189,26 @@ const i18n = defineMessages({
   },
 });
 
-// THINKING_LEVEL_OPTIONS and CLAUDE_THINKING_EFFORT_OPTIONS are created inside the component to support i18n.
+// Thinking effort options are created inside the component to support i18n.
 
 function isClaudeModel(name: string | null | undefined): boolean {
-  return !!name && name.toLowerCase().startsWith('claude-');
+  return !!name && name.toLowerCase().includes('claude');
 }
 
-function supportsAdaptiveThinking(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.includes('claude-opus-4-6') || lower.includes('claude-sonnet-4-6');
+function isOpenAIReasoningModel(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const base = name.replace(/^(goose-|databricks-)/, '');
+  return /^(o1|o3|o4|gpt-5)/.test(base);
 }
+
+function isGemini3Model(name: string | null | undefined): boolean {
+  return !!name && name.toLowerCase().startsWith('gemini-3');
+}
+
+function supportsThinking(name: string | null | undefined): boolean {
+  return isClaudeModel(name) || isOpenAIReasoningModel(name) || isGemini3Model(name);
+}
+
 
 const PREFERRED_MODEL_PATTERNS = [
   /claude-sonnet-4/i,
@@ -256,12 +270,8 @@ export const SwitchModelModal = ({
 }: SwitchModelModalProps) => {
   const intl = useIntl();
 
-  const THINKING_LEVEL_OPTIONS = [
-    { value: 'low', label: intl.formatMessage(i18n.thinkingLevelLow) },
-    { value: 'high', label: intl.formatMessage(i18n.thinkingLevelHigh) },
-  ];
-
-  const CLAUDE_THINKING_EFFORT_OPTIONS = [
+  const THINKING_EFFORT_OPTIONS = [
+    { value: 'off', label: intl.formatMessage(i18n.thinkingEffortOff) },
     { value: 'low', label: intl.formatMessage(i18n.claudeEffortLow) },
     { value: 'medium', label: intl.formatMessage(i18n.claudeEffortMedium) },
     { value: 'high', label: intl.formatMessage(i18n.claudeEffortHigh) },
@@ -304,40 +314,19 @@ export const SwitchModelModal = ({
     import('../../../../api').ProviderDetails[]
   >([]);
   const fetchedProviders = useRef<Set<string>>(new Set());
-  const [thinkingLevel, setThinkingLevel] = useState<string>('low');
-  const [claudeThinkingType, setClaudeThinkingType] = useState<string>('disabled');
-  const [claudeThinkingEffort, setClaudeThinkingEffort] = useState<string>('high');
-  const [claudeThinkingBudget, setClaudeThinkingBudget] = useState<string>('16000');
+  const [thinkingEffort, setThinkingEffort] = useState<string>('off');
 
   const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
-  const isGemini3Model = modelName?.toLowerCase().startsWith('gemini-3') ?? false;
-  const showClaudeThinking = isClaudeModel(modelName);
-  const modelSupportsAdaptive = modelName ? supportsAdaptiveThinking(modelName) : false;
+  const showThinkingControl = supportsThinking(modelName);
 
   useEffect(() => {
-    if (!showClaudeThinking) return;
-    if (claudeThinkingType === 'adaptive' && !modelSupportsAdaptive) {
-      setClaudeThinkingType('disabled');
-    }
-  }, [modelName, showClaudeThinking, modelSupportsAdaptive, claudeThinkingType]);
-
-  useEffect(() => {
-    const readConfig = async (key: string): Promise<string | null> => {
-      try {
-        const val = (await read(key, false)) as string;
-        return val || null;
-      } catch (e) {
-        console.warn(`Could not read ${key}, using default:`, e);
-        return null;
-      }
-    };
     (async () => {
-      const tt = await readConfig('CLAUDE_THINKING_TYPE');
-      if (tt) setClaudeThinkingType(tt);
-      const effort = await readConfig('CLAUDE_THINKING_EFFORT');
-      if (effort) setClaudeThinkingEffort(effort);
-      const budget = await readConfig('CLAUDE_THINKING_BUDGET');
-      if (budget) setClaudeThinkingBudget(budget);
+      try {
+        const effort = (await read('GOOSE_THINKING_EFFORT', false)) as string;
+        if (effort) setThinkingEffort(effort);
+      } catch (e) {
+        console.warn('Could not read GOOSE_THINKING_EFFORT, using default:', e);
+      }
     })();
   }, [read]);
 
@@ -394,35 +383,12 @@ export const SwitchModelModal = ({
         } as Model;
       }
 
-      if (isGemini3Model) {
+      if (showThinkingControl) {
         modelObj = {
           ...modelObj,
-          request_params: { ...modelObj.request_params, thinking_level: thinkingLevel },
+          request_params: { ...modelObj.request_params, thinking_effort: thinkingEffort },
         };
-      }
-
-      if (showClaudeThinking) {
-        const params: Record<string, unknown> = {
-          ...modelObj.request_params,
-          thinking_type: claudeThinkingType,
-        };
-        if (claudeThinkingType === 'adaptive') {
-          params.effort = claudeThinkingEffort;
-        } else if (claudeThinkingType === 'enabled') {
-          params.budget_tokens = parseInt(claudeThinkingBudget, 10) || 16000;
-        }
-        modelObj = { ...modelObj, request_params: params };
-
-        upsert('CLAUDE_THINKING_TYPE', claudeThinkingType, false).catch(console.warn);
-        if (claudeThinkingType === 'adaptive') {
-          upsert('CLAUDE_THINKING_EFFORT', claudeThinkingEffort, false).catch(console.warn);
-        } else if (claudeThinkingType === 'enabled') {
-          upsert(
-            'CLAUDE_THINKING_BUDGET',
-            parseInt(claudeThinkingBudget, 10) || 16000,
-            false
-          ).catch(console.warn);
-        }
+        upsert('GOOSE_THINKING_EFFORT', thinkingEffort, false).catch(console.warn);
       }
 
       const success = await changeModel(sessionId, modelObj);
@@ -673,54 +639,20 @@ export const SwitchModelModal = ({
     }
   };
 
-  const claudeThinkingTypeOptions = [
-    ...(modelSupportsAdaptive
-      ? [{ value: 'adaptive', label: intl.formatMessage(i18n.claudeAdaptive) }]
-      : []),
-    { value: 'enabled', label: intl.formatMessage(i18n.claudeEnabled) },
-    { value: 'disabled', label: intl.formatMessage(i18n.claudeDisabled) },
-  ];
-
-  const claudeThinkingControls = showClaudeThinking && (
-    <div className="mt-2 flex flex-col gap-3">
-      <div>
-        <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.extendedThinking)}</label>
-        <Select
-          options={claudeThinkingTypeOptions}
-          value={claudeThinkingTypeOptions.find((o) => o.value === claudeThinkingType)}
-          onChange={(newValue: unknown) => {
-            const option = newValue as { value: string; label: string } | null;
-            setClaudeThinkingType(option?.value || 'disabled');
-          }}
-          placeholder={intl.formatMessage(i18n.selectThinkingMode)}
-        />
-      </div>
-      {claudeThinkingType === 'adaptive' && (
-        <div>
-          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingEffort)}</label>
-          <Select
-            options={CLAUDE_THINKING_EFFORT_OPTIONS}
-            value={CLAUDE_THINKING_EFFORT_OPTIONS.find((o) => o.value === claudeThinkingEffort)}
-            onChange={(newValue: unknown) => {
-              const option = newValue as { value: string; label: string } | null;
-              setClaudeThinkingEffort(option?.value || 'high');
-            }}
-            placeholder={intl.formatMessage(i18n.selectEffortLevel)}
-          />
-        </div>
-      )}
-      {claudeThinkingType === 'enabled' && (
-        <div>
-          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingBudget)}</label>
-          <Input
-            className="border-2 px-4 py-2"
-            type="number"
-            min="1024"
-            value={claudeThinkingBudget}
-            onChange={(e) => setClaudeThinkingBudget(e.target.value)}
-          />
-        </div>
-      )}
+  const thinkingEffortControl = showThinkingControl && (
+    <div className="mt-2">
+      <label className="text-sm text-textSubtle mb-1 block">
+        {intl.formatMessage(i18n.thinkingEffort)}
+      </label>
+      <Select
+        options={THINKING_EFFORT_OPTIONS}
+        value={THINKING_EFFORT_OPTIONS.find((o) => o.value === thinkingEffort)}
+        onChange={(newValue: unknown) => {
+          const option = newValue as { value: string; label: string } | null;
+          setThinkingEffort(option?.value || 'off');
+        }}
+        placeholder={intl.formatMessage(i18n.selectEffortLevel)}
+      />
     </div>
   );
 
@@ -798,25 +730,7 @@ export const SwitchModelModal = ({
                 <div className="text-red-500 text-sm mt-1">{validationErrors.model}</div>
               )}
 
-              {isGemini3Model && (
-                <div className="mt-2">
-                  <label className="text-sm text-textSubtle mb-1 block">
-                    {intl.formatMessage(i18n.thinkingLevel)}
-                    <span className="text-xs text-textMuted ml-2">{intl.formatMessage(i18n.geminiOnly)}</span>
-                  </label>
-                  <Select
-                    options={THINKING_LEVEL_OPTIONS}
-                    value={THINKING_LEVEL_OPTIONS.find((o) => o.value === thinkingLevel)}
-                    onChange={(newValue: unknown) => {
-                      const option = newValue as { value: string; label: string } | null;
-                      setThinkingLevel(option?.value || 'low');
-                    }}
-                    placeholder={intl.formatMessage(i18n.selectThinkingLevel)}
-                  />
-                </div>
-              )}
-
-              {claudeThinkingControls}
+              {thinkingEffortControl}
             </div>
           ) : (
             /* Manual Provider/Model Selection */
@@ -963,25 +877,7 @@ export const SwitchModelModal = ({
                     </div>
                   )}
 
-                  {isGemini3Model && (
-                    <div className="mt-2">
-                      <label className="text-sm text-textSubtle mb-1 block">
-                        Thinking Level
-                        <span className="text-xs text-textMuted ml-2">(Gemini 3 models only)</span>
-                      </label>
-                      <Select
-                        options={THINKING_LEVEL_OPTIONS}
-                        value={THINKING_LEVEL_OPTIONS.find((o) => o.value === thinkingLevel)}
-                        onChange={(newValue: unknown) => {
-                          const option = newValue as { value: string; label: string } | null;
-                          setThinkingLevel(option?.value || 'low');
-                        }}
-                        placeholder="Select thinking level"
-                      />
-                    </div>
-                  )}
-
-                  {claudeThinkingControls}
+                  {thinkingEffortControl}
                 </>
               )}
             </div>

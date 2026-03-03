@@ -1239,8 +1239,25 @@ pub fn create_request_with_options(
         ));
     }
 
-    let (model_name, reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
+    let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
     let is_reasoning_model = is_openai_responses_model(&model_name);
+    let reasoning_effort = if is_reasoning_model {
+        model_config.thinking_effort().map_or(legacy_reasoning_effort, |effort| {
+            use crate::model::ThinkingEffort;
+            Some(
+                match effort {
+                    ThinkingEffort::Off => "none",
+                    ThinkingEffort::Low => "low",
+                    ThinkingEffort::Medium => "medium",
+                    ThinkingEffort::High => "high",
+                    ThinkingEffort::Max => "xhigh",
+                }
+                .to_string(),
+            )
+        })
+    } else {
+        None
+    };
 
     let system_message = json!({
         "role": if is_reasoning_model { "developer" } else { "system" },

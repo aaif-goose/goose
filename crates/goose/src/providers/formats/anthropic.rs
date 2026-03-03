@@ -81,6 +81,16 @@ pub fn thinking_type(model_config: &ModelConfig) -> ThinkingType {
 
     let is_adaptive_model = supports_adaptive_thinking(&model_config.model_name);
 
+    // Unified thinking effort takes priority
+    if let Some(effort) = model_config.thinking_effort() {
+        use crate::model::ThinkingEffort;
+        return match effort {
+            ThinkingEffort::Off => ThinkingType::Disabled,
+            _ if is_adaptive_model => ThinkingType::Adaptive,
+            _ => ThinkingType::Enabled,
+        };
+    }
+
     if let Some(s) =
         model_config.get_config_param::<String>("thinking_type", "CLAUDE_THINKING_TYPE")
     {
@@ -510,6 +520,17 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
 }
 
 pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
+    // Unified thinking effort takes priority
+    if let Some(effort) = model_config.thinking_effort() {
+        return match effort {
+            crate::model::ThinkingEffort::Off => ThinkingEffort::Low,
+            crate::model::ThinkingEffort::Low => ThinkingEffort::Low,
+            crate::model::ThinkingEffort::Medium => ThinkingEffort::Medium,
+            crate::model::ThinkingEffort::High => ThinkingEffort::High,
+            crate::model::ThinkingEffort::Max => ThinkingEffort::Max,
+        };
+    }
+
     match model_config.get_config_param::<String>("effort", "CLAUDE_THINKING_EFFORT") {
         Some(s) => s.parse().unwrap_or_else(|e| {
             tracing::warn!("{e}, defaulting to 'high'");
