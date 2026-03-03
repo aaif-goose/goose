@@ -766,8 +766,10 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     };
 
     {
+        let claude_thinking_providers = ["anthropic", "databricks"];
         let supports_thinking = model.to_lowercase().starts_with("gemini-3")
-            || model.to_lowercase().contains("claude")
+            || (model.to_lowercase().contains("claude")
+                && claude_thinking_providers.contains(&provider_name.as_str()))
             || goose::model::ModelConfig::new(&model)
                 .map(|c| c.is_openai_reasoning_model())
                 .unwrap_or(false);
