@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -82,7 +83,7 @@ pub enum ConfigError {
     InvalidRange(String, String),
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, ToSchema)]
 pub struct ModelConfig {
     pub model_name: String,
     pub context_limit: Option<usize>,
@@ -97,6 +98,42 @@ pub struct ModelConfig {
     pub request_params: Option<HashMap<String, Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for ModelConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawModelConfig {
+            model_name: String,
+            context_limit: Option<usize>,
+            temperature: Option<f32>,
+            max_tokens: Option<i32>,
+            toolshim: bool,
+            toolshim_model: Option<String>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            request_params: Option<HashMap<String, Value>>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            reasoning: Option<bool>,
+        }
+
+        let raw = RawModelConfig::deserialize(deserializer)?;
+        let mut config = Self {
+            model_name: raw.model_name,
+            context_limit: raw.context_limit,
+            temperature: raw.temperature,
+            max_tokens: raw.max_tokens,
+            toolshim: raw.toolshim,
+            toolshim_model: raw.toolshim_model,
+            fast_model_config: None,
+            request_params: raw.request_params,
+            reasoning: raw.reasoning,
+        };
+        config.normalize_effort_suffix();
+        Ok(config)
+    }
 }
 
 impl ModelConfig {
