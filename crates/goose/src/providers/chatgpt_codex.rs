@@ -235,6 +235,8 @@ fn create_codex_request(
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<Value> {
+    use crate::model::ThinkingEffort;
+
     let input_items = build_input_items(messages)?;
     let reasoning_effort = get_reasoning_effort(&model_config.model_name);
 
@@ -276,6 +278,24 @@ fn create_codex_request(
     if let Some(temp) = model_config.temperature {
         payload_obj.insert("temperature".to_string(), json!(temp));
     }
+
+    let reasoning_effort = match model_config
+        .thinking_effort()
+        .unwrap_or(ThinkingEffort::High)
+    {
+        ThinkingEffort::Off => {
+            if model_config.model_name.contains("codex") {
+                "low"
+            } else {
+                "none"
+            }
+        }
+        ThinkingEffort::Low => "low",
+        ThinkingEffort::Medium => "medium",
+        ThinkingEffort::High => "high",
+        ThinkingEffort::Max => "xhigh",
+    };
+    payload_obj.insert("reasoning_effort".to_string(), json!(reasoning_effort));
 
     Ok(payload)
 }
@@ -1175,6 +1195,28 @@ mod tests {
             "image_url should start with data:image/png;base64, but was: {}",
             url
         );
+    }
+
+    #[test]
+    fn test_create_codex_request_reasoning_effort_from_unified_thinking() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("max"));
+        let mut config = ModelConfig::new("gpt-5.2-codex").unwrap();
+        config.request_params = Some(params);
+
+        let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning_effort"], "xhigh");
+    }
+
+    #[test]
+    fn test_create_codex_request_off_maps_to_low_for_codex_models() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("off"));
+        let mut config = ModelConfig::new("gpt-5.2-codex").unwrap();
+        config.request_params = Some(params);
+
+        let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning_effort"], "low");
     }
 
     #[test_case(
