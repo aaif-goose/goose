@@ -206,13 +206,27 @@ function isGemini3Model(name: string | null | undefined): boolean {
 }
 
 const CLAUDE_THINKING_PROVIDERS = new Set(['anthropic', 'databricks']);
+const OPENAI_REASONING_THINKING_PROVIDERS = new Set([
+  'openai',
+  'codex',
+  'azure_openai',
+  'openrouter',
+  'litellm',
+  'github_copilot',
+  'tetrate',
+  'xai',
+  'databricks',
+]);
 
 function supportsThinking(
   name: string | null | undefined,
   provider: string | null | undefined
 ): boolean {
   const claudeSupported = isClaudeModel(name) && CLAUDE_THINKING_PROVIDERS.has(provider ?? '');
-  return claudeSupported || isOpenAIReasoningModel(name) || isGemini3Model(name);
+  const openaiReasoningSupported =
+    isOpenAIReasoningModel(name) && OPENAI_REASONING_THINKING_PROVIDERS.has(provider ?? '');
+  const gemini3Supported = isGemini3Model(name) && provider === 'google';
+  return claudeSupported || openaiReasoningSupported || gemini3Supported;
 }
 
 

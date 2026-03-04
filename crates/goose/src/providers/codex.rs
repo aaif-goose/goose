@@ -16,7 +16,7 @@ use super::base::{
 };
 use super::errors::ProviderError;
 use super::utils::{filter_extensions_from_system_prompt, RequestLog};
-use crate::config::base::{CodexCommand, CodexReasoningEffort, CodexSkipGitCheck};
+use crate::config::base::{CodexCommand, CodexSkipGitCheck};
 use crate::config::paths::Paths;
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, ExtensionConfig, GooseMode};
@@ -60,6 +60,27 @@ pub struct CodexProvider {
 }
 
 impl CodexProvider {
+    fn map_thinking_effort(
+        model_name: &str,
+        effort: Option<crate::model::ThinkingEffort>,
+    ) -> String {
+        use crate::model::ThinkingEffort;
+        match effort.unwrap_or(ThinkingEffort::High) {
+            ThinkingEffort::Off => {
+                if model_name.contains("codex") {
+                    "low".to_string()
+                } else {
+                    "none".to_string()
+                }
+            }
+            ThinkingEffort::Low => "low".to_string(),
+            ThinkingEffort::Medium => "medium".to_string(),
+            ThinkingEffort::High => "high".to_string(),
+            ThinkingEffort::Max => "xhigh".to_string(),
+        }
+    }
+
+    #[cfg(test)]
     fn supports_reasoning_effort(model_name: &str, reasoning_effort: &str) -> bool {
         if !CODEX_REASONING_LEVELS.contains(&reasoning_effort) {
             return false;
@@ -604,7 +625,6 @@ impl ProviderDef for CodexProvider {
             CODEX_DOC_URL,
             vec![
                 ConfigKey::from_value_type::<CodexCommand>(true, false, true),
-                ConfigKey::from_value_type::<CodexReasoningEffort>(false, false, true),
                 ConfigKey::from_value_type::<CodexSkipGitCheck>(false, false, true),
             ],
         )
@@ -619,24 +639,8 @@ impl ProviderDef for CodexProvider {
             let command: String = config.get_codex_command().unwrap_or_default().into();
             let resolved_command = SearchPaths::builder().with_npm().resolve(command)?;
 
-            // Get reasoning effort from config, default to "high"
-            let reasoning_effort = config
-                .get_codex_reasoning_effort()
-                .map(String::from)
-                .unwrap_or_else(|_| "high".to_string());
-
-            // Validate reasoning effort
             let reasoning_effort =
-                if Self::supports_reasoning_effort(&model.model_name, &reasoning_effort) {
-                    reasoning_effort
-                } else {
-                    tracing::warn!(
-                        "Invalid CODEX_REASONING_EFFORT '{}' for model '{}', using 'high'",
-                        reasoning_effort,
-                        model.model_name
-                    );
-                    "high".to_string()
-                };
+                Self::map_thinking_effort(&model.model_name, model.thinking_effort());
 
             // Get skip_git_check from config, default to false
             let skip_git_check = config
@@ -1214,20 +1218,38 @@ mod tests {
     #[test]
     fn test_config_keys() {
         let metadata = CodexProvider::metadata();
-        assert_eq!(metadata.config_keys.len(), 3);
+        assert_eq!(metadata.config_keys.len(), 2);
 
         // First key should be CODEX_COMMAND (required)
         assert_eq!(metadata.config_keys[0].name, "CODEX_COMMAND");
         assert!(metadata.config_keys[0].required);
         assert!(!metadata.config_keys[0].secret);
 
-        // Second key should be CODEX_REASONING_EFFORT (optional)
-        assert_eq!(metadata.config_keys[1].name, "CODEX_REASONING_EFFORT");
+        // Second key should be CODEX_SKIP_GIT_CHECK (optional)
+        assert_eq!(metadata.config_keys[1].name, "CODEX_SKIP_GIT_CHECK");
         assert!(!metadata.config_keys[1].required);
+    }
 
-        // Third key should be CODEX_SKIP_GIT_CHECK (optional)
-        assert_eq!(metadata.config_keys[2].name, "CODEX_SKIP_GIT_CHECK");
-        assert!(!metadata.config_keys[2].required);
+    #[test]
+    fn test_map_thinking_effort() {
+        use crate::model::ThinkingEffort;
+
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Off)),
+            "low"
+        );
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.2", Some(ThinkingEffort::Off)),
+            "none"
+        );
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Max)),
+            "xhigh"
+        );
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.2-codex", None),
+            "high"
+        );
     }
 
     #[test]
