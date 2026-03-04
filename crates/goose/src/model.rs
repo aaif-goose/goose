@@ -338,17 +338,16 @@ impl ModelConfig {
         Ok(self)
     }
 
-    pub fn with_request_params(mut self, params: Option<HashMap<String, Value>>) -> Self {
-        match (self.request_params.as_mut(), params) {
-            (Some(existing), Some(new)) => {
-                for (k, v) in new {
+    pub fn with_merged_request_params(mut self, params: HashMap<String, Value>) -> Self {
+        match self.request_params.as_mut() {
+            Some(existing) => {
+                for (k, v) in params {
                     existing.insert(k, v);
                 }
             }
-            (None, Some(new)) => {
-                self.request_params = Some(new);
+            None => {
+                self.request_params = Some(params);
             }
-            _ => {}
         }
         self
     }

@@ -595,7 +595,7 @@ async fn update_agent_provider(
         }
     };
 
-    let model_config = ModelConfig::new(&model)
+    let mut model_config = ModelConfig::new(&model)
         .map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,
@@ -603,8 +603,11 @@ async fn update_agent_provider(
             )
         })?
         .with_canonical_limits(&payload.provider)
-        .with_context_limit(payload.context_limit)
-        .with_request_params(payload.request_params);
+        .with_context_limit(payload.context_limit);
+
+    if let Some(request_params) = payload.request_params {
+        model_config = model_config.with_merged_request_params(request_params);
+    }
 
     let extensions =
         EnabledExtensionsState::for_session(state.session_manager(), &payload.session_id, config)
