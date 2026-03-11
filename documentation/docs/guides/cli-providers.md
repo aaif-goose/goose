@@ -330,7 +330,7 @@ GOOSE_PROVIDER=claude-code GOOSE_MODE=approve goose session
 | `GOOSE_PROVIDER` | Set to `codex` to use this provider | None |
 | `GOOSE_MODEL` | Model to use (only known models are passed to CLI) | `gpt-5.2-codex` |
 | `CODEX_COMMAND` | Path to the Codex CLI command | `codex` |
-| `GOOSE_THINKING_EFFORT` | Unified thinking effort (`off`, `low`, `medium`, `high`, `max`). Mapped to Codex CLI effort levels (`none/low/medium/high/xhigh`). | `high` |
+| `CODEX_REASONING_EFFORT` | Reasoning effort level: `low`, `medium`, `high`, or `xhigh` (`none` is only supported on non-codex models like `gpt-5.2`) | `high` |
 | `CODEX_ENABLE_SKILLS` | Enable Codex skills: `true` or `false` | `true` |
 | `CODEX_SKIP_GIT_CHECK` | Skip git repository requirement: `true` or `false` | `false` |
 
