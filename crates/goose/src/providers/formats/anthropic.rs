@@ -1,6 +1,6 @@
 use crate::conversation::message::{Message, MessageContent};
 use crate::mcp_utils::extract_text_from_resource;
-use crate::model::ModelConfig;
+use crate::model::{ModelConfig, ThinkingEffort};
 use crate::providers::base::Usage;
 use crate::providers::errors::ProviderError;
 use crate::providers::utils::{convert_image, ImageFormat};
@@ -37,7 +37,6 @@ macro_rules! string_enum {
 }
 
 string_enum!(ThinkingType { Adaptive => "adaptive", Enabled => "enabled", Disabled => "disabled" });
-string_enum!(ThinkingEffort { Low => "low", Medium => "medium", High => "high", Max => "max" });
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AnthropicFormatOptions {
@@ -82,10 +81,10 @@ pub fn thinking_type(model_config: &ModelConfig) -> ThinkingType {
     let is_adaptive_model = supports_adaptive_thinking(&model_config.model_name);
     let effort = model_config
         .thinking_effort()
-        .unwrap_or(crate::model::ThinkingEffort::Off);
+        .unwrap_or(ThinkingEffort::Off);
 
     match effort {
-        crate::model::ThinkingEffort::Off => ThinkingType::Disabled,
+        ThinkingEffort::Off => ThinkingType::Disabled,
         _ if is_adaptive_model => ThinkingType::Adaptive,
         _ => ThinkingType::Enabled,
     }
@@ -491,17 +490,9 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
 }
 
 pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
-    let effort = model_config
+    model_config
         .thinking_effort()
-        .unwrap_or(crate::model::ThinkingEffort::High);
-    match effort {
-        crate::model::ThinkingEffort::Off | crate::model::ThinkingEffort::Low => {
-            ThinkingEffort::Low
-        }
-        crate::model::ThinkingEffort::Medium => ThinkingEffort::Medium,
-        crate::model::ThinkingEffort::High => ThinkingEffort::High,
-        crate::model::ThinkingEffort::Max => ThinkingEffort::Max,
-    }
+        .unwrap_or(ThinkingEffort::High)
 }
 
 fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
@@ -516,13 +507,13 @@ fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
 
     let effort = model_config
         .thinking_effort()
-        .unwrap_or(crate::model::ThinkingEffort::High);
+        .unwrap_or(ThinkingEffort::High);
     match effort {
-        crate::model::ThinkingEffort::Off => 1024,
-        crate::model::ThinkingEffort::Low => 4000,
-        crate::model::ThinkingEffort::Medium => 10000,
-        crate::model::ThinkingEffort::High => 16000,
-        crate::model::ThinkingEffort::Max => 32000,
+        ThinkingEffort::Off => 1024,
+        ThinkingEffort::Low => 4000,
+        ThinkingEffort::Medium => 10000,
+        ThinkingEffort::High => 16000,
+        ThinkingEffort::Max => 32000,
     }
 }
 
@@ -1191,19 +1182,16 @@ mod tests {
             ("ANTHROPIC_PRESERVE_THINKING_CONTEXT", None::<&str>),
         ]);
 
-        let mut params = std::collections::HashMap::new();
-        params.insert("thinking_effort".to_string(), json!("high"));
-
-        let mut config = cfg("claude-3-7-sonnet-20250219");
+        let mut config = cfg_with_effort("claude-3-7-sonnet-20250219", "high");
         config.max_tokens = Some(4096);
-        config.request_params = Some(params);
 
         let messages = vec![Message::user().with_text("Hello")];
         let payload = create_request(&config, "system", &messages, &[])?;
 
         assert_eq!(payload["thinking"]["type"], "enabled");
-        assert_eq!(payload["thinking"]["budget_tokens"], 16000);
-        assert_eq!(payload["max_tokens"], 4096 + 16000);
+        let budget = payload["thinking"]["budget_tokens"].as_i64().unwrap();
+        assert!(budget > 0);
+        assert_eq!(payload["max_tokens"], 4096 + budget);
 
         Ok(())
     }

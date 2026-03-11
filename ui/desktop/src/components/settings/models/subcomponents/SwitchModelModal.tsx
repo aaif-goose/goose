@@ -192,17 +192,17 @@ const i18n = defineMessages({
 // Thinking effort options are created inside the component to support i18n.
 
 function isClaudeModel(name: string | null | undefined): boolean {
-  return !!name && name.toLowerCase().includes('claude');
+  return typeof name === 'string' && name.toLowerCase().includes('claude');
 }
 
 function isOpenAIReasoningModel(name: string | null | undefined): boolean {
-  if (!name) return false;
+  if (typeof name !== 'string') return false;
   const base = name.replace(/^(goose-|databricks-)/, '');
   return /^(o1|o3|o4|gpt-5)/.test(base);
 }
 
 function isGemini3Model(name: string | null | undefined): boolean {
-  return !!name && name.toLowerCase().startsWith('gemini-3');
+  return typeof name === 'string' && name.toLowerCase().startsWith('gemini-3');
 }
 
 const CLAUDE_THINKING_PROVIDERS = new Set(['anthropic', 'databricks']);
