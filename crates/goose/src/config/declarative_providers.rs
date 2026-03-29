@@ -266,14 +266,14 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
         String::new()
     };
 
-    if editable {
+    let updated_config = if editable {
         let model_infos: Vec<ModelInfo> = params
             .models
             .into_iter()
             .map(|name| ModelInfo::new(name, 128000))
             .collect();
 
-        let updated_config = DeclarativeProviderConfig {
+        Some(DeclarativeProviderConfig {
             name: params.id.clone(),
             engine: match params.engine.as_str() {
                 "openai_compatible" => ProviderEngine::OpenAI,
@@ -300,12 +300,34 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             dynamic_models: existing_config.dynamic_models,
             skip_canonical_filtering: existing_config.skip_canonical_filtering,
             fast_model: existing_config.fast_model.clone(),
-        };
+        })
+    } else {
+        let custom_file = custom_providers_dir().join(format!("{}.json", params.id));
+        if params.requires_auth {
+            Some(DeclarativeProviderConfig {
+                requires_auth: true,
+                api_key_env,
+                ..existing_config
+            })
+        } else {
+            if !existing_config.api_key_env.is_empty() {
+                let _ = config.delete_secret(&existing_config.api_key_env);
+            }
+            if custom_file.exists() {
+                std::fs::remove_file(custom_file)?;
+            }
+            None
+        }
+    };
 
-        let file_path = custom_providers_dir().join(format!("{}.json", updated_config.name));
-        let json_content = serde_json::to_string_pretty(&updated_config)?;
+    if let Some(config_to_write) = updated_config {
+        let custom_dir = custom_providers_dir();
+        std::fs::create_dir_all(&custom_dir)?;
+        let file_path = custom_dir.join(format!("{}.json", config_to_write.name));
+        let json_content = serde_json::to_string_pretty(&config_to_write)?;
         std::fs::write(file_path, json_content)?;
     }
+
     Ok(())
 }
 
@@ -324,8 +346,36 @@ pub fn remove_custom_provider(id: &str) -> Result<()> {
     Ok(())
 }
 
+fn find_fixed_provider(id: &str) -> Option<DeclarativeProviderConfig> {
+    FIXED_PROVIDERS.files().find_map(|file| {
+        if file.path().extension().and_then(|s| s.to_str()) != Some("json") {
+            return None;
+        }
+        let config: DeclarativeProviderConfig = serde_json::from_str(file.contents_utf8()?).ok()?;
+        (config.name == id).then_some(config)
+    })
+}
+
 pub fn load_provider(id: &str) -> Result<LoadedProvider> {
     let custom_file_path = custom_providers_dir().join(format!("{}.json", id));
+
+    if let Some(fixed) = find_fixed_provider(id) {
+        let config = if custom_file_path.exists() {
+            let content = std::fs::read_to_string(&custom_file_path)?;
+            let shadow: DeclarativeProviderConfig = serde_json::from_str(&content)?;
+            DeclarativeProviderConfig {
+                requires_auth: shadow.requires_auth,
+                api_key_env: shadow.api_key_env,
+                ..fixed
+            }
+        } else {
+            fixed
+        };
+        return Ok(LoadedProvider {
+            config,
+            is_editable: false,
+        });
+    }
 
     if custom_file_path.exists() {
         let content = std::fs::read_to_string(&custom_file_path)?;
@@ -334,27 +384,6 @@ pub fn load_provider(id: &str) -> Result<LoadedProvider> {
             config,
             is_editable: true,
         });
-    }
-
-    for file in FIXED_PROVIDERS.files() {
-        if file.path().extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-
-        let content = file
-            .contents_utf8()
-            .ok_or_else(|| anyhow::anyhow!("Failed to read file as UTF-8: {:?}", file.path()))?;
-
-        let config: DeclarativeProviderConfig = match serde_json::from_str(content) {
-            Ok(config) => config,
-            Err(_) => continue,
-        };
-        if config.name == id {
-            return Ok(LoadedProvider {
-                config,
-                is_editable: false,
-            });
-        }
     }
 
     Err(anyhow::anyhow!("Provider not found: {}", id))
@@ -409,11 +438,31 @@ pub fn register_declarative_providers(
     let dir = custom_providers_dir();
     let custom_providers = load_custom_providers(&dir)?;
     let fixed_providers = load_fixed_providers()?;
+
+    let fixed_names: std::collections::HashSet<&str> =
+        fixed_providers.iter().map(|c| c.name.as_str()).collect();
+
+    let (shadows, true_custom): (Vec<_>, Vec<_>) = custom_providers
+        .into_iter()
+        .partition(|c| fixed_names.contains(c.name.as_str()));
+
+    let shadow_map: HashMap<String, DeclarativeProviderConfig> =
+        shadows.into_iter().map(|c| (c.name.clone(), c)).collect();
+
     for config in fixed_providers {
+        let config = if let Some(shadow) = shadow_map.get(&config.name) {
+            DeclarativeProviderConfig {
+                requires_auth: shadow.requires_auth,
+                api_key_env: shadow.api_key_env.clone(),
+                ..config
+            }
+        } else {
+            config
+        };
         register_declarative_provider(registry, config, ProviderType::Declarative);
     }
 
-    for config in custom_providers {
+    for config in true_custom {
         register_declarative_provider(registry, config, ProviderType::Custom);
     }
 
