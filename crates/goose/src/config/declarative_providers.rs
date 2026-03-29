@@ -388,6 +388,7 @@ pub fn load_provider(id: &str) -> Result<LoadedProvider> {
 
     Err(anyhow::anyhow!("Provider not found: {}", id))
 }
+
 pub fn load_custom_providers(dir: &Path) -> Result<Vec<DeclarativeProviderConfig>> {
     if !dir.exists() {
         return Ok(Vec::new());
