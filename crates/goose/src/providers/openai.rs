@@ -77,7 +77,7 @@ struct ParsedBaseUrl {
     host: String,
     /// Query parameters to forward on every request.
     query_params: Vec<(String, String)>,
-    /// Whether the URL path ended with `/v1`.
+    /// Whether the URL should keep versioned default endpoint paths.
     has_v1: bool,
     /// `true` when the host was derived from `OPENAI_BASE_URL`.
     /// Controls whether `OPENAI_BASE_PATH` is read from env only
@@ -98,7 +98,7 @@ pub(crate) fn parse_openai_base_url(raw_url: &str) -> Result<OpenAiBaseUrlParts>
 
     let path = parsed.path().trim_end_matches('/');
     if path.is_empty() || path == "/" {
-        return Ok((authority, query_params, false));
+        return Ok((authority, query_params, true));
     }
 
     if path == "/v1" {
@@ -1089,7 +1089,7 @@ mod tests {
     fn parse_base_url_handles_no_path() {
         let r = OpenAiProvider::parse_base_url("https://api.openai.com").unwrap();
         assert_eq!(r.host, "https://api.openai.com");
-        assert!(!r.has_v1);
+        assert!(r.has_v1);
     }
 
     #[test]

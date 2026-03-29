@@ -351,6 +351,15 @@ mod tests {
     }
 
     #[test]
+    fn openai_dictation_target_keeps_v1_endpoint_for_bare_host() {
+        let (host, query_params, endpoint_path) =
+            openai_dictation_target("https://api.openai.com").unwrap();
+        assert_eq!(host, "https://api.openai.com");
+        assert!(query_params.is_empty());
+        assert_eq!(endpoint_path, "v1/audio/transcriptions");
+    }
+
+    #[test]
     fn resolve_openai_base_url_target_ignores_blank_values() {
         assert!(resolve_openai_base_url_target(Some("   "))
             .unwrap()
