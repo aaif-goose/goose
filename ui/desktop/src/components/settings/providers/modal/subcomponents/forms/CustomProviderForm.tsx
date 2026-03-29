@@ -408,11 +408,11 @@ export default function CustomProviderForm({
     setValidationErrors({});
 
     const errors: Record<string, string> = {};
-    if (!displayName) errors.displayName = intl.formatMessage(i18n.displayNameRequired);
-    if (!apiUrl) errors.apiUrl = intl.formatMessage(i18n.apiUrlRequired);
+    if (isEditable && !displayName) errors.displayName = intl.formatMessage(i18n.displayNameRequired);
+    if (isEditable && !apiUrl) errors.apiUrl = intl.formatMessage(i18n.apiUrlRequired);
     const existingHadAuth = initialData && (initialData.requires_auth ?? true);
     if (requiresAuth && !apiKey && !existingHadAuth) errors.apiKey = intl.formatMessage(i18n.apiKeyRequired);
-    if (!models) errors.models = intl.formatMessage(i18n.modelsRequired);
+    if (isEditable && !models) errors.models = intl.formatMessage(i18n.modelsRequired);
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
