@@ -32,7 +32,7 @@ fn check_path_status(path: &Path) -> String {
     }
 }
 
-pub fn handle_info(verbose: bool) -> Result<()> {
+pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
     let logs_dir = Paths::in_state_dir("logs");
     let sessions_dir = Paths::in_data_dir(SESSIONS_FOLDER);
     let sessions_db = sessions_dir.join(DB_NAME);
@@ -86,6 +86,97 @@ pub fn handle_info(verbose: bool) -> Result<()> {
                 for line in yaml.lines() {
                     println!("  {}", line);
                 }
+            }
+        }
+    }
+
+    if check {
+        println!("\n{}", style("Provider Check:").cyan().bold());
+
+        let provider_name: Result<String, _> = config.get_param("provider");
+        let model_name: Result<String, _> = config.get_param("model");
+
+        match (provider_name, model_name) {
+            (Ok(provider), Ok(model)) => {
+                print_aligned("Provider:", &provider, label_padding);
+                print_aligned("Model:", &model, label_padding);
+
+                let start = std::time::Instant::now();
+                match goose::model::ModelConfig::new(&model) {
+                    Ok(model_config) => {
+                        match goose::providers::create(&provider, model_config, Vec::new()).await {
+                            Ok(p) => {
+                                let elapsed = start.elapsed();
+                                print_aligned(
+                                    "Auth:",
+                                    &style("ok").green().to_string(),
+                                    label_padding,
+                                );
+                                print_aligned(
+                                    "Connection:",
+                                    &format!(
+                                        "{} (initialized in {:.1}s)",
+                                        style("ok").green(),
+                                        elapsed.as_secs_f64()
+                                    ),
+                                    label_padding,
+                                );
+
+                                match p.fetch_supported_models().await {
+                                    Ok(models) if !models.is_empty() => {
+                                        print_aligned(
+                                            "Models:",
+                                            &format!("{} available", models.len()),
+                                            label_padding,
+                                        );
+                                    }
+                                    Ok(_) => {
+                                        print_aligned("Models:", "none listed", label_padding);
+                                    }
+                                    Err(e) => {
+                                        print_aligned(
+                                            "Models:",
+                                            &format!("{} {}", style("error:").red(), e),
+                                            label_padding,
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let err_str = e.to_string();
+                                print_aligned(
+                                    "Auth:",
+                                    &format!("{} {}", style("FAILED").red().bold(), err_str),
+                                    label_padding,
+                                );
+                                if err_str.contains("not found") || err_str.contains("API_KEY") {
+                                    print_aligned(
+                                        "Hint:",
+                                        &format!(
+                                            "Set the API key in your environment or run '{}'",
+                                            style("goose configure").cyan()
+                                        ),
+                                        label_padding,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        print_aligned(
+                            "Model:",
+                            &format!("{} {}", style("invalid:").red(), e),
+                            label_padding,
+                        );
+                    }
+                }
+            }
+            _ => {
+                println!(
+                    "  {} No provider configured. Run '{}' first.",
+                    style("⚠").yellow(),
+                    style("goose configure").cyan()
+                );
             }
         }
     }
