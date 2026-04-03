@@ -107,38 +107,76 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                         match goose::providers::create(&provider, model_config, Vec::new()).await {
                             Ok(p) => {
                                 let elapsed = start.elapsed();
-                                print_aligned(
-                                    "Auth:",
-                                    &style("ok").green().to_string(),
-                                    label_padding,
-                                );
-                                print_aligned(
-                                    "Connection:",
-                                    &format!(
-                                        "{} (initialized in {:.1}s)",
-                                        style("ok").green(),
-                                        elapsed.as_secs_f64()
-                                    ),
-                                    label_padding,
-                                );
-
                                 match p.fetch_supported_models().await {
-                                    Ok(models) if !models.is_empty() => {
+                                    Ok(models) => {
                                         print_aligned(
-                                            "Models:",
-                                            &format!("{} available", models.len()),
+                                            "Auth:",
+                                            &style("ok").green().to_string(),
                                             label_padding,
                                         );
-                                    }
-                                    Ok(_) => {
-                                        print_aligned("Models:", "none listed", label_padding);
+                                        print_aligned(
+                                            "Connection:",
+                                            &format!(
+                                                "{} (verified in {:.1}s)",
+                                                style("ok").green(),
+                                                elapsed.as_secs_f64()
+                                            ),
+                                            label_padding,
+                                        );
+                                        if !models.is_empty() {
+                                            print_aligned(
+                                                "Models:",
+                                                &format!("{} available", models.len()),
+                                                label_padding,
+                                            );
+                                        } else {
+                                            print_aligned("Models:", "none listed", label_padding);
+                                        }
                                     }
                                     Err(e) => {
-                                        print_aligned(
-                                            "Models:",
-                                            &format!("{} {}", style("error:").red(), e),
-                                            label_padding,
-                                        );
+                                        let err_str = e.to_string();
+                                        if err_str.contains("401")
+                                            || err_str.contains("Authentication")
+                                            || err_str.contains("Unauthorized")
+                                        {
+                                            print_aligned(
+                                                "Auth:",
+                                                &format!(
+                                                    "{} {}",
+                                                    style("FAILED").red().bold(),
+                                                    err_str
+                                                ),
+                                                label_padding,
+                                            );
+                                            print_aligned(
+                                                "Hint:",
+                                                &format!(
+                                                    "Check your API key or run '{}'",
+                                                    style("goose configure").cyan()
+                                                ),
+                                                label_padding,
+                                            );
+                                        } else {
+                                            print_aligned(
+                                                "Auth:",
+                                                &style("ok").green().to_string(),
+                                                label_padding,
+                                            );
+                                            print_aligned(
+                                                "Connection:",
+                                                &format!(
+                                                    "{} (initialized in {:.1}s)",
+                                                    style("ok").green(),
+                                                    elapsed.as_secs_f64()
+                                                ),
+                                                label_padding,
+                                            );
+                                            print_aligned(
+                                                "Models:",
+                                                &format!("{} {}", style("error:").red(), err_str),
+                                                label_padding,
+                                            );
+                                        }
                                     }
                                 }
                             }
