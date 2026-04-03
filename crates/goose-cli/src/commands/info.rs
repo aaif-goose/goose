@@ -158,22 +158,12 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                                             );
                                         } else {
                                             print_aligned(
-                                                "Auth:",
-                                                &style("ok").green().to_string(),
-                                                label_padding,
-                                            );
-                                            print_aligned(
-                                                "Connection:",
+                                                "Check:",
                                                 &format!(
-                                                    "{} (initialized in {:.1}s)",
-                                                    style("ok").green(),
-                                                    elapsed.as_secs_f64()
+                                                    "{} {}",
+                                                    style("FAILED").red().bold(),
+                                                    err_str
                                                 ),
-                                                label_padding,
-                                            );
-                                            print_aligned(
-                                                "Models:",
-                                                &format!("{} {}", style("error:").red(), err_str),
                                                 label_padding,
                                             );
                                         }
