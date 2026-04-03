@@ -1,3 +1,4 @@
+use agent_client_protocol_schema::Usage as AcpUsage;
 use agent_client_protocol_schema::AGENT_METHOD_NAMES;
 use anyhow::{Context, Result};
 use async_stream::try_stream;
@@ -30,7 +31,7 @@ use crate::conversation::message::{Message, MessageContent, TOOL_META_EXTERNAL_D
 use crate::model::ModelConfig;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
-use crate::providers::base::{MessageStream, PermissionRouting, Provider};
+use crate::providers::base::{MessageStream, PermissionRouting, Provider, ProviderUsage, Usage};
 use crate::providers::errors::ProviderError;
 use crate::subprocess::configure_subprocess;
 
@@ -102,7 +103,7 @@ enum AcpUpdate {
         request: Box<RequestPermissionRequest>,
         response_tx: oneshot::Sender<RequestPermissionResponse>,
     },
-    Complete(StopReason),
+    Complete(StopReason, Option<AcpUsage>),
     Error(String),
 }
 
@@ -391,7 +392,7 @@ impl Provider for AcpProvider {
 
     async fn stream(
         &self,
-        _model_config: &ModelConfig,
+        model_config: &ModelConfig,
         _session_id: &str,
         _system: &str,
         messages: &[Message],
@@ -417,6 +418,8 @@ impl Provider for AcpProvider {
             .map_err(|_| ProviderError::RequestFailed("goose_mode lock poisoned".into()))?;
 
         let reject_all_tools = goose_mode == GooseMode::Chat;
+        let model_name = model_config.model_name.clone();
+
         Ok(Box::pin(try_stream! {
             let mut suppress_text = false;
             let mut rejected_tool_calls: HashSet<String> = HashSet::new();
@@ -529,7 +532,18 @@ impl Provider for AcpProvider {
                         }
                         let _ = response_tx.send(map_permission_response(&request, decision));
                     }
-                    AcpUpdate::Complete(_reason) => {
+                    AcpUpdate::Complete(_reason, usage) => {
+                        if let Some(usage) = usage {
+                            let provider_usage = ProviderUsage::new(
+                                model_name.clone(),
+                                Usage::new(
+                                    Some(usage.input_tokens as i32),
+                                    Some(usage.output_tokens as i32),
+                                    Some(usage.total_tokens as i32),
+                                ),
+                            );
+                            yield (None, Some(provider_usage));
+                        }
                         break;
                     }
                     AcpUpdate::Error(e) => {
@@ -967,7 +981,7 @@ async fn handle_requests(
                 match response {
                     Ok(r) => {
                         log_undelivered(
-                            response_tx.try_send(AcpUpdate::Complete(r.stop_reason)),
+                            response_tx.try_send(AcpUpdate::Complete(r.stop_reason, r.usage)),
                             AGENT_METHOD_NAMES.session_prompt,
                         );
                     }
