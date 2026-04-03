@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -10,6 +11,18 @@ export default defineConfig({
   },
 
   plugins: [tailwindcss()],
+
+  resolve: {
+    alias: {
+      // Force all dependencies (including hoisted ones like react-intl) to use
+      // the same React instance as the app.  Without this, Vite's dep
+      // pre-bundling can inline a second copy of React resolved from the
+      // workspace root node_modules, which triggers the "Invalid hook call"
+      // error at runtime.
+      'react': path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+    },
+  },
 
   build: {
     target: 'esnext'
