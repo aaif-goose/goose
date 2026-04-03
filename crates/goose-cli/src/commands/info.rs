@@ -93,8 +93,8 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
     if check {
         println!("\n{}", style("Provider Check:").cyan().bold());
 
-        let provider_name: Result<String, _> = config.get_param("provider");
-        let model_name: Result<String, _> = config.get_param("model");
+        let provider_name: Result<String, _> = config.get_goose_provider();
+        let model_name: Result<String, _> = config.get_goose_model();
 
         match (provider_name, model_name) {
             (Ok(provider), Ok(model)) => {
