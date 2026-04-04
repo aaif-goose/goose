@@ -2,6 +2,7 @@ use anyhow::Result;
 use console::style;
 use goose::config::paths::Paths;
 use goose::config::Config;
+use goose::conversation::message::Message;
 use goose::session::session_manager::{DB_NAME, SESSIONS_FOLDER};
 use serde_yaml;
 
@@ -101,14 +102,19 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                 print_aligned("Provider:", &provider, label_padding);
                 print_aligned("Model:", &model, label_padding);
 
-                let start = std::time::Instant::now();
                 match goose::model::ModelConfig::new(&model) {
                     Ok(model_config) => {
                         match goose::providers::create(&provider, model_config, Vec::new()).await {
                             Ok(p) => {
-                                let elapsed = start.elapsed();
-                                match p.fetch_supported_models().await {
-                                    Ok(models) => {
+                                let test_msg = Message::user().with_text("Say 'ok'");
+                                let model_config = p.get_model_config();
+                                let start = std::time::Instant::now();
+                                match p
+                                    .complete(&model_config, "check", "", &[test_msg], &[])
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        let elapsed = start.elapsed();
                                         print_aligned(
                                             "Auth:",
                                             &style("ok").green().to_string(),
@@ -123,15 +129,6 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                                             ),
                                             label_padding,
                                         );
-                                        if !models.is_empty() {
-                                            print_aligned(
-                                                "Models:",
-                                                &format!("{} available", models.len()),
-                                                label_padding,
-                                            );
-                                        } else {
-                                            print_aligned("Models:", "none listed", label_padding);
-                                        }
                                     }
                                     Err(e) => {
                                         let err_str = e.to_string();
