@@ -976,6 +976,10 @@ fn print_markdown(content: &str, theme: Theme) {
     }
 }
 
+pub fn print_markdown_for_command(content: &str) {
+    print_markdown(content, get_theme());
+}
+
 /// Renders markdown content using bat (no table processing)
 fn print_markdown_raw(content: &str, theme: Theme) {
     bat::PrettyPrinter::new()

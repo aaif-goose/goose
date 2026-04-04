@@ -136,6 +136,7 @@ impl GooseCompleter {
             "/prompt",
             "/mode",
             "/recipe",
+            "/md",
         ];
 
         // Find commands that match the prefix
