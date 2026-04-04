@@ -124,6 +124,108 @@ export const zGetExtensionsResponse = z.object({
     warnings: z.array(z.string())
 });
 
+/**
+ * Atomically update the provider for a live session.
+ */
+export const zUpdateProviderRequest = z.object({
+    sessionId: z.string(),
+    provider: z.string(),
+    model: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    contextLimit: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional(),
+    requestParams: z.union([
+        z.record(z.unknown()),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Provider update response.
+ */
+export const zUpdateProviderResponse = z.object({
+    configOptions: z.array(z.unknown())
+});
+
+/**
+ * List providers available through goose, including the config-default sentinel.
+ */
+export const zListProvidersRequest = z.record(z.unknown());
+
+export const zProviderListEntry = z.object({
+    id: z.string(),
+    label: z.string()
+});
+
+/**
+ * Provider list response.
+ */
+export const zListProvidersResponse = z.object({
+    providers: z.array(zProviderListEntry)
+});
+
+/**
+ * Read a single non-secret config value.
+ */
+export const zReadConfigRequest = z.object({
+    key: z.string()
+});
+
+/**
+ * Config read response.
+ */
+export const zReadConfigResponse = z.object({
+    value: z.unknown().optional().default(null)
+});
+
+/**
+ * Upsert a single non-secret config value.
+ */
+export const zUpsertConfigRequest = z.object({
+    key: z.string(),
+    value: z.unknown()
+});
+
+/**
+ * Remove a single non-secret config value.
+ */
+export const zRemoveConfigRequest = z.object({
+    key: z.string()
+});
+
+/**
+ * Check whether a secret exists. Never returns the actual value.
+ */
+export const zCheckSecretRequest = z.object({
+    key: z.string()
+});
+
+/**
+ * Secret check response.
+ */
+export const zCheckSecretResponse = z.object({
+    exists: z.boolean()
+});
+
+/**
+ * Set a secret value (write-only).
+ */
+export const zUpsertSecretRequest = z.object({
+    key: z.string(),
+    value: z.unknown()
+});
+
+/**
+ * Remove a secret.
+ */
+export const zRemoveSecretRequest = z.object({
+    key: z.string()
+});
+
 export const zExtRequest = z.object({
     id: z.string(),
     method: z.string(),
@@ -138,7 +240,15 @@ export const zExtRequest = z.object({
             zDeleteSessionRequest,
             zExportSessionRequest,
             zImportSessionRequest,
-            zGetExtensionsRequest
+            zGetExtensionsRequest,
+            zUpdateProviderRequest,
+            zListProvidersRequest,
+            zReadConfigRequest,
+            zUpsertConfigRequest,
+            zRemoveConfigRequest,
+            zCheckSecretRequest,
+            zUpsertSecretRequest,
+            zRemoveSecretRequest
         ]),
         z.union([
             z.record(z.unknown()),
@@ -158,7 +268,11 @@ export const zExtResponse = z.union([
                 zGetSessionResponse,
                 zExportSessionResponse,
                 zImportSessionResponse,
-                zGetExtensionsResponse
+                zGetExtensionsResponse,
+                zUpdateProviderResponse,
+                zListProvidersResponse,
+                zReadConfigResponse,
+                zCheckSecretResponse
             ]),
             z.unknown()
         ]).optional()

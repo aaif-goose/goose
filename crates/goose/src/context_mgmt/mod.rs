@@ -188,6 +188,10 @@ pub async fn check_if_compaction_needed(
     threshold_override: Option<f64>,
     session: &crate::session::Session,
 ) -> Result<bool> {
+    if provider.manages_own_context() {
+        return Ok(false);
+    }
+
     let messages = conversation.messages();
     let config = Config::global();
     let threshold = threshold_override.unwrap_or_else(|| {

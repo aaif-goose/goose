@@ -2,11 +2,13 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::agents::{AgentEvent, SessionConfig};
-use crate::config::GooseMode;
+use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::Message;
 use crate::execution::manager::AgentManager;
+use crate::providers;
 use crate::providers::base::Provider;
+use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -137,6 +139,11 @@ impl OrchestratorClient {
             .as_ref()
             .cloned()
             .ok_or_else(|| "Provider not available".to_string())
+    }
+
+    fn parent_extensions(&self) -> Vec<ExtensionConfig> {
+        let extension_data = self.context.session.as_ref().map(|s| &s.extension_data);
+        EnabledExtensionsState::extensions_or_default(extension_data, Config::global())
     }
 
     async fn handle_list_sessions(
@@ -397,8 +404,15 @@ impl OrchestratorClient {
             .await
             .map_err(|e| format!("Failed to create agent: {}", e))?;
 
-        // Inherit the orchestrator's provider and model
-        let provider = self.get_provider().await?;
+        let parent_provider = self.get_provider().await?;
+        let extensions = self.parent_extensions();
+        let provider = providers::create(
+            parent_provider.get_name(),
+            parent_provider.get_model_config(),
+            extensions,
+        )
+        .await
+        .map_err(|e| format!("Failed to create provider for new agent: {}", e))?;
         agent
             .update_provider(provider, &session.id)
             .await
@@ -432,11 +446,20 @@ impl OrchestratorClient {
             .map_err(|e| format!("Failed to get agent for session '{}': {}", session_id, e))?;
 
         if agent.provider().await.is_err() {
-            if let Ok(provider) = self.get_provider().await {
-                agent
-                    .update_provider(provider, &session_id)
-                    .await
-                    .map_err(|e| format!("Failed to set provider: {}", e))?;
+            if let Ok(parent_provider) = self.get_provider().await {
+                let extensions = self.parent_extensions();
+                if let Ok(provider) = providers::create(
+                    parent_provider.get_name(),
+                    parent_provider.get_model_config(),
+                    extensions,
+                )
+                .await
+                {
+                    agent
+                        .update_provider(provider, &session_id)
+                        .await
+                        .map_err(|e| format!("Failed to set provider: {}", e))?;
+                }
             }
         }
 

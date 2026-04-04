@@ -22,6 +22,16 @@ ACP providers let you use goose with your existing Claude Code, ChatGPT Plus/Pro
 
 ## Available ACP Providers
 
+### Amp ACP
+
+Wraps [amp-acp](https://www.npmjs.com/package/amp-acp), an ACP adapter for [Amp](https://ampcode.com). Uses your existing Amp subscription.
+
+**Requirements:**
+- Node.js and npm
+- Amp CLI installed (`curl -fsSL https://ampcode.com/install.sh | bash`)
+- ACP adapter installed (`npm install -g amp-acp`)
+- Authenticated with your Amp account (`amp` CLI working)
+
 ### Claude ACP
 
 Wraps [claude-agent-acp](https://github.com/zed-industries/claude-agent-acp), an ACP adapter for Anthropic's Claude Code. Uses the same Claude subscription as the deprecated `claude-code` CLI provider.
@@ -49,7 +59,43 @@ Uses Google's [Gemini CLI](https://github.com/google-gemini/gemini-cli) directly
 - Gemini CLI installed (`npm install -g @google/gemini-cli`)
 - Authenticated with your Google account (run `gemini` once to authenticate via browser)
 
+### Pi ACP
+
+Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
+
+**Requirements:**
+- Pi CLI installed
+- ACP adapter installed (`pi-acp` binary available)
+- Authenticated with your Pi account (`pi` CLI working)
+
 ## Setup Instructions
+
+### Amp ACP
+
+1. **Install the Amp CLI**
+
+   ```bash
+   curl -fsSL https://ampcode.com/install.sh | bash
+   ```
+
+2. **Install the ACP adapter**
+
+   ```bash
+   npm install -g amp-acp
+   ```
+
+3. **Authenticate with Amp**
+
+   Run `amp` and follow the authentication prompts.
+
+4. **Configure goose**
+
+   Set the provider environment variable:
+   ```bash
+   export GOOSE_PROVIDER=amp-acp
+   ```
+
+   Or configure through the goose CLI using `goose configure`.
 
 ### Claude ACP
 
@@ -159,6 +205,25 @@ Uses Google's [Gemini CLI](https://github.com/google-gemini/gemini-cli) directly
    │  default
    ```
 
+### Pi ACP
+
+1. **Install the Pi CLI and ACP adapter**
+
+   Install the `pi` CLI and the `pi-acp` ACP adapter following the project's installation instructions.
+
+2. **Authenticate with Pi**
+
+   Run `pi` and follow the authentication prompts.
+
+3. **Configure goose**
+
+   Set the provider environment variable:
+   ```bash
+   export GOOSE_PROVIDER=pi-acp
+   ```
+
+   Or configure through the goose CLI using `goose configure`.
+
 ## Usage Examples
 
 ### Basic Usage
@@ -190,6 +255,14 @@ GOOSE_PROVIDER=gemini-acp goose run \
 ```
 
 ## Configuration Options
+
+### Amp ACP Configuration
+
+| Environment Variable | Description       | Default   |
+|----------------------|-------------------|-----------|
+| `GOOSE_PROVIDER`     | Set to `amp-acp`  | None      |
+| `GOOSE_MODEL`        | Model to use      | `current` |
+| `GOOSE_MODE`         | Permission mode   | `auto`    |
 
 ### Claude ACP Configuration
 
@@ -259,13 +332,21 @@ See [codex-acp](https://github.com/zed-industries/codex-acp) for approval policy
 
 See the [Gemini CLI documentation](https://github.com/google-gemini/gemini-cli) for approval mode details.
 
+### Pi ACP Configuration
+
+| Environment Variable | Description      | Default   |
+|----------------------|------------------|-----------|
+| `GOOSE_PROVIDER`     | Set to `pi-acp`  | None      |
+| `GOOSE_MODEL`        | Model to use     | `current` |
+| `GOOSE_MODE`         | Permission mode  | `auto`    |
+
 ## Error Handling
 
-ACP providers depend on external npm packages, so ensure:
+ACP providers depend on external binaries, so ensure:
 
-- The ACP agent binary is installed and in your PATH (`claude-agent-acp`, `codex-acp`, or `gemini`)
+- The ACP agent binary is installed and in your PATH (`amp-acp`, `claude-agent-acp`, `codex-acp`, `gemini`, `pi-acp`, or `copilot`)
 - The underlying CLI tool is authenticated and working
 - Subscription limits are not exceeded
-- Node.js and npm are installed
+- Node.js and npm are installed (for npm-distributed adapters)
 
-If goose can't find the binary, session startup will fail with an error. Run `which claude-agent-acp`, `which codex-acp`, or `which gemini` to verify installation.
+If goose can't find the binary, session startup will fail with an error. Run `which <binary>` to verify installation.
