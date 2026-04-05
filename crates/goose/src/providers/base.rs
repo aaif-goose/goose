@@ -588,7 +588,7 @@ pub trait Provider: Send + Sync {
         false
     }
 
-    /// Fetch models filtered by canonical registry and usability
+    /// Fetch models ordered using canonical metadata when available.
     async fn fetch_recommended_models(&self) -> Result<Vec<String>, ProviderError> {
         let all_models = self.fetch_supported_models().await?;
 
@@ -601,52 +601,60 @@ pub trait Provider: Send + Sync {
         })?;
 
         let provider_name = self.get_name();
+        let toolshim_enabled = self.get_model_config().toolshim;
 
-        // Get all text-capable models with their release dates
-        let mut models_with_dates: Vec<(String, Option<String>)> = all_models
-            .iter()
-            .filter_map(|model| {
-                let canonical_id = map_to_canonical_model(provider_name, model, registry)?;
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+        enum RecommendationTier {
+            Recommended,
+            Other,
+        }
 
-                let (provider, model_name) = canonical_id.split_once('/')?;
-                let canonical_model = registry.get(provider, model_name)?;
+        let mut ranked_models: Vec<(RecommendationTier, Option<String>, usize, String)> =
+            all_models
+                .into_iter()
+                .enumerate()
+                .map(|(index, model)| {
+                    let canonical_model = map_to_canonical_model(provider_name, &model, registry)
+                        .and_then(|canonical_id| canonical_id.split_once('/'))
+                        .and_then(|(provider, model_name)| registry.get(provider, model_name));
 
-                if !canonical_model
-                    .modalities
-                    .input
-                    .contains(&crate::providers::canonical::Modality::Text)
-                {
-                    return None;
-                }
+                    let (tier, release_date) = match canonical_model {
+                        Some(canonical_model)
+                            if canonical_model
+                                .modalities
+                                .input
+                                .contains(&crate::providers::canonical::Modality::Text)
+                                && (canonical_model.tool_call || toolshim_enabled) =>
+                        {
+                            (
+                                RecommendationTier::Recommended,
+                                canonical_model.release_date.clone(),
+                            )
+                        }
+                        _ => (RecommendationTier::Other, None),
+                    };
 
-                if !canonical_model.tool_call && !self.get_model_config().toolshim {
-                    return None;
-                }
+                    (tier, release_date, index, model)
+                })
+                .collect();
 
-                let release_date = canonical_model.release_date.clone();
-
-                Some((model.clone(), release_date))
-            })
-            .collect();
-
-        // Sort by release date (most recent first), then alphabetically for models without dates
-        models_with_dates.sort_by(|a, b| match (&a.1, &b.1) {
-            (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.0.cmp(&b.0),
+        ranked_models.sort_by(|a, b| match a.0.cmp(&b.0) {
+            std::cmp::Ordering::Equal => match a.0 {
+                RecommendationTier::Recommended => match (&a.1, &b.1) {
+                    (Some(date_a), Some(date_b)) => date_b.cmp(date_a).then_with(|| a.3.cmp(&b.3)),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => a.3.cmp(&b.3),
+                },
+                RecommendationTier::Other => a.2.cmp(&b.2),
+            },
+            ordering => ordering,
         });
 
-        let recommended_models: Vec<String> = models_with_dates
+        Ok(ranked_models
             .into_iter()
-            .map(|(name, _)| name)
-            .collect();
-
-        if recommended_models.is_empty() {
-            Ok(all_models)
-        } else {
-            Ok(recommended_models)
-        }
+            .map(|(_, _, _, model)| model)
+            .collect())
     }
 
     async fn map_to_canonical_model(
@@ -851,10 +859,57 @@ pub async fn collect_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use std::collections::HashMap;
     use test_case::test_case;
 
     use serde_json::json;
+
+    #[derive(Clone)]
+    struct SupportedModelsProvider {
+        name: String,
+        model_config: ModelConfig,
+        supported_models: Vec<String>,
+    }
+
+    impl SupportedModelsProvider {
+        fn new(name: &str, model_config: ModelConfig, supported_models: Vec<&str>) -> Self {
+            Self {
+                name: name.to_string(),
+                model_config,
+                supported_models: supported_models
+                    .into_iter()
+                    .map(|model| model.to_string())
+                    .collect(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Provider for SupportedModelsProvider {
+        fn get_name(&self) -> &str {
+            &self.name
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &ModelConfig,
+            _session_id: &str,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            unimplemented!("stream is not used in fetch_recommended_models tests")
+        }
+
+        fn get_model_config(&self) -> ModelConfig {
+            self.model_config.clone()
+        }
+
+        async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
+            Ok(self.supported_models.clone())
+        }
+    }
 
     #[test]
     fn test_strip_xml_tags() {
@@ -943,6 +998,42 @@ mod tests {
         assert_eq!(usage.input_tokens, Some(10));
         assert_eq!(usage.output_tokens, Some(20));
         assert_eq!(usage.total_tokens, Some(30));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_recommended_models_keeps_unrecognized_and_nonrecommended_models() {
+        let provider = SupportedModelsProvider::new(
+            "openai",
+            ModelConfig::new_or_fail("gpt-4o"),
+            vec!["future-gpt", "text-embedding-3-small", "gpt-4o"],
+        );
+
+        let models = provider.fetch_recommended_models().await.unwrap();
+
+        assert_eq!(
+            models,
+            vec![
+                "gpt-4o".to_string(),
+                "future-gpt".to_string(),
+                "text-embedding-3-small".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_recommended_models_preserves_provider_order_without_canonical_metadata() {
+        let provider = SupportedModelsProvider::new(
+            "custom-proxy",
+            ModelConfig::new_or_fail("gpt-4o"),
+            vec!["alpha", "beta", "gamma"],
+        );
+
+        let models = provider.fetch_recommended_models().await.unwrap();
+
+        assert_eq!(
+            models,
+            vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()]
+        );
     }
 
     fn content_from_str(s: String) -> MessageContent {
