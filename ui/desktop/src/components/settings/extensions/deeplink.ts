@@ -3,12 +3,12 @@ import { toastService } from '../../../toasts';
 import { DEFAULT_EXTENSION_TIMEOUT } from './utils';
 
 export const FILESYSTEM_WORKING_DIR_PLACEHOLDER = '{{WORKING_DIR}}';
-const LEGACY_FILESYSTEM_SAMPLE_PATHS = [
+const LEGACY_FILESYSTEM_SAMPLE_PATHS: readonly string[] = [
   '/path/to/dir1',
   '/path/to/dir2',
   '/Users/username/Desktop',
   '/path/to/other/allowed/dir',
-] as const;
+];
 
 function isFilesystemServerArg(arg: string): boolean {
   return arg.startsWith('@modelcontextprotocol/server-filesystem');
