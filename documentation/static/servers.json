@@ -317,10 +317,10 @@
   {
     "id": "filesystem",
     "name": "Filesystem",
-    "description": "File system operations and management (requires updating local paths)",
-    "command": "npx -y @modelcontextprotocol/server-filesystem /path/to/dir1 /path/to/dir2",
+    "description": "File system operations and management",
+    "command": "npx -y @modelcontextprotocol/server-filesystem {{WORKING_DIR}}",
     "link": "https://github.com/modelcontextprotocol/servers",
-    "installation_notes": "Install using npx package manager. Update the placeholder paths before running the 'goose session' command. If installing from the link, you must update the paths from the Extensions page before activating the extension.",
+    "installation_notes": "Install using npx package manager. Goose will default this extension to the chat's selected working directory. Edit the extension if you want to allow additional directories.",
     "is_builtin": false,
     "endorsed": true,
     "environmentVariables": []

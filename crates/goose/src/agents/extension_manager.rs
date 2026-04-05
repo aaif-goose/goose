@@ -12,7 +12,7 @@ use rmcp::transport::{
     ConfigureCommandExt, DynamicTransportError, StreamableHttpClientTransport, TokioChildProcess,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -57,6 +57,8 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
+
+const FILESYSTEM_WORKING_DIR_PLACEHOLDER: &str = "{{WORKING_DIR}}";
 
 struct Extension {
     pub config: ExtensionConfig,
@@ -162,6 +164,56 @@ fn resolve_command(cmd: &str) -> PathBuf {
             // let the OS raise the error
             PathBuf::from(cmd)
         })
+}
+
+fn is_filesystem_server_arg(arg: &str) -> bool {
+    arg.starts_with("@modelcontextprotocol/server-filesystem")
+}
+
+fn is_filesystem_placeholder_path(arg: &str) -> bool {
+    arg == FILESYSTEM_WORKING_DIR_PLACEHOLDER
+        || arg.starts_with("/path/to/")
+        || arg.starts_with("</path/to/")
+        || arg.contains("/Users/username/")
+        || arg.contains("/home/username/")
+}
+
+fn normalize_filesystem_stdio_args(args: &[String], working_dir: &Path) -> Vec<String> {
+    let Some(server_idx) = args.iter().position(|arg| is_filesystem_server_arg(arg)) else {
+        return args.to_vec();
+    };
+
+    let trailing_args = &args[server_idx + 1..];
+    let working_dir = working_dir.to_string_lossy().into_owned();
+    let mut normalized_args = args[..=server_idx].to_vec();
+    let mut inserted_working_dir = false;
+    let mut saw_placeholder = false;
+
+    for arg in trailing_args {
+        if is_filesystem_placeholder_path(arg) {
+            saw_placeholder = true;
+            if !inserted_working_dir {
+                normalized_args.push(working_dir.clone());
+                inserted_working_dir = true;
+            }
+            continue;
+        }
+
+        if arg == &working_dir {
+            if inserted_working_dir {
+                continue;
+            }
+            inserted_working_dir = true;
+        }
+
+        normalized_args.push(arg.clone());
+    }
+
+    if (saw_placeholder || trailing_args.is_empty()) && !inserted_working_dir {
+        normalized_args.push(working_dir);
+    }
+
+    normalized_args
 }
 
 fn require_str_parameter<'a>(v: &'a serde_json::Value, name: &str) -> Result<&'a str, ErrorData> {
@@ -713,8 +765,10 @@ impl ExtensionManager {
                     all_envs.insert("AGENT_SESSION_ID".to_string(), sid.to_string());
                 }
 
+                let args = normalize_filesystem_stdio_args(args, &effective_working_dir);
+
                 // Check for malicious packages before launching the process
-                extension_malware_check::deny_if_malicious_cmd_args(cmd, args).await?;
+                extension_malware_check::deny_if_malicious_cmd_args(cmd, &args).await?;
 
                 let command = if let Some(container) = container {
                     let container_id = container.id();
@@ -730,12 +784,12 @@ impl ExtensionManager {
                         }
                         command.arg(container_id);
                         command.arg(cmd);
-                        command.args(args);
+                        command.args(&args);
                     })
                 } else {
                     let cmd = resolve_command(cmd);
                     Command::new(cmd).configure(|command| {
-                        command.args(args).envs(all_envs);
+                        command.args(&args).envs(all_envs);
                     })
                 };
 
@@ -2143,6 +2197,63 @@ mod tests {
             .collect();
         assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
         assert!(tool_names.iter().any(|n| n.starts_with("ext_b__")));
+    }
+
+    #[test]
+    fn test_normalize_filesystem_stdio_args_replaces_legacy_placeholders() {
+        let args = vec![
+            "-y".to_string(),
+            "@modelcontextprotocol/server-filesystem".to_string(),
+            "/path/to/dir1".to_string(),
+            "/path/to/dir2".to_string(),
+        ];
+
+        let normalized =
+            normalize_filesystem_stdio_args(&args, std::path::Path::new("/tmp/project"));
+
+        assert_eq!(
+            normalized,
+            vec![
+                "-y".to_string(),
+                "@modelcontextprotocol/server-filesystem".to_string(),
+                "/tmp/project".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_normalize_filesystem_stdio_args_replaces_working_dir_token() {
+        let args = vec![
+            "-y".to_string(),
+            "@modelcontextprotocol/server-filesystem".to_string(),
+            FILESYSTEM_WORKING_DIR_PLACEHOLDER.to_string(),
+        ];
+
+        let normalized =
+            normalize_filesystem_stdio_args(&args, std::path::Path::new("/tmp/project"));
+
+        assert_eq!(
+            normalized,
+            vec![
+                "-y".to_string(),
+                "@modelcontextprotocol/server-filesystem".to_string(),
+                "/tmp/project".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_normalize_filesystem_stdio_args_preserves_real_paths() {
+        let args = vec![
+            "-y".to_string(),
+            "@modelcontextprotocol/server-filesystem".to_string(),
+            "/tmp/shared".to_string(),
+        ];
+
+        let normalized =
+            normalize_filesystem_stdio_args(&args, std::path::Path::new("/tmp/project"));
+
+        assert_eq!(normalized, args);
     }
 
     #[tokio::test]

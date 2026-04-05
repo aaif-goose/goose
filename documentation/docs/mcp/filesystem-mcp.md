@@ -39,16 +39,15 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
     args={[
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "/Users/username/Desktop",
-        "/path/to/other/allowed/dir"
+        "{{WORKING_DIR}}"
     ]}
   />
 
-  After installing, update the extension with the actual paths to allowed directories:
+  Goose will use the chat's selected working directory by default. If you want to allow additional directories, update the extension command:
   1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar
   2. Click `Extensions` in the sidebar
   3. On the `Filesystem` card, click the <Settings className="inline" size={16} /> button
-  4. Edit the command to replace the placeholder paths with space-separated paths to allowed directories
+  4. Edit the command to add space-separated paths to the additional directories you want to allow
   5. Click `Save Changes`
 
   </TabItem>

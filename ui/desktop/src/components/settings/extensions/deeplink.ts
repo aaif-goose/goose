@@ -2,6 +2,57 @@ import type { ExtensionConfig } from '../../../api';
 import { toastService } from '../../../toasts';
 import { DEFAULT_EXTENSION_TIMEOUT } from './utils';
 
+export const FILESYSTEM_WORKING_DIR_PLACEHOLDER = '{{WORKING_DIR}}';
+
+function isFilesystemServerArg(arg: string): boolean {
+  return arg.startsWith('@modelcontextprotocol/server-filesystem');
+}
+
+function isFilesystemPlaceholderPath(arg: string): boolean {
+  return (
+    arg === FILESYSTEM_WORKING_DIR_PLACEHOLDER ||
+    arg.startsWith('/path/to/') ||
+    arg.startsWith('</path/to/') ||
+    arg.includes('/Users/username/') ||
+    arg.includes('/home/username/')
+  );
+}
+
+export function normalizeFilesystemInstallArgs(args: string[]): string[] {
+  const serverIndex = args.findIndex(isFilesystemServerArg);
+  if (serverIndex === -1) {
+    return args;
+  }
+
+  const trailingArgs = args.slice(serverIndex + 1);
+  const normalizedArgs = args.slice(0, serverIndex + 1);
+  let insertedWorkingDir = false;
+  let sawPlaceholder = false;
+
+  for (const arg of trailingArgs) {
+    if (isFilesystemPlaceholderPath(arg)) {
+      sawPlaceholder = true;
+      if (!insertedWorkingDir) {
+        normalizedArgs.push(FILESYSTEM_WORKING_DIR_PLACEHOLDER);
+        insertedWorkingDir = true;
+      }
+      continue;
+    }
+
+    if (arg === FILESYSTEM_WORKING_DIR_PLACEHOLDER) {
+      insertedWorkingDir = true;
+    }
+
+    normalizedArgs.push(arg);
+  }
+
+  if ((sawPlaceholder || trailingArgs.length === 0) && !insertedWorkingDir) {
+    normalizedArgs.push(FILESYSTEM_WORKING_DIR_PLACEHOLDER);
+  }
+
+  return normalizedArgs;
+}
+
 /**
  * Build an extension config for stdio from the deeplink URL
  */
@@ -32,7 +83,7 @@ function getStdioConfig(
   }
 
   // Check for security risk with npx -c command
-  const args = parsedUrl.searchParams.getAll('arg');
+  const args = normalizeFilesystemInstallArgs(parsedUrl.searchParams.getAll('arg'));
   if (cmd === 'npx' && args.includes('-c')) {
     toastService.handleError(
       'Security Risk',
