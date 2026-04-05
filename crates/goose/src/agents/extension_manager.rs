@@ -59,6 +59,12 @@ static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
 
 const FILESYSTEM_WORKING_DIR_PLACEHOLDER: &str = "{{WORKING_DIR}}";
+const LEGACY_FILESYSTEM_SAMPLE_PATHS: &[&str] = &[
+    "/path/to/dir1",
+    "/path/to/dir2",
+    "/Users/username/Desktop",
+    "/path/to/other/allowed/dir",
+];
 
 struct Extension {
     pub config: ExtensionConfig,
@@ -171,11 +177,7 @@ fn is_filesystem_server_arg(arg: &str) -> bool {
 }
 
 fn is_filesystem_placeholder_path(arg: &str) -> bool {
-    arg == FILESYSTEM_WORKING_DIR_PLACEHOLDER
-        || arg.starts_with("/path/to/")
-        || arg.starts_with("</path/to/")
-        || arg.contains("/Users/username/")
-        || arg.contains("/home/username/")
+    arg == FILESYSTEM_WORKING_DIR_PLACEHOLDER || LEGACY_FILESYSTEM_SAMPLE_PATHS.contains(&arg)
 }
 
 fn normalize_filesystem_stdio_args(args: &[String], working_dir: &Path) -> Vec<String> {
@@ -2247,7 +2249,7 @@ mod tests {
         let args = vec![
             "-y".to_string(),
             "@modelcontextprotocol/server-filesystem".to_string(),
-            "/tmp/shared".to_string(),
+            "/path/to/shared".to_string(),
         ];
 
         let normalized =

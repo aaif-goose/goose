@@ -43,7 +43,7 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
     ]}
   />
 
-  Goose will use the chat's selected working directory by default. If you want to allow additional directories, update the extension command:
+  goose will use the chat's selected working directory by default. If you want to allow additional directories, update the extension command:
   1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar
   2. Click `Extensions` in the sidebar
   3. On the `Filesystem` card, click the <Settings className="inline" size={16} /> button

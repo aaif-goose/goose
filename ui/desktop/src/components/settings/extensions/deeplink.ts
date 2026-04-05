@@ -3,19 +3,19 @@ import { toastService } from '../../../toasts';
 import { DEFAULT_EXTENSION_TIMEOUT } from './utils';
 
 export const FILESYSTEM_WORKING_DIR_PLACEHOLDER = '{{WORKING_DIR}}';
+const LEGACY_FILESYSTEM_SAMPLE_PATHS = [
+  '/path/to/dir1',
+  '/path/to/dir2',
+  '/Users/username/Desktop',
+  '/path/to/other/allowed/dir',
+] as const;
 
 function isFilesystemServerArg(arg: string): boolean {
   return arg.startsWith('@modelcontextprotocol/server-filesystem');
 }
 
 function isFilesystemPlaceholderPath(arg: string): boolean {
-  return (
-    arg === FILESYSTEM_WORKING_DIR_PLACEHOLDER ||
-    arg.startsWith('/path/to/') ||
-    arg.startsWith('</path/to/') ||
-    arg.includes('/Users/username/') ||
-    arg.includes('/home/username/')
-  );
+  return arg === FILESYSTEM_WORKING_DIR_PLACEHOLDER || LEGACY_FILESYSTEM_SAMPLE_PATHS.includes(arg);
 }
 
 export function normalizeFilesystemInstallArgs(args: string[]): string[] {

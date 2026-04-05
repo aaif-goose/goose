@@ -139,61 +139,75 @@ my-project/
 ```
 
 If you start goose in `my-project/`, the root-level hints are loaded immediately. Later, when goose accesses files under `frontend/components/`, it loads the nested hints for that path and combines them in the following order:
-1. <details>
-     <summary>`my-project/.goosehints` (project root)</summary>
-        ```
-        This is a React + TypeScript project using Vite.
+<ol>
+  <li>
+    <details>
+      <summary><code>my-project/.goosehints</code> (project root)</summary>
 
-        @README.md                    # Project overview and setup instructions
-        @docs/development-setup.md    # Development environment configuration
+```text
+This is a React + TypeScript project using Vite.
 
-        Always run tests before committing: `npm test`
-        Use conventional commits for all changes.
-        ```
-   </details>
+@README.md                    # Project overview and setup instructions
+@docs/development-setup.md    # Development environment configuration
+
+Always run tests before committing: `npm test`
+Use conventional commits for all changes.
+```
+
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary><code>frontend/.goosehints</code></summary>
+
+```text
+This frontend uses React 18 with TypeScript and Tailwind CSS.
+
+@package.json                      # Dependencies and scripts
+@docs/frontend-architecture.md     # Frontend structure and patterns
+
+## Development Standards
+- Use functional components with hooks (no class components)
+- Implement proper TypeScript interfaces for all props
+- Follow the component structure: /components/ComponentName/index.tsx
+- Use Tailwind classes instead of custom CSS when possible
+
+## Testing Requirements
+- Write unit tests for all components using React Testing Library
+- Test files should be co-located: ComponentName.test.tsx
+- Run `npm run test:frontend` before committing changes
+
+## State Management
+- Use React Query for server state
+- Use Zustand for client state management
+- Avoid prop drilling - lift state appropriately
+
+Always confirm UI changes with design team before implementation.
+```
+
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary><code>frontend/components/.goosehints</code> (current directory)</summary>
+
+```text
+Components in this directory use our design system.
+
+@docs/component-api.md    # Component interface standards and examples
+
+All components must:
+- Export a default component
+- Include TypeScript props interface
+- Have corresponding .test.tsx file
+- Follow naming convention: PascalCase
+```
+
+    </details>
+  </li>
+</ol>
 
 After nested hints are loaded for a directory, they remain active for the rest of the session. If you update a hint file and want goose to pick up the new content reliably, restart the session.
-2. <details>
-     <summary>`frontend/.goosehints`</summary>
-        ```
-        This frontend uses React 18 with TypeScript and Tailwind CSS.
-
-        @package.json                      # Dependencies and scripts
-        @docs/frontend-architecture.md     # Frontend structure and patterns
-
-        ## Development Standards
-        - Use functional components with hooks (no class components)
-        - Implement proper TypeScript interfaces for all props
-        - Follow the component structure: /components/ComponentName/index.tsx
-        - Use Tailwind classes instead of custom CSS when possible
-
-        ## Testing Requirements  
-        - Write unit tests for all components using React Testing Library
-        - Test files should be co-located: ComponentName.test.tsx
-        - Run `npm run test:frontend` before committing changes
-
-        ## State Management
-        - Use React Query for server state
-        - Use Zustand for client state management
-        - Avoid prop drilling - lift state appropriately
-
-        Always confirm UI changes with design team before implementation.
-        ```
-   </details> 
-3. <details>
-     <summary>`frontend/components/.goosehints` (current directory)</summary>
-        ```
-        Components in this directory use our design system.
-
-        @docs/component-api.md    # Component interface standards and examples
-
-        All components must:
-        - Export a default component
-        - Include TypeScript props interface
-        - Have corresponding .test.tsx file
-        - Follow naming convention: PascalCase
-        ```
-   </details>
 
 ## Common Use Cases
 Here are some ways people have used hints to provide additional context to goose:

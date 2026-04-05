@@ -33,12 +33,12 @@ describe('normalizeFilesystemInstallArgs', () => {
       normalizeFilesystemInstallArgs([
         '-y',
         '@modelcontextprotocol/server-filesystem',
-        '/Users/example/projects/goose',
+        '/path/to/shared',
       ])
     ).toEqual([
       '-y',
       '@modelcontextprotocol/server-filesystem',
-      '/Users/example/projects/goose',
+      '/path/to/shared',
     ]);
   });
 
