@@ -43,6 +43,19 @@ cd ui/desktop && pnpm test   # test UI
 git commit -s                # required for DCO sign-off
 ```
 
+## Packaging
+```bash
+download_cli.sh              # POSIX installer (uses GOOSE_BIN_DIR)
+download_cli.ps1             # PowerShell installer (uses GOOSE_BIN_DIR)
+ui/goose-binary/             # native npm binary packages
+```
+
+- `@aaif/goose-binary-darwin-arm64`
+- `@aaif/goose-binary-darwin-x64`
+- `@aaif/goose-binary-linux-arm64`
+- `@aaif/goose-binary-linux-x64`
+- `@aaif/goose-binary-win32-x64`
+
 ## Structure
 ```
 crates/
