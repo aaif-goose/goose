@@ -152,7 +152,6 @@ If you start goose in `my-project/`, the root-level hints are loaded immediately
         ```
    </details>
 
-After nested hints are loaded for a directory, they remain active for the rest of the session. If you update a hint file and want goose to pick up the new content reliably, restart the session.
 2. <details>
      <summary>`frontend/.goosehints`</summary>
         ```
@@ -194,6 +193,8 @@ After nested hints are loaded for a directory, they remain active for the rest o
         - Follow naming convention: PascalCase
         ```
    </details>
+
+After nested hints are loaded for a directory, they remain active for the rest of the session. If you update a hint file and want goose to pick up the new content reliably, restart the session.
 
 ## Common Use Cases
 Here are some ways people have used hints to provide additional context to goose:
