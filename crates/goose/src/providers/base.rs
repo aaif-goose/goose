@@ -615,8 +615,13 @@ pub trait Provider: Send + Sync {
                 .enumerate()
                 .map(|(index, model)| {
                     let canonical_model = map_to_canonical_model(provider_name, &model, registry)
-                        .and_then(|canonical_id| canonical_id.split_once('/'))
-                        .and_then(|(provider, model_name)| registry.get(provider, model_name));
+                        .and_then(|canonical_id| {
+                            canonical_id
+                                .split_once('/')
+                                .and_then(|(provider, model_name)| {
+                                    registry.get(provider, model_name)
+                                })
+                        });
 
                     let (tier, release_date) = match canonical_model {
                         Some(canonical_model)
