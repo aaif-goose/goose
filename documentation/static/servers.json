@@ -657,6 +657,19 @@
     "environmentVariables": []
   },
   {
+    "id": "safeagent-token-safety",
+    "name": "SafeAgent Token Safety",
+    "description": "Analyze DeFi token safety, detect honeypots, and simulate swaps across six EVM chains.",
+    "type": "streamable-http",
+    "url": "https://cryptogenesis.duckdns.org/mcp",
+    "link": "https://github.com/Aigen-Protocol/aigen-protocol",
+    "installation_notes": "No API key required. Connect to the public Streamable HTTP endpoint to scan tokens for honeypots, hidden mints, fee traps, and ownership risks.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": []
+  },
+  {
     "id": "selenium-mcp",
     "name": "Selenium",
     "description": "Web browser automation and testing",
