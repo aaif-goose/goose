@@ -308,8 +308,8 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             println!("{}", console::style("⚠️  Note: /summarize has been renamed to /compact and will be removed in a future release.").yellow());
             Some(InputResult::Compact)
         }
-        s if s.starts_with("/md ") => {
-            let path = s.strip_prefix("/md ").unwrap_or("").trim();
+        s if s == "/md" || s.starts_with("/md ") => {
+            let path = s.strip_prefix("/md").unwrap_or("").trim();
             if path.is_empty() {
                 println!("Usage: /md <file>");
                 Some(InputResult::Retry)
