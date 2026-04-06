@@ -1061,10 +1061,11 @@ export function useChatStream({
   }, [state.notifications]);
 
   const retrySessionLoad = useCallback(() => {
+    resultsCache.delete(sessionId);
     dispatch({ type: 'SET_SESSION_LOAD_ERROR', payload: undefined });
     dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.LoadingConversation });
     setRetryCount((c) => c + 1);
-  }, []);
+  }, [sessionId]);
 
   return {
     sessionLoadError: state.sessionLoadError,

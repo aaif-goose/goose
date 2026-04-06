@@ -53,8 +53,11 @@
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Failed to Load Session"
   },
-  "baseChat.goHome": {
-    "defaultMessage": "Go home"
+  "baseChat.retryConnection": {
+    "defaultMessage": "Retry connection"
+  },
+  "baseChat.newSession": {
+    "defaultMessage": "New session"
   },
   "baseChat.noSession": {
     "defaultMessage": "No Session"
