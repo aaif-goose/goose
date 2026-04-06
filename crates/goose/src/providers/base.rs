@@ -603,10 +603,19 @@ pub trait Provider: Send + Sync {
         let provider_name = self.get_name();
 
         // Get all text-capable models with their release dates
+        // Models that can't be mapped to a canonical ID are still included
+        // (without a release date) so users can select newly released models.
         let mut models_with_dates: Vec<(String, Option<String>)> = all_models
             .iter()
             .filter_map(|model| {
-                let canonical_id = map_to_canonical_model(provider_name, model, registry)?;
+                let canonical_id = match map_to_canonical_model(provider_name, model, registry) {
+                    Some(id) => id,
+                    None => {
+                        // Unmapped model — include it anyway so new/unknown models
+                        // are available in the UI dropdown.
+                        return Some((model.clone(), None));
+                    }
+                };
 
                 let (provider, model_name) = canonical_id.split_once('/')?;
                 let canonical_model = registry.get(provider, model_name)?;
