@@ -49,4 +49,30 @@ This tutorial covers how to add the [PQS MCP Server](https://github.com/OnChainA
 
 ## Example Usage
 
-Use PQS to check prompt quality bef
+Use PQS to check prompt quality before sending to any model, or have goose optimize your prompts automatically.
+
+### goose Prompt
+
+> Score this prompt before I send it: "Summarize the key risks in this document"
+
+### goose Output
+
+:::note Desktop
+
+PQS scored your prompt 14/40 — Grade D. The main issues are lack of specificity, missing output format instructions, and no context about what type of risks to focus on. Would you like me to optimize it?
+
+:::
+
+### goose Prompt
+
+> Optimize my prompt for the crypto vertical: "What wallets should I watch?"
+
+### goose Output
+
+:::note Desktop
+
+Here is your optimized prompt (scored 31/40 — Grade B):
+
+"Identify the top 5 crypto wallets currently exhibiting unusual on-chain activity on Ethereum mainnet. For each wallet provide: address, 30-day PnL, primary trading pattern (e.g. swing, DeFi yield, NFT), and one actionable signal for the next 48 hours."
+
+:::
