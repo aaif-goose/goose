@@ -196,11 +196,42 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                     }
                 }
             }
-            _ => {
-                println!(
-                    "  {} No provider configured. Run '{}' first.",
-                    style("⚠").yellow(),
-                    style("goose configure").cyan()
+            (Err(e), _) => {
+                print_aligned(
+                    "Provider:",
+                    &format!(
+                        "{} {}",
+                        style("not configured:").red(),
+                        e
+                    ),
+                    label_padding,
+                );
+                print_aligned(
+                    "Hint:",
+                    &format!(
+                        "Run '{}'",
+                        style("goose configure").cyan()
+                    ),
+                    label_padding,
+                );
+            }
+            (_, Err(e)) => {
+                print_aligned(
+                    "Model:",
+                    &format!(
+                        "{} {}",
+                        style("not configured:").red(),
+                        e
+                    ),
+                    label_padding,
+                );
+                print_aligned(
+                    "Hint:",
+                    &format!(
+                        "Run '{}'",
+                        style("goose configure").cyan()
+                    ),
+                    label_padding,
                 );
             }
         }
