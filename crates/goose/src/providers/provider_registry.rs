@@ -23,6 +23,10 @@ pub struct ProviderEntry {
 }
 
 impl ProviderEntry {
+    pub fn metadata(&self) -> &ProviderMetadata {
+        &self.metadata
+    }
+
     pub async fn create_with_default_model(
         &self,
         extensions: Vec<ExtensionConfig>,

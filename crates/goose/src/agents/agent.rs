@@ -1578,6 +1578,7 @@ impl Agent {
                                 no_tools_called = false;
                             }
                         }
+                        #[allow(unused_variables)]
                         Err(ref provider_err @ ProviderError::ContextLengthExceeded(_)) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
