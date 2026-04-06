@@ -93,6 +93,41 @@ pub fn read_tail(path: &std::path::Path, max_lines: usize) -> Option<String> {
     Some(lines[start..].join("\n"))
 }
 
+pub fn read_capped(path: &std::path::Path, max_bytes: usize) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    if content.len() <= max_bytes {
+        return Some(content);
+    }
+    let half = max_bytes / 2;
+    let head: String = content
+        .chars()
+        .take_while({
+            let mut n = 0;
+            move |c| {
+                n += c.len_utf8();
+                n <= half
+            }
+        })
+        .collect();
+    let tail: String = {
+        let skip = content.len().saturating_sub(half);
+        let mut chars = content.chars();
+        let mut skipped = 0;
+        for c in chars.by_ref() {
+            skipped += c.len_utf8();
+            if skipped >= skip {
+                break;
+            }
+        }
+        chars.collect()
+    };
+    let omitted = content.len() - head.len() - tail.len();
+    Some(format!(
+        "{}\n\n... ({} bytes omitted) ...\n\n{}",
+        head, omitted, tail,
+    ))
+}
+
 fn latest_entry_by_name(dir: &std::path::Path) -> Option<PathBuf> {
     let mut entries: Vec<_> = fs::read_dir(dir).ok()?.filter_map(|e| e.ok()).collect();
     entries.sort_by_key(|e| e.file_name());

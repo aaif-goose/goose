@@ -8,7 +8,7 @@ use crate::model::ModelConfig;
 use crate::providers::base::Provider;
 use crate::providers::{self, errors::ProviderError};
 use crate::session::{
-    config_path, latest_llm_log_path, latest_server_log_path, read_tail, SystemInfo,
+    config_path, latest_llm_log_path, latest_server_log_path, read_capped, read_tail, SystemInfo,
 };
 
 pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Result<Message> {
@@ -42,7 +42,7 @@ pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Resu
     }
 
     if let Some(path) = latest_llm_log_path() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Some(content) = read_capped(&path, 10_000) {
             prompt.push_str(&format!("\nLast LLM request log:\n```\n{}\n```\n", content));
         }
     }
@@ -69,8 +69,7 @@ async fn ensure_working_provider(
     if let (Some(ref pname), Some(ref mname)) = (&provider_name, &model_name) {
         log.push(format!("Checking {} / {} ...", pname, mname));
         match try_create_and_test(pname, mname).await {
-            Ok(working) => {
-                agent.update_provider(working, session_id).await?;
+            Ok(_) => {
                 return Ok(None);
             }
             Err(e) => {
