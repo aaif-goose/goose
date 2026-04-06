@@ -1,19 +1,20 @@
 use super::{
-    map_permission_response, spawn_acp_server_in_process, Connection, PermissionDecision,
-    PermissionMapping, Session, SessionData, TestConnectionConfig, TestOutput,
+    map_permission_response, spawn_acp_server_in_process, Connection, PermissionDecision, Session,
+    SessionData, TestConnectionConfig, TestOutput,
 };
 use async_trait::async_trait;
 use goose::config::PermissionManager;
 use goose_test_support::{EnforceSessionId, ExpectedSessionId};
 use sacp::schema::{
-    AuthMethod, ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
+    ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
     FileSystemCapabilities, ImageContent, InitializeRequest, KillTerminalRequest,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, McpServer, NewSessionRequest,
-    PromptRequest, ProtocolVersion, ReadTextFileRequest, ReleaseTerminalRequest,
-    RequestPermissionRequest, SessionConfigOptionValue, SessionId, SessionModeId,
-    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest,
-    SetSessionModelRequest, StopReason, TerminalOutputRequest, TextContent, ToolCallStatus,
-    WaitForTerminalExitRequest, WriteTextFileRequest,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, McpServer, ModelId, ModelInfo,
+    NewSessionRequest, PromptRequest, ProtocolVersion, ReadTextFileRequest, ReleaseTerminalRequest,
+    RequestPermissionRequest, SessionConfigKind, SessionConfigOptionCategory,
+    SessionConfigOptionValue, SessionId, SessionModeId, SessionModelState, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModelRequest,
+    StopReason, TerminalOutputRequest, TextContent, ToolCallStatus, WaitForTerminalExitRequest,
+    WriteTextFileRequest,
 };
 use sacp::{Agent, Client, ConnectionTo};
 use std::sync::{Arc, Mutex};
@@ -30,7 +31,6 @@ pub struct AcpServerConnection {
     permission: Arc<Mutex<PermissionDecision>>,
     notify: Arc<Notify>,
     permission_manager: Arc<PermissionManager>,
-    auth_methods: Vec<AuthMethod>,
     _openai: super::OpenAiFixture,
     _temp_dir: Option<tempfile::TempDir>,
 }
@@ -133,7 +133,7 @@ impl Connection for AcpServerConnection {
             fs_cap = fs_cap.write_text_file(true);
         }
 
-        let (cx, auth_methods) = {
+        let cx = {
             let updates_clone = updates.clone();
             let notify_clone = notify.clone();
             let permission_clone = permission.clone();
@@ -143,14 +143,10 @@ impl Connection for AcpServerConnection {
 
             let cx_holder: Arc<Mutex<Option<ConnectionTo<Agent>>>> = Arc::new(Mutex::new(None));
             let cx_holder_clone = cx_holder.clone();
-            let auth_holder: Arc<Mutex<Vec<AuthMethod>>> = Arc::new(Mutex::new(Vec::new()));
-            let auth_holder_clone = auth_holder.clone();
 
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
 
             tokio::spawn(async move {
-                let permission_mapping = PermissionMapping::default();
-
                 let result = Client
                     .builder()
                     .on_receive_notification(
@@ -170,9 +166,7 @@ impl Connection for AcpServerConnection {
                             let permission = permission_clone.clone();
                             async move |req: RequestPermissionRequest, responder, _connection_cx| {
                                 let decision = *permission.lock().unwrap();
-                                let response =
-                                    map_permission_response(&permission_mapping, &req, decision);
-                                responder.respond(response)
+                                responder.respond(map_permission_response(&req, decision))
                             }
                         },
                         sacp::on_receive_request!(),
@@ -261,9 +255,8 @@ impl Connection for AcpServerConnection {
                     )
                     .connect_with(transport, {
                         let cx_holder = cx_holder_clone;
-                        let auth_holder = auth_holder_clone;
                         async move |cx: ConnectionTo<Agent>| {
-                            let resp = cx
+                            let _resp = cx
                                 .send_request(
                                     InitializeRequest::new(ProtocolVersion::LATEST)
                                         .client_capabilities(
@@ -276,7 +269,6 @@ impl Connection for AcpServerConnection {
                                 .await
                                 .unwrap();
 
-                            *auth_holder.lock().unwrap() = resp.auth_methods;
                             *cx_holder.lock().unwrap() = Some(cx.clone());
                             let _ = ready_tx.send(());
 
@@ -292,8 +284,7 @@ impl Connection for AcpServerConnection {
 
             ready_rx.await.unwrap();
             let cx = cx_holder.lock().unwrap().take().unwrap();
-            let auth = std::mem::take(&mut *auth_holder.lock().unwrap());
-            (cx, auth)
+            cx
         };
 
         Self {
@@ -305,7 +296,6 @@ impl Connection for AcpServerConnection {
             permission,
             notify,
             permission_manager,
-            auth_methods,
             _openai: openai,
             _temp_dir: temp_dir,
         }
@@ -330,9 +320,13 @@ impl Connection for AcpServerConnection {
             notify: self.notify.clone(),
             _work_dir: work_dir,
         };
+        let models = response.models.or_else(|| {
+            extract_model_state_from_config_options(response.config_options.as_deref())
+        });
+        self.updates.lock().unwrap().clear();
         Ok(SessionData {
             session,
-            models: response.models,
+            models,
             modes: response.modes,
         })
     }
@@ -438,10 +432,6 @@ impl Connection for AcpServerConnection {
             .map_err(|e| e.into())
     }
 
-    fn auth_methods(&self) -> &[AuthMethod] {
-        &self.auth_methods
-    }
-
     fn data_root(&self) -> std::path::PathBuf {
         self.data_root.clone()
     }
@@ -502,6 +492,46 @@ impl Session for AcpServerSession {
         )
         .await
     }
+}
+
+fn extract_model_state_from_config_options(
+    config_options: Option<&[sacp::schema::SessionConfigOption]>,
+) -> Option<SessionModelState> {
+    let option = config_options?
+        .iter()
+        .find(|option| option.category.as_ref() == Some(&SessionConfigOptionCategory::Model))?;
+    let SessionConfigKind::Select(select) = &option.kind else {
+        return None;
+    };
+
+    let available_models = match &select.options {
+        sacp::schema::SessionConfigSelectOptions::Ungrouped(options) => options
+            .iter()
+            .map(|option| {
+                ModelInfo::new(
+                    ModelId::new(option.value.0.to_string()),
+                    option.name.clone(),
+                )
+            })
+            .collect(),
+        sacp::schema::SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|group| {
+                group.options.iter().map(|option| {
+                    ModelInfo::new(
+                        ModelId::new(option.value.0.to_string()),
+                        option.name.clone(),
+                    )
+                })
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    Some(SessionModelState::new(
+        ModelId::new(select.current_value.0.to_string()),
+        available_models,
+    ))
 }
 
 fn collect_agent_text(updates: &Arc<Mutex<Vec<SessionNotification>>>) -> String {

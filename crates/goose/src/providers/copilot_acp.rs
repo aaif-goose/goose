@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, PermissionMapping,
-    ACP_CURRENT_MODEL,
+    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
@@ -54,10 +53,6 @@ impl ProviderDef for CopilotAcpProvider {
                 .resolve(COPILOT_ACP_BINARY)?;
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
 
-            // Copilot uses standard ACP permission option IDs (allow_once,
-            // allow_always, reject_once) so kind-based fallback handles them.
-            let permission_mapping = PermissionMapping::default();
-
             let mut args = vec!["--acp".to_string()];
             if model.model_name != ACP_CURRENT_MODEL {
                 args.push("--model".to_string());
@@ -82,7 +77,6 @@ impl ProviderDef for CopilotAcpProvider {
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
                 session_mode_id: Some(mode_mapping[&goose_mode].clone()),
                 mode_mapping,
-                permission_mapping,
                 notification_callback: None,
             };
 

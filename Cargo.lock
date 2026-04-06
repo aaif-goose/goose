@@ -4573,7 +4573,7 @@ dependencies = [
 
 [[package]]
 name = "goose-sdk"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "agent-client-protocol-schema",
  "sacp",

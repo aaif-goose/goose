@@ -4,7 +4,7 @@ use super::{
 };
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose::acp::{AcpProvider, AcpProviderConfig, PermissionMapping};
+use goose::acp::{AcpProvider, AcpProviderConfig};
 use goose::config::{GooseMode, PermissionManager};
 use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
 use goose::model::ModelConfig;
@@ -12,9 +12,12 @@ use goose::permission::permission_confirmation::PrincipalType;
 use goose::permission::{Permission, PermissionConfirmation};
 use goose::providers::base::Provider;
 use goose_test_support::{ExpectedSessionId, IgnoreSessionId, TEST_MODEL};
-use sacp::schema::{AuthMethod, ListSessionsResponse, McpServer, SessionUpdate, ToolCallStatus};
+use sacp::schema::{
+    ListSessionsResponse, McpServer, ModelId, ModelInfo, SessionModelState, SessionUpdate,
+    ToolCallStatus,
+};
 use sacp::{Channel, Client, ConnectTo, DynConnectTo};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use strum::VariantNames;
@@ -28,10 +31,10 @@ pub struct AcpProviderConnection {
     /// Option so close_session can trigger session/close via Drop.
     provider: Arc<Mutex<Option<AcpProvider>>>,
     permission_manager: Arc<PermissionManager>,
-    auth_methods: Vec<AuthMethod>,
     session_counter: usize,
     notification_sink: NotificationSink,
     session_models: SessionModels,
+    strip_config_options: bool,
     work_dir: std::path::PathBuf,
     data_root: std::path::PathBuf,
     _openai: OpenAiFixture,
@@ -186,7 +189,6 @@ impl Connection for AcpProviderConnection {
                     (mode, mode.to_string())
                 })
                 .collect(),
-            permission_mapping: PermissionMapping::default(),
             notification_callback: Some(Arc::new(move |n| {
                 sink_clone.lock().unwrap().push(n.update.clone());
             })),
@@ -208,15 +210,13 @@ impl Connection for AcpProviderConnection {
         .await
         .unwrap();
 
-        let auth_methods = provider.auth_methods().to_vec();
-
         Self {
             provider: Arc::new(Mutex::new(Some(provider))),
             permission_manager,
-            auth_methods,
             session_counter: 0,
             notification_sink,
             session_models,
+            strip_config_options: config.strip_config_options,
             work_dir: cwd_path,
             data_root,
             _openai: openai,
@@ -226,18 +226,23 @@ impl Connection for AcpProviderConnection {
     }
 
     async fn new_session(&mut self) -> anyhow::Result<SessionData<AcpProviderSession>> {
-        // Tests like run_model_set call new_session() multiple times on the same
-        // connection, so each needs a distinct key to avoid returning a cached session.
         self.session_counter += 1;
         let goose_id = format!("test-session-{}", self.session_counter);
-        let response = self
-            .provider
-            .lock()
-            .await
-            .as_ref()
-            .unwrap()
-            .ensure_session(Some(&goose_id))
-            .await?;
+
+        let models = if self.strip_config_options {
+            None
+        } else {
+            let provider = self.provider.lock().await;
+            let provider = provider.as_ref().unwrap();
+            let available_models = provider.fetch_supported_models().await?;
+            Some(SessionModelState::new(
+                ModelId::new(provider.get_model_config().model_name.clone()),
+                available_models
+                    .into_iter()
+                    .map(|model_id| ModelInfo::new(ModelId::new(model_id.clone()), model_id))
+                    .collect(),
+            ))
+        };
 
         let session = AcpProviderSession {
             provider: Arc::clone(&self.provider),
@@ -246,10 +251,11 @@ impl Connection for AcpProviderConnection {
             session_models: self.session_models.clone(),
             work_dir: self.work_dir.clone(),
         };
+        self.notification_sink.lock().unwrap().clear();
         Ok(SessionData {
             session,
-            models: response.models,
-            modes: response.modes,
+            models,
+            modes: None,
         })
     }
 
@@ -264,13 +270,7 @@ impl Connection for AcpProviderConnection {
     }
 
     async fn list_sessions(&self) -> anyhow::Result<ListSessionsResponse> {
-        self.provider
-            .lock()
-            .await
-            .as_ref()
-            .unwrap()
-            .list_sessions()
-            .await
+        Err(anyhow::anyhow!("not implemented for AcpProviderConnection"))
     }
 
     async fn close_session(&self, _session_id: &str) -> anyhow::Result<()> {
@@ -279,89 +279,29 @@ impl Connection for AcpProviderConnection {
         Ok(())
     }
 
-    async fn delete_session(&self, session_id: &str) -> anyhow::Result<()> {
-        self.provider
-            .lock()
-            .await
-            .as_ref()
-            .unwrap()
-            .delete_session(session_id)
-            .await
+    async fn delete_session(&self, _session_id: &str) -> anyhow::Result<()> {
+        Err(anyhow::anyhow!("not implemented for AcpProviderConnection"))
     }
 
     fn data_root(&self) -> std::path::PathBuf {
         self.data_root.clone()
     }
 
-    async fn set_mode(&self, session_id: &str, mode_id: &str) -> anyhow::Result<()> {
-        let mode = GooseMode::from_str(mode_id)
-            .map_err(|_| sacp::Error::invalid_params().data(format!("Invalid mode: {mode_id}")))?;
-        let guard = self.provider.lock().await;
-        let provider = guard.as_ref().unwrap();
-        if !provider.has_session(session_id).await {
-            return Err(
-                sacp::Error::resource_not_found(Some(session_id.to_string()))
-                    .data(format!("Session not found: {session_id}"))
-                    .into(),
-            );
-        }
-        provider
-            .update_mode(session_id, mode)
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))
+    async fn set_mode(&self, _session_id: &str, _mode_id: &str) -> anyhow::Result<()> {
+        Err(anyhow::anyhow!("not implemented for AcpProviderConnection"))
     }
 
-    async fn set_model(&self, session_id: &str, model_id: &str) -> anyhow::Result<()> {
-        let config = ModelConfig::new(model_id).map_err(|e| anyhow::anyhow!("{e}"))?;
-        self.session_models
-            .lock()
-            .unwrap()
-            .insert(session_id.to_string(), config);
-        Ok(())
+    async fn set_model(&self, _session_id: &str, _model_id: &str) -> anyhow::Result<()> {
+        Err(anyhow::anyhow!("not implemented for AcpProviderConnection"))
     }
 
     async fn set_config_option(
         &self,
-        session_id: &str,
-        config_id: &str,
-        value: &str,
+        _session_id: &str,
+        _config_id: &str,
+        _value: &str,
     ) -> anyhow::Result<()> {
-        // Check up front because the "model" branch doesn't go through the provider.
-        let guard = self.provider.lock().await;
-        let provider = guard.as_ref().unwrap();
-        if !provider.has_session(session_id).await {
-            return Err(
-                sacp::Error::resource_not_found(Some(session_id.to_string()))
-                    .data(format!("Session not found: {session_id}"))
-                    .into(),
-            );
-        }
-        match config_id {
-            "mode" => {
-                let mode = GooseMode::from_str(value).map_err(|_| {
-                    sacp::Error::invalid_params().data(format!("Invalid mode: {value}"))
-                })?;
-                provider
-                    .update_mode(session_id, mode)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            }
-            "model" => {
-                let config = ModelConfig::new(value).map_err(|e| anyhow::anyhow!("{e}"))?;
-                self.session_models
-                    .lock()
-                    .unwrap()
-                    .insert(session_id.to_string(), config);
-                Ok(())
-            }
-            other => Err(sacp::Error::invalid_params()
-                .data(format!("Unsupported config option: {other}"))
-                .into()),
-        }
-    }
-
-    fn auth_methods(&self) -> &[AuthMethod] {
-        &self.auth_methods
+        Err(anyhow::anyhow!("not implemented for AcpProviderConnection"))
     }
 
     fn reset_openai(&self) {
@@ -425,6 +365,8 @@ fn strip_config_options(transport: DuplexTransport) -> Channel {
     });
 
     tokio::spawn(async move {
+        let mut stripped_initial_config = HashSet::new();
+
         let goose_to_server = async {
             let mut from_goose = filter.rx;
             while let Some(msg) = from_goose.next().await {
@@ -437,19 +379,67 @@ fn strip_config_options(transport: DuplexTransport) -> Channel {
         let server_to_goose = async {
             let mut from_server = server.rx;
             while let Some(msg) = from_server.next().await {
-                let msg = msg.map(|m| match m {
-                    sacp::jsonrpcmsg::Message::Response(mut resp) => {
-                        if let Some(ref mut result) = resp.result {
-                            if let Some(obj) = result.as_object_mut() {
-                                obj.remove("configOptions");
+                let msg = match msg {
+                    Ok(m) => match m {
+                        sacp::jsonrpcmsg::Message::Response(mut resp) => {
+                            if let Some(ref mut result) = resp.result {
+                                if let Some(obj) = result.as_object_mut() {
+                                    obj.remove("configOptions");
+                                }
+                            }
+                            Ok(Some(sacp::jsonrpcmsg::Message::Response(resp)))
+                        }
+                        sacp::jsonrpcmsg::Message::Request(req)
+                            if req.id.is_none()
+                                && req.method == "session/update"
+                                && req
+                                    .params
+                                    .as_ref()
+                                    .and_then(|params| match params {
+                                        sacp::jsonrpcmsg::Params::Object(obj) => Some(obj),
+                                        _ => None,
+                                    })
+                                    .and_then(|obj| obj.get("update"))
+                                    .and_then(|update| update.get("sessionUpdate"))
+                                    .and_then(|session_update| session_update.as_str())
+                                    == Some("config_option_update") =>
+                        {
+                            let session_id = req
+                                .params
+                                .as_ref()
+                                .and_then(|params| match params {
+                                    sacp::jsonrpcmsg::Params::Object(obj) => Some(obj),
+                                    _ => None,
+                                })
+                                .and_then(|obj| obj.get("sessionId"))
+                                .and_then(|session_id| session_id.as_str())
+                                .map(str::to_owned);
+                            if let Some(session_id) = session_id {
+                                if stripped_initial_config.insert(session_id) {
+                                    Ok(None)
+                                } else {
+                                    Ok(Some(sacp::jsonrpcmsg::Message::Request(req)))
+                                }
+                            } else {
+                                Ok(Some(sacp::jsonrpcmsg::Message::Request(req)))
                             }
                         }
-                        sacp::jsonrpcmsg::Message::Response(resp)
+                        other => Ok(Some(other)),
+                    },
+                    Err(err) => Err(err),
+                };
+                match msg {
+                    Ok(Some(msg)) => {
+                        if filter.tx.unbounded_send(Ok(msg)).is_err() {
+                            break;
+                        }
                     }
-                    other => other,
-                });
-                if filter.tx.unbounded_send(msg).is_err() {
-                    break;
+                    Ok(None) => continue,
+                    Err(err) => {
+                        if filter.tx.unbounded_send(Err(err)).is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         };

@@ -151,7 +151,6 @@ If you start goose in `my-project/`, the root-level hints are loaded immediately
         Use conventional commits for all changes.
         ```
    </details>
-
 2. <details>
      <summary>`frontend/.goosehints`</summary>
         ```
@@ -178,7 +177,7 @@ If you start goose in `my-project/`, the root-level hints are loaded immediately
 
         Always confirm UI changes with design team before implementation.
         ```
-   </details> 
+   </details>
 3. <details>
      <summary>`frontend/components/.goosehints` (current directory)</summary>
         ```
@@ -194,7 +193,9 @@ If you start goose in `my-project/`, the root-level hints are loaded immediately
         ```
    </details>
 
+:::note
 After nested hints are loaded for a directory, they remain active for the rest of the session. If you update a hint file and want goose to pick up the new content reliably, restart the session.
+:::
 
 ## Common Use Cases
 Here are some ways people have used hints to provide additional context to goose:

@@ -3,7 +3,8 @@ use crate::fs::AcpTools;
 use crate::tools::AcpAwareToolMeta;
 use anyhow::Result;
 use fs_err as fs;
-use goose::acp::PermissionDecision;
+use futures::future::BoxFuture;
+use goose::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use goose::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use goose::agents::mcp_client::McpClientTrait;
 use goose::agents::platform_extensions::developer::DeveloperClient;
@@ -20,9 +21,8 @@ use goose::mcp_utils::ToolResult;
 use goose::permission::permission_confirmation::PrincipalType;
 use goose::permission::{Permission, PermissionConfirmation};
 use goose::providers::base::Provider;
-use goose::providers::provider_registry::ProviderConstructor;
 use goose::session::session_manager::SessionType;
-use goose::session::{Session, SessionManager};
+use goose::session::{EnabledExtensionsState, Session, SessionManager};
 use goose_acp_macros::custom_methods;
 use rmcp::model::{CallToolResult, RawContent, ResourceContents, Role};
 use sacp::schema::{
@@ -57,6 +57,19 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
+pub type AcpProviderFactory = Arc<
+    dyn Fn(
+            String,
+            goose::model::ModelConfig,
+            Vec<ExtensionConfig>,
+        ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
+        + Send
+        + Sync,
+>;
+
+const DEFAULT_PROVIDER_ID: &str = "goose";
+const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
+
 struct GooseAcpSession {
     agent: Arc<Agent>,
     messages: Conversation,
@@ -66,7 +79,7 @@ struct GooseAcpSession {
 
 pub struct GooseAcpAgent {
     sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
-    provider_factory: ProviderConstructor,
+    provider_factory: AcpProviderFactory,
     builtins: Vec<String>,
     client_fs_capabilities: OnceCell<FileSystemCapabilities>,
     client_terminal: OnceCell<bool>,
@@ -328,6 +341,56 @@ async fn build_model_state(provider: &dyn Provider) -> Result<SessionModelState,
     ))
 }
 
+async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderListEntry> {
+    let mut providers = goose::providers::providers()
+        .await
+        .into_iter()
+        .map(|(metadata, _)| ProviderListEntry {
+            id: metadata.name,
+            label: metadata.display_name,
+        })
+        .collect::<Vec<_>>();
+    providers.sort_by(|left, right| left.id.cmp(&right.id));
+    providers.dedup_by(|left, right| left.id == right.id);
+
+    if let Some(current_provider) = current_provider {
+        if current_provider != DEFAULT_PROVIDER_ID
+            && !providers
+                .iter()
+                .any(|provider| provider.id == current_provider)
+        {
+            providers.push(ProviderListEntry {
+                id: current_provider.to_string(),
+                label: current_provider.to_string(),
+            });
+            providers.sort_by(|left, right| left.id.cmp(&right.id));
+        }
+    }
+
+    let mut entries = Vec::with_capacity(providers.len() + 1);
+    entries.push(ProviderListEntry {
+        id: DEFAULT_PROVIDER_ID.to_string(),
+        label: DEFAULT_PROVIDER_LABEL.to_string(),
+    });
+    entries.extend(providers);
+    entries
+}
+
+async fn build_provider_options(current_provider: Option<&str>) -> Vec<SessionConfigSelectOption> {
+    list_provider_entries(current_provider)
+        .await
+        .into_iter()
+        .map(|provider| SessionConfigSelectOption::new(provider.id, provider.label))
+        .collect()
+}
+
+fn session_provider_selection(session: &Session) -> &str {
+    session
+        .provider_name
+        .as_deref()
+        .unwrap_or(DEFAULT_PROVIDER_ID)
+}
+
 fn build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::Error> {
     let mut available = Vec::with_capacity(GooseMode::VARIANTS.len());
     for &name in GooseMode::VARIANTS {
@@ -348,6 +411,8 @@ fn build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::E
 fn build_config_options(
     mode_state: &SessionModeState,
     model_state: &SessionModelState,
+    provider_selection: &str,
+    provider_options: Vec<SessionConfigSelectOption>,
 ) -> Vec<SessionConfigOption> {
     let mode_options: Vec<SessionConfigSelectOption> = mode_state
         .available_modes
@@ -363,6 +428,12 @@ fn build_config_options(
         .map(|m| SessionConfigSelectOption::new(m.model_id.0.clone(), m.name.clone()))
         .collect();
     vec![
+        SessionConfigOption::select(
+            "provider",
+            "Provider",
+            provider_selection.to_string(),
+            provider_options,
+        ),
         SessionConfigOption::select(
             "mode",
             "Mode",
@@ -387,7 +458,7 @@ impl GooseAcpAgent {
 
     // TODO: goose reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
     pub async fn new(
-        provider_factory: ProviderConstructor,
+        provider_factory: AcpProviderFactory,
         builtins: Vec<String>,
         data_dir: std::path::PathBuf,
         config_dir: std::path::PathBuf,
@@ -409,6 +480,19 @@ impl GooseAcpAgent {
             goose_mode,
             disable_session_naming,
         })
+    }
+
+    fn load_config(&self) -> Result<Config> {
+        Config::new(self.config_dir.join(CONFIG_YAML_NAME), "goose").map_err(Into::into)
+    }
+
+    async fn create_provider(
+        &self,
+        provider_name: &str,
+        model_config: goose::model::ModelConfig,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<Arc<dyn Provider>> {
+        (self.provider_factory)(provider_name.to_string(), model_config, extensions).await
     }
 
     async fn create_agent_for_session(
@@ -852,6 +936,16 @@ impl GooseAcpAgent {
     ) -> Result<NewSessionResponse, sacp::Error> {
         debug!(?args, "new session request");
 
+        // Allow the client to request a specific provider via _meta.provider,
+        // avoiding the double-create when the client would otherwise call
+        // _goose/session/provider/update immediately after.
+        let requested_provider = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("provider"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         let goose_session = self
             .session_manager
             .create_session(
@@ -864,6 +958,30 @@ impl GooseAcpAgent {
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create session: {}", e))
             })?;
+
+        if let Some(ref provider_name) = requested_provider {
+            self.session_manager
+                .update(&goose_session.id)
+                .provider_name(provider_name)
+                .apply()
+                .await
+                .map_err(|e| {
+                    sacp::Error::internal_error()
+                        .data(format!("Failed to set provider on session: {}", e))
+                })?;
+        }
+
+        // Reload the session so init_provider sees the updated provider_name.
+        let goose_session = if requested_provider.is_some() {
+            self.session_manager
+                .get_session(&goose_session.id, false)
+                .await
+                .map_err(|e| {
+                    sacp::Error::internal_error().data(format!("Failed to reload session: {}", e))
+                })?
+        } else {
+            goose_session
+        };
 
         let session_id = SessionId::new(goose_session.id.clone());
 
@@ -879,7 +997,6 @@ impl GooseAcpAgent {
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to set provider: {}", e))
             })?;
-
         Self::add_mcp_extensions(&agent, args.mcp_servers, &goose_session.id).await?;
 
         let session = GooseAcpSession {
@@ -901,25 +1018,55 @@ impl GooseAcpAgent {
 
         let model_state = build_model_state(&*provider).await?;
         let mode_state = build_mode_state(self.goose_mode)?;
+        let provider_selection = session_provider_selection(&goose_session).to_string();
+        let session_id_for_response = SessionId::new(goose_session.id);
+        let provider_options = build_provider_options(Some(provider.get_name())).await;
 
-        Ok(NewSessionResponse::new(SessionId::new(goose_session.id))
+        Ok(NewSessionResponse::new(session_id_for_response)
             .models(model_state.clone())
             .modes(mode_state.clone())
-            .config_options(build_config_options(&mode_state, &model_state)))
+            .config_options(build_config_options(
+                &mode_state,
+                &model_state,
+                &provider_selection,
+                provider_options,
+            )))
     }
 
     async fn init_provider(&self, agent: &Agent, session: &Session) -> Result<Arc<dyn Provider>> {
+        let config = self.load_config()?;
+        let global_provider = config.get_goose_provider().ok();
+        let provider_override = session
+            .provider_name
+            .as_deref()
+            .filter(|provider| *provider != DEFAULT_PROVIDER_ID);
+        let provider_name = provider_override
+            .map(ToOwned::to_owned)
+            .or_else(|| global_provider.clone())
+            .ok_or_else(|| anyhow::anyhow!("Could not configure agent: missing provider"))?;
+        let explicitly_switched =
+            provider_override.is_some() && provider_override != global_provider.as_deref();
         let model_config = match &session.model_config {
-            Some(config) => config.clone(),
+            Some(model_config) => model_config.clone(),
+            None if explicitly_switched => {
+                // The provider was set via _meta.provider (or similar) without an
+                // explicit model.  Use the provider's own default model from the
+                // registry so we don't leak the global config model (which belongs
+                // to a different provider) into this one.
+                let entry = goose::providers::get_from_registry(&provider_name).await?;
+                let default_model = &entry.metadata().default_model;
+                goose::model::ModelConfig::new(default_model)?.with_canonical_limits(&provider_name)
+            }
             None => {
-                let config_path = self.config_dir.join(CONFIG_YAML_NAME);
-                let config = Config::new(&config_path, "goose")?;
                 let model_id = config.get_goose_model()?;
-                let provider_name = config.get_goose_provider()?;
                 goose::model::ModelConfig::new(&model_id)?.with_canonical_limits(&provider_name)
             }
         };
-        let provider = (self.provider_factory)(model_config, Vec::new()).await?;
+        let extensions =
+            EnabledExtensionsState::extensions_or_default(Some(&session.extension_data), &config);
+        let provider = self
+            .create_provider(&provider_name, model_config, extensions)
+            .await?;
         agent.update_provider(provider.clone(), &session.id).await?;
         Ok(provider)
     }
@@ -993,7 +1140,6 @@ impl GooseAcpAgent {
                 sacp::Error::resource_not_found(Some(session_id.clone()))
                     .data(format!("Session not found: {}", session_id))
             })?;
-
         let loaded_mode = goose_session.goose_mode;
         let acp_session_id = SessionId::new(session_id.clone());
 
@@ -1003,7 +1149,6 @@ impl GooseAcpAgent {
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create agent: {}", e))
             })?;
-
         let provider = self
             .init_provider(&agent, &goose_session)
             .await
@@ -1011,8 +1156,15 @@ impl GooseAcpAgent {
                 sacp::Error::internal_error().data(format!("Failed to set provider: {}", e))
             })?;
 
+        agent
+            .update_goose_mode(loaded_mode, &session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to restore mode: {}", e))
+            })?;
         Self::add_mcp_extensions(&agent, args.mcp_servers, &session_id).await?;
 
+        let provider_selection = session_provider_selection(&goose_session).to_string();
         let conversation = goose_session.conversation.ok_or_else(|| {
             sacp::Error::internal_error()
                 .data(format!("Session {} has no conversation data", session_id))
@@ -1095,11 +1247,17 @@ impl GooseAcpAgent {
 
         let model_state = build_model_state(&*provider).await?;
         let mode_state = build_mode_state(goose_mode)?;
+        let provider_options = build_provider_options(Some(provider.get_name())).await;
 
         Ok(LoadSessionResponse::new()
             .models(model_state.clone())
             .modes(mode_state.clone())
-            .config_options(build_config_options(&mode_state, &model_state)))
+            .config_options(build_config_options(
+                &mode_state,
+                &model_state,
+                &provider_selection,
+                provider_options,
+            )))
     }
 
     async fn on_prompt(
@@ -1167,7 +1325,6 @@ impl GooseAcpAgent {
         if let Some(session) = sessions.get_mut(&session_id) {
             session.cancel_token = None;
         }
-
         Ok(PromptResponse::new(if was_cancelled {
             StopReason::Cancelled
         } else {
@@ -1198,30 +1355,41 @@ impl GooseAcpAgent {
         session_id: &str,
         model_id: &str,
     ) -> Result<SetSessionModelResponse, sacp::Error> {
-        let config_path = self.config_dir.join(CONFIG_YAML_NAME);
-        let config = Config::new(&config_path, "goose").map_err(|e| {
+        let config = self.load_config().map_err(|e| {
             sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
         })?;
-        let provider_name = config.get_goose_provider().map_err(|_| {
-            sacp::Error::internal_error().data("No provider configured".to_string())
+        let agent = self.get_session_agent(session_id, None).await?;
+        let current_provider = agent.provider().await.map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
         })?;
+        let provider_name = current_provider.get_name().to_string();
+        let extensions =
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let model_config = goose::model::ModelConfig::new(model_id)
             .map_err(|e| {
                 sacp::Error::invalid_params().data(format!("Invalid model config: {}", e))
             })?
             .with_canonical_limits(&provider_name);
-        let provider = (self.provider_factory)(model_config, Vec::new())
+        let provider = self
+            .create_provider(&provider_name, model_config, extensions)
             .await
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
             })?;
 
-        let agent = self.get_session_agent(session_id, None).await?;
         agent
             .update_provider(provider, session_id)
             .await
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to update provider: {}", e))
+            })?;
+
+        let mode = agent.goose_mode().await;
+        agent
+            .update_goose_mode(mode, session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to propagate mode: {}", e))
             })?;
 
         info!(session_id = %session_id, model_id = %model_id, "Model switched");
@@ -1232,6 +1400,11 @@ impl GooseAcpAgent {
         &self,
         session_id: &SessionId,
     ) -> Result<(SessionNotification, Vec<SessionConfigOption>), sacp::Error> {
+        let session = self
+            .session_manager
+            .get_session(&session_id.0, false)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
         let agent = self.get_session_agent(&session_id.0, None).await?;
         let provider = agent.provider().await.map_err(|e| {
             sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
@@ -1239,7 +1412,13 @@ impl GooseAcpAgent {
         let goose_mode = agent.goose_mode().await;
         let model_state = build_model_state(&*provider).await?;
         let mode_state = build_mode_state(goose_mode)?;
-        let config_options = build_config_options(&mode_state, &model_state);
+        let provider_options = build_provider_options(Some(provider.get_name())).await;
+        let config_options = build_config_options(
+            &mode_state,
+            &model_state,
+            session_provider_selection(&session),
+            provider_options,
+        );
         let notification = SessionNotification::new(
             session_id.clone(),
             SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options.clone())),
@@ -1265,6 +1444,120 @@ impl GooseAcpAgent {
             })?;
 
         Ok(SetSessionModeResponse::new())
+    }
+
+    async fn update_provider(
+        &self,
+        session_id: &str,
+        provider_name: &str,
+        model_name: Option<&str>,
+        context_limit: Option<usize>,
+        request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Result<Vec<SessionConfigOption>, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        let agent = self.get_session_agent(session_id, None).await?;
+        let current_provider = agent.provider().await.map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
+        })?;
+        let current_provider_name = current_provider.get_name();
+        let current_model = current_provider.get_model_config().model_name;
+        let has_default_overrides =
+            model_name.is_some() || context_limit.is_some() || request_params.is_some();
+        let use_default_provider = provider_name == DEFAULT_PROVIDER_ID;
+        let resolved_provider_name = if use_default_provider {
+            config.get_goose_provider().map_err(|e| {
+                sacp::Error::internal_error().data(format!(
+                    "Failed to resolve default provider from config: {}",
+                    e
+                ))
+            })?
+        } else {
+            provider_name.to_string()
+        };
+        let is_changing_provider = resolved_provider_name != current_provider_name;
+        let default_model = if let Some(model_name) = model_name {
+            model_name.to_string()
+        } else if use_default_provider {
+            config.get_goose_model().map_err(|e| {
+                sacp::Error::internal_error().data(format!(
+                    "Failed to resolve default model from config: {}",
+                    e
+                ))
+            })?
+        } else if is_changing_provider {
+            ACP_CURRENT_MODEL.to_string()
+        } else {
+            current_model
+        };
+        let model = model_name.unwrap_or(&default_model);
+        let model_config = goose::model::ModelConfig::new(model)
+            .map_err(|e| {
+                sacp::Error::invalid_params().data(format!("Invalid model config: {}", e))
+            })?
+            .with_canonical_limits(&resolved_provider_name)
+            .with_context_limit(context_limit)
+            .with_request_params(request_params);
+        let extensions =
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
+        let new_provider = self
+            .create_provider(&resolved_provider_name, model_config, extensions)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
+            })?;
+
+        agent
+            .update_provider(new_provider, session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to update provider: {}", e))
+            })?;
+
+        let mode = agent.goose_mode().await;
+        agent
+            .update_goose_mode(mode, session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to propagate mode: {}", e))
+            })?;
+
+        let provider = agent.provider().await.map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
+        })?;
+
+        if use_default_provider {
+            let update = self
+                .session_manager
+                .update(session_id)
+                .provider_name(DEFAULT_PROVIDER_ID);
+            if has_default_overrides {
+                let provider_model_config = provider.get_model_config();
+                update
+                    .model_config(provider_model_config)
+                    .apply()
+                    .await
+                    .map_err(|e| {
+                        sacp::Error::internal_error().data(format!(
+                            "Failed to persist default provider selection overrides: {}",
+                            e
+                        ))
+                    })?;
+            } else {
+                update.clear_model_config().apply().await.map_err(|e| {
+                    sacp::Error::internal_error().data(format!(
+                        "Failed to persist default provider selection: {}",
+                        e
+                    ))
+                })?;
+            }
+        }
+
+        let (_, config_options) = self
+            .build_config_update(&SessionId::new(session_id.to_string()))
+            .await?;
+        Ok(config_options)
     }
 
     async fn on_list_sessions(&self) -> Result<ListSessionsResponse, sacp::Error> {
@@ -1468,6 +1761,124 @@ impl GooseAcpAgent {
             warnings,
         })
     }
+
+    #[custom_method(UpdateProviderRequest)]
+    async fn on_update_provider(
+        &self,
+        req: UpdateProviderRequest,
+    ) -> Result<UpdateProviderResponse, sacp::Error> {
+        let config_options = self
+            .update_provider(
+                &req.session_id,
+                &req.provider,
+                req.model.as_deref(),
+                req.context_limit,
+                req.request_params,
+            )
+            .await?;
+        let config_options = config_options
+            .into_iter()
+            .map(|option| serde_json::to_value(&option))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(UpdateProviderResponse { config_options })
+    }
+
+    #[custom_method(ListProvidersRequest)]
+    async fn on_list_providers(
+        &self,
+        _req: ListProvidersRequest,
+    ) -> Result<ListProvidersResponse, sacp::Error> {
+        Ok(ListProvidersResponse {
+            providers: list_provider_entries(None).await,
+        })
+    }
+
+    #[custom_method(ReadConfigRequest)]
+    async fn on_read_config(
+        &self,
+        req: ReadConfigRequest,
+    ) -> Result<ReadConfigResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        let response = match config.get_param::<serde_json::Value>(&req.key) {
+            Ok(value) => ReadConfigResponse { value },
+            Err(goose::config::ConfigError::NotFound(_)) => ReadConfigResponse {
+                value: serde_json::Value::Null,
+            },
+            Err(e) => return Err(sacp::Error::internal_error().data(e.to_string())),
+        };
+        Ok(response)
+    }
+
+    #[custom_method(UpsertConfigRequest)]
+    async fn on_upsert_config(
+        &self,
+        req: UpsertConfigRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .set_param(&req.key, &req.value)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(RemoveConfigRequest)]
+    async fn on_remove_config(
+        &self,
+        req: RemoveConfigRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .delete(&req.key)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(CheckSecretRequest)]
+    async fn on_check_secret(
+        &self,
+        req: CheckSecretRequest,
+    ) -> Result<CheckSecretResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        let exists = config.get_secret::<serde_json::Value>(&req.key).is_ok();
+        Ok(CheckSecretResponse { exists })
+    }
+
+    #[custom_method(UpsertSecretRequest)]
+    async fn on_upsert_secret(
+        &self,
+        req: UpsertSecretRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .set_secret(&req.key, &req.value)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(RemoveSecretRequest)]
+    async fn on_remove_secret(
+        &self,
+        req: RemoveSecretRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .delete_secret(&req.key)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
 }
 
 pub struct GooseAcpHandler {
@@ -1545,6 +1956,12 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             .clone();
                         let session_id = req.session_id.clone();
                         match req.config_id.0.as_ref() {
+                            "provider" => {
+                                match agent.update_provider(&session_id.0, &value_id.0, None, None, None).await {
+                                    Ok(_) => {}
+                                    Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                }
+                            }
                             "mode" => {
                                 match agent.on_set_mode(&session_id.0, &value_id.0).await {
                                     Ok(_) => {}
@@ -2089,11 +2506,23 @@ print(\"hello, world\")
 
     #[test_case(
         build_mode_state(GooseMode::Auto).unwrap(),
+        "openai",
+        vec![
+            SessionConfigSelectOption::new("anthropic", "anthropic"),
+            SessionConfigSelectOption::new("openai", "openai"),
+        ],
         SessionModelState::new(
             ModelId::new("gpt-4"),
             vec![ModelInfo::new(ModelId::new("gpt-4"), "gpt-4"), ModelInfo::new(ModelId::new("gpt-3.5"), "gpt-3.5")],
         )
         => vec![
+            SessionConfigOption::select(
+                "provider", "Provider", "openai",
+                vec![
+                    SessionConfigSelectOption::new("anthropic", "anthropic"),
+                    SessionConfigSelectOption::new("openai", "openai"),
+                ],
+            ),
             SessionConfigOption::select(
                 "mode", "Mode", "auto",
                 vec![
@@ -2115,8 +2544,14 @@ print(\"hello, world\")
     )]
     #[test_case(
         build_mode_state(GooseMode::Approve).unwrap(),
+        "openai",
+        vec![SessionConfigSelectOption::new("openai", "openai")],
         SessionModelState::new(ModelId::new("only-model"), vec![ModelInfo::new(ModelId::new("only-model"), "only-model")])
         => vec![
+            SessionConfigOption::select(
+                "provider", "Provider", "openai",
+                vec![SessionConfigSelectOption::new("openai", "openai")],
+            ),
             SessionConfigOption::select(
                 "mode", "Mode", "approve",
                 vec![
@@ -2135,8 +2570,10 @@ print(\"hello, world\")
     )]
     fn test_build_config_options(
         mode_state: SessionModeState,
+        provider_name: &'static str,
+        provider_options: Vec<SessionConfigSelectOption>,
         model_state: SessionModelState,
     ) -> Vec<SessionConfigOption> {
-        build_config_options(&mode_state, &model_state)
+        build_config_options(&mode_state, &model_state, provider_name, provider_options)
     }
 }
