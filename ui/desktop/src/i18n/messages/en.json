@@ -2021,6 +2021,12 @@
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item found} other{# items found}}"
   },
+  "mentionPopover.loadingCommands": {
+    "defaultMessage": "Loading commands..."
+  },
+  "mentionPopover.noCommandsFound": {
+    "defaultMessage": "No commands found matching \"{query}\""
+  },
   "mentionPopover.noItemsFound": {
     "defaultMessage": "No items found matching \"{query}\""
   },
