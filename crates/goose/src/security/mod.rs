@@ -1,5 +1,6 @@
 pub mod adversary_inspector;
 pub mod classification_client;
+pub mod egress_inspector;
 pub mod patterns;
 pub mod scanner;
 pub mod security_inspector;
@@ -135,16 +136,12 @@ impl SecurityManager {
                     let above_threshold = analysis_result.confidence > config_threshold;
                     let finding_id = format!("SEC-{}", Uuid::new_v4().simple());
 
-                    let tool_call_json =
-                        serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
-
                     tracing::warn!(
                         monotonic_counter.goose.prompt_injection_finding = 1,
                         threat_type = "command_injection",
                         above_threshold = above_threshold,
                         tool_name = %tool_call.name,
                         tool_request_id = %tool_request.id,
-                        tool_call_json = %tool_call_json,
                         confidence = analysis_result.confidence,
                         explanation = %sanitized_explanation,
                         finding_id = %finding_id,
@@ -167,14 +164,10 @@ impl SecurityManager {
                         });
                     }
                 } else if analysis_result.scanned {
-                    let tool_call_json =
-                        serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
-
                     tracing::info!(
                         monotonic_counter.goose.prompt_injection_tool_call_passed = 1,
                         tool_name = %tool_call.name,
                         tool_request_id = %tool_request.id,
-                        tool_call_json = %tool_call_json,
                         confidence = analysis_result.confidence,
                         explanation = %sanitized_explanation,
                         "Current tool call passed security analysis"

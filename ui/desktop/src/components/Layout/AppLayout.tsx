@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Menu } from 'lucide-react';
+import { defineMessages, useIntl } from '../../i18n';
 import { Button } from '../ui/button';
 import ChatSessionsContainer from '../ChatSessionsContainer';
 import { useChatContext } from '../../contexts/ChatContext';
@@ -11,6 +12,17 @@ import { NAV_DIMENSIONS, Z_INDEX } from './constants';
 import { cn } from '../../utils';
 import { UserInput } from '../../types/message';
 
+const i18n = defineMessages({
+  closeNavigation: {
+    id: 'appLayout.closeNavigation',
+    defaultMessage: 'Close navigation',
+  },
+  openNavigation: {
+    id: 'appLayout.openNavigation',
+    defaultMessage: 'Open navigation',
+  },
+});
+
 interface AppLayoutContentProps {
   activeSessions: Array<{
     sessionId: string;
@@ -19,6 +31,7 @@ interface AppLayoutContentProps {
 }
 
 const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) => {
+  const intl = useIntl();
   const location = useLocation();
   const safeIsMacOS = (window?.electron?.platform || 'darwin') === 'darwin';
   const chatContext = useChatContext();
@@ -33,6 +46,82 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
     isHorizontalNav,
     isCondensedIconOnly,
   } = useNavigationContext();
+
+  const [navWidth, setNavWidth] = useState<number | null>(null);
+  const navWidthRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    window.electron.getSetting('navExpandedWidth').then((delta) => {
+      if (delta !== null) {
+        setNavWidth(
+          Math.min(
+            NAV_DIMENSIONS.MAX_NAV_WIDTH,
+            Math.max(NAV_DIMENSIONS.MIN_NAV_WIDTH, NAV_DIMENSIONS.CONDENSED_WIDTH + delta)
+          )
+        );
+      }
+    });
+  }, []);
+
+  const isResizable =
+    !isHorizontalNav && !isCondensedIconOnly && effectiveNavigationMode === 'push' && isNavExpanded;
+
+  const dragStateRef = useRef<{ startX: number; startWidth: number; direction: 1 | -1 } | null>(
+    null
+  );
+  const navRef = useRef<HTMLDivElement>(null);
+
+  const onMouseMove = useCallback((e: MouseEvent) => {
+    if (!dragStateRef.current) return;
+    const delta = (e.clientX - dragStateRef.current.startX) * dragStateRef.current.direction;
+    const newWidth = Math.min(
+      NAV_DIMENSIONS.MAX_NAV_WIDTH,
+      Math.max(NAV_DIMENSIONS.MIN_NAV_WIDTH, dragStateRef.current.startWidth + delta)
+    );
+    navWidthRef.current = newWidth;
+    setNavWidth(newWidth);
+  }, []);
+
+  const onMouseUp = useCallback(() => {
+    dragStateRef.current = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+    if (navWidthRef.current !== null) {
+      window.electron.setSetting(
+        'navExpandedWidth',
+        navWidthRef.current - NAV_DIMENSIONS.CONDENSED_WIDTH
+      );
+    }
+  }, [onMouseMove]);
+
+  const onHandleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const currentWidth =
+        navRef.current?.getBoundingClientRect().width ?? NAV_DIMENSIONS.CONDENSED_WIDTH;
+      dragStateRef.current = {
+        startX: e.clientX,
+        startWidth: currentWidth,
+        direction: navigationPosition === 'right' ? -1 : 1,
+      };
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [navigationPosition, onMouseMove, onMouseUp]
+  );
+
+  useEffect(() => {
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [onMouseMove, onMouseUp]);
 
   if (!chatContext) {
     throw new Error('AppLayoutContent must be used within ChatProvider');
@@ -123,7 +212,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
           className="no-drag hover:!bg-background-tertiary"
           variant="ghost"
           size="xs"
-          title={isNavExpanded ? 'Close navigation' : 'Open navigation'}
+          title={isNavExpanded ? intl.formatMessage(i18n.closeNavigation) : intl.formatMessage(i18n.openNavigation)}
         >
           <Menu className="w-5 h-5" />
         </Button>
@@ -134,6 +223,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         {/* Push mode navigation (inline) with animation */}
         {effectiveNavigationMode === 'push' && (
           <motion.div
+            ref={navRef}
             key="push-nav"
             initial={false}
             animate={{
@@ -141,10 +231,10 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
                 ? '100%'
                 : isNavExpanded
                   ? effectiveNavigationStyle === 'expanded'
-                    ? '30%'
+                    ? (navWidth ?? '30%')
                     : isCondensedIconOnly
                       ? NAV_DIMENSIONS.CONDENSED_ICON_ONLY_WIDTH
-                      : NAV_DIMENSIONS.CONDENSED_WIDTH
+                      : (navWidth ?? NAV_DIMENSIONS.CONDENSED_WIDTH)
                   : 0,
               height: isHorizontalNav
                 ? isNavExpanded
@@ -161,7 +251,9 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
             }}
             style={{
               maxWidth:
-                !isHorizontalNav && effectiveNavigationStyle === 'expanded' ? '400px' : undefined,
+                !isHorizontalNav && effectiveNavigationStyle === 'expanded'
+                  ? NAV_DIMENSIONS.MAX_NAV_WIDTH
+                  : undefined,
               minWidth:
                 !isHorizontalNav && effectiveNavigationStyle === 'condensed' && isNavExpanded
                   ? isCondensedIconOnly
@@ -177,14 +269,31 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
               height: !isHorizontalNav ? '100%' : undefined,
             }}
             className={cn(
-              'flex-shrink-0',
-              effectiveNavigationStyle === 'condensed' && !isHorizontalNav
-                ? 'overflow-visible'
-                : 'overflow-hidden',
+              'relative flex-shrink-0 overflow-visible',
               isHorizontalNav ? 'w-full' : 'h-full'
             )}
           >
-            <Navigation />
+            <div
+              className={cn(
+                'w-full h-full',
+                effectiveNavigationStyle === 'condensed' && !isHorizontalNav
+                  ? 'overflow-visible'
+                  : 'overflow-hidden'
+              )}
+            >
+              <Navigation />
+            </div>
+            {isResizable && (
+              <div
+                onMouseDown={onHandleMouseDown}
+                className={cn(
+                  'absolute top-0 w-2 h-full z-20 cursor-col-resize group flex items-center justify-center',
+                  navigationPosition === 'right' ? '-left-1' : '-right-1'
+                )}
+              >
+                <div className="w-px h-full bg-border-subtle opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            )}
           </motion.div>
         )}
 

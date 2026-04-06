@@ -4,6 +4,14 @@ import { Button } from './button';
 import type { VariantProps } from 'class-variance-authority';
 import { buttonVariants } from './button';
 import { cn } from '../../utils';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  back: {
+    id: 'backButton.back',
+    defaultMessage: 'Back',
+  },
+});
 
 interface BackButtonProps extends VariantProps<typeof buttonVariants> {
   onClick?: () => void;
@@ -21,6 +29,7 @@ const BackButton: React.FC<BackButtonProps> = ({
   showText = true,
   ...props
 }) => {
+  const intl = useIntl();
   const handleExit = useCallback(() => {
     if (onClick) {
       onClick(); // Custom onClick handler passed via props
@@ -75,7 +84,7 @@ const BackButton: React.FC<BackButtonProps> = ({
       {...props}
     >
       <ArrowLeft />
-      {showText && 'Back'}
+      {showText && intl.formatMessage(i18n.back)}
     </Button>
   );
 };

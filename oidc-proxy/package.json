@@ -1,0 +1,15 @@
+{
+  "name": "oidc-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0",
+    "vitest": "^3.0.0",
+    "@cloudflare/vitest-pool-workers": "^0.8.0"
+  }
+}

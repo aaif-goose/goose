@@ -244,7 +244,7 @@ html {
 .hero--logo {
   display: 'flex';
   justify-content: 'center';
-  margin-bottom: '1rem' 
+  margin-bottom: '1rem'
 }
 
 .pill-button {
@@ -450,7 +450,7 @@ html, body {
 /* Ensure all containers respect viewport width */
 .container {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Prevent navbar from causing horizontal overflow */
@@ -461,7 +461,7 @@ html, body {
 /* Ensure main content doesn't overflow */
 main {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Custom scrollbar for filter sections */

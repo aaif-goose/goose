@@ -81,8 +81,7 @@ fn get_extensions_map() -> IndexMap<String, ExtensionEntry> {
 fn save_extensions_map(extensions: IndexMap<String, ExtensionEntry>) {
     let config = Config::global();
     if let Err(e) = config.set_param(EXTENSIONS_CONFIG_KEY, &extensions) {
-        // TODO(jack) why is this just a debug statement?
-        tracing::debug!("Failed to save extensions config: {}", e);
+        tracing::warn!("Failed to save extensions config: {}", e);
     }
 }
 

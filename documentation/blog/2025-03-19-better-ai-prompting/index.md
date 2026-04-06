@@ -58,7 +58,7 @@ which might get you a response that's hard to follow, you could say:
 
 ✅ Better Prompt:
  
->_**goose, walk me through what MCPs are and how they're used in gosoe, step by step**_ 
+>_**goose, walk me through what MCPs are and how they're used in goose, step by step**_
 
 This forces goose to slow down and explain each part clearly, making it easier to understand.
 

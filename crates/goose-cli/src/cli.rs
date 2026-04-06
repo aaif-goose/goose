@@ -3,12 +3,15 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
+#[cfg(feature = "telemetry")]
 use goose::posthog::get_telemetry_choice;
 use goose::recipe::Recipe;
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
-use crate::commands::configure::{configure_telemetry_consent_dialog, handle_configure};
+#[cfg(feature = "telemetry")]
+use crate::commands::configure::configure_telemetry_consent_dialog;
+use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
 use crate::commands::project::{handle_project_default, handle_projects_interactive};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
@@ -729,6 +732,26 @@ enum Command {
         builtins: Vec<String>,
     },
 
+    /// Start ACP server over HTTP and WebSocket
+    #[command(about = "Start ACP server over HTTP and WebSocket")]
+    Serve {
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        #[arg(long, default_value = "3284")]
+        port: u16,
+
+        #[arg(
+            long = "with-builtin",
+            value_name = "NAME",
+            help = "Add builtin extensions by name (e.g., 'developer' or multiple: 'developer,github')",
+            long_help = "Add one or more builtin extensions that are bundled with goose by specifying their names, comma-separated",
+            value_delimiter = ',',
+            action = clap::ArgAction::Append
+        )]
+        builtins: Vec<String>,
+    },
+
     /// Start or resume interactive chat sessions
     #[command(
         about = "Start or resume interactive chat sessions",
@@ -865,6 +888,7 @@ enum Command {
         command: TermCommand,
     },
     /// Manage local inference models
+    #[cfg(feature = "local-inference")]
     #[command(about = "Manage local inference models", visible_alias = "lm")]
     LocalModels {
         #[command(subcommand)]
@@ -892,6 +916,7 @@ enum Command {
     },
 }
 
+#[cfg(feature = "local-inference")]
 #[derive(Subcommand)]
 enum LocalModelsCommand {
     /// Search HuggingFace for GGUF models
@@ -1004,6 +1029,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Info { .. }) => "info",
         Some(Command::Mcp { .. }) => "mcp",
         Some(Command::Acp { .. }) => "acp",
+        Some(Command::Serve { .. }) => "serve",
         Some(Command::Session { .. }) => "session",
         Some(Command::Project {}) => "project",
         Some(Command::Projects) => "projects",
@@ -1013,6 +1039,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Update { .. }) => "update",
         Some(Command::Recipe { .. }) => "recipe",
         Some(Command::Term { .. }) => "term",
+        #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
         Some(Command::Completion { .. }) => "completion",
         Some(Command::ValidateExtensions { .. }) => "validate-extensions",
@@ -1029,6 +1056,35 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
         McpCommand::Memory => serve(MemoryServer::new()).await?,
         McpCommand::Tutorial => serve(TutorialServer::new()).await?,
     }
+    Ok(())
+}
+
+async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) -> Result<()> {
+    use goose::config::paths::Paths;
+    use goose_acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+    use tracing::info;
+
+    let builtins = if builtins.is_empty() {
+        vec!["developer".to_string()]
+    } else {
+        builtins
+    };
+
+    let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
+        builtins,
+        data_dir: Paths::data_dir(),
+        config_dir: Paths::config_dir(),
+    }));
+    let router = goose_acp::transport::create_router(server);
+
+    let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
+    info!("Starting ACP server on {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, router).await?;
+
     Ok(())
 }
 
@@ -1105,6 +1161,7 @@ async fn handle_interactive_session(
     session_opts: SessionOptions,
     extension_opts: ExtensionOptions,
 ) -> Result<()> {
+    #[cfg(feature = "telemetry")]
     if get_telemetry_choice().is_none() {
         configure_telemetry_consent_dialog()?;
     }
@@ -1329,6 +1386,7 @@ async fn handle_run_command(
     output_opts: OutputOptions,
     model_opts: ModelOptions,
 ) -> Result<()> {
+    #[cfg(feature = "telemetry")]
     if run_behavior.interactive && get_telemetry_choice().is_none() {
         configure_telemetry_consent_dialog()?;
     }
@@ -1473,6 +1531,7 @@ async fn handle_term_subcommand(command: TermCommand) -> Result<()> {
     }
 }
 
+#[cfg(feature = "local-inference")]
 async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> {
     use goose::providers::local_inference::hf_models;
     use goose::providers::local_inference::local_model_registry::{
@@ -1639,6 +1698,7 @@ async fn handle_default_session() -> Result<()> {
         return handle_configure().await;
     }
 
+    #[cfg(feature = "telemetry")]
     if get_telemetry_choice().is_none() {
         configure_telemetry_consent_dialog()?;
     }
@@ -1698,6 +1758,11 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Info { verbose }) => handle_info(verbose),
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
         Some(Command::Acp { builtins }) => goose_acp::server::run(builtins).await,
+        Some(Command::Serve {
+            host,
+            port,
+            builtins,
+        }) => handle_serve_command(host, port, builtins).await,
         Some(Command::Session {
             command: Some(cmd), ..
         }) => handle_session_subcommand(cmd).await,
@@ -1759,6 +1824,7 @@ pub async fn cli() -> anyhow::Result<()> {
         }
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
+        #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,
         Some(Command::ValidateExtensions { file }) => {
             use goose::agents::validate_extensions::validate_bundled_extensions;

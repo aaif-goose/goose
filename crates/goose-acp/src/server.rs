@@ -3,7 +3,8 @@ use crate::fs::AcpTools;
 use crate::tools::AcpAwareToolMeta;
 use anyhow::Result;
 use fs_err as fs;
-use goose::acp::PermissionDecision;
+use futures::future::BoxFuture;
+use goose::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use goose::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use goose::agents::mcp_client::McpClientTrait;
 use goose::agents::platform_extensions::developer::DeveloperClient;
@@ -20,36 +21,55 @@ use goose::mcp_utils::ToolResult;
 use goose::permission::permission_confirmation::PrincipalType;
 use goose::permission::{Permission, PermissionConfirmation};
 use goose::providers::base::Provider;
-use goose::providers::provider_registry::ProviderConstructor;
 use goose::session::session_manager::SessionType;
-use goose::session::{Session, SessionManager};
+use goose::session::{EnabledExtensionsState, Session, SessionManager};
 use goose_acp_macros::custom_methods;
 use rmcp::model::{CallToolResult, RawContent, ResourceContents, Role};
 use sacp::schema::{
-    AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse, BlobResourceContents,
-    CancelNotification, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
-    EmbeddedResourceResource, FileSystemCapability, ImageContent, InitializeRequest,
-    InitializeResponse, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    McpCapabilities, McpServer, ModelId, ModelInfo, NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
-    SessionId, SessionInfo, SessionListCapabilities, SessionMode, SessionModeId, SessionModeState,
-    SessionModelState, SessionNotification, SessionUpdate, SetSessionModeRequest,
-    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
-    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    AgentCapabilities, AuthMethod, AuthMethodAgent, AuthenticateRequest, AuthenticateResponse,
+    BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
+    ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
+    EmbeddedResourceResource, FileSystemCapabilities, ImageContent, InitializeRequest,
+    InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
+    LoadSessionResponse, McpCapabilities, McpServer, ModelId, ModelInfo, NewSessionRequest,
+    NewSessionResponse, PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest,
+    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, ResourceLink,
+    SessionCapabilities, SessionCloseCapabilities, SessionConfigOption,
+    SessionConfigOptionCategory, SessionConfigSelectOption, SessionId, SessionInfo,
+    SessionListCapabilities, SessionMode, SessionModeId, SessionModeState, SessionModelState,
+    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
+    SetSessionModelRequest, SetSessionModelResponse, StopReason, TextContent, TextResourceContents,
+    ToolCall, ToolCallContent, ToolCallId, ToolCallLocation, ToolCallStatus, ToolCallUpdate,
+    ToolCallUpdateFields, ToolKind,
 };
-use sacp::{AgentToClient, ByteStreams, Handled, JrConnectionCx, JrMessageHandler, MessageCx};
+use sacp::util::MatchDispatchFrom;
+use sacp::{
+    Agent as SacpAgent, ByteStreams, Client, ConnectionTo, Dispatch, HandleDispatchFrom, Handled,
+    Responder,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
+use strum::{EnumMessage, VariantNames};
 use tokio::sync::{Mutex, OnceCell};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-// Agent binds provider, extensions, and permission channels to a single session.
-// ACP has no session/close, so sessions accumulate until transport closes.
+pub type AcpProviderFactory = Arc<
+    dyn Fn(
+            String,
+            goose::model::ModelConfig,
+            Vec<ExtensionConfig>,
+        ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
+        + Send
+        + Sync,
+>;
+
+const DEFAULT_PROVIDER_ID: &str = "goose";
+const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
+
 struct GooseAcpSession {
     agent: Arc<Agent>,
     messages: Conversation,
@@ -59,9 +79,9 @@ struct GooseAcpSession {
 
 pub struct GooseAcpAgent {
     sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
-    provider_factory: ProviderConstructor,
+    provider_factory: AcpProviderFactory,
     builtins: Vec<String>,
-    client_fs_capabilities: OnceCell<FileSystemCapability>,
+    client_fs_capabilities: OnceCell<FileSystemCapabilities>,
     client_terminal: OnceCell<bool>,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
@@ -306,25 +326,72 @@ fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
     }
 }
 
-async fn build_model_state(provider: &dyn Provider, current_model: &str) -> SessionModelState {
-    let models = match provider.fetch_recommended_models().await {
-        Ok(models) => models,
-        Err(e) => {
-            warn!(error = %e, "failed to fetch models, model selection will be unavailable");
-            vec![]
-        }
-    };
-    SessionModelState::new(
-        ModelId::new(current_model),
+async fn build_model_state(provider: &dyn Provider) -> Result<SessionModelState, sacp::Error> {
+    let models = provider
+        .fetch_recommended_models()
+        .await
+        .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+    let current_model = &provider.get_model_config().model_name;
+    Ok(SessionModelState::new(
+        ModelId::new(current_model.as_str()),
         models
             .iter()
             .map(|name| ModelInfo::new(ModelId::new(&**name), &**name))
             .collect(),
-    )
+    ))
+}
+
+async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderListEntry> {
+    let mut providers = goose::providers::providers()
+        .await
+        .into_iter()
+        .map(|(metadata, _)| ProviderListEntry {
+            id: metadata.name,
+            label: metadata.display_name,
+        })
+        .collect::<Vec<_>>();
+    providers.sort_by(|left, right| left.id.cmp(&right.id));
+    providers.dedup_by(|left, right| left.id == right.id);
+
+    if let Some(current_provider) = current_provider {
+        if current_provider != DEFAULT_PROVIDER_ID
+            && !providers
+                .iter()
+                .any(|provider| provider.id == current_provider)
+        {
+            providers.push(ProviderListEntry {
+                id: current_provider.to_string(),
+                label: current_provider.to_string(),
+            });
+            providers.sort_by(|left, right| left.id.cmp(&right.id));
+        }
+    }
+
+    let mut entries = Vec::with_capacity(providers.len() + 1);
+    entries.push(ProviderListEntry {
+        id: DEFAULT_PROVIDER_ID.to_string(),
+        label: DEFAULT_PROVIDER_LABEL.to_string(),
+    });
+    entries.extend(providers);
+    entries
+}
+
+async fn build_provider_options(current_provider: Option<&str>) -> Vec<SessionConfigSelectOption> {
+    list_provider_entries(current_provider)
+        .await
+        .into_iter()
+        .map(|provider| SessionConfigSelectOption::new(provider.id, provider.label))
+        .collect()
+}
+
+fn session_provider_selection(session: &Session) -> &str {
+    session
+        .provider_name
+        .as_deref()
+        .unwrap_or(DEFAULT_PROVIDER_ID)
 }
 
 fn build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::Error> {
-    use strum::{EnumMessage, VariantNames};
     let mut available = Vec::with_capacity(GooseMode::VARIANTS.len());
     for &name in GooseMode::VARIANTS {
         let goose_mode: GooseMode = name.parse().map_err(|_| {
@@ -341,13 +408,57 @@ fn build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::E
     ))
 }
 
+fn build_config_options(
+    mode_state: &SessionModeState,
+    model_state: &SessionModelState,
+    provider_selection: &str,
+    provider_options: Vec<SessionConfigSelectOption>,
+) -> Vec<SessionConfigOption> {
+    let mode_options: Vec<SessionConfigSelectOption> = mode_state
+        .available_modes
+        .iter()
+        .map(|m| {
+            SessionConfigSelectOption::new(m.id.0.clone(), m.name.clone())
+                .description(m.description.clone())
+        })
+        .collect();
+    let model_options: Vec<SessionConfigSelectOption> = model_state
+        .available_models
+        .iter()
+        .map(|m| SessionConfigSelectOption::new(m.model_id.0.clone(), m.name.clone()))
+        .collect();
+    vec![
+        SessionConfigOption::select(
+            "provider",
+            "Provider",
+            provider_selection.to_string(),
+            provider_options,
+        ),
+        SessionConfigOption::select(
+            "mode",
+            "Mode",
+            mode_state.current_mode_id.0.clone(),
+            mode_options,
+        )
+        .category(SessionConfigOptionCategory::Mode),
+        SessionConfigOption::select(
+            "model",
+            "Model",
+            model_state.current_model_id.0.clone(),
+            model_options,
+        )
+        .category(SessionConfigOptionCategory::Model),
+    ]
+}
+
 impl GooseAcpAgent {
     pub fn permission_manager(&self) -> Arc<PermissionManager> {
         Arc::clone(&self.permission_manager)
     }
 
+    // TODO: goose reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
     pub async fn new(
-        provider_factory: ProviderConstructor,
+        provider_factory: AcpProviderFactory,
         builtins: Vec<String>,
         data_dir: std::path::PathBuf,
         config_dir: std::path::PathBuf,
@@ -371,9 +482,22 @@ impl GooseAcpAgent {
         })
     }
 
+    fn load_config(&self) -> Result<Config> {
+        Config::new(self.config_dir.join(CONFIG_YAML_NAME), "goose").map_err(Into::into)
+    }
+
+    async fn create_provider(
+        &self,
+        provider_name: &str,
+        model_config: goose::model::ModelConfig,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<Arc<dyn Provider>> {
+        (self.provider_factory)(provider_name.to_string(), model_config, extensions).await
+    }
+
     async fn create_agent_for_session(
         &self,
-        cx: Option<&JrConnectionCx<AgentToClient>>,
+        cx: Option<&ConnectionTo<Client>>,
         session_id: Option<&SessionId>,
         goose_mode: Option<GooseMode>,
     ) -> Result<Arc<Agent>> {
@@ -439,20 +563,29 @@ impl GooseAcpAgent {
         let skip_developer = acp_developer.is_some();
         let sid_str = session_id.map(|s| s.0.to_string());
 
-        for ext in extensions {
-            if skip_developer && ext.name() == "developer" {
-                continue;
-            }
-            let name = ext.name().to_string();
-            match agent
-                .extension_manager
-                .add_extension(ext, None, None, sid_str.as_deref())
-                .await
-            {
-                Ok(_) => info!(extension = %name, "extension loaded"),
-                Err(e) => warn!(extension = %name, error = %e, "extension load failed"),
-            }
+        if skip_developer {
+            extensions.retain(|ext| ext.name() != "developer");
         }
+
+        let ext_manager = &agent.extension_manager;
+        let extension_futures = extensions
+            .into_iter()
+            .map(|ext| {
+                let ext_manager = Arc::clone(ext_manager);
+                let sid = sid_str.clone();
+                async move {
+                    let name = ext.name().to_string();
+                    match ext_manager
+                        .add_extension(ext, None, None, sid.as_deref())
+                        .await
+                    {
+                        Ok(_) => info!(extension = %name, "extension loaded"),
+                        Err(e) => warn!(extension = %name, error = %e, "extension load failed"),
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        futures::future::join_all(extension_futures).await;
 
         if let Some((client, config)) = acp_developer {
             let info = client.get_info().cloned();
@@ -506,7 +639,7 @@ impl GooseAcpAgent {
         content_item: &MessageContent,
         session_id: &SessionId,
         session: &mut GooseAcpSession,
-        cx: &JrConnectionCx<AgentToClient>,
+        cx: &ConnectionTo<Client>,
     ) -> Result<(), sacp::Error> {
         match content_item {
             MessageContent::Text(text) => {
@@ -562,7 +695,7 @@ impl GooseAcpAgent {
         tool_request: &goose::conversation::message::ToolRequest,
         session_id: &SessionId,
         session: &mut GooseAcpSession,
-        cx: &JrConnectionCx<AgentToClient>,
+        cx: &ConnectionTo<Client>,
     ) -> Result<(), sacp::Error> {
         session
             .tool_requests
@@ -592,7 +725,7 @@ impl GooseAcpAgent {
         tool_response: &goose::conversation::message::ToolResponse,
         session_id: &SessionId,
         session: &mut GooseAcpSession,
-        cx: &JrConnectionCx<AgentToClient>,
+        cx: &ConnectionTo<Client>,
     ) -> Result<(), sacp::Error> {
         let status = match &tool_response.tool_result {
             Ok(result) if result.is_error == Some(true) => ToolCallStatus::Failed,
@@ -635,7 +768,7 @@ impl GooseAcpAgent {
     #[allow(clippy::too_many_arguments)]
     fn handle_tool_permission_request(
         &self,
-        cx: &JrConnectionCx<AgentToClient>,
+        cx: &ConnectionTo<Client>,
         agent: &Arc<Agent>,
         session_id: &SessionId,
         request_id: String,
@@ -776,7 +909,11 @@ impl GooseAcpAgent {
 
         let capabilities = AgentCapabilities::new()
             .load_session(true)
-            .session_capabilities(SessionCapabilities::new().list(SessionListCapabilities::new()))
+            .session_capabilities(
+                SessionCapabilities::new()
+                    .list(SessionListCapabilities::new())
+                    .close(SessionCloseCapabilities::new()),
+            )
             .prompt_capabilities(
                 PromptCapabilities::new()
                     .image(true)
@@ -786,34 +923,65 @@ impl GooseAcpAgent {
             .mcp_capabilities(McpCapabilities::new().http(true));
         Ok(InitializeResponse::new(args.protocol_version)
             .agent_capabilities(capabilities)
-            .auth_methods(vec![AuthMethod::new(
-                "goose-provider",
-                "Configure Provider",
-            )
-            .description(
-                "Run `goose configure` to set up your AI provider and API key",
+            .auth_methods(vec![AuthMethod::Agent(
+                AuthMethodAgent::new("goose-provider", "Configure Provider")
+                    .description("Run `goose configure` to set up your AI provider and API key"),
             )]))
     }
 
     async fn on_new_session(
         &self,
-        cx: &JrConnectionCx<AgentToClient>,
+        cx: &ConnectionTo<Client>,
         args: NewSessionRequest,
     ) -> Result<NewSessionResponse, sacp::Error> {
         debug!(?args, "new session request");
+
+        // Allow the client to request a specific provider via _meta.provider,
+        // avoiding the double-create when the client would otherwise call
+        // _goose/session/provider/update immediately after.
+        let requested_provider = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("provider"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let goose_session = self
             .session_manager
             .create_session(
                 args.cwd.clone(),
                 "ACP Session".to_string(),
-                SessionType::User,
+                SessionType::Acp,
                 self.goose_mode,
             )
             .await
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create session: {}", e))
             })?;
+
+        if let Some(ref provider_name) = requested_provider {
+            self.session_manager
+                .update(&goose_session.id)
+                .provider_name(provider_name)
+                .apply()
+                .await
+                .map_err(|e| {
+                    sacp::Error::internal_error()
+                        .data(format!("Failed to set provider on session: {}", e))
+                })?;
+        }
+
+        // Reload the session so init_provider sees the updated provider_name.
+        let goose_session = if requested_provider.is_some() {
+            self.session_manager
+                .get_session(&goose_session.id, false)
+                .await
+                .map_err(|e| {
+                    sacp::Error::internal_error().data(format!("Failed to reload session: {}", e))
+                })?
+        } else {
+            goose_session
+        };
 
         let session_id = SessionId::new(goose_session.id.clone());
 
@@ -829,7 +997,6 @@ impl GooseAcpAgent {
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to set provider: {}", e))
             })?;
-
         Self::add_mcp_extensions(&agent, args.mcp_servers, &goose_session.id).await?;
 
         let session = GooseAcpSession {
@@ -849,27 +1016,57 @@ impl GooseAcpAgent {
             "Session started"
         );
 
-        let model_state =
-            build_model_state(&*provider, &provider.get_model_config().model_name).await;
+        let model_state = build_model_state(&*provider).await?;
         let mode_state = build_mode_state(self.goose_mode)?;
+        let provider_selection = session_provider_selection(&goose_session).to_string();
+        let session_id_for_response = SessionId::new(goose_session.id);
+        let provider_options = build_provider_options(Some(provider.get_name())).await;
 
-        Ok(NewSessionResponse::new(SessionId::new(goose_session.id))
-            .models(model_state)
-            .modes(mode_state))
+        Ok(NewSessionResponse::new(session_id_for_response)
+            .models(model_state.clone())
+            .modes(mode_state.clone())
+            .config_options(build_config_options(
+                &mode_state,
+                &model_state,
+                &provider_selection,
+                provider_options,
+            )))
     }
 
     async fn init_provider(&self, agent: &Agent, session: &Session) -> Result<Arc<dyn Provider>> {
+        let config = self.load_config()?;
+        let global_provider = config.get_goose_provider().ok();
+        let provider_override = session
+            .provider_name
+            .as_deref()
+            .filter(|provider| *provider != DEFAULT_PROVIDER_ID);
+        let provider_name = provider_override
+            .map(ToOwned::to_owned)
+            .or_else(|| global_provider.clone())
+            .ok_or_else(|| anyhow::anyhow!("Could not configure agent: missing provider"))?;
+        let explicitly_switched =
+            provider_override.is_some() && provider_override != global_provider.as_deref();
         let model_config = match &session.model_config {
-            Some(config) => config.clone(),
+            Some(model_config) => model_config.clone(),
+            None if explicitly_switched => {
+                // The provider was set via _meta.provider (or similar) without an
+                // explicit model.  Use the provider's own default model from the
+                // registry so we don't leak the global config model (which belongs
+                // to a different provider) into this one.
+                let entry = goose::providers::get_from_registry(&provider_name).await?;
+                let default_model = &entry.metadata().default_model;
+                goose::model::ModelConfig::new(default_model)?.with_canonical_limits(&provider_name)
+            }
             None => {
-                let config_path = self.config_dir.join(CONFIG_YAML_NAME);
-                let config = Config::new(&config_path, "goose")?;
                 let model_id = config.get_goose_model()?;
-                let provider_name = config.get_goose_provider()?;
                 goose::model::ModelConfig::new(&model_id)?.with_canonical_limits(&provider_name)
             }
         };
-        let provider = (self.provider_factory)(model_config, Vec::new()).await?;
+        let extensions =
+            EnabledExtensionsState::extensions_or_default(Some(&session.extension_data), &config);
+        let provider = self
+            .create_provider(&provider_name, model_config, extensions)
+            .await?;
         agent.update_provider(provider.clone(), &session.id).await?;
         Ok(provider)
     }
@@ -881,7 +1078,8 @@ impl GooseAcpAgent {
     ) -> Result<Arc<Agent>, sacp::Error> {
         let mut sessions = self.sessions.lock().await;
         let session = sessions.get_mut(session_id).ok_or_else(|| {
-            sacp::Error::invalid_params().data(format!("Session not found: {}", session_id))
+            sacp::Error::resource_not_found(Some(session_id.to_string()))
+                .data(format!("Session not found: {}", session_id))
         })?;
         if let Some(token) = cancel_token {
             session.cancel_token = Some(token);
@@ -890,10 +1088,11 @@ impl GooseAcpAgent {
     }
 
     async fn add_mcp_extensions(
-        agent: &Agent,
+        agent: &Arc<Agent>,
         mcp_servers: Vec<McpServer>,
         session_id: &str,
     ) -> Result<(), sacp::Error> {
+        let mut configs = Vec::with_capacity(mcp_servers.len());
         for mcp_server in mcp_servers {
             let config = match mcp_server_to_extension_config(mcp_server) {
                 Ok(c) => c,
@@ -901,10 +1100,24 @@ impl GooseAcpAgent {
                     return Err(sacp::Error::invalid_params().data(msg));
                 }
             };
-            let name = config.name().to_string();
-            if let Err(e) = agent.add_extension(config, session_id).await {
-                return Err(sacp::Error::internal_error()
-                    .data(format!("Failed to add MCP server '{}': {}", name, e)));
+            configs.push(config);
+        }
+
+        if configs.is_empty() {
+            return Ok(());
+        }
+
+        let results = agent
+            .add_extensions_bulk(configs, session_id)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        for result in &results {
+            if !result.success {
+                let error_msg = result.error.as_deref().unwrap_or("unknown error");
+                return Err(sacp::Error::internal_error().data(format!(
+                    "Failed to add MCP server '{}': {}",
+                    result.name, error_msg
+                )));
             }
         }
         Ok(())
@@ -912,7 +1125,7 @@ impl GooseAcpAgent {
 
     async fn on_load_session(
         &self,
-        cx: &JrConnectionCx<AgentToClient>,
+        cx: &ConnectionTo<Client>,
         args: LoadSessionRequest,
     ) -> Result<LoadSessionResponse, sacp::Error> {
         debug!(?args, "load session request");
@@ -923,11 +1136,10 @@ impl GooseAcpAgent {
             .session_manager
             .get_session(&session_id, true)
             .await
-            .map_err(|e| {
-                sacp::Error::invalid_params()
-                    .data(format!("Failed to load session {}: {}", session_id, e))
+            .map_err(|_| {
+                sacp::Error::resource_not_found(Some(session_id.clone()))
+                    .data(format!("Session not found: {}", session_id))
             })?;
-
         let loaded_mode = goose_session.goose_mode;
         let acp_session_id = SessionId::new(session_id.clone());
 
@@ -937,7 +1149,6 @@ impl GooseAcpAgent {
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create agent: {}", e))
             })?;
-
         let provider = self
             .init_provider(&agent, &goose_session)
             .await
@@ -945,8 +1156,15 @@ impl GooseAcpAgent {
                 sacp::Error::internal_error().data(format!("Failed to set provider: {}", e))
             })?;
 
+        agent
+            .update_goose_mode(loaded_mode, &session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to restore mode: {}", e))
+            })?;
         Self::add_mcp_extensions(&agent, args.mcp_servers, &session_id).await?;
 
+        let provider_selection = session_provider_selection(&goose_session).to_string();
         let conversation = goose_session.conversation.ok_or_else(|| {
             sacp::Error::internal_error()
                 .data(format!("Session {} has no conversation data", session_id))
@@ -1027,18 +1245,24 @@ impl GooseAcpAgent {
             "Session loaded"
         );
 
-        let model_state =
-            build_model_state(&*provider, &provider.get_model_config().model_name).await;
+        let model_state = build_model_state(&*provider).await?;
         let mode_state = build_mode_state(goose_mode)?;
+        let provider_options = build_provider_options(Some(provider.get_name())).await;
 
         Ok(LoadSessionResponse::new()
-            .models(model_state)
-            .modes(mode_state))
+            .models(model_state.clone())
+            .modes(mode_state.clone())
+            .config_options(build_config_options(
+                &mode_state,
+                &model_state,
+                &provider_selection,
+                provider_options,
+            )))
     }
 
     async fn on_prompt(
         &self,
-        cx: &JrConnectionCx<AgentToClient>,
+        cx: &ConnectionTo<Client>,
         args: PromptRequest,
     ) -> Result<PromptResponse, sacp::Error> {
         let session_id = args.session_id.0.to_string();
@@ -1101,7 +1325,6 @@ impl GooseAcpAgent {
         if let Some(session) = sessions.get_mut(&session_id) {
             session.cancel_token = None;
         }
-
         Ok(PromptResponse::new(if was_cancelled {
             StopReason::Cancelled
         } else {
@@ -1132,25 +1355,28 @@ impl GooseAcpAgent {
         session_id: &str,
         model_id: &str,
     ) -> Result<SetSessionModelResponse, sacp::Error> {
-        let config_path = self.config_dir.join(CONFIG_YAML_NAME);
-        let config = Config::new(&config_path, "goose").map_err(|e| {
+        let config = self.load_config().map_err(|e| {
             sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
         })?;
-        let provider_name = config.get_goose_provider().map_err(|_| {
-            sacp::Error::internal_error().data("No provider configured".to_string())
+        let agent = self.get_session_agent(session_id, None).await?;
+        let current_provider = agent.provider().await.map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
         })?;
+        let provider_name = current_provider.get_name().to_string();
+        let extensions =
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let model_config = goose::model::ModelConfig::new(model_id)
             .map_err(|e| {
                 sacp::Error::invalid_params().data(format!("Invalid model config: {}", e))
             })?
             .with_canonical_limits(&provider_name);
-        let provider = (self.provider_factory)(model_config, Vec::new())
+        let provider = self
+            .create_provider(&provider_name, model_config, extensions)
             .await
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
             })?;
 
-        let agent = self.get_session_agent(session_id, None).await?;
         agent
             .update_provider(provider, session_id)
             .await
@@ -1158,8 +1384,46 @@ impl GooseAcpAgent {
                 sacp::Error::internal_error().data(format!("Failed to update provider: {}", e))
             })?;
 
+        let mode = agent.goose_mode().await;
+        agent
+            .update_goose_mode(mode, session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to propagate mode: {}", e))
+            })?;
+
         info!(session_id = %session_id, model_id = %model_id, "Model switched");
         Ok(SetSessionModelResponse::new())
+    }
+
+    async fn build_config_update(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<(SessionNotification, Vec<SessionConfigOption>), sacp::Error> {
+        let session = self
+            .session_manager
+            .get_session(&session_id.0, false)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let agent = self.get_session_agent(&session_id.0, None).await?;
+        let provider = agent.provider().await.map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
+        })?;
+        let goose_mode = agent.goose_mode().await;
+        let model_state = build_model_state(&*provider).await?;
+        let mode_state = build_mode_state(goose_mode)?;
+        let provider_options = build_provider_options(Some(provider.get_name())).await;
+        let config_options = build_config_options(
+            &mode_state,
+            &model_state,
+            session_provider_selection(&session),
+            provider_options,
+        );
+        let notification = SessionNotification::new(
+            session_id.clone(),
+            SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options.clone())),
+        );
+        Ok((notification, config_options))
     }
 
     async fn on_set_mode(
@@ -1181,11 +1445,158 @@ impl GooseAcpAgent {
 
         Ok(SetSessionModeResponse::new())
     }
+
+    async fn update_provider(
+        &self,
+        session_id: &str,
+        provider_name: &str,
+        model_name: Option<&str>,
+        context_limit: Option<usize>,
+        request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Result<Vec<SessionConfigOption>, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        let agent = self.get_session_agent(session_id, None).await?;
+        let current_provider = agent.provider().await.map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
+        })?;
+        let current_provider_name = current_provider.get_name();
+        let current_model = current_provider.get_model_config().model_name;
+        let has_default_overrides =
+            model_name.is_some() || context_limit.is_some() || request_params.is_some();
+        let use_default_provider = provider_name == DEFAULT_PROVIDER_ID;
+        let resolved_provider_name = if use_default_provider {
+            config.get_goose_provider().map_err(|e| {
+                sacp::Error::internal_error().data(format!(
+                    "Failed to resolve default provider from config: {}",
+                    e
+                ))
+            })?
+        } else {
+            provider_name.to_string()
+        };
+        let is_changing_provider = resolved_provider_name != current_provider_name;
+        let default_model = if let Some(model_name) = model_name {
+            model_name.to_string()
+        } else if use_default_provider {
+            config.get_goose_model().map_err(|e| {
+                sacp::Error::internal_error().data(format!(
+                    "Failed to resolve default model from config: {}",
+                    e
+                ))
+            })?
+        } else if is_changing_provider {
+            ACP_CURRENT_MODEL.to_string()
+        } else {
+            current_model
+        };
+        let model = model_name.unwrap_or(&default_model);
+        let model_config = goose::model::ModelConfig::new(model)
+            .map_err(|e| {
+                sacp::Error::invalid_params().data(format!("Invalid model config: {}", e))
+            })?
+            .with_canonical_limits(&resolved_provider_name)
+            .with_context_limit(context_limit)
+            .with_request_params(request_params);
+        let extensions =
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
+        let new_provider = self
+            .create_provider(&resolved_provider_name, model_config, extensions)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
+            })?;
+
+        agent
+            .update_provider(new_provider, session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to update provider: {}", e))
+            })?;
+
+        let mode = agent.goose_mode().await;
+        agent
+            .update_goose_mode(mode, session_id)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error().data(format!("Failed to propagate mode: {}", e))
+            })?;
+
+        let provider = agent.provider().await.map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
+        })?;
+
+        if use_default_provider {
+            let update = self
+                .session_manager
+                .update(session_id)
+                .provider_name(DEFAULT_PROVIDER_ID);
+            if has_default_overrides {
+                let provider_model_config = provider.get_model_config();
+                update
+                    .model_config(provider_model_config)
+                    .apply()
+                    .await
+                    .map_err(|e| {
+                        sacp::Error::internal_error().data(format!(
+                            "Failed to persist default provider selection overrides: {}",
+                            e
+                        ))
+                    })?;
+            } else {
+                update.clear_model_config().apply().await.map_err(|e| {
+                    sacp::Error::internal_error().data(format!(
+                        "Failed to persist default provider selection: {}",
+                        e
+                    ))
+                })?;
+            }
+        }
+
+        let (_, config_options) = self
+            .build_config_update(&SessionId::new(session_id.to_string()))
+            .await?;
+        Ok(config_options)
+    }
+
+    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, sacp::Error> {
+        let sessions = self
+            .session_manager
+            .list_sessions_by_types(&[SessionType::Acp])
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let session_infos: Vec<SessionInfo> = sessions
+            .into_iter()
+            .map(|s| {
+                SessionInfo::new(SessionId::new(s.id), s.working_dir)
+                    .title(s.name)
+                    .updated_at(s.updated_at.to_rfc3339())
+            })
+            .collect();
+        Ok(ListSessionsResponse::new(session_infos))
+    }
+
+    async fn on_close_session(
+        &self,
+        session_id: &str,
+    ) -> Result<CloseSessionResponse, sacp::Error> {
+        let mut sessions = self.sessions.lock().await;
+        // Cancel before removing so on_prompt sees cancellation before session disappears.
+        if let Some(session) = sessions.get(session_id) {
+            if let Some(ref token) = session.cancel_token {
+                token.cancel();
+            }
+        }
+        sessions.remove(session_id);
+        info!(session_id = %session_id, "session closed");
+        Ok(CloseSessionResponse::new())
+    }
 }
 
 #[custom_methods]
 impl GooseAcpAgent {
-    #[custom_method("extensions/add")]
+    #[custom_method(AddExtensionRequest)]
     async fn on_add_extension(
         &self,
         req: AddExtensionRequest,
@@ -1200,7 +1611,7 @@ impl GooseAcpAgent {
         Ok(EmptyResponse {})
     }
 
-    #[custom_method("extensions/remove")]
+    #[custom_method(RemoveExtensionRequest)]
     async fn on_remove_extension(
         &self,
         req: RemoveExtensionRequest,
@@ -1213,7 +1624,7 @@ impl GooseAcpAgent {
         Ok(EmptyResponse {})
     }
 
-    #[custom_method("tools")]
+    #[custom_method(GetToolsRequest)]
     async fn on_get_tools(&self, req: GetToolsRequest) -> Result<GetToolsResponse, sacp::Error> {
         let agent = self.get_session_agent(&req.session_id, None).await?;
         let tools = agent.list_tools(&req.session_id, None).await;
@@ -1225,7 +1636,7 @@ impl GooseAcpAgent {
         Ok(GetToolsResponse { tools: tools_json })
     }
 
-    #[custom_method("resource/read")]
+    #[custom_method(ReadResourceRequest)]
     async fn on_read_resource(
         &self,
         req: ReadResourceRequest,
@@ -1244,7 +1655,7 @@ impl GooseAcpAgent {
         })
     }
 
-    #[custom_method("working_dir/update")]
+    #[custom_method(UpdateWorkingDirRequest)]
     async fn on_update_working_dir(
         &self,
         req: UpdateWorkingDirRequest,
@@ -1276,25 +1687,7 @@ impl GooseAcpAgent {
         Ok(EmptyResponse {})
     }
 
-    #[custom_method("session/list")]
-    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, sacp::Error> {
-        let sessions = self
-            .session_manager
-            .list_sessions()
-            .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-        let session_infos: Vec<SessionInfo> = sessions
-            .into_iter()
-            .map(|s| {
-                SessionInfo::new(SessionId::new(s.id), s.working_dir)
-                    .title(s.name)
-                    .updated_at(s.updated_at.to_rfc3339())
-            })
-            .collect();
-        Ok(ListSessionsResponse::new(session_infos))
-    }
-
-    #[custom_method("session/get")]
+    #[custom_method(GetSessionRequest)]
     async fn on_get_session(
         &self,
         req: GetSessionRequest,
@@ -1311,7 +1704,7 @@ impl GooseAcpAgent {
         })
     }
 
-    #[custom_method("session/delete")]
+    #[custom_method(DeleteSessionRequest)]
     async fn on_delete_session(
         &self,
         req: DeleteSessionRequest,
@@ -1320,10 +1713,11 @@ impl GooseAcpAgent {
             .delete_session(&req.session_id)
             .await
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        self.sessions.lock().await.remove(&req.session_id);
         Ok(EmptyResponse {})
     }
 
-    #[custom_method("session/export")]
+    #[custom_method(ExportSessionRequest)]
     async fn on_export_session(
         &self,
         req: ExportSessionRequest,
@@ -1336,14 +1730,14 @@ impl GooseAcpAgent {
         Ok(ExportSessionResponse { data })
     }
 
-    #[custom_method("session/import")]
+    #[custom_method(ImportSessionRequest)]
     async fn on_import_session(
         &self,
         req: ImportSessionRequest,
     ) -> Result<ImportSessionResponse, sacp::Error> {
         let session = self
             .session_manager
-            .import_session(&req.data)
+            .import_session(&req.data, Some(SessionType::Acp))
             .await
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
         let session_json = serde_json::to_value(&session)
@@ -1353,7 +1747,7 @@ impl GooseAcpAgent {
         })
     }
 
-    #[custom_method("config/extensions")]
+    #[custom_method(GetExtensionsRequest)]
     async fn on_get_extensions(&self) -> Result<GetExtensionsResponse, sacp::Error> {
         let extensions = goose::config::extensions::get_all_extensions();
         let warnings = goose::config::extensions::get_warnings();
@@ -1367,68 +1761,181 @@ impl GooseAcpAgent {
             warnings,
         })
     }
+
+    #[custom_method(UpdateProviderRequest)]
+    async fn on_update_provider(
+        &self,
+        req: UpdateProviderRequest,
+    ) -> Result<UpdateProviderResponse, sacp::Error> {
+        let config_options = self
+            .update_provider(
+                &req.session_id,
+                &req.provider,
+                req.model.as_deref(),
+                req.context_limit,
+                req.request_params,
+            )
+            .await?;
+        let config_options = config_options
+            .into_iter()
+            .map(|option| serde_json::to_value(&option))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(UpdateProviderResponse { config_options })
+    }
+
+    #[custom_method(ListProvidersRequest)]
+    async fn on_list_providers(
+        &self,
+        _req: ListProvidersRequest,
+    ) -> Result<ListProvidersResponse, sacp::Error> {
+        Ok(ListProvidersResponse {
+            providers: list_provider_entries(None).await,
+        })
+    }
+
+    #[custom_method(ReadConfigRequest)]
+    async fn on_read_config(
+        &self,
+        req: ReadConfigRequest,
+    ) -> Result<ReadConfigResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        let response = match config.get_param::<serde_json::Value>(&req.key) {
+            Ok(value) => ReadConfigResponse { value },
+            Err(goose::config::ConfigError::NotFound(_)) => ReadConfigResponse {
+                value: serde_json::Value::Null,
+            },
+            Err(e) => return Err(sacp::Error::internal_error().data(e.to_string())),
+        };
+        Ok(response)
+    }
+
+    #[custom_method(UpsertConfigRequest)]
+    async fn on_upsert_config(
+        &self,
+        req: UpsertConfigRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .set_param(&req.key, &req.value)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(RemoveConfigRequest)]
+    async fn on_remove_config(
+        &self,
+        req: RemoveConfigRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .delete(&req.key)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(CheckSecretRequest)]
+    async fn on_check_secret(
+        &self,
+        req: CheckSecretRequest,
+    ) -> Result<CheckSecretResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        let exists = config.get_secret::<serde_json::Value>(&req.key).is_ok();
+        Ok(CheckSecretResponse { exists })
+    }
+
+    #[custom_method(UpsertSecretRequest)]
+    async fn on_upsert_secret(
+        &self,
+        req: UpsertSecretRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .set_secret(&req.key, &req.value)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(RemoveSecretRequest)]
+    async fn on_remove_secret(
+        &self,
+        req: RemoveSecretRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let config = self.load_config().map_err(|e| {
+            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
+        })?;
+        config
+            .delete_secret(&req.key)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(EmptyResponse {})
+    }
 }
 
 pub struct GooseAcpHandler {
     pub agent: Arc<GooseAcpAgent>,
 }
 
-impl JrMessageHandler for GooseAcpHandler {
-    type Link = AgentToClient;
-
+impl HandleDispatchFrom<Client> for GooseAcpHandler {
     fn describe_chain(&self) -> impl std::fmt::Debug {
         "goose-acp"
     }
 
-    fn handle_message(
+    fn handle_dispatch_from(
         &mut self,
-        message: MessageCx,
-        cx: JrConnectionCx<AgentToClient>,
-    ) -> impl std::future::Future<Output = Result<Handled<MessageCx>, sacp::Error>> + Send {
-        use sacp::util::MatchMessageFrom;
-        use sacp::JrRequestCx;
-
+        message: Dispatch,
+        cx: ConnectionTo<Client>,
+    ) -> impl std::future::Future<Output = Result<Handled<Dispatch>, sacp::Error>> + Send {
         let agent = self.agent.clone();
 
-        // The MatchMessageFrom chain produces an ~85KB async state machine.
+        // The MatchDispatchFrom chain produces an ~85KB async state machine.
         // Box::pin moves it to the heap so it doesn't overflow the tokio worker stack.
         Box::pin(async move {
-            MatchMessageFrom::new(message, &cx)
+            MatchDispatchFrom::new(message, &cx)
                 .if_request(
-                    |req: InitializeRequest, req_cx: JrRequestCx<InitializeResponse>| async {
-                        req_cx.respond(agent.on_initialize(req).await?)
+                    |req: InitializeRequest, responder: Responder<InitializeResponse>| async {
+                        responder.respond_with_result(agent.on_initialize(req).await)
                     },
                 )
                 .await
                 .if_request(
-                    |_req: AuthenticateRequest, req_cx: JrRequestCx<AuthenticateResponse>| async {
-                        req_cx.respond(AuthenticateResponse::new())
+                    |_req: AuthenticateRequest, responder: Responder<AuthenticateResponse>| async {
+                        responder.respond(AuthenticateResponse::new())
                     },
                 )
                 .await
                 .if_request(
-                    |req: NewSessionRequest, req_cx: JrRequestCx<NewSessionResponse>| async {
-                        req_cx.respond(agent.on_new_session(&cx, req).await?)
+                    |req: NewSessionRequest, responder: Responder<NewSessionResponse>| async {
+                        responder.respond_with_result(agent.on_new_session(&cx, req).await)
                     },
                 )
                 .await
                 .if_request(
-                    |req: LoadSessionRequest, req_cx: JrRequestCx<LoadSessionResponse>| async {
-                        req_cx.respond(agent.on_load_session(&cx, req).await?)
+                    |req: LoadSessionRequest, responder: Responder<LoadSessionResponse>| async {
+                        responder.respond_with_result(agent.on_load_session(&cx, req).await)
                     },
                 )
                 .await
                 .if_request(
-                    |req: PromptRequest, req_cx: JrRequestCx<PromptResponse>| async {
+                    |req: PromptRequest, responder: Responder<PromptResponse>| async {
                         let agent = agent.clone();
                         let cx_clone = cx.clone();
                         cx.spawn(async move {
                             match agent.on_prompt(&cx_clone, req).await {
                                 Ok(response) => {
-                                    req_cx.respond(response)?;
+                                    responder.respond(response)?;
                                 }
                                 Err(e) => {
-                                    req_cx.respond_with_error(e)?;
+                                    responder.respond_with_error(e)?;
                                 }
                             }
                             Ok(())
@@ -1439,76 +1946,124 @@ impl JrMessageHandler for GooseAcpHandler {
                 .await
                 .if_notification(|notif: CancelNotification| async { agent.on_cancel(notif).await })
                 .await
-                // Handle methods not yet in the sacp typed API.
-                // - session/set_model, session/set_mode: typed support pending in sacp
-                // - _<method>: custom requests that will eventually route to goose-server
-                .otherwise({
+                // set_config_option (SACP 11) and legacy set_mode/set_model; custom _goose/* in otherwise.
+                .if_request({
                     let agent = agent.clone();
                     let cx = cx.clone();
-                    |message: MessageCx| async move {
+                    |req: SetSessionConfigOptionRequest, responder: Responder<SetSessionConfigOptionResponse>| async move {
+                        let value_id = req.value.as_value_id()
+                            .ok_or_else(|| sacp::Error::invalid_params().data("Expected a value ID"))?
+                            .clone();
+                        let session_id = req.session_id.clone();
+                        match req.config_id.0.as_ref() {
+                            "provider" => {
+                                match agent.update_provider(&session_id.0, &value_id.0, None, None, None).await {
+                                    Ok(_) => {}
+                                    Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                }
+                            }
+                            "mode" => {
+                                match agent.on_set_mode(&session_id.0, &value_id.0).await {
+                                    Ok(_) => {}
+                                    Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                }
+                            }
+                            "model" => {
+                                match agent.on_set_model(&session_id.0, &value_id.0).await {
+                                    Ok(_) => {}
+                                    Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                }
+                            }
+                            other => {
+                                responder.respond_with_error(
+                                    sacp::Error::invalid_params().data(format!("Unsupported config option: {}", other))
+                                )?;
+                                return Ok(());
+                            }
+                        }
+                        let (notification, config_options) = agent.build_config_update(&session_id).await?;
+                        cx.send_notification(notification)?;
+                        responder.respond(SetSessionConfigOptionResponse::new(config_options))?;
+                        Ok(())
+                    }
+                })
+                .await
+                .if_request({
+                    let agent = agent.clone();
+                    let cx = cx.clone();
+                    |req: SetSessionModeRequest, responder: Responder<SetSessionModeResponse>| async move {
+                        let session_id = req.session_id.clone();
+                        let mode_id = req.mode_id.clone();
+                        match agent.on_set_mode(&session_id.0, &mode_id.0).await {
+                            Ok(resp) => {
+                                // Notify before responding so clients see the mode update before block_task unblocks.
+                                cx.send_notification(SessionNotification::new(
+                                    session_id,
+                                    SessionUpdate::CurrentModeUpdate(
+                                        CurrentModeUpdate::new(mode_id),
+                                    ),
+                                ))?;
+                                responder.respond(resp)?;
+                            }
+                            Err(e) => {
+                                responder.respond_with_error(e)?;
+                            }
+                        }
+                        Ok(())
+                    }
+                })
+                .await
+                .if_request({
+                    let agent = agent.clone();
+                    let cx = cx.clone();
+                    |req: SetSessionModelRequest, responder: Responder<SetSessionModelResponse>| async move {
+                        let session_id = req.session_id.clone();
+                        match agent.on_set_model(&session_id.0, &req.model_id.0).await {
+                            Ok(resp) => {
+                                let (notification, _) = agent.build_config_update(&session_id).await?;
+                                cx.send_notification(notification)?;
+                                responder.respond(resp)?;
+                            }
+                            Err(e) => responder.respond_with_error(e)?,
+                        }
+                        Ok(())
+                    }
+                })
+                .await
+                .if_request({
+                    let agent = agent.clone();
+                    |_req: ListSessionsRequest, responder: Responder<ListSessionsResponse>| async move {
+                        responder.respond(agent.on_list_sessions().await?)
+                    }
+                })
+                .await
+                .if_request({
+                    let agent = agent.clone();
+                    |req: CloseSessionRequest, responder: Responder<CloseSessionResponse>| async move {
+                        responder.respond(agent.on_close_session(&req.session_id.0).await?)
+                    }
+                })
+                .await
+                .otherwise({
+                    let agent = agent.clone();
+                    |message: Dispatch| async move {
                         match message {
-                            MessageCx::Request(req, request_cx)
-                                if req.method == "session/set_mode" =>
-                            {
-                                let params: SetSessionModeRequest =
-                                    serde_json::from_value(req.params).map_err(|e| {
-                                        sacp::Error::invalid_params().data(e.to_string())
-                                    })?;
-                                let session_id = params.session_id.clone();
-                                let mode_id = params.mode_id.clone();
-                                match agent.on_set_mode(&session_id.0, &mode_id.0).await {
-                                    Ok(resp) => {
-                                        let json = serde_json::to_value(resp).map_err(|e| {
-                                            sacp::Error::internal_error().data(e.to_string())
-                                        })?;
-                                        // Notify before responding so clients see the mode
-                                        // update before block_task unblocks (serial dispatch).
-                                        cx.send_notification(SessionNotification::new(
-                                            session_id,
-                                            SessionUpdate::CurrentModeUpdate(
-                                                CurrentModeUpdate::new(mode_id),
-                                            ),
-                                        ))?;
-                                        request_cx.respond(json)?;
-                                    }
-                                    Err(e) => {
-                                        request_cx.respond_with_error(e)?;
-                                    }
-                                }
-                                Ok(())
-                            }
-                            MessageCx::Request(req, request_cx)
-                                if req.method == "session/set_model" =>
-                            {
-                                let params: SetSessionModelRequest =
-                                    serde_json::from_value(req.params).map_err(|e| {
-                                        sacp::Error::invalid_params().data(e.to_string())
-                                    })?;
-                                let resp = agent
-                                    .on_set_model(&params.session_id.0, &params.model_id.0)
-                                    .await?;
-                                let json = serde_json::to_value(resp).map_err(|e| {
-                                    sacp::Error::internal_error().data(e.to_string())
-                                })?;
-                                request_cx.respond(json)?;
-                                Ok(())
-                            }
-                            MessageCx::Request(req, request_cx) if req.method == "session/list" => {
-                                let resp = agent.on_list_sessions().await?;
-                                let json = serde_json::to_value(resp).map_err(|e| {
-                                    sacp::Error::internal_error().data(e.to_string())
-                                })?;
-                                request_cx.respond(json)?;
-                                Ok(())
-                            }
-                            MessageCx::Request(req, request_cx) if req.method.starts_with('_') => {
+                            Dispatch::Request(req, responder) => {
                                 match agent.handle_custom_request(&req.method, req.params).await {
-                                    Ok(json) => request_cx.respond(json)?,
-                                    Err(e) => request_cx.respond_with_error(e)?,
+                                    Ok(json) => responder.respond(json)?,
+                                    Err(e) => responder.respond_with_error(e)?,
                                 }
                                 Ok(())
                             }
-                            _ => Err(sacp::Error::method_not_found()),
+                            Dispatch::Response(result, router) => {
+                                debug!(method = %router.method(), id = %router.id(), ok = result.is_ok(), "routing response");
+                                router.respond_with_result(result)?;
+                                Ok(())
+                            }
+                            Dispatch::Notification(notif) => {
+                                debug!(method = %notif.method, "unhandled notification");
+                                Ok(())
+                            }
                         }
                     }
                 })
@@ -1530,10 +2085,11 @@ where
     Box::pin(async move {
         let handler = GooseAcpHandler { agent };
 
-        AgentToClient::builder()
+        SacpAgent
+            .builder()
             .name("goose-acp")
             .with_handler(handler)
-            .serve(ByteStreams::new(write, read))
+            .connect_to(ByteStreams::new(write, read))
             .await?;
 
         Ok(())
@@ -1565,8 +2121,8 @@ mod tests {
     use rmcp::model::{CallToolRequestParams, Content as RmcpContent};
     use sacp::schema::{
         EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
-        PermissionOptionId, ResourceLink, SelectedPermissionOutcome, SessionMode, SessionModeId,
-        SessionModeState,
+        PermissionOptionId, ResourceLink, SelectedPermissionOutcome, SessionConfigSelectOption,
+        SessionMode, SessionModeId, SessionModeState,
     };
     use std::io::Write;
     use std::path::PathBuf;
@@ -1720,7 +2276,7 @@ print(\"hello, world\")
     }
 
     #[async_trait::async_trait]
-    impl goose::providers::base::Provider for MockModelProvider {
+    impl Provider for MockModelProvider {
         fn get_name(&self) -> &str {
             "mock"
         }
@@ -1746,40 +2302,30 @@ print(\"hello, world\")
     }
 
     #[test_case(
-        "model-a", Ok(vec!["model-a".into(), "model-b".into()])
-        => SessionModelState::new(
-            ModelId::new("model-a"),
+        Ok(vec!["model-a".into(), "model-b".into()])
+        => Ok(SessionModelState::new(
+            ModelId::new("unused"),
             vec![ModelInfo::new(ModelId::new("model-a"), "model-a"),
                  ModelInfo::new(ModelId::new("model-b"), "model-b")],
-        )
+        ))
         ; "returns current and available models"
     )]
     #[test_case(
-        "model-a", Ok(vec![])
-        => SessionModelState::new(ModelId::new("model-a"), vec![])
+        Ok(vec![])
+        => Ok(SessionModelState::new(ModelId::new("unused"), vec![]))
         ; "empty model list"
     )]
     #[test_case(
-        "model-a", Err(ProviderError::ExecutionError("fail".into()))
-        => SessionModelState::new(ModelId::new("model-a"), vec![])
-        ; "fetch error falls back to current model only"
-    )]
-    #[test_case(
-        "switched-model", Ok(vec!["model-a".into(), "switched-model".into()])
-        => SessionModelState::new(
-            ModelId::new("switched-model"),
-            vec![ModelInfo::new(ModelId::new("model-a"), "model-a"),
-                 ModelInfo::new(ModelId::new("switched-model"), "switched-model")],
-        )
-        ; "current model reflects switched model"
+        Err(ProviderError::ExecutionError("fail".into()))
+        => Err(sacp::Error::internal_error().data("Execution error: fail".to_string()))
+        ; "fetch error propagates"
     )]
     #[tokio::test]
     async fn test_build_model_state(
-        current_model: &str,
         models: Result<Vec<String>, ProviderError>,
-    ) -> SessionModelState {
+    ) -> Result<SessionModelState, sacp::Error> {
         let provider = MockModelProvider { models };
-        build_model_state(&provider, current_model).await
+        build_model_state(&provider).await
     }
 
     fn json_object(pairs: Vec<(&str, serde_json::Value)>) -> rmcp::model::JsonObject {
@@ -1920,24 +2466,114 @@ print(\"hello, world\")
             .map(|locs| locs.into_iter().map(|loc| (loc.path, loc.line)).collect())
     }
 
-    #[test]
-    fn test_build_mode_state() {
-        let state = build_mode_state(GooseMode::Auto).unwrap();
-        assert_eq!(
-            state,
-            SessionModeState::new(
-                SessionModeId::new("auto"),
+    #[test_case(
+        GooseMode::Auto
+        => Ok(SessionModeState::new(
+            SessionModeId::new("auto"),
+            vec![
+                SessionMode::new(SessionModeId::new("auto"), "auto")
+                    .description("Automatically approve tool calls"),
+                SessionMode::new(SessionModeId::new("approve"), "approve")
+                    .description("Ask before every tool call"),
+                SessionMode::new(SessionModeId::new("smart_approve"), "smart_approve")
+                    .description("Ask only for sensitive tool calls"),
+                SessionMode::new(SessionModeId::new("chat"), "chat")
+                    .description("Chat only, no tool calls"),
+            ],
+        ))
+        ; "auto mode"
+    )]
+    #[test_case(
+        GooseMode::Approve
+        => Ok(SessionModeState::new(
+            SessionModeId::new("approve"),
+            vec![
+                SessionMode::new(SessionModeId::new("auto"), "auto")
+                    .description("Automatically approve tool calls"),
+                SessionMode::new(SessionModeId::new("approve"), "approve")
+                    .description("Ask before every tool call"),
+                SessionMode::new(SessionModeId::new("smart_approve"), "smart_approve")
+                    .description("Ask only for sensitive tool calls"),
+                SessionMode::new(SessionModeId::new("chat"), "chat")
+                    .description("Chat only, no tool calls"),
+            ],
+        ))
+        ; "approve mode"
+    )]
+    fn test_build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::Error> {
+        build_mode_state(current_mode)
+    }
+
+    #[test_case(
+        build_mode_state(GooseMode::Auto).unwrap(),
+        "openai",
+        vec![
+            SessionConfigSelectOption::new("anthropic", "anthropic"),
+            SessionConfigSelectOption::new("openai", "openai"),
+        ],
+        SessionModelState::new(
+            ModelId::new("gpt-4"),
+            vec![ModelInfo::new(ModelId::new("gpt-4"), "gpt-4"), ModelInfo::new(ModelId::new("gpt-3.5"), "gpt-3.5")],
+        )
+        => vec![
+            SessionConfigOption::select(
+                "provider", "Provider", "openai",
                 vec![
-                    SessionMode::new(SessionModeId::new("auto"), "auto")
-                        .description("Automatically approve tool calls"),
-                    SessionMode::new(SessionModeId::new("approve"), "approve")
-                        .description("Ask before every tool call"),
-                    SessionMode::new(SessionModeId::new("smart_approve"), "smart_approve")
-                        .description("Ask only for sensitive tool calls"),
-                    SessionMode::new(SessionModeId::new("chat"), "chat")
-                        .description("Chat only, no tool calls"),
+                    SessionConfigSelectOption::new("anthropic", "anthropic"),
+                    SessionConfigSelectOption::new("openai", "openai"),
                 ],
-            )
-        );
+            ),
+            SessionConfigOption::select(
+                "mode", "Mode", "auto",
+                vec![
+                    SessionConfigSelectOption::new("auto", "auto").description("Automatically approve tool calls"),
+                    SessionConfigSelectOption::new("approve", "approve").description("Ask before every tool call"),
+                    SessionConfigSelectOption::new("smart_approve", "smart_approve").description("Ask only for sensitive tool calls"),
+                    SessionConfigSelectOption::new("chat", "chat").description("Chat only, no tool calls"),
+                ],
+            ).category(SessionConfigOptionCategory::Mode),
+            SessionConfigOption::select(
+                "model", "Model", "gpt-4",
+                vec![
+                    SessionConfigSelectOption::new("gpt-4", "gpt-4"),
+                    SessionConfigSelectOption::new("gpt-3.5", "gpt-3.5"),
+                ],
+            ).category(SessionConfigOptionCategory::Model),
+        ]
+        ; "auto mode with multiple models"
+    )]
+    #[test_case(
+        build_mode_state(GooseMode::Approve).unwrap(),
+        "openai",
+        vec![SessionConfigSelectOption::new("openai", "openai")],
+        SessionModelState::new(ModelId::new("only-model"), vec![ModelInfo::new(ModelId::new("only-model"), "only-model")])
+        => vec![
+            SessionConfigOption::select(
+                "provider", "Provider", "openai",
+                vec![SessionConfigSelectOption::new("openai", "openai")],
+            ),
+            SessionConfigOption::select(
+                "mode", "Mode", "approve",
+                vec![
+                    SessionConfigSelectOption::new("auto", "auto").description("Automatically approve tool calls"),
+                    SessionConfigSelectOption::new("approve", "approve").description("Ask before every tool call"),
+                    SessionConfigSelectOption::new("smart_approve", "smart_approve").description("Ask only for sensitive tool calls"),
+                    SessionConfigSelectOption::new("chat", "chat").description("Chat only, no tool calls"),
+                ],
+            ).category(SessionConfigOptionCategory::Mode),
+            SessionConfigOption::select(
+                "model", "Model", "only-model",
+                vec![SessionConfigSelectOption::new("only-model", "only-model")],
+            ).category(SessionConfigOptionCategory::Model),
+        ]
+        ; "approve mode with single model"
+    )]
+    fn test_build_config_options(
+        mode_state: SessionModeState,
+        provider_name: &'static str,
+        provider_options: Vec<SessionConfigSelectOption>,
+        model_state: SessionModelState,
+    ) -> Vec<SessionConfigOption> {
+        build_config_options(&mode_state, &model_state, provider_name, provider_options)
     }
 }

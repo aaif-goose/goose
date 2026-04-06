@@ -1,4 +1,5 @@
 use crate::conversation::message::MessageContent;
+use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -52,6 +53,7 @@ pub struct ChatHistorySearch<'a> {
     after_date: Option<DateTime<Utc>>,
     before_date: Option<DateTime<Utc>>,
     exclude_session_id: Option<String>,
+    session_types: Vec<SessionType>,
 }
 
 impl<'a> ChatHistorySearch<'a> {
@@ -62,6 +64,7 @@ impl<'a> ChatHistorySearch<'a> {
         after_date: Option<DateTime<Utc>>,
         before_date: Option<DateTime<Utc>>,
         exclude_session_id: Option<String>,
+        session_types: Vec<SessionType>,
     ) -> Self {
         Self {
             pool,
@@ -70,6 +73,7 @@ impl<'a> ChatHistorySearch<'a> {
             after_date,
             before_date,
             exclude_session_id,
+            session_types,
         }
     }
 
@@ -100,6 +104,10 @@ impl<'a> ChatHistorySearch<'a> {
 
         if let Some(exclude_id) = &self.exclude_session_id {
             query_builder = query_builder.bind(exclude_id);
+        }
+
+        for t in &self.session_types {
+            query_builder = query_builder.bind(t.to_string());
         }
 
         if let Some(after) = self.after_date {
@@ -157,6 +165,16 @@ impl<'a> ChatHistorySearch<'a> {
 
         if self.exclude_session_id.is_some() {
             sql.push_str(" AND s.id != ?");
+        }
+
+        if !self.session_types.is_empty() {
+            let placeholders: String = self
+                .session_types
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
+            sql.push_str(&format!(" AND s.session_type IN ({})", placeholders));
         }
 
         if self.after_date.is_some() {

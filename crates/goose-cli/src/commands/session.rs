@@ -89,25 +89,18 @@ pub async fn handle_session_remove(
     regex_string: Option<String>,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
-    let all_sessions = match session_manager.list_sessions().await {
-        Ok(sessions) => sessions,
-        Err(e) => {
-            tracing::error!("Failed to retrieve sessions: {:?}", e);
-            return Err(anyhow::anyhow!("Failed to retrieve sessions"));
-        }
-    };
 
     let matched_sessions: Vec<Session>;
 
     if let Some(id_val) = session_id {
-        if let Some(session) = all_sessions.iter().find(|s| s.id == id_val) {
-            matched_sessions = vec![session.clone()];
-        } else {
-            return Err(anyhow::anyhow!("Session ID '{}' not found.", id_val));
+        match session_manager.get_session(&id_val, false).await {
+            Ok(session) => matched_sessions = vec![session],
+            Err(_) => return Err(anyhow::anyhow!("Session ID '{}' not found.", id_val)),
         }
     } else if let Some(name_val) = name {
-        if let Some(session) = all_sessions.iter().find(|s| s.name == name_val) {
-            matched_sessions = vec![session.clone()];
+        let all_sessions = session_manager.list_all_sessions().await?;
+        if let Some(session) = all_sessions.into_iter().find(|s| s.name == name_val) {
+            matched_sessions = vec![session];
         } else {
             return Err(anyhow::anyhow!(
                 "Session with name '{}' not found.",
@@ -118,7 +111,8 @@ pub async fn handle_session_remove(
         let session_regex = Regex::new(&regex_val)
             .with_context(|| format!("Invalid regex pattern '{}'", regex_val))?;
 
-        matched_sessions = all_sessions
+        let visible_sessions = session_manager.list_sessions().await?;
+        matched_sessions = visible_sessions
             .into_iter()
             .filter(|session| session_regex.is_match(&session.id))
             .collect();
@@ -128,10 +122,11 @@ pub async fn handle_session_remove(
             return Ok(());
         }
     } else {
-        if all_sessions.is_empty() {
+        let visible_sessions = session_manager.list_sessions().await?;
+        if visible_sessions.is_empty() {
             return Err(anyhow::anyhow!("No sessions found."));
         }
-        matched_sessions = prompt_interactive_session_removal(&all_sessions)?;
+        matched_sessions = prompt_interactive_session_removal(&visible_sessions)?;
     }
 
     if matched_sessions.is_empty() {

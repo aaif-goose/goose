@@ -7,7 +7,16 @@ use crate::providers::openai::OpenAiProvider;
 use anyhow::Result;
 use include_dir::{include_dir, Dir};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Deserialize an optional string, treating empty/whitespace-only values as None.
+fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.trim().is_empty()))
+}
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -34,6 +43,9 @@ pub struct EnvVarConfig {
     pub required: bool,
     #[serde(default)]
     pub secret: bool,
+    /// When true, the field is shown prominently in the UI (not collapsed).
+    /// Defaults to the value of `required` if not specified.
+    pub primary: Option<bool>,
     pub description: Option<String>,
     pub default: Option<String>,
 }
@@ -61,6 +73,10 @@ pub struct DeclarativeProviderConfig {
     pub env_vars: Option<Vec<EnvVarConfig>>,
     #[serde(default)]
     pub dynamic_models: Option<bool>,
+    #[serde(default)]
+    pub skip_canonical_filtering: bool,
+    #[serde(default, deserialize_with = "deserialize_non_empty_string")]
+    pub fast_model: Option<String>,
 }
 
 fn default_requires_auth() -> bool {
@@ -215,6 +231,8 @@ pub fn create_custom_provider(
         base_path: params.base_path,
         env_vars: None,
         dynamic_models: None,
+        skip_canonical_filtering: false,
+        fast_model: None,
     };
 
     let custom_providers_dir = custom_providers_dir();
@@ -280,6 +298,8 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             base_path: params.base_path,
             env_vars: existing_config.env_vars,
             dynamic_models: existing_config.dynamic_models,
+            skip_canonical_filtering: existing_config.skip_canonical_filtering,
+            fast_model: existing_config.fast_model.clone(),
         };
 
         let file_path = custom_providers_dir().join(format!("{}.json", updated_config.name));
@@ -400,40 +420,78 @@ pub fn register_declarative_providers(
     Ok(())
 }
 
+/// Resolve `${VAR}` placeholders in the config's `base_url` and apply
+/// runtime overrides from env_vars. Called lazily (at provider instantiation)
+/// so values configured through the UI after startup are picked up.
+fn resolve_config(config: &mut DeclarativeProviderConfig) -> Result<()> {
+    if let Some(ref env_vars) = config.env_vars {
+        config.base_url = expand_env_vars(&config.base_url, env_vars)?;
+
+        // Check for streaming override via env_vars.
+        // Config/env may store the value as a string ("true") or a native bool,
+        // so try String first, then fall back to bool.
+        let global_config = Config::global();
+        for var in env_vars {
+            if var.name.ends_with("_STREAMING") {
+                let val: Option<bool> = global_config
+                    .get_param::<String>(&var.name)
+                    .ok()
+                    .map(|s| s.to_lowercase() == "true")
+                    .or_else(|| global_config.get_param::<bool>(&var.name).ok())
+                    .or_else(|| var.default.as_deref().map(|d| d.to_lowercase() == "true"));
+                if let Some(v) = val {
+                    config.supports_streaming = Some(v);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn register_declarative_provider(
     registry: &mut crate::providers::provider_registry::ProviderRegistry,
     config: DeclarativeProviderConfig,
     provider_type: ProviderType,
 ) {
-    // Expand env vars in base_url once, so individual engines don't need to
-    let mut config = config;
-    if let Some(ref env_vars) = config.env_vars {
-        if let Ok(resolved) = expand_env_vars(&config.base_url, env_vars) {
-            config.base_url = resolved;
-        }
-    }
-    let config_clone = config.clone();
-
+    // Each closure needs its own owned copy of config because closures are
+    // moved into the registry and may be invoked much later than registration.
+    // Env var expansion happens lazily inside resolve_base_url so that values
+    // configured through the UI after startup are picked up.
     match config.engine {
         ProviderEngine::OpenAI => {
+            let captured = config.clone();
             registry.register_with_name::<OpenAiProvider, _>(
                 &config,
                 provider_type,
-                move |model| OpenAiProvider::from_custom_config(model, config_clone.clone()),
+                move |model| {
+                    let mut cfg = captured.clone();
+                    resolve_config(&mut cfg)?;
+                    OpenAiProvider::from_custom_config(model, cfg)
+                },
             );
         }
         ProviderEngine::Ollama => {
+            let captured = config.clone();
             registry.register_with_name::<OllamaProvider, _>(
                 &config,
                 provider_type,
-                move |model| OllamaProvider::from_custom_config(model, config_clone.clone()),
+                move |model| {
+                    let mut cfg = captured.clone();
+                    resolve_config(&mut cfg)?;
+                    OllamaProvider::from_custom_config(model, cfg)
+                },
             );
         }
         ProviderEngine::Anthropic => {
+            let captured = config.clone();
             registry.register_with_name::<AnthropicProvider, _>(
                 &config,
                 provider_type,
-                move |model| AnthropicProvider::from_custom_config(model, config_clone.clone()),
+                move |model| {
+                    let mut cfg = captured.clone();
+                    resolve_config(&mut cfg)?;
+                    AnthropicProvider::from_custom_config(model, cfg)
+                },
             );
         }
     }
@@ -449,7 +507,7 @@ mod tests {
         let config: DeclarativeProviderConfig =
             serde_json::from_str(json).expect("tanzu.json should parse");
         assert_eq!(config.name, "tanzu_ai");
-        assert_eq!(config.display_name, "Tanzu AI Services");
+        assert_eq!(config.display_name, "VMware Tanzu Platform");
         assert!(matches!(config.engine, ProviderEngine::OpenAI));
         assert_eq!(config.api_key_env, "TANZU_AI_API_KEY");
         assert_eq!(
@@ -457,13 +515,16 @@ mod tests {
             "${TANZU_AI_ENDPOINT}/openai/v1/chat/completions"
         );
         assert_eq!(config.dynamic_models, Some(true));
-        assert_eq!(config.supports_streaming, Some(false));
+        assert_eq!(config.supports_streaming, Some(true));
 
         let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
-        assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars.len(), 2);
         assert_eq!(env_vars[0].name, "TANZU_AI_ENDPOINT");
         assert!(env_vars[0].required);
         assert!(!env_vars[0].secret);
+        assert_eq!(env_vars[1].name, "TANZU_AI_STREAMING");
+        assert!(!env_vars[1].required);
+        assert_eq!(env_vars[1].default, Some("true".to_string()));
 
         assert_eq!(config.models.len(), 1);
         assert_eq!(config.models[0].name, "openai/gpt-oss-120b");
@@ -486,6 +547,7 @@ mod tests {
             name: "TEST_EXPAND_HOST".to_string(),
             required: true,
             secret: false,
+            primary: None,
             description: None,
             default: None,
         }];
@@ -502,6 +564,7 @@ mod tests {
             name: "TEST_EXPAND_MISSING".to_string(),
             required: true,
             secret: false,
+            primary: None,
             description: None,
             default: None,
         }];
@@ -522,6 +585,7 @@ mod tests {
             name: "TEST_EXPAND_DEFAULT".to_string(),
             required: false,
             secret: false,
+            primary: None,
             description: None,
             default: Some("https://fallback.example.com".to_string()),
         }];
@@ -537,6 +601,7 @@ mod tests {
             name: "UNUSED_VAR".to_string(),
             required: true,
             secret: false,
+            primary: None,
             description: None,
             default: None,
         }];
@@ -560,6 +625,7 @@ mod tests {
             name: "TEST_EXPAND_OVERRIDE".to_string(),
             required: false,
             secret: false,
+            primary: None,
             description: None,
             default: Some("https://from-default.com".to_string()),
         }];

@@ -1,9 +1,21 @@
 import React from 'react';
 import { Calendar, MessageSquareText, Folder, Target, LoaderCircle, Share2 } from 'lucide-react';
+import { defineMessages, useIntl } from '../../i18n';
 import { type SharedSessionDetails } from '../../sharedSessions';
 import { SessionMessages } from './SessionViewComponents';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
+
+const i18n = defineMessages({
+  sharedSession: {
+    id: 'sharedSession.title',
+    defaultMessage: 'Shared Session',
+  },
+  loadingDetails: {
+    id: 'sharedSession.loading',
+    defaultMessage: 'Loading session details...',
+  },
+});
 
 interface SharedSessionViewProps {
   session: SharedSessionDetails | null;
@@ -31,17 +43,18 @@ const SharedSessionView: React.FC<SharedSessionViewProps> = ({
   error,
   onRetry,
 }) => {
+  const intl = useIntl();
   return (
     <MainPanelLayout>
       <div className="flex-1 flex flex-col min-h-0 px-8">
         <div className="flex items-center py-4 border-b border-border-primary mb-6">
           <div className="flex items-center text-text-secondary">
             <Share2 className="w-5 h-5 mr-2" />
-            <span className="text-sm font-medium">Shared Session</span>
+            <span className="text-sm font-medium">{intl.formatMessage(i18n.sharedSession)}</span>
           </div>
         </div>
 
-        <SessionHeader title={session ? session.description : 'Shared Session'}>
+        <SessionHeader title={session ? session.description : intl.formatMessage(i18n.sharedSession)}>
           <div className="flex flex-col">
             {!isLoading && session && session.messages.length > 0 ? (
               <>
@@ -71,7 +84,7 @@ const SharedSessionView: React.FC<SharedSessionViewProps> = ({
             ) : (
               <div className="flex items-center text-text-secondary text-sm">
                 <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
-                <span>Loading session details...</span>
+                <span>{intl.formatMessage(i18n.loadingDetails)}</span>
               </div>
             )}
           </div>

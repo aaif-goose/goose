@@ -10,7 +10,7 @@
     "license": {
       "name": "Apache-2.0"
     },
-    "version": "1.28.0"
+    "version": "1.30.0"
   },
   "paths": {
     "/action-required/tool-confirmation": {
@@ -969,39 +969,6 @@
         }
       }
     },
-    "/config/detect-provider": {
-      "post": {
-        "tags": [
-          "super::routes::config_management"
-        ],
-        "operationId": "detect_provider",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DetectProviderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Provider detected successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DetectProviderResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No matching provider found"
-          }
-        }
-      }
-    },
     "/config/extensions": {
       "get": {
         "tags": [
@@ -1602,6 +1569,18 @@
           "super::routes::config_management"
         ],
         "operationId": "get_slash_commands",
+        "parameters": [
+          {
+            "name": "working_dir",
+            "in": "query",
+            "description": "Optional working directory to discover local skills from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Slash commands retrieved successfully",
@@ -1918,6 +1897,26 @@
           },
           "504": {
             "description": "Request timeout"
+          }
+        }
+      }
+    },
+    "/features": {
+      "get": {
+        "tags": [
+          "super::routes::features"
+        ],
+        "operationId": "get_features",
+        "responses": {
+          "200": {
+            "description": "Compile-time feature flags",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturesResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -4152,7 +4151,8 @@
         "type": "string",
         "enum": [
           "Builtin",
-          "Recipe"
+          "Recipe",
+          "Skill"
         ]
       },
       "ConfigKey": {
@@ -4170,13 +4170,17 @@
             "description": "Optional default value for the key",
             "nullable": true
           },
+          "device_code_flow": {
+            "type": "boolean",
+            "description": "Whether this OAuth flow uses the device code grant (RFC 8628)\nWhen true, the user must enter a verification code in the browser"
+          },
           "name": {
             "type": "string",
             "description": "The name of the configuration key (e.g., \"API_KEY\")"
           },
           "oauth_flow": {
             "type": "boolean",
-            "description": "Whether this key should be configured using OAuth device code flow\nWhen true, the provider's configure_oauth() method will be called instead of prompting for manual input"
+            "description": "Whether this key should be configured using an OAuth flow\nWhen true, the provider's configure_oauth() method will be called instead of prompting for manual input"
           },
           "primary": {
             "type": "boolean",
@@ -4614,6 +4618,10 @@
             },
             "nullable": true
           },
+          "fast_model": {
+            "type": "string",
+            "nullable": true
+          },
           "headers": {
             "type": "object",
             "additionalProperties": {
@@ -4631,6 +4639,9 @@
             "type": "string"
           },
           "requires_auth": {
+            "type": "boolean"
+          },
+          "skip_canonical_filtering": {
             "type": "boolean"
           },
           "supports_streaming": {
@@ -4674,35 +4685,6 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
-          }
-        }
-      },
-      "DetectProviderRequest": {
-        "type": "object",
-        "required": [
-          "api_key"
-        ],
-        "properties": {
-          "api_key": {
-            "type": "string"
-          }
-        }
-      },
-      "DetectProviderResponse": {
-        "type": "object",
-        "required": [
-          "provider_name",
-          "models"
-        ],
-        "properties": {
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "provider_name": {
             "type": "string"
           }
         }
@@ -4892,6 +4874,11 @@
           },
           "name": {
             "type": "string"
+          },
+          "primary": {
+            "type": "boolean",
+            "description": "When true, the field is shown prominently in the UI (not collapsed).\nDefaults to the value of `required` if not specified.",
+            "nullable": true
           },
           "required": {
             "type": "boolean"
@@ -5329,6 +5316,21 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "FeaturesResponse": {
+        "type": "object",
+        "required": [
+          "features"
+        ],
+        "properties": {
+          "features": {
+            "type": "object",
+            "description": "Map of feature name to enabled status",
+            "additionalProperties": {
+              "type": "boolean"
             }
           }
         }
@@ -7562,9 +7564,17 @@
       "SaveRecipeResponse": {
         "type": "object",
         "required": [
-          "id"
+          "id",
+          "file_name",
+          "file_path"
         ],
         "properties": {
+          "file_name": {
+            "type": "string"
+          },
+          "file_path": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           }
@@ -7920,7 +7930,8 @@
           "sub_agent",
           "hidden",
           "terminal",
-          "gateway"
+          "gateway",
+          "acp"
         ]
       },
       "SessionsQuery": {
@@ -8469,6 +8480,9 @@
         "properties": {
           "description": {
             "type": "string"
+          },
+          "input_schema": {
+            "type": "object"
           },
           "name": {
             "type": "string"

@@ -19,12 +19,25 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 8;
+pub const CURRENT_SCHEMA_VERSION: i32 = 9;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    PartialEq,
+    Eq,
+    Default,
+    strum::Display,
+    strum::EnumString,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum SessionType {
     #[default]
     User,
@@ -33,35 +46,7 @@ pub enum SessionType {
     Hidden,
     Terminal,
     Gateway,
-}
-
-impl std::fmt::Display for SessionType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SessionType::User => write!(f, "user"),
-            SessionType::SubAgent => write!(f, "sub_agent"),
-            SessionType::Hidden => write!(f, "hidden"),
-            SessionType::Scheduled => write!(f, "scheduled"),
-            SessionType::Terminal => write!(f, "terminal"),
-            SessionType::Gateway => write!(f, "gateway"),
-        }
-    }
-}
-
-impl std::str::FromStr for SessionType {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "user" => Ok(SessionType::User),
-            "sub_agent" => Ok(SessionType::SubAgent),
-            "hidden" => Ok(SessionType::Hidden),
-            "scheduled" => Ok(SessionType::Scheduled),
-            "terminal" => Ok(SessionType::Terminal),
-            "gateway" => Ok(SessionType::Gateway),
-            _ => Err(anyhow::anyhow!("Invalid session type: {}", s)),
-        }
-    }
+    Acp,
 }
 
 static SESSION_STORAGE: LazyLock<Arc<SessionStorage>> =
@@ -247,6 +232,11 @@ impl<'a> SessionUpdateBuilder<'a> {
         self
     }
 
+    pub fn clear_model_config(mut self) -> Self {
+        self.model_config = Some(None);
+        self
+    }
+
     pub fn goose_mode(mut self, mode: GooseMode) -> Self {
         self.goose_mode = Some(mode);
         self
@@ -311,7 +301,11 @@ impl SessionManager {
     }
 
     pub async fn list_sessions_by_types(&self, types: &[SessionType]) -> Result<Vec<Session>> {
-        self.storage.list_sessions_by_types(types).await
+        self.storage.list_sessions_by_types(Some(types)).await
+    }
+
+    pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
+        self.storage.list_sessions_by_types(None).await
     }
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
@@ -319,15 +313,23 @@ impl SessionManager {
     }
 
     pub async fn get_insights(&self) -> Result<SessionInsights> {
-        self.storage.get_insights().await
+        self.storage
+            .get_insights(&[SessionType::User, SessionType::Scheduled])
+            .await
     }
 
     pub async fn export_session(&self, id: &str) -> Result<String> {
         self.storage.export_session(id).await
     }
 
-    pub async fn import_session(&self, json: &str) -> Result<Session> {
-        self.storage.import_session(self, json).await
+    pub async fn import_session(
+        &self,
+        json: &str,
+        session_type_override: Option<SessionType>,
+    ) -> Result<Session> {
+        self.storage
+            .import_session(self, json, session_type_override)
+            .await
     }
 
     pub async fn copy_session(&self, session_id: &str, new_name: String) -> Result<Session> {
@@ -372,9 +374,17 @@ impl SessionManager {
         after_date: Option<chrono::DateTime<chrono::Utc>>,
         before_date: Option<chrono::DateTime<chrono::Utc>>,
         exclude_session_id: Option<String>,
+        session_types: Vec<SessionType>,
     ) -> Result<crate::session::chat_history_search::ChatRecallResults> {
         self.storage
-            .search_chat_history(query, limit, after_date, before_date, exclude_session_id)
+            .search_chat_history(
+                query,
+                limit,
+                after_date,
+                before_date,
+                exclude_session_id,
+                session_types,
+            )
             .await
     }
 
@@ -915,6 +925,19 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            9 => {
+                sqlx::query(
+                    r#"
+                    UPDATE sessions
+                    SET session_type = 'acp'
+                    WHERE session_type = 'user'
+                      AND name = 'ACP Session'
+                      AND user_set_name = FALSE
+                "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -963,6 +986,7 @@ impl SessionStorage {
             .await?;
 
         tx.commit().await?;
+        #[cfg(feature = "telemetry")]
         crate::posthog::emit_session_started();
         Ok(session)
     }
@@ -1239,12 +1263,19 @@ impl SessionStorage {
         Self::replace_conversation_inner(pool, session_id, conversation).await
     }
 
-    async fn list_sessions_by_types(&self, types: &[SessionType]) -> Result<Vec<Session>> {
-        if types.is_empty() {
-            return Ok(Vec::new());
-        }
+    async fn list_sessions_by_types(&self, types: Option<&[SessionType]>) -> Result<Vec<Session>> {
+        let (where_clause, binds): (String, Vec<String>) = match types {
+            Some(t) if !t.is_empty() => {
+                let placeholders: String = t.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                (
+                    format!("WHERE s.session_type IN ({})", placeholders),
+                    t.iter().map(|t| t.to_string()).collect(),
+                )
+            }
+            Some(_) => return Ok(Vec::new()),
+            None => (String::new(), Vec::new()),
+        };
 
-        let placeholders: String = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         let query = format!(
             r#"
             SELECT s.id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
@@ -1255,16 +1286,16 @@ impl SessionStorage {
                    COUNT(m.id) as message_count
             FROM sessions s
             INNER JOIN messages m ON s.id = m.session_id
-            WHERE s.session_type IN ({})
+            {}
             GROUP BY s.id
             ORDER BY s.updated_at DESC
             "#,
-            placeholders
+            where_clause
         );
 
         let mut q = sqlx::query_as::<_, Session>(&query);
-        for t in types {
-            q = q.bind(t.to_string());
+        for b in &binds {
+            q = q.bind(b);
         }
 
         let pool = self.pool().await?;
@@ -1272,7 +1303,7 @@ impl SessionStorage {
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>> {
-        self.list_sessions_by_types(&[SessionType::User, SessionType::Scheduled])
+        self.list_sessions_by_types(Some(&[SessionType::User, SessionType::Scheduled]))
             .await
     }
 
@@ -1304,17 +1335,32 @@ impl SessionStorage {
         Ok(())
     }
 
-    async fn get_insights(&self) -> Result<SessionInsights> {
-        let pool = self.pool().await?;
-        let row = sqlx::query_as::<_, (i64, Option<i64>)>(
+    async fn get_insights(&self, types: &[SessionType]) -> Result<SessionInsights> {
+        if types.is_empty() {
+            return Ok(SessionInsights {
+                total_sessions: 0,
+                total_tokens: 0,
+            });
+        }
+
+        let placeholders: String = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let query = format!(
             r#"
             SELECT COUNT(*) as total_sessions,
                    COALESCE(SUM(COALESCE(accumulated_total_tokens, total_tokens, 0)), 0) as total_tokens
             FROM sessions
+            WHERE session_type IN ({})
             "#,
-        )
-            .fetch_one(pool)
-            .await?;
+            placeholders
+        );
+
+        let pool = self.pool().await?;
+        let mut q = sqlx::query_as::<_, (i64, Option<i64>)>(&query);
+        for t in types {
+            q = q.bind(t.to_string());
+        }
+
+        let row = q.fetch_one(pool).await?;
 
         Ok(SessionInsights {
             total_sessions: row.0 as usize,
@@ -1331,6 +1377,7 @@ impl SessionStorage {
         &self,
         session_manager: &SessionManager,
         json: &str,
+        session_type_override: Option<SessionType>,
     ) -> Result<Session> {
         let import: Session = serde_json::from_str(json)?;
 
@@ -1338,7 +1385,7 @@ impl SessionStorage {
             .create_session(
                 import.working_dir.clone(),
                 import.name.clone(),
-                import.session_type,
+                session_type_override.unwrap_or(import.session_type),
                 import.goose_mode,
             )
             .await?;
@@ -1433,6 +1480,7 @@ impl SessionStorage {
         after_date: Option<chrono::DateTime<chrono::Utc>>,
         before_date: Option<chrono::DateTime<chrono::Utc>>,
         exclude_session_id: Option<String>,
+        session_types: Vec<SessionType>,
     ) -> Result<crate::session::chat_history_search::ChatRecallResults> {
         use crate::session::chat_history_search::ChatHistorySearch;
 
@@ -1444,6 +1492,7 @@ impl SessionStorage {
             after_date,
             before_date,
             exclude_session_id,
+            session_types,
         )
         .execute()
         .await
@@ -1741,7 +1790,7 @@ mod tests {
         .unwrap();
 
         let exported = sm.export_session(&original.id).await.unwrap();
-        let imported = sm.import_session(&exported).await.unwrap();
+        let imported = sm.import_session(&exported, None).await.unwrap();
 
         assert_ne!(imported.id, original.id);
         assert_eq!(imported.name, DESCRIPTION);
@@ -1756,6 +1805,69 @@ mod tests {
         assert_eq!(conversation.messages().len(), 2);
         assert_eq!(conversation.messages()[0].role, Role::User);
         assert_eq!(conversation.messages()[1].role, Role::Assistant);
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_filters_by_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let user_session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "User session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        sm.add_message(
+            &user_session.id,
+            &Message {
+                id: None,
+                role: Role::User,
+                created: chrono::Utc::now().timestamp_millis(),
+                content: vec![MessageContent::text("hello world")],
+                metadata: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let acp_session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "ACP session".to_string(),
+                SessionType::Acp,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        sm.add_message(
+            &acp_session.id,
+            &Message {
+                id: None,
+                role: Role::User,
+                created: chrono::Utc::now().timestamp_millis(),
+                content: vec![MessageContent::text("hello acp")],
+                metadata: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let default_sessions = sm.list_sessions().await.unwrap();
+        assert_eq!(default_sessions.len(), 1);
+        assert_eq!(default_sessions[0].name, "User session");
+
+        let acp_sessions = sm
+            .list_sessions_by_types(&[SessionType::Acp])
+            .await
+            .unwrap();
+        assert_eq!(acp_sessions.len(), 1);
+        assert_eq!(acp_sessions[0].name, "ACP session");
     }
 
     #[tokio::test]
@@ -1774,7 +1886,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
 
-        let imported = sm.import_session(OLD_FORMAT_JSON).await.unwrap();
+        let imported = sm.import_session(OLD_FORMAT_JSON, None).await.unwrap();
 
         assert_eq!(imported.name, "Old format session");
         assert!(imported.user_set_name);
@@ -1852,5 +1964,74 @@ mod tests {
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.goose_mode, GooseMode::default());
+    }
+
+    #[tokio::test]
+    async fn test_acp_session_migration() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+
+        SessionStorage::create_schema(&pool).await.unwrap();
+
+        // Demote the schema back to v8 to simulate a database
+        // that has never seen migration 9.
+        sqlx::query("UPDATE schema_version SET version = 8")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind("user_id")
+        .bind("User Session")
+        .bind(false)
+        .bind("user")
+        .bind("/tmp")
+        .bind("{}")
+        .bind("auto")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind("acp_id")
+        .bind("ACP Session")
+        .bind(false)
+        .bind("user")
+        .bind("/tmp")
+        .bind("{}")
+        .bind("auto")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        sm.storage().pool().await.unwrap(); // Triggers migration
+
+        let user_session = sm.storage().get_session("user_id", false).await.unwrap();
+        assert_eq!(user_session.session_type, SessionType::User);
+
+        let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
+        assert_eq!(acp_session.session_type, SessionType::Acp);
     }
 }

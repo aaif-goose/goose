@@ -145,7 +145,7 @@ fn test_format_tasks_update_from_event() {
 
     let result2 = format_tasks_update_from_event(&event);
     assert!(!result2.contains("🎯 Task Execution Dashboard"));
-    assert!(result2.contains(MOVE_TO_PROGRESS_LINE));
+    assert!(result2.contains("📊 Progress:"));
 }
 
 #[test]

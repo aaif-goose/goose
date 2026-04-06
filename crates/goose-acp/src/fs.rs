@@ -10,12 +10,12 @@ use goose::agents::platform_extensions::developer::shell::{ShellParams, OUTPUT_L
 use goose::agents::platform_extensions::developer::DeveloperClient;
 use rmcp::model::{CallToolResult, Content as RmcpContent, Tool, ToolAnnotations};
 use sacp::schema::{
-    CreateTerminalRequest, Diff, KillTerminalCommandRequest, ReadTextFileRequest,
-    ReleaseTerminalRequest, SessionId, SessionNotification, SessionUpdate, Terminal,
-    TerminalOutputRequest, ToolCallContent, ToolCallId, ToolCallLocation, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind, WaitForTerminalExitRequest, WriteTextFileRequest,
+    CreateTerminalRequest, Diff, KillTerminalRequest, ReadTextFileRequest, ReleaseTerminalRequest,
+    SessionId, SessionNotification, SessionUpdate, Terminal, TerminalOutputRequest,
+    ToolCallContent, ToolCallId, ToolCallLocation, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    WaitForTerminalExitRequest, WriteTextFileRequest,
 };
-use sacp::{AgentToClient, JrConnectionCx};
+use sacp::{Client, ConnectionTo};
 use schemars::schema_for;
 use std::path::Path;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 async fn acp_read_text_file(
-    cx: &JrConnectionCx<AgentToClient>,
+    cx: &ConnectionTo<Client>,
     session_id: &SessionId,
     path: &Path,
     line: Option<u32>,
@@ -46,7 +46,7 @@ async fn acp_read_text_file(
 }
 
 async fn acp_write_text_file(
-    cx: &JrConnectionCx<AgentToClient>,
+    cx: &ConnectionTo<Client>,
     session_id: &SessionId,
     path: &Path,
     content: &str,
@@ -62,7 +62,7 @@ async fn acp_write_text_file(
 
 pub(crate) struct AcpTools {
     pub(crate) inner: Arc<dyn McpClientTrait>,
-    pub(crate) cx: JrConnectionCx<AgentToClient>,
+    pub(crate) cx: ConnectionTo<Client>,
     pub(crate) session_id: SessionId,
     pub(crate) fs_read: bool,
     pub(crate) fs_write: bool,
@@ -335,7 +335,7 @@ impl AcpTools {
                 Err(_) => {
                     let _ = self
                         .cx
-                        .send_request(KillTerminalCommandRequest::new(
+                        .send_request(KillTerminalRequest::new(
                             self.session_id.clone(),
                             terminal_id.clone(),
                         ))

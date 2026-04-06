@@ -2,6 +2,90 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Loader2, Download, CheckCircle, AlertCircle } from 'lucide-react';
 import { errorMessage } from '../../../utils/conversionUtils';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  loading: {
+    id: 'updateSection.loading',
+    defaultMessage: 'Loading...',
+  },
+  currentVersion: {
+    id: 'updateSection.currentVersion',
+    defaultMessage: 'Current version',
+  },
+  versionAvailable: {
+    id: 'updateSection.versionAvailable',
+    defaultMessage: '→ {version} available',
+  },
+  upToDate: {
+    id: 'updateSection.upToDate',
+    defaultMessage: '(up to date)',
+  },
+  checkForUpdates: {
+    id: 'updateSection.checkForUpdates',
+    defaultMessage: 'Check for Updates',
+  },
+  installAndRestart: {
+    id: 'updateSection.installAndRestart',
+    defaultMessage: 'Install & Restart',
+  },
+  checking: {
+    id: 'updateSection.checking',
+    defaultMessage: 'Checking for updates...',
+  },
+  downloadingProgress: {
+    id: 'updateSection.downloadingProgress',
+    defaultMessage: 'Downloading update... {percent}%',
+  },
+  downloadReady: {
+    id: 'updateSection.downloadReady',
+    defaultMessage: 'Update downloaded and ready to install!',
+  },
+  latestVersion: {
+    id: 'updateSection.latestVersion',
+    defaultMessage: 'You are running the latest version!',
+  },
+  updateAvailable: {
+    id: 'updateSection.updateAvailable',
+    defaultMessage: 'Update available!',
+  },
+  versionIsAvailable: {
+    id: 'updateSection.versionIsAvailable',
+    defaultMessage: 'Version {version} is available',
+  },
+  downloadingUpdate: {
+    id: 'updateSection.downloadingUpdate',
+    defaultMessage: 'Downloading update...',
+  },
+  autoDownload: {
+    id: 'updateSection.autoDownload',
+    defaultMessage: 'Update will be downloaded automatically in the background.',
+  },
+  manualInstallNote: {
+    id: 'updateSection.manualInstallNote',
+    defaultMessage: "After download, you'll need to manually install the update.",
+  },
+  autoInstallNote: {
+    id: 'updateSection.autoInstallNote',
+    defaultMessage: 'The update will be installed automatically when you quit the app.',
+  },
+  readyInstallManual: {
+    id: 'updateSection.readyInstallManual',
+    defaultMessage: '✓ Update is ready! Click "Install & Restart" for installation instructions.',
+  },
+  manualInstallRequired: {
+    id: 'updateSection.manualInstallRequired',
+    defaultMessage: 'Manual installation required for this update method.',
+  },
+  readyInstallAuto: {
+    id: 'updateSection.readyInstallAuto',
+    defaultMessage: '✓ Update is ready! It will be installed when you quit Goose.',
+  },
+  installNowHint: {
+    id: 'updateSection.installNowHint',
+    defaultMessage: 'Or click "Install & Restart" to update now.',
+  },
+});
 
 type UpdateStatus =
   | 'idle'
@@ -25,6 +109,7 @@ interface UpdateEventData {
 }
 
 export default function UpdateSection() {
+  const intl = useIntl();
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo>({
     currentVersion: '',
@@ -42,7 +127,6 @@ export default function UpdateSection() {
     // Check if there's already an update state from the auto-check
     window.electron.getUpdateState().then((state) => {
       if (state) {
-        console.log('Found existing update state:', state);
         setUpdateInfo((prev) => ({
           ...prev,
           isUpdateAvailable: state.updateAvailable,
@@ -58,7 +142,6 @@ export default function UpdateSection() {
 
     // Listen for updater events
     window.electron.onUpdaterEvent((event) => {
-      console.log('Updater event:', event);
 
       switch (event.event) {
         case 'checking-for-update':
@@ -169,20 +252,20 @@ export default function UpdateSection() {
   const getStatusMessage = () => {
     switch (updateStatus) {
       case 'checking':
-        return 'Checking for updates...';
+        return intl.formatMessage(i18n.checking);
       case 'downloading':
-        return `Downloading update... ${Math.round(progress)}%`;
+        return intl.formatMessage(i18n.downloadingProgress, { percent: Math.round(progress) });
       case 'ready':
-        return 'Update downloaded and ready to install!';
+        return intl.formatMessage(i18n.downloadReady);
       case 'success':
         return updateInfo.isUpdateAvailable === false
-          ? 'You are running the latest version!'
-          : 'Update available!';
+          ? intl.formatMessage(i18n.latestVersion)
+          : intl.formatMessage(i18n.updateAvailable);
       case 'error':
         return updateInfo.error || 'An error occurred';
       default:
         if (updateInfo.isUpdateAvailable) {
-          return `Version ${updateInfo.latestVersion} is available`;
+          return intl.formatMessage(i18n.versionIsAvailable, { version: updateInfo.latestVersion });
         }
         return '';
     }
@@ -209,15 +292,15 @@ export default function UpdateSection() {
       <div className="text-sm text-text-secondary mb-4 flex items-center gap-2">
         <div className="flex flex-col">
           <div className="text-text-primary text-2xl font-mono">
-            {updateInfo.currentVersion || 'Loading...'}
+            {updateInfo.currentVersion || intl.formatMessage(i18n.loading)}
           </div>
-          <div className="text-xs text-text-secondary">Current version</div>
+          <div className="text-xs text-text-secondary">{intl.formatMessage(i18n.currentVersion)}</div>
         </div>
         {updateInfo.latestVersion && updateInfo.isUpdateAvailable && (
-          <span className="text-text-secondary"> → {updateInfo.latestVersion} available</span>
+          <span className="text-text-secondary"> {intl.formatMessage(i18n.versionAvailable, { version: updateInfo.latestVersion })}</span>
         )}
         {updateInfo.currentVersion && updateInfo.isUpdateAvailable === false && (
-          <span className="text-text-primary"> (up to date)</span>
+          <span className="text-text-primary"> {intl.formatMessage(i18n.upToDate)}</span>
         )}
       </div>
 
@@ -229,12 +312,12 @@ export default function UpdateSection() {
             variant="secondary"
             size="sm"
           >
-            Check for Updates
+            {intl.formatMessage(i18n.checkForUpdates)}
           </Button>
 
           {updateStatus === 'ready' && (
             <Button onClick={installUpdate} variant="default" size="sm">
-              Install & Restart
+              {intl.formatMessage(i18n.installAndRestart)}
             </Button>
           )}
         </div>
@@ -249,7 +332,7 @@ export default function UpdateSection() {
         {updateStatus === 'downloading' && (
           <div className="w-full mt-2">
             <div className="flex justify-between text-xs text-text-secondary mb-1">
-              <span>Downloading update...</span>
+              <span>{intl.formatMessage(i18n.downloadingUpdate)}</span>
               <span>{progress}%</span>
             </div>
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
@@ -264,14 +347,14 @@ export default function UpdateSection() {
         {/* Update information */}
         {updateInfo.isUpdateAvailable && updateStatus === 'idle' && (
           <div className="text-xs text-text-secondary mt-4 space-y-1">
-            <p>Update will be downloaded automatically in the background.</p>
+            <p>{intl.formatMessage(i18n.autoDownload)}</p>
             {isUsingGitHubFallback ? (
               <p className="text-xs text-amber-600">
-                After download, you'll need to manually install the update.
+                {intl.formatMessage(i18n.manualInstallNote)}
               </p>
             ) : (
               <p className="text-xs text-green-600">
-                The update will be installed automatically when you quit the app.
+                {intl.formatMessage(i18n.autoInstallNote)}
               </p>
             )}
           </div>
@@ -282,19 +365,19 @@ export default function UpdateSection() {
             {isUsingGitHubFallback ? (
               <>
                 <p className="text-xs text-green-600">
-                  ✓ Update is ready! Click "Install & Restart" for installation instructions.
+                  {intl.formatMessage(i18n.readyInstallManual)}
                 </p>
                 <p className="text-xs text-text-secondary">
-                  Manual installation required for this update method.
+                  {intl.formatMessage(i18n.manualInstallRequired)}
                 </p>
               </>
             ) : (
               <>
                 <p className="text-xs text-green-600">
-                  ✓ Update is ready! It will be installed when you quit Goose.
+                  {intl.formatMessage(i18n.readyInstallAuto)}
                 </p>
                 <p className="text-xs text-text-secondary">
-                  Or click "Install & Restart" to update now.
+                  {intl.formatMessage(i18n.installNowHint)}
                 </p>
               </>
             )}

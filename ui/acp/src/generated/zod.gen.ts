@@ -4,11 +4,10 @@ import { z } from 'zod';
 
 /**
  * Add an extension to an active session.
- * Method: `_agent/extensions/add`
  */
 export const zAddExtensionRequest = z.object({
-    session_id: z.string(),
-    config: z.unknown()
+    sessionId: z.string(),
+    config: z.unknown().optional().default(null)
 });
 
 /**
@@ -18,111 +17,213 @@ export const zEmptyResponse = z.record(z.unknown());
 
 /**
  * Remove an extension from an active session.
- * Method: `_agent/extensions/remove`
  */
 export const zRemoveExtensionRequest = z.object({
-    session_id: z.string(),
+    sessionId: z.string(),
     name: z.string()
 });
 
 /**
  * List all tools available in a session.
- * Method: `_agent/tools`
  */
 export const zGetToolsRequest = z.object({
-    session_id: z.string()
+    sessionId: z.string()
 });
 
+/**
+ * Tools response.
+ */
 export const zGetToolsResponse = z.object({
     tools: z.array(z.unknown())
 });
 
 /**
  * Read a resource from an extension.
- * Method: `_agent/resource/read`
  */
 export const zReadResourceRequest = z.object({
-    session_id: z.string(),
+    sessionId: z.string(),
     uri: z.string(),
-    extension_name: z.string()
+    extensionName: z.string()
 });
 
+/**
+ * Resource read response.
+ */
 export const zReadResourceResponse = z.object({
-    result: z.unknown()
+    result: z.unknown().optional().default(null)
 });
 
 /**
  * Update the working directory for a session.
- * Method: `_agent/working_dir/update`
  */
 export const zUpdateWorkingDirRequest = z.object({
-    session_id: z.string(),
-    working_dir: z.string()
-});
-
-/**
- * List all sessions.
- * Method: `_session/list`
- */
-export const zListSessionsResponse = z.object({
-    sessions: z.array(z.unknown())
+    sessionId: z.string(),
+    workingDir: z.string()
 });
 
 /**
  * Get a session by ID.
- * Method: `_session/get`
  */
 export const zGetSessionRequest = z.object({
-    session_id: z.string(),
-    include_messages: z.boolean().optional().default(false)
+    sessionId: z.string(),
+    includeMessages: z.boolean().optional().default(false)
 });
 
 /**
  * Get a session response.
  */
 export const zGetSessionResponse = z.object({
-    session: z.unknown()
+    session: z.unknown().optional().default(null)
 });
 
 /**
  * Delete a session.
- * Method: `_session/delete`
  */
 export const zDeleteSessionRequest = z.object({
-    session_id: z.string()
+    sessionId: z.string()
 });
 
 /**
  * Export a session as a JSON string.
- * Method: `_session/export`
  */
 export const zExportSessionRequest = z.object({
-    session_id: z.string()
+    sessionId: z.string()
 });
 
+/**
+ * Export session response.
+ */
 export const zExportSessionResponse = z.object({
     data: z.string()
 });
 
 /**
  * Import a session from a JSON string.
- * Method: `_session/import`
  */
 export const zImportSessionRequest = z.object({
     data: z.string()
 });
 
+/**
+ * Import session response.
+ */
 export const zImportSessionResponse = z.object({
-    session: z.unknown()
+    session: z.unknown().optional().default(null)
 });
 
 /**
  * List configured extensions and any warnings.
- * Method: `_config/extensions`
+ */
+export const zGetExtensionsRequest = z.record(z.unknown());
+
+/**
+ * List configured extensions and any warnings.
  */
 export const zGetExtensionsResponse = z.object({
     extensions: z.array(z.unknown()),
     warnings: z.array(z.string())
+});
+
+/**
+ * Atomically update the provider for a live session.
+ */
+export const zUpdateProviderRequest = z.object({
+    sessionId: z.string(),
+    provider: z.string(),
+    model: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    contextLimit: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional(),
+    requestParams: z.union([
+        z.record(z.unknown()),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Provider update response.
+ */
+export const zUpdateProviderResponse = z.object({
+    configOptions: z.array(z.unknown())
+});
+
+/**
+ * List providers available through goose, including the config-default sentinel.
+ */
+export const zListProvidersRequest = z.record(z.unknown());
+
+export const zProviderListEntry = z.object({
+    id: z.string(),
+    label: z.string()
+});
+
+/**
+ * Provider list response.
+ */
+export const zListProvidersResponse = z.object({
+    providers: z.array(zProviderListEntry)
+});
+
+/**
+ * Read a single non-secret config value.
+ */
+export const zReadConfigRequest = z.object({
+    key: z.string()
+});
+
+/**
+ * Config read response.
+ */
+export const zReadConfigResponse = z.object({
+    value: z.unknown().optional().default(null)
+});
+
+/**
+ * Upsert a single non-secret config value.
+ */
+export const zUpsertConfigRequest = z.object({
+    key: z.string(),
+    value: z.unknown()
+});
+
+/**
+ * Remove a single non-secret config value.
+ */
+export const zRemoveConfigRequest = z.object({
+    key: z.string()
+});
+
+/**
+ * Check whether a secret exists. Never returns the actual value.
+ */
+export const zCheckSecretRequest = z.object({
+    key: z.string()
+});
+
+/**
+ * Secret check response.
+ */
+export const zCheckSecretResponse = z.object({
+    exists: z.boolean()
+});
+
+/**
+ * Set a secret value (write-only).
+ */
+export const zUpsertSecretRequest = z.object({
+    key: z.string(),
+    value: z.unknown()
+});
+
+/**
+ * Remove a secret.
+ */
+export const zRemoveSecretRequest = z.object({
+    key: z.string()
 });
 
 export const zExtRequest = z.object({
@@ -138,7 +239,16 @@ export const zExtRequest = z.object({
             zGetSessionRequest,
             zDeleteSessionRequest,
             zExportSessionRequest,
-            zImportSessionRequest
+            zImportSessionRequest,
+            zGetExtensionsRequest,
+            zUpdateProviderRequest,
+            zListProvidersRequest,
+            zReadConfigRequest,
+            zUpsertConfigRequest,
+            zRemoveConfigRequest,
+            zCheckSecretRequest,
+            zUpsertSecretRequest,
+            zRemoveSecretRequest
         ]),
         z.union([
             z.record(z.unknown()),
@@ -155,11 +265,14 @@ export const zExtResponse = z.union([
                 zEmptyResponse,
                 zGetToolsResponse,
                 zReadResourceResponse,
-                zListSessionsResponse,
                 zGetSessionResponse,
                 zExportSessionResponse,
                 zImportSessionResponse,
-                zGetExtensionsResponse
+                zGetExtensionsResponse,
+                zUpdateProviderResponse,
+                zListProvidersResponse,
+                zReadConfigResponse,
+                zCheckSecretResponse
             ]),
             z.unknown()
         ]).optional()

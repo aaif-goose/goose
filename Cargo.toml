@@ -8,7 +8,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.28.0"
+version = "1.30.0"
 authors = ["Block <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
 repository = "https://github.com/block/goose"
@@ -20,7 +20,9 @@ string_slice = "warn"
 
 [workspace.dependencies]
 rmcp = { version = "1.2.0", features = ["schemars", "auth"] }
-sacp = "10.1.0"
+agent-client-protocol-schema = { version = "0.11", features = ["unstable"] }
+sacp = "11.0.0"
+arboard = "3"
 anyhow = "1.0"
 async-stream = "0.3"
 async-trait = "0.1"
@@ -64,8 +66,12 @@ utoipa = "4.1"
 uuid = { version = "1.11", features = ["v4"] }
 webbrowser = "1.0"
 which = "8.0.0"
+winapi = { version = "0.3", features = ["wincred"] }
 wiremock = "0.6"
+zip = { version = "^8.0", default-features = false, features = ["deflate"] }
 serial_test = "3.2.0"
+sha2 = "0.10"
+shell-words = "1.1.1"
 test-case = "3.3.1"
 url = "2.5.8"
 opentelemetry = "0.31"
@@ -90,6 +96,9 @@ tree-sitter-typescript = "0.23"
 
 [patch.crates-io]
 v8 = { path = "vendor/v8" }
+# TODO: switch to crates.io release once it includes the unstable feature and updates org from symposium-dev to agentclientprotocol
+sacp = { git = "https://github.com/agentclientprotocol/symposium-acp", rev = "14086c9" }
+sacp-derive = { git = "https://github.com/agentclientprotocol/symposium-acp", rev = "14086c9" }
 # TODO: switch to released version in opentelemetry 0.32.0
 # https://github.com/open-telemetry/opentelemetry-rust/issues/3408
 opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "345cd74a" }

@@ -12,7 +12,7 @@ pub mod moim;
 pub mod platform_extensions;
 pub mod platform_tools;
 pub mod prompt_manager;
-mod reply_parts;
+pub mod reply_parts;
 pub mod retry;
 mod schedule_tool;
 pub mod subagent_execution_tool;

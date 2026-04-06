@@ -12,7 +12,6 @@ use goose::config::paths::Paths;
 use goose::config::ExtensionEntry;
 use goose::config::{Config, ConfigError};
 use goose::model::ModelConfig;
-use goose::providers::auto_detect::detect_provider_from_api_key;
 use goose::providers::base::{ProviderMetadata, ProviderType};
 use goose::providers::canonical::maybe_get_canonical_model;
 use goose::providers::catalog::{
@@ -136,6 +135,7 @@ pub enum ConfigValueResponse {
 pub enum CommandType {
     Builtin,
     Recipe,
+    Skill,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -149,16 +149,6 @@ pub struct SlashCommandsResponse {
     pub commands: Vec<SlashCommand>,
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct DetectProviderRequest {
-    pub api_key: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct DetectProviderResponse {
-    pub provider_name: String,
-    pub models: Vec<String>,
-}
 #[utoipa::path(
     post,
     path = "/config/upsert",
@@ -398,14 +388,23 @@ pub async fn get_provider_models(
     }
 }
 
+#[derive(Deserialize, utoipa::IntoParams)]
+pub struct SlashCommandsQuery {
+    /// Optional working directory to discover local skills from
+    pub working_dir: Option<String>,
+}
+
 #[utoipa::path(
     get,
     path = "/config/slash_commands",
+    params(SlashCommandsQuery),
     responses(
         (status = 200, description = "Slash commands retrieved successfully", body = SlashCommandsResponse)
     )
 )]
-pub async fn get_slash_commands() -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
+pub async fn get_slash_commands(
+    axum::extract::Query(query): axum::extract::Query<SlashCommandsQuery>,
+) -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
     let mut commands: Vec<_> = slash_commands::list_commands()
         .iter()
         .map(|command| SlashCommand {
@@ -421,6 +420,23 @@ pub async fn get_slash_commands() -> Result<Json<SlashCommandsResponse>, ErrorRe
             help: cmd_def.description.to_string(),
             command_type: CommandType::Builtin,
         });
+    }
+
+    let working_dir = query.working_dir.map(std::path::PathBuf::from);
+    for source in
+        goose::agents::platform_extensions::summon::list_installed_sources(working_dir.as_deref())
+    {
+        if matches!(
+            source.kind,
+            goose::agents::platform_extensions::summon::SourceKind::Skill
+                | goose::agents::platform_extensions::summon::SourceKind::BuiltinSkill
+        ) {
+            commands.push(SlashCommand {
+                command: source.name,
+                help: source.description,
+                command_type: CommandType::Skill,
+            });
+        }
     }
 
     Ok(Json(SlashCommandsResponse { commands }))
@@ -532,31 +548,6 @@ pub async fn upsert_permissions(
     }
 
     Ok(Json("Permissions updated successfully".to_string()))
-}
-
-#[utoipa::path(
-    post,
-    path = "/config/detect-provider",
-    request_body = DetectProviderRequest,
-    responses(
-        (status = 200, description = "Provider detected successfully", body = DetectProviderResponse),
-        (status = 404, description = "No matching provider found"),
-    )
-)]
-pub async fn detect_provider(
-    Json(detect_request): Json<DetectProviderRequest>,
-) -> Result<Json<DetectProviderResponse>, ErrorResponse> {
-    let api_key = detect_request.api_key.trim();
-
-    match detect_provider_from_api_key(api_key).await {
-        Some((provider_name, models)) => Ok(Json(DetectProviderResponse {
-            provider_name,
-            models,
-        })),
-        None => Err(ErrorResponse::not_found(
-            "Could not detect provider from the provided API key",
-        )),
-    }
 }
 
 #[utoipa::path(
@@ -930,7 +921,6 @@ pub fn routes(state: Arc<AppState>) -> Router {
             "/config/providers/{name}/cleanup",
             post(cleanup_provider_cache),
         )
-        .route("/config/detect-provider", post(detect_provider))
         .route("/config/slash_commands", get(get_slash_commands))
         .route(
             "/config/canonical-model-info",

@@ -13,6 +13,7 @@ use crate::session_event_bus::SessionEventBus;
 use crate::tunnel::TunnelManager;
 use goose::agents::ExtensionLoadResult;
 use goose::gateway::manager::GatewayManager;
+#[cfg(feature = "local-inference")]
 use goose::providers::local_inference::InferenceRuntime;
 
 type ExtensionLoadingTasks =
@@ -26,6 +27,7 @@ pub struct AppState {
     pub tunnel_manager: Arc<TunnelManager>,
     pub gateway_manager: Arc<GatewayManager>,
     pub extension_loading_tasks: ExtensionLoadingTasks,
+    #[cfg(feature = "local-inference")]
     pub inference_runtime: Arc<InferenceRuntime>,
     session_buses: Arc<Mutex<HashMap<String, Arc<SessionEventBus>>>>,
 }
@@ -45,6 +47,7 @@ impl AppState {
             tunnel_manager,
             gateway_manager,
             extension_loading_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(feature = "local-inference")]
             inference_runtime: InferenceRuntime::get_or_init(),
             session_buses: Arc::new(Mutex::new(HashMap::new())),
         }))

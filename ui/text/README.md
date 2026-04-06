@@ -7,10 +7,16 @@ https://github.com/block/goose/discussions/7309
 
 ## Running
 
-1. Run the server `cargo run -p goose-acp --bin goose-acp-server`
-2. Run the tui
-    ```
-    cd ui/text
-    npm i
-    npm run start
-    ```
+The TUI automatically launches the goose ACP server using the `goose acp` command.
+
+```bash
+cd ui/text
+npm i
+npm run start
+```
+
+To use a custom server URL instead:
+
+```bash
+npm run start -- --server http://localhost:8080
+```

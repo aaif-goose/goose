@@ -1,3 +1,9 @@
+#[cfg(not(any(feature = "rustls-tls", feature = "native-tls")))]
+compile_error!("At least one of `rustls-tls` or `native-tls` features must be enabled");
+
+#[cfg(all(feature = "rustls-tls", feature = "native-tls"))]
+compile_error!("Features `rustls-tls` and `native-tls` are mutually exclusive");
+
 pub mod acp;
 pub mod action_required_manager;
 pub mod agents;
@@ -15,8 +21,10 @@ pub mod logging;
 pub mod mcp_utils;
 pub mod model;
 pub mod oauth;
+#[cfg(feature = "otel")]
 pub mod otel;
 pub mod permission;
+#[cfg(feature = "telemetry")]
 pub mod posthog;
 pub mod prompt_template;
 pub mod providers;

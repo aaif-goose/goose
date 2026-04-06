@@ -20,8 +20,10 @@ use goose::config::{
     PermissionManager,
 };
 use goose::model::ModelConfig;
+#[cfg(feature = "telemetry")]
 use goose::posthog::{get_telemetry_choice, TELEMETRY_ENABLED_KEY};
 use goose::providers::base::ConfigKey;
+use goose::providers::chatgpt_codex::reasoning_levels_for_model;
 use goose::providers::formats::anthropic::supports_adaptive_thinking;
 use goose::providers::provider_test::test_provider_configuration;
 use goose::providers::{create, providers, retry_operation, RetryConfig};
@@ -43,6 +45,7 @@ pub async fn handle_configure() -> anyhow::Result<()> {
     }
 }
 
+#[cfg(feature = "telemetry")]
 pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
     let config = Config::global();
 
@@ -113,6 +116,7 @@ async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
     );
     println!();
 
+    #[cfg(feature = "telemetry")]
     configure_telemetry_consent_dialog()?;
 
     println!();
@@ -809,6 +813,26 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         }
     }
 
+    if provider_name == "chatgpt_codex" {
+        let valid_levels = reasoning_levels_for_model(&model);
+        if !valid_levels.is_empty() {
+            let mut select = cliclack::select("Select reasoning effort level:");
+            for &level in valid_levels {
+                let description = match level {
+                    "low" => "Low - Fast responses with lighter reasoning",
+                    "medium" => "Medium - Balances speed and reasoning depth for everyday tasks",
+                    "high" => "High - Greater reasoning depth for complex problems",
+                    "xhigh" => "Extra High - Extra high reasoning depth for complex problems",
+                    _ => "",
+                };
+                select = select.item(level, description, "");
+            }
+            select = select.initial_value("medium");
+            let effort: &str = select.interact()?;
+            config.set_chatgpt_codex_reasoning_effort(effort.to_string())?;
+        }
+    }
+
     // Test the configuration
     let spin = spinner();
     spin.start("Checking your configuration...");
@@ -1082,9 +1106,13 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
 
     let timeout = prompt_extension_timeout()?;
 
-    let mut parts = command_str.split_whitespace();
-    let cmd = parts.next().unwrap_or("").to_string();
-    let args: Vec<String> = parts.map(String::from).collect();
+    let mut parts = crate::session::split_quoted(&command_str)?;
+    let cmd = if parts.is_empty() {
+        String::new()
+    } else {
+        parts.remove(0)
+    };
+    let args = parts;
 
     let description = prompt_extension_description()?;
     let (envs, env_keys) = collect_env_vars()?;
@@ -1243,13 +1271,21 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
 }
 
 pub async fn configure_settings_dialog() -> anyhow::Result<()> {
-    let setting_type = cliclack::select("What setting would you like to configure?")
-        .item("goose_mode", "goose mode", "Configure goose mode")
-        .item(
+    #[allow(unused_mut)]
+    let mut setting_select = cliclack::select("What setting would you like to configure?").item(
+        "goose_mode",
+        "goose mode",
+        "Configure goose mode",
+    );
+    #[cfg(feature = "telemetry")]
+    {
+        setting_select = setting_select.item(
             "telemetry",
             "Telemetry",
             "Enable or disable anonymous usage data collection",
-        )
+        );
+    }
+    let setting_type = setting_select
         .item(
             "tool_permission",
             "Tool Permission",
@@ -1288,6 +1324,7 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         "goose_mode" => {
             configure_goose_mode_dialog()?;
         }
+        #[cfg(feature = "telemetry")]
         "telemetry" => {
             configure_telemetry_dialog()?;
         }
@@ -1362,6 +1399,7 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "telemetry")]
 pub fn configure_telemetry_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
@@ -1440,7 +1478,11 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
     };
 
     let _ = cliclack::log::info(format!("Current secret storage: {}", current_status));
-    let _ = cliclack::log::warning("Note: Disabling the keyring stores secrets in a plain text file (~/.config/goose/secrets.yaml)");
+    let secrets_path = Paths::config_dir().join("secrets.yaml");
+    let _ = cliclack::log::warning(format!(
+        "Note: Disabling the keyring stores secrets in a plain text file ({})",
+        secrets_path.display()
+    ));
 
     let storage_option = cliclack::select("How would you like to store secrets?")
         .item(
@@ -1466,9 +1508,10 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
         "file" => {
             // Set the disable flag to use file storage
             config.set_param("GOOSE_DISABLE_KEYRING", Value::String("true".to_string()))?;
-            cliclack::outro(
-                "Secret storage set to file (~/.config/goose/secrets.yaml). Keep this file secure!",
-            )?;
+            cliclack::outro(format!(
+                "Secret storage set to file ({}). Keep this file secure!",
+                secrets_path.display(),
+            ))?;
             let _ =
                 cliclack::log::info("You may need to restart goose for this change to take effect");
         }

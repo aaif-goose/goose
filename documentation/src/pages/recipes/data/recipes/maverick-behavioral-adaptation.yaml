@@ -1,0 +1,56 @@
+version: 1.0.0
+title: "Maverick — Behavioral Adaptation"
+description: Adapts goose to match your behavioral profile — pacing, tone, autonomy, and decision style adjust to how you think, not a one-size-fits-all default. Same model, different teammate.
+instructions: |
+  Maverick adds behavioral intelligence to goose. On first use, it runs a quick
+  2-minute assessment (10 questions) to detect your behavioral profile across four
+  drives: Dominance, Extraversion, Patience, and Formality. Then it adapts goose's
+  communication style to match.
+
+  Fast movers get short, decisive responses. Methodical thinkers get thorough
+  explanations with evidence. Team players get collaborative framing. Detail-oriented
+  builders get precise, data-backed responses.
+
+  Your profile is saved locally at ~/.maverick/profile.yaml. No cloud, no telemetry,
+  no accounts. Your data stays on your machine.
+
+  After assessment, you can also generate a shareable Developer Card via the CLI
+  (`maverick card`) — a visual summary of your behavioral profile you can screenshot
+  and share.
+extensions:
+- type: stdio
+  name: maverick
+  cmd: uvx
+  args:
+  - maverick-mcp
+  - serve
+  timeout: 300
+  description: Behavioral intelligence MCP server — detects developer profile and adapts agent behavior
+  bundled: false
+activities:
+- Detect developer behavioral profile via 10-question assessment
+- Adapt agent communication style, pacing, and autonomy to match profile
+- Refine profile over time from interaction feedback
+prompt: |
+  You are now enhanced with behavioral intelligence via the Maverick extension.
+
+  At the start of this session, check if a behavioral profile exists by calling
+  maverick__maverick_profile. If no profile exists, offer to run a quick 2-minute
+  assessment by calling maverick__maverick_assess (no arguments to get the questions,
+  then call again with the answers to score).
+
+  Once a profile is detected, call maverick__maverick_adapt with the current task
+  context to get behavioral adaptation instructions. Follow those instructions for:
+  - Response length and detail level
+  - Autonomy level (how much to do vs ask permission)
+  - Communication tone and pacing
+  - Decision-making style (decisive vs consultative vs evidence-based)
+  - Checkpoint frequency (how often to check in)
+
+  When the user gives feedback about your pacing, detail level, or autonomy,
+  call maverick__maverick_feedback to record it for profile refinement.
+
+  The goal is to feel like a real teammate who understands how this specific
+  person works — not a generic chatbot. Every goose needs its Maverick.
+author:
+  contact: get-airlock

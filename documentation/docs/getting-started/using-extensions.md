@@ -119,6 +119,8 @@ If you're in a corporate or airgapped environment and extensions fail to activat
 
 You can install any MCP server as a goose extension. 
 
+Many MCP servers work better when they understand your active workspace. goose supports [MCP Roots](/docs/guides/mcp-roots), which lets roots-aware extensions see your current session working directory automatically.
+
 :::tip MCP Server Directory
 See available servers in the **[MCP Server Directory](https://www.pulsemcp.com/servers)**.
 :::

@@ -18,7 +18,7 @@ jobs:
         ref: ${{ github.head_ref }}
         fetch-depth: 0
 
-    - name: Check all PR commits exist in main
+    - name: Check all PR commits are empty or cherry-picked from main
       run: |
         git fetch origin main
 
@@ -39,19 +39,25 @@ jobs:
           exit 0
         fi
 
-        COMMIT_COUNT=$(echo "$MISSING_COMMITS" | wc -l)
-        FIRST_COMMIT=$(git rev-list --reverse HEAD ^origin/main | head -1)
+        ALL_EMPTY=true
+        for commit in $MISSING_COMMITS; do
+          if [ -n "$(git diff-tree --no-commit-id --name-only -r "$commit")" ]; then
+            ALL_EMPTY=false
+            break
+          fi
+        done
 
-        if [ "$COMMIT_COUNT" -eq 1 ] && echo "$MISSING_COMMITS" | grep -q "$FIRST_COMMIT"; then
-          echo "✅ Only version bump commit is unique"
-          git log --oneline -1 "$FIRST_COMMIT"
-        else
-          echo "❌ Found commits that should exist in main:"
+        if [ "$ALL_EMPTY" = true ]; then
+          echo "✅ Only empty commits (release branch markers) are unique"
           for commit in $MISSING_COMMITS; do
-            if [ "$commit" != "$FIRST_COMMIT" ]; then
-              git log --oneline -1 "$commit"
-            fi
+            git log --oneline -1 "$commit"
           done
-          echo "Make sure commits have equivalents in main. If you've since updated main, re-run this job"
-          exit 1
+          exit 0
         fi
+
+        echo "❌ Found commits with changes that don't exist in main:"
+        for commit in $MISSING_COMMITS; do
+          git log --oneline -1 "$commit"
+        done
+        echo "Cherry-pick these commits into main first, or re-run this job after updating main."
+        exit 1

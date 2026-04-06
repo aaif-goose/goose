@@ -7,9 +7,11 @@ use crate::scheduler_trait::SchedulerTrait;
 use crate::session::SessionManager;
 use anyhow::Result;
 use lru::LruCache;
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::{OnceCell, RwLock};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 const DEFAULT_MAX_SESSION: usize = 100;
@@ -22,6 +24,7 @@ pub struct AgentManager {
     session_manager: Arc<SessionManager>,
     default_provider: Arc<RwLock<Option<Arc<dyn crate::providers::base::Provider>>>>,
     default_mode: GooseMode,
+    cancel_tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
 }
 
 impl AgentManager {
@@ -42,6 +45,7 @@ impl AgentManager {
             session_manager,
             default_provider: Arc::new(RwLock::new(None)),
             default_mode,
+            cancel_tokens: Arc::new(RwLock::new(HashMap::new())),
         };
 
         Ok(manager)
@@ -151,6 +155,9 @@ impl AgentManager {
     }
 
     pub async fn remove_session(&self, session_id: &str) -> Result<()> {
+        if let Some(token) = self.cancel_tokens.write().await.remove(session_id) {
+            token.cancel();
+        }
         let mut sessions = self.sessions.write().await;
         sessions
             .pop(session_id)
@@ -165,6 +172,51 @@ impl AgentManager {
 
     pub async fn session_count(&self) -> usize {
         self.sessions.read().await.len()
+    }
+
+    /// Atomically check if busy and register a cancel token. Returns Err if already busy.
+    pub async fn try_register_cancel_token(
+        &self,
+        session_id: &str,
+        token: CancellationToken,
+    ) -> Result<()> {
+        let mut tokens = self.cancel_tokens.write().await;
+        if tokens.contains_key(session_id) {
+            anyhow::bail!("Session '{}' is currently busy", session_id);
+        }
+        tokens.insert(session_id.to_string(), token);
+        Ok(())
+    }
+
+    /// Remove the cancellation token for a session (called when reply finishes)
+    pub async fn unregister_cancel_token(&self, session_id: &str) {
+        self.cancel_tokens.write().await.remove(session_id);
+    }
+
+    /// Cancel a running agent by triggering its cancellation token
+    pub async fn cancel_session(&self, session_id: &str) -> Result<()> {
+        let tokens = self.cancel_tokens.read().await;
+        let token = tokens
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("No active operation for session {}", session_id))?;
+        token.cancel();
+        Ok(())
+    }
+
+    /// Check if a session has an active reply in progress
+    pub async fn is_session_busy(&self, session_id: &str) -> bool {
+        let tokens = self.cancel_tokens.read().await;
+        tokens.contains_key(session_id)
+    }
+
+    /// List session IDs that currently have active agents loaded
+    pub async fn list_active_session_ids(&self) -> Vec<String> {
+        self.sessions
+            .read()
+            .await
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 }
 

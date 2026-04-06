@@ -207,7 +207,9 @@ pub async fn classify_planner_response(
     message_text: String,
     provider: Arc<dyn Provider>,
 ) -> Result<PlannerResponseType> {
-    let prompt = format!("The text below is the output from an AI model which can either provide a plan or list of clarifying questions. Based on the text below, decide if the output is a \"plan\" or \"clarifying questions\".\n---\n{message_text}");
+    let prompt = format!(
+        "The text below is the output from an AI model which can either provide a plan or list of clarifying questions. Based on the text below, decide if the output is a \"plan\" or \"clarifying questions\".\n---\n{message_text}"
+    );
 
     let message = Message::user().with_text(&prompt);
     let model_config = provider.get_model_config();
@@ -227,6 +229,36 @@ pub async fn classify_planner_response(
     } else {
         Ok(PlannerResponseType::ClarifyingQuestions)
     }
+}
+
+pub fn split_quoted(input: &str) -> Result<Vec<String>> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_double_quote = false;
+    let mut in_single_quote = false;
+
+    for c in input.chars() {
+        match c {
+            '"' if !in_single_quote => in_double_quote = !in_double_quote,
+            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            c if c.is_whitespace() && !in_double_quote && !in_single_quote => {
+                if !current.is_empty() {
+                    parts.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(c),
+        }
+    }
+
+    if in_double_quote || in_single_quote {
+        return Err(anyhow::anyhow!("Unmatched quote in command"));
+    }
+
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    Ok(parts)
 }
 
 impl CliSession {
@@ -271,7 +303,7 @@ impl CliSession {
     /// Parse a stdio extension command string into an ExtensionConfig
     /// Format: "ENV1=val1 ENV2=val2 command args..."
     pub fn parse_stdio_extension(extension_command: &str) -> Result<ExtensionConfig> {
-        let mut parts: Vec<&str> = extension_command.split_whitespace().collect();
+        let mut parts = split_quoted(extension_command)?;
         let mut envs = HashMap::new();
 
         while let Some(part) = parts.first() {
@@ -287,7 +319,7 @@ impl CliSession {
             return Err(anyhow::anyhow!("No command provided in extension string"));
         }
 
-        let cmd = parts.remove(0).to_string();
+        let cmd = parts.remove(0);
         let name = std::path::Path::new(&cmd)
             .file_name()
             .and_then(|f| f.to_str())
@@ -297,7 +329,7 @@ impl CliSession {
         Ok(ExtensionConfig::Stdio {
             name,
             cmd,
-            args: parts.iter().map(|s| s.to_string()).collect(),
+            args: parts,
             envs: Envs::new(envs),
             env_keys: Vec::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
@@ -576,7 +608,7 @@ impl CliSession {
             }
             InputResult::GooseMode(mode) => {
                 history.save(editor);
-                self.handle_goose_mode(&mode)?;
+                self.handle_goose_mode(&mode).await?;
             }
             InputResult::Plan(options) => {
                 self.handle_plan_mode(options).await?;
@@ -628,6 +660,7 @@ impl CliSession {
 
                 let _provider = self.agent.provider().await?;
 
+                println!();
                 output::run_status_hook("thinking");
                 output::show_thinking();
                 let start_time = Instant::now();
@@ -709,7 +742,7 @@ impl CliSession {
         }
     }
 
-    fn handle_goose_mode(&self, mode: &str) -> Result<()> {
+    async fn handle_goose_mode(&self, mode: &str) -> Result<()> {
         let config = Config::global();
         let mode = match GooseMode::from_str(&mode.to_lowercase()) {
             Ok(mode) => mode,
@@ -721,6 +754,7 @@ impl CliSession {
                 return Ok(());
             }
         };
+        self.agent.update_goose_mode(mode, &self.session_id).await?;
         config.set_goose_mode(mode)?;
         output::goose_mode_message(&format!("Goose mode set to '{mode}'"));
         Ok(())
@@ -1751,7 +1785,9 @@ fn display_log_notification(
                 let _ = progress_bars.hide();
             }
             if !is_json_mode {
-                print!("{}", formatted_message);
+                for line in formatted_message.lines() {
+                    println!("    {}", console::style(line).dim());
+                }
                 std::io::stdout().flush().unwrap();
             }
         } else if ntype == "shell_output" {
@@ -1766,7 +1802,7 @@ fn display_log_notification(
                     let _ = progress_bars.hide();
                 }
                 if !is_json_mode {
-                    println!("{}", formatted_message);
+                    println!("    {}", console::style(formatted_message).dim());
                 }
             }
         }
@@ -2008,6 +2044,21 @@ mod tests {
         }
         ; "env_prefix_name_from_cmd"
     )]
+    #[test_case(
+        r#""/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home/bin/java" -classpath "/path/with spaces/lib.jar" Main"#,
+        ExtensionConfig::Stdio {
+            name: "java".into(),
+            cmd: "/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home/bin/java".into(),
+            args: vec!["-classpath".into(), "/path/with spaces/lib.jar".into(), "Main".into()],
+            envs: Envs::default(),
+            env_keys: vec![],
+            description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
+            timeout: Some(goose::config::DEFAULT_EXTENSION_TIMEOUT),
+            bundled: None,
+            available_tools: vec![],
+        }
+        ; "quoted_path_with_spaces"
+    )]
     fn test_parse_stdio_extension(input: &str, expected: ExtensionConfig) {
         assert_eq!(CliSession::parse_stdio_extension(input).unwrap(), expected);
     }
@@ -2015,6 +2066,23 @@ mod tests {
     #[test]
     fn test_parse_stdio_extension_no_command() {
         assert!(CliSession::parse_stdio_extension("").is_err());
+    }
+
+    #[test]
+    fn test_split_quoted_windows_paths() {
+        assert_eq!(
+            split_quoted(r"C:\tools\mcp.exe --arg value").unwrap(),
+            vec![r"C:\tools\mcp.exe", "--arg", "value"]
+        );
+        assert_eq!(
+            split_quoted(r#""C:\Program Files\server\mcp.exe" --arg"#).unwrap(),
+            vec![r"C:\Program Files\server\mcp.exe", "--arg"]
+        );
+    }
+
+    #[test]
+    fn test_split_quoted_unmatched_quote() {
+        assert!(split_quoted(r#""unmatched"#).is_err());
     }
 
     #[test_case(

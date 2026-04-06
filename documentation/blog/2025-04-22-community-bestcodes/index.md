@@ -13,7 +13,7 @@ The only way to discover how much of an impact your contributions can make is to
 
 ## How BestCodes Discovered Goose
 
-[BestCodes (aka William Steele)](https://bestcodes.dev/) first discovered Goose during a [GitHub Open Source Friday livestream](https://www.youtube.com/watch?v=O-zJJN-TkXc&ab_channel=AngieJones) and decided to give it a try. At the time, Goose offered limited support for Windows/Linux (with more work in progress before any official release). Since BestCodes wasn't a Mac user, he wanted to help bring support to Linux. After lots of troubleshooting, he ended up creating [a Debian build fix](https://github.com/block/goose/pull/2070) that finally let him start using Goose on Linux. 
+[BestCodes](https://bestcodes.dev/) first discovered Goose during a [GitHub Open Source Friday livestream](https://www.youtube.com/watch?v=O-zJJN-TkXc&ab_channel=AngieJones) and decided to give it a try. At the time, Goose offered limited support for Windows/Linux (with more work in progress before any official release). Since BestCodes wasn't a Mac user, he wanted to help bring support to Linux. After lots of troubleshooting, he ended up creating [a Debian build fix](https://github.com/block/goose/pull/2070) that finally let him start using Goose on Linux. 
 
 Even though BestCodes wondered if such a small fix was worth sharing, it was this "small" contribution that enabled fellow community members wanting to use Goose on Linux, and gave him momentum for future PRs. His experience is proof that your contribution has a chance to help someone, and you should share it! You never know what curiosity and the open source community can make happen.
 

@@ -1,0 +1,25 @@
+{
+  "name": "@aaif/goose-binary-darwin-x64",
+  "version": "0.1.2",
+  "description": "Goose binary for macOS x64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/block/goose.git"
+  },
+  "keywords": [
+    "goose",
+    "ai",
+    "agent",
+    "binary"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/goose"
+  ]
+}

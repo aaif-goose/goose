@@ -1,16 +1,23 @@
 import { Recipe, saveRecipe as saveRecipeApi, listRecipes, RecipeManifest } from '../api';
 import { stripEmptyExtensions } from '.';
 
-export const saveRecipe = async (recipe: Recipe, recipeId?: string | null): Promise<string> => {
+export const saveRecipe = async (
+  recipe: Recipe,
+  recipeId?: string | null
+): Promise<{ id: string; fileName: string; filePath: string }> => {
   try {
-    let response = await saveRecipeApi({
+    const response = await saveRecipeApi({
       body: {
         recipe: stripEmptyExtensions(recipe),
         id: recipeId,
       },
       throwOnError: true,
     });
-    return response.data.id;
+    return {
+      id: response.data.id,
+      fileName: response.data.file_name,
+      filePath: response.data.file_path,
+    };
   } catch (error) {
     let error_message = 'unknown error';
     if (typeof error === 'object' && error !== null && 'message' in error) {

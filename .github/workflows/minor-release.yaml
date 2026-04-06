@@ -12,9 +12,7 @@ on:
 jobs:
   release:
     if: github.repository == 'block/goose'
-    uses: ./.github/workflows/create-release-pr.yaml
-    with:
-      bump_type: "minor"
+    uses: ./.github/workflows/create-version-bump-pr.yaml
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

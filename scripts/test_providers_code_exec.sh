@@ -27,10 +27,11 @@ run_test() {
     cd "$testdir" && "$GOOSE_BIN" run --text "$prompt" --with-builtin "$BUILTINS" 2>&1
   ) > "$output_file" 2>&1
 
-  # Matches: "execute | code_execution", "get_function_details | code_execution",
+  # Matches: "execute_typescript | code_execution", "get_function_details | code_execution",
   #           "tool call | execute", "tool calls | execute" (old format)
   #           "▸ execute N tool call" (new format with tool_graph)
-  if grep -qE "(execute \| code_execution)|(get_function_details \| code_execution)|(tool calls? \| execute)|(▸.*execute.*tool call)" "$output_file"; then
+  #           "▸ execute_typescript" (plain tool name in output)
+  if grep -qE "(execute_typescript \| code_execution)|(get_function_details \| code_execution)|(tool calls? \| execute)|(▸.*execute.*tool call)|(▸ execute_typescript)" "$output_file"; then
     echo "success|code_execution tool called" > "$result_file"
   else
     echo "failure|no code_execution tool calls found" > "$result_file"

@@ -183,7 +183,7 @@ Sometimes the right move is to reduce instead of add, and this new version ended
 To fully automate this workflow, you must schedule your recipe. 
 In goose Desktop, open the `recipe` section, click the `calendar icon` , and choose when it should run (I set mine to 10 AM daily).
 
-You can read more in the [Shareable Recipes Guide](https://block.github.io/goose/docs/guides/recipes/session-recipes#schedule-recipe).
+You can read more in the [Reusable Recipes Guide](https://block.github.io/goose/docs/guides/recipes/session-recipes#schedule-recipe).
 :::
 
 <details>

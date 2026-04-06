@@ -1,0 +1,27 @@
+{
+  "name": "anthropic-oidc-proxy",
+  "engine": "anthropic",
+  "display_name": "Anthropic (OIDC Proxy)",
+  "description": "Anthropic API via OIDC proxy — uses a short-lived OIDC token instead of a long-lived API key",
+  "api_key_env": "ANTHROPIC_OIDC_PROXY_API_KEY",
+  "base_url": "${OIDC_PROXY_URL}",
+  "models": [
+    {
+      "name": "claude-opus-4-6",
+      "context_limit": 200000
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "context_limit": 200000
+    }
+  ],
+  "supports_streaming": true,
+  "env_vars": [
+    {
+      "name": "OIDC_PROXY_URL",
+      "required": true,
+      "secret": false,
+      "description": "URL of the OIDC proxy worker (e.g. https://oidc-proxy.your-subdomain.workers.dev)"
+    }
+  ]
+}

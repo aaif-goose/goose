@@ -15,6 +15,7 @@ import {
   Zap,
   BookOpen,
   Wrench,
+  Sparkles,
 } from 'lucide-react';
 import { DisplayItem } from './MentionPopover';
 
@@ -33,6 +34,8 @@ export const getItemIcon = (item: DisplayItem): IconInfo => {
       return { Icon: Zap, color: '#3b82f6' }; // Blue
     case 'Recipe':
       return { Icon: BookOpen, color: '#10b981' }; // Green
+    case 'Skill':
+      return { Icon: Sparkles, color: '#8b5cf6' }; // Purple
     case 'Directory':
       return { Icon: Folder, color: '#f59e0b' }; // Amber
     default: {

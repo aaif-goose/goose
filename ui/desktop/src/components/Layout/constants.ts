@@ -7,6 +7,10 @@ export const NAV_DIMENSIONS = {
   EXPANDED_HEIGHT: 180,
   /** Height of condensed navigation (horizontal mode) */
   CONDENSED_HEIGHT: 46,
+  /** Minimum width when resizing the navigation panel */
+  MIN_NAV_WIDTH: 200,
+  /** Maximum width when resizing the navigation panel */
+  MAX_NAV_WIDTH: 600,
 } as const;
 
 export const Z_INDEX = {

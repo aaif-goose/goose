@@ -1,0 +1,30 @@
+name = "oidc-proxy"
+main = "src/index.js"
+compatibility_date = "2026-03-01"
+
+[durable_objects]
+bindings = [{ name = "TOKEN_BUCKET", class_name = "TokenBucket" }]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TokenBucket"]
+
+[vars]
+OIDC_ISSUER = "https://token.actions.githubusercontent.com"
+OIDC_AUDIENCE = "goose-oidc-proxy"
+MAX_TOKEN_AGE_SECONDS = "1200"  # 20 minutes
+MAX_REQUESTS_PER_TOKEN = "200"
+RATE_LIMIT_PER_SECOND = "2"
+
+ALLOWED_REPOS = "block/goose,aaif/goose"
+
+# Upstream configuration
+UPSTREAM_URL = "https://api.anthropic.com"
+UPSTREAM_AUTH_HEADER = "x-api-key"
+# UPSTREAM_AUTH_PREFIX is unset — Anthropic expects a raw key, not "Bearer <key>"
+
+# Additional CORS headers for Anthropic SDK
+CORS_EXTRA_HEADERS = "anthropic-version"
+
+# Set the upstream API key as a secret:
+#   npx wrangler secret put UPSTREAM_API_KEY

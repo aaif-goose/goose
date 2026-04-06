@@ -1,16 +1,22 @@
 use crate::routes::errors::ErrorResponse;
 use crate::state::AppState;
 use axum::{
-    extract::{DefaultBodyLimit, Path},
+    extract::DefaultBodyLimit,
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
+#[cfg(feature = "local-inference")]
+use axum::{extract::Path, routing::delete};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+#[cfg(feature = "local-inference")]
+use goose::dictation::providers::transcribe_local;
 use goose::dictation::providers::{
-    is_configured, transcribe_local, transcribe_with_provider, DictationProvider, PROVIDERS,
+    all_providers, is_configured, transcribe_with_provider, DictationProvider,
 };
+#[cfg(feature = "local-inference")]
 use goose::dictation::whisper;
+#[cfg(feature = "local-inference")]
 use goose::download_manager::{get_download_manager, DownloadProgress};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +25,7 @@ use utoipa::ToSchema;
 
 const MAX_AUDIO_SIZE_BYTES: usize = 50 * 1024 * 1024;
 
+#[cfg(feature = "local-inference")]
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WhisperModelResponse {
     #[serde(flatten)]
@@ -171,6 +178,7 @@ pub async fn transcribe_dictation(
         )
         .await
         .map_err(convert_error)?,
+        #[cfg(feature = "local-inference")]
         DictationProvider::Local => transcribe_local(audio_bytes).await.map_err(convert_error)?,
     };
 
@@ -189,7 +197,7 @@ pub async fn get_dictation_config(
     let config = goose::config::Config::global();
     let mut providers = HashMap::new();
 
-    for def in PROVIDERS {
+    for def in all_providers() {
         let provider = def.provider;
         let configured = is_configured(provider);
 
@@ -222,6 +230,7 @@ pub async fn get_dictation_config(
     Ok(Json(providers))
 }
 
+#[cfg(feature = "local-inference")]
 #[utoipa::path(
     get,
     path = "/dictation/models",
@@ -243,6 +252,7 @@ pub async fn list_models() -> Result<Json<Vec<WhisperModelResponse>>, ErrorRespo
     Ok(Json(models))
 }
 
+#[cfg(feature = "local-inference")]
 #[utoipa::path(
     post,
     path = "/dictation/models/{model_id}/download",
@@ -274,6 +284,7 @@ pub async fn download_model(Path(model_id): Path<String>) -> Result<StatusCode, 
     Ok(StatusCode::ACCEPTED)
 }
 
+#[cfg(feature = "local-inference")]
 #[utoipa::path(
     get,
     path = "/dictation/models/{model_id}/download",
@@ -293,6 +304,7 @@ pub async fn get_download_progress(
     Ok(Json(progress))
 }
 
+#[cfg(feature = "local-inference")]
 #[utoipa::path(
     delete,
     path = "/dictation/models/{model_id}/download",
@@ -307,6 +319,7 @@ pub async fn cancel_download(Path(model_id): Path<String>) -> Result<StatusCode,
     Ok(StatusCode::OK)
 }
 
+#[cfg(feature = "local-inference")]
 #[utoipa::path(
     delete,
     path = "/dictation/models/{model_id}",
@@ -334,9 +347,12 @@ pub async fn delete_model(Path(model_id): Path<String>) -> Result<StatusCode, Er
 }
 
 pub fn routes(state: Arc<AppState>) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/dictation/transcribe", post(transcribe_dictation))
-        .route("/dictation/config", get(get_dictation_config))
+        .route("/dictation/config", get(get_dictation_config));
+
+    #[cfg(feature = "local-inference")]
+    let router = router
         .route("/dictation/models", get(list_models))
         .route(
             "/dictation/models/{model_id}/download",
@@ -350,7 +366,9 @@ pub fn routes(state: Arc<AppState>) -> Router {
             "/dictation/models/{model_id}/download",
             delete(cancel_download),
         )
-        .route("/dictation/models/{model_id}", delete(delete_model))
+        .route("/dictation/models/{model_id}", delete(delete_model));
+
+    router
         .layer(DefaultBodyLimit::max(MAX_AUDIO_SIZE_BYTES))
         .with_state(state)
 }

@@ -48,6 +48,26 @@ This tutorial covers enabling and using the Memory MCP Server, which is a built-
   </TabItem>
 </Tabs>
 
+## Storage Locations
+
+Memories are stored as files on disk in one of two locations:
+
+| Scope | Path | When to use |
+|-------|------|-------------|
+| Local (project) | `.goose/memory/` in your working directory | Project-specific preferences and configs |
+| Global (user) | `~/.config/goose/memory/` | Preferences that apply across all projects |
+
+goose loads all saved memories at the start of a session and includes them in every prompt sent to the LLM.
+
+## Tool Reference
+
+| Tool | What it does |
+|------|-------------|
+| `remember_memory(category, data, tags, is_global)` | Store information with a category, optional tags, and scope (local/global) |
+| `retrieve_memories(category, is_global)` | Retrieve memories by category. Use `"*"` to retrieve all. |
+| `remove_memory_category(category, is_global)` | Remove all memories in a category. Use `"*"` to clear all. |
+| `remove_specific_memory(category, memory_content, is_global)` | Remove a single memory by matching its content within a category |
+
 ## Why Use Memory?  
 With the Memory extension, you’re not just storing static notes, you’re teaching goose how to assist you better. Imagine telling goose:  
 
@@ -58,7 +78,7 @@ Later, you can ask:
 
 goose will recall everything you’ve saved as long as you instruct it to remember. This makes it easier to have consistent results when working with goose.
 
-goose loads all saved memories at the start of a session and includes them in every prompt sent to the LLM. For large or detailed instructions, store them in files and instruct goose to reference those files:
+For large or detailed instructions, store them in files and instruct goose to reference those files:
 
 > _Remember that if I ask for help writing JavaScript, I want you to refer to "/path/to/javascript_notes.txt" and follow the instructions in that file._
 

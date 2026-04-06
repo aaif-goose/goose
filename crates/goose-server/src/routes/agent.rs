@@ -14,6 +14,7 @@ use goose::agents::{Container, ExtensionLoadResult};
 use goose::goose_apps::{fetch_mcp_apps, GooseApp, McpAppCache};
 
 use base64::Engine;
+use goose::agents::reply_parts::is_tool_visible_to_app;
 use goose::agents::ExtensionConfig;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, GooseMode};
@@ -196,6 +197,7 @@ async fn start_agent(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<StartAgentRequest>,
 ) -> Result<Json<Session>, ErrorResponse> {
+    #[cfg(feature = "telemetry")]
     goose::posthog::set_session_context("desktop", false);
 
     let StartAgentRequest {
@@ -211,6 +213,7 @@ async fn start_agent(
             Ok(recipe) => Some(recipe),
             Err(err) => {
                 error!("Failed to decode recipe deeplink: {}", err);
+                #[cfg(feature = "telemetry")]
                 goose::posthog::emit_error("recipe_deeplink_decode_failed", &err.to_string());
                 return Err(ErrorResponse {
                     message: err.to_string(),
@@ -252,6 +255,7 @@ async fn start_agent(
         .await
         .map_err(|err| {
             error!("Failed to create session: {}", err);
+            #[cfg(feature = "telemetry")]
             goose::posthog::emit_error("session_create_failed", &err.to_string());
             ErrorResponse {
                 message: format!("Failed to create session: {}", err),
@@ -369,6 +373,7 @@ async fn resume_agent(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ResumeAgentRequest>,
 ) -> Result<Json<ResumeAgentResponse>, ErrorResponse> {
+    #[cfg(feature = "telemetry")]
     goose::posthog::set_session_context("desktop", true);
 
     let session = state
@@ -377,6 +382,7 @@ async fn resume_agent(
         .await
         .map_err(|err| {
             error!("Failed to resume session {}: {}", payload.session_id, err);
+            #[cfg(feature = "telemetry")]
             goose::posthog::emit_error("session_resume_failed", &err.to_string());
             ErrorResponse {
                 message: format!("Failed to resume session: {}", err),
@@ -384,7 +390,7 @@ async fn resume_agent(
             }
         })?;
 
-    let extension_results = if payload.load_model_and_extensions {
+    let (extension_results, session) = if payload.load_model_and_extensions {
         let agent = state
             .get_agent_for_route(payload.session_id.clone())
             .await
@@ -393,13 +399,26 @@ async fn resume_agent(
                 status: code,
             })?;
 
-        agent
+        let provider_changed = agent
             .restore_provider_from_session(&session)
             .await
             .map_err(|e| ErrorResponse {
                 message: e.to_string(),
                 status: StatusCode::INTERNAL_SERVER_ERROR,
             })?;
+
+        let session = if provider_changed {
+            state
+                .session_manager()
+                .get_session(&payload.session_id, true)
+                .await
+                .map_err(|err| ErrorResponse {
+                    message: format!("Failed to re-fetch session: {}", err),
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                })?
+        } else {
+            session
+        };
 
         let extension_results =
             if let Some(results) = state.take_extension_loading_task(&payload.session_id).await {
@@ -419,9 +438,9 @@ async fn resume_agent(
                 agent.load_extensions_from_session(&session).await
             };
 
-        Some(extension_results)
+        (Some(extension_results), session)
     } else {
-        None
+        (None, session)
     };
 
     Ok(Json(ResumeAgentResponse {
@@ -537,6 +556,9 @@ async fn get_tools(
                 get_parameter_names(&tool),
                 permission,
             )
+            .with_input_schema(serde_json::Value::Object(
+                tool.input_schema.as_ref().clone(),
+            ))
         })
         .collect::<Vec<ToolInfo>>();
     tools.sort_by(|a, b| a.name.cmp(&b.name));
@@ -685,6 +707,7 @@ async fn agent_add_extension(
         .add_extension(request.config, &request.session_id)
         .await
         .map_err(|e| {
+            #[cfg(feature = "telemetry")]
             goose::posthog::emit_error(
                 "extension_add_failed",
                 &format!("{}: {}", extension_name, e),
@@ -1046,6 +1069,18 @@ async fn call_tool(
     let agent = state
         .get_agent_for_route(payload.session_id.clone())
         .await?;
+
+    // Check app-side visibility: reject calls to tools that exclude "app"
+    let tools = agent.list_tools(&payload.session_id, None).await;
+    if let Some(tool) = tools.iter().find(|t| *t.name == payload.name) {
+        if !is_tool_visible_to_app(tool) {
+            warn!(
+                tool = %payload.name,
+                "Rejected app call to model-only tool"
+            );
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
 
     let arguments = match payload.arguments {
         Value::Object(map) => Some(map),

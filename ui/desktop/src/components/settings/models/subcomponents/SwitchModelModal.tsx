@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Bot, ExternalLink } from 'lucide-react';
+import { defineMessages, useIntl } from '../../../../i18n';
 
 import {
   Dialog,
@@ -21,17 +22,170 @@ import { getPredefinedModelsFromEnv, shouldShowPredefinedModels } from '../prede
 import { ProviderType } from '../../../../api';
 import { trackModelChanged } from '../../../../utils/analytics';
 
-const THINKING_LEVEL_OPTIONS = [
-  { value: 'low', label: 'Low - Better latency, lighter reasoning' },
-  { value: 'high', label: 'High - Deeper reasoning, higher latency' },
-];
+const i18n = defineMessages({
+  thinkingLevelLow: {
+    id: 'switchModelModal.thinkingLevelLow',
+    defaultMessage: 'Low - Better latency, lighter reasoning',
+  },
+  thinkingLevelHigh: {
+    id: 'switchModelModal.thinkingLevelHigh',
+    defaultMessage: 'High - Deeper reasoning, higher latency',
+  },
+  claudeEffortLow: {
+    id: 'switchModelModal.claudeEffortLow',
+    defaultMessage: 'Low - Minimal thinking, fastest responses',
+  },
+  claudeEffortMedium: {
+    id: 'switchModelModal.claudeEffortMedium',
+    defaultMessage: 'Medium - Moderate thinking',
+  },
+  claudeEffortHigh: {
+    id: 'switchModelModal.claudeEffortHigh',
+    defaultMessage: 'High - Deep reasoning (default)',
+  },
+  claudeEffortMax: {
+    id: 'switchModelModal.claudeEffortMax',
+    defaultMessage: 'Max - No constraints on thinking depth',
+  },
+  selectModel: {
+    id: 'switchModelModal.selectModel',
+    defaultMessage: 'Please select a model',
+  },
+  selectProvider: {
+    id: 'switchModelModal.selectProvider',
+    defaultMessage: 'Please select a provider',
+  },
+  selectOrEnterModel: {
+    id: 'switchModelModal.selectOrEnterModel',
+    defaultMessage: 'Please select or enter a model',
+  },
+  title: {
+    id: 'switchModelModal.title',
+    defaultMessage: 'Switch models',
+  },
+  description: {
+    id: 'switchModelModal.description',
+    defaultMessage: 'Select a provider and model to use for your conversations.',
+  },
+  chooseModel: {
+    id: 'switchModelModal.chooseModel',
+    defaultMessage: 'Choose a model:',
+  },
+  recommended: {
+    id: 'switchModelModal.recommended',
+    defaultMessage: 'Recommended',
+  },
+  thinkingLevel: {
+    id: 'switchModelModal.thinkingLevel',
+    defaultMessage: 'Thinking Level',
+  },
+  geminiOnly: {
+    id: 'switchModelModal.geminiOnly',
+    defaultMessage: '(Gemini 3 models only)',
+  },
+  selectThinkingLevel: {
+    id: 'switchModelModal.selectThinkingLevel',
+    defaultMessage: 'Select thinking level',
+  },
+  useOtherProvider: {
+    id: 'switchModelModal.useOtherProvider',
+    defaultMessage: 'Use other provider',
+  },
+  providerPlaceholder: {
+    id: 'switchModelModal.providerPlaceholder',
+    defaultMessage: 'Provider, type to search',
+  },
+  localModelsTitle: {
+    id: 'switchModelModal.localModelsTitle',
+    defaultMessage: 'Local models need to be downloaded first',
+  },
+  localModelsDescription: {
+    id: 'switchModelModal.localModelsDescription',
+    defaultMessage: 'To use local inference, you need to download a model to your computer first. Go to Settings → Models to manage local models.',
+  },
+  goToSettings: {
+    id: 'switchModelModal.goToSettings',
+    defaultMessage: 'Go to Settings',
+  },
+  couldNotContactProvider: {
+    id: 'switchModelModal.couldNotContactProvider',
+    defaultMessage: 'Could not contact provider',
+  },
+  checkProviderConfig: {
+    id: 'switchModelModal.checkProviderConfig',
+    defaultMessage: 'Check your provider configuration in Settings → Providers',
+  },
+  loadingModels: {
+    id: 'switchModelModal.loadingModels',
+    defaultMessage: 'Loading models…',
+  },
+  selectModelPlaceholder: {
+    id: 'switchModelModal.selectModelPlaceholder',
+    defaultMessage: 'Select a model, type to search',
+  },
+  customModelName: {
+    id: 'switchModelModal.customModelName',
+    defaultMessage: 'Custom model name',
+  },
+  backToModelList: {
+    id: 'switchModelModal.backToModelList',
+    defaultMessage: 'Back to model list',
+  },
+  typeModelName: {
+    id: 'switchModelModal.typeModelName',
+    defaultMessage: 'Type model name here',
+  },
+  extendedThinking: {
+    id: 'switchModelModal.extendedThinking',
+    defaultMessage: 'Extended Thinking',
+  },
+  selectThinkingMode: {
+    id: 'switchModelModal.selectThinkingMode',
+    defaultMessage: 'Select thinking mode',
+  },
+  thinkingEffort: {
+    id: 'switchModelModal.thinkingEffort',
+    defaultMessage: 'Thinking Effort',
+  },
+  selectEffortLevel: {
+    id: 'switchModelModal.selectEffortLevel',
+    defaultMessage: 'Select effort level',
+  },
+  thinkingBudget: {
+    id: 'switchModelModal.thinkingBudget',
+    defaultMessage: 'Thinking Budget (tokens)',
+  },
+  quickStartGuide: {
+    id: 'switchModelModal.quickStartGuide',
+    defaultMessage: 'Quick start guide',
+  },
+  cancel: {
+    id: 'switchModelModal.cancel',
+    defaultMessage: 'Cancel',
+  },
+  selectModelButton: {
+    id: 'switchModelModal.selectModelButton',
+    defaultMessage: 'Select model',
+  },
+  enterModelNotListed: {
+    id: 'switchModelModal.enterModelNotListed',
+    defaultMessage: 'Enter a model not listed...',
+  },
+  claudeAdaptive: {
+    id: 'switchModelModal.claudeAdaptive',
+    defaultMessage: 'Adaptive - Claude decides when and how much to think',
+  },
+  claudeEnabled: {
+    id: 'switchModelModal.claudeEnabled',
+    defaultMessage: 'Enabled - Fixed token budget for thinking',
+  },
+  claudeDisabled: {
+    id: 'switchModelModal.claudeDisabled',
+    defaultMessage: 'Disabled - No extended thinking',
+  },
+});
 
-const CLAUDE_THINKING_EFFORT_OPTIONS = [
-  { value: 'low', label: 'Low - Minimal thinking, fastest responses' },
-  { value: 'medium', label: 'Medium - Moderate thinking' },
-  { value: 'high', label: 'High - Deep reasoning (default)' },
-  { value: 'max', label: 'Max - No constraints on thinking depth' },
-];
+// THINKING_LEVEL_OPTIONS and CLAUDE_THINKING_EFFORT_OPTIONS are created inside the component to support i18n.
 
 function isClaudeModel(name: string | null | undefined): boolean {
   return !!name && name.toLowerCase().startsWith('claude-');
@@ -100,6 +254,20 @@ export const SwitchModelModal = ({
   sessionModel,
   sessionProvider,
 }: SwitchModelModalProps) => {
+  const intl = useIntl();
+
+  const THINKING_LEVEL_OPTIONS = [
+    { value: 'low', label: intl.formatMessage(i18n.thinkingLevelLow) },
+    { value: 'high', label: intl.formatMessage(i18n.thinkingLevelHigh) },
+  ];
+
+  const CLAUDE_THINKING_EFFORT_OPTIONS = [
+    { value: 'low', label: intl.formatMessage(i18n.claudeEffortLow) },
+    { value: 'medium', label: intl.formatMessage(i18n.claudeEffortMedium) },
+    { value: 'high', label: intl.formatMessage(i18n.claudeEffortHigh) },
+    { value: 'max', label: intl.formatMessage(i18n.claudeEffortMax) },
+  ];
+
   const { getProviders, read, upsert } = useConfig();
   const {
     changeModel,
@@ -179,17 +347,17 @@ export const SwitchModelModal = ({
 
     if (usePredefinedModels) {
       if (!selectedPredefinedModel) {
-        errors.model = 'Please select a model';
+        errors.model = intl.formatMessage(i18n.selectModel);
         formIsValid = false;
       }
     } else {
       if (!provider) {
-        errors.provider = 'Please select a provider';
+        errors.provider = intl.formatMessage(i18n.selectProvider);
         formIsValid = false;
       }
 
       if (!model) {
-        errors.model = 'Please select or enter a model';
+        errors.model = intl.formatMessage(i18n.selectOrEnterModel);
         formIsValid = false;
       }
     }
@@ -197,7 +365,7 @@ export const SwitchModelModal = ({
     setValidationErrors(errors);
     setIsValid(formIsValid);
     return formIsValid;
-  }, [model, provider, usePredefinedModels, selectedPredefinedModel]);
+  }, [model, provider, usePredefinedModels, selectedPredefinedModel, intl]);
 
   const handleClose = () => {
     onClose();
@@ -316,7 +484,7 @@ export const SwitchModelModal = ({
           })),
           {
             value: 'configure_providers',
-            label: 'Use other provider',
+            label: intl.formatMessage(i18n.useOtherProvider),
           },
         ]);
 
@@ -357,7 +525,7 @@ export const SwitchModelModal = ({
           if (p.provider_type !== 'Custom') {
             options.push({
               value: 'custom',
-              label: 'Enter a model not listed...',
+              label: intl.formatMessage(i18n.enterModelNotListed),
               provider: p.name,
               providerType: p.provider_type,
             });
@@ -380,7 +548,7 @@ export const SwitchModelModal = ({
         setLoadingModels(false);
       }
     })();
-  }, [getProviders, usePredefinedModels, read]);
+  }, [getProviders, usePredefinedModels, read, intl]);
 
   const filteredModelOptions = provider
     ? modelOptions.filter((group) => group.options[0]?.provider === provider)
@@ -471,16 +639,16 @@ export const SwitchModelModal = ({
 
   const claudeThinkingTypeOptions = [
     ...(modelSupportsAdaptive
-      ? [{ value: 'adaptive', label: 'Adaptive - Claude decides when and how much to think' }]
+      ? [{ value: 'adaptive', label: intl.formatMessage(i18n.claudeAdaptive) }]
       : []),
-    { value: 'enabled', label: 'Enabled - Fixed token budget for thinking' },
-    { value: 'disabled', label: 'Disabled - No extended thinking' },
+    { value: 'enabled', label: intl.formatMessage(i18n.claudeEnabled) },
+    { value: 'disabled', label: intl.formatMessage(i18n.claudeDisabled) },
   ];
 
   const claudeThinkingControls = showClaudeThinking && (
     <div className="mt-2 flex flex-col gap-3">
       <div>
-        <label className="text-sm text-textSubtle mb-1 block">Extended Thinking</label>
+        <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.extendedThinking)}</label>
         <Select
           options={claudeThinkingTypeOptions}
           value={claudeThinkingTypeOptions.find((o) => o.value === claudeThinkingType)}
@@ -488,12 +656,12 @@ export const SwitchModelModal = ({
             const option = newValue as { value: string; label: string } | null;
             setClaudeThinkingType(option?.value || 'disabled');
           }}
-          placeholder="Select thinking mode"
+          placeholder={intl.formatMessage(i18n.selectThinkingMode)}
         />
       </div>
       {claudeThinkingType === 'adaptive' && (
         <div>
-          <label className="text-sm text-textSubtle mb-1 block">Thinking Effort</label>
+          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingEffort)}</label>
           <Select
             options={CLAUDE_THINKING_EFFORT_OPTIONS}
             value={CLAUDE_THINKING_EFFORT_OPTIONS.find((o) => o.value === claudeThinkingEffort)}
@@ -501,13 +669,13 @@ export const SwitchModelModal = ({
               const option = newValue as { value: string; label: string } | null;
               setClaudeThinkingEffort(option?.value || 'high');
             }}
-            placeholder="Select effort level"
+            placeholder={intl.formatMessage(i18n.selectEffortLevel)}
           />
         </div>
       )}
       {claudeThinkingType === 'enabled' && (
         <div>
-          <label className="text-sm text-textSubtle mb-1 block">Thinking Budget (tokens)</label>
+          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingBudget)}</label>
           <Input
             className="border-2 px-4 py-2"
             type="number"
@@ -526,10 +694,10 @@ export const SwitchModelModal = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bot size={24} className="text-text-primary" />
-            {titleOverride || 'Switch models'}
+            {titleOverride || intl.formatMessage(i18n.title)}
           </DialogTitle>
           <DialogDescription>
-            Select a provider and model to use for your conversations.
+            {intl.formatMessage(i18n.description)}
           </DialogDescription>
         </DialogHeader>
 
@@ -537,7 +705,7 @@ export const SwitchModelModal = ({
           {usePredefinedModels ? (
             <div className="w-full flex flex-col gap-4">
               <div className="flex justify-between items-center">
-                <label className="text-sm font-medium text-text-primary">Choose a model:</label>
+                <label className="text-sm font-medium text-text-primary">{intl.formatMessage(i18n.chooseModel)}</label>
               </div>
 
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -558,7 +726,7 @@ export const SwitchModelModal = ({
                           </span>
                           {model.alias?.includes('recommended') && (
                             <span className="text-xs bg-background-secondary text-text-primary px-2 py-1 rounded-full border border-border-primary ml-2">
-                              Recommended
+                              {intl.formatMessage(i18n.recommended)}
                             </span>
                           )}
                         </div>
@@ -597,8 +765,8 @@ export const SwitchModelModal = ({
               {isGemini3Model && (
                 <div className="mt-2">
                   <label className="text-sm text-textSubtle mb-1 block">
-                    Thinking Level
-                    <span className="text-xs text-textMuted ml-2">(Gemini 3 models only)</span>
+                    {intl.formatMessage(i18n.thinkingLevel)}
+                    <span className="text-xs text-textMuted ml-2">{intl.formatMessage(i18n.geminiOnly)}</span>
                   </label>
                   <Select
                     options={THINKING_LEVEL_OPTIONS}
@@ -607,7 +775,7 @@ export const SwitchModelModal = ({
                       const option = newValue as { value: string; label: string } | null;
                       setThinkingLevel(option?.value || 'low');
                     }}
-                    placeholder="Select thinking level"
+                    placeholder={intl.formatMessage(i18n.selectThinkingLevel)}
                   />
                 </div>
               )}
@@ -634,7 +802,7 @@ export const SwitchModelModal = ({
                       setUserClearedModel(false);
                     }
                   }}
-                  placeholder="Provider, type to search"
+                  placeholder={intl.formatMessage(i18n.providerPlaceholder)}
                   isClearable
                 />
                 {attemptedSubmit && validationErrors.provider && (
@@ -653,11 +821,10 @@ export const SwitchModelModal = ({
                       <div className="flex flex-col gap-3">
                         <div>
                           <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                            Local models need to be downloaded first
+                            {intl.formatMessage(i18n.localModelsTitle)}
                           </h3>
                           <div className="mt-1 text-sm text-blue-700 dark:text-blue-300">
-                            To use local inference, you need to download a model to your computer
-                            first. Go to Settings → Models to manage local models.
+                            {intl.formatMessage(i18n.localModelsDescription)}
                           </div>
                         </div>
                         <Button
@@ -669,7 +836,7 @@ export const SwitchModelModal = ({
                           }}
                           className="self-start border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40"
                         >
-                          Go to Settings
+                          {intl.formatMessage(i18n.goToSettings)}
                         </Button>
                       </div>
                     </div>
@@ -679,13 +846,13 @@ export const SwitchModelModal = ({
                       <div className="flex items-start">
                         <div className="flex-1">
                           <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-                            Could not contact provider
+                            {intl.formatMessage(i18n.couldNotContactProvider)}
                           </h3>
                           <div className="mt-1 text-sm text-red-700 dark:text-red-300">
                             {providerErrors[provider]}
                           </div>
                           <div className="mt-2 text-xs text-red-600 dark:text-red-400">
-                            Check your provider configuration in Settings → Providers
+                            {intl.formatMessage(i18n.checkProviderConfig)}
                           </div>
                         </div>
                       </div>
@@ -704,12 +871,12 @@ export const SwitchModelModal = ({
                         onInputChange={handleInputChange}
                         value={
                           loadingModels
-                            ? { value: '', label: 'Loading models…', isDisabled: true }
+                            ? { value: '', label: intl.formatMessage(i18n.loadingModels), isDisabled: true }
                             : model
                               ? { value: model, label: model }
                               : null
                         }
-                        placeholder="Select a model, type to search"
+                        placeholder={intl.formatMessage(i18n.selectModelPlaceholder)}
                         isClearable
                         isDisabled={loadingModels}
                       />
@@ -728,17 +895,17 @@ export const SwitchModelModal = ({
                   ) : (
                     <div className="flex flex-col gap-2">
                       <div className="flex justify-between">
-                        <label className="text-sm text-text-secondary">Custom model name</label>
+                        <label className="text-sm text-text-secondary">{intl.formatMessage(i18n.customModelName)}</label>
                         <button
                           onClick={() => setIsCustomModel(false)}
                           className="text-sm text-text-secondary"
                         >
-                          Back to model list
+                          {intl.formatMessage(i18n.backToModelList)}
                         </button>
                       </div>
                       <Input
                         className="border-2 px-4 py-5"
-                        placeholder="Type model name here"
+                        placeholder={intl.formatMessage(i18n.typeModelName)}
                         onChange={(event) => setModel(event.target.value)}
                         value={model}
                       />
@@ -781,14 +948,14 @@ export const SwitchModelModal = ({
             className="inline-flex items-center text-text-secondary hover:text-text-primary text-sm mr-auto"
           >
             <ExternalLink size={14} className="mr-1" />
-            Quick start guide
+            {intl.formatMessage(i18n.quickStartGuide)}
           </a>
           <div className="flex gap-2">
             <Button variant="outline" onClick={handleClose} type="button">
-              Cancel
+              {intl.formatMessage(i18n.cancel)}
             </Button>
             <Button onClick={handleSubmit} disabled={!isValid}>
-              Select model
+              {intl.formatMessage(i18n.selectModelButton)}
             </Button>
           </div>
         </DialogFooter>

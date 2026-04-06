@@ -14,12 +14,61 @@ import {
   getExtensionOverride,
   getExtensionOverrides,
 } from '../../store/extensionOverrides';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  manageExtensions: {
+    id: 'bottomMenuExtensionSelection.manageExtensions',
+    defaultMessage: 'manage extensions',
+  },
+  searchExtensions: {
+    id: 'bottomMenuExtensionSelection.searchExtensions',
+    defaultMessage: 'search extensions...',
+  },
+  extensionsForNewChats: {
+    id: 'bottomMenuExtensionSelection.extensionsForNewChats',
+    defaultMessage: 'Extensions for new chats',
+  },
+  extensionsForThisSession: {
+    id: 'bottomMenuExtensionSelection.extensionsForThisSession',
+    defaultMessage: 'Extensions for this chat session',
+  },
+  noExtensionsFound: {
+    id: 'bottomMenuExtensionSelection.noExtensionsFound',
+    defaultMessage: 'no extensions found',
+  },
+  noExtensionsAvailable: {
+    id: 'bottomMenuExtensionSelection.noExtensionsAvailable',
+    defaultMessage: 'no extensions available',
+  },
+  extensionUpdated: {
+    id: 'bottomMenuExtensionSelection.extensionUpdated',
+    defaultMessage: 'Extension Updated',
+  },
+  extensionWillBeEnabled: {
+    id: 'bottomMenuExtensionSelection.extensionWillBeEnabled',
+    defaultMessage: '{name} will be enabled in new chats',
+  },
+  extensionWillBeDisabled: {
+    id: 'bottomMenuExtensionSelection.extensionWillBeDisabled',
+    defaultMessage: '{name} will be disabled in new chats',
+  },
+  extensionToggleError: {
+    id: 'bottomMenuExtensionSelection.extensionToggleError',
+    defaultMessage: 'Extension Toggle Error',
+  },
+  noActiveSession: {
+    id: 'bottomMenuExtensionSelection.noActiveSession',
+    defaultMessage: 'No active session found. Please start a chat session first.',
+  },
+});
 
 interface BottomMenuExtensionSelectionProps {
   sessionId: string | null;
 }
 
 export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionSelectionProps) => {
+  const intl = useIntl();
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [sessionExtensions, setSessionExtensions] = useState<ExtensionConfig[]>([]);
@@ -113,8 +162,11 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
         }, 800);
 
         toastService.success({
-          title: 'Extension Updated',
-          msg: `${formatExtensionName(extensionConfig.name)} will be ${!currentState ? 'enabled' : 'disabled'} in new chats`,
+          title: intl.formatMessage(i18n.extensionUpdated),
+          msg: intl.formatMessage(
+            !currentState ? i18n.extensionWillBeEnabled : i18n.extensionWillBeDisabled,
+            { name: formatExtensionName(extensionConfig.name) }
+          ),
         });
         return;
       }
@@ -123,8 +175,8 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
         setIsTransitioning(false);
         setTogglingExtension(null);
         toastService.error({
-          title: 'Extension Toggle Error',
-          msg: 'No active session found. Please start a chat session first.',
+          title: intl.formatMessage(i18n.extensionToggleError),
+          msg: intl.formatMessage(i18n.noActiveSession),
           traceback: 'No session ID available',
         });
         return;
@@ -161,7 +213,7 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
         setTogglingExtension(null);
       }
     },
-    [sessionId, isHubView, togglingExtension]
+    [sessionId, isHubView, togglingExtension, intl]
   );
 
   // Merge all available extensions with session-specific or hub override state
@@ -233,7 +285,7 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
       <DropdownMenuTrigger asChild>
         <button
           className={`flex items-center [&_svg]:size-4 text-text-primary/70 hover:text-text-primary hover:scale-100 hover:bg-transparent text-xs cursor-pointer ${allExtensions.length === 0 || (!isHubView && !isSessionExtensionsLoaded) ? 'invisible' : ''}`}
-          title="manage extensions"
+          title={intl.formatMessage(i18n.manageExtensions)}
         >
           <Puzzle className="mr-1 h-4 w-4" />
           <span>{activeCount}</span>
@@ -250,14 +302,14 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
         <div className="p-2">
           <Input
             type="text"
-            placeholder="search extensions..."
+            placeholder={intl.formatMessage(i18n.searchExtensions)}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-8 text-sm"
             autoFocus
           />
           <p className="text-xs text-text-primary/60 mt-1.5">
-            {isHubView ? 'Extensions for new chats' : 'Extensions for this chat session'}
+            {intl.formatMessage(isHubView ? i18n.extensionsForNewChats : i18n.extensionsForThisSession)}
           </p>
         </div>
         <div
@@ -267,7 +319,7 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
         >
           {sortedExtensions.length === 0 ? (
             <div className="px-2 py-4 text-center text-sm text-text-primary/70">
-              {searchQuery ? 'no extensions found' : 'no extensions available'}
+              {intl.formatMessage(searchQuery ? i18n.noExtensionsFound : i18n.noExtensionsAvailable)}
             </div>
           ) : (
             sortedExtensions.map((ext) => {

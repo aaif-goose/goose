@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, type RenderOptions, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import RecipeActivityEditor from '../../RecipeActivityEditor';
+import { IntlTestWrapper } from '../../../../i18n/test-utils';
+
+const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
+  render(ui, { wrapper: IntlTestWrapper, ...options });
 
 describe('RecipeActivityEditor', () => {
   const mockOnChange = vi.fn();
@@ -14,24 +18,24 @@ describe('RecipeActivityEditor', () => {
 
   describe('Basic Rendering', () => {
     it('renders without crashing', () => {
-      render(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
       expect(screen.getByText('Activities')).toBeInTheDocument();
     });
 
     it('displays the activities label', () => {
-      render(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
       expect(screen.getByText('Activities')).toBeInTheDocument();
     });
 
     it('shows helper text', () => {
-      render(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
       expect(screen.getByText(/top-line prompts and activity buttons/)).toBeInTheDocument();
     });
   });
 
   describe('Empty State', () => {
     it('shows message input when no activities', () => {
-      render(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
       expect(screen.getByText('Message')).toBeInTheDocument();
       expect(
         screen.getByPlaceholderText(/Enter a user facing introduction message/)
@@ -42,7 +46,7 @@ describe('RecipeActivityEditor', () => {
   describe('With Activities', () => {
     it('displays existing activities as visual boxes', () => {
       const activities = ['message: Hello World', 'button: Click me', 'action: Do something'];
-      render(<RecipeActivityEditor activities={activities} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={activities} setActivities={mockOnChange} />);
 
       const messageTextarea = screen.getByPlaceholderText(
         /Enter a user facing introduction message/
@@ -59,7 +63,7 @@ describe('RecipeActivityEditor', () => {
     it('truncates long activity text in boxes', () => {
       const longActivity = 'button: ' + 'a'.repeat(150);
       const activities = [longActivity];
-      render(<RecipeActivityEditor activities={activities} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={activities} setActivities={mockOnChange} />);
 
       expect(screen.getByText(/button: a+\.\.\./)).toBeInTheDocument();
 
@@ -68,7 +72,7 @@ describe('RecipeActivityEditor', () => {
     });
 
     it('handles empty activities array', () => {
-      render(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
       expect(screen.getByText('Activities')).toBeInTheDocument();
 
       expect(screen.queryByText('×')).not.toBeInTheDocument();
@@ -77,7 +81,7 @@ describe('RecipeActivityEditor', () => {
     it('allows removing activities via remove buttons', async () => {
       const user = userEvent.setup();
       const activities = ['button: Click me', 'action: Do something'];
-      render(<RecipeActivityEditor activities={activities} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={activities} setActivities={mockOnChange} />);
 
       const removeButtons = screen.getAllByText('×');
       await user.click(removeButtons[0]);
@@ -89,7 +93,7 @@ describe('RecipeActivityEditor', () => {
   describe('User Interactions', () => {
     it('allows typing in message field', async () => {
       const user = userEvent.setup();
-      render(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
+      renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
 
       const messageInput = screen.getByPlaceholderText(/Enter a user facing introduction message/);
       await user.type(messageInput, 'Test message');
@@ -99,7 +103,7 @@ describe('RecipeActivityEditor', () => {
 
     it('calls onBlur when provided', async () => {
       const user = userEvent.setup();
-      render(
+      renderWithIntl(
         <RecipeActivityEditor activities={[]} setActivities={mockOnChange} onBlur={mockOnBlur} />
       );
 

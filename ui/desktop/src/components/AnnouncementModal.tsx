@@ -5,6 +5,14 @@ import { ANNOUNCEMENTS_ENABLED } from '../updates';
 import packageJson from '../../package.json';
 import { getAnnouncementContent } from '../../announcements/content';
 import { Button } from './ui/button';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  gotIt: {
+    id: 'announcementModal.gotIt',
+    defaultMessage: 'Got it!',
+  },
+});
 
 interface AnnouncementMeta {
   id: string;
@@ -33,6 +41,7 @@ function compareVersions(a: string, b: string): number {
 }
 
 export default function AnnouncementModal() {
+  const intl = useIntl();
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [combinedAnnouncementContent, setCombinedAnnouncementContent] = useState<string | null>(
     null
@@ -92,7 +101,7 @@ export default function AnnouncementModal() {
           }
         }
       } catch (error) {
-        console.log('No announcements found or failed to load:', error);
+        console.warn('No announcements found or failed to load:', error);
       }
     };
 
@@ -137,7 +146,7 @@ export default function AnnouncementModal() {
             onClick={handleCloseAnnouncement}
             className="w-full h-[60px] rounded-none border-b border-border-primary bg-transparent hover:bg-background-secondary text-text-primary font-medium text-md"
           >
-            Got it!
+            {intl.formatMessage(i18n.gotIt)}
           </Button>
         </div>
       }

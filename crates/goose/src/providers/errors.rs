@@ -34,6 +34,9 @@ pub enum ProviderError {
     #[error("Unsupported operation: {0}")]
     NotImplemented(String),
 
+    #[error("Endpoint not found (404): {0}")]
+    EndpointNotFound(String),
+
     #[error("Credits exhausted: {details}")]
     CreditsExhausted {
         details: String,
@@ -53,8 +56,13 @@ impl ProviderError {
             ProviderError::ExecutionError(_) => "execution",
             ProviderError::UsageError(_) => "usage",
             ProviderError::NotImplemented(_) => "not_implemented",
+            ProviderError::EndpointNotFound(_) => "endpoint_not_found",
             ProviderError::CreditsExhausted { .. } => "credits_exhausted",
         }
+    }
+
+    pub fn is_endpoint_not_found(&self) -> bool {
+        matches!(self, ProviderError::EndpointNotFound(_))
     }
 }
 

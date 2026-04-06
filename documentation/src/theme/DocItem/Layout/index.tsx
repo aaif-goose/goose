@@ -359,6 +359,7 @@ function CopyPageButton(): ReactNode {
 
 // New wrapper component that adds dropdown menu to copy button
 function PageActionsMenu(): ReactNode {
+  const {metadata} = useDoc();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
@@ -391,11 +392,8 @@ function PageActionsMenu(): ReactNode {
   }, [dropdownOpen]);
   
   const handleViewMarkdown = () => {
-    const currentPath = window.location.pathname;
-    const mdPath = currentPath.endsWith('/') 
-      ? `${currentPath.slice(0, -1)}.md` 
-      : `${currentPath}.md`;
-    window.open(mdPath, '_blank');
+    const source = metadata?.source?.replace('@site/', '') || '';
+    window.open(`https://raw.githubusercontent.com/block/goose/refs/heads/main/documentation/${source}`, '_blank');
     setDropdownOpen(false);
   };
   

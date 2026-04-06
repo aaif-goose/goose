@@ -181,12 +181,12 @@ impl BedrockProvider {
             .get_param::<u64>("BEDROCK_MAX_RETRY_INTERVAL_MS")
             .unwrap_or(BEDROCK_DEFAULT_MAX_RETRY_INTERVAL_MS);
 
-        RetryConfig {
+        RetryConfig::new(
             max_retries,
             initial_interval_ms,
             backoff_multiplier,
             max_interval_ms,
-        }
+        )
     }
 
     fn should_enable_caching(&self) -> bool {

@@ -4,14 +4,9 @@ use goose::providers::api_client::{ApiClient, AuthMethod};
 use goose::providers::base::Provider;
 use goose::providers::openai::OpenAiProvider;
 use goose::session_context::SESSION_ID_HEADER;
-use opentelemetry::logs::AnyValue;
-use opentelemetry::Key;
-use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_sdk::logs::{InMemoryLogExporterBuilder, SdkLoggerProvider};
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tracing_subscriber::prelude::*;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
@@ -110,7 +105,14 @@ async fn make_request(provider: &dyn Provider, session_id: &str) {
 }
 
 #[tokio::test]
+#[cfg(feature = "otel")]
 async fn test_session_id_propagates_to_log_records() {
+    use opentelemetry::logs::AnyValue;
+    use opentelemetry::Key;
+    use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+    use opentelemetry_sdk::logs::{InMemoryLogExporterBuilder, SdkLoggerProvider};
+    use tracing_subscriber::prelude::*;
+
     let exporter = InMemoryLogExporterBuilder::default().build();
     let provider = SdkLoggerProvider::builder()
         .with_simple_exporter(exporter.clone())

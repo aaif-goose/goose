@@ -3,6 +3,7 @@ import { Button } from '../../ui/button';
 import { Plus } from 'lucide-react';
 import { GPSIcon } from '../../ui/icons';
 import { useConfig, FixedExtensionEntry } from '../../ConfigContext';
+import { defineMessages, useIntl } from '../../../i18n';
 import ExtensionList from './subcomponents/ExtensionList';
 import ExtensionModal from './modal/ExtensionModal';
 import {
@@ -14,6 +15,29 @@ import {
 
 import { activateExtensionDefault, deleteExtension, toggleExtensionDefault } from './index';
 import { ExtensionConfig } from '../../../api/types.gen';
+
+const i18n = defineMessages({
+  addCustomExtension: {
+    id: 'extensionsSection.addCustomExtension',
+    defaultMessage: 'Add custom extension',
+  },
+  browseExtensions: {
+    id: 'extensionsSection.browseExtensions',
+    defaultMessage: 'Browse extensions',
+  },
+  updateExtension: {
+    id: 'extensionsSection.updateExtension',
+    defaultMessage: 'Update Extension',
+  },
+  saveChanges: {
+    id: 'extensionsSection.saveChanges',
+    defaultMessage: 'Save Changes',
+  },
+  addExtension: {
+    id: 'extensionsSection.addExtension',
+    defaultMessage: 'Add Extension',
+  },
+});
 
 interface ExtensionSectionProps {
   deepLinkConfig?: ExtensionConfig;
@@ -36,6 +60,7 @@ export default function ExtensionsSection({
   onModalClose,
   searchTerm = '',
 }: ExtensionSectionProps) {
+  const intl = useIntl();
   const { getExtensions, addExtension, removeExtension, extensionsList } = useConfig();
   const [selectedExtension, setSelectedExtension] = useState<FixedExtensionEntry | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -198,7 +223,7 @@ export default function ExtensionsSection({
               onClick={() => setIsAddModalOpen(true)}
             >
               <Plus className="h-4 w-4" />
-              Add custom extension
+              {intl.formatMessage(i18n.addCustomExtension)}
             </Button>
             <Button
               className="flex items-center gap-2 justify-center"
@@ -206,7 +231,7 @@ export default function ExtensionsSection({
               onClick={() => window.open('https://block.github.io/goose/v1/extensions/', '_blank')}
             >
               <GPSIcon size={12} />
-              Browse extensions
+              {intl.formatMessage(i18n.browseExtensions)}
             </Button>
           </div>
         )}
@@ -214,12 +239,12 @@ export default function ExtensionsSection({
         {/* Modal for updating an existing extension */}
         {isModalOpen && selectedExtension && (
           <ExtensionModal
-            title="Update Extension"
+            title={intl.formatMessage(i18n.updateExtension)}
             initialData={extensionToFormData(selectedExtension)}
             onClose={handleModalClose}
             onSubmit={handleUpdateExtension}
             onDelete={handleDeleteExtension}
-            submitLabel="Save Changes"
+            submitLabel={intl.formatMessage(i18n.saveChanges)}
             modalType={'edit'}
           />
         )}
@@ -227,11 +252,11 @@ export default function ExtensionsSection({
         {/* Modal for adding a new extension */}
         {isAddModalOpen && (
           <ExtensionModal
-            title="Add custom extension"
+            title={intl.formatMessage(i18n.addCustomExtension)}
             initialData={getDefaultFormData()}
             onClose={handleModalClose}
             onSubmit={handleAddExtension}
-            submitLabel="Add Extension"
+            submitLabel={intl.formatMessage(i18n.addExtension)}
             modalType={'add'}
           />
         )}
@@ -239,14 +264,14 @@ export default function ExtensionsSection({
         {/* Modal for adding extension from deeplink*/}
         {deepLinkConfigStateVar && showEnvVarsStateVar && (
           <ExtensionModal
-            title="Add custom extension"
+            title={intl.formatMessage(i18n.addCustomExtension)}
             initialData={extensionToFormData({
               ...deepLinkConfig,
               enabled: true,
             } as FixedExtensionEntry)}
             onClose={handleModalClose}
             onSubmit={handleAddExtension}
-            submitLabel="Add Extension"
+            submitLabel={intl.formatMessage(i18n.addExtension)}
             modalType={'add'}
           />
         )}

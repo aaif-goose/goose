@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
@@ -40,7 +41,32 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Goose } from './icons';
 import EnvironmentBadge from './GooseSidebar/EnvironmentBadge';
 
-
+const i18n = defineMessages({
+  failedToLoadSession: {
+    id: 'baseChat.failedToLoadSession',
+    defaultMessage: 'Failed to Load Session',
+  },
+  retryConnection: {
+    id: 'baseChat.retryConnection',
+    defaultMessage: 'Retry connection',
+  },
+  newSession: {
+    id: 'baseChat.newSession',
+    defaultMessage: 'New session',
+  },
+  noSession: {
+    id: 'baseChat.noSession',
+    defaultMessage: 'No Session',
+  },
+  recipeCreatedTitle: {
+    id: 'baseChat.recipeCreatedTitle',
+    defaultMessage: 'Recipe created successfully!',
+  },
+  recipeCreatedMessage: {
+    id: 'baseChat.recipeCreatedMessage',
+    defaultMessage: '"{title}" has been saved and is ready to use.',
+  },
+});
 
 interface BaseChatProps {
   setChat: (chat: ChatType) => void;
@@ -66,6 +92,7 @@ export default function BaseChat({
   initialMessage,
   isActiveSession,
 }: BaseChatProps) {
+  const intl = useIntl();
   const location = useLocation();
   const navigate = useNavigate();
   const scrollRef = useRef<ScrollAreaHandle>(null);
@@ -299,8 +326,8 @@ export default function BaseChat({
 
   const handleRecipeCreated = (recipe: Recipe) => {
     toastSuccess({
-      title: 'Recipe created successfully!',
-      msg: `"${recipe.title}" has been saved and is ready to use.`,
+      title: intl.formatMessage(i18n.recipeCreatedTitle),
+      msg: intl.formatMessage(i18n.recipeCreatedMessage, { title: recipe.title }),
     });
   };
 
@@ -311,7 +338,7 @@ export default function BaseChat({
     messages,
     recipe,
     sessionId,
-    name: session?.name || 'No Session',
+    name: session?.name || intl.formatMessage(i18n.noSession),
   };
 
   const lastSetNameRef = useRef<string>('');
@@ -353,7 +380,7 @@ export default function BaseChat({
             <div className="flex-1 bg-background-primary rounded-b-2xl flex items-center justify-center">
               <div className="flex flex-col items-center justify-center p-8 max-w-md w-full">
                 <div className="text-red-700 dark:text-red-300 bg-red-400/50 p-4 rounded-lg mb-6 w-full">
-                  <h3 className="font-semibold mb-2">Failed to Load Session</h3>
+                  <h3 className="font-semibold mb-2">{intl.formatMessage(i18n.failedToLoadSession)}</h3>
                   <p className="text-sm">{sessionLoadError}</p>
                 </div>
                 <div className="flex gap-3 mb-4">
@@ -361,7 +388,7 @@ export default function BaseChat({
                     onClick={retrySessionLoad}
                     className="px-4 py-2 text-center cursor-pointer text-text-on-primary bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-150 font-medium"
                   >
-                    Retry connection
+                    {intl.formatMessage(i18n.retryConnection)}
                   </button>
                   <button
                     onClick={() => {
@@ -369,7 +396,7 @@ export default function BaseChat({
                     }}
                     className="px-4 py-2 text-center cursor-pointer text-text-primary border border-border-primary hover:bg-background-secondary rounded-lg transition-all duration-150"
                   >
-                    New session
+                    {intl.formatMessage(i18n.newSession)}
                   </button>
                 </div>
                 <p className="text-xs text-text-muted text-center">

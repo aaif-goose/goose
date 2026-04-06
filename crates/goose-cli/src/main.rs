@@ -9,6 +9,7 @@ async fn main() -> Result<()> {
 
     let result = cli().await;
 
+    #[cfg(feature = "otel")]
     if goose::otel::otlp::is_otlp_initialized() {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         goose::otel::otlp::shutdown_otlp();

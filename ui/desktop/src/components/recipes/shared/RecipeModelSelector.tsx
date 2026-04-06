@@ -3,6 +3,58 @@ import { Select } from '../../ui/Select';
 import { Input } from '../../ui/input';
 import { useConfig } from '../../ConfigContext';
 import { fetchModelsForProviders } from '../../settings/models/modelInterface';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  fetchError: {
+    id: 'recipeModelSelector.fetchError',
+    defaultMessage: 'Failed to fetch models. Please try again later.',
+  },
+  providerLabel: {
+    id: 'recipeModelSelector.providerLabel',
+    defaultMessage: 'Provider (Optional)',
+  },
+  providerHint: {
+    id: 'recipeModelSelector.providerHint',
+    defaultMessage: 'Leave empty to use the default provider configured in settings',
+  },
+  selectProvider: {
+    id: 'recipeModelSelector.selectProvider',
+    defaultMessage: 'Select provider',
+  },
+  useDefaultProvider: {
+    id: 'recipeModelSelector.useDefaultProvider',
+    defaultMessage: 'Use default provider',
+  },
+  enterModelNotListed: {
+    id: 'recipeModelSelector.enterModelNotListed',
+    defaultMessage: 'Enter a model not listed...',
+  },
+  modelLabel: {
+    id: 'recipeModelSelector.modelLabel',
+    defaultMessage: 'Model (Optional)',
+  },
+  backToModelList: {
+    id: 'recipeModelSelector.backToModelList',
+    defaultMessage: 'Back to model list',
+  },
+  modelHint: {
+    id: 'recipeModelSelector.modelHint',
+    defaultMessage: 'Leave empty to use the default model for the selected provider',
+  },
+  enterCustomModel: {
+    id: 'recipeModelSelector.enterCustomModel',
+    defaultMessage: 'Enter custom model name',
+  },
+  loadingModels: {
+    id: 'recipeModelSelector.loadingModels',
+    defaultMessage: 'Loading models…',
+  },
+  selectModel: {
+    id: 'recipeModelSelector.selectModel',
+    defaultMessage: 'Select a model',
+  },
+});
 
 interface RecipeModelSelectorProps {
   selectedProvider?: string;
@@ -17,6 +69,7 @@ export const RecipeModelSelector = ({
   onProviderChange,
   onModelChange,
 }: RecipeModelSelectorProps) => {
+  const intl = useIntl();
   const { getProviders } = useConfig();
   const [providerOptions, setProviderOptions] = useState<{ value: string; label: string }[]>([]);
   const [modelOptions, setModelOptions] = useState<
@@ -34,7 +87,7 @@ export const RecipeModelSelector = ({
         const activeProviders = providersResponse.filter((provider) => provider.is_configured);
 
         setProviderOptions([
-          { value: '', label: 'Use default provider' },
+          { value: '', label: intl.formatMessage(i18n.useDefaultProvider) },
           ...activeProviders.map(({ metadata, name }) => ({
             value: name,
             label: metadata.display_name,
@@ -62,7 +115,7 @@ export const RecipeModelSelector = ({
 
           options.push({
             value: `__custom__:${p.name}`,
-            label: 'Enter a model not listed...',
+            label: intl.formatMessage(i18n.enterModelNotListed),
             provider: p.name,
           });
 
@@ -74,12 +127,12 @@ export const RecipeModelSelector = ({
         setModelOptions(groupedOptions);
       } catch (error) {
         console.error('Failed to load providers:', error);
-        setFetchError('Failed to fetch models. Please try again later.');
+        setFetchError(intl.formatMessage(i18n.fetchError));
       } finally {
         setLoadingModels(false);
       }
     })();
-  }, [getProviders]);
+  }, [getProviders, intl]);
 
   useEffect(() => {
     if (!loadingModels && selectedModel && selectedProvider) {
@@ -131,10 +184,10 @@ export const RecipeModelSelector = ({
       )}
       <div>
         <label className="block text-sm font-medium text-textStandard mb-2">
-          Provider (Optional)
+          {intl.formatMessage(i18n.providerLabel)}
         </label>
         <p className="text-xs text-textSubtle mb-2">
-          Leave empty to use the default provider configured in settings
+          {intl.formatMessage(i18n.providerHint)}
         </p>
         <Select
           options={providerOptions}
@@ -144,14 +197,14 @@ export const RecipeModelSelector = ({
               : providerOptions.find((opt) => opt.value === '') || null
           }
           onChange={handleProviderChange}
-          placeholder="Select provider"
+          placeholder={intl.formatMessage(i18n.selectProvider)}
           isClearable
         />
       </div>
 
       <div>
         <div className="flex justify-between items-center mb-2">
-          <label className="block text-sm font-medium text-textStandard">Model (Optional)</label>
+          <label className="block text-sm font-medium text-textStandard">{intl.formatMessage(i18n.modelLabel)}</label>
           {isCustomModel && (
             <button
               onClick={() => {
@@ -161,17 +214,17 @@ export const RecipeModelSelector = ({
               className="text-xs text-textSubtle hover:underline"
               type="button"
             >
-              Back to model list
+              {intl.formatMessage(i18n.backToModelList)}
             </button>
           )}
         </div>
         <p className="text-xs text-textSubtle mb-2">
-          Leave empty to use the default model for the selected provider
+          {intl.formatMessage(i18n.modelHint)}
         </p>
         {isCustomModel ? (
           <Input
             type="text"
-            placeholder="Enter custom model name"
+            placeholder={intl.formatMessage(i18n.enterCustomModel)}
             value={selectedModel || ''}
             onChange={(e) => onModelChange(e.target.value || undefined)}
           />
@@ -180,13 +233,13 @@ export const RecipeModelSelector = ({
             options={loadingModels ? [] : filteredModelOptions}
             value={
               loadingModels
-                ? { value: '', label: 'Loading models…', isDisabled: true }
+                ? { value: '', label: intl.formatMessage(i18n.loadingModels), isDisabled: true }
                 : selectedModel
                   ? { value: selectedModel, label: selectedModel }
                   : null
             }
             onChange={handleModelChange}
-            placeholder="Select a model"
+            placeholder={intl.formatMessage(i18n.selectModel)}
             isClearable
             isDisabled={loadingModels}
           />

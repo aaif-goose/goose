@@ -2,6 +2,28 @@
   "private": true,
   "workspaces": [
     "acp",
-    "text"
-  ]
+    "text",
+    "desktop",
+    "goose-binary/*"
+  ],
+  "scripts": {
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "^19.2.4",
+      "react-dom": "^19.2.4"
+    },
+    "onlyBuiltDependencies": [
+      "@modelcontextprotocol/ext-apps",
+      "electron",
+      "electron-winstaller",
+      "esbuild"
+    ]
+  }
 }

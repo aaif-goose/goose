@@ -1,0 +1,44 @@
+version: "1.0.0"
+title: GitHub PR Code Review
+description: Perform a code review of a GitHub pull request.
+
+parameters:
+  - key: pr_directory
+    input_type: string
+    requirement: required
+    description: Path to the directory with pr.md and pr.diff
+  - key: instructions
+    input_type: string
+    requirement: required
+    description: Specific instructions for the code review.
+
+extensions:
+  - type: builtin
+    name: developer
+  - type: stdio
+    name: code_review
+    cmd: uv
+    args:
+      - run
+      - '{{ recipe_dir }}/../scripts/pr-review-mcp.py'
+
+prompt: |
+  Review the code changes downloaded from a GitHub pull request.
+  The PR metadata is located at {{ pr_directory }}/pr.md.
+  The proposed diff you are to review is located at {{ pr_directory }}/pr.diff.
+  The base branch is checked out in the working directory.
+  Use the tools you have to review the diff and examine the code changes and context.
+  Use the code review tools to add feedback on specific parts of the diff.
+  There is no need to call the finish_review tool unless absolutely necessary to add
+  summary content not covered by inline comments.
+
+  Be concise with your comments. Just a few sentences per comment at most, with no
+  extra formatting. Just the gist of the problem is enough.
+
+  ** Important **
+  Don't add nit-pick comments and avoid matters of opinion.
+  Adhere closely to the code review instructions below.
+  Don't add add feedback outside the scope of the instructions below.
+
+  # Code review instructions
+    {{ instructions }}

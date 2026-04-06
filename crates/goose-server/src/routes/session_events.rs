@@ -1,5 +1,6 @@
 use crate::routes::errors::ErrorResponse;
 use crate::routes::reply::{get_token_state, track_tool_telemetry, MessageEvent};
+use crate::session_event_bus::RequestGuard;
 use crate::state::AppState;
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
@@ -320,7 +321,13 @@ pub async fn session_reply(
     }
 
     let bus = state.get_or_create_event_bus(&session_id).await;
-    let cancel_token = bus.register_request(request_id.clone()).await;
+
+    let cancel_token = bus
+        .try_register_request(request_id.clone())
+        .await
+        .map_err(|_| {
+            ErrorResponse::bad_request("Session already has an active request. Cancel it first.")
+        })?;
 
     let user_message = request.user_message;
     let override_conversation = request.override_conversation;
@@ -332,6 +339,8 @@ pub async fn session_reply(
     let task_bus = bus.clone();
 
     drop(tokio::spawn(async move {
+        let mut _guard = RequestGuard::new(task_bus.clone(), task_request_id.clone());
+
         let publish = |rid: Option<String>, event: MessageEvent| {
             let bus = task_bus.clone();
             async move {
@@ -350,7 +359,6 @@ pub async fn session_reply(
                     },
                 )
                 .await;
-                task_bus.cleanup_request(&task_request_id).await;
                 return;
             }
         };
@@ -370,7 +378,6 @@ pub async fn session_reply(
                     },
                 )
                 .await;
-                task_bus.cleanup_request(&task_request_id).await;
                 return;
             }
         };
@@ -420,7 +427,6 @@ pub async fn session_reply(
                     },
                 )
                 .await;
-                task_bus.cleanup_request(&task_request_id).await;
                 return;
             }
         };
@@ -562,6 +568,7 @@ pub async fn session_reply(
         )
         .await;
 
+        _guard.disarm();
         task_bus.cleanup_request(&task_request_id).await;
     }));
 

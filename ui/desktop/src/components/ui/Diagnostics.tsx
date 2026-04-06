@@ -3,6 +3,80 @@ import { AlertTriangle, Download, Github } from 'lucide-react';
 import { Button } from './button';
 import { toastError } from '../../toasts';
 import { diagnostics, systemInfo } from '../../api';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  reportProblem: {
+    id: 'diagnosticsModal.reportProblem',
+    defaultMessage: 'Report a Problem',
+  },
+  description: {
+    id: 'diagnosticsModal.description',
+    defaultMessage:
+      'You can download a diagnostics zip file to share with the team, or file a bug directly on GitHub with your system details pre-filled. A diagnostics report contains the following:',
+  },
+  systemInfo: {
+    id: 'diagnosticsModal.systemInfo',
+    defaultMessage: 'Basic system info',
+  },
+  sessionMessages: {
+    id: 'diagnosticsModal.sessionMessages',
+    defaultMessage: 'Your current session messages',
+  },
+  logFiles: {
+    id: 'diagnosticsModal.logFiles',
+    defaultMessage: 'Recent log files',
+  },
+  configSettings: {
+    id: 'diagnosticsModal.configSettings',
+    defaultMessage: 'Configuration settings',
+  },
+  sensitiveWarning: {
+    id: 'diagnosticsModal.sensitiveWarning',
+    defaultMessage:
+      'If your session contains sensitive information, do not share the diagnostics file publicly.',
+  },
+  attachHint: {
+    id: 'diagnosticsModal.attachHint',
+    defaultMessage: 'If you file a bug, consider attaching the diagnostics report to it.',
+  },
+  cancel: {
+    id: 'diagnosticsModal.cancel',
+    defaultMessage: 'Cancel',
+  },
+  downloading: {
+    id: 'diagnosticsModal.downloading',
+    defaultMessage: 'Downloading...',
+  },
+  download: {
+    id: 'diagnosticsModal.download',
+    defaultMessage: 'Download',
+  },
+  opening: {
+    id: 'diagnosticsModal.opening',
+    defaultMessage: 'Opening...',
+  },
+  fileBug: {
+    id: 'diagnosticsModal.fileBug',
+    defaultMessage: 'File Bug on GitHub',
+  },
+  diagnosticsErrorTitle: {
+    id: 'diagnosticsModal.diagnosticsErrorTitle',
+    defaultMessage: 'Diagnostics Error',
+  },
+  diagnosticsErrorMsg: {
+    id: 'diagnosticsModal.diagnosticsErrorMsg',
+    defaultMessage: 'Failed to download diagnostics',
+  },
+  systemInfoErrorTitle: {
+    id: 'diagnosticsModal.systemInfoErrorTitle',
+    defaultMessage: 'Error',
+  },
+  systemInfoErrorMsg: {
+    id: 'diagnosticsModal.systemInfoErrorMsg',
+    defaultMessage: 'Failed to get system information',
+  },
+});
 
 interface DiagnosticsModalProps {
   isOpen: boolean;
@@ -15,6 +89,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   onClose,
   sessionId,
 }) => {
+  const intl = useIntl();
   const [isDownloading, setIsDownloading] = useState(false);
   const [isFilingBug, setIsFilingBug] = useState(false);
 
@@ -40,8 +115,8 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
       onClose();
     } catch {
       toastError({
-        title: 'Diagnostics Error',
-        msg: 'Failed to download diagnostics',
+        title: intl.formatMessage(i18n.diagnosticsErrorTitle),
+        msg: intl.formatMessage(i18n.diagnosticsErrorMsg),
       });
     } finally {
       setIsDownloading(false);
@@ -119,8 +194,8 @@ Add any other context about the problem here.
       onClose();
     } catch {
       toastError({
-        title: 'Error',
-        msg: 'Failed to get system information',
+        title: intl.formatMessage(i18n.systemInfoErrorTitle),
+        msg: intl.formatMessage(i18n.systemInfoErrorMsg),
       });
     } finally {
       setIsFilingBug(false);
@@ -135,24 +210,21 @@ Add any other context about the problem here.
         <div className="flex items-start gap-3 mb-4">
           <AlertTriangle className="text-orange-500 flex-shrink-0 mt-1" size={20} />
           <div>
-            <h3 className="text-lg font-semibold text-text-primary mb-2">Report a Problem</h3>
+            <h3 className="text-lg font-semibold text-text-primary mb-2">{intl.formatMessage(i18n.reportProblem)}</h3>
             <p className="text-sm text-text-secondary mb-3">
-              You can download a diagnostics zip file to share with the team, or file a bug directly
-              on GitHub with your system details pre-filled. A diagnostics report contains the
-              following:
+              {intl.formatMessage(i18n.description)}
             </p>
             <ul className="text-sm text-text-secondary list-disc list-inside space-y-1 mb-3">
-              <li>Basic system info</li>
-              <li>Your current session messages</li>
-              <li>Recent log files</li>
-              <li>Configuration settings</li>
+              <li>{intl.formatMessage(i18n.systemInfo)}</li>
+              <li>{intl.formatMessage(i18n.sessionMessages)}</li>
+              <li>{intl.formatMessage(i18n.logFiles)}</li>
+              <li>{intl.formatMessage(i18n.configSettings)}</li>
             </ul>
             <p className="text-sm text-text-secondary">
-              <strong>Warning:</strong> If your session contains sensitive information, do not share
-              the diagnostics file publicly.
+              <strong>Warning:</strong> {intl.formatMessage(i18n.sensitiveWarning)}
             </p>
             <p className="text-sm text-text-secondary">
-              If you file a bug, consider attaching the diagnostics report to it.
+              {intl.formatMessage(i18n.attachHint)}
             </p>
           </div>
         </div>
@@ -163,7 +235,7 @@ Add any other context about the problem here.
             size="sm"
             disabled={isDownloading || isFilingBug}
           >
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
           <Button
             onClick={handleDownload}
@@ -172,7 +244,7 @@ Add any other context about the problem here.
             disabled={isDownloading || isFilingBug}
           >
             <Download size={16} className="mr-1" />
-            {isDownloading ? 'Downloading...' : 'Download'}
+            {isDownloading ? intl.formatMessage(i18n.downloading) : intl.formatMessage(i18n.download)}
           </Button>
           <Button
             onClick={handleFileGitHubIssue}
@@ -182,7 +254,7 @@ Add any other context about the problem here.
             className="bg-slate-600 text-white hover:bg-slate-700"
           >
             <Github size={16} className="mr-1" />
-            {isFilingBug ? 'Opening...' : 'File Bug on GitHub'}
+            {isFilingBug ? intl.formatMessage(i18n.opening) : intl.formatMessage(i18n.fileBug)}
           </Button>
         </div>
       </div>

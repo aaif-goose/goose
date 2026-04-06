@@ -6,6 +6,7 @@ use tracing_subscriber::{
     Registry,
 };
 
+#[cfg(feature = "otel")]
 use goose::otel::otlp;
 use goose::tracing::langfuse_layer;
 
@@ -67,6 +68,7 @@ fn setup_logging_internal(name: Option<&str>, force: bool) -> Result<()> {
                 // Console logging disabled for CLI - all logs go to files only
             ];
 
+            #[cfg(feature = "otel")]
             if !force {
                 layers.extend(otlp::init_otlp_layers(goose::config::Config::global()));
             }

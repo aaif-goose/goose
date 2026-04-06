@@ -1,34 +1,29 @@
 {
   "methods": [
     {
-      "method": "extensions/add",
+      "method": "_goose/extensions/add",
       "requestType": "AddExtensionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "extensions/remove",
+      "method": "_goose/extensions/remove",
       "requestType": "RemoveExtensionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "tools",
+      "method": "_goose/tools",
       "requestType": "GetToolsRequest",
       "responseType": "GetToolsResponse"
     },
     {
-      "method": "resource/read",
+      "method": "_goose/resource/read",
       "requestType": "ReadResourceRequest",
       "responseType": "ReadResourceResponse"
     },
     {
-      "method": "working_dir/update",
+      "method": "_goose/working_dir/update",
       "requestType": "UpdateWorkingDirRequest",
       "responseType": "EmptyResponse"
-    },
-    {
-      "method": "session/list",
-      "requestType": null,
-      "responseType": "ListSessionsResponse"
     },
     {
       "method": "session/get",
@@ -41,19 +36,59 @@
       "responseType": "EmptyResponse"
     },
     {
-      "method": "session/export",
+      "method": "_goose/session/export",
       "requestType": "ExportSessionRequest",
       "responseType": "ExportSessionResponse"
     },
     {
-      "method": "session/import",
+      "method": "_goose/session/import",
       "requestType": "ImportSessionRequest",
       "responseType": "ImportSessionResponse"
     },
     {
-      "method": "config/extensions",
-      "requestType": null,
+      "method": "_goose/config/extensions",
+      "requestType": "GetExtensionsRequest",
       "responseType": "GetExtensionsResponse"
+    },
+    {
+      "method": "_goose/session/provider/update",
+      "requestType": "UpdateProviderRequest",
+      "responseType": "UpdateProviderResponse"
+    },
+    {
+      "method": "_goose/providers/list",
+      "requestType": "ListProvidersRequest",
+      "responseType": "ListProvidersResponse"
+    },
+    {
+      "method": "_goose/config/read",
+      "requestType": "ReadConfigRequest",
+      "responseType": "ReadConfigResponse"
+    },
+    {
+      "method": "_goose/config/upsert",
+      "requestType": "UpsertConfigRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/remove",
+      "requestType": "RemoveConfigRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/secret/check",
+      "requestType": "CheckSecretRequest",
+      "responseType": "CheckSecretResponse"
+    },
+    {
+      "method": "_goose/secret/upsert",
+      "requestType": "UpsertSecretRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/secret/remove",
+      "requestType": "RemoveSecretRequest",
+      "responseType": "EmptyResponse"
     }
   ]
 }

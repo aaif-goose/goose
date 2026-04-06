@@ -20,6 +20,9 @@ pub struct RetryConfig {
     pub(crate) backoff_multiplier: f64,
     /// Maximum interval between retries in milliseconds
     pub(crate) max_interval_ms: u64,
+    /// When true, only retry on transient errors (ServerError, NetworkError,
+    /// RateLimitExceeded). RequestFailed (4xx client errors) will not be retried.
+    pub(crate) transient_only: bool,
 }
 
 impl Default for RetryConfig {
@@ -29,6 +32,7 @@ impl Default for RetryConfig {
             initial_interval_ms: DEFAULT_INITIAL_RETRY_INTERVAL_MS,
             backoff_multiplier: DEFAULT_BACKOFF_MULTIPLIER,
             max_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
+            transient_only: false,
         }
     }
 }
@@ -45,7 +49,13 @@ impl RetryConfig {
             initial_interval_ms,
             backoff_multiplier,
             max_interval_ms,
+            transient_only: false,
         }
+    }
+
+    pub fn transient_only(mut self) -> Self {
+        self.transient_only = true;
+        self
     }
 
     pub fn max_retries(&self) -> usize {
@@ -71,14 +81,14 @@ impl RetryConfig {
     }
 }
 
-pub fn should_retry(error: &ProviderError) -> bool {
-    matches!(
-        error,
+pub fn should_retry(error: &ProviderError, config: &RetryConfig) -> bool {
+    match error {
         ProviderError::RateLimitExceeded { .. }
-            | ProviderError::ServerError(_)
-            | ProviderError::NetworkError(_)
-            | ProviderError::RequestFailed(_)
-    )
+        | ProviderError::ServerError(_)
+        | ProviderError::NetworkError(_) => true,
+        ProviderError::RequestFailed(_) => !config.transient_only,
+        _ => false,
+    }
 }
 
 pub async fn retry_operation<F, Fut, T>(
@@ -96,7 +106,7 @@ where
         match operation().await {
             Ok(result) => return Ok(result),
             Err(error) => {
-                if should_retry(&error) && attempts < config.max_retries {
+                if should_retry(&error, config) && attempts < config.max_retries {
                     attempts += 1;
                     tracing::warn!(
                         "Request failed, retrying ({}/{}): {:?}",
@@ -195,7 +205,7 @@ impl<P: Provider> ProviderRetry for P {
                         }
                     }
 
-                    if should_retry(&error) && attempts < config.max_retries {
+                    if should_retry(&error, &config) && attempts < config.max_retries {
                         attempts += 1;
                         tracing::warn!(
                             "Request failed, retrying ({}/{}): {:?}",
@@ -230,5 +240,63 @@ impl<P: Provider> ProviderRetry for P {
                 }
             };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_retries_request_failed() {
+        let config = RetryConfig::default();
+        let error = ProviderError::RequestFailed("Bad request (400): model not found".into());
+        assert!(should_retry(&error, &config));
+    }
+
+    #[test]
+    fn transient_only_skips_request_failed() {
+        let config = RetryConfig::default().transient_only();
+        let error = ProviderError::RequestFailed("Bad request (400): model not found".into());
+        assert!(!should_retry(&error, &config));
+    }
+
+    #[test]
+    fn transient_only_still_retries_server_error() {
+        let config = RetryConfig::default().transient_only();
+        assert!(should_retry(
+            &ProviderError::ServerError("500 internal".into()),
+            &config
+        ));
+    }
+
+    #[test]
+    fn transient_only_still_retries_network_error() {
+        let config = RetryConfig::default().transient_only();
+        assert!(should_retry(
+            &ProviderError::NetworkError("connection refused".into()),
+            &config
+        ));
+    }
+
+    #[test]
+    fn transient_only_still_retries_rate_limit() {
+        let config = RetryConfig::default().transient_only();
+        assert!(should_retry(
+            &ProviderError::RateLimitExceeded {
+                details: "too many requests".into(),
+                retry_delay: None,
+            },
+            &config
+        ));
+    }
+
+    #[test]
+    fn never_retries_auth_errors() {
+        let config = RetryConfig::default();
+        assert!(!should_retry(
+            &ProviderError::Authentication("invalid key".into()),
+            &config
+        ));
     }
 }

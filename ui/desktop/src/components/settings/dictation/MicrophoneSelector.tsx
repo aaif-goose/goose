@@ -8,6 +8,50 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../../ui/dropdown-menu';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  microphone: {
+    id: 'microphoneSelector.microphone',
+    defaultMessage: 'Microphone',
+  },
+  grantAccessDescription: {
+    id: 'microphoneSelector.grantAccessDescription',
+    defaultMessage: 'Grant access to see available microphones',
+  },
+  grantAccess: {
+    id: 'microphoneSelector.grantAccess',
+    defaultMessage: 'Grant Access',
+  },
+  chooseDescription: {
+    id: 'microphoneSelector.chooseDescription',
+    defaultMessage: 'Choose which microphone to use for dictation',
+  },
+  systemDefault: {
+    id: 'microphoneSelector.systemDefault',
+    defaultMessage: 'System Default',
+  },
+  selectedMicrophone: {
+    id: 'microphoneSelector.selectedMicrophone',
+    defaultMessage: 'Selected Microphone',
+  },
+  microphoneLabel: {
+    id: 'microphoneSelector.microphoneLabel',
+    defaultMessage: 'Microphone {index}',
+  },
+  stop: {
+    id: 'microphoneSelector.stop',
+    defaultMessage: 'Stop',
+  },
+  test: {
+    id: 'microphoneSelector.test',
+    defaultMessage: 'Test',
+  },
+  speakToTest: {
+    id: 'microphoneSelector.speakToTest',
+    defaultMessage: 'Speak to test your microphone ({seconds}s)',
+  },
+});
 
 interface MicrophoneSelectorProps {
   selectedDeviceId: string | null;
@@ -20,6 +64,7 @@ export const MicrophoneSelector = ({
   selectedDeviceId,
   onDeviceChange,
 }: MicrophoneSelectorProps) => {
+  const intl = useIntl();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [hasPermission, setHasPermission] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -120,27 +165,27 @@ export const MicrophoneSelector = ({
   }, [stopTest]);
 
   const getDeviceLabel = (device: MediaDeviceInfo, index: number): string => {
-    return device.label || `Microphone ${index + 1}`;
+    return device.label || intl.formatMessage(i18n.microphoneLabel, { index: index + 1 });
   };
 
   const selectedLabel = (): string => {
-    if (!selectedDeviceId) return 'System Default';
+    if (!selectedDeviceId) return intl.formatMessage(i18n.systemDefault);
     const device = devices.find((d) => d.deviceId === selectedDeviceId);
-    if (device) return device.label || 'Selected Microphone';
-    return 'System Default';
+    if (device) return device.label || intl.formatMessage(i18n.selectedMicrophone);
+    return intl.formatMessage(i18n.systemDefault);
   };
 
   if (!hasPermission) {
     return (
       <div className="flex items-center justify-between py-2 px-2 hover:bg-background-secondary rounded-lg transition-all">
         <div>
-          <h3 className="text-text-primary text-sm">Microphone</h3>
+          <h3 className="text-text-primary text-sm">{intl.formatMessage(i18n.microphone)}</h3>
           <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-            Grant access to see available microphones
+            {intl.formatMessage(i18n.grantAccessDescription)}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={requestPermission}>
-          Grant Access
+          {intl.formatMessage(i18n.grantAccess)}
         </Button>
       </div>
     );
@@ -150,9 +195,9 @@ export const MicrophoneSelector = ({
     <div className="space-y-3">
       <div className="flex items-center justify-between py-2 px-2 hover:bg-background-secondary rounded-lg transition-all">
         <div>
-          <h3 className="text-text-primary text-sm">Microphone</h3>
+          <h3 className="text-text-primary text-sm">{intl.formatMessage(i18n.microphone)}</h3>
           <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-            Choose which microphone to use for dictation
+            {intl.formatMessage(i18n.chooseDescription)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -166,7 +211,7 @@ export const MicrophoneSelector = ({
                 value={selectedDeviceId ?? 'system_default'}
                 onValueChange={(v) => onDeviceChange(v === 'system_default' ? null : v)}
               >
-                <DropdownMenuRadioItem value="system_default">System Default</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="system_default">{intl.formatMessage(i18n.systemDefault)}</DropdownMenuRadioItem>
                 {devices.map((device, i) => (
                   <DropdownMenuRadioItem key={device.deviceId} value={device.deviceId}>
                     <span className="truncate">{getDeviceLabel(device, i)}</span>
@@ -182,7 +227,7 @@ export const MicrophoneSelector = ({
             className="shrink-0"
           >
             <Mic className="w-4 h-4 mr-1" />
-            {isTesting ? 'Stop' : 'Test'}
+            {isTesting ? intl.formatMessage(i18n.stop) : intl.formatMessage(i18n.test)}
           </Button>
         </div>
       </div>
@@ -196,7 +241,7 @@ export const MicrophoneSelector = ({
             />
           </div>
           <p className="text-xs text-text-secondary mt-1">
-            Speak to test your microphone ({Math.ceil(TEST_DURATION_MS / 1000)}s)
+            {intl.formatMessage(i18n.speakToTest, { seconds: Math.ceil(TEST_DURATION_MS / 1000) })}
           </p>
         </div>
       )}

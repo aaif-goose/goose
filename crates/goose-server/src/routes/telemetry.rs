@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+#[cfg(feature = "telemetry")]
 use goose::posthog::emit_event;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -29,6 +30,7 @@ async fn send_telemetry_event(
     let event_name = request.event_name;
     let properties = request.properties;
 
+    #[cfg(feature = "telemetry")]
     tokio::spawn(async move {
         if let Err(e) = emit_event(&event_name, properties).await {
             tracing::debug!("Failed to send telemetry event: {}", e);

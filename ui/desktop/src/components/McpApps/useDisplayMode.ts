@@ -36,6 +36,7 @@ export interface DisplayModeState {
   isInline: boolean;
   appSupportsFullscreen: boolean;
   appSupportsPip: boolean;
+  appTitle: string | null;
 
   changeDisplayMode: (mode: GooseDisplayMode) => void;
 
@@ -76,6 +77,9 @@ export function useDisplayMode({
   // Display modes the app declared support for during ui/initialize.
   // null = not yet known (controls stay hidden until initialize), empty = app didn't declare any.
   const [appDeclaredModes, setAppDeclaredModes] = useState<string[] | null>(null);
+
+  // App-declared title from ui/initialize (highest priority in the title fallback chain).
+  const [appTitle, setAppTitle] = useState<string | null>(null);
 
   const effectiveDisplayModes = useMemo((): McpUiDisplayMode[] => {
     if (!appDeclaredModes) return [];
@@ -263,6 +267,10 @@ export function useDisplayMode({
         if (caps?.availableDisplayModes && Array.isArray(caps.availableDisplayModes)) {
           setAppDeclaredModes(caps.availableDisplayModes);
         }
+        const title = data.params.clientInfo?.name;
+        if (typeof title === 'string' && title.trim()) {
+          setAppTitle(title.trim());
+        }
       }
 
       // After initialize, only allow modes both host and app agree on.
@@ -319,6 +327,7 @@ export function useDisplayMode({
     isInline,
     appSupportsFullscreen,
     appSupportsPip,
+    appTitle,
 
     changeDisplayMode,
 

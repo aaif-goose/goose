@@ -217,12 +217,12 @@ impl DatabricksProvider {
             .and_then(|v: String| v.parse::<u64>().ok())
             .unwrap_or(DEFAULT_MAX_RETRY_INTERVAL_MS);
 
-        RetryConfig {
+        RetryConfig::new(
             max_retries,
             initial_interval_ms,
             backoff_multiplier,
             max_interval_ms,
-        }
+        )
     }
 
     fn load_fast_retry_config(_config: &crate::config::Config) -> RetryConfig {
@@ -412,16 +412,40 @@ impl Provider for DatabricksProvider {
                         let status = resp.status();
                         let error_text = resp.text().await.unwrap_or_default();
 
-                        // Parse as JSON if possible to pass to map_http_error_to_provider_error
                         let json_payload = serde_json::from_str::<Value>(&error_text).ok();
                         return Err(map_http_error_to_provider_error(status, json_payload));
                     }
                     Ok(resp)
                 })
-                .await
-                .inspect_err(|e| {
-                    let _ = log.error(e);
-                })?;
+                .await;
+
+            let response = match response {
+                Err(e) if e.to_string().contains("stream_options") => {
+                    payload.as_object_mut().unwrap().remove("stream_options");
+                    self.with_retry(|| async {
+                        let resp = self
+                            .api_client
+                            .response_post(Some(session_id), &path, &payload)
+                            .await?;
+                        if !resp.status().is_success() {
+                            let status = resp.status();
+                            let error_text = resp.text().await.unwrap_or_default();
+                            let json_payload = serde_json::from_str::<Value>(&error_text).ok();
+                            return Err(map_http_error_to_provider_error(status, json_payload));
+                        }
+                        Ok(resp)
+                    })
+                    .await
+                    .inspect_err(|e| {
+                        let _ = log.error(e);
+                    })?
+                }
+                Err(e) => {
+                    let _ = log.error(&e);
+                    return Err(e);
+                }
+                Ok(resp) => resp,
+            };
 
             stream_openai_compat(response, log)
         }

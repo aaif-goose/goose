@@ -1,0 +1,28 @@
+{
+  "name": "zhipu",
+  "engine": "openai",
+  "display_name": "Zhipu AI",
+  "description": "Zhipu AI GLM models. Set ZHIPU_BASE_URL to override the default endpoint (e.g. https://open.bigmodel.cn/api/coding/paas/v4 for Coding Plan models).",
+  "api_key_env": "ZHIPU_API_KEY",
+  "base_url": "${ZHIPU_BASE_URL}",
+  "env_vars": [
+    {
+      "name": "ZHIPU_BASE_URL",
+      "required": false,
+      "secret": false,
+      "default": "https://open.bigmodel.cn/api/paas/v4",
+      "description": "Zhipu API base URL. Change to https://open.bigmodel.cn/api/coding/paas/v4 for Coding Plan models like GLM-5.1."
+    }
+  ],
+  "catalog_provider_id": "zhipuai",
+  "dynamic_models": true,
+  "models": [
+    {"name": "glm-4.5", "context_limit": 131072},
+    {"name": "glm-4.5-flash", "context_limit": 131072},
+    {"name": "glm-4.6", "context_limit": 204800},
+    {"name": "glm-4.7", "context_limit": 204800},
+    {"name": "glm-4.7-flash", "context_limit": 200000},
+    {"name": "glm-5", "context_limit": 204800}
+  ],
+  "supports_streaming": true
+}

@@ -1,0 +1,59 @@
+name: Close release PR on tag push
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  close-release-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+
+    - name: Extract version from tag
+      id: version
+      env:
+        TAG: ${{ github.ref_name }}
+      run: |
+        VERSION=${TAG#v}
+        BRANCH="release/${VERSION}"
+
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+
+        echo "Tag: ${TAG}"
+        echo "Version: ${VERSION}"
+        echo "Expected branch: ${BRANCH}"
+
+    - name: Find and close matching PR
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BRANCH: ${{ steps.version.outputs.branch }}
+        TAG: ${{ steps.version.outputs.tag }}
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+
+        if [ -z "$PR_NUMBER" ]; then
+          echo "ℹ️ No open PR found for branch: $BRANCH (may already be closed)"
+        else
+          echo "✅ Found PR #$PR_NUMBER for branch: $BRANCH"
+          gh pr close "$PR_NUMBER" --comment "Release $TAG has been tagged and pushed. Closing this PR (version bump was already merged to main)."
+          echo "✅ Closed PR #$PR_NUMBER"
+        fi
+
+    - name: Trigger patch release
+      env:
+        BRANCH: ${{ steps.version.outputs.branch }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh workflow run patch-release.yaml \
+          --field target_branch=$BRANCH

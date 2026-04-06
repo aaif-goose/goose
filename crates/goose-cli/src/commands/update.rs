@@ -1,4 +1,8 @@
 use anyhow::{bail, Context, Result};
+use sha2::{Digest, Sha256};
+use sigstore_verify::trust_root::TrustedRoot;
+use sigstore_verify::types::{Bundle, Sha256Hash};
+use sigstore_verify::VerificationPolicy;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,10 +44,161 @@ fn binary_name() -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Sigstore / SLSA provenance verification
+// ---------------------------------------------------------------------------
+
+/// Compute the SHA-256 hex digest of a byte slice.
+fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    format!("{:x}", hasher.finalize())
+}
+
+#[derive(serde::Deserialize)]
+struct AttestationResponse {
+    attestations: Vec<AttestationEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct AttestationEntry {
+    bundle: serde_json::Value,
+}
+
+const GITHUB_ACTIONS_ISSUER: &str = "https://token.actions.githubusercontent.com";
+
+async fn fetch_attestations(digest: &str, token: Option<&str>) -> Result<Vec<serde_json::Value>> {
+    let url = format!(
+        "https://api.github.com/repos/block/goose/attestations/sha256:{digest}\
+         ?per_page=30&predicate_type=https://slsa.dev/provenance/v1"
+    );
+
+    let client = reqwest::Client::new();
+    let mut req = client
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "goose-cli");
+
+    if let Some(tok) = token {
+        req = req.header("Authorization", format!("Bearer {tok}"));
+    }
+
+    let resp = req.send().await.context("Failed to fetch attestations")?;
+
+    if !resp.status().is_success() {
+        bail!("GitHub attestation API returned HTTP {}", resp.status());
+    }
+
+    let body: AttestationResponse = resp
+        .json()
+        .await
+        .context("Failed to parse attestation response")?;
+
+    Ok(body.attestations.into_iter().map(|a| a.bundle).collect())
+}
+
+// Verify a single attestation bundle against the artifact digest and workflow.
+fn verify_bundle(
+    bundle_json: &serde_json::Value,
+    artifact_digest: Sha256Hash,
+    policy: &VerificationPolicy,
+    trusted_root: &TrustedRoot,
+    workflow: &str,
+) -> Result<()> {
+    let bundle_str = serde_json::to_string(bundle_json)?;
+    let bundle = Bundle::from_json(&bundle_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse bundle: {e}"))?;
+
+    let result = sigstore_verify::verify(artifact_digest, &bundle, policy, trusted_root)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if !result.success {
+        bail!("Verification unsuccessful");
+    }
+
+    let identity = result
+        .identity
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("No identity in certificate"))?;
+
+    let expected = format!("/.github/workflows/{workflow}");
+    if !identity.contains(&expected) {
+        bail!("Workflow mismatch: expected {workflow}, got {identity}");
+    }
+
+    Ok(())
+}
+
+/// Returns `Ok(true)` verified, `Ok(false)` skipped (soft warning), `Err` hard failure.
+async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<bool> {
+    let digest = sha256_hex(archive_data);
+    println!("Archive SHA-256: {digest}");
+
+    let workflow = match tag {
+        "canary" => "canary.yml",
+        _ => "release.yml",
+    };
+
+    let token = env::var("GITHUB_TOKEN")
+        .ok()
+        .or_else(|| env::var("GH_TOKEN").ok());
+
+    println!("Verifying SLSA provenance via Sigstore...");
+
+    let bundles = match fetch_attestations(&digest, token.as_deref()).await {
+        Ok(b) if b.is_empty() => {
+            eprintln!(
+                "Warning: No Sigstore attestation found for this build. \
+                 This may be expected for canary or nightly builds."
+            );
+            return Ok(false);
+        }
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!(
+                "Warning: Sigstore provenance check could not complete: {e}\n\
+                 This may be expected for releases published before provenance \
+                 attestations were enabled."
+            );
+            return Ok(false);
+        }
+    };
+
+    let trusted_root = TrustedRoot::production().context("Failed to load Sigstore trusted root")?;
+    let policy = VerificationPolicy::with_issuer(GITHUB_ACTIONS_ISSUER);
+    let artifact_digest =
+        Sha256Hash::from_hex(&digest).context("Failed to parse artifact digest")?;
+
+    // One passing attestation is sufficient.
+    let mut last_err = None;
+    for bundle_json in &bundles {
+        match verify_bundle(
+            bundle_json,
+            artifact_digest,
+            &policy,
+            &trusted_root,
+            workflow,
+        ) {
+            Ok(()) => {
+                println!("Sigstore provenance verification passed.");
+                return Ok(true);
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Sigstore verification failed: {}\n\nAborting update due to security check failure.",
+        last_err.unwrap()
+    ))
+}
+
 /// Update the goose binary to the latest release.
 ///
-/// Downloads the platform-appropriate archive from GitHub releases,
-/// extracts it, and replaces the current binary in-place.
+/// Downloads the platform-appropriate archive from GitHub releases, verifies
+/// its SLSA provenance via Sigstore, extracts it with path-traversal
+/// hardening, and replaces the current binary in-place.
 pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
     #[cfg(feature = "disable-update")]
     {
@@ -78,7 +233,10 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
 
         println!("Downloaded {} bytes.", bytes.len());
 
-        // --- Extract to temp dir ------------------------------------------------
+        // --- Verify SLSA provenance via Sigstore --------------------------------
+        let provenance_verified = verify_provenance(&bytes, tag).await?;
+
+        // --- Extract to temp dir (hardened against path traversal) --------------
         let tmp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
 
         #[cfg(target_os = "windows")]
@@ -103,7 +261,11 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
         #[cfg(target_os = "windows")]
         copy_dlls(&extracted_binary, &current_exe)?;
 
-        println!("goose updated successfully!");
+        if provenance_verified {
+            println!("goose updated successfully (verified with Sigstore SLSA provenance).");
+        } else {
+            println!("goose updated successfully.");
+        }
 
         // --- Reconfigure if requested -------------------------------------------
         if reconfigure {
@@ -125,27 +287,94 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
 // Archive extraction
 // ---------------------------------------------------------------------------
 
-/// Extract a .zip archive (Windows).
+/// Extract a .zip archive with path-traversal hardening (Windows).
+///
+/// Iterates entries individually and uses `enclosed_name()` to reject any
+/// path that escapes the destination directory (zip-slip protection).
 #[cfg(target_os = "windows")]
 fn extract_zip(data: &[u8], dest: &Path) -> Result<()> {
     use std::io::Cursor;
     let cursor = Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor).context("Failed to open zip archive")?;
-    archive
-        .extract(dest)
-        .context("Failed to extract zip archive")?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .with_context(|| format!("Failed to read zip entry at index {i}"))?;
+
+        let safe_path = match entry.enclosed_name() {
+            Some(p) => p.to_owned(),
+            None => bail!("Zip entry has unsafe path: {}", entry.name()),
+        };
+
+        let target = dest.join(&safe_path);
+
+        if entry.is_dir() {
+            fs::create_dir_all(&target)?;
+        } else {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut out = fs::File::create(&target)?;
+            std::io::copy(&mut entry, &mut out)?;
+        }
+    }
+
     Ok(())
 }
 
-/// Extract a .tar.bz2 archive (macOS / Linux).
+/// Validate that an archive entry path is safe (no absolute paths, no `..`).
+fn validate_entry_path(path: &Path) -> Result<()> {
+    if path.is_absolute() {
+        bail!("Tar entry has absolute path: {}", path.display());
+    }
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            bail!("Tar entry contains path traversal: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+/// Extract a .tar.bz2 archive with path-traversal hardening (macOS / Linux).
+///
+/// Iterates entries individually, rejecting any entry whose path is absolute
+/// or contains `..` components (tar-slip protection).
 #[cfg(not(target_os = "windows"))]
 fn extract_tar_bz2(data: &[u8], dest: &Path) -> Result<()> {
     use bzip2::read::BzDecoder;
     let decoder = BzDecoder::new(data);
     let mut archive = tar::Archive::new(decoder);
-    archive
-        .unpack(dest)
-        .context("Failed to extract tar.bz2 archive")?;
+
+    for entry in archive.entries().context("Failed to read tar entries")? {
+        let mut entry = entry.context("Failed to read tar entry")?;
+        let path = entry
+            .path()
+            .context("Failed to read entry path")?
+            .into_owned();
+
+        validate_entry_path(&path)?;
+
+        // Block symlinks and hardlinks whose targets escape the destination directory.
+        // Use entry.link_name() (not entry.header().link_name()) so GNU/PAX extended
+        // metadata (linkpath) is resolved; the header field alone may be truncated.
+        let link_target_opt = entry
+            .link_name()
+            .context("Failed to read link name from tar entry")?;
+        if let Some(link_target) = link_target_opt {
+            validate_entry_path(&link_target)?;
+        }
+
+        let target = dest.join(&path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        entry
+            .unpack(&target)
+            .with_context(|| format!("Failed to extract: {}", path.display()))?;
+    }
+
     Ok(())
 }
 
@@ -456,5 +685,144 @@ mod tests {
 
         // DLL should be in goose-package too
         assert!(tmp.path().join("goose-package/libtest.dll").exists());
+    }
+
+    // -----------------------------------------------------------------------
+    // SHA-256 digest tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_sha256_hex_known_value() {
+        let digest = sha256_hex(b"hello world");
+        assert_eq!(
+            digest,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+    }
+
+    #[test]
+    fn test_sha256_hex_empty() {
+        let digest = sha256_hex(b"");
+        assert_eq!(
+            digest,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Path validation and extraction hardening tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_entry_path_accepts_safe_paths() {
+        assert!(validate_entry_path(Path::new("goose")).is_ok());
+        assert!(validate_entry_path(Path::new("goose-package/goose")).is_ok());
+        assert!(validate_entry_path(Path::new("subdir/nested/file.txt")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_entry_path_rejects_absolute() {
+        let result = validate_entry_path(Path::new("/etc/malicious"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("absolute path"));
+    }
+
+    #[test]
+    fn test_validate_entry_path_rejects_traversal() {
+        let result = validate_entry_path(Path::new("../../escape.txt"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("path traversal"));
+    }
+
+    #[test]
+    fn test_validate_entry_path_rejects_nested_traversal() {
+        let result = validate_entry_path(Path::new("safe/../../escape"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("path traversal"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_extract_tar_bz2_safe_archive() {
+        use bzip2::write::BzEncoder;
+        use bzip2::Compression;
+
+        let tmp = tempdir().unwrap();
+
+        let mut builder_buf = Vec::new();
+        {
+            let encoder = BzEncoder::new(&mut builder_buf, Compression::default());
+            let mut builder = tar::Builder::new(encoder);
+
+            let data = b"goose binary content";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, "goose-package/goose", &data[..])
+                .unwrap();
+            builder.into_inner().unwrap().finish().unwrap();
+        }
+
+        extract_tar_bz2(&builder_buf, tmp.path()).unwrap();
+
+        let extracted = tmp.path().join("goose-package/goose");
+        assert!(extracted.exists());
+        assert_eq!(
+            fs::read_to_string(extracted).unwrap(),
+            "goose binary content"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Sigstore provenance verification test
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_verify_provenance_warns_on_missing_attestation() {
+        let result = verify_provenance(b"not a real archive", "stable").await;
+        // Network failures and missing attestations are soft warnings: Ok(false), not hard errors.
+        assert_eq!(
+            result.ok(),
+            Some(false),
+            "verify_provenance should return Ok(false) when attestations cannot be fetched"
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_extract_tar_bz2_blocks_symlink_escape() {
+        use bzip2::write::BzEncoder;
+        use bzip2::Compression;
+
+        let tmp = tempdir().unwrap();
+
+        let mut builder_buf = Vec::new();
+        {
+            let encoder = BzEncoder::new(&mut builder_buf, Compression::default());
+            let mut builder = tar::Builder::new(encoder);
+
+            let mut header = tar::Header::new_gnu();
+            header.set_size(0);
+            header.set_mode(0o777);
+            header.set_cksum();
+            // Symlink whose target escapes the destination directory.
+            builder
+                .append_link(&mut header, "evil_link", "../../etc/passwd")
+                .unwrap();
+            builder.into_inner().unwrap().finish().unwrap();
+        }
+
+        let result = extract_tar_bz2(&builder_buf, tmp.path());
+        assert!(
+            result.is_err(),
+            "extraction should fail when a symlink target escapes the destination"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("path traversal"),
+            "error should mention path traversal, got: {err_msg}"
+        );
     }
 }

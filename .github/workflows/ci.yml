@@ -41,7 +41,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606  # v1
 
       - name: Run cargo fmt
         run: cargo fmt --check
@@ -55,7 +55,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606  # v1
 
       - name: Install Dependencies
         run: |
@@ -63,7 +63,7 @@ jobs:
           sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev
 
       - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae  # v2
 
       - name: Build and Test
         run: |
@@ -76,6 +76,30 @@ jobs:
           RUST_MIN_STACK: 8388608
 
 
+  rust-build-windows:
+    name: Build Rust Project on Windows
+    runs-on: windows-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae  # v2
+        with:
+          key: windows-ci
+
+      - name: Setup Rust
+        shell: bash
+        run: |
+          rustup show
+          rustup target add x86_64-pc-windows-msvc
+
+      - name: Build
+        run: cargo build --target x86_64-pc-windows-msvc
+        env:
+          CARGO_INCREMENTAL: "0"
+
   rust-lint:
     name: Lint Rust Code
     runs-on: ubuntu-latest
@@ -84,7 +108,7 @@ jobs:
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606  # v1
 
       - uses: Swatinem/rust-cache@v2
 
@@ -95,10 +119,7 @@ jobs:
           # play nicely with hermit-managed rust
           hermit uninstall rustup
           export CARGO_INCREMENTAL=0
-          cargo clippy --all-targets -- -D warnings
-
-      - name: Check for banned TLS crates
-        run: ./scripts/check-no-native-tls.sh
+          cargo clippy --workspace --all-targets --exclude v8 -- -D warnings
 
   openapi-schema-check:
     name: Check OpenAPI Schema is Up-to-Date
@@ -109,7 +130,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606  # v1
 
       - name: Install Dependencies
         run: |
@@ -117,7 +138,7 @@ jobs:
           sudo apt install -y libdbus-1-dev libxcb1-dev
 
       - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae  # v2
 
       - name: Install Node.js Dependencies for OpenAPI Check
         run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
@@ -147,7 +168,7 @@ jobs:
       #     path: |
       #       ui/desktop/node_modules
       #       .hermit/node/cache
-      #     key: ci-pnpm-cache-v1-${{ runner.os }}-${{ hashFiles('ui/desktop/pnpm-lock.yaml') }}
+      #     key: ci-pnpm-cache-v1-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
       #     restore-keys: |
       #       ci-pnpm-cache-v1-${{ runner.os }}-
 

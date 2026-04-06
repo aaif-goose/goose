@@ -8,8 +8,20 @@ import {
 import { SessionIndicators } from '../../SessionIndicators';
 import { cn } from '../../../utils';
 import { getSessionDisplayName, truncateMessage } from '../../../hooks/useNavigationSessions';
+import { defineMessages, useIntl } from '../../../i18n';
 import type { Session } from '../../../api';
 import type { SessionStatus } from './types';
+
+const i18n = defineMessages({
+  newChat: {
+    id: 'chatSessionsDropdown.newChat',
+    defaultMessage: 'New Chat',
+  },
+  showAll: {
+    id: 'chatSessionsDropdown.showAll',
+    defaultMessage: 'Show All',
+  },
+});
 
 interface ChatSessionsDropdownProps {
   sessions: Session[];
@@ -34,6 +46,7 @@ export const ChatSessionsDropdown: React.FC<ChatSessionsDropdownProps> = ({
   onSessionClick,
   onShowAll,
 }) => {
+  const intl = useIntl();
   return (
     <DropdownMenuContent
       className="w-64 p-1 bg-background-primary border-border-secondary rounded-lg shadow-lg"
@@ -47,7 +60,7 @@ export const ChatSessionsDropdown: React.FC<ChatSessionsDropdownProps> = ({
         className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg cursor-pointer"
       >
         <Plus className="w-4 h-4 flex-shrink-0" />
-        <span>New Chat</span>
+        <span>{intl.formatMessage(i18n.newChat)}</span>
       </DropdownMenuItem>
 
       {sessions.length > 0 && <DropdownMenuSeparator className="my-1" />}
@@ -96,7 +109,7 @@ export const ChatSessionsDropdown: React.FC<ChatSessionsDropdownProps> = ({
             className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg cursor-pointer text-text-secondary"
           >
             <History className="w-4 h-4 flex-shrink-0" />
-            <span>Show All</span>
+            <span>{intl.formatMessage(i18n.showAll)}</span>
           </DropdownMenuItem>
         </>
       )}

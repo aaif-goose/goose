@@ -114,6 +114,7 @@ pub fn create_router(server: Arc<AcpServer>) -> Router {
 
     Router::new()
         .route("/health", get(health))
+        .route("/status", get(health))
         .route(
             "/acp",
             post(http::handle_post).with_state(http_state.clone()),

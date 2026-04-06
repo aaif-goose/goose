@@ -17,6 +17,7 @@ describe('recipeFormSchema', () => {
       },
     ],
     jsonSchema: '{"type": "object"}',
+    subRecipes: [],
   };
 
   describe('Zod Schema Validation', () => {

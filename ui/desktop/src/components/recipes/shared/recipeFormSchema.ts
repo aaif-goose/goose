@@ -14,6 +14,17 @@ const parameterSchema = z.object({
 // Export the parameter type for use in components
 export type RecipeParameter = z.infer<typeof parameterSchema>;
 
+// Zod schema for SubRecipe - matching API SubRecipe type
+const subRecipeSchema = z.object({
+  name: z.string().min(1, 'Subrecipe name is required'),
+  path: z.string().min(1, 'Subrecipe path is required'),
+  description: z.string().optional(),
+  values: z.record(z.string()).nullable().optional(),
+  sequential_when_repeated: z.boolean().default(false),
+});
+
+export type SubRecipeFormData = z.infer<typeof subRecipeSchema>;
+
 // Main recipe form schema
 export const recipeFormSchema = z.object({
   title: z
@@ -46,6 +57,8 @@ export const recipeFormSchema = z.object({
   provider: z.string().optional(),
 
   extensions: z.array(z.custom<ExtensionConfig>()).optional(),
+
+  subRecipes: z.array(subRecipeSchema).default([]),
 });
 
 export type RecipeFormData = z.infer<typeof recipeFormSchema>;

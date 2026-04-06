@@ -11,6 +11,38 @@ import FreeOptionCards from './FreeOptionCards';
 import CustomProviderForm from '../settings/providers/modal/subcomponents/forms/CustomProviderForm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Gift, Key, Plus } from 'lucide-react';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  useFreeLocal: {
+    id: 'providerSelector.useFreeLocal',
+    defaultMessage: 'Use Free/Local Providers',
+  },
+  freeLocalDescription: {
+    id: 'providerSelector.freeLocalDescription',
+    defaultMessage: 'Use a local model or a provider with free credits',
+  },
+  connectProvider: {
+    id: 'providerSelector.connectProvider',
+    defaultMessage: 'Connect to a Provider',
+  },
+  connectProviderDescription: {
+    id: 'providerSelector.connectProviderDescription',
+    defaultMessage: 'Connect OpenAI, Anthropic, Google, etc',
+  },
+  selectProvider: {
+    id: 'providerSelector.selectProvider',
+    defaultMessage: 'Select a provider',
+  },
+  addCustomProvider: {
+    id: 'providerSelector.addCustomProvider',
+    defaultMessage: 'Add a custom provider',
+  },
+  addCustomProviderTitle: {
+    id: 'providerSelector.addCustomProviderTitle',
+    defaultMessage: 'Add Custom Provider',
+  },
+});
 
 const FREE_OPTIONS = 'free-options' as const;
 const OWN_PROVIDER = 'own-provider' as const;
@@ -32,6 +64,7 @@ export default function ProviderSelector({
   onConfigured,
   onFirstSelection,
 }: ProviderSelectorProps) {
+  const intl = useIntl();
   const [providerList, setProviderList] = useState<ProviderDetails[]>([]);
   const [selectedOption, setSelectedOption] = useState<ProviderOption | null>(null);
   const [selectedPath, setSelectedPath] = useState<SelectedPath>(null);
@@ -116,10 +149,10 @@ export default function ProviderSelector({
         >
           <Gift size={20} className="text-text-muted mb-2" />
           <span className="font-medium text-text-default text-base block">
-            Use Free/Local Providers
+            {intl.formatMessage(i18n.useFreeLocal)}
           </span>
           <p className="text-text-muted text-sm mt-1">
-            Use a local model or a provider with free credits
+            {intl.formatMessage(i18n.freeLocalDescription)}
           </p>
         </div>
 
@@ -133,9 +166,9 @@ export default function ProviderSelector({
         >
           <Key size={20} className="text-text-muted mb-2" />
           <span className="font-medium text-text-default text-base block">
-            Connect to a Provider
+            {intl.formatMessage(i18n.connectProvider)}
           </span>
-          <p className="text-text-muted text-sm mt-1">Connect OpenAI, Anthropic, Google, etc</p>
+          <p className="text-text-muted text-sm mt-1">{intl.formatMessage(i18n.connectProviderDescription)}</p>
         </div>
       </div>
 
@@ -152,7 +185,7 @@ export default function ProviderSelector({
               options={options}
               value={selectedOption}
               onChange={(option) => handleProviderSelect(option as ProviderOption | null)}
-              placeholder="Select a provider"
+              placeholder={intl.formatMessage(i18n.selectProvider)}
               isClearable
               isSearchable
               autoFocus
@@ -165,7 +198,7 @@ export default function ProviderSelector({
             className="flex items-center gap-1 text-sm text-text-muted hover:text-text-default transition-colors mb-6"
           >
             <Plus size={14} />
-            <span>Add a custom provider</span>
+            <span>{intl.formatMessage(i18n.addCustomProvider)}</span>
           </button>
 
           {selectedProvider && (
@@ -181,7 +214,7 @@ export default function ProviderSelector({
       <Dialog open={showCustomModal} onOpenChange={setShowCustomModal}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add Custom Provider</DialogTitle>
+            <DialogTitle>{intl.formatMessage(i18n.addCustomProviderTitle)}</DialogTitle>
           </DialogHeader>
           <CustomProviderForm
             initialData={null}

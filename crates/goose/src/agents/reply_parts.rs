@@ -96,7 +96,7 @@ fn try_coerce_boolean(s: &str) -> Value {
     }
 }
 
-fn coerce_tool_arguments(
+pub(crate) fn coerce_tool_arguments(
     arguments: Option<serde_json::Map<String, Value>>,
     tool_schema: &Value,
 ) -> Option<serde_json::Map<String, Value>> {
@@ -154,15 +154,57 @@ impl Agent {
             .await;
         #[cfg(not(feature = "code-mode"))]
         let code_execution_active = false;
+        #[cfg(feature = "code-mode")]
         if code_execution_active {
-            tools.retain(|tool| {
-                if let Some(owner) = crate::agents::extension_manager::get_tool_owner(tool) {
-                    crate::agents::extension_manager::is_first_class_extension(&owner)
-                } else {
-                    false
-                }
-            });
+            let disclosure_style =
+                crate::agents::platform_extensions::code_execution::get_tool_disclosure();
+
+            tools = tools
+                .into_iter()
+                .filter_map(|mut t| match disclosure_style {
+                    pctx_code_mode::config::ToolDisclosure::Catalog
+                    | pctx_code_mode::config::ToolDisclosure::Filesystem => {
+                        // in catalog & filesystem styles, progressive search is handled
+                        // by pctx, so we want to omit all non-first-class extensions
+                        // from the standard tool list
+                        if crate::agents::extension_manager::get_tool_owner(&t).is_some_and(|o| {
+                            crate::agents::extension_manager::is_first_class_extension(&o)
+                        }) {
+                            Some(t)
+                        } else {
+                            None
+                        }
+                    }
+                    pctx_code_mode::config::ToolDisclosure::Sidecar => {
+                        // in sidecar style there is no progressive search, just a way to chain tools
+                        // together with typescript
+                        // add output schema to description since many model providers drop the
+                        // output schema when presenting tools to the model
+                        let output_schema = t
+                            .output_schema
+                            .as_ref()
+                            .map(|s| serde_json::json!(s).to_string())
+                            .unwrap_or("unknown".to_string());
+                        let description_extension = format!(
+                            "The successful return schema of this tool is:\n{output_schema}"
+                        );
+
+                        t.description = Some(
+                            t.description
+                                .map(|t| format!("{t}\n{description_extension}"))
+                                .unwrap_or(description_extension)
+                                .into(),
+                        );
+
+                        Some(t)
+                    }
+                })
+                .collect();
         }
+
+        // Filter out tools not visible to the model per MCP Apps visibility spec.
+        // Tools with `_meta.ui.visibility` that doesn't include "model" are app-only.
+        tools.retain(is_tool_visible_to_model);
 
         // Stable tool ordering is important for multi session prompt caching.
         tools.sort_by(|a, b| a.name.cmp(&b.name));
@@ -297,6 +339,7 @@ impl Agent {
         &self,
         response: &Message,
         tools: &[Tool],
+        suppress_replayed_thinking: bool,
     ) -> (Vec<ToolRequest>, Vec<ToolRequest>, Message) {
         // First collect all tool requests with coercion applied
         let tool_requests: Vec<ToolRequest> = response
@@ -325,7 +368,16 @@ impl Agent {
             })
             .collect();
 
-        // Create a filtered message with frontend tool requests removed
+        let has_tool_requests = !tool_requests.is_empty();
+        let should_suppress_replayed_thinking = suppress_replayed_thinking && has_tool_requests;
+
+        // Create a filtered message with frontend tool requests removed.
+        // When a response contains tool calls, keep reasoning in the original
+        // message for provider/state purposes but only suppress it from the
+        // user-visible filtered message if the caller already surfaced
+        // thinking earlier in this provider turn. That avoids replaying full
+        // accumulated reasoning after streamed thought chunks while still
+        // preserving final-only non-streaming thoughts.
         let mut filtered_content = Vec::new();
         let mut tool_request_index = 0;
 
@@ -347,6 +399,8 @@ impl Agent {
                         }
                     }
                 }
+                MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+                    if should_suppress_replayed_thinking => {}
                 _ => {
                     filtered_content.push(content.clone());
                 }
@@ -431,6 +485,48 @@ impl Agent {
 
         Ok(())
     }
+}
+
+/// Check whether a tool should be callable by an app based on MCP Apps visibility metadata.
+///
+/// Per the MCP Apps spec (2026-01-26), if `_meta.ui.visibility` is present and does not
+/// include `"app"`, the tool is model-only and must not be callable by app UIs.
+/// If the field is absent, the tool defaults to visible to both model and app.
+pub fn is_tool_visible_to_app(tool: &Tool) -> bool {
+    let Some(meta) = &tool.meta else {
+        return true;
+    };
+    let Some(ui) = meta.0.get("ui") else {
+        return true;
+    };
+    let Some(visibility) = ui.get("visibility") else {
+        return true;
+    };
+    let Some(arr) = visibility.as_array() else {
+        return true;
+    };
+    arr.iter().any(|v| v.as_str() == Some("app"))
+}
+
+/// Check whether a tool should be visible to the model based on MCP Apps visibility metadata.
+///
+/// Per the MCP Apps spec (2026-01-26), tools may declare `_meta.ui.visibility` as an array
+/// of `"model"` and/or `"app"`. If the field is absent, the tool defaults to visible to both.
+/// If present and does not include `"model"`, the tool is app-only and must not be sent to the LLM.
+pub fn is_tool_visible_to_model(tool: &Tool) -> bool {
+    let Some(meta) = &tool.meta else {
+        return true;
+    };
+    let Some(ui) = meta.0.get("ui") else {
+        return true;
+    };
+    let Some(visibility) = ui.get("visibility") else {
+        return true;
+    };
+    let Some(arr) = visibility.as_array() else {
+        return true;
+    };
+    arr.iter().any(|v| v.as_str() == Some("model"))
 }
 
 #[cfg(test)]
@@ -576,5 +672,144 @@ mod tests {
             error_seen,
             "Error should have been propagated, not silently ignored"
         );
+    }
+
+    #[tokio::test]
+    async fn categorize_tool_requests_keeps_thinking_when_not_previously_streamed() {
+        let agent = crate::agents::Agent::new();
+        let response = Message::assistant()
+            .with_thinking("final-only reasoning", "")
+            .with_tool_request(
+                "tool-1",
+                Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+            );
+
+        let (_frontend_requests, other_requests, filtered_message) =
+            agent.categorize_tool_requests(&response, &[], false).await;
+
+        assert_eq!(other_requests.len(), 1);
+        assert_eq!(filtered_message.content.len(), 2);
+        assert!(matches!(
+            filtered_message.content[0],
+            MessageContent::Thinking(_)
+        ));
+        assert!(matches!(
+            filtered_message.content[1],
+            MessageContent::ToolRequest(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn categorize_tool_requests_drops_replayed_thinking_after_streaming() {
+        let agent = crate::agents::Agent::new();
+        let response = Message::assistant()
+            .with_thinking("replayed reasoning", "")
+            .with_tool_request(
+                "tool-1",
+                Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+            );
+
+        let (_frontend_requests, other_requests, filtered_message) =
+            agent.categorize_tool_requests(&response, &[], true).await;
+
+        assert_eq!(other_requests.len(), 1);
+        assert_eq!(filtered_message.content.len(), 1);
+        assert!(matches!(
+            filtered_message.content[0],
+            MessageContent::ToolRequest(_)
+        ));
+    }
+
+    fn make_tool_with_meta(meta_json: Option<serde_json::Value>) -> Tool {
+        let mut tool = Tool::new("test_tool", "a test tool", object!({ "type": "object" }));
+        if let Some(v) = meta_json {
+            let obj = v.as_object().unwrap().clone();
+            tool = tool.with_meta(rmcp::model::Meta(obj));
+        }
+        tool
+    }
+
+    #[test]
+    fn test_tool_visible_when_no_meta() {
+        let tool = make_tool_with_meta(None);
+        assert!(is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_tool_visible_when_meta_has_no_ui() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"other": "stuff"})));
+        assert!(is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_tool_visible_when_ui_has_no_visibility() {
+        let tool = make_tool_with_meta(Some(
+            serde_json::json!({"ui": {"resourceUri": "ui://foo/bar"}}),
+        ));
+        assert!(is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_tool_visible_when_visibility_includes_model() {
+        let tool = make_tool_with_meta(Some(
+            serde_json::json!({"ui": {"visibility": ["model", "app"]}}),
+        ));
+        assert!(is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_tool_visible_when_visibility_is_model_only() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": ["model"]}})));
+        assert!(is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_tool_hidden_when_visibility_is_app_only() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": ["app"]}})));
+        assert!(!is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_tool_hidden_when_visibility_is_empty() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": []}})));
+        assert!(!is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_tool_visible_when_visibility_is_not_array() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": "model"}})));
+        assert!(is_tool_visible_to_model(&tool));
+    }
+
+    #[test]
+    fn test_app_visible_when_no_meta() {
+        let tool = make_tool_with_meta(None);
+        assert!(is_tool_visible_to_app(&tool));
+    }
+
+    #[test]
+    fn test_app_visible_when_visibility_includes_app() {
+        let tool = make_tool_with_meta(Some(
+            serde_json::json!({"ui": {"visibility": ["model", "app"]}}),
+        ));
+        assert!(is_tool_visible_to_app(&tool));
+    }
+
+    #[test]
+    fn test_app_visible_when_visibility_is_app_only() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": ["app"]}})));
+        assert!(is_tool_visible_to_app(&tool));
+    }
+
+    #[test]
+    fn test_app_hidden_when_visibility_is_model_only() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": ["model"]}})));
+        assert!(!is_tool_visible_to_app(&tool));
+    }
+
+    #[test]
+    fn test_app_hidden_when_visibility_is_empty() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": []}})));
+        assert!(!is_tool_visible_to_app(&tool));
     }
 }

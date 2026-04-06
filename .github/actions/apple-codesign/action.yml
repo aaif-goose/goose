@@ -1,0 +1,53 @@
+name: 'Apple Certificate Keychain Setup'
+description: 'Import a Developer ID certificate into a temporary keychain for Electron Forge signing'
+
+inputs:
+  certificate-base64:
+    description: 'Base64-encoded Developer ID Application .p12 certificate'
+    required: true
+  certificate-password:
+    description: 'Password for the .p12 certificate'
+    required: true
+
+outputs:
+  keychain-path:
+    description: 'Path to the temporary keychain'
+    value: ${{ steps.import-cert.outputs.keychain-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Import Apple certificate
+      id: import-cert
+      shell: bash
+      env:
+        APPLE_CERTIFICATE_BASE64: ${{ inputs.certificate-base64 }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ inputs.certificate-password }}
+      run: |
+        set -e
+
+        CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+        KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+        KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+
+        echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        security import "$CERTIFICATE_PATH" \
+          -k "$KEYCHAIN_PATH" \
+          -P "$APPLE_CERTIFICATE_PASSWORD" \
+          -T /usr/bin/codesign
+
+        security set-key-partition-list \
+          -S apple-tool:,apple: \
+          -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+        echo "keychain-path=$KEYCHAIN_PATH" >> "$GITHUB_OUTPUT"
+        echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+        rm -f "$CERTIFICATE_PATH"

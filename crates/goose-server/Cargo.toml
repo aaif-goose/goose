@@ -11,9 +11,30 @@ description.workspace = true
 workspace = true
 
 [features]
-default = ["code-mode"]
+default = ["code-mode", "local-inference", "aws-providers", "telemetry", "otel", "rustls-tls"]
 code-mode = ["goose/code-mode"]
-cuda = ["goose/cuda"]
+local-inference = ["goose/local-inference"]
+aws-providers = ["goose/aws-providers"]
+cuda = ["goose/cuda", "local-inference"]
+telemetry = ["goose/telemetry"]
+otel = ["goose/otel"]
+rustls-tls = [
+    "reqwest/rustls",
+    "tokio-tungstenite/rustls-tls-native-roots",
+    "axum-server/tls-rustls",
+    "dep:rustls",
+    "dep:aws-lc-rs",
+    "goose/rustls-tls",
+    "goose-mcp/rustls-tls",
+]
+native-tls = [
+    "reqwest/native-tls",
+    "tokio-tungstenite/native-tls",
+    "axum-server/tls-openssl",
+    "dep:openssl",
+    "goose/native-tls",
+    "goose-mcp/native-tls",
+]
 
 [dependencies]
 goose = { path = "../goose", default-features = false }
@@ -39,21 +60,22 @@ thiserror = { workspace = true }
 clap = { workspace = true }
 serde_yaml = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras", "chrono"] }
-reqwest = { workspace = true, features = ["json", "rustls", "blocking", "multipart", "system-proxy"], default-features = false }
+reqwest = { workspace = true, features = ["json", "blocking", "multipart", "system-proxy"], default-features = false }
 tokio-util = { workspace = true }
 serde_path_to_error = "0.1.20"
-tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.28.0" }
 url = { workspace = true }
-rand = "0.9.2"
+rand = { workspace = true }
 hex = "0.4.3"
 subtle = "2.6"
 socket2 = "0.6.1"
 fs2 = { workspace = true }
-rustls = { version = "0.23", features = ["aws_lc_rs"] }
+rustls = { version = "0.23", features = ["aws_lc_rs"], optional = true }
 uuid = { workspace = true }
 rcgen = "0.13"
-axum-server = { version = "0.8.0", features = ["tls-rustls"] }
-aws-lc-rs = "1.16.0"
+axum-server = { version = "0.8.0" }
+aws-lc-rs = { version = "1.16.0", optional = true }
+openssl = { version = "0.10", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.55.0" }

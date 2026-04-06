@@ -7,5 +7,6 @@
   "base_url": "http://localhost:1234/v1/chat/completions",
   "models": [],
   "supports_streaming": true,
-  "requires_auth": false
+  "requires_auth": false,
+  "skip_canonical_filtering": true
 }

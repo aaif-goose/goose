@@ -103,6 +103,8 @@ pub struct SaveRecipeRequest {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SaveRecipeResponse {
     id: String,
+    file_name: String,
+    file_path: String,
 }
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ParseRecipeRequest {
@@ -211,6 +213,7 @@ async fn create_recipe(
         }
         Err(e) => {
             tracing::error!("Error details: {:?}", e);
+            #[cfg(feature = "telemetry")]
             goose::posthog::emit_error("recipe_create_failed", &e.to_string());
             let error_response = CreateRecipeResponse {
                 recipe: None,
@@ -238,6 +241,7 @@ async fn encode_recipe(
         Ok(encoded) => Ok(Json(EncodeRecipeResponse { deeplink: encoded })),
         Err(err) => {
             tracing::error!("Failed to encode recipe: {}", err);
+            #[cfg(feature = "telemetry")]
             goose::posthog::emit_error("recipe_encode_failed", &err.to_string());
             Err(StatusCode::BAD_REQUEST)
         }
@@ -264,6 +268,7 @@ async fn decode_recipe(
         },
         Err(err) => {
             tracing::error!("Failed to decode deeplink: {}", err);
+            #[cfg(feature = "telemetry")]
             goose::posthog::emit_error("recipe_decode_failed", &err.to_string());
             Err(StatusCode::BAD_REQUEST)
         }
@@ -390,6 +395,7 @@ async fn schedule_recipe(
         Ok(_) => Ok(StatusCode::OK),
         Err(e) => {
             tracing::error!("Failed to schedule recipe: {}", e);
+            #[cfg(feature = "telemetry")]
             goose::posthog::emit_error("recipe_schedule_failed", &e.to_string());
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -459,9 +465,18 @@ async fn save_recipe(
     };
 
     match local_recipes::save_recipe_to_file(request.recipe, file_path.clone()) {
-        Ok(save_file_path) => Ok(Json(SaveRecipeResponse {
-            id: short_id_from_path(&save_file_path.display().to_string()),
-        })),
+        Ok(save_file_path) => {
+            let file_name = save_file_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let file_path_str = save_file_path.display().to_string();
+            Ok(Json(SaveRecipeResponse {
+                id: short_id_from_path(&file_path_str),
+                file_name,
+                file_path: file_path_str,
+            }))
+        }
         Err(e) => Err(ErrorResponse {
             message: e.to_string(),
             status: StatusCode::INTERNAL_SERVER_ERROR,

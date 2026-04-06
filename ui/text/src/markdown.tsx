@@ -1,10 +1,20 @@
-import { marked } from "marked";
+import { Marked } from "marked";
 import { markedTerminal } from "marked-terminal";
 
-marked.use(markedTerminal({ width: 76, reflowText: true, tab: 2 }) as any);
+let renderer: Marked | null = null;
+let rendererWidth = 0;
 
-export function renderMarkdown(src: string): string {
-  if (!src) return "";
-  const rendered = marked.parse(src) as string;
-  return rendered.replace(/\n+$/, "");
+function getRenderer(width: number): Marked {
+  if (renderer && rendererWidth === width) return renderer;
+  renderer = new Marked();
+  renderer.use(markedTerminal({ width, reflowText: true, tab: 2 }) as any);
+  rendererWidth = width;
+  return renderer;
+}
+
+export function renderMarkdown(src: string, width = 76): string[] {
+  if (!src) return [];
+  const m = getRenderer(width);
+  const rendered = (m.parse(src) as string).replace(/\n+$/, "");
+  return rendered.split("\n");
 }

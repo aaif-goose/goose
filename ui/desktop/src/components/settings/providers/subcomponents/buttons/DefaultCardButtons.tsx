@@ -1,5 +1,25 @@
 import { ConfigureSettingsButton, RocketButton } from './CardButtons';
 import { ProviderDetails } from '../../../../../api';
+import { defineMessages, useIntl } from '../../../../../i18n';
+
+const i18n = defineMessages({
+  configureSettings: {
+    id: 'defaultCardButtons.configureSettings',
+    defaultMessage: 'Configure {name} settings',
+  },
+  editSettings: {
+    id: 'defaultCardButtons.editSettings',
+    defaultMessage: 'Edit {name} settings',
+  },
+  deleteSettings: {
+    id: 'defaultCardButtons.deleteSettings',
+    defaultMessage: 'Delete {name} settings',
+  },
+  getStarted: {
+    id: 'defaultCardButtons.getStarted',
+    defaultMessage: 'Get started with goose!',
+  },
+});
 
 // can define other optional callbacks as needed
 interface CardButtonsProps {
@@ -9,31 +29,21 @@ interface CardButtonsProps {
   onLaunch: (provider: ProviderDetails) => void;
 }
 
-function getDefaultTooltipMessages(name: string, actionType: string) {
-  switch (actionType) {
-    case 'add':
-      return `Configure ${name} settings`;
-    case 'edit':
-      return `Edit ${name} settings`;
-    case 'delete':
-      return `Delete ${name} settings`;
-    default:
-      return null;
-  }
-}
-
 export default function DefaultCardButtons({
   provider,
   isOnboardingPage,
   onLaunch,
   onConfigure,
 }: CardButtonsProps) {
+  const intl = useIntl();
+  const name = provider.metadata.display_name;
+
   return (
     <>
       {/*Set up an unconfigured provider */}
       {!provider.is_configured && (
         <ConfigureSettingsButton
-          tooltip={getDefaultTooltipMessages(provider.metadata.display_name, 'add')}
+          tooltip={intl.formatMessage(i18n.configureSettings, { name })}
           onClick={(e) => {
             e.stopPropagation();
             onConfigure(provider);
@@ -43,7 +53,7 @@ export default function DefaultCardButtons({
       {/*show edit tooltip instead when hovering over button for configured providers*/}
       {provider.is_configured && !isOnboardingPage && (
         <ConfigureSettingsButton
-          tooltip={getDefaultTooltipMessages(provider.metadata.display_name, 'edit')}
+          tooltip={intl.formatMessage(i18n.editSettings, { name })}
           onClick={(e) => {
             e.stopPropagation();
             onConfigure(provider);
@@ -53,7 +63,7 @@ export default function DefaultCardButtons({
       {/*show Launch button for configured providers on onboarding page*/}
       {provider.is_configured && isOnboardingPage && (
         <RocketButton
-          tooltip={'Get started with goose!'}
+          tooltip={intl.formatMessage(i18n.getStarted)}
           onClick={(e) => {
             e.stopPropagation();
             onLaunch(provider);

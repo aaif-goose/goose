@@ -1,8 +1,8 @@
 {
   "name": "tanzu_ai",
   "engine": "openai",
-  "display_name": "Tanzu AI Services",
-  "description": "Enterprise-managed LLM access through VMware Tanzu Platform AI Services",
+  "display_name": "VMware Tanzu Platform",
+  "description": "Enterprise-managed LLM access through AI Services on VMware Tanzu Platform.",
   "api_key_env": "TANZU_AI_API_KEY",
   "base_url": "${TANZU_AI_ENDPOINT}/openai/v1/chat/completions",
   "env_vars": [
@@ -10,12 +10,20 @@
       "name": "TANZU_AI_ENDPOINT",
       "required": true,
       "secret": false,
-      "description": "Your Tanzu AI Services endpoint URL"
+      "description": "Your VMware Tanzu Platform AI Services endpoint URL"
+    },
+    {
+      "name": "TANZU_AI_STREAMING",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "true",
+      "description": "Enable streaming responses (true/false)"
     }
   ],
   "dynamic_models": true,
   "models": [
     { "name": "openai/gpt-oss-120b", "context_limit": 131072 }
   ],
-  "supports_streaming": false
+  "supports_streaming": true
 }

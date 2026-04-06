@@ -1,0 +1,25 @@
+{
+  "name": "@aaif/goose-binary-win32-x64",
+  "version": "0.1.0",
+  "description": "Goose binary for Windows x64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/block/goose.git"
+  },
+  "keywords": [
+    "goose",
+    "ai",
+    "agent",
+    "binary"
+  ],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/goose.exe"
+  ]
+}

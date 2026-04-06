@@ -13,6 +13,7 @@ const RecipeFields = () => {
           <li><strong>Model and provider</strong> to specify which provider and model the recipe should use</li>
           <li><strong>Extensions</strong> to select which tools are available</li>
           <li><strong>Response JSON schema</strong> for <a href="/goose/docs/guides/recipes/session-recipes#structured-output-for-automation">structured output in automations</a></li>
+          <li><strong>Subrecipes</strong> to attach existing subrecipes or create a new one inline</li>
         </ul>
       </li>
     </ul>

@@ -23,6 +23,10 @@ pub struct ProviderEntry {
 }
 
 impl ProviderEntry {
+    pub fn metadata(&self) -> &ProviderMetadata {
+        &self.metadata
+    }
+
     pub async fn create_with_default_model(
         &self,
         extensions: Vec<ExtensionConfig>,
@@ -125,12 +129,14 @@ impl ProviderRegistry {
 
         if let Some(ref env_vars) = config.env_vars {
             for ev in env_vars {
+                // Default primary to `required` so required fields show prominently in the UI
+                let primary = ev.primary.unwrap_or(ev.required);
                 config_keys.push(super::base::ConfigKey::new(
                     &ev.name,
                     ev.required,
                     ev.secret,
                     ev.default.as_deref(),
-                    false,
+                    primary,
                 ));
             }
         }

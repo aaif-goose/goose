@@ -188,6 +188,10 @@ pub async fn check_if_compaction_needed(
     threshold_override: Option<f64>,
     session: &crate::session::Session,
 ) -> Result<bool> {
+    if provider.manages_own_context() {
+        return Ok(false);
+    }
+
     let messages = conversation.messages();
     let config = Config::global();
     let threshold = threshold_override.unwrap_or_else(|| {
@@ -342,7 +346,7 @@ async fn do_compact(
     ))
 }
 
-fn format_message_for_compacting(msg: &Message) -> String {
+pub fn format_message_for_compacting(msg: &Message) -> String {
     let content_parts: Vec<String> = msg
         .content
         .iter()

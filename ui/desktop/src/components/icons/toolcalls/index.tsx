@@ -2,6 +2,7 @@ export { Archive } from './Archive';
 export { Brain } from './Brain';
 export { Camera } from './Camera';
 export { Code2 } from './Code2';
+export { Delegate } from './Delegate';
 export { Eye } from './Eye';
 export { FileEdit } from './FileEdit';
 export { FilePlus } from './FilePlus';

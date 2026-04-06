@@ -1,0 +1,77 @@
+name: Create Version Bump PR
+
+on:
+  workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      GOOGLE_API_KEY:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      XAI_API_KEY:
+        required: false
+      TETRATE_API_KEY:
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-version-bump:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+      with:
+        ref: main
+        fetch-depth: 0
+
+    - uses: cashapp/activate-hermit@e49f5cb4dd64ff0b0b659d1d8df499595451155a # v1
+    - uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b  # v7.2.0
+
+    - name: install dependencies
+      run: |
+        sudo apt update -y
+        sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev
+
+    - name: Compute version and create bump branch
+      env:
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        TETRATE_API_KEY: ${{ secrets.TETRATE_API_KEY }}
+      run: |
+        VERSION=$(just get-next-minor-version)
+        echo "version=$VERSION" >> $GITHUB_ENV
+        echo "Version: $VERSION (minor bump on main)"
+
+        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+
+        BRANCH_NAME="version-bump/$VERSION"
+        git switch -c "$BRANCH_NAME"
+
+        just prepare-release $VERSION
+
+        echo "branch_name=$BRANCH_NAME" >> $GITHUB_ENV
+
+    - name: Push bump branch
+      run: |
+        git push origin "${{ env.branch_name }}"
+
+    - name: Create Pull Request
+      run: |
+        PR_URL=$(gh pr create \
+          -B main \
+          -H "${{ env.branch_name }}" \
+          --title "chore(release): bump version to ${{ env.version }} (minor)" \
+          --body "Bumps version to **${{ env.version }}**. Merging this PR will trigger creation of the \`release/${{ env.version }}\` branch and release PR.")
+        echo "pr_url=$PR_URL" >> $GITHUB_ENV
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

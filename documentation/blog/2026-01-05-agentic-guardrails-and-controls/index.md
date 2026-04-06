@@ -252,7 +252,7 @@ We also welcome any and all feedback and suggestions on improving the concept. [
 <head>
   <meta property="og:title" content="Agent Guardrails and Controls: Applying the CORS Model to Agents" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/01/05/agent-guardrails-cors-model" />
+  <meta property="og:url" content="https://block.github.io/goose/blog/2026/01/05/agentic-guardrails-and-controls" />
   <meta property="og:description" content="Applying the security model of CORS to Agentic technologies to address common attacks against tool calling." />
   <meta property="og:image" content="http://block.github.io/goose/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
   <meta name="twitter:card" content="summary_large_image" />

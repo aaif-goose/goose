@@ -25,16 +25,17 @@ goose skills are compatible with Claude Desktop and other [agents that support A
 
 ## Skill Locations
 
-Skills can be stored globally and/or per-project. goose checks all of these directories in order and combines what it finds. If the same skill name exists in multiple directories, later directories take priority:
+Skills can be stored globally or per-project:
 
-1. `~/.claude/skills/` — Global, shared with Claude Desktop
-2. `~/.config/agents/skills/` — Global, portable across AI coding agents
-3. `~/.config/goose/skills/` — Global, goose-specific
-4. `./.claude/skills/` — Project-level, shared with Claude Desktop
-5. `./.goose/skills/` — Project-level, goose-specific
-6. `./.agents/skills/` — Project-level, portable across AI coding agents
+1. `~/.agents/skills/` — Global skills, available in all sessions
+2. `.agents/skills/` — Project-level skills, scoped to the current project
 
-Use global skills for workflows you use across projects. Use project-level skills for procedures unique to a codebase.
+Place a `SKILL.md` file inside a named subdirectory. For example, a global skill called
+`code-review` goes in `~/.agents/skills/code-review/SKILL.md`.
+
+> **Backward compatibility:** goose also discovers skills from `.goose/skills/`,
+> `.claude/skills/`, `~/.claude/skills/`, and platform-specific config directories,
+> but `agents/skills/` is the recommended standard.
 
 ## Creating a Skill
 
@@ -45,7 +46,7 @@ Create a skill when you have a repeatable workflow that involves multiple steps,
 Each skill lives in its own directory with a `SKILL.md` file:
 
 ```
-~/.config/agents/skills/
+~/.agents/skills/
 └── code-review/
     └── SKILL.md
 ```
@@ -88,7 +89,7 @@ When reviewing code, check each of these areas:
 Skills can include supporting files like scripts, templates, or configuration files. Place them in the skill directory:
 
 ```
-~/.config/agents/skills/
+~/.agents/skills/
 └── api-setup/
     ├── SKILL.md
     ├── setup.sh

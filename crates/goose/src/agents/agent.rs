@@ -45,6 +45,7 @@ use crate::providers::errors::ProviderError;
 use crate::recipe::{Author, Recipe, Response, Settings};
 use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
+use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::{Session, SessionManager};
@@ -262,6 +263,7 @@ impl Agent {
 
         // Add security inspector (highest priority - runs first)
         tool_inspection_manager.add_inspector(Box::new(SecurityInspector::new()));
+        tool_inspection_manager.add_inspector(Box::new(EgressInspector::new()));
 
         // Add adversary inspector (LLM-based review, enabled by ~/.config/goose/adversary.md)
         tool_inspection_manager.add_inspector(Box::new(AdversaryInspector::new(provider.clone())));
@@ -393,10 +395,12 @@ impl Agent {
         &self,
         response: &Message,
         tools: &[rmcp::model::Tool],
+        suppress_replayed_thinking: bool,
     ) -> ToolCategorizeResult {
         // Categorize tool requests
-        let (frontend_requests, remaining_requests, filtered_response) =
-            self.categorize_tool_requests(response, tools).await;
+        let (frontend_requests, remaining_requests, filtered_response) = self
+            .categorize_tool_requests(response, tools, suppress_replayed_thinking)
+            .await;
 
         ToolCategorizeResult {
             frontend_requests,
@@ -583,6 +587,7 @@ impl Agent {
                 )
                 .await;
             result.unwrap_or_else(|e| {
+                #[cfg(feature = "telemetry")]
                 crate::posthog::emit_error(
                     "tool_execution_failed",
                     &format!("{}: {}", tool_call.name, e),
@@ -754,6 +759,71 @@ impl Agent {
             })?;
 
         Ok(())
+    }
+
+    /// Load multiple extensions in parallel, persisting state once at the end.
+    ///
+    /// Unlike `add_extension`, this avoids per-extension persistence and acquires
+    /// the container lock once upfront to prevent serialisation of the parallel futures.
+    pub async fn add_extensions_bulk(
+        self: &Arc<Self>,
+        extensions: Vec<ExtensionConfig>,
+        session_id: &str,
+    ) -> anyhow::Result<Vec<ExtensionLoadResult>> {
+        let working_dir = match self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await
+        {
+            Ok(session) => Some(session.working_dir),
+            Err(e) => {
+                warn!("Failed to get session for bulk load: {}", e);
+                None
+            }
+        };
+        let container = self.container.lock().await.clone();
+
+        let extension_futures = extensions
+            .into_iter()
+            .map(|config| {
+                let ext_manager = Arc::clone(&self.extension_manager);
+                let working_dir = working_dir.clone();
+                let container = container.clone();
+                let sid = session_id.to_string();
+
+                async move {
+                    let name = config.name().to_string();
+                    match ext_manager
+                        .add_extension(config, working_dir, container.as_ref(), Some(&sid))
+                        .await
+                    {
+                        Ok(_) => ExtensionLoadResult {
+                            name,
+                            success: true,
+                            error: None,
+                        },
+                        Err(e) => {
+                            let error_msg = e.to_string();
+                            warn!("Failed to load extension {}: {}", name, error_msg);
+                            ExtensionLoadResult {
+                                name,
+                                success: false,
+                                error: Some(error_msg),
+                            }
+                        }
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let results = futures::future::join_all(extension_futures).await;
+
+        if results.iter().any(|r| r.success) {
+            self.persist_extension_state(session_id).await?;
+        }
+
+        Ok(results)
     }
 
     async fn add_extension_inner(
@@ -943,6 +1013,7 @@ impl Agent {
             let command = message_text.split_whitespace().next();
             if let Some(cmd) = command {
                 if crate::slash_commands::get_recipe_for_command(cmd).is_some() {
+                    #[cfg(feature = "telemetry")]
                     crate::posthog::emit_custom_slash_command_used();
                 }
             }
@@ -1220,6 +1291,11 @@ impl Agent {
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
 
+                // Track whether this provider turn has already emitted visible
+                // thinking so a later tool-call chunk can suppress replayed
+                // reasoning without hiding final-only non-streaming thoughts.
+                let mut surfaced_thinking_in_turn = false;
+
                 while let Some(next) = stream.next().await {
                     if is_token_cancelled(&cancel_token) || exit_chat {
                         break;
@@ -1238,7 +1314,23 @@ impl Agent {
                                     frontend_requests,
                                     remaining_requests,
                                     filtered_response,
-                                } = self.categorize_tools(&response, &tools).await;
+                                } = self
+                                    .categorize_tools(
+                                        &response,
+                                        &tools,
+                                        surfaced_thinking_in_turn,
+                                    )
+                                    .await;
+
+                                surfaced_thinking_in_turn |= filtered_response.content.iter().any(
+                                    |content| {
+                                        matches!(
+                                            content,
+                                            MessageContent::Thinking(_)
+                                                | MessageContent::RedactedThinking(_)
+                                        )
+                                    },
+                                );
 
                                 yield AgentEvent::Message(filtered_response.clone());
                                 tokio::task::yield_now().await;
@@ -1486,7 +1578,9 @@ impl Agent {
                                 no_tools_called = false;
                             }
                         }
+                        #[allow(unused_variables)]
                         Err(ref provider_err @ ProviderError::ContextLengthExceeded(_)) => {
+                            #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             compaction_attempts += 1;
 
@@ -1531,13 +1625,20 @@ impl Agent {
                                     break;
                                 }
                                 Err(e) => {
+                                    #[cfg(feature = "telemetry")]
                                     crate::posthog::emit_error("compaction_failed", &e.to_string());
                                     error!("Compaction failed: {}", e);
+                                    yield AgentEvent::Message(
+                                        Message::assistant().with_text(
+                                            format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
+                                        )
+                                    );
                                     break;
                                 }
                             }
                         }
                         Err(ref provider_err @ ProviderError::CreditsExhausted { details: _, ref top_up_url }) => {
+                            #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
 
@@ -1561,6 +1662,7 @@ impl Agent {
                             break;
                         }
                         Err(ref provider_err @ ProviderError::NetworkError(_)) => {
+                            #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
                             yield AgentEvent::Message(
@@ -1571,6 +1673,7 @@ impl Agent {
                             break;
                         }
                         Err(ref provider_err) => {
+                            #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
                             yield AgentEvent::Message(
@@ -1754,7 +1857,8 @@ impl Agent {
 
     /// Restore the provider from session data or fall back to global config
     /// This is used when resuming a session to restore the provider state
-    pub async fn restore_provider_from_session(&self, session: &Session) -> Result<()> {
+    /// Returns true if the session's provider was replaced with a fallback.
+    pub async fn restore_provider_from_session(&self, session: &Session) -> Result<bool> {
         let config = Config::global();
 
         let provider_name = session
@@ -1779,9 +1883,69 @@ impl Agent {
         let extensions =
             EnabledExtensionsState::extensions_or_default(Some(&session.extension_data), config);
 
-        let provider = crate::providers::create(&provider_name, model_config, extensions)
+        let (provider, provider_changed) = if crate::providers::get_from_registry(&provider_name)
             .await
-            .map_err(|e| anyhow!("Could not create provider: {}", e))?;
+            .is_ok()
+        {
+            let p = crate::providers::create(&provider_name, model_config, extensions)
+                .await
+                .map_err(|e| anyhow!("Could not create provider: {}", e))?;
+            (p, false)
+        } else {
+            let fallback_provider_name = config
+                .get_goose_provider()
+                .ok()
+                .filter(|name| name != &provider_name)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Could not create provider: provider '{}' not found",
+                        provider_name
+                    )
+                })?;
+
+            tracing::warn!(
+                "Session provider '{}' unavailable, falling back to '{}'",
+                provider_name,
+                fallback_provider_name
+            );
+
+            let fallback_model_name = config
+                .get_goose_model()
+                .ok()
+                .ok_or_else(|| anyhow!("Could not configure fallback provider: missing model"))?;
+            let fallback_model_config = crate::model::ModelConfig::new(&fallback_model_name)
+                .map_err(|e| anyhow!("Could not configure fallback provider: invalid model {}", e))?
+                .with_canonical_limits(&fallback_provider_name);
+
+            let fallback_provider = crate::providers::create(
+                &fallback_provider_name,
+                fallback_model_config.clone(),
+                extensions,
+            )
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Could not create provider '{}' or fallback '{}': {}",
+                    provider_name,
+                    fallback_provider_name,
+                    e
+                )
+            })?;
+
+            if let Err(e) = self
+                .config
+                .session_manager
+                .update(&session.id)
+                .provider_name(&fallback_provider_name)
+                .model_config(fallback_model_config)
+                .apply()
+                .await
+            {
+                tracing::warn!("Failed to update session provider: {}", e);
+            }
+
+            (fallback_provider, true)
+        };
 
         self.update_provider(provider, &session.id).await?;
         // Propagate session mode to the new provider
@@ -1792,7 +1956,7 @@ impl Agent {
                 .map_err(|e| anyhow!("Failed to propagate mode to provider: {}", e))?;
         }
         *self.current_goose_mode.lock().await = session.goose_mode;
-        Ok(())
+        Ok(provider_changed)
     }
 
     /// Override the system prompt with a custom template
@@ -1915,14 +2079,17 @@ impl Agent {
             .build();
 
         let recipe_prompt = prompt_manager.get_recipe_prompt().await;
-        let tools = self
+        let tools: Vec<_> = self
             .extension_manager
             .get_prefixed_tools(session_id, None)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to get tools for recipe creation: {}", e);
                 e
-            })?;
+            })?
+            .into_iter()
+            .filter(super::reply_parts::is_tool_visible_to_model)
+            .collect();
 
         messages.push(Message::user().with_text(recipe_prompt));
 

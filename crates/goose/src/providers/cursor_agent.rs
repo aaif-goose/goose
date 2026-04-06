@@ -23,7 +23,7 @@ use rmcp::model::Tool;
 
 const CURSOR_AGENT_PROVIDER_NAME: &str = "cursor-agent";
 pub const CURSOR_AGENT_DEFAULT_MODEL: &str = "auto";
-pub const CURSOR_AGENT_KNOWN_MODELS: &[&str] = &["auto", "gpt-5", "opus-4.1", "sonnet-4"];
+pub const CURSOR_AGENT_KNOWN_MODELS: &[&str] = &["auto", "composer-2", "composer-2-fast"];
 
 pub const CURSOR_AGENT_DOC_URL: &str = "https://docs.cursor.com/en/cli/overview";
 
@@ -205,10 +205,7 @@ impl CursorAgentProvider {
             cmd.env("PATH", path);
         }
 
-        // Only pass model parameter if it's in the known models list
-        if CURSOR_AGENT_KNOWN_MODELS.contains(&self.model.model_name.as_str()) {
-            cmd.arg("--model").arg(&self.model.model_name);
-        }
+        cmd.arg("--model").arg(&self.model.model_name);
 
         cmd.arg("-p")
             .arg(&prompt)

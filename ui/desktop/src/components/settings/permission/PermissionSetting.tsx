@@ -5,6 +5,23 @@ import { FixedExtensionEntry, useConfig } from '../../ConfigContext';
 import { ChevronRight } from 'lucide-react';
 import PermissionModal from './PermissionModal';
 import { Button } from '../../ui/button';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  permissionRules: {
+    id: 'permissionSetting.permissionRules',
+    defaultMessage: 'Permission Rules',
+  },
+  permissionRulesDescription: {
+    id: 'permissionSetting.permissionRulesDescription',
+    defaultMessage:
+      'Hidden instructions that will be passed to the provider to help direct and add context to your responses.',
+  },
+  extensionRules: {
+    id: 'permissionSetting.extensionRules',
+    defaultMessage: 'Extension rules',
+  },
+});
 
 function RuleItem({ title, description }: { title: string; description: string }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,6 +60,7 @@ function RulesSection({ title, rules }: { title: string; rules: React.ReactNode 
 }
 
 export default function PermissionSettingsView({ onClose }: { onClose: () => void }) {
+  const intl = useIntl();
   const { getExtensions } = useConfig();
   const [extensions, setExtensions] = useState<FixedExtensionEntry[]>([]);
 
@@ -102,10 +120,9 @@ export default function PermissionSettingsView({ onClose }: { onClose: () => voi
                 <circle cx="7.5" cy="15.5" r="5.5" />
               </svg>
             </div>
-            <h1 className="text-3xl font-medium text-text-primary mt-4">Permission Rules</h1>
+            <h1 className="text-3xl font-medium text-text-primary mt-4">{intl.formatMessage(i18n.permissionRules)}</h1>
             <p className="text-text-secondary">
-              Hidden instructions that will be passed to the provider to help direct and add context
-              to your responses.
+              {intl.formatMessage(i18n.permissionRulesDescription)}
             </p>
           </div>
 
@@ -114,7 +131,7 @@ export default function PermissionSettingsView({ onClose }: { onClose: () => voi
             <div className="space-y-8 px-8">
               {/* Extension Rules Section */}
               <RulesSection
-                title="Extension rules"
+                title={intl.formatMessage(i18n.extensionRules)}
                 rules={
                   <>
                     {extensions.map((extension) => (

@@ -39,7 +39,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const SHELL_TOOL: &str = "developer__shell";
-const CODE_EXECUTION_TOOL: &str = "code_execution__execute";
+const CODE_EXECUTION_TOOL: &str = "code_execution__execute_typescript";
 
 type ModelSlot = Arc<Mutex<Option<LoadedModel>>>;
 
@@ -210,10 +210,10 @@ fn build_openai_messages_json(system: &str, messages: &[Message]) -> String {
 /// the model:
 ///
 /// - `ToolRequest` with a `"command"` argument → `$ command`
-/// - `ToolRequest` with a `"code"` argument → `` ```execute\n…\n``` ``
+/// - `ToolRequest` with a `"code"` argument → `` ```execute_typescript\n…\n``` ``
 /// - `ToolResponse` → `Command output:\n…`
 ///
-/// Only `developer__shell` and `code_execution__execute` style tool calls are
+/// Only `developer__shell` and `code_execution__execute_typescript` style tool calls are
 /// recognized (by argument shape, not tool name). Tool calls from other extensions
 /// (e.g. custom MCP tools made by a native-tool-calling model earlier in the
 /// conversation) are silently dropped, since the emulator path has no syntax to
@@ -241,7 +241,7 @@ fn extract_text_content(msg: &Message) -> String {
                         .and_then(|a| a.get("code"))
                         .and_then(|v| v.as_str())
                     {
-                        parts.push(format!("```execute\n{}\n```", code));
+                        parts.push(format!("```execute_typescript\n{}\n```", code));
                     }
                 }
             }

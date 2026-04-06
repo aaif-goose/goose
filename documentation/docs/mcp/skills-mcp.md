@@ -14,7 +14,7 @@ This extension has been deprecated and is only available in v1.16.0 - v1.24.0. F
 
 The Skills extension loads *skills* &mdash; reusable sets of instructions that teach goose how to perform specific tasks or follow particular workflows.
 
-goose automatically discovers skills at startup and uses them when relevant to your request. goose loads skills from `.agents/skills/` in your project directory and `~/.config/agents/skills/` globally, making skills portable across different AI coding agents. To learn about creating skills and how goose uses them, see [Using Skills](/docs/guides/context-engineering/using-skills).
+goose automatically discovers skills at startup and uses them when relevant to your request. goose loads skills from `.agents/skills/` in your project directory and `~/.agents/skills/` globally, making skills portable across different AI coding agents. To learn about creating skills and how goose uses them, see [Using Skills](/docs/guides/context-engineering/using-skills).
 
 ## Configuration
 
@@ -52,7 +52,7 @@ goose automatically discovers skills at startup and uses them when relevant to y
 
 ## Example Usage
 
-Let's say you have a skill that goose discovers on startup in `~/.config/agents/skills/deploy/SKILL.md`:
+Let's say you have a skill that goose discovers on startup in `~/.agents/skills/deploy/SKILL.md`:
 
 ```markdown
 ---

@@ -9,7 +9,7 @@ use std::fs;
 use std::io::Cursor;
 use std::io::Write;
 use utoipa::ToSchema;
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -84,7 +84,8 @@ pub async fn generate_diagnostics(
     let mut buffer = Vec::new();
     {
         let mut zip = ZipWriter::new(Cursor::new(&mut buffer));
-        let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         let mut log_files: Vec<_> = fs::read_dir(&logs_dir)?
             .filter_map(|e| e.ok())

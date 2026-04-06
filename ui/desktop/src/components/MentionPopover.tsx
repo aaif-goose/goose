@@ -10,6 +10,22 @@ import {
 import { ItemIcon } from './ItemIcon';
 import { CommandType, getSlashCommands } from '../api';
 import { getInitialWorkingDir } from '../utils/workingDir';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  scanningFiles: {
+    id: 'mentionPopover.scanningFiles',
+    defaultMessage: 'Scanning files...',
+  },
+  itemsFound: {
+    id: 'mentionPopover.itemsFound',
+    defaultMessage: '{count, plural, one {# item} other {# items}} found',
+  },
+  noItemsFound: {
+    id: 'mentionPopover.noItemsFound',
+    defaultMessage: 'No items found matching "{query}"',
+  },
+});
 
 type DisplayItemType = CommandType | 'Directory' | 'File';
 
@@ -17,7 +33,8 @@ const typeOrder: Record<DisplayItemType, number> = {
   Directory: 0,
   File: 1,
   Builtin: 2,
-  Recipe: 3,
+  Skill: 3,
+  Recipe: 4,
 };
 
 export interface DisplayItem {
@@ -127,6 +144,7 @@ const MentionPopover = forwardRef<
     },
     ref
   ) => {
+    const intl = useIntl();
     const [items, setItems] = useState<DisplayItem[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const popoverRef = useRef<HTMLDivElement>(null);
@@ -441,6 +459,16 @@ const MentionPopover = forwardRef<
         });
     }, [items, query, currentWorkingDir]);
 
+    const getSelectionText = (item: DisplayItem): string => {
+      if (item.itemType === 'Skill') {
+        return `Use the ${item.name} skill to `;
+      }
+      if (['Builtin', 'Recipe'].includes(item.itemType)) {
+        return '/' + item.name;
+      }
+      return item.extra;
+    };
+
     // Expose methods to parent component
     useImperativeHandle(
       ref,
@@ -448,7 +476,7 @@ const MentionPopover = forwardRef<
         getDisplayFiles: () => displayItems,
         selectFile: (index: number) => {
           if (displayItems[index]) {
-            onSelect(displayItems[index].extra);
+            onSelect(getSelectionText(displayItems[index]));
             onClose();
           }
         },
@@ -459,7 +487,10 @@ const MentionPopover = forwardRef<
     useEffect(() => {
       const loadData = async () => {
         if (isSlashCommand) {
-          const response = await getSlashCommands({ throwOnError: true });
+          const response = await getSlashCommands({
+            query: { working_dir: currentWorkingDir },
+            throwOnError: true,
+          });
           const commandItems: DisplayItem[] = (response.data?.commands || []).map((cmd) => ({
             name: cmd.command,
             extra: cmd.help,
@@ -475,7 +506,7 @@ const MentionPopover = forwardRef<
       if (isOpen) {
         loadData();
       }
-    }, [isOpen, isSlashCommand, scanFilesFromRoot]);
+    }, [isOpen, isSlashCommand, scanFilesFromRoot, currentWorkingDir]);
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -509,12 +540,7 @@ const MentionPopover = forwardRef<
     const handleItemClick = (index: number) => {
       if (index >= 0 && index < displayItems.length) {
         onSelectedIndexChange(index);
-        const displayItem = displayItems[index];
-        onSelect(
-          ['Builtin', 'Recipe'].includes(displayItem.itemType)
-            ? '/' + displayItem.name
-            : displayItem.extra
-        );
+        onSelect(getSelectionText(displayItems[index]));
         onClose();
       }
     };
@@ -535,13 +561,13 @@ const MentionPopover = forwardRef<
           {isLoading ? (
             <div className="flex items-center justify-center py-4">
               <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2"></div>
-              <span className="ml-2 text-sm text-text-secondary">Scanning files...</span>
+              <span className="ml-2 text-sm text-text-secondary">{intl.formatMessage(i18n.scanningFiles)}</span>
             </div>
           ) : (
             <>
               {displayItems.length > 0 && (
                 <div className="text-xs text-text-secondary mb-2 px-1">
-                  {displayItems.length} item{displayItems.length !== 1 ? 's' : ''} found
+                  {intl.formatMessage(i18n.itemsFound, { count: displayItems.length })}
                 </div>
               )}
               <div
@@ -551,7 +577,7 @@ const MentionPopover = forwardRef<
               >
                 {displayItems.map((item, index) => (
                   <div
-                    key={item.extra}
+                    key={`${item.itemType}-${item.name}`}
                     onClick={() => handleItemClick(index)}
                     data-selected={index === selectedIndex}
                     className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${
@@ -570,7 +596,7 @@ const MentionPopover = forwardRef<
 
                 {!isLoading && displayItems.length === 0 && query && (
                   <div className="p-4 text-center text-text-secondary text-sm">
-                    No items found matching "{query}"
+                    {intl.formatMessage(i18n.noItemsFound, { query })}
                   </div>
                 )}
               </div>

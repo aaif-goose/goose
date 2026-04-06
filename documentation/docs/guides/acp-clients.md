@@ -183,23 +183,15 @@ The TUI will automatically start the goose-acp-server if you have it installed:
 npm start
 ```
 
-**Option 2: Manual server startup**
+**Option 2: Connect to a custom server**
 
-Start the ACP server separately, then connect the TUI:
+For servers that support the draft standard ACP over Streamable HTTP https://github.com/agentclientprotocol/agent-client-protocol/pull/721
 
 ```bash
-# Terminal 1: Start the server
+npm start -- --server http://HOST:PORT
+
+# example server
 cargo run -p goose-acp --bin goose-acp-server
-
-# Terminal 2: Start the TUI
-cd ui/text
-npm start
-```
-
-**Option 3: Connect to a custom server**
-
-```bash
-npm start -- --server http://localhost:3284
 ```
 
 ### Single Prompt Mode

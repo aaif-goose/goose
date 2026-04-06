@@ -11,8 +11,6 @@ check-everything:
     cargo fmt --all
     @echo "  → Running clippy linting..."
     cargo clippy --all-targets -- -D warnings
-    @echo "  → Checking for banned TLS crates..."
-    ./scripts/check-no-native-tls.sh
     @echo "  → Checking UI code formatting..."
     cd ui/desktop && pnpm run lint:check
     @echo "  → Validating OpenAPI schema..."
@@ -306,25 +304,46 @@ get-next-minor-version:
 get-next-patch-version:
     @python -c "import sys; v=sys.argv[1].split('.'); print(f'{v[0]}.{v[1]}.{int(v[2])+1}')" $(just get-tag-version)
 
-# set cargo and app versions, must be semver
-prepare-release version:
+# derive the prior release tag from a version
+# patch bump (e.g. 1.25.1): prior is v1.25.0 (deterministic)
+# minor bump (e.g. 1.26.0): prior is highest v1.25.* GitHub release
+get-prior-version version:
+    #!/usr/bin/env bash
+    IFS='.' read -r major minor patch <<< "{{ version }}"
+    if [[ "$patch" -gt 0 ]]; then
+      echo "v${major}.${minor}.$((patch - 1))"
+    elif [[ "$minor" -gt 0 ]]; then
+      prev_minor=$((minor - 1))
+      prefix="v${major}.${prev_minor}."
+      best=$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases \
+        --json tagName --jq "[.[] | select(.tagName | startswith(\"${prefix}\"))][0].tagName")
+      if [[ -n "$best" && "$best" != "null" ]]; then
+        echo "$best"
+      fi
+    fi
+
+# update version numbers in all manifests
+bump-version version:
     @just validate {{ version }} || exit 1
-
-    @git switch -c "release/{{ version }}"
     @uvx --from=toml-cli toml set --toml-path=Cargo.toml "workspace.package.version" {{ version }}
-
-    @cd ui/desktop && pnpm version {{ version }} --no-git-tag-version --allow-same-version
-
-    # see --workspace flag https://doc.rust-lang.org/cargo/commands/cargo-update.html
-    # used to update Cargo.lock after we've bumped versions in Cargo.toml
+    @cd ui/desktop && npm pkg set "version={{ version }}"
+    # update Cargo.lock after bumping versions in Cargo.toml
     @cargo update --workspace
     @just set-openapi-version {{ version }}
+
+# rebuild canonical model registry and mapping report from models.dev
+build-canonical-models:
     @cargo run --bin build_canonical_models
+
+# bump version, rebuild canonical models, and commit
+prepare-release version:
+    @just bump-version {{ version }}
+    @just build-canonical-models
     @git add \
         Cargo.toml \
         Cargo.lock \
         ui/desktop/package.json \
-        ui/desktop/pnpm-lock.yaml \
+        ui/pnpm-lock.yaml \
         ui/desktop/openapi.json \
         crates/goose/src/providers/canonical/data/canonical_models.json \
         crates/goose/src/providers/canonical/data/provider_metadata.json

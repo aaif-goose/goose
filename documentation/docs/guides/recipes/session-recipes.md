@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-title: Shareable Recipes
+title: Reusable Recipes
 description: "Share a goose session setup (including tools, goals, and instructions) as a reusable recipe that others can launch with a single click"
 ---
 

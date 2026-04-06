@@ -89,106 +89,17 @@ impl Default for MemoryServer {
 impl MemoryServer {
     pub fn new() -> Self {
         let instructions = formatdoc! {r#"
-             This extension allows storage and retrieval of categorized information with tagging support. It's designed to help
-             manage important information across sessions in a systematic and organized manner.
-             Capabilities:
-             1. Store information in categories with optional tags for context-based retrieval.
-             2. Search memories by content or specific tags to find relevant information.
-             3. List all available memory categories for easy navigation.
-             4. Remove entire categories of memories when they are no longer needed.
-             When to call memory tools:
-             - These are examples where the assistant should proactively call the memory tool because the user is providing recurring preferences, project details, or workflow habits that they may expect to be remembered.
-             - Preferred Development Tools & Conventions
-             - User-specific data (e.g., name, preferences)
-             - Project-related configurations
-             - Workflow descriptions
-             - Other critical settings
-             Interaction Protocol:
-             When important information is identified, such as:
-             - User-specific data (e.g., name, preferences)
-             - Project-related configurations
-             - Workflow descriptions
-             - Other critical settings
-             The protocol is:
-             1. Identify the critical piece of information.
-             2. Ask the user if they'd like to store it for later reference.
-             3. Upon agreement:
-                - Suggest a relevant category like "personal" for user data or "development" for project preferences.
-                - Inquire about any specific tags they want to apply for easier lookup.
-                - Confirm the desired storage location:
-                  - Local storage (.goose/memory) for project-specific details.
-                  - Global storage (~/.config/goose/memory) for user-wide data.
-                - Use the remember_memory tool to store the information.
-                  - `remember_memory(category, data, tags, is_global)`
-             Keywords that trigger memory tools:
-             - "remember"
-             - "forget"
-             - "memory"
-             - "save"
-             - "save memory"
-             - "remove memory"
-             - "clear memory"
-             - "search memory"
-             - "find memory"
-             Suggest the user to use memory tools when:
-             - When the user mentions a keyword that triggers a memory tool
-             - When the user performs a routine task
-             - When the user executes a command and would benefit from remembering the exact command
-             Example Interaction for Storing Information:
-             User: "For this project, we use black for code formatting"
-             Assistant: "You've mentioned a development preference. Would you like to remember this for future conversations?
-             User: "Yes, please."
-             Assistant: "I'll store this in the 'development' category. Any specific tags to add? Suggestions: #formatting
-             #tools"
-             User: "Yes, use those tags."
-             Assistant: "Shall I store this locally for this project only, or globally for all projects?"
-             User: "Locally, please."
-             Assistant: *Stores the information under category="development", tags="formatting tools", scope="local"*
-             Another Example Interaction for Storing Information:
-             User: "Remember the gh command to view github comments"
-             Assistant: "Shall I store this locally for this project only, or globally for all projects?"
-             User: "Globally, please."
-             Assistant: *Stores the gh command under category="github", tags="comments", scope="global"*
-             Example Interaction suggesting memory tools:
-             User: "I'm using the gh command to view github comments"
-             Assistant: "You've mentioned a command. Would you like to remember this for future conversations?
-             User: "Yes, please."
-             Assistant: "I'll store this in the 'github' category. Any specific tags to add? Suggestions: #comments #gh"
-             Retrieving Memories:
-             To access stored information, utilize the memory retrieval protocols:
-             - **Search by Category**:
-               - Provides all memories within the specified context.
-               - Use: `retrieve_memories(category="development", is_global=False)`
-               - Note: If you want to retrieve all local memories, use `retrieve_memories(category="*", is_global=False)`
-               - Note: If you want to retrieve all global memories, use `retrieve_memories(category="*", is_global=True)`
-             - **Filter by Tags**:
-               - Enables targeted retrieval based on specific tags.
-               - Use: Provide tag filters to refine search.
-            To remove a memory, use the following protocol:
-            - **Remove by Category**:
-              - Removes all memories within the specified category.
-              - Use: `remove_memory_category(category="development", is_global=False)`
-              - Note: If you want to remove all local memories, use `remove_memory_category(category="*", is_global=False)`
-              - Note: If you want to remove all global memories, use `remove_memory_category(category="*", is_global=True)`
-            The Protocol is:
-             1. Confirm what kind of information the user seeks by category or keyword.
-             2. Suggest categories or relevant tags based on the user's request.
-             3. Use the retrieve function to access relevant memory entries.
-             4. Present a summary of findings, offering detailed exploration upon request.
-             Example Interaction for Retrieving Information:
-             User: "What configuration do we use for code formatting?"
-             Assistant: "Let me check the 'development' category for any related memories. Searching using #formatting tag."
-             Assistant: *Executes retrieval: `retrieve_memories(category="development", is_global=False)`*
-             Assistant: "We have 'black' configured for code formatting, specific to this project. Would you like further
-             details?"
-             Memory Overview:
-             - Categories can include a wide range of topics, structured to keep information grouped logically.
-             - Tags enable quick filtering and identification of specific entries.
-             Operational Guidelines:
-             - Always confirm with the user before saving information.
-             - Propose suitable categories and tag suggestions.
-             - Discuss storage scope thoroughly to align with user needs.
-             - Acknowledge the user about what is stored and where, for transparency and ease of future retrieval.
+             This extension stores and retrieves categorized information with tagging support.
+
+             Storage:
+             - Local: .goose/memory/ (project-specific)
+             - Global: ~/.config/goose/memory/ (user-wide)
+
+             Save proactively when users share preferences, project configurations, workflow patterns,
+             or recurring commands. Always confirm with the user before saving. Suggest relevant
+             categories and tags, and clarify storage scope (local vs global).
+
+             Use category "*" with retrieve_memories or remove_memory_category to access all entries.
             "#};
 
         let global_memory_dir = choose_app_strategy(crate::APP_STRATEGY.clone())

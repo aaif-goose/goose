@@ -44,6 +44,7 @@ export interface Settings {
   showPricing: boolean;
   sessionSharing: SessionSharingConfig;
   seenAnnouncementIds: string[];
+  navExpandedWidth: number | null;
 }
 
 export type SettingKey = keyof Settings;
@@ -85,6 +86,7 @@ export const defaultSettings: Settings = {
     baseUrl: '',
   },
   seenAnnouncementIds: [],
+  navExpandedWidth: null,
 };
 
 export function getKeyboardShortcuts(settings: Settings): KeyboardShortcuts {

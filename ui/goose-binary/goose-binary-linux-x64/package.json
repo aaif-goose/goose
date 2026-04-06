@@ -1,0 +1,25 @@
+{
+  "name": "@aaif/goose-binary-linux-x64",
+  "version": "0.1.2",
+  "description": "Goose binary for Linux x64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/block/goose.git"
+  },
+  "keywords": [
+    "goose",
+    "ai",
+    "agent",
+    "binary"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/goose"
+  ]
+}

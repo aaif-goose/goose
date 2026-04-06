@@ -40,51 +40,48 @@ const STATUS_INDICATORS: Record<string, { icon: string; color: string }> = {
   failed: { icon: "✗", color: CRANBERRY },
 };
 
-function formatJsonCompact(value: unknown, maxWidth: number): string[] {
-  if (value === undefined || value === null) return [];
-  let raw: string;
-  try {
-    raw = JSON.stringify(value, null, 2);
-  } catch {
-    raw = String(value);
-  }
-  const lines = raw.split("\n");
-  const result: string[] = [];
-  for (const line of lines) {
-    if (line.length <= maxWidth) {
-      result.push(line);
-    } else {
-      let remaining = line;
-      while (remaining.length > maxWidth) {
-        result.push(remaining.slice(0, maxWidth));
-        remaining = remaining.slice(maxWidth);
-      }
-      if (remaining) result.push(remaining);
-    }
-  }
-  return result;
+function truncateLine(line: string, maxWidth: number): string {
+  if (line.length <= maxWidth) return line;
+  return maxWidth > 1 ? line.slice(0, maxWidth - 1) + "…" : line.slice(0, maxWidth);
 }
 
-function extractTextFromContent(content: ToolCallContent[]): string[] {
+function formatJsonLines(value: unknown, maxWidth: number): string[] {
+  if (value === undefined || value === null) return [];
+  let raw: string;
+  if (typeof value === "string") {
+    raw = value;
+  } else {
+    try {
+      raw = JSON.stringify(value, null, 2);
+    } catch {
+      raw = String(value);
+    }
+  }
+  return raw.split("\n").map((line) => truncateLine(line, maxWidth));
+}
+
+function extractTextLines(content: ToolCallContent[], maxWidth: number): string[] {
   const lines: string[] = [];
   for (const item of content) {
     if (item.type === "content" && item.content) {
       const block = item.content as any;
       if (block.type === "text" && block.text) {
-        lines.push(...block.text.split("\n"));
+        for (const line of block.text.split("\n")) {
+          lines.push(truncateLine(line, maxWidth));
+        }
       }
     } else if (item.type === "diff") {
       const diff = item as any;
-      lines.push(`diff: ${diff.path || "unknown"}`);
+      lines.push(truncateLine(`diff: ${diff.path || "unknown"}`, maxWidth));
     } else if (item.type === "terminal") {
       const term = item as any;
-      lines.push(`terminal: ${term.terminalId || "unknown"}`);
+      lines.push(truncateLine(`terminal: ${term.terminalId || "unknown"}`, maxWidth));
     }
   }
   return lines;
 }
 
-function summarizeContent(info: ToolCallInfo): string {
+function summarizeContent(info: ToolCallInfo, maxWidth: number): string {
   const parts: string[] = [];
 
   if (info.locations && info.locations.length > 0) {
@@ -94,7 +91,7 @@ function summarizeContent(info: ToolCallInfo): string {
   }
 
   if (info.content && info.content.length > 0) {
-    const textLines = extractTextFromContent(info.content);
+    const textLines = extractTextLines(info.content, maxWidth);
     if (textLines.length > 0) {
       const first = textLines[0]!.trim();
       if (first.length > 60) {
@@ -117,163 +114,103 @@ function summarizeContent(info: ToolCallInfo): string {
     }
   }
 
-  return parts.join(" · ");
+  return truncateLine(parts.join(" · "), maxWidth);
 }
 
-const MAX_PREVIEW_LINES = 8;
-
-export function findFeaturedToolCallId(
-  toolCallOrder: string[],
-  toolCalls: Map<string, ToolCallInfo>,
-): string | undefined {
-  for (let i = toolCallOrder.length - 1; i >= 0; i--) {
-    const tc = toolCalls.get(toolCallOrder[i]!);
-    if (tc && (tc.status === "pending" || tc.status === "in_progress")) {
-      return toolCallOrder[i]!;
-    }
-  }
-  return toolCallOrder[toolCallOrder.length - 1];
-}
-
-export function buildToolCallCardLines(
+export function renderToolCallLines(
   info: ToolCallInfo,
-  indent: number,
-  totalWidth: number,
+  width: number,
   expanded: boolean,
-  keyPrefix: string = "card",
-): React.ReactNode[] {
-  const cardWidth = Math.min(totalWidth - indent - 2, 72);
-  const innerWidth = cardWidth - 2;
-  const contentWidth = innerWidth - 2;
+  showTabHint: boolean,
+): React.ReactElement[] {
   const kindIcon = KIND_ICONS[info.kind ?? "other"] ?? "⚙";
   const statusInfo = STATUS_INDICATORS[info.status] ?? STATUS_INDICATORS.pending!;
   const borderColor = info.status === "failed" ? CRANBERRY : CEDAR;
   const dimBorder = info.status !== "failed";
 
-  const hasInput = info.rawInput !== undefined && info.rawInput !== null;
-  const hasOutput = info.rawOutput !== undefined && info.rawOutput !== null;
-  const hasContent = info.content && info.content.length > 0;
-  const hasLocations = info.locations && info.locations.length > 0;
+  const innerWidth = Math.max(width - 4, 10);
+  const indentedWidth = Math.max(innerWidth - 2, 8);
 
-  const inputLines = hasInput ? formatJsonCompact(info.rawInput, contentWidth - 6) : [];
-  const outputLines = hasOutput ? formatJsonCompact(info.rawOutput, contentWidth - 6) : [];
-  const contentLines = hasContent ? extractTextFromContent(info.content!) : [];
+  const lines: React.ReactElement[] = [];
+  const k = info.toolCallId;
 
-  const shownInput = expanded ? inputLines : inputLines.slice(0, MAX_PREVIEW_LINES);
-  const shownOutput = expanded ? outputLines : outputLines.slice(0, MAX_PREVIEW_LINES);
-  const shownContent = expanded ? contentLines : contentLines.slice(0, MAX_PREVIEW_LINES);
-
-  const hasTruncated =
-    inputLines.length > MAX_PREVIEW_LINES ||
-    outputLines.length > MAX_PREVIEW_LINES ||
-    contentLines.length > MAX_PREVIEW_LINES;
-
-  const bodyRows: Array<{ text: string; color?: string; italic?: boolean }> = [];
-
-  const runningText = info.status === "in_progress" ? " running…" : "";
-  const tabHint = hasTruncated && !expanded ? "tab ↔" : "";
-  bodyRows.push({ text: "__HEADER__" });
-
-  if (hasLocations) {
-    for (const loc of info.locations!) {
-      bodyRows.push({ text: `  📁 ${loc.path}${loc.line ? `:${loc.line}` : ""}`, color: TEXT_DIM });
-    }
-  }
-
-  function addSection(label: string, lines: string[], totalCount: number) {
-    if (lines.length === 0) return;
-    bodyRows.push({ text: `  ▸ ${label}:`, color: TEXT_DIM });
-    for (const line of lines) {
-      bodyRows.push({ text: `    ${line}`, color: TEXT_DIM });
-    }
-    if (!expanded && totalCount > MAX_PREVIEW_LINES) {
-      const remaining = totalCount - MAX_PREVIEW_LINES;
-      bodyRows.push({ text: `    ▸ ${remaining} more lines (tab to expand)`, color: GOLD, italic: true });
-    }
-  }
-
-  addSection("input", shownInput, inputLines.length);
-  addSection("output", shownOutput, outputLines.length);
-  addSection("content", shownContent, contentLines.length);
-
-  const result: React.ReactNode[] = [];
-  const topBorder = "╭" + "─".repeat(innerWidth) + "╮";
-  const botBorder = "╰" + "─".repeat(innerWidth) + "╯";
-
-  result.push(
-    <Box key={`${keyPrefix}-top`} marginLeft={indent} height={1}>
-      <Text color={borderColor} dimColor={dimBorder}>{topBorder}</Text>
+  const hRule = "─".repeat(Math.max(width - 2, 0));
+  lines.push(
+    <Box key={`${k}-t`} width={width} height={1}>
+      <Text color={borderColor} dimColor={dimBorder}>╭{hRule}╮</Text>
     </Box>,
   );
 
-  for (let i = 0; i < bodyRows.length; i++) {
-    const row = bodyRows[i]!;
-
-    if (row.text === "__HEADER__") {
-      result.push(
-        <Box key={`${keyPrefix}-row-${i}`} marginLeft={indent} width={cardWidth} height={1}>
-          <Text color={borderColor} dimColor={dimBorder}>│ </Text>
-          <Box flexGrow={1} justifyContent="space-between">
-            <Box>
-              <Text color={statusInfo.color}>{statusInfo.icon} </Text>
-              <Text>{kindIcon} </Text>
-              <Text color={TEXT_SECONDARY} bold>{info.title}</Text>
-              {runningText ? <Text color={TEXT_DIM} italic>{runningText}</Text> : null}
-            </Box>
-            {tabHint ? <Text color={TEXT_DIM} italic>{tabHint}</Text> : null}
-          </Box>
-          <Text color={borderColor} dimColor={dimBorder}> │</Text>
-        </Box>,
-      );
-      continue;
-    }
-
-    result.push(
-      <Box key={`${keyPrefix}-row-${i}`} marginLeft={indent} width={cardWidth} height={1}>
-        <Text color={borderColor} dimColor={dimBorder}>│</Text>
-        <Box flexGrow={1}>
-          <Text color={row.color} italic={row.italic}> {row.text}</Text>
+  const row = (key: string, content: React.ReactNode) => {
+    lines.push(
+      <Box key={key} width={width} height={1}>
+        <Text color={borderColor} dimColor={dimBorder}>│ </Text>
+        <Box width={innerWidth} height={1}>
+          {content}
         </Box>
-        <Text color={borderColor} dimColor={dimBorder}>│</Text>
+        <Text color={borderColor} dimColor={dimBorder}> │</Text>
       </Box>,
     );
+  };
+
+  const statusIcon = statusInfo.icon;
+  const runningText = info.status === "in_progress" ? " running…" : "";
+  const tabHintText = showTabHint && !expanded ? "tab ↔" : "";
+  const fixedLen = 4 + runningText.length + tabHintText.length; // icon+space+kind+space + suffix + hint
+  const titleMax = Math.max(innerWidth - fixedLen, 4);
+  const title = truncateLine(info.title, titleMax);
+
+  row(`${k}-h`, (
+    <>
+      <Text color={statusInfo.color}>{statusIcon}</Text>
+      <Text> {kindIcon} </Text>
+      <Text wrap="truncate-end" color={TEXT_SECONDARY} bold>{title}</Text>
+      {runningText ? <Text color={TEXT_DIM} italic>{runningText}</Text> : null}
+      <Box flexGrow={1} />
+      {tabHintText ? <Text color={TEXT_DIM} italic>{tabHintText}</Text> : null}
+    </>
+  ));
+
+  if (!expanded) {
+    const summary = summarizeContent(info, innerWidth);
+    if (summary) {
+      row(`${k}-s`, <Text wrap="truncate-end" color={TEXT_DIM}>{summary}</Text>);
+    }
+  } else {
+    if (info.locations) {
+      for (let i = 0; i < info.locations.length; i++) {
+        const loc = info.locations[i]!;
+        const t = truncateLine(`📁 ${loc.path}${loc.line ? `:${loc.line}` : ""}`, innerWidth);
+        row(`${k}-l${i}`, <Text wrap="truncate-end" color={TEXT_DIM}>{t}</Text>);
+      }
+    }
+
+    const section = (label: string, sLines: string[]) => {
+      if (sLines.length === 0) return;
+      row(`${k}-${label}H`, <Text color={TEXT_DIM}>▸ {label}:</Text>);
+      for (let i = 0; i < sLines.length; i++) {
+        row(`${k}-${label}${i}`, (
+          <Text wrap="truncate-end" color={TEXT_DIM}>{"  "}{sLines[i]}</Text>
+        ));
+      }
+    };
+
+    if (info.rawInput !== undefined && info.rawInput !== null) {
+      section("in", formatJsonLines(info.rawInput, indentedWidth));
+    }
+    if (info.rawOutput !== undefined && info.rawOutput !== null) {
+      section("out", formatJsonLines(info.rawOutput, indentedWidth));
+    }
+    if (info.content && info.content.length > 0) {
+      section("ct", extractTextLines(info.content, indentedWidth));
+    }
   }
 
-  result.push(
-    <Box key={`${keyPrefix}-bot`} marginLeft={indent} height={1}>
-      <Text color={borderColor} dimColor={dimBorder}>{botBorder}</Text>
+  lines.push(
+    <Box key={`${k}-b`} width={width} height={1}>
+      <Text color={borderColor} dimColor={dimBorder}>╰{hRule}╯</Text>
     </Box>,
   );
 
-  return result;
-}
-
-export function ToolCallCompact({
-  info,
-  indent,
-  width,
-}: {
-  info: ToolCallInfo;
-  indent: number;
-  width: number;
-}) {
-  const statusInfo = STATUS_INDICATORS[info.status] ?? STATUS_INDICATORS.pending!;
-  const kindIcon = KIND_ICONS[info.kind ?? "other"] ?? "⚙";
-  const summary = summarizeContent(info);
-  const maxSummaryWidth = width - indent - 12 - info.title.length;
-  const trimmedSummary =
-    summary.length > maxSummaryWidth && maxSummaryWidth > 3
-      ? summary.slice(0, maxSummaryWidth - 1) + "…"
-      : summary;
-
-  return (
-    <Box marginLeft={indent} height={1}>
-      <Text color={statusInfo.color}>{statusInfo.icon} </Text>
-      <Text>{kindIcon} </Text>
-      <Text color={TEXT_SECONDARY}>{info.title}</Text>
-      {trimmedSummary ? (
-        <Text color={TEXT_DIM}> — {trimmedSummary}</Text>
-      ) : null}
-    </Box>
-  );
+  return lines;
 }

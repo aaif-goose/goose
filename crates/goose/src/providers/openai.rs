@@ -65,6 +65,8 @@ pub struct OpenAiProvider {
     custom_headers: Option<HashMap<String, String>>,
     supports_streaming: bool,
     name: String,
+    custom_models: Option<Vec<String>>,
+    skip_canonical_filtering: bool,
 }
 
 impl OpenAiProvider {
@@ -126,6 +128,8 @@ impl OpenAiProvider {
             custom_headers,
             supports_streaming: true,
             name: OPEN_AI_PROVIDER_NAME.to_string(),
+            custom_models: None,
+            skip_canonical_filtering: false,
         })
     }
 
@@ -140,6 +144,8 @@ impl OpenAiProvider {
             custom_headers: None,
             supports_streaming: true,
             name: OPEN_AI_PROVIDER_NAME.to_string(),
+            custom_models: None,
+            skip_canonical_filtering: false,
         }
     }
 
@@ -150,7 +156,17 @@ impl OpenAiProvider {
         let global_config = crate::config::Config::global();
 
         let api_key: Option<String> = if config.requires_auth && !config.api_key_env.is_empty() {
-            global_config.get_secret(&config.api_key_env).ok()
+            Some(global_config.get_secret::<String>(&config.api_key_env).map_err(|e| {
+                use crate::config::ConfigError;
+                match e {
+                    ConfigError::NotFound(_) => anyhow::anyhow!(
+                        "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
+                        config.api_key_env,
+                        config.api_key_env
+                    ),
+                    other => anyhow::anyhow!("Failed to read {}: {}", config.api_key_env, other),
+                }
+            })?)
         } else {
             None
         };
@@ -199,6 +215,18 @@ impl OpenAiProvider {
             api_client = api_client.with_headers(header_map)?;
         }
 
+        let custom_models = if !config.models.is_empty() {
+            Some(config.models.iter().map(|m| m.name.clone()).collect())
+        } else {
+            None
+        };
+
+        let model = if let Some(ref fast_model_name) = config.fast_model {
+            model.with_fast(fast_model_name, &config.name)?
+        } else {
+            model
+        };
+
         Ok(Self {
             api_client,
             base_path,
@@ -208,6 +236,8 @@ impl OpenAiProvider {
             custom_headers: config.headers,
             supports_streaming: config.supports_streaming.unwrap_or(true),
             name: config.name.clone(),
+            custom_models,
+            skip_canonical_filtering: config.skip_canonical_filtering,
         })
     }
 
@@ -300,6 +330,40 @@ impl OpenAiProvider {
             fallback.to_string()
         }
     }
+
+    async fn fetch_models_from_api(&self) -> Result<Vec<String>, ProviderError> {
+        let models_path =
+            Self::map_base_path(&self.base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH);
+        let response = self
+            .api_client
+            .request(None, &models_path)
+            .response_get()
+            .await?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            let body = response.text().await.unwrap_or_default();
+            return Err(ProviderError::EndpointNotFound(body));
+        }
+
+        let json = handle_response_openai_compat(response).await?;
+        if let Some(err_obj) = json.get("error") {
+            let msg = err_obj
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            return Err(ProviderError::Authentication(msg.to_string()));
+        }
+
+        let data = json.get("data").and_then(|v| v.as_array()).ok_or_else(|| {
+            ProviderError::UsageError("Missing data field in JSON response".into())
+        })?;
+        let mut models: Vec<String> = data
+            .iter()
+            .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(str::to_string))
+            .collect();
+        models.sort();
+        Ok(models)
+    }
 }
 
 impl ProviderDef for OpenAiProvider {
@@ -361,36 +425,31 @@ impl Provider for OpenAiProvider {
         &self.name
     }
 
+    fn skip_canonical_filtering(&self) -> bool {
+        self.skip_canonical_filtering
+    }
+
     fn get_model_config(&self) -> ModelConfig {
         self.model.clone()
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        let models_path =
-            Self::map_base_path(&self.base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH);
-        let response = self
-            .api_client
-            .request(None, &models_path)
-            .response_get()
-            .await?;
-        let json = handle_response_openai_compat(response).await?;
-        if let Some(err_obj) = json.get("error") {
-            let msg = err_obj
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error");
-            return Err(ProviderError::Authentication(msg.to_string()));
+        if let Some(custom_models) = &self.custom_models {
+            match self.fetch_models_from_api().await {
+                Ok(models) => return Ok(models),
+                Err(e) if e.is_endpoint_not_found() => {
+                    tracing::debug!(
+                        "Models endpoint not implemented for provider '{}' ({}), using predefined list",
+                        self.name,
+                        e
+                    );
+                    return Ok(custom_models.clone());
+                }
+                Err(e) => return Err(e),
+            }
         }
 
-        let data = json.get("data").and_then(|v| v.as_array()).ok_or_else(|| {
-            ProviderError::UsageError("Missing data field in JSON response".into())
-        })?;
-        let mut models: Vec<String> = data
-            .iter()
-            .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(str::to_string))
-            .collect();
-        models.sort();
-        Ok(models)
+        self.fetch_models_from_api().await
     }
 
     fn supports_embeddings(&self) -> bool {
@@ -617,6 +676,8 @@ mod tests {
             custom_headers: None,
             supports_streaming: true,
             name: name.to_string(),
+            custom_models: None,
+            skip_canonical_filtering: false,
         }
     }
 

@@ -11,7 +11,7 @@ use axum::{
 };
 use goose::agents::ExtensionConfig;
 use goose::recipe::Recipe;
-use goose::session::session_manager::SessionInsights;
+use goose::session::session_manager::{SessionInsights, SessionType};
 use goose::session::{EnabledExtensionsState, Session};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -357,7 +357,7 @@ async fn import_session(
 ) -> Result<Json<Session>, StatusCode> {
     let session = state
         .session_manager()
-        .import_session(&request.json)
+        .import_session(&request.json, Some(SessionType::User))
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
@@ -403,6 +403,7 @@ async fn fork_session(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to get session: {}", e);
+                #[cfg(feature = "telemetry")]
                 goose::posthog::emit_error("session_get_failed", &e.to_string());
                 ErrorResponse {
                     message: if e.to_string().contains("not found") {
@@ -423,6 +424,7 @@ async fn fork_session(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to copy session: {}", e);
+                #[cfg(feature = "telemetry")]
                 goose::posthog::emit_error("session_copy_failed", &e.to_string());
                 ErrorResponse {
                     message: format!("Failed to copy session: {}", e),
@@ -441,6 +443,7 @@ async fn fork_session(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to truncate conversation: {}", e);
+                #[cfg(feature = "telemetry")]
                 goose::posthog::emit_error("session_truncate_failed", &e.to_string());
                 ErrorResponse {
                     message: format!("Failed to truncate conversation: {}", e),
@@ -580,7 +583,14 @@ async fn search_sessions(
 
     let search_results = state
         .session_manager()
-        .search_chat_history(query, Some(limit), after_date, before_date, None)
+        .search_chat_history(
+            query,
+            Some(limit),
+            after_date,
+            before_date,
+            None,
+            vec![SessionType::User, SessionType::Scheduled],
+        )
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

@@ -187,8 +187,7 @@ async fn offer_extension_debugging_help(
     // Create a debugging prompt with context about the extension failure
     let debug_prompt = format!(
         "I'm having trouble starting an extension called '{}'. Here's the error I encountered:\n\n{}\n\nCan you help me diagnose what might be wrong and suggest how to fix it? Please consider common issues like:\n- Missing dependencies or tools\n- Configuration problems\n- Network connectivity (for remote extensions)\n- Permission issues\n- Path or environment variable problems",
-        extension_name,
-        error_message
+        extension_name, error_message
     );
 
     // Create a minimal agent for debugging
@@ -360,7 +359,10 @@ fn resolve_provider_and_model(
         .or(saved_provider)
         .or_else(|| recipe_settings.and_then(|s| s.goose_provider.clone()))
         .or_else(|| config.get_goose_provider().ok())
-        .expect("No provider configured. Run 'goose configure' first");
+        .unwrap_or_else(|| {
+            output::render_error("No provider configured. Run 'goose configure' first.");
+            process::exit(1);
+        });
 
     let model_name = session_config
         .model
@@ -368,7 +370,10 @@ fn resolve_provider_and_model(
         .or_else(|| saved_model_config.as_ref().map(|mc| mc.model_name.clone()))
         .or_else(|| recipe_settings.and_then(|s| s.goose_model.clone()))
         .or_else(|| config.get_goose_model().ok())
-        .expect("No model configured. Run 'goose configure' first");
+        .unwrap_or_else(|| {
+            output::render_error("No model configured. Run 'goose configure' first.");
+            process::exit(1);
+        });
 
     let model_config = if session_config.resume
         && saved_model_config
@@ -404,7 +409,10 @@ async fn resolve_session_id(
     goose_mode: GooseMode,
 ) -> String {
     if session_config.no_session {
-        let working_dir = std::env::current_dir().expect("Could not get working directory");
+        let working_dir = std::env::current_dir().unwrap_or_else(|e| {
+            output::render_error(&format!("Could not get working directory: {}", e));
+            process::exit(1);
+        });
         let session = session_manager
             .create_session(
                 working_dir,
@@ -413,7 +421,10 @@ async fn resolve_session_id(
                 goose_mode,
             )
             .await
-            .expect("Could not create session");
+            .unwrap_or_else(|e| {
+                output::render_error(&format!("Could not create session: {}", e));
+                process::exit(1);
+            });
         session.id
     } else if session_config.resume {
         if let Some(ref session_id) = session_config.session_id {
@@ -452,7 +463,10 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
             process::exit(1);
         });
 
-    let current_workdir = std::env::current_dir().expect("Failed to get current working directory");
+    let current_workdir = std::env::current_dir().unwrap_or_else(|e| {
+        output::render_error(&format!("Failed to get current working directory: {}", e));
+        process::exit(1);
+    });
     if current_workdir == session.working_dir {
         return;
     }
@@ -468,7 +482,10 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
         ))
         .initial_value(true)
         .interact()
-        .expect("Failed to get user input");
+        .unwrap_or_else(|e| {
+            output::render_error(&format!("Failed to get user input: {}", e));
+            process::exit(1);
+        });
 
         if change_workdir {
             if !session.working_dir.exists() {
@@ -573,13 +590,19 @@ async fn configure_session_prompts(
 
     let system_prompt_file: Option<String> = config.get_param("GOOSE_SYSTEM_PROMPT_FILE_PATH").ok();
     if let Some(ref path) = system_prompt_file {
-        let override_prompt =
-            std::fs::read_to_string(path).expect("Failed to read system prompt file");
+        let override_prompt = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            output::render_error(&format!(
+                "Failed to read system prompt file '{}': {}",
+                path, e
+            ));
+            process::exit(1);
+        });
         session.agent.override_system_prompt(override_prompt).await;
     }
 }
 
 pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
+    #[cfg(feature = "telemetry")]
     goose::posthog::set_session_context("cli", session_config.resume);
 
     let config = Config::global();

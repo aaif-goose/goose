@@ -17,15 +17,10 @@ fn main() {
         .map(|(k, v)| (k, serde_json::to_value(v).unwrap_or(json!({}))))
         .collect();
 
-    // Strip the `_goose/` prefix to get the bare method name for x-method.
-    fn bare_method(full: &str) -> &str {
-        full.strip_prefix("_goose/").unwrap_or(full)
-    }
-
     // Track which types map to which methods so we can detect shared types.
     let mut type_methods: HashMap<String, Vec<String>> = HashMap::new();
     for m in &methods {
-        let method = bare_method(&m.method).to_string();
+        let method = m.method.clone();
         if let Some(name) = &m.params_type_name {
             type_methods
                 .entry(name.clone())
@@ -38,6 +33,13 @@ fn main() {
                 .or_default()
                 .push(method.clone());
         }
+    }
+
+    // Replace `true` with `{}` throughout $defs. Both mean "accept any value" in
+    // JSON Schema, but many TS codegen tools (e.g. @hey-api/openapi-ts Zod plugin)
+    // silently drop properties whose schema is the bare `true` literal.
+    for def in defs.values_mut() {
+        replace_true_schemas(def);
     }
 
     // Annotate $defs entries with x-method/x-side. Only set x-method for types
@@ -172,7 +174,7 @@ fn main() {
         .iter()
         .map(|m| {
             json!({
-                "method": bare_method(&m.method),
+                "method": &m.method,
                 "requestType": m.params_type_name,
                 "responseType": m.response_type_name,
             })
@@ -185,4 +187,32 @@ fn main() {
     eprintln!("Generated ACP meta at {}", meta_path.display());
 
     println!("{json_str}");
+}
+
+/// Recursively replace `true` with `{}` in a JSON value.
+///
+/// In JSON Schema, `true` and `{}` both mean "accept any value", but many
+/// TypeScript codegen tools only handle the object form.
+fn replace_true_schemas(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for v in map.values_mut() {
+                if *v == Value::Bool(true) {
+                    *v = json!({});
+                } else {
+                    replace_true_schemas(v);
+                }
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                if *v == Value::Bool(true) {
+                    *v = json!({});
+                } else {
+                    replace_true_schemas(v);
+                }
+            }
+        }
+        _ => {}
+    }
 }

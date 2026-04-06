@@ -2,6 +2,12 @@ name: "Bundle Desktop (Windows)"
 
 on:
   workflow_dispatch:
+    inputs:
+      signing:
+        description: 'Whether to sign the Windows executable'
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       version:
@@ -18,17 +24,10 @@ on:
         required: false
         type: string
         default: ''
-    secrets:
-      WINDOWS_CODESIGN_CERTIFICATE:
-        required: false
-      WINDOW_SIGNING_ROLE:
-        required: false
-      WINDOW_SIGNING_ROLE_TAG:
-        required: false
 
-# Permissions required for OIDC authentication with AWS
+# Permissions required for OIDC authentication with Azure Trusted Signing
 permissions:
-  id-token: write   # Required to fetch the OIDC token
+  id-token: write   # Required to fetch the OIDC token for Azure federated credentials
   contents: read    # Required by actions/checkout
   actions: read     # May be needed for some workflows
 
@@ -42,13 +41,6 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || '' }}
-
-      - name: Configure AWS credentials
-        if: inputs.signing && inputs.signing == true
-        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708  # v5.1.1
-        with:
-          role-to-assume: ${{ github.ref == 'refs/heads/main' && secrets.WINDOW_SIGNING_ROLE || secrets.WINDOW_SIGNING_ROLE_TAG }}
-          aws-region: us-west-2
 
       - name: Set up Node.js
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
@@ -160,103 +152,89 @@ jobs:
           echo "📋 Binary files in resources/bin:"
           ls -la ./dist-windows/resources/bin/
 
-      - name: Setup Java for signing
-        if: inputs.signing && inputs.signing == true
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00  # v4.7.1
+      - name: Upload unsigned distribution
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          distribution: 'temurin'
-          java-version: '11'
+          name: windows-unsigned
+          path: ui/desktop/dist-windows/
 
-      - name: Sign Windows executables with jsign + AWS KMS
-        if: inputs.signing && inputs.signing == true
-        shell: bash
-        run: |
-          set -exuo pipefail
-          echo "🔐 Starting Windows code signing with jsign + AWS KMS..."
+  sign-desktop-windows:
+    name: Sign Desktop (Windows)
+    needs: build-desktop-windows
+    if: inputs.signing
+    runs-on: windows-latest
+    environment: ${{ (inputs.signing == true) && 'signing' || null }}
 
-          echo "📝 Creating certificate file from GitHub secret..."
-          echo "${{ secrets.WINDOWS_CODESIGN_CERTIFICATE }}" > block-codesign-cert.pem
+    steps:
+      - name: Download unsigned distribution
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: windows-unsigned
+          path: dist-windows
 
-          # Download jsign
-          echo "📥 Downloading jsign..."
-          curl -sL https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar -o jsign.jar
-          echo "05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar" | sha256sum -c
+      - name: Azure login
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5  # v2.3.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-          echo "🔐 Signing main Electron executable: Goose.exe"
-          cd ui/desktop/dist-windows/
+      - name: Sign Windows executables with Azure Trusted Signing
+        uses: azure/trusted-signing-action@b443cf8ea4124818d2ea9f043cba29fc3ec47b16  # v1.2.0
+        with:
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+          files: |
+            ${{ github.workspace }}/dist-windows/Goose.exe
+            ${{ github.workspace }}/dist-windows/resources/bin/goosed.exe
 
-          java -jar ${GITHUB_WORKSPACE}/jsign.jar \
-            --storetype AWS \
-            --keystore us-west-2 \
-            --storepass "${AWS_ACCESS_KEY_ID}|${AWS_SECRET_ACCESS_KEY}|${AWS_SESSION_TOKEN}" \
-            --alias windows-codesign \
-            --certfile "${GITHUB_WORKSPACE}/block-codesign-cert.pem" \
-            --tsaurl "http://timestamp.digicert.com" \
-            --name "Goose" \
-            --url "https://github.com/block/goose" \
-            "Goose.exe"
-
-          echo "✅ Main executable Goose.exe signed successfully"
-
-          echo "🔐 Signing backend executable: goosed.exe"
-          cd resources/bin/
-
-          java -jar ${GITHUB_WORKSPACE}/jsign.jar \
-            --storetype AWS \
-            --keystore us-west-2 \
-            --storepass "${AWS_ACCESS_KEY_ID}|${AWS_SECRET_ACCESS_KEY}|${AWS_SESSION_TOKEN}" \
-            --alias windows-codesign \
-            --certfile "${GITHUB_WORKSPACE}/block-codesign-cert.pem" \
-            --tsaurl "http://timestamp.digicert.com" \
-            --name "Goose Backend" \
-            --url "https://github.com/block/goose" \
-            "goosed.exe"
-
-          echo "✅ Backend executable goosed.exe signed successfully"
-
-          # Show final file status
-          echo "📋 Final signed files:"
-          cd ../../
-          ls -la Goose.exe
-          sha256sum Goose.exe
-          ls -la resources/bin/goosed.exe
-          sha256sum resources/bin/goosed.exe
-
-          rm -f ${GITHUB_WORKSPACE}/block-codesign-cert.pem
-
-      - name: Verify signed executables are in final distribution
-        if: inputs.signing && inputs.signing == true
+      - name: Verify signed executables
         shell: pwsh
         run: |
-          echo "📋 Verifying both signed executables in final distribution:"
-          echo "Main executable:"
-          Get-Item ui/desktop/dist-windows/Goose.exe
-          $sig = Get-AuthenticodeSignature ui/desktop/dist-windows/Goose.exe
-          if ($sig.Status -ne "Valid") { throw "Main executable signature invalid: $($sig.Status)" }
-          echo "✅ Main executable signature verification passed"
-
-          echo "Backend executable:"
-          Get-Item ui/desktop/dist-windows/resources/bin/goosed.exe
-          $sig = Get-AuthenticodeSignature ui/desktop/dist-windows/resources/bin/goosed.exe
-          if ($sig.Status -ne "Valid") { throw "Backend executable signature invalid: $($sig.Status)" }
-          echo "✅ Backend executable signature verification passed"
+          $files = @(
+            "dist-windows/Goose.exe",
+            "dist-windows/resources/bin/goosed.exe"
+          )
+          foreach ($file in $files) {
+            Write-Output "Verifying signature: $file"
+            $sig = Get-AuthenticodeSignature $file
+            if ($sig.Status -ne "Valid") { throw "Signature invalid for ${file}: $($sig.Status)" }
+            Write-Output "Signature valid: $file"
+          }
 
       - name: Create Windows zip package
         shell: bash
         run: |
-          cd ui/desktop
-          echo "📦 Creating Windows zip package..."
-
           7z a -tzip "Goose-win32-x64.zip" dist-windows/
 
-          echo "✅ Windows zip package created:"
-          ls -la Goose-win32-x64.zip
-
-          mkdir -p out/Goose-win32-x64/
-          cp Goose-win32-x64.zip out/Goose-win32-x64/
-
-      - name: Upload Windows build artifacts
+      - name: Upload signed Windows build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: Goose-win32-x64
-          path: ui/desktop/out/Goose-win32-x64/Goose-win32-x64.zip
+          path: Goose-win32-x64.zip
+
+  # When signing is disabled, package the unsigned build directly
+  package-desktop-windows:
+    name: Package Desktop (Windows)
+    needs: build-desktop-windows
+    if: ${{ !inputs.signing }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Download unsigned distribution
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: windows-unsigned
+          path: dist-windows
+
+      - name: Create Windows zip package
+        shell: bash
+        run: |
+          7z a -tzip "Goose-win32-x64.zip" dist-windows/
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: Goose-win32-x64
+          path: Goose-win32-x64.zip

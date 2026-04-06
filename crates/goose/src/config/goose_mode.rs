@@ -8,6 +8,7 @@ use utoipa::ToSchema;
     Debug,
     Default,
     Eq,
+    Hash,
     PartialEq,
     Serialize,
     Deserialize,

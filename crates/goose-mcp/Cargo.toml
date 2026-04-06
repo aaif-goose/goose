@@ -10,6 +10,10 @@ description.workspace = true
 [lints]
 workspace = true
 
+[features]
+rustls-tls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls"]
+
 [dependencies]
 rmcp = { workspace = true, features = ["server", "client", "transport-io", "macros"] }
 anyhow = { workspace = true }
@@ -23,7 +27,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 indoc = { workspace = true }
-reqwest = { workspace = true, features = ["json", "rustls", "system-proxy"], default-features = false }
+reqwest = { workspace = true, features = ["json", "system-proxy"], default-features = false }
 chrono = { workspace = true }
 etcetera = { workspace = true }
 tempfile = { workspace = true }
@@ -33,4 +37,4 @@ lopdf = "0.36.0"
 docx-rs = "0.4.7"
 image = { version = "0.24.9", features = ["jpeg"] }
 umya-spreadsheet = "2.2.3"
-shell-words = "1.1.1"
+shell-words = { workspace = true }

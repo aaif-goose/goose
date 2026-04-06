@@ -72,7 +72,7 @@ fn build_vertex_url(
     let host_url = if configured_location == target_location {
         host.to_string()
     } else {
-        host.replace(configured_location, target_location)
+        GcpVertexAIProvider::build_host_url(target_location)
     };
 
     let base_url =
@@ -87,8 +87,17 @@ fn build_vertex_url(
         (ModelProvider::MaaS(_), false) => "generateContent",
     };
 
+    // Anthropic's Vertex AI docs specify v1 for rawPredict endpoints.
+    // The official google-genai SDK uses v1beta1 for Google models,
+    // and the global endpoint requires it.
+    let api_version = match &provider {
+        ModelProvider::Anthropic => "v1",
+        ModelProvider::Google | ModelProvider::MaaS(_) => "v1beta1",
+    };
+
     let path = format!(
-        "v1/projects/{}/locations/{}/publishers/{}/models/{}:{}",
+        "{}/projects/{}/locations/{}/publishers/{}/models/{}:{}",
+        api_version,
         project_id,
         target_location,
         provider.as_str(),
@@ -733,6 +742,60 @@ mod tests {
             .as_str()
             .contains("europe-west1-aiplatform.googleapis.com"));
         assert!(url.as_str().contains("locations/europe-west1"));
+    }
+
+    #[test]
+    fn test_build_vertex_url_global_location_fallback() {
+        // When configured_location is "global", the host is
+        // "https://aiplatform.googleapis.com" which does not contain "global".
+        // Falling back to a regional target_location must rebuild the host
+        // via build_host_url rather than string replacement.
+        let url = build_vertex_url(
+            "https://aiplatform.googleapis.com",
+            "global",
+            "test-project",
+            "claude-haiku-4-5@20251001",
+            ModelProvider::Anthropic,
+            "us-east5",
+            true,
+        )
+        .unwrap();
+
+        assert!(
+            url.as_str()
+                .starts_with("https://us-east5-aiplatform.googleapis.com"),
+            "Expected regional host for us-east5, got: {}",
+            url
+        );
+        assert!(
+            url.as_str().contains("locations/us-east5"),
+            "Expected locations/us-east5 in path, got: {}",
+            url
+        );
+        assert!(url.as_str().contains(":streamRawPredict"));
+    }
+
+    #[test]
+    fn test_build_vertex_url_global_location_same() {
+        // When both configured and target are "global", the host should stay as-is.
+        let url = build_vertex_url(
+            "https://aiplatform.googleapis.com",
+            "global",
+            "test-project",
+            "claude-haiku-4-5@20251001",
+            ModelProvider::Anthropic,
+            "global",
+            true,
+        )
+        .unwrap();
+
+        assert!(
+            url.as_str()
+                .starts_with("https://aiplatform.googleapis.com"),
+            "Expected global host, got: {}",
+            url
+        );
+        assert!(url.as_str().contains("locations/global"));
     }
 
     #[test]

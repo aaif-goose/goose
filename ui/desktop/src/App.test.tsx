@@ -7,6 +7,7 @@ import React from 'react';
 import { screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AppInner } from './App';
+import { IntlTestWrapper } from './i18n/test-utils';
 
 // Set up globals for jsdom
 Object.defineProperty(window, 'location', {
@@ -61,10 +62,6 @@ vi.mock('./sessions', () => ({
   generateSessionId: vi.fn(),
 }));
 
-vi.mock('./utils/openRouterSetup', () => ({
-  startOpenRouterSetup: vi.fn().mockResolvedValue({ success: false, message: 'Test' }),
-}));
-
 // Mock the ConfigContext module
 vi.mock('./components/ConfigContext', () => ({
   useConfig: () => ({
@@ -81,19 +78,6 @@ vi.mock('./components/ConfigContext', () => ({
 // Mock other components to simplify testing
 vi.mock('./components/ErrorBoundary', () => ({
   ErrorUI: ({ error }: { error: Error }) => <div>Error: {error.message}</div>,
-}));
-
-// Mock ProviderGuard to show the welcome screen when no provider is configured
-vi.mock('./components/ProviderGuard', () => ({
-  default: ({ children }: { children: React.ReactNode }) => {
-    // In a real app, ProviderGuard would check for provider and show welcome screen
-    // For this test, we'll simulate that behavior
-    const hasProvider = window.electron?.getConfig()?.GOOSE_DEFAULT_PROVIDER;
-    if (!hasProvider) {
-      return <div>Welcome to Goose!</div>;
-    }
-    return <>{children}</>;
-  },
 }));
 
 vi.mock('./components/ModelAndProviderContext', () => ({
@@ -171,6 +155,8 @@ const mockElectron = {
   getAllowedExtensions: vi.fn().mockResolvedValue([]),
   platform: 'darwin',
   createChatWindow: vi.fn(),
+  getSetting: vi.fn().mockResolvedValue(null),
+  setSetting: vi.fn().mockResolvedValue(undefined),
 };
 
 // Mock appConfig
@@ -214,8 +200,8 @@ describe('App Component - Brand New State', () => {
     window.location.hash = '';
     window.location.search = '';
     window.location.pathname = '/';
-    window.sessionStorage.clear();
-    window.localStorage.clear();
+    window.sessionStorage?.clear?.();
+    window.localStorage?.clear?.();
   });
 
   afterEach(() => {
@@ -230,7 +216,7 @@ describe('App Component - Brand New State', () => {
       GOOSE_ALLOWLIST_WARNING: false,
     });
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization
     await waitFor(() => {
@@ -253,17 +239,17 @@ describe('App Component - Brand New State', () => {
     // Set up search params to simulate view=settings deep link
     mockSearchParams.set('view', 'settings');
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization
     await waitFor(() => {
       expect(mockElectron.reactReady).toHaveBeenCalled();
     });
 
-    expect(screen.getByText(/^Select an AI model provider/)).toBeInTheDocument();
+    expect(screen.getByText(/^Welcome to goose/)).toBeInTheDocument();
   });
 
-  it('should not redirect to /welcome when provider is configured', async () => {
+  it('should not redirect when provider is configured', async () => {
     // Mock provider configured
     mockElectron.getConfig.mockReturnValue({
       GOOSE_DEFAULT_PROVIDER: 'openai',
@@ -271,7 +257,7 @@ describe('App Component - Brand New State', () => {
       GOOSE_ALLOWLIST_WARNING: false,
     });
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization
     await waitFor(() => {
@@ -294,7 +280,7 @@ describe('App Component - Brand New State', () => {
       GOOSE_ALLOWLIST_WARNING: false,
     });
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization and recovery
     await waitFor(() => {

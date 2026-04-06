@@ -9,6 +9,39 @@ import ProviderLogo from '../settings/providers/modal/subcomponents/ProviderLogo
 import { SecureStorageNotice } from '../settings/providers/modal/subcomponents/SecureStorageNotice';
 import { Button } from '../ui/button';
 import { LogIn, ChevronRight } from 'lucide-react';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  browserWindowOpen: {
+    id: 'providerConfigForm.browserWindowOpen',
+    defaultMessage: 'A browser window will open for you to complete the login.',
+  },
+  deviceCodeFlowHint: {
+    id: 'providerConfigForm.deviceCodeFlowHint',
+    defaultMessage:
+      'A browser window will open and the verification code will be copied to your clipboard. Paste it in the browser to complete sign-in.',
+  },
+  signingIn: {
+    id: 'providerConfigForm.signingIn',
+    defaultMessage: 'Signing in...',
+  },
+  signInWith: {
+    id: 'providerConfigForm.signInWith',
+    defaultMessage: 'Sign in with {providerName}',
+  },
+  noApiKey: {
+    id: 'providerConfigForm.noApiKey',
+    defaultMessage: "Don't have an API key?",
+  },
+  configuring: {
+    id: 'providerConfigForm.configuring',
+    defaultMessage: 'Configuring...',
+  },
+  continue: {
+    id: 'providerConfigForm.continue',
+    defaultMessage: 'Continue',
+  },
+});
 
 function parseLinks(text: string) {
   return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
@@ -39,6 +72,7 @@ function OAuthForm({
   onConfigured: (name: string) => void;
   onError: (msg: string) => void;
 }) {
+  const intl = useIntl();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -56,6 +90,8 @@ function OAuthForm({
     }
   };
 
+  const isDeviceCodeFlow = provider.metadata.config_keys.some((key) => key.device_code_flow);
+
   return (
     <div className="flex flex-col items-center gap-3 py-4">
       <Button
@@ -65,10 +101,12 @@ function OAuthForm({
         size="lg"
       >
         <LogIn size={20} />
-        {isLoading ? 'Signing in...' : `Sign in with ${provider.metadata.display_name}`}
+        {isLoading ? intl.formatMessage(i18n.signingIn) : intl.formatMessage(i18n.signInWith, { providerName: provider.metadata.display_name })}
       </Button>
       <p className="text-xs text-text-muted text-center">
-        A browser window will open for you to complete the login.
+        {isDeviceCodeFlow
+          ? intl.formatMessage(i18n.deviceCodeFlowHint)
+          : intl.formatMessage(i18n.browserWindowOpen)}
       </p>
     </div>
   );
@@ -83,6 +121,7 @@ function ApiKeyForm({
   onConfigured: (name: string) => void;
   onError: (msg: string) => void;
 }) {
+  const intl = useIntl();
   const { upsert } = useConfig();
   const [configValues, setConfigValues] = useState<Record<string, ConfigInput>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -155,7 +194,7 @@ function ApiKeyForm({
               size={14}
               className={`transition-transform duration-200 ${showSetupHelp ? 'rotate-90' : ''}`}
             />
-            Don't have an API key?
+            {intl.formatMessage(i18n.noApiKey)}
           </button>
           {showSetupHelp && (
             <ol className="mt-2 ml-5 list-decimal text-sm text-text-muted space-y-1">
@@ -168,7 +207,7 @@ function ApiKeyForm({
       )}
       <div className="mt-4">
         <Button type="submit" disabled={isSubmitting} className="w-full">
-          {isSubmitting ? 'Configuring...' : 'Continue'}
+          {isSubmitting ? intl.formatMessage(i18n.configuring) : intl.formatMessage(i18n.continue)}
         </Button>
       </div>
     </form>

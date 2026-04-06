@@ -1,9 +1,10 @@
 use anyhow::Result;
 use futures::future::BoxFuture;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, PermissionMapping,
+    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
@@ -11,7 +12,6 @@ use crate::model::ModelConfig;
 use crate::providers::base::{ProviderDef, ProviderMetadata};
 
 const CLAUDE_ACP_PROVIDER_NAME: &str = "claude-acp";
-pub const CLAUDE_ACP_DEFAULT_MODEL: &str = "default";
 const CLAUDE_ACP_DOC_URL: &str = "https://github.com/zed-industries/claude-agent-acp";
 const CLAUDE_ACP_BINARY: &str = "claude-agent-acp";
 
@@ -24,12 +24,18 @@ impl ProviderDef for ClaudeAcpProvider {
         ProviderMetadata::new(
             CLAUDE_ACP_PROVIDER_NAME,
             "Claude Code",
-            "ACP wrapper for Anthropic's Claude. Install: npm install -g @zed-industries/claude-agent-acp",
-            CLAUDE_ACP_DEFAULT_MODEL,
+            "Use goose with your Claude Code subscription via the claude-agent-acp adapter.",
+            ACP_CURRENT_MODEL,
             vec![],
             CLAUDE_ACP_DOC_URL,
             vec![],
         )
+        .with_setup_steps(vec![
+            "Install the ACP adapter: `npm install -g @zed-industries/claude-agent-acp`",
+            "Ensure your Claude CLI is authenticated (run `claude` to verify)",
+            "Set in your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: claude-acp\n  GOOSE_MODEL: current",
+            "Restart goose for changes to take effect",
+        ])
     }
 
     fn from_env(
@@ -44,12 +50,16 @@ impl ProviderDef for ClaudeAcpProvider {
                 .resolve(CLAUDE_ACP_BINARY)?;
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
 
-            // claude-agent-acp permission option_ids
-            let permission_mapping = PermissionMapping {
-                allow_option_id: Some("allow".to_string()),
-                reject_option_id: Some("reject".to_string()),
-                rejected_tool_status: sacp::schema::ToolCallStatus::Failed,
-            };
+            let mode_mapping = HashMap::from([
+                // Closest to "autonomous": bypassPermissions skips confirmations.
+                (GooseMode::Auto, "bypassPermissions".to_string()),
+                // Claude Code's default matches "ask before risky actions".
+                (GooseMode::Approve, "default".to_string()),
+                // acceptEdits auto-accepts file edits but still prompts for risky ops.
+                (GooseMode::SmartApprove, "acceptEdits".to_string()),
+                // Plan mode disables tool execution, aligning with chat-only intent.
+                (GooseMode::Chat, "plan".to_string()),
+            ]);
 
             let provider_config = AcpProviderConfig {
                 command: resolved_command,
@@ -59,34 +69,13 @@ impl ProviderDef for ClaudeAcpProvider {
                 env_remove: vec!["CLAUDECODE".to_string()],
                 work_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
-                session_mode_id: Some(map_goose_mode(goose_mode)),
-                permission_mapping,
+                session_mode_id: Some(mode_mapping[&goose_mode].clone()),
+                mode_mapping,
                 notification_callback: None,
             };
 
             let metadata = Self::metadata();
             AcpProvider::connect(metadata.name, model, goose_mode, provider_config).await
         })
-    }
-}
-
-fn map_goose_mode(goose_mode: GooseMode) -> String {
-    match goose_mode {
-        GooseMode::Auto => {
-            // Closest to "autonomous": Claude Code's bypassPermissions skips confirmations.
-            "bypassPermissions".to_string()
-        }
-        GooseMode::Approve => {
-            // Claude Code's default matches "ask before risky actions".
-            "default".to_string()
-        }
-        GooseMode::SmartApprove => {
-            // Best-effort: acceptEdits auto-accepts file edits but still prompts for risky ops.
-            "acceptEdits".to_string()
-        }
-        GooseMode::Chat => {
-            // Plan mode disables tool execution, aligning with chat-only intent.
-            "plan".to_string()
-        }
     }
 }

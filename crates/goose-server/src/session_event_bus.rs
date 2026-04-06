@@ -116,12 +116,26 @@ impl SessionEventBus {
         requests.keys().cloned().collect()
     }
 
-    /// Register a new request and return its cancellation token.
+    #[cfg(test)]
     pub async fn register_request(&self, request_id: String) -> CancellationToken {
         let token = CancellationToken::new();
         let mut requests = self.active_requests.lock().await;
         requests.insert(request_id, token.clone());
         token
+    }
+
+    /// Atomically check no requests are active and register one. Returns Err if busy.
+    pub async fn try_register_request(
+        &self,
+        request_id: String,
+    ) -> Result<CancellationToken, String> {
+        let mut requests = self.active_requests.lock().await;
+        if !requests.is_empty() {
+            return Err("Session already has an active request".into());
+        }
+        let token = CancellationToken::new();
+        requests.insert(request_id, token.clone());
+        Ok(token)
     }
 
     /// Cancel a specific request by request_id.
@@ -153,6 +167,38 @@ impl SessionEventBus {
 impl Default for SessionEventBus {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct RequestGuard {
+    bus: std::sync::Arc<SessionEventBus>,
+    request_id: String,
+    disarmed: bool,
+}
+
+impl RequestGuard {
+    pub fn new(bus: std::sync::Arc<SessionEventBus>, request_id: String) -> Self {
+        Self {
+            bus,
+            request_id,
+            disarmed: false,
+        }
+    }
+
+    pub fn disarm(&mut self) {
+        self.disarmed = true;
+    }
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        if !self.disarmed {
+            let bus = self.bus.clone();
+            let request_id = self.request_id.clone();
+            tokio::spawn(async move {
+                bus.cleanup_request(&request_id).await;
+            });
+        }
     }
 }
 

@@ -292,7 +292,21 @@ echo "Moving goose to $GOOSE_BIN_DIR/$OUT_FILE"
 if [ "$OS" = "windows" ]; then
   mv "$EXTRACT_DIR/goose.exe" "$GOOSE_BIN_DIR/$OUT_FILE"
 else
-  mv "$EXTRACT_DIR/goose" "$GOOSE_BIN_DIR/$OUT_FILE"
+  # On Linux, if the target binary is currently running, writing to it fails
+  # with ETXTBSY ("Text file busy"). Rename the old binary out of the way
+  # first, then move the new one in. If the move fails, restore the old binary
+  # so the user is never left without an executable.
+  if [ -f "$GOOSE_BIN_DIR/$OUT_FILE" ]; then
+    mv "$GOOSE_BIN_DIR/$OUT_FILE" "$GOOSE_BIN_DIR/$OUT_FILE.old"
+    if ! mv "$EXTRACT_DIR/goose" "$GOOSE_BIN_DIR/$OUT_FILE"; then
+      echo "Error: failed to install new binary, restoring previous version"
+      mv "$GOOSE_BIN_DIR/$OUT_FILE.old" "$GOOSE_BIN_DIR/$OUT_FILE"
+      exit 1
+    fi
+    rm -f "$GOOSE_BIN_DIR/$OUT_FILE.old"
+  else
+    mv "$EXTRACT_DIR/goose" "$GOOSE_BIN_DIR/$OUT_FILE"
+  fi
 fi
 
 # Copy Windows runtime DLLs if they exist

@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, type RenderOptions, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from '@tanstack/react-form';
 
 import { RecipeFormFields, extractTemplateVariables } from '../RecipeFormFields';
 import { type RecipeFormData } from '../recipeFormSchema';
+import { IntlTestWrapper } from '../../../../i18n/test-utils';
+
+const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
+  render(ui, { wrapper: IntlTestWrapper, ...options });
 
 vi.mock('../../../ConfigContext', () => ({
   useConfig: () => ({
@@ -35,6 +39,7 @@ describe('RecipeFormFields', () => {
       model: undefined,
       provider: undefined,
       extensions: undefined,
+      subRecipes: [],
       ...initialValues,
     };
 
@@ -63,13 +68,13 @@ describe('RecipeFormFields', () => {
 
   describe('Basic Rendering', () => {
     it('renders the component without crashing', () => {
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
       expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
     });
 
     it('renders required form fields', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
@@ -86,7 +91,7 @@ describe('RecipeFormFields', () => {
     });
 
     it('shows form inputs with proper accessibility', () => {
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       expect(screen.getByRole('textbox', { name: /title/i })).toBeInTheDocument();
       expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
@@ -98,7 +103,7 @@ describe('RecipeFormFields', () => {
   describe('Form Interactions', () => {
     it('allows typing in text fields', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const titleInput = screen.getByRole('textbox', { name: /title/i });
       await user.type(titleInput, 'Test Recipe');
@@ -111,7 +116,7 @@ describe('RecipeFormFields', () => {
 
     it('allows typing in textarea fields', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const instructionsInput = screen.getByRole('textbox', { name: /instructions/i });
       await user.type(instructionsInput, 'Do something');
@@ -126,7 +131,7 @@ describe('RecipeFormFields', () => {
   describe('Parameter Management', () => {
     it('shows parameter input section', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -136,7 +141,7 @@ describe('RecipeFormFields', () => {
 
     it('allows adding parameters manually', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -166,7 +171,7 @@ describe('RecipeFormFields', () => {
         prompt: 'Pre-filled Prompt',
       };
 
-      render(<TestWrapper initialValues={initialValues} />);
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
 
       expect(screen.getByDisplayValue('Pre-filled Title')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Pre-filled Description')).toBeInTheDocument();
@@ -177,7 +182,7 @@ describe('RecipeFormFields', () => {
 
   describe('Editor Buttons', () => {
     it('shows editor buttons for instructions and JSON schema', () => {
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const editorButtons = screen.getAllByText('Open Editor');
       expect(editorButtons.length).toBeGreaterThan(0);
@@ -187,7 +192,7 @@ describe('RecipeFormFields', () => {
   describe('Parameter Auto-Detection', () => {
     it('has parameter detection functionality', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const instructionsInput = screen.getByPlaceholderText(
         'Detailed instructions for the AI, hidden from the user'
@@ -216,7 +221,7 @@ describe('RecipeFormFields', () => {
 
     it('allows manual parameter addition', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -236,7 +241,7 @@ describe('RecipeFormFields', () => {
 
     it('shows parameter management UI', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -251,7 +256,7 @@ describe('RecipeFormFields', () => {
 
     it('handles activities field for parameter detection', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -289,6 +294,7 @@ describe('RecipeFormFields', () => {
             model: undefined,
             provider: undefined,
             extensions: undefined,
+            subRecipes: [],
           } as RecipeFormData,
           onSubmit: async ({ value }) => {
             console.log('Form submitted:', value);
@@ -298,7 +304,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       const instructionsInput = screen.getByPlaceholderText(
         'Detailed instructions for the AI, hidden from the user'
@@ -385,6 +391,7 @@ describe('RecipeFormFields', () => {
             model: undefined,
             provider: undefined,
             extensions: undefined,
+            subRecipes: [],
           } as RecipeFormData,
           onSubmit: async ({ value }) => {
             console.log('Form submitted:', value);
@@ -394,7 +401,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       // Check that parameter names are displayed in code blocks with more specific selectors
       const usernameCode = screen.getByText('username').closest('code');
@@ -453,7 +460,7 @@ describe('RecipeFormFields', () => {
 
     it('renders parameter form fields when manually adding parameters', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -555,6 +562,7 @@ describe('RecipeFormFields', () => {
             model: undefined,
             provider: undefined,
             extensions: undefined,
+            subRecipes: [],
           } as RecipeFormData,
           onSubmit: async ({ value }) => {
             console.log('Form submitted:', value);
@@ -564,7 +572,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       // Check that unused indicators are shown
       const unusedTexts = screen.getAllByText('Unused');
@@ -631,6 +639,7 @@ describe('RecipeFormFields', () => {
             model: undefined,
             provider: undefined,
             extensions: undefined,
+            subRecipes: [],
           } as RecipeFormData,
           onSubmit: async ({ value }) => {
             console.log('Form submitted:', value);
@@ -640,7 +649,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       // Should have 3 parameters total
       const parameterContainers = document.querySelectorAll('.parameter-input');
@@ -670,7 +679,7 @@ describe('RecipeFormFields', () => {
 
     it('shows delete button for parameters', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -703,7 +712,7 @@ describe('RecipeFormFields', () => {
 
     it('supports different parameter input types', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -874,7 +883,7 @@ describe('RecipeFormFields', () => {
   describe('Model and Extension Selection', () => {
     it('renders model and extension selectors in advanced options', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -898,6 +907,7 @@ describe('RecipeFormFields', () => {
             model: undefined,
             provider: undefined,
             extensions: undefined,
+            subRecipes: [],
           } as RecipeFormData,
           onSubmit: async ({ value }) => {
             onSubmit(value);
@@ -907,7 +917,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
@@ -929,6 +939,7 @@ describe('RecipeFormFields', () => {
             model: undefined,
             provider: undefined,
             extensions: undefined,
+            subRecipes: [],
           } as RecipeFormData,
           onSubmit: async ({ value }) => {
             console.log('Form submitted:', value);
@@ -938,7 +949,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
@@ -961,7 +972,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
@@ -992,12 +1003,134 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
       expect(screen.getByText('Extensions (Optional)')).toBeInTheDocument();
       expect(screen.getByText('1 extension selected')).toBeInTheDocument();
+    });
+  });
+
+  describe('Subrecipes Field', () => {
+    it('renders the subrecipes section in advanced options', async () => {
+      const user = userEvent.setup();
+      renderWithIntl(<TestWrapper />);
+
+      await expandAdvancedSection(user);
+
+      expect(screen.getByText('Subrecipes')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add existing/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /create new subrecipe/i })).toBeInTheDocument();
+    });
+
+    it('pre-fills subrecipes from initial values', async () => {
+      const user = userEvent.setup();
+      const initialValues: Partial<RecipeFormData> = {
+        subRecipes: [
+          {
+            name: 'data_fetcher',
+            path: '~/.config/goose/recipes/abc123.yaml',
+            description: 'Fetches data from an API',
+            sequential_when_repeated: false,
+          },
+        ],
+      };
+
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
+
+      await expandAdvancedSection(user);
+
+      expect(screen.getByText('data_fetcher')).toBeInTheDocument();
+      expect(screen.getByText('~/.config/goose/recipes/abc123.yaml')).toBeInTheDocument();
+      expect(screen.getByText('Fetches data from an API')).toBeInTheDocument();
+    });
+
+    it('displays pre-configured values for a subrecipe', async () => {
+      const user = userEvent.setup();
+      const initialValues: Partial<RecipeFormData> = {
+        subRecipes: [
+          {
+            name: 'report_generator',
+            path: '~/.config/goose/recipes/def456.yaml',
+            sequential_when_repeated: false,
+            values: { output_format: 'pdf', language: 'en' },
+          },
+        ],
+      };
+
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
+
+      await expandAdvancedSection(user);
+
+      expect(screen.getByText('report_generator')).toBeInTheDocument();
+      expect(screen.getByText('Pre-configured values:')).toBeInTheDocument();
+      expect(screen.getByText('output_format')).toBeInTheDocument();
+      expect(screen.getByText('pdf')).toBeInTheDocument();
+      expect(screen.getByText('language')).toBeInTheDocument();
+      expect(screen.getByText('en')).toBeInTheDocument();
+    });
+
+    it('shows sequential badge when subrecipe has sequential_when_repeated set', async () => {
+      const user = userEvent.setup();
+      const initialValues: Partial<RecipeFormData> = {
+        subRecipes: [
+          {
+            name: 'sequential_tool',
+            path: '~/.config/goose/recipes/ghi789.yaml',
+            sequential_when_repeated: true,
+          },
+        ],
+      };
+
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
+
+      await expandAdvancedSection(user);
+
+      expect(screen.getByText('sequential_tool')).toBeInTheDocument();
+      expect(screen.getByText('Sequential')).toBeInTheDocument();
+    });
+
+    it('opens the add existing subrecipe modal on button click', async () => {
+      const user = userEvent.setup();
+      renderWithIntl(<TestWrapper />);
+
+      await expandAdvancedSection(user);
+
+      const addButton = screen.getByRole('button', { name: /add existing/i });
+      await user.click(addButton);
+
+      expect(screen.getByRole('heading', { name: /add subrecipe/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/^name/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^path/i)).toBeInTheDocument();
+    });
+
+    it('removes a subrecipe when its delete button is clicked', async () => {
+      const user = userEvent.setup();
+      const initialValues: Partial<RecipeFormData> = {
+        subRecipes: [
+          {
+            name: 'to_be_deleted',
+            path: '~/.config/goose/recipes/jkl012.yaml',
+            sequential_when_repeated: false,
+          },
+        ],
+      };
+
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
+
+      await expandAdvancedSection(user);
+
+      expect(screen.getByText('to_be_deleted')).toBeInTheDocument();
+
+      // The delete button is the last icon button inside the subrecipe card
+      const subrecipeCard = screen.getByText('to_be_deleted').closest('.border');
+      const deleteButton = subrecipeCard?.querySelectorAll('button')[1];
+
+      expect(subrecipeCard).toBeTruthy();
+      expect(deleteButton).toBeTruthy();
+      await user.click(deleteButton!);
+      expect(screen.queryByText('to_be_deleted')).not.toBeInTheDocument();
     });
   });
 });

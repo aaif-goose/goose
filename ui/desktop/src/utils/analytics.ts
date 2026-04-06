@@ -303,18 +303,6 @@ export function trackOnboardingCompleted(provider: string, model?: string): void
   onboardingStartTime = null;
 }
 
-export function trackOnboardingAbandoned(step: string): void {
-  const durationSeconds = onboardingStartTime
-    ? Math.round((Date.now() - onboardingStartTime) / 1000)
-    : undefined;
-
-  trackEvent({
-    name: 'onboarding_abandoned',
-    properties: { step, duration_seconds: durationSeconds },
-  });
-  onboardingStartTime = null;
-}
-
 export function trackOnboardingSetupFailed(
   provider: 'openrouter' | 'tetrate' | 'chatgpt_codex' | 'local',
   errorMessage?: string

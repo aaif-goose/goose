@@ -1,6 +1,38 @@
 import React, { useState } from 'react';
 import { Button } from '../../ui/button';
 import { useEscapeKey } from '../../../hooks/useEscapeKey';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'instructionsEditor.title',
+    defaultMessage: 'Instructions Editor',
+  },
+  label: {
+    id: 'instructionsEditor.label',
+    defaultMessage: 'Instructions',
+  },
+  insertExample: {
+    id: 'instructionsEditor.insertExample',
+    defaultMessage: 'Insert Example',
+  },
+  syntaxHelp: {
+    id: 'instructionsEditor.syntaxHelp',
+    defaultMessage: 'Use {code} syntax to define parameters that users can fill in',
+  },
+  placeholder: {
+    id: 'instructionsEditor.placeholder',
+    defaultMessage: 'Detailed instructions for the AI, hidden from the user',
+  },
+  cancel: {
+    id: 'instructionsEditor.cancel',
+    defaultMessage: 'Cancel',
+  },
+  save: {
+    id: 'instructionsEditor.save',
+    defaultMessage: 'Save Instructions',
+  },
+});
 
 interface InstructionsEditorProps {
   isOpen: boolean;
@@ -17,6 +49,7 @@ export default function InstructionsEditor({
   onChange,
   error,
 }: InstructionsEditorProps) {
+  const intl = useIntl();
   const [localValue, setLocalValue] = useState(value);
   useEscapeKey(isOpen, onClose);
 
@@ -74,7 +107,7 @@ Use {{parameter_name}} syntax for any user-provided values.`;
     >
       <div className="bg-background-primary border border-border-primary rounded-lg p-6 w-[900px] max-w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-text-primary">Instructions Editor</h3>
+          <h3 className="text-lg font-medium text-text-primary">{intl.formatMessage(i18n.title)}</h3>
           <button
             type="button"
             onClick={handleCancel}
@@ -87,7 +120,7 @@ Use {{parameter_name}} syntax for any user-provided values.`;
         <div className="flex-1 flex flex-col min-h-0">
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-text-primary">Instructions</label>
+              <label className="block text-sm font-medium text-text-primary">{intl.formatMessage(i18n.label)}</label>
               <Button
                 type="button"
                 onClick={insertExample}
@@ -95,13 +128,11 @@ Use {{parameter_name}} syntax for any user-provided values.`;
                 size="sm"
                 className="text-xs"
               >
-                Insert Example
+                {intl.formatMessage(i18n.insertExample)}
               </Button>
             </div>
             <p className="text-xs text-text-secondary mb-3">
-              Use{' '}
-              <code className="bg-background-secondary px-1 rounded">{`{{parameter_name}}`}</code>{' '}
-              syntax to define parameters that users can fill in
+              {intl.formatMessage(i18n.syntaxHelp, { code: '{{parameter_name}}' })}
             </p>
           </div>
 
@@ -112,7 +143,7 @@ Use {{parameter_name}} syntax for any user-provided values.`;
               className={`w-full h-full min-h-[500px] p-3 border rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-sm ${
                 error ? 'border-red-500' : 'border-border-primary'
               }`}
-              placeholder="Detailed instructions for the AI, hidden from the user"
+              placeholder={intl.formatMessage(i18n.placeholder)}
             />
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
           </div>
@@ -120,10 +151,10 @@ Use {{parameter_name}} syntax for any user-provided values.`;
 
         <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-border-primary">
           <Button type="button" onClick={handleCancel} variant="ghost">
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
           <Button type="button" onClick={handleSave} variant="default">
-            Save Instructions
+            {intl.formatMessage(i18n.save)}
           </Button>
         </div>
       </div>

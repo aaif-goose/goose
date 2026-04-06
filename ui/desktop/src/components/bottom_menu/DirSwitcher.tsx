@@ -3,6 +3,14 @@ import { FolderDot } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/Tooltip';
 import { updateWorkingDir } from '../../api';
 import { toast } from 'react-toastify';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  failedToUpdateWorkingDir: {
+    id: 'dirSwitcher.failedToUpdateWorkingDir',
+    defaultMessage: 'Failed to update working directory',
+  },
+});
 
 interface DirSwitcherProps {
   className: string;
@@ -21,6 +29,7 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
   onRestartStart,
   onRestartEnd,
 }) => {
+  const intl = useIntl();
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const [isDirectoryChooserOpen, setIsDirectoryChooserOpen] = useState(false);
 
@@ -53,7 +62,7 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
         });
       } catch (error) {
         console.error('[DirSwitcher] Failed to update working directory:', error);
-        toast.error('Failed to update working directory');
+        toast.error(intl.formatMessage(i18n.failedToUpdateWorkingDir));
       } finally {
         onRestartEnd?.();
       }

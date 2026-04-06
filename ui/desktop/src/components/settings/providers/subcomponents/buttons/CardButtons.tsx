@@ -3,6 +3,18 @@ import { Button } from '../../../../ui/button';
 import clsx from 'clsx';
 import { TooltipWrapper } from './TooltipWrapper';
 import { Check, Rocket, Sliders } from 'lucide-react';
+import { defineMessages, useIntl } from '../../../../../i18n';
+
+const i18n = defineMessages({
+  configure: {
+    id: 'cardButtons.configure',
+    defaultMessage: 'Configure',
+  },
+  launch: {
+    id: 'cardButtons.launch',
+    defaultMessage: 'Launch',
+  },
+});
 
 interface ActionButtonProps extends React.ComponentProps<typeof Button> {
   /** Icon component to render, e.g. `RefreshCw` from lucide-react */
@@ -65,12 +77,13 @@ export function GreenCheckButton({ tooltip, className = '', ...props }: ActionBu
 }
 
 export function ConfigureSettingsButton({ tooltip, className, ...props }: ActionButtonProps) {
+  const intl = useIntl();
   return (
     <ActionButton
       icon={Sliders}
       tooltip={tooltip}
       variant="outline"
-      text={'Configure'}
+      text={intl.formatMessage(i18n.configure)}
       iconClassName="rotate-90"
       className={clsx('cursor-pointer', className)}
       {...props}
@@ -79,13 +92,14 @@ export function ConfigureSettingsButton({ tooltip, className, ...props }: Action
 }
 
 export function RocketButton({ tooltip, className, ...props }: ActionButtonProps) {
+  const intl = useIntl();
   return (
     <ActionButton
       data-testid="provider-launch-button"
       icon={Rocket}
       tooltip={tooltip}
       variant="outline"
-      text={'Launch'}
+      text={intl.formatMessage(i18n.launch)}
       className={clsx('cursor-pointer', className)}
       {...props}
     />

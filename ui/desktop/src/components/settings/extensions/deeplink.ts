@@ -174,14 +174,10 @@ export async function addExtensionFromDeepLink(
     config.type === 'streamable_http' && config.headers && Object.keys(config.headers).length > 0;
 
   if (hasEnvVars || hasHeaders) {
-    console.log(
-      'Environment variables or headers required, redirecting to extensions with env variables modal showing'
-    );
     setView('extensions', { deepLinkConfig: config, showEnvVars: true });
     return;
   }
 
-  console.log('No env vars required, activating extension directly');
   // Note: deeplink activation doesn't have access to sessionId
   // The extension will be added to config but not activated in the current session
   // It will be activated when the next session starts

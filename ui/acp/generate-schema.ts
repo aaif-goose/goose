@@ -20,12 +20,8 @@ const SCHEMA_PATH = resolve(ROOT, "crates/goose-acp/acp-schema.json");
 const META_PATH = resolve(ROOT, "crates/goose-acp/acp-meta.json");
 const OUTPUT_DIR = resolve(__dirname, "src/generated");
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-
-async function main() {
+// Export the main function so it can be imported by build-schema.ts
+export default async function main() {
   const schemaSrc = await fs.readFile(SCHEMA_PATH, "utf8");
   const jsonSchema = JSON.parse(
     schemaSrc.replaceAll("#/$defs/", "#/components/schemas/"),
@@ -138,7 +134,7 @@ async function generateClient(meta: { methods: MethodMeta[] }) {
 
   for (const m of meta.methods) {
     const fnName = methodToCamelCase(m.method);
-    const fullMethod = `_goose/${m.method}`;
+    const fullMethod = m.method;
 
     let paramType = "";
     let paramArg = "";
@@ -207,4 +203,12 @@ ${methodDefs.join("\n")}
 
   const clientPath = resolve(OUTPUT_DIR, "client.gen.ts");
   await fs.writeFile(clientPath, src);
+}
+
+// Run main if this file is executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

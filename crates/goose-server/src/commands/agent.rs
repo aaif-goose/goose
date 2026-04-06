@@ -4,6 +4,7 @@ use anyhow::Result;
 use axum::middleware;
 use axum_server::Handle;
 use goose_server::auth::check_token;
+#[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
 use goose_server::tls::self_signed_config;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
@@ -31,6 +32,7 @@ pub async fn run() -> Result<()> {
     // gateways, etc.) try to open TLS connections. Both `ring` and `aws-lc-rs`
     // features are enabled on rustls (via different transitive deps), so rustls
     // cannot auto-detect a provider — we must pick one explicitly.
+    #[cfg(feature = "rustls-tls")]
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     crate::logging::setup_logging(Some("goosed"))?;
@@ -74,21 +76,39 @@ pub async fn run() -> Result<()> {
     });
 
     if settings.tls {
-        let tls_setup = self_signed_config().await?;
+        #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
+        {
+            let tls_setup = self_signed_config().await?;
 
-        let handle = Handle::new();
-        let shutdown_handle = handle.clone();
-        tokio::spawn(async move {
-            shutdown_signal().await;
-            shutdown_handle.graceful_shutdown(None);
-        });
+            let handle = Handle::new();
+            let shutdown_handle = handle.clone();
+            tokio::spawn(async move {
+                shutdown_signal().await;
+                shutdown_handle.graceful_shutdown(None);
+            });
 
-        info!("listening on https://{}", addr);
+            info!("listening on https://{}", addr);
 
-        axum_server::bind_rustls(addr, tls_setup.config)
-            .handle(handle)
-            .serve(app.into_make_service())
-            .await?;
+            #[cfg(feature = "rustls-tls")]
+            axum_server::bind_rustls(addr, tls_setup.config)
+                .handle(handle)
+                .serve(app.into_make_service())
+                .await?;
+
+            #[cfg(feature = "native-tls")]
+            axum_server::bind_openssl(addr, tls_setup.config)
+                .handle(handle)
+                .serve(app.into_make_service())
+                .await?;
+        }
+
+        #[cfg(not(any(feature = "rustls-tls", feature = "native-tls")))]
+        {
+            anyhow::bail!(
+                "TLS was requested but no TLS backend is enabled. \
+                 Enable the `rustls-tls` or `native-tls` feature."
+            );
+        }
     } else {
         let listener = tokio::net::TcpListener::bind(addr).await?;
 
@@ -99,6 +119,7 @@ pub async fn run() -> Result<()> {
             .await?;
     }
 
+    #[cfg(feature = "otel")]
     if goose::otel::otlp::is_otlp_initialized() {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         goose::otel::otlp::shutdown_otlp();

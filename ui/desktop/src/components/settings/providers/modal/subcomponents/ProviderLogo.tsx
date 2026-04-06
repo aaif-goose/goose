@@ -8,7 +8,16 @@ import OpenRouterLogo from './icons/openrouter@3x.png';
 import SnowflakeLogo from './icons/snowflake@3x.png';
 import XaiLogo from './icons/xai@3x.png';
 import MiniMaxLogo from './icons/minimax@3x.png';
+import TanzuLogo from './icons/tanzu@3x.png';
 import DefaultLogo from './icons/default@3x.png';
+import { defineMessages, useIntl } from '../../../../../i18n';
+
+const i18n = defineMessages({
+  logoAlt: {
+    id: 'providerLogo.alt',
+    defaultMessage: '{providerName} logo',
+  },
+});
 
 // Map provider names to their logos
 const providerLogos: Record<string, string> = {
@@ -22,6 +31,7 @@ const providerLogos: Record<string, string> = {
   snowflake: SnowflakeLogo,
   xai: XaiLogo,
   minimax: MiniMaxLogo,
+  tanzu_ai: TanzuLogo,
   default: DefaultLogo,
 };
 
@@ -30,6 +40,7 @@ interface ProviderLogoProps {
 }
 
 export default function ProviderLogo({ providerName }: ProviderLogoProps) {
+  const intl = useIntl();
   // Convert provider name to lowercase and fetch the logo
   const logoKey = providerName.toLowerCase();
   const logo = providerLogos[logoKey] || DefaultLogo;
@@ -48,7 +59,7 @@ export default function ProviderLogo({ providerName }: ProviderLogoProps) {
       <div className="w-12 h-12 bg-black rounded-full overflow-hidden flex items-center justify-center">
         <img
           src={logo}
-          alt={`${providerName} logo`}
+          alt={intl.formatMessage(i18n.logoAlt, { providerName })}
           className={imageClassName}
           style={imageStyle}
         />

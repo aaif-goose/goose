@@ -266,9 +266,13 @@ pub struct ConfigKey {
     pub secret: bool,
     /// Optional default value for the key
     pub default: Option<String>,
-    /// Whether this key should be configured using OAuth device code flow
+    /// Whether this key should be configured using an OAuth flow
     /// When true, the provider's configure_oauth() method will be called instead of prompting for manual input
     pub oauth_flow: bool,
+    /// Whether this OAuth flow uses the device code grant (RFC 8628)
+    /// When true, the user must enter a verification code in the browser
+    #[serde(default)]
+    pub device_code_flow: bool,
     /// Whether this key should be shown prominently during provider setup
     /// (onboarding, settings modal, CLI configure)
     #[serde(default)]
@@ -290,6 +294,7 @@ impl ConfigKey {
             secret,
             default: default.map(|s| s.to_string()),
             oauth_flow: false,
+            device_code_flow: false,
             primary,
         }
     }
@@ -301,11 +306,12 @@ impl ConfigKey {
             secret,
             default: Some(T::DEFAULT.to_string()),
             oauth_flow: false,
+            device_code_flow: false,
             primary,
         }
     }
 
-    /// Create a new ConfigKey that uses OAuth device code flow for configuration
+    /// Create a new ConfigKey that uses an OAuth flow for configuration
     ///
     /// This is used for providers that support OAuth authentication instead of manual API key entry.
     /// When oauth_flow is true, the configuration system will call the provider's configure_oauth() method.
@@ -322,6 +328,29 @@ impl ConfigKey {
             secret,
             default: default.map(|s| s.to_string()),
             oauth_flow: true,
+            device_code_flow: false,
+            primary,
+        }
+    }
+
+    /// Create a new ConfigKey that uses OAuth device code flow (RFC 8628) for configuration
+    ///
+    /// Similar to new_oauth, but indicates the provider uses the device code grant where the user
+    /// must enter a verification code in the browser.
+    pub fn new_oauth_device_code(
+        name: &str,
+        required: bool,
+        secret: bool,
+        default: Option<&str>,
+        primary: bool,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            required,
+            secret,
+            default: default.map(|s| s.to_string()),
+            oauth_flow: true,
+            device_code_flow: true,
             primary,
         }
     }
@@ -372,6 +401,8 @@ pub struct Usage {
     pub input_tokens: Option<i32>,
     pub output_tokens: Option<i32>,
     pub total_tokens: Option<i32>,
+    pub cache_read_input_tokens: Option<i32>,
+    pub cache_write_input_tokens: Option<i32>,
 }
 
 fn sum_optionals<T>(a: Option<T>, b: Option<T>) -> Option<T>
@@ -394,6 +425,13 @@ impl Add for Usage {
             sum_optionals(self.input_tokens, other.input_tokens),
             sum_optionals(self.output_tokens, other.output_tokens),
             sum_optionals(self.total_tokens, other.total_tokens),
+        )
+        .with_cache_tokens(
+            sum_optionals(self.cache_read_input_tokens, other.cache_read_input_tokens),
+            sum_optionals(
+                self.cache_write_input_tokens,
+                other.cache_write_input_tokens,
+            ),
         )
     }
 }
@@ -425,7 +463,19 @@ impl Usage {
             input_tokens,
             output_tokens,
             total_tokens: calculated_total,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
         }
+    }
+
+    pub fn with_cache_tokens(
+        mut self,
+        cache_read_input_tokens: Option<i32>,
+        cache_write_input_tokens: Option<i32>,
+    ) -> Self {
+        self.cache_read_input_tokens = cache_read_input_tokens;
+        self.cache_write_input_tokens = cache_write_input_tokens;
+        self
     }
 }
 
@@ -534,9 +584,17 @@ pub trait Provider: Send + Sync {
         Ok(vec![])
     }
 
+    fn skip_canonical_filtering(&self) -> bool {
+        false
+    }
+
     /// Fetch models filtered by canonical registry and usability
     async fn fetch_recommended_models(&self) -> Result<Vec<String>, ProviderError> {
         let all_models = self.fetch_supported_models().await?;
+
+        if self.skip_canonical_filtering() {
+            return Ok(all_models);
+        }
 
         let registry = CanonicalModelRegistry::bundled().map_err(|e| {
             ProviderError::ExecutionError(format!("Failed to load canonical registry: {}", e))
@@ -657,9 +715,15 @@ pub trait Provider: Send + Sync {
         )
         .map_err(|e| ProviderError::ContextLengthExceeded(e.to_string()))?;
 
+        use super::cli_common::{
+            SESSION_NAME_BEGIN_MARKER, SESSION_NAME_END_MARKER, SESSION_NAME_SUFFIX,
+        };
         let user_text = format!(
-            "---BEGIN USER MESSAGES---\n{}\n---END USER MESSAGES---\n\nGenerate a short title for the above messages.",
-            context.join("\n")
+            "{}\n{}\n{}\n\n{}",
+            SESSION_NAME_BEGIN_MARKER,
+            context.join("\n"),
+            SESSION_NAME_END_MARKER,
+            SESSION_NAME_SUFFIX,
         );
         let message = Message::user().with_text(&user_text);
         let result = self
@@ -1077,5 +1141,20 @@ mod tests {
         assert_eq!(info.input_token_cost, Some(0.0000025));
         assert_eq!(info.output_token_cost, Some(0.00001));
         assert_eq!(info.currency, Some("$".to_string()));
+    }
+
+    #[test]
+    fn test_usage_addition_includes_cached_tokens() {
+        let usage_a =
+            Usage::new(Some(100), Some(20), Some(120)).with_cache_tokens(Some(10), Some(5));
+        let usage_b = Usage::new(Some(50), Some(8), Some(58)).with_cache_tokens(Some(4), Some(1));
+
+        let combined = usage_a + usage_b;
+
+        assert_eq!(combined.input_tokens, Some(150));
+        assert_eq!(combined.output_tokens, Some(28));
+        assert_eq!(combined.total_tokens, Some(178));
+        assert_eq!(combined.cache_read_input_tokens, Some(14));
+        assert_eq!(combined.cache_write_input_tokens, Some(6));
     }
 }

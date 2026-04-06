@@ -5,6 +5,7 @@ use tracing_subscriber::{
     Registry,
 };
 
+#[cfg(feature = "otel")]
 use goose::otel::otlp;
 use goose::tracing::langfuse_layer;
 
@@ -55,6 +56,7 @@ pub fn setup_logging(name: Option<&str>) -> Result<()> {
         console_layer.with_filter(base_env_filter).boxed(),
     ];
 
+    #[cfg(feature = "otel")]
     layers.extend(otlp::init_otlp_layers(goose::config::Config::global()));
 
     if let Some(langfuse) = langfuse_layer::create_langfuse_observer() {

@@ -4,6 +4,7 @@ import {
   Brain,
   Camera,
   Code2,
+  Delegate,
   Eye,
   FileEdit,
   FilePlus,
@@ -74,6 +75,12 @@ export const getToolIcon = (toolName: string): React.ComponentType<ToolIconProps
       return Numbers;
     case 'docs_tool':
       return FileText;
+
+    // Delegation Tools
+    case 'delegate':
+      return Delegate;
+    case 'load':
+      return Eye;
 
     // Special Tools
     case 'final_output':

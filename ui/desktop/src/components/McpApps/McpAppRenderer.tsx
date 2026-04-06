@@ -23,16 +23,19 @@ import type {
   McpUiResourcePermissions,
   McpUiSizeChangedNotification,
 } from '@modelcontextprotocol/ext-apps/app-bridge';
-import type { CallToolResult, JSONRPCRequest } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, JSONRPCRequest, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { GripHorizontal, Maximize2, PictureInPicture2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { callTool, readResource } from '../../api';
+import { getCachedTools } from './toolsCache';
 import { AppEvents } from '../../constants/events';
 import { useTheme } from '../../contexts/ThemeContext';
 import { cn } from '../../utils';
 import { errorMessage } from '../../utils/conversionUtils';
 import { getProtocol, isProtocolSafe } from '../../utils/urlSecurity';
+import { defineMessages, useIntl } from '../../i18n';
 import FlyingBird from '../FlyingBird';
+import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
 import {
   GooseDisplayMode,
   SandboxPermissions,
@@ -53,7 +56,75 @@ import {
   PIP_MARGIN_BOTTOM,
 } from './useDisplayMode';
 
+const i18n = defineMessages({
+  appFallbackTitle: {
+    id: 'mcpAppRenderer.appFallbackTitle',
+    defaultMessage: 'App',
+  },
+  pictureInPicture: {
+    id: 'mcpAppRenderer.pictureInPicture',
+    defaultMessage: 'Picture-in-Picture',
+  },
+  exitFullscreenTitle: {
+    id: 'mcpAppRenderer.exitFullscreenTitle',
+    defaultMessage: 'Exit fullscreen (Esc)',
+  },
+  exitFullscreen: {
+    id: 'mcpAppRenderer.exitFullscreen',
+    defaultMessage: 'Exit fullscreen',
+  },
+  fullscreen: {
+    id: 'mcpAppRenderer.fullscreen',
+    defaultMessage: 'Fullscreen',
+  },
+  close: {
+    id: 'mcpAppRenderer.close',
+    defaultMessage: 'Close',
+  },
+  movePipWindow: {
+    id: 'mcpAppRenderer.movePipWindow',
+    defaultMessage: 'Move Picture-in-Picture window (use arrow keys)',
+  },
+  playingInPip: {
+    id: 'mcpAppRenderer.playingInPip',
+    defaultMessage: 'Playing in Picture-in-Picture',
+  },
+  invalidUrl: {
+    id: 'mcpAppRenderer.invalidUrl',
+    defaultMessage: 'Invalid URL',
+  },
+  openExternalLinkTitle: {
+    id: 'mcpAppRenderer.openExternalLinkTitle',
+    defaultMessage: 'Open External Link',
+  },
+  openProtocolLink: {
+    id: 'mcpAppRenderer.openProtocolLink',
+    defaultMessage: 'Open {protocol} link?',
+  },
+  openLinkDetail: {
+    id: 'mcpAppRenderer.openLinkDetail',
+    defaultMessage: 'This will open: {url}',
+  },
+  cancelButton: {
+    id: 'mcpAppRenderer.cancelButton',
+    defaultMessage: 'Cancel',
+  },
+  openButton: {
+    id: 'mcpAppRenderer.openButton',
+    defaultMessage: 'Open',
+  },
+  failedToLoadResource: {
+    id: 'mcpAppRenderer.failedToLoadResource',
+    defaultMessage: 'Failed to load resource',
+  },
+  failedToInitSandbox: {
+    id: 'mcpAppRenderer.failedToInitSandbox',
+    defaultMessage: 'Failed to initialize sandbox proxy',
+  },
+});
+
 const DEFAULT_IFRAME_HEIGHT = 200;
+const FULLSCREEN_HEADER_HEIGHT = 48;
 
 const DISPLAY_MODE_LAYOUTS: Record<GooseDisplayMode, DimensionLayout> = {
   inline: { width: 'fixed', height: 'unbounded' },
@@ -138,6 +209,7 @@ async function fetchMcpAppProxyUrl(csp: McpUiResourceCsp | null): Promise<string
 interface McpAppRendererProps {
   resourceUri: string;
   extensionName: string;
+  toolName?: string;
   sessionId?: string | null;
   toolInput?: McpAppToolInput;
   toolInputPartial?: McpAppToolInputPartial;
@@ -235,6 +307,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
 export default function McpAppRenderer({
   resourceUri,
   extensionName,
+  toolName,
   sessionId,
   toolInput,
   toolInputPartial,
@@ -245,7 +318,9 @@ export default function McpAppRenderer({
   cachedHtml,
   onDisplayModeChange,
 }: McpAppRendererProps) {
+  const intl = useIntl();
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const dm = useDisplayMode({ displayMode, onDisplayModeChange, containerRef });
   const {
@@ -258,6 +333,7 @@ export default function McpAppRenderer({
     isInline,
     appSupportsFullscreen,
     appSupportsPip,
+    appTitle,
     changeDisplayMode,
     inlineHeight,
     pipPosition,
@@ -266,6 +342,42 @@ export default function McpAppRenderer({
   } = dm;
 
   const { resolvedTheme, mcpHostStyles } = useTheme();
+
+  // Fetch the MCP Tool definition (name, description, inputSchema) for hostContext.toolInfo.
+  // Note: the spec also calls for toolInfo.id — the JSON-RPC id of the tools/call request
+  // between the MCP client and server. That id is generated internally by rmcp's transport
+  // layer and isn't surfaced through the extension manager or message stream to the frontend.
+  // Plumbing it would require changes from rmcp → extension_manager → message → SSE → UI.
+  const [mcpTool, setMcpTool] = useState<Tool | null>(null);
+  const toolDefRef = useRef<Tool | null>(null);
+  useEffect(() => {
+    if (!sessionId || !toolName || toolDefRef.current) {
+      if (toolDefRef.current) setMcpTool(toolDefRef.current);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const tools = await getCachedTools(sessionId, extensionName || undefined);
+      if (cancelled || !tools) return;
+
+      const prefixedName = extensionName ? `${extensionName}__${toolName}` : toolName;
+      const match = tools.find((t) => t.name === prefixedName);
+      if (match) {
+        const tool: Tool = {
+          name: toolName,
+          description: match.description || undefined,
+          inputSchema: (match.input_schema as Tool['inputSchema']) ?? { type: 'object' as const },
+        };
+        toolDefRef.current = tool;
+        setMcpTool(tool);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, toolName, extensionName]);
 
   // Survive StrictMode remounts — replay cached results instead of re-fetching,
   // which prevents the iframe from being torn down and recreated (visible flicker).
@@ -399,7 +511,7 @@ export default function McpAppRenderer({
           }
           dispatch({
             type: 'RESOURCE_FAILED',
-            message: errorMessage(err, 'Failed to load resource'),
+            message: errorMessage(err, intl.formatMessage(i18n.failedToLoadResource)),
           });
           return;
         }
@@ -411,7 +523,7 @@ export default function McpAppRenderer({
     return () => {
       cancelled = true;
     };
-  }, [resourceUri, extensionName, sessionId, cachedHtml]);
+  }, [resourceUri, extensionName, sessionId, cachedHtml, intl]);
 
   // Create the sandbox proxy URL once we have HTML and metadata.
   // On StrictMode remount, reuse the cached URL to avoid recreating the proxy
@@ -431,10 +543,10 @@ export default function McpAppRenderer({
         sandboxUrlRef.current = { url, csp: pendingCsp };
         dispatch({ type: 'SANDBOX_READY', sandboxUrl: url, sandboxCsp: pendingCsp });
       } else {
-        dispatch({ type: 'SANDBOX_FAILED', message: 'Failed to initialize sandbox proxy' });
+        dispatch({ type: 'SANDBOX_FAILED', message: intl.formatMessage(i18n.failedToInitSandbox) });
       }
     });
-  }, [state.status, pendingCsp]);
+  }, [state.status, pendingCsp, intl]);
 
   const handleOpenLink = useCallback(async ({ url }: { url: string }) => {
     if (isProtocolSafe(url)) {
@@ -444,16 +556,16 @@ export default function McpAppRenderer({
 
     const protocol = getProtocol(url);
     if (!protocol) {
-      return { status: 'error' as const, message: 'Invalid URL' };
+      return { status: 'error' as const, message: intl.formatMessage(i18n.invalidUrl) };
     }
 
     const result = await window.electron.showMessageBox({
       type: 'question',
-      buttons: ['Cancel', 'Open'],
+      buttons: [intl.formatMessage(i18n.cancelButton), intl.formatMessage(i18n.openButton)],
       defaultId: 0,
-      title: 'Open External Link',
-      message: `Open ${protocol} link?`,
-      detail: `This will open: ${url}`,
+      title: intl.formatMessage(i18n.openExternalLinkTitle),
+      message: intl.formatMessage(i18n.openProtocolLink, { protocol }),
+      detail: intl.formatMessage(i18n.openLinkDetail, { url }),
     });
 
     if (result.response !== 1) {
@@ -462,7 +574,7 @@ export default function McpAppRenderer({
 
     await window.electron.openExternal(url);
     return { status: 'success' as const };
-  }, []);
+  }, [intl]);
 
   const handleMessage = useCallback(
     async ({ content }: { content: Array<{ type: string; text?: string }> }) => {
@@ -540,12 +652,7 @@ export default function McpAppRenderer({
   );
 
   const handleLoggingMessage = useCallback(
-    ({ level, logger, data }: { level?: string; logger?: string; data?: unknown }) => {
-      console.log(
-        `[MCP App Notification]${logger ? ` [${logger}]` : ''} ${level || 'info'}:`,
-        data
-      );
-    },
+    (_notification: { level?: string; logger?: string; data?: unknown }) => {},
     []
   );
 
@@ -660,7 +767,7 @@ export default function McpAppRenderer({
 
   const hostContext = useMemo((): McpUiHostContext => {
     const context: McpUiHostContext = {
-      // todo: toolInfo: {}
+      toolInfo: mcpTool ? { tool: mcpTool } : undefined,
       theme: resolvedTheme,
       styles: mcpHostStyles,
       displayMode: activeDisplayMode as McpUiDisplayMode,
@@ -672,7 +779,7 @@ export default function McpAppRenderer({
       containerDimensions: getContainerDimensions(
         activeDisplayMode,
         containerWidth,
-        containerHeight
+        isFullscreen ? containerHeight - FULLSCREEN_HEADER_HEIGHT : containerHeight
       ),
       locale: navigator.language,
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -695,10 +802,12 @@ export default function McpAppRenderer({
     resolvedTheme,
     mcpHostStyles,
     activeDisplayMode,
+    isFullscreen,
     isStandalone,
     containerWidth,
     containerHeight,
     effectiveDisplayModes,
+    mcpTool,
   ]);
 
   const isToolCancelled = !!toolCancelled;
@@ -754,36 +863,53 @@ export default function McpAppRenderer({
     );
   };
 
-  const showControls = !isStandalone && !isError && (appSupportsFullscreen || appSupportsPip);
+  const showControls =
+    !isStandalone && !isError && (appSupportsFullscreen || appSupportsPip || isFullscreen || isPip);
+
+  const fullscreenTitle = useMemo(() => {
+    if (appTitle) return appTitle;
+    if (extensionName) return formatExtensionName(extensionName);
+    return intl.formatMessage(i18n.appFallbackTitle);
+  }, [appTitle, extensionName, intl]);
+
+  const renderFullscreenHeader = () => (
+    <div
+      className="flex shrink-0 items-center border-b border-border-primary bg-background-primary px-3"
+      style={{ height: `${FULLSCREEN_HEADER_HEIGHT}px` }}
+    >
+      <div className="min-w-0 flex-1" />
+      <span className="truncate px-4 text-sm font-medium text-text-secondary">
+        {fullscreenTitle}
+      </span>
+      <div className="flex flex-1 items-center justify-end gap-1">
+        {appSupportsPip && (
+          <button
+            onClick={() => changeDisplayMode('pip')}
+            className="no-drag cursor-pointer rounded-md p-1.5 text-text-secondary transition-colors hover:bg-black/10 hover:text-text-primary dark:hover:bg-white/10"
+            title={intl.formatMessage(i18n.pictureInPicture)}
+            aria-label={intl.formatMessage(i18n.pictureInPicture)}
+          >
+            <PictureInPicture2 size={16} />
+          </button>
+        )}
+        <button
+          ref={fullscreenCloseRef}
+          onClick={() => changeDisplayMode('inline')}
+          className="no-drag cursor-pointer rounded-md p-1.5 text-text-secondary transition-colors hover:bg-black/10 hover:text-text-primary dark:hover:bg-white/10"
+          title={intl.formatMessage(i18n.exitFullscreenTitle)}
+          aria-label={intl.formatMessage(i18n.exitFullscreen)}
+        >
+          <X size={16} />
+        </button>
+      </div>
+    </div>
+  );
 
   const renderDisplayModeControls = () => {
     if (!showControls) return null;
 
-    if (activeDisplayMode === 'fullscreen') {
-      return (
-        <div className="no-drag absolute top-3 right-3 z-[60] flex gap-1">
-          {appSupportsPip && (
-            <button
-              onClick={() => changeDisplayMode('pip')}
-              className="cursor-pointer rounded-md bg-black/50 p-1.5 text-white backdrop-blur-sm transition-opacity hover:bg-black/70"
-              title="Picture-in-Picture"
-              aria-label="Picture-in-Picture"
-            >
-              <PictureInPicture2 size={16} />
-            </button>
-          )}
-          <button
-            ref={fullscreenCloseRef}
-            onClick={() => changeDisplayMode('inline')}
-            className="cursor-pointer rounded-md bg-black/50 p-1.5 text-white backdrop-blur-sm transition-opacity hover:bg-black/70"
-            title="Exit fullscreen (Esc)"
-            aria-label="Exit fullscreen"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      );
-    }
+    // Fullscreen controls are rendered by renderFullscreenHeader instead.
+    if (activeDisplayMode === 'fullscreen') return null;
 
     if (activeDisplayMode === 'pip') {
       return (
@@ -792,8 +918,8 @@ export default function McpAppRenderer({
             <button
               onClick={() => changeDisplayMode('fullscreen')}
               className="cursor-pointer rounded-md bg-black/50 p-1 text-white backdrop-blur-sm transition-opacity hover:bg-black/70"
-              title="Fullscreen"
-              aria-label="Fullscreen"
+              title={intl.formatMessage(i18n.fullscreen)}
+              aria-label={intl.formatMessage(i18n.fullscreen)}
             >
               <Maximize2 size={14} />
             </button>
@@ -801,8 +927,8 @@ export default function McpAppRenderer({
           <button
             onClick={() => changeDisplayMode('inline')}
             className="cursor-pointer rounded-md bg-black/50 p-1 text-white backdrop-blur-sm transition-opacity hover:bg-black/70"
-            title="Close"
-            aria-label="Close"
+            title={intl.formatMessage(i18n.close)}
+            aria-label={intl.formatMessage(i18n.close)}
           >
             <X size={14} />
           </button>
@@ -817,8 +943,8 @@ export default function McpAppRenderer({
           <button
             onClick={() => changeDisplayMode('fullscreen')}
             className="cursor-pointer rounded-md bg-black/40 p-1.5 text-white backdrop-blur-sm transition-opacity hover:bg-black/60"
-            title="Fullscreen"
-            aria-label="Fullscreen"
+            title={intl.formatMessage(i18n.fullscreen)}
+            aria-label={intl.formatMessage(i18n.fullscreen)}
           >
             <Maximize2 size={14} />
           </button>
@@ -827,8 +953,8 @@ export default function McpAppRenderer({
           <button
             onClick={() => changeDisplayMode('pip')}
             className="cursor-pointer rounded-md bg-black/40 p-1.5 text-white backdrop-blur-sm transition-opacity hover:bg-black/60"
-            title="Picture-in-Picture"
-            aria-label="Picture-in-Picture"
+            title={intl.formatMessage(i18n.pictureInPicture)}
+            aria-label={intl.formatMessage(i18n.pictureInPicture)}
           >
             <PictureInPicture2 size={14} />
           </button>
@@ -885,7 +1011,7 @@ export default function McpAppRenderer({
             className="cursor-pointer flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
           >
             <PictureInPicture2 size={14} />
-            <span>Playing in Picture-in-Picture</span>
+            <span>{intl.formatMessage(i18n.playingInPip)}</span>
           </button>
         </div>
       )}
@@ -893,15 +1019,16 @@ export default function McpAppRenderer({
       {/* Stable app container — never unmounted, only repositioned via CSS */}
       <div
         ref={containerRef}
-        className={cn(containerClasses, isPip && 'group/pip')}
+        className={cn(containerClasses, isFillsViewport && 'flex flex-col', isPip && 'group/pip')}
         style={containerStyle}
       >
+        {isFullscreen && renderFullscreenHeader()}
         {isPip && (
           <div className="pointer-events-none sticky top-1 z-20 flex h-0 items-start justify-between px-1 opacity-0 transition-opacity group-hover/pip:pointer-events-auto group-hover/pip:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
             <div
               role="button"
               tabIndex={0}
-              aria-label="Move Picture-in-Picture window (use arrow keys)"
+              aria-label={intl.formatMessage(i18n.movePipWindow)}
               className="pointer-events-auto cursor-grab rounded-md bg-black/50 p-1 text-white backdrop-blur-sm hover:bg-black/70 active:cursor-grabbing"
               onPointerDown={pipHandlers.onPointerDown}
               onPointerMove={pipHandlers.onPointerMove}
@@ -914,7 +1041,7 @@ export default function McpAppRenderer({
             <div className="flex gap-1">{renderDisplayModeControls()}</div>
           </div>
         )}
-        <div className={cn('relative w-full', !isPip && 'h-full')}>
+        <div ref={contentRef} className={cn('relative w-full', !isPip && 'flex-1 min-h-0')}>
           {!isPip && renderDisplayModeControls()}
           {renderContent()}
         </div>

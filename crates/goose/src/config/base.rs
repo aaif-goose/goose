@@ -14,6 +14,26 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
+fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+
+        file.write_all(content.as_bytes())
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, content)
+    }
+}
+
 const KEYRING_SERVICE: &str = "goose";
 const KEYRING_USERNAME: &str = "secrets";
 pub const CONFIG_YAML_NAME: &str = "config.yaml";
@@ -132,13 +152,16 @@ impl Default for Config {
             }
         });
 
-        let secrets = match env::var("GOOSE_DISABLE_KEYRING") {
-            Ok(_) => SecretStorage::File {
+        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
+            || keyring_disabled_in_config(&config_path)
+        {
+            SecretStorage::File {
                 path: config_dir.join("secrets.yaml"),
-            },
-            Err(_) => SecretStorage::Keyring {
+            }
+        } else {
+            SecretStorage::Keyring {
                 service: KEYRING_SERVICE.to_string(),
-            },
+            }
         };
         Config {
             config_path,
@@ -227,6 +250,22 @@ macro_rules! config_value {
 
 fn parse_yaml_content(content: &str) -> Result<Mapping, ConfigError> {
     serde_yaml::from_str(content).map_err(|e| e.into())
+}
+
+/// Read the GOOSE_DISABLE_KEYRING flag from the config file.
+///
+/// Called before Config is fully initialised, so we do a minimal raw read
+/// rather than going through `get_param`.  All errors are treated as `false`
+/// (keyring stays enabled) so a missing/malformed file is never fatal here.
+fn keyring_disabled_in_config(config_path: &Path) -> bool {
+    std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|s| parse_yaml_content(&s).ok())
+        .and_then(|m| {
+            m.get("GOOSE_DISABLE_KEYRING")
+                .map(|v| v.as_bool().unwrap_or(false) || v.as_str().is_some_and(|s| s == "true"))
+        })
+        .unwrap_or(false)
 }
 
 impl Config {
@@ -856,7 +895,7 @@ impl Config {
             }
             SecretStorage::File { path } => {
                 let yaml_value = serde_yaml::to_string(&values)?;
-                std::fs::write(path, yaml_value)?;
+                write_secrets_file(path, &yaml_value)?;
             }
         };
 
@@ -897,7 +936,7 @@ impl Config {
             }
             SecretStorage::File { path } => {
                 let yaml_value = serde_yaml::to_string(&values)?;
-                std::fs::write(path, yaml_value)?;
+                write_secrets_file(path, &yaml_value)?;
             }
         };
 
@@ -937,7 +976,7 @@ impl Config {
         std::fs::create_dir_all(Paths::config_dir())?;
         let path = Self::secrets_file_path();
         let yaml_value = serde_yaml::to_string(values)?;
-        std::fs::write(path, yaml_value)?;
+        write_secrets_file(&path, &yaml_value)?;
         Ok(())
     }
 
@@ -1012,6 +1051,7 @@ config_value!(CODEX_COMMAND, String, "codex");
 config_value!(CODEX_REASONING_EFFORT, String, "high");
 config_value!(CODEX_ENABLE_SKILLS, String, "true");
 config_value!(CODEX_SKIP_GIT_CHECK, String, "false");
+config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 
 config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);
@@ -1938,6 +1978,24 @@ mod tests {
         // But reading via get_param should still return the default
         let value: String = config.get_param("default_key")?;
         assert_eq!(value, "default_value");
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_secrets_file_created_with_restricted_permissions() -> Result<(), ConfigError> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().unwrap();
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_path = dir.path().join("secrets.yaml");
+
+        let config = Config::new_with_file_secrets(config_file.path(), &secrets_path)?;
+        config.set_secret("key", &"value")?;
+
+        let mode = std::fs::metadata(&secrets_path)?.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
 
         Ok(())
     }

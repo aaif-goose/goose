@@ -161,7 +161,7 @@ impl ProviderDef for GeminiCliProvider {
         ProviderMetadata::new(
             GEMINI_CLI_PROVIDER_NAME,
             "Gemini CLI",
-            "[Deprecated: use gemini-acp instead] Execute Gemini models via gemini CLI tool. Requires gemini CLI installed.",
+            "[Deprecated: use gemini_oauth instead] Execute Gemini models via gemini CLI tool. Requires gemini CLI installed.",
             GEMINI_CLI_DEFAULT_MODEL,
             GEMINI_CLI_KNOWN_MODELS.to_vec(),
             GEMINI_CLI_DOC_URL,

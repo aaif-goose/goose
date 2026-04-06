@@ -1,0 +1,210 @@
+name: Code Review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+      oidc_proxy_url:
+        description: 'OIDC proxy URL (overrides repo variable)'
+        required: false
+        type: string
+      review_instructions:
+        description: 'Instructions for the code review'
+        required: false
+        default: 'Review the changes for correctness'
+        type: string
+  # pull_request_target:
+  #   types: [opened, synchronize, reopened]
+
+concurrency:
+  group: code-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Mint OIDC token
+        id: oidc
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          TOKEN_AUDIENCE: goose-oidc-proxy
+        with:
+          script: |
+            const token = await core.getIDToken(process.env.TOKEN_AUDIENCE);
+            core.setOutput('token', token);
+            core.setSecret(token);
+
+      - name: Gather PR metadata and diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+          mkdir -p /tmp/code-review
+
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json title --jq '.title' > /tmp/code-review/title.txt
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // "(no description)"' > /tmp/code-review/body.txt
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid' > /tmp/code-review/commit_id.txt
+          gh pr diff "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" > /tmp/code-review/pr.diff
+
+          TITLE=$(cat /tmp/code-review/title.txt)
+          BODY=$(cat /tmp/code-review/body.txt)
+          printf '# %s\n\n## Description\n\n%s\n' "$TITLE" "$BODY" > /tmp/code-review/pr.md
+
+      - name: Write OIDC token to file
+        run: echo "$OIDC_TOKEN" > /tmp/code-review/oidc-token.txt
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+
+      - name: Upload review inputs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: code-review-inputs
+          path: /tmp/code-review/
+          retention-days: 1
+
+  review:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 15
+
+    container:
+      image: ghcr.io/block/goose:latest
+      options: --user root
+      env:
+        HOME: /tmp/goose-home
+
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y ripgrep jq
+
+      - name: Download review inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: code-review-inputs
+          path: /tmp/code-review
+
+      - name: Install custom provider and run goose review
+        env:
+          GOOSE_PROVIDER: anthropic-oidc-proxy
+          GOOSE_MODEL: ${{ vars.GOOSE_CODE_REVIEW_MODEL || 'claude-opus-4-6' }}
+          OIDC_PROXY_URL: ${{ github.event.inputs.oidc_proxy_url || vars.OIDC_PROXY_URL }}
+          REVIEW_INSTRUCTIONS: ${{ github.event.inputs.review_instructions || 'Review the changes for correctness' }}
+        run: |
+          ANTHROPIC_OIDC_PROXY_API_KEY=$(cat /tmp/code-review/oidc-token.txt)
+          export ANTHROPIC_OIDC_PROXY_API_KEY
+          rm /tmp/code-review/oidc-token.txt
+
+          mkdir -p "$HOME/.local/share/goose/sessions"
+          mkdir -p "$HOME/.config/goose/custom_providers"
+          cp oidc-proxy/anthropic-oidc-proxy.json "$HOME/.config/goose/custom_providers/"
+
+          goose run \
+            --recipe .github/recipes/code-review.yaml \
+            --params pr_directory=/tmp/code-review \
+            --params instructions="$REVIEW_INSTRUCTIONS"
+
+      - name: Upload review output
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: code-review-output
+          path: |
+            /tmp/conclusion.json
+            /tmp/comments.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  submit:
+    needs: [prepare, review]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    if: always() && needs.review.result == 'success'
+
+    steps:
+      - name: Download review inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: code-review-inputs
+          path: /tmp/inputs
+
+      - name: Download review output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: code-review-output
+          path: /tmp/output
+
+      - name: Submit review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+        run: |
+          CONCLUSION="/tmp/output/conclusion.json"
+          COMMENTS="/tmp/output/comments.json"
+          COMMIT_ID=$(cat /tmp/inputs/commit_id.txt)
+
+          if [ ! -f "$COMMENTS" ]; then
+            echo "No comments produced, skipping review submission."
+            exit 0
+          fi
+
+          if [ ! -f "$CONCLUSION" ]; then
+            echo '{"body":"","event":"COMMENT"}' > "$CONCLUSION"
+          fi
+
+          jq -n \
+            --arg commit_id "$COMMIT_ID" \
+            --slurpfile conclusion "$CONCLUSION" \
+            --slurpfile comments "$COMMENTS" \
+            '{
+              commit_id: $commit_id,
+              event: $conclusion[0].event,
+              comments: $comments[0]
+            }
+            | if $conclusion[0].body != "" then .body = $conclusion[0].body else . end
+            ' > /tmp/review-payload.json
+
+          if gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+              --input /tmp/review-payload.json; then
+            echo "Review submitted with inline comments."
+            exit 0
+          fi
+
+          echo "Inline comments failed, folding into review body."
+
+          jq -n \
+            --arg commit_id "$COMMIT_ID" \
+            --slurpfile conclusion "$CONCLUSION" \
+            --slurpfile comments "$COMMENTS" \
+            '{
+              commit_id: $commit_id,
+              body: (
+                $conclusion[0].body + "\n\n---\n\n## Inline Comments\n\n" +
+                ([$comments[0][] |
+                  "### `" + .path + "` (line " + (.line | tostring) + ")\n\n" + .body
+                ] | join("\n\n---\n\n"))
+              ),
+              event: $conclusion[0].event
+            }' \
+          | gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+              --input -

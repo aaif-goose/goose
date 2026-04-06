@@ -1,3 +1,5 @@
+#[cfg(not(windows))]
+use crate::subprocess::merged_path;
 use crate::subprocess::SubprocessExt;
 #[cfg(target_os = "macos")]
 use base64::Engine;
@@ -863,21 +865,24 @@ impl ComputerControllerServer {
                         )
                     })?
             }
-            _ => Command::new(shell)
-                .arg(shell_arg)
-                .arg(&command)
-                .env("GOOSE_TERMINAL", "1")
-                .env("AGENT", "goose")
-                .set_no_window()
-                .output()
-                .await
-                .map_err(|e| {
+            _ => {
+                let mut cmd = Command::new(shell);
+                cmd.arg(shell_arg)
+                    .arg(&command)
+                    .env("GOOSE_TERMINAL", "1")
+                    .env("AGENT", "goose");
+                #[cfg(not(windows))]
+                if let Some(path) = merged_path() {
+                    cmd.env("PATH", path);
+                }
+                cmd.set_no_window().output().await.map_err(|e| {
                     ErrorData::new(
                         ErrorCode::INTERNAL_ERROR,
                         format!("Failed to run script: {}", e),
                         None,
                     )
-                })?,
+                })?
+            }
         };
 
         let output_str = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -1065,16 +1070,18 @@ impl ComputerControllerServer {
 
     #[cfg(target_os = "macos")]
     fn run_peekaboo_cmd(&self, args: &[&str]) -> Result<String, ErrorData> {
-        let output = std::process::Command::new("peekaboo")
-            .args(args)
-            .output()
-            .map_err(|e| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Failed to run peekaboo: {}", e),
-                    None,
-                )
-            })?;
+        let mut cmd = std::process::Command::new("peekaboo");
+        cmd.args(args);
+        if let Some(path) = merged_path() {
+            cmd.env("PATH", path);
+        }
+        let output = cmd.output().map_err(|e| {
+            ErrorData::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("Failed to run peekaboo: {}", e),
+                None,
+            )
+        })?;
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         if !output.status.success() {

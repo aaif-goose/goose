@@ -19,12 +19,7 @@ jobs:
     steps:
     - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
       with:
-        fetch-depth: 0 # to generate complete release log
-
-    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
-      with:
-        ref: ${{ github.base_ref }}
-        path: './prior-version'
+        fetch-depth: 0
 
     - uses: cashapp/activate-hermit@e49f5cb4dd64ff0b0b659d1d8df499595451155a # v1
     - uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b  # v7.2.0
@@ -39,10 +34,16 @@ jobs:
         echo "Version: $VERSION"
 
     - name: Get prior version
-      working-directory: './prior-version'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        PRIOR_VERSION=$(just get-tag-version)
-        echo "prior_ref=v$PRIOR_VERSION" >> $GITHUB_ENV
+        PRIOR_TAG=$(just get-prior-version "${{ env.version }}")
+        if [[ -z "$PRIOR_TAG" ]]; then
+          echo "No prior version (first release), using first commit"
+          PRIOR_TAG=$(git rev-list --max-parents=0 HEAD)
+        fi
+        echo "prior_ref=$PRIOR_TAG" >> $GITHUB_ENV
+        echo "Prior ref: $PRIOR_TAG"
 
     - name: Generate release notes
       uses: ./.github/actions/generate-release-pr-body

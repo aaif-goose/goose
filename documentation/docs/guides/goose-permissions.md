@@ -145,3 +145,17 @@ Here's how to configure:
   
   Read/write approval makes best effort attempt at classifying read or write tools. This is interpreted by your LLM provider. 
   :::
+
+## CLI Provider Permission Integration
+
+When using [CLI providers](/docs/guides/cli-providers) like Claude Code, goose integrates with the provider's native permission system. In approve mode, permission requests from Claude Code are routed through goose's confirmation interface, giving you a unified experience.
+
+For example, with Claude Code in approve mode:
+- Claude Code detects sensitive operations (file writes, shell commands, tool calls)
+- The permission prompt appears in goose's interface (CLI or Desktop)
+- Your allow/deny decision is sent back to Claude Code
+- Claude Code proceeds or adapts based on your response
+
+This integration uses the same mechanism as the official Claude Agent SDKs, ensuring compatibility and consistent behavior.
+
+See [CLI Providers - Claude Code Configuration](/docs/guides/cli-providers#claude-code-configuration) for setup details.

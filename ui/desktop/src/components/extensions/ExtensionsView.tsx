@@ -17,6 +17,40 @@ import { activateExtensionDefault } from '../settings/extensions';
 import { useConfig } from '../ConfigContext';
 import { SearchView } from '../conversation/SearchView';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  heading: {
+    id: 'extensionsView.heading',
+    defaultMessage: 'Extensions',
+  },
+  description: {
+    id: 'extensionsView.description',
+    defaultMessage:
+      'These extensions use the Model Context Protocol (MCP). They can expand Goose\'s capabilities using three main components: Prompts, Resources, and Tools. {searchShortcut} to search.',
+  },
+  defaultNote: {
+    id: 'extensionsView.defaultNote',
+    defaultMessage:
+      'Extensions enabled here are used as the default for new chats. You can also toggle active extensions during chat.',
+  },
+  addCustomExtension: {
+    id: 'extensionsView.addCustomExtension',
+    defaultMessage: 'Add custom extension',
+  },
+  browseExtensions: {
+    id: 'extensionsView.browseExtensions',
+    defaultMessage: 'Browse extensions',
+  },
+  searchPlaceholder: {
+    id: 'extensionsView.searchPlaceholder',
+    defaultMessage: 'Search extensions...',
+  },
+  addExtension: {
+    id: 'extensionsView.addExtension',
+    defaultMessage: 'Add Extension',
+  },
+});
 
 export type ExtensionsViewOptions = {
   deepLinkConfig?: ExtensionConfig;
@@ -30,6 +64,7 @@ export default function ExtensionsView({
   setView: (view: View, viewOptions?: ViewOptions) => void;
   viewOptions: ExtensionsViewOptions;
 }) {
+  const intl = useIntl();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
@@ -98,16 +133,13 @@ export default function ExtensionsView({
         <div className="bg-background-primary px-8 pb-4 pt-16">
           <div className="flex flex-col page-transition">
             <div className="flex justify-between items-center mb-1">
-              <h1 className="text-4xl font-light">Extensions</h1>
+              <h1 className="text-4xl font-light">{intl.formatMessage(i18n.heading)}</h1>
             </div>
             <p className="text-sm text-text-secondary mb-2">
-              These extensions use the Model Context Protocol (MCP). They can expand Goose's
-              capabilities using three main components: Prompts, Resources, and Tools.{' '}
-              {getSearchShortcutText()} to search.
+              {intl.formatMessage(i18n.description, { searchShortcut: getSearchShortcutText() })}
             </p>
             <p className="text-sm text-text-secondary mb-6">
-              Extensions enabled here are used as the default for new chats. You can also toggle
-              active extensions during chat.
+              {intl.formatMessage(i18n.defaultNote)}
             </p>
 
             {/* Action Buttons */}
@@ -118,7 +150,7 @@ export default function ExtensionsView({
                 onClick={() => setIsAddModalOpen(true)}
               >
                 <Plus className="h-4 w-4" />
-                Add custom extension
+                {intl.formatMessage(i18n.addCustomExtension)}
               </Button>
               <Button
                 className="flex items-center gap-2 justify-center"
@@ -128,14 +160,14 @@ export default function ExtensionsView({
                 }
               >
                 <GPSIcon size={12} />
-                Browse extensions
+                {intl.formatMessage(i18n.browseExtensions)}
               </Button>
             </div>
           </div>
         </div>
 
         <div className="px-8 pb-16">
-          <SearchView onSearch={(term) => setSearchTerm(term)} placeholder="Search extensions...">
+          <SearchView onSearch={(term) => setSearchTerm(term)} placeholder={intl.formatMessage(i18n.searchPlaceholder)}>
             <ExtensionsSection
               key={refreshKey}
               deepLinkConfig={viewOptions.deepLinkConfig}
@@ -156,11 +188,11 @@ export default function ExtensionsView({
       {/* Modal for adding a new extension */}
       {isAddModalOpen && (
         <ExtensionModal
-          title="Add custom extension"
+          title={intl.formatMessage(i18n.addCustomExtension)}
           initialData={getDefaultFormData()}
           onClose={handleModalClose}
           onSubmit={handleAddExtension}
-          submitLabel="Add Extension"
+          submitLabel={intl.formatMessage(i18n.addExtension)}
           modalType={'add'}
         />
       )}

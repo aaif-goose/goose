@@ -9,10 +9,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(test)]
 mod tests;
 
-const CLEAR_SCREEN: &str = "\x1b[2J\x1b[H";
-const MOVE_TO_PROGRESS_LINE: &str = "\x1b[4;1H";
-const CLEAR_TO_EOL: &str = "\x1b[K";
-const CLEAR_BELOW: &str = "\x1b[J";
 pub const TASK_EXECUTION_NOTIFICATION_TYPE: &str = "task_execution";
 
 static INITIAL_SHOWN: AtomicBool = AtomicBool::new(false);
@@ -85,18 +81,14 @@ fn format_tasks_update_from_event(event: &TaskExecutionNotificationEvent) -> Str
         let mut display = String::new();
 
         if !INITIAL_SHOWN.swap(true, Ordering::SeqCst) {
-            display.push_str(CLEAR_SCREEN);
             display.push_str("🎯 Task Execution Dashboard\n");
             display.push_str("═══════════════════════════\n\n");
-        } else {
-            display.push_str(MOVE_TO_PROGRESS_LINE);
         }
 
         display.push_str(&format!(
-            "📊 Progress: {} total | ⏳ {} pending | 🏃 {} running | ✅ {} completed | ❌ {} failed", 
+            "📊 Progress: {} total | ⏳ {} pending | 🏃 {} running | ✅ {} completed | ❌ {} failed\n\n",
             stats.total, stats.pending, stats.running, stats.completed, stats.failed
         ));
-        display.push_str(&format!("{}\n\n", CLEAR_TO_EOL));
 
         let mut sorted_tasks = tasks.clone();
         sorted_tasks.sort_by(|a, b| a.id.cmp(&b.id));
@@ -105,7 +97,6 @@ fn format_tasks_update_from_event(event: &TaskExecutionNotificationEvent) -> Str
             display.push_str(&format_task_display(&task));
         }
 
-        display.push_str(CLEAR_BELOW);
         display
     } else {
         String::new()
@@ -155,25 +146,22 @@ fn format_task_display(task: &TaskInfo) -> String {
     };
 
     task_display.push_str(&format!(
-        "{} {} ({}){}\n",
-        status_icon, task.task_name, task.task_type, CLEAR_TO_EOL
+        "{} {} ({})\n",
+        status_icon, task.task_name, task.task_type
     ));
 
     if !task.task_metadata.is_empty() {
-        task_display.push_str(&format!(
-            "   📋 Parameters: {}{}\n",
-            task.task_metadata, CLEAR_TO_EOL
-        ));
+        task_display.push_str(&format!("   📋 Parameters: {}\n", task.task_metadata));
     }
 
     if let Some(duration_secs) = task.duration_secs {
-        task_display.push_str(&format!("   ⏱️  {:.1}s{}\n", duration_secs, CLEAR_TO_EOL));
+        task_display.push_str(&format!("   ⏱️  {:.1}s\n", duration_secs));
     }
 
     if matches!(task.status, TaskStatus::Running) && !task.current_output.trim().is_empty() {
         let processed_output = process_output_for_display(&task.current_output);
         if !processed_output.is_empty() {
-            task_display.push_str(&format!("   💬 {}{}\n", processed_output, CLEAR_TO_EOL));
+            task_display.push_str(&format!("   💬 {}\n", processed_output));
         }
     }
 
@@ -181,7 +169,7 @@ fn format_task_display(task: &TaskInfo) -> String {
         if let Some(result_data) = &task.result_data {
             let result_preview = format_result_data_for_display(result_data);
             if !result_preview.is_empty() {
-                task_display.push_str(&format!("   📄 {}{}\n", result_preview, CLEAR_TO_EOL));
+                task_display.push_str(&format!("   📄 {}\n", result_preview));
             }
         }
     }
@@ -189,14 +177,10 @@ fn format_task_display(task: &TaskInfo) -> String {
     if matches!(task.status, TaskStatus::Failed) {
         if let Some(error) = &task.error {
             let error_preview = safe_truncate(error, 80);
-            task_display.push_str(&format!(
-                "   ⚠️  {}{}\n",
-                error_preview.replace('\n', " "),
-                CLEAR_TO_EOL
-            ));
+            task_display.push_str(&format!("   ⚠️  {}\n", error_preview.replace('\n', " ")));
         }
     }
 
-    task_display.push_str(&format!("{}\n", CLEAR_TO_EOL));
+    task_display.push('\n');
     task_display
 }

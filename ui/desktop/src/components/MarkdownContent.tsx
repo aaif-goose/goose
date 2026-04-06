@@ -30,6 +30,42 @@ import { Check, Copy } from './icons';
 import { wrapHTMLInCodeBlock } from '../utils/htmlSecurity';
 import { isProtocolSafe, getProtocol, BLOCKED_PROTOCOLS } from '../utils/urlSecurity';
 import { ConfirmationModal } from './ui/ConfirmationModal';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  copyCode: {
+    id: 'markdownContent.copyCode',
+    defaultMessage: 'Copy code',
+  },
+  openExternalLink: {
+    id: 'markdownContent.openExternalLink',
+    defaultMessage: 'Open External Link',
+  },
+  openProtocolLink: {
+    id: 'markdownContent.openProtocolLink',
+    defaultMessage: 'Open {protocol} link?',
+  },
+  thisWillOpen: {
+    id: 'markdownContent.thisWillOpen',
+    defaultMessage: 'This will open: {href}',
+  },
+  open: {
+    id: 'markdownContent.open',
+    defaultMessage: 'Open',
+  },
+  cancel: {
+    id: 'markdownContent.cancel',
+    defaultMessage: 'Cancel',
+  },
+  failedToOpenLink: {
+    id: 'markdownContent.failedToOpenLink',
+    defaultMessage: 'Failed to Open Link',
+  },
+  noApplicationFound: {
+    id: 'markdownContent.noApplicationFound',
+    defaultMessage: 'No application found to open this link.',
+  },
+});
 
 interface CodeProps extends React.ClassAttributes<HTMLElement>, React.HTMLAttributes<HTMLElement> {
   inline?: boolean;
@@ -48,6 +84,7 @@ const CodeBlock = memo(function CodeBlock({
   language: string;
   children: string;
 }) {
+  const intl = useIntl();
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
@@ -120,7 +157,7 @@ const CodeBlock = memo(function CodeBlock({
         className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-gray-700/50 text-gray-300 font-sans text-sm
                  opacity-0 group-hover:opacity-100 transition-opacity duration-200
                  hover:bg-gray-600/50 hover:text-gray-100 z-10"
-        title="Copy code"
+        title={intl.formatMessage(i18n.copyCode)}
       >
         {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
       </button>
@@ -164,6 +201,7 @@ const MarkdownContent = memo(function MarkdownContent({
   content,
   className = '',
 }: MarkdownContentProps) {
+  const intl = useIntl();
   const [processedContent, setProcessedContent] = useState(content);
   const [pendingLink, setPendingLink] = useState<{ protocol: string; href: string } | null>(null);
 
@@ -185,14 +223,14 @@ const MarkdownContent = memo(function MarkdownContent({
         await window.electron.showMessageBox({
           type: 'error',
           buttons: ['OK'],
-          title: 'Failed to Open Link',
-          message: `No application found to open this link.`,
+          title: intl.formatMessage(i18n.failedToOpenLink),
+          message: intl.formatMessage(i18n.noApplicationFound),
           detail: pendingLink.href,
         });
       }
     }
     setPendingLink(null);
-  }, [pendingLink]);
+  }, [pendingLink, intl]);
 
   const handleCancelOpen = useCallback(() => {
     setPendingLink(null);
@@ -262,13 +300,13 @@ const MarkdownContent = memo(function MarkdownContent({
       </div>
       <ConfirmationModal
         isOpen={pendingLink !== null}
-        title="Open External Link"
-        message={`Open ${pendingLink?.protocol ?? ''} link?`}
-        detail={`This will open: ${pendingLink?.href ?? ''}`}
+        title={intl.formatMessage(i18n.openExternalLink)}
+        message={intl.formatMessage(i18n.openProtocolLink, { protocol: pendingLink?.protocol ?? '' })}
+        detail={intl.formatMessage(i18n.thisWillOpen, { href: pendingLink?.href ?? '' })}
         onConfirm={handleConfirmOpen}
         onCancel={handleCancelOpen}
-        confirmLabel="Open"
-        cancelLabel="Cancel"
+        confirmLabel={intl.formatMessage(i18n.open)}
+        cancelLabel={intl.formatMessage(i18n.cancel)}
       />
     </>
   );

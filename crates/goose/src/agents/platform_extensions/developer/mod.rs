@@ -29,13 +29,23 @@ pub struct DeveloperClient {
     tree_tool: Arc<TreeTool>,
 }
 
-impl DeveloperClient {
-    pub fn new(_context: PlatformExtensionContext) -> Result<Self> {
-        let info = InitializeResult::new(
-            ServerCapabilities::builder().enable_tools().build(),
-        )
-        .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Developer"))
-        .with_instructions(indoc! {"
+fn developer_instructions() -> &'static str {
+    if cfg!(windows) {
+        indoc! {"
+            Use the developer extension to build software and operate a terminal.
+
+            Make sure to use the tools *efficiently* - reading all the content you need in as few
+            iterations as possible and then making the requested edits or running commands. You are
+            responsible for managing your context window, and to minimize unnecessary turns which
+            cost the user money.
+
+            For editing software, prefer the flow of using tree to understand the codebase structure
+            and file sizes. When you need to search, prefer findstr or Select-String (via shell).
+            Then use type or Get-Content to gather the context you need, always reading before
+            editing. Use write and edit to efficiently make changes. Test and verify as appropriate.
+        "}
+    } else {
+        indoc! {"
             Use the developer extension to build software and operate a terminal.
 
             Make sure to use the tools *efficiently* - reading all the content you need in as few
@@ -47,7 +57,15 @@ impl DeveloperClient {
             and file sizes. When you need to search, prefer rg which correctly respects gitignored
             content. Then use cat or sed to gather the context you need, always reading before editing.
             Use write and edit to efficiently make changes. Test and verify as appropriate.
-        "});
+        "}
+    }
+}
+
+impl DeveloperClient {
+    pub fn new(_context: PlatformExtensionContext) -> Result<Self> {
+        let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Developer"))
+            .with_instructions(developer_instructions());
 
         Ok(Self {
             info,

@@ -301,6 +301,21 @@ The following models are recognized and passed to the Claude CLI via the `--mode
 | `approve` | `--permission-prompt-tool stdio` | Routes permission checks through the control protocol (prompts as needed) |
 | `chat` | (none) | Default Claude Code behavior |
 
+:::tip Approve Mode Integration
+When using `approve` or `smart_approve` mode with Claude Code, goose routes Claude Code's permission prompts through goose's confirmation interface. This means:
+
+- **Sensitive operations** (file writes, shell commands, etc.) trigger approval prompts in goose
+- **You review and approve/deny** directly in the goose CLI or Desktop interface
+- **Denied operations** are communicated back to Claude Code, which adapts accordingly
+
+This provides a consistent permission experience across all goose providers while leveraging Claude Code's built-in safety checks.
+
+Example with approve mode:
+```bash
+GOOSE_PROVIDER=claude-code GOOSE_MODE=approve goose session
+```
+:::
+
 ### Cursor Agent Configuration
 
 | Environment Variable | Description | Default |
@@ -315,7 +330,7 @@ The following models are recognized and passed to the Claude CLI via the `--mode
 | `GOOSE_PROVIDER` | Set to `codex` to use this provider | None |
 | `GOOSE_MODEL` | Model to use (only known models are passed to CLI) | `gpt-5.2-codex` |
 | `CODEX_COMMAND` | Path to the Codex CLI command | `codex` |
-| `CODEX_REASONING_EFFORT` | Reasoning effort level: `low`, `medium`, `high`, or `xhigh` (`none` is only supported on non-codex models like `gpt-5.2`) | `high` |
+| `GOOSE_THINKING_EFFORT` | Unified thinking effort (`off`, `low`, `medium`, `high`, `max`). Mapped to Codex CLI effort levels (`none/low/medium/high/xhigh`). | `high` |
 | `CODEX_ENABLE_SKILLS` | Enable Codex skills: `true` or `false` | `true` |
 | `CODEX_SKIP_GIT_CHECK` | Skip git repository requirement: `true` or `false` | `false` |
 

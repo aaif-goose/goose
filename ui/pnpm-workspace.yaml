@@ -1,0 +1,5 @@
+packages:
+  - 'acp'
+  - 'text'
+  - 'desktop'
+  - 'goose-binary/*'

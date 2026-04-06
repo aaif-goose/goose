@@ -100,6 +100,12 @@ const TOOL_USE_ID_FIELD: &str = "tool_use_id";
 const IS_ERROR_FIELD: &str = "is_error";
 const SIGNATURE_FIELD: &str = "signature";
 const DATA_FIELD: &str = "data";
+const EVENT_MESSAGE_START: &str = "message_start";
+const EVENT_MESSAGE_DELTA: &str = "message_delta";
+const EVENT_MESSAGE_STOP: &str = "message_stop";
+const EVENT_CONTENT_BLOCK_START: &str = "content_block_start";
+const EVENT_CONTENT_BLOCK_DELTA: &str = "content_block_delta";
+const EVENT_CONTENT_BLOCK_STOP: &str = "content_block_stop";
 
 /// Convert internal Message format to Anthropic's API message specification
 pub fn format_messages(messages: &[Message]) -> Vec<Value> {
@@ -571,15 +577,27 @@ where
         data: Value,
     }
 
+    #[derive(Deserialize, Debug)]
+    #[serde(tag = "type", rename_all = "snake_case")]
+    #[allow(clippy::enum_variant_names)]
+    enum ContentDelta {
+        TextDelta { text: String },
+        InputJsonDelta { partial_json: String },
+        ThinkingDelta { thinking: String },
+        SignatureDelta { signature: String },
+    }
+
+    struct ThinkingState {
+        text: String,
+        signature: String,
+    }
+
     try_stream! {
-        let mut accumulated_text = String::new();
-        let mut accumulated_thinking = String::new();
-        let mut accumulated_thinking_signature = String::new();
         let mut accumulated_tool_calls: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
         let mut current_tool_id: Option<String> = None;
-        let mut current_block_type: Option<String> = None;
         let mut final_usage: Option<crate::providers::base::ProviderUsage> = None;
         let mut message_id: Option<String> = None;
+        let mut thinking: Option<ThinkingState> = None;
 
         while let Some(line_result) = stream.next().await {
             let line = line_result?;
@@ -607,36 +625,27 @@ where
             };
 
             match event.event_type.as_str() {
-                "message_start" => {
-                    // Message started, we can extract initial metadata and usage if needed
+                EVENT_MESSAGE_START => {
                     if let Some(message_data) = event.data.get("message") {
-                        // Extract message ID
                         if let Some(id) = message_data.get("id").and_then(|v| v.as_str()) {
                             message_id = Some(id.to_string());
                         }
 
                         if let Some(usage_data) = message_data.get("usage") {
                             let usage = get_usage(usage_data).unwrap_or_default();
-                            tracing::debug!("🔍 Anthropic message_start parsed usage: input_tokens={:?}, output_tokens={:?}, total_tokens={:?}",
-                                    usage.input_tokens, usage.output_tokens, usage.total_tokens);
                             let model = message_data.get("model")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string();
                             final_usage = Some(crate::providers::base::ProviderUsage::new(model, usage));
-                        } else {
-                            tracing::debug!("🔍 Anthropic message_start has no usage data");
                         }
                     }
                     continue;
                 }
-                "content_block_start" => {
-                    // A new content block started
+                EVENT_CONTENT_BLOCK_START => {
                     if let Some(content_block) = event.data.get("content_block") {
-                        let block_type = content_block.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                        current_block_type = Some(block_type.to_string());
-                        match block_type {
-                            "tool_use" => {
+                        match content_block.get(TYPE_FIELD).and_then(|v| v.as_str()) {
+                            Some(TOOL_USE_TYPE) => {
                                 if let Some(id) = content_block.get("id").and_then(|v| v.as_str()) {
                                     current_tool_id = Some(id.to_string());
                                     if let Some(name) = content_block.get("name").and_then(|v| v.as_str()) {
@@ -644,19 +653,20 @@ where
                                     }
                                 }
                             }
-                            THINKING_TYPE => {
-                                accumulated_thinking.clear();
+                            Some(THINKING_TYPE) => {
+                                thinking = Some(ThinkingState {
+                                    text: String::new(),
+                                    signature: String::new(),
+                                });
                             }
-                            REDACTED_THINKING_TYPE => {
-                                // Yield redacted thinking immediately — there are no deltas for it
-                                if let Some(data) = content_block.get("data").and_then(|v| v.as_str()) {
-                                    let mut message = Message::new(
-                                        Role::Assistant,
-                                        chrono::Utc::now().timestamp(),
-                                        vec![MessageContent::redacted_thinking(data)],
-                                    );
+                            Some(REDACTED_THINKING_TYPE) => {
+                                if let Some(data) = content_block.get(DATA_FIELD).and_then(|d| d.as_str()) {
+                                    let mut message = Message::assistant()
+                                        .with_redacted_thinking(data);
                                     message.id = message_id.clone();
                                     yield (Some(message), None);
+                                } else {
+                                    tracing::warn!("redacted_thinking block missing '{}' field", DATA_FIELD);
                                 }
                             }
                             _ => {}
@@ -664,73 +674,47 @@ where
                     }
                     continue;
                 }
-                "content_block_delta" => {
+                EVENT_CONTENT_BLOCK_DELTA => {
                     if let Some(delta) = event.data.get("delta") {
-                        if delta.get("type") == Some(&json!("text_delta")) {
-                            // Text content delta
-                            if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                                accumulated_text.push_str(text);
-
-                                // Yield partial text message with the same ID from message_start
-                                let mut message = Message::new(
-                                    Role::Assistant,
-                                    chrono::Utc::now().timestamp(),
-                                    vec![MessageContent::text(text)],
-                                );
+                        match serde_json::from_value::<ContentDelta>(delta.clone()) {
+                            Ok(ContentDelta::TextDelta { text }) => {
+                                let mut message = Message::assistant().with_text(&text);
                                 message.id = message_id.clone();
                                 yield (Some(message), None);
                             }
-                        } else if delta.get("type") == Some(&json!("thinking_delta")) {
-                            // Thinking content delta — stream incrementally for real-time UI
-                            if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
-                                accumulated_thinking.push_str(thinking);
-
-                                // Yield partial thinking (no signature yet) for live display
-                                let mut message = Message::new(
-                                    Role::Assistant,
-                                    chrono::Utc::now().timestamp(),
-                                    vec![MessageContent::thinking(thinking, "")],
-                                );
-                                message.id = message_id.clone();
-                                yield (Some(message), None);
-                            }
-                        } else if delta.get("type") == Some(&json!("input_json_delta")) {
-                            // Tool input delta
-                            if let Some(tool_id) = &current_tool_id {
-                                if let Some(partial_json) = delta.get("partial_json").and_then(|v| v.as_str()) {
+                            Ok(ContentDelta::InputJsonDelta { partial_json }) => {
+                                if let Some(tool_id) = &current_tool_id {
                                     if let Some((_name, args)) = accumulated_tool_calls.get_mut(tool_id) {
-                                        args.push_str(partial_json);
+                                        args.push_str(&partial_json);
                                     }
                                 }
                             }
-                        } else if delta.get("type") == Some(&json!("signature_delta")) {
-                            // Signature for a thinking block
-                            if let Some(sig) = delta.get("signature").and_then(|v| v.as_str()) {
-                                accumulated_thinking_signature.push_str(sig);
+                            Ok(ContentDelta::ThinkingDelta { thinking: t }) => {
+                                if let Some(ref mut state) = thinking {
+                                    state.text.push_str(&t);
+                                }
+                            }
+                            Ok(ContentDelta::SignatureDelta { signature: s }) => {
+                                if let Some(ref mut state) = thinking {
+                                    state.signature.push_str(&s);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::debug!("Unknown content_block_delta type: {}", e);
                             }
                         }
                     }
                     continue;
                 }
-                "content_block_stop" => {
-                    // Content block finished
-                    if current_block_type.as_deref() == Some(THINKING_TYPE) && !accumulated_thinking.is_empty() {
-                        // Yield the complete thinking block with signature for session storage
-                        let mut message = Message::new(
-                            Role::Assistant,
-                            chrono::Utc::now().timestamp(),
-                            vec![MessageContent::thinking(
-                                std::mem::take(&mut accumulated_thinking),
-                                std::mem::take(&mut accumulated_thinking_signature),
-                            )],
-                        );
-                        message.id = message_id.clone();
-                        yield (Some(message), None);
-                        current_block_type = None;
-                        continue;
+                EVENT_CONTENT_BLOCK_STOP => {
+                    if let Some(state) = thinking.take() {
+                        if !state.text.is_empty() {
+                            let mut message = Message::assistant()
+                                .with_thinking(state.text, state.signature);
+                            message.id = message_id.clone();
+                            yield (Some(message), None);
+                        }
                     }
-                    current_block_type = None;
-
                     if let Some(tool_id) = current_tool_id.take() {
                         // Tool call finished, yield complete tool call
                         if let Some((name, args)) = accumulated_tool_calls.remove(&tool_id) {
@@ -771,17 +755,10 @@ where
                     }
                     continue;
                 }
-                "message_delta" => {
-                    // Message metadata delta (like stop_reason) and cumulative usage
-                    tracing::debug!("🔍 Anthropic message_delta event data: {}", serde_json::to_string_pretty(&event.data).unwrap_or_else(|_| format!("{:?}", event.data)));
+                EVENT_MESSAGE_DELTA => {
                     if let Some(usage_data) = event.data.get("usage") {
-                        tracing::debug!("🔍 Anthropic message_delta usage data (cumulative): {}", serde_json::to_string_pretty(usage_data).unwrap_or_else(|_| format!("{:?}", usage_data)));
                         let delta_usage = get_usage(usage_data).unwrap_or_default();
-                        tracing::debug!("🔍 Anthropic message_delta parsed usage: input_tokens={:?}, output_tokens={:?}, total_tokens={:?}",
-                                delta_usage.input_tokens, delta_usage.output_tokens, delta_usage.total_tokens);
 
-                        // IMPORTANT: message_delta usage should be MERGED with existing usage, not replace it
-                        // message_start has input tokens, message_delta has output tokens
                         if let Some(existing_usage) = &final_usage {
                             let merged_input = existing_usage.usage.input_tokens.or(delta_usage.input_tokens);
                             let merged_output = delta_usage.output_tokens.or(existing_usage.usage.output_tokens);
@@ -794,37 +771,24 @@ where
 
                             let merged_usage = crate::providers::base::Usage::new(merged_input, merged_output, merged_total);
                             final_usage = Some(crate::providers::base::ProviderUsage::new(existing_usage.model.clone(), merged_usage));
-                            tracing::debug!("🔍 Anthropic MERGED usage: input_tokens={:?}, output_tokens={:?}, total_tokens={:?}",
-                                    merged_input, merged_output, merged_total);
                         } else {
-                            // No existing usage, just use delta usage
                             let model = event.data.get("model")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string();
                             final_usage = Some(crate::providers::base::ProviderUsage::new(model, delta_usage));
-                            tracing::debug!("🔍 Anthropic no existing usage, using delta usage");
                         }
-                    } else {
-                        tracing::debug!("🔍 Anthropic message_delta event has no usage field");
                     }
                     continue;
                 }
-                "message_stop" => {
-                    // Message finished, extract final usage if available
+                EVENT_MESSAGE_STOP => {
                     if let Some(usage_data) = event.data.get("usage") {
-                        tracing::debug!("🔍 Anthropic streaming usage data: {}", serde_json::to_string_pretty(usage_data).unwrap_or_else(|_| format!("{:?}", usage_data)));
                         let usage = get_usage(usage_data).unwrap_or_default();
-                        tracing::debug!("🔍 Anthropic parsed usage: input_tokens={:?}, output_tokens={:?}, total_tokens={:?}",
-                                usage.input_tokens, usage.output_tokens, usage.total_tokens);
                         let model = event.data.get("model")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown")
                             .to_string();
-                        tracing::debug!("🔍 Anthropic final_usage created with model: {}", model);
                         final_usage = Some(crate::providers::base::ProviderUsage::new(model, usage));
-                    } else {
-                        tracing::debug!("🔍 Anthropic message_stop event has no usage data");
                     }
                     break;
                 }
@@ -836,11 +800,8 @@ where
             }
         }
 
-        // Yield final usage information if available
         if let Some(usage) = final_usage {
             yield (None, Some(usage));
-        } else {
-            tracing::debug!("🔍 Anthropic no final usage to yield");
         }
     }
 }
@@ -1310,5 +1271,153 @@ mod tests {
             thinking_type(&cfg("claude-3-7-sonnet-20250219")),
             ThinkingType::Disabled
         );
+    }
+
+    #[derive(Default)]
+    struct StreamedParts {
+        thinking: Vec<(String, String)>,
+        redacted_thinking: Vec<String>,
+        text: Vec<String>,
+        tool_calls: Vec<String>,
+    }
+
+    async fn collect_stream(events: &str) -> StreamedParts {
+        use futures::StreamExt;
+
+        let lines: Vec<Result<String, anyhow::Error>> =
+            events.lines().map(|l| Ok(l.to_string())).collect();
+        let stream = Box::pin(futures::stream::iter(lines));
+        let mut msg_stream = std::pin::pin!(response_to_streaming_message(stream));
+        let mut parts = StreamedParts::default();
+
+        while let Some(Ok((message, _usage))) = msg_stream.next().await {
+            if let Some(msg) = message {
+                for c in &msg.content {
+                    match c {
+                        MessageContent::Thinking(t) => {
+                            parts
+                                .thinking
+                                .push((t.thinking.clone(), t.signature.clone()));
+                        }
+                        MessageContent::RedactedThinking(r) => {
+                            parts.redacted_thinking.push(r.data.clone());
+                        }
+                        MessageContent::Text(t) => {
+                            parts.text.push(t.text.clone());
+                        }
+                        MessageContent::ToolRequest(req) => {
+                            if let Ok(call) = &req.tool_call {
+                                parts.tool_calls.push(call.name.to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        parts
+    }
+
+    #[tokio::test]
+    async fn test_streaming_thinking_and_text() {
+        let events = concat!(
+            r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me analyze"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" this problem."}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig_abc"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"123"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":0}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Here is the answer."}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":1}"#,
+            "\n",
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":25}}"#,
+            "\n",
+            r#"data: {"type":"message_stop"}"#,
+        );
+
+        let parts = collect_stream(events).await;
+        assert_eq!(parts.thinking.len(), 1);
+        assert_eq!(parts.thinking[0].0, "Let me analyze this problem.");
+        assert_eq!(parts.thinking[0].1, "sig_abc123");
+        assert_eq!(parts.text, vec!["Here is the answer."]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_redacted_thinking() {
+        let events = concat!(
+            r#"data: {"type":"message_start","message":{"id":"msg_2","role":"assistant","content":[],"model":"claude-opus-4-6","usage":{"input_tokens":5,"output_tokens":0}}}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"opaque_base64_data"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":0}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Done."}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":1}"#,
+            "\n",
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":10}}"#,
+            "\n",
+            r#"data: {"type":"message_stop"}"#,
+        );
+
+        let parts = collect_stream(events).await;
+        assert_eq!(parts.redacted_thinking, vec!["opaque_base64_data"]);
+        assert_eq!(parts.text, vec!["Done."]);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_thinking_text_then_tool_call() {
+        let events = concat!(
+            r#"data: {"type":"message_start","message":{"id":"msg_3","role":"assistant","content":[],"model":"claude-sonnet-4-6","usage":{"input_tokens":8,"output_tokens":0}}}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"I should search for this."}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"tool_sig_xyz"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":0}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Let me search for that."}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":1}"#,
+            "\n",
+            r#"data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"tool_1","name":"search","input":{}}}"#,
+            "\n",
+            r#"data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"rust\"}"}}"#,
+            "\n",
+            r#"data: {"type":"content_block_stop","index":2}"#,
+            "\n",
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":15}}"#,
+            "\n",
+            r#"data: {"type":"message_stop"}"#,
+        );
+
+        let parts = collect_stream(events).await;
+        assert_eq!(parts.thinking.len(), 1);
+        assert_eq!(
+            parts.thinking[0],
+            (
+                "I should search for this.".to_string(),
+                "tool_sig_xyz".to_string()
+            )
+        );
+        assert_eq!(parts.text, vec!["Let me search for that."]);
+        assert_eq!(parts.tool_calls, vec!["search"]);
     }
 }

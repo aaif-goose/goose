@@ -8,7 +8,7 @@ repository.workspace = true
 description.workspace = true
 
 [dependencies]
-axum = "0.7"
+axum = { workspace = true }
 env-lock = { workspace = true }
 opentelemetry = { workspace = true }
 rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server"] }

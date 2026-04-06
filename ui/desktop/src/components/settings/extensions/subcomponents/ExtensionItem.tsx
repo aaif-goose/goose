@@ -5,6 +5,18 @@ import { Gear } from '../../../icons';
 import { FixedExtensionEntry } from '../../../ConfigContext';
 import { getSubtitle, getFriendlyTitle } from './ExtensionList';
 import { Card, CardHeader, CardTitle, CardContent, CardAction } from '../../../ui/card';
+import { defineMessages, useIntl } from '../../../../i18n';
+
+const i18n = defineMessages({
+  configureExtension: {
+    id: 'extensionItem.configureExtension',
+    defaultMessage: 'Configure {name} Extension',
+  },
+  toggleExtension: {
+    id: 'extensionItem.toggleExtension',
+    defaultMessage: 'Toggle {name} extension On or Off',
+  },
+});
 
 interface ExtensionItemProps {
   extension: FixedExtensionEntry;
@@ -19,6 +31,7 @@ export default function ExtensionItem({
   onConfigure,
   isStatic,
 }: ExtensionItemProps) {
+  const intl = useIntl();
   // Add local state to track the visual toggle state
   const [visuallyEnabled, setVisuallyEnabled] = useState(extension.enabled);
   // Track if we're in the process of toggling
@@ -40,7 +53,6 @@ export default function ExtensionItem({
       // Success case is handled by the useEffect below when extension.enabled changes
     } catch {
       // If there was an error, revert the visual state
-      console.log('Toggle failed, reverting visual state');
       setVisuallyEnabled(!newState);
     } finally {
       setIsToggling(false);
@@ -85,7 +97,7 @@ export default function ExtensionItem({
             {editable && (
               <button
                 className="text-text-secondary hover:text-text-primary"
-                aria-label={`Configure ${getFriendlyTitle(extension)} Extension`}
+                aria-label={intl.formatMessage(i18n.configureExtension, { name: getFriendlyTitle(extension) })}
                 onClick={() => onConfigure?.(extension)}
               >
                 <Gear className="w-4 h-4" />
@@ -96,7 +108,7 @@ export default function ExtensionItem({
               onCheckedChange={() => handleToggle(extension)}
               disabled={isToggling}
               variant="mono"
-              aria-label={`Toggle ${getFriendlyTitle(extension)} extension On or Off`}
+              aria-label={intl.formatMessage(i18n.toggleExtension, { name: getFriendlyTitle(extension) })}
             />
           </div>
         </CardAction>

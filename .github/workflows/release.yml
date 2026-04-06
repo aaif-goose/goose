@@ -8,9 +8,8 @@ on:
 
 name: Release
 
-# Permissions needed for AWS OIDC authentication in called workflows
 permissions:
-  id-token: write   # Required for AWS OIDC authentication in called workflow
+  id-token: write   # Required for Sigstore OIDC signing and AWS OIDC (Windows signing)
   contents: write   # Required for creating releases and by actions/checkout
   actions: read     # May be needed for some workflows
   attestations: write  # Required for SLSA build provenance attestations
@@ -50,8 +49,8 @@ jobs:
       contents: read
     with:
       signing: true
-    secrets:
-      OSX_CODESIGN_ROLE: ${{ secrets.OSX_CODESIGN_ROLE }}
+      environment: signing
+    secrets: inherit
 
   # ------------------------------------------------------------
   # 4) Bundle Desktop App (macOS)
@@ -63,8 +62,8 @@ jobs:
       contents: read
     with:
       signing: true
-    secrets:
-      OSX_CODESIGN_ROLE: ${{ secrets.OSX_CODESIGN_ROLE }}
+      environment: signing
+    secrets: inherit
 
   # ------------------------------------------------------------
   # 5) Bundle Desktop App (Linux)
@@ -79,10 +78,6 @@ jobs:
     uses: ./.github/workflows/bundle-desktop-windows.yml
     with:
       signing: true
-    secrets:
-      WINDOWS_CODESIGN_CERTIFICATE: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE }}
-      WINDOW_SIGNING_ROLE: ${{ secrets.WINDOW_SIGNING_ROLE }}
-      WINDOW_SIGNING_ROLE_TAG: ${{ secrets.WINDOW_SIGNING_ROLE_TAG }}
 
   # ------------------------------------
   # 7) Create/Update GitHub Release
@@ -106,6 +101,7 @@ jobs:
         with:
           subject-path: |
             goose-*.tar.bz2
+            goose-*.tar.gz
             goose-*.zip
             Goose*.zip
             *.deb
@@ -120,6 +116,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           artifacts: |
             goose-*.tar.bz2
+            goose-*.tar.gz
             goose-*.zip
             Goose*.zip
             *.deb
@@ -139,6 +136,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           artifacts: |
             goose-*.tar.bz2
+            goose-*.tar.gz
             goose-*.zip
             Goose*.zip
             *.deb
