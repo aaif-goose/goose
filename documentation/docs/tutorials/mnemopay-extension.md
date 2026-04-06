@@ -82,7 +82,7 @@ extensions:
     cmd: npx
     args: ["-y", "@mnemopay/sdk"]
     enabled: true
-    env:
+    envs:
       MNEMOPAY_AGENT_ID: "goose-agent"
 ```
 
@@ -129,10 +129,10 @@ goose: [uses settle to finalize]
 MnemoPay includes a pre-configured recipe:
 
 ```sh
-goose run --recipe https://raw.githubusercontent.com/mnemopay/mnemopay-sdk/master/integrations/goose/recipe.yaml
+goose run --recipe mnemopay.yaml
 ```
 
-The recipe instructs goose to automatically recall memories at session start, store important findings, and use the payment feedback loop.
+You can grab the recipe file from the [MnemoPay repo](https://github.com/mnemopay/mnemopay-sdk/blob/master/integrations/goose/recipe.yaml) and save it locally. The recipe instructs goose to automatically recall memories at session start, store important findings, and use the payment feedback loop.
 
 ## Pairing with lightning
 
@@ -141,11 +141,17 @@ MnemoPay pairs with [Lightning Agent Tools](https://github.com/lightninglabs/lig
 ```yaml
 extensions:
   mnemopay:
+    name: MnemoPay
     type: stdio
+    enabled: true
     cmd: npx
     args: ["-y", "@mnemopay/sdk"]
+    envs:
+      MNEMOPAY_AGENT_ID: "goose-agent"
   lightning:
+    name: Lightning Agent Tools
     type: stdio
+    enabled: true
     cmd: npx
     args: ["-y", "@lightninglabs/lightning-mcp-server"]
 ```
