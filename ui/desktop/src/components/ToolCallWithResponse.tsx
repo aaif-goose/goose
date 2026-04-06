@@ -811,7 +811,7 @@ function ToolCallView({
   );
   return (
     <ToolCallExpandable
-      isStartExpanded={isRenderingProgress}
+      isStartExpanded={isRenderingProgress || isExpandToolDetails}
       isForceExpand={false}
       label={
         extensionTooltip ? (
@@ -874,7 +874,7 @@ function ToolCallView({
         <>
           {toolResults.map((result, index) => (
             <div key={index} className={cn('border-t border-border-primary')}>
-              <ToolResultView toolCall={toolCall} result={result} isStartExpanded={false} />
+              <ToolResultView toolCall={toolCall} result={result} isStartExpanded={isExpandToolDetails} />
             </div>
           ))}
         </>
