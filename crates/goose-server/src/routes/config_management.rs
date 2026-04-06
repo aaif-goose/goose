@@ -252,7 +252,10 @@ pub async fn read_config(
     )
 )]
 pub async fn get_extensions() -> Result<Json<ExtensionResponse>, ErrorResponse> {
-    let extensions = goose::config::get_all_extensions();
+    let extensions = goose::config::get_all_extensions()
+        .into_iter()
+        .filter(|ext| !goose::agents::extension_manager::is_hidden_extension(&ext.config.name()))
+        .collect();
     let warnings = goose::config::get_warnings();
     Ok(Json(ExtensionResponse {
         extensions,
