@@ -62,8 +62,6 @@ fn resolve_timeout(timeout: Option<u64>) -> u64 {
     timeout.unwrap_or_else(|| {
         Config::global()
             .get_goose_default_extension_timeout()
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
     })
 }
