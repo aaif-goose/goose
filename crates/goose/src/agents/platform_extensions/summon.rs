@@ -95,9 +95,69 @@ struct AgentMetadata {
     model: Option<String>,
 }
 
-fn parse_agent_content(content: &str, path: PathBuf) -> Option<Source> {
-    let (metadata, body): (AgentMetadata, String) = parse_frontmatter(content)?;
+fn try_parse_frontmatter<T: for<'de> Deserialize<'de>>(
+    content: &str,
+) -> std::result::Result<Option<(T, String)>, serde_yaml::Error> {
+    let parts: Vec<&str> = content.split("---").collect();
+    if parts.len() < 3 {
+        return Ok(None);
+    }
 
+    let yaml_content = parts[1].trim();
+    let metadata: T = serde_yaml::from_str(yaml_content)?;
+
+    let body = parts[2..].join("---").trim().to_string();
+    Ok(Some((metadata, body)))
+}
+
+fn is_missing_required_field(error: &serde_yaml::Error, field: &str) -> bool {
+    error
+        .to_string()
+        .contains(&format!("missing field `{field}`"))
+}
+
+fn frontmatter_looks_like_non_agent_markdown(path: &Path, content: &str) -> bool {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("README.md"))
+    {
+        return true;
+    }
+
+    let parts: Vec<&str> = content.split("---").collect();
+    if parts.len() < 3 {
+        return false;
+    }
+
+    let metadata: serde_yaml::Mapping = match serde_yaml::from_str(parts[1].trim()) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
+
+    const COMMON_DOC_KEYS: &[&str] = &[
+        "aliases",
+        "author",
+        "authors",
+        "category",
+        "categories",
+        "date",
+        "description",
+        "draft",
+        "sidebar_position",
+        "slug",
+        "summary",
+        "tags",
+        "title",
+    ];
+
+    metadata.keys().all(|key| {
+        key.as_str()
+            .is_some_and(|key| COMMON_DOC_KEYS.contains(&key))
+    })
+}
+
+fn build_agent_source(metadata: AgentMetadata, body: String, path: PathBuf) -> Source {
     let description = metadata.description.unwrap_or_else(|| {
         let model_info = metadata
             .model
@@ -107,14 +167,19 @@ fn parse_agent_content(content: &str, path: PathBuf) -> Option<Source> {
         format!("Agent{}", model_info)
     });
 
-    Some(Source {
+    Source {
         name: metadata.name,
         kind: SourceKind::Agent,
         description,
         path,
         content: body,
         supporting_files: Vec::new(),
-    })
+    }
+}
+
+fn parse_agent_content(content: &str, path: PathBuf) -> Option<Source> {
+    let (metadata, body): (AgentMetadata, String) = parse_frontmatter(content)?;
+    Some(build_agent_source(metadata, body, path))
 }
 
 fn scan_recipes_from_dir(
@@ -197,7 +262,26 @@ fn scan_agents_from_dir(
             }
         };
 
-        if let Some(source) = parse_agent_content(&content, path) {
+        let parsed = match try_parse_frontmatter::<AgentMetadata>(&content) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                if is_missing_required_field(&e, "name")
+                    && frontmatter_looks_like_non_agent_markdown(&path, &content)
+                {
+                    continue;
+                }
+
+                warn!(
+                    "Failed to parse agent file {} frontmatter: {}",
+                    path.display(),
+                    e
+                );
+                continue;
+            }
+        };
+
+        if let Some((metadata, body)) = parsed {
+            let source = build_agent_source(metadata, body, path);
             if !seen.contains(&source.name) {
                 seen.insert(source.name.clone());
                 sources.push(source);
@@ -1647,9 +1731,43 @@ impl McpClientTrait for SummonClient {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use std::collections::HashSet;
     use std::fs;
+    use std::io;
     use std::sync::Arc;
+    use std::sync::Mutex as StdMutex;
     use tempfile::TempDir;
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct TestWriter {
+        buf: Arc<StdMutex<Vec<u8>>>,
+    }
+
+    impl<'a> MakeWriter<'a> for TestWriter {
+        type Writer = TestWriterGuard;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            TestWriterGuard {
+                buf: Arc::clone(&self.buf),
+            }
+        }
+    }
+
+    struct TestWriterGuard {
+        buf: Arc<StdMutex<Vec<u8>>>,
+    }
+
+    impl io::Write for TestWriterGuard {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.buf.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     fn create_test_context() -> PlatformExtensionContext {
         PlatformExtensionContext {
@@ -1669,6 +1787,105 @@ You review code."#;
         let source = parse_agent_content(agent, PathBuf::new()).unwrap();
         assert_eq!(source.name, "reviewer");
         assert!(source.description.contains("sonnet"));
+    }
+
+    #[test]
+    fn test_agent_scan_skips_markdown_without_name_warning() {
+        let temp_dir = TempDir::new().unwrap();
+        let agents_dir = temp_dir.path().join(".claude/agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        fs::write(
+            agents_dir.join("README.md"),
+            "---\ntitle: Notes\n---\nThis is not an agent.",
+        )
+        .unwrap();
+        fs::write(
+            agents_dir.join("reviewer.md"),
+            "---\nname: reviewer\nmodel: sonnet\n---\nYou review code.",
+        )
+        .unwrap();
+
+        let writer = TestWriter::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(writer.clone())
+            .with_ansi(false)
+            .without_time()
+            .with_target(false)
+            .finish();
+
+        let (sources, logs) = tracing::subscriber::with_default(subscriber, || {
+            let mut sources = Vec::new();
+            let mut seen = HashSet::new();
+            scan_agents_from_dir(&agents_dir, &mut sources, &mut seen);
+            let logs = String::from_utf8(writer.buf.lock().unwrap().clone()).unwrap();
+            (sources, logs)
+        });
+
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "reviewer");
+        assert!(!logs.contains("missing field `name`"));
+        assert!(!logs.contains("README.md"));
+    }
+
+    #[test]
+    fn test_agent_scan_warns_with_path_for_missing_name_in_agent_like_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let agents_dir = temp_dir.path().join(".claude/agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        let invalid_path = agents_dir.join("reviewer.md");
+        fs::write(
+            &invalid_path,
+            "---\nnam: reviewer\nmodel: sonnet\n---\nYou review code.",
+        )
+        .unwrap();
+
+        let writer = TestWriter::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(writer.clone())
+            .with_ansi(false)
+            .without_time()
+            .with_target(false)
+            .finish();
+
+        let logs = tracing::subscriber::with_default(subscriber, || {
+            let mut sources = Vec::new();
+            let mut seen = HashSet::new();
+            scan_agents_from_dir(&agents_dir, &mut sources, &mut seen);
+            assert!(sources.is_empty());
+            String::from_utf8(writer.buf.lock().unwrap().clone()).unwrap()
+        });
+
+        assert!(logs.contains("Failed to parse agent file"));
+        assert!(logs.contains("reviewer.md"));
+        assert!(logs.contains("missing field `name`"));
+    }
+
+    #[test]
+    fn test_agent_scan_warns_with_path_for_invalid_frontmatter() {
+        let temp_dir = TempDir::new().unwrap();
+        let agents_dir = temp_dir.path().join(".claude/agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        let invalid_path = agents_dir.join("broken.md");
+        fs::write(&invalid_path, "---\nname: [unterminated\n---\nBroken").unwrap();
+
+        let writer = TestWriter::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(writer.clone())
+            .with_ansi(false)
+            .without_time()
+            .with_target(false)
+            .finish();
+
+        let logs = tracing::subscriber::with_default(subscriber, || {
+            let mut sources = Vec::new();
+            let mut seen = HashSet::new();
+            scan_agents_from_dir(&agents_dir, &mut sources, &mut seen);
+            assert!(sources.is_empty());
+            String::from_utf8(writer.buf.lock().unwrap().clone()).unwrap()
+        });
+
+        assert!(logs.contains("Failed to parse agent file"));
+        assert!(logs.contains("broken.md"));
     }
 
     #[tokio::test]
