@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Cursor;
 use std::io::Write;
+use std::path::PathBuf;
 use utoipa::ToSchema;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
@@ -70,6 +71,34 @@ pub fn get_system_info() -> SystemInfo {
     SystemInfo::collect()
 }
 
+pub fn config_path() -> PathBuf {
+    Paths::config_dir().join("config.yaml")
+}
+
+pub fn latest_server_log_path() -> Option<PathBuf> {
+    let server_dir = Paths::in_state_dir("logs").join("server");
+    let latest_date_dir = latest_entry_by_name(&server_dir)?;
+    latest_entry_by_name(&latest_date_dir)
+}
+
+pub fn latest_llm_log_path() -> Option<PathBuf> {
+    let path = Paths::in_state_dir("logs").join("llm_request.0.jsonl");
+    path.exists().then_some(path)
+}
+
+pub fn read_tail(path: &std::path::Path, max_lines: usize) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines.len().saturating_sub(max_lines);
+    Some(lines[start..].join("\n"))
+}
+
+fn latest_entry_by_name(dir: &std::path::Path) -> Option<PathBuf> {
+    let mut entries: Vec<_> = fs::read_dir(dir).ok()?.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| e.file_name());
+    entries.last().map(|e| e.path())
+}
+
 pub async fn generate_diagnostics(
     session_manager: &SessionManager,
     session_id: &str,
@@ -99,6 +128,14 @@ pub async fn generate_diagnostics(
             let name = path.file_name().unwrap().to_str().unwrap();
             zip.start_file(format!("logs/{}", name), options)?;
             zip.write_all(&fs::read(&path)?)?;
+        }
+
+        if let Some(server_log) = latest_server_log_path() {
+            if let Ok(content) = fs::read(&server_log) {
+                let name = server_log.file_name().unwrap().to_str().unwrap();
+                zip.start_file(format!("logs/server/{}", name), options)?;
+                zip.write_all(&content)?;
+            }
         }
 
         let session_data = session_manager.export_session(session_id).await?;

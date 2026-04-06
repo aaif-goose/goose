@@ -37,6 +37,10 @@ static COMMANDS: &[CommandDef] = &[
         name: "skills",
         description: "List installed skills and other available sources",
     },
+    CommandDef {
+        name: "doctor",
+        description: "Check that your Goose setup is working",
+    },
 ];
 
 pub fn list_commands() -> &'static [CommandDef] {
@@ -77,6 +81,7 @@ impl Agent {
             "compact" => self.handle_compact_command(session_id).await,
             "clear" => self.handle_clear_command(session_id).await,
             "skills" => self.handle_skills_command(session_id).await,
+            "doctor" => Ok(Some(crate::doctor::run(self, session_id).await?)),
             _ => {
                 self.handle_recipe_command(command, params_str, session_id)
                     .await
