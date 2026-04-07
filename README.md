@@ -4,7 +4,7 @@
 
 # goose
 
-_your open source AI agent — desktop app, CLI, and API — for code, workflows, and everything in between_
+_your native open source AI agent — desktop app, CLI, and API — for code, workflows, and everything in between_
 
 <p align="center">
   <a href="https://opensource.org/licenses/Apache-2.0"

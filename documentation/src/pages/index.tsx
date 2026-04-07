@@ -17,7 +17,7 @@ function HeroSection() {
           <GooseLogo />
         </div>
         <p className={styles.heroSubtitle}>
-          Your open source AI agent. Desktop app, CLI, and API — for code,
+          Your native open source AI agent. Desktop app, CLI, and API — for code,
           workflows, and everything in between.
         </p>
         <div className={styles.heroActions}>
@@ -351,7 +351,7 @@ function VideoSection() {
 
 export default function Home(): ReactNode {
   return (
-    <Layout description="Your open source AI agent. Desktop app, CLI, and API — for code, workflows, and everything in between.">
+    <Layout description="Your native open source AI agent. Desktop app, CLI, and API — for code, workflows, and everything in between.">
       <HeroSection />
       <main>
         <FeaturesSection />
