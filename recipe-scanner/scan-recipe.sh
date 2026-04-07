@@ -8,6 +8,9 @@ set -euo pipefail
 echo "🔍 Goose Recipe Security Scanner v2.1"
 echo "======================================"
 
+# Map the workflow secret to what goose expects (GOOSE_PROVIDER=openai)
+export OPENAI_API_KEY="${SECURITY_SCANNER_ANTHROPIC_API_KEY:-${OPENAI_API_KEY:-}}"
+
 # Configuration
 RECIPE_FILE="/input/recipe.yaml"
 OUTPUT_DIR="/output"
