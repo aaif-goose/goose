@@ -5,7 +5,7 @@ authors:
     - mic
 ---
 
-goose has moved! The project now lives under the [AI & Automation Infrastructure Foundation (AAIF)](https://aaif.io/) at the Linux Foundation.
+goose has moved! The project now lives under the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation.
 
 There is also a new docs site  [https://goose-docs.ai/](https://goose-docs.ai/) with a nice .ai TLD!
 
