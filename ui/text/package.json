@@ -30,10 +30,10 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.14.1",
     "@aaif/goose-acp": "workspace:*",
+    "@agentclientprotocol/sdk": "^0.14.1",
     "ink": "^6.8.0",
-    "ink-text-input": "^6.0.0",
+    "ink-multiline-input": "^0.1.0",
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "meow": "^13.2.0",
