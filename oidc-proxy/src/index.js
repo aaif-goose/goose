@@ -20,6 +20,24 @@ export class TokenBucket {
     if (url.pathname === "/check") {
       const { maxRequests, ratePerSecond } = await request.json();
 
+      // Validate that rate-limit parameters are positive integers within
+      // acceptable bounds so callers cannot bypass limits by supplying
+      // arbitrarily large values.
+      const MAX_ALLOWED_REQUESTS = 10000;
+      const MAX_ALLOWED_RATE = 100;
+      if (
+        typeof maxRequests !== "number" ||
+        typeof ratePerSecond !== "number" ||
+        !Number.isInteger(maxRequests) ||
+        !Number.isInteger(ratePerSecond) ||
+        maxRequests <= 0 ||
+        ratePerSecond <= 0 ||
+        maxRequests > MAX_ALLOWED_REQUESTS ||
+        ratePerSecond > MAX_ALLOWED_RATE
+      ) {
+        return Response.json({ error: "Invalid rate-limit parameters" }, { status: 400 });
+      }
+
       if (this.count >= maxRequests) {
         return Response.json({ allowed: false, error: "budget_exhausted" });
       }
