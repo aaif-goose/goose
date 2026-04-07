@@ -177,6 +177,7 @@ fn build_agent_source(metadata: AgentMetadata, body: String, path: PathBuf) -> S
     }
 }
 
+#[cfg(test)]
 fn parse_agent_content(content: &str, path: PathBuf) -> Option<Source> {
     let (metadata, body): (AgentMetadata, String) = parse_frontmatter(content)?;
     Some(build_agent_source(metadata, body, path))
