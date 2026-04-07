@@ -24,6 +24,8 @@ pub(super) struct GenerationContext<'a> {
 pub(super) struct LoadedModel {
     pub model: LlamaModel,
     pub template: LlamaChatTemplate,
+    /// Auto-detected from the model's chat template at load time.
+    pub has_native_tool_calling: bool,
 }
 
 /// Estimate the maximum context length that can fit in available accelerator/CPU

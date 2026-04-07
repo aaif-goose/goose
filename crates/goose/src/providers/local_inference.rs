@@ -360,9 +360,21 @@ impl LocalInferenceProvider {
             }
         };
 
-        tracing::info!("Model loaded successfully");
+        let has_native_tool_calling = template
+            .to_str()
+            .map(|s| s.contains("tool_call"))
+            .unwrap_or(false);
 
-        Ok(LoadedModel { model, template })
+        tracing::info!(
+            "Model loaded successfully (native_tool_calling={})",
+            has_native_tool_calling
+        );
+
+        Ok(LoadedModel {
+            model,
+            template,
+            has_native_tool_calling,
+        })
     }
 }
 
@@ -477,13 +489,20 @@ impl Provider for LocalInferenceProvider {
             }
         }
 
-        // Models that support native OpenAI-compatible tool-call JSON use the
-        // native path (template-based tool calling with JSON output). All other
-        // models use the emulator which parses `$ command` and ```execute blocks.
+        // Detect native tool calling from the loaded model's template.
+        // Models whose template supports tool calling use the native path;
+        // all others use the emulator which parses `$ command` and ```execute blocks.
         // Only use emulator when there are actually tools to emulate - utility calls
         // like compaction and session naming pass empty tools and should preserve
         // their system prompts.
-        let use_emulator = !model_settings.native_tool_calling && !tools.is_empty();
+        let detected_native_tool_calling = {
+            let model_lock = self.model.lock().await;
+            model_lock
+                .as_ref()
+                .map(|m| m.has_native_tool_calling)
+                .unwrap_or(false)
+        };
+        let use_emulator = !detected_native_tool_calling && !tools.is_empty();
         let system_prompt = if use_emulator {
             load_tiny_model_prompt()
         } else {
@@ -539,7 +558,7 @@ impl Provider for LocalInferenceProvider {
             (None, None)
         };
 
-        let oai_messages_json = if model_settings.use_jinja {
+        let oai_messages_json = if model_settings.use_jinja || detected_native_tool_calling {
             Some(build_openai_messages_json(&system_prompt, messages))
         } else {
             None
