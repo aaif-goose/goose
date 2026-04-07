@@ -188,6 +188,7 @@ pkcs1 = { version = "0.7", default-features = false, features = ["pkcs8"], optio
 pkcs8 = { version = "0.10", default-features = false, features = ["alloc"], optional = true }
 sec1 = { version = "0.7", default-features = false, features = ["der", "pkcs8"], optional = true }
 
+
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }
 keyring = { version = "3.6.2", features = ["windows-native"] }
@@ -201,6 +202,7 @@ keyring = { version = "3.6.2", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.2", features = ["sync-secret-service"] }
+libc = "0.2.184"
 
 [dev-dependencies]
 serial_test = { workspace = true }

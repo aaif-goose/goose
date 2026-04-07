@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Builds the goose-acp-server binary for target platforms and places them
- * into the corresponding npm package directories under native/.
+ * Builds the goose binary for target platforms and places them
+ * into the corresponding npm package directories under ui/goose-binary/.
  *
  * Usage:
  *   npm run build:native              # build for current platform only
@@ -20,7 +20,7 @@ import { mkdirSync, copyFileSync, chmodSync, existsSync } from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT = resolve(__dirname, "../../..");
-const NATIVE_DIR = resolve(ROOT, "ui/goose-acp-server");
+const NATIVE_DIR = resolve(ROOT, "ui/goose-binary");
 
 const RUST_TARGETS: Record<string, string> = {
   "darwin-arm64": "aarch64-apple-darwin",
@@ -51,19 +51,16 @@ function buildTarget(platform: string): void {
     throw new Error(`Unknown platform: ${platform}`);
   }
 
-  const pkgDir = resolve(NATIVE_DIR, `goose-acp-server-${platform}`);
+  const pkgDir = resolve(NATIVE_DIR, `goose-binary-${platform}`);
   const binDir = resolve(pkgDir, "bin");
 
-  console.log(`==> Building goose-acp-server for ${platform} (${rustTarget})`);
+  console.log(`==> Building goose for ${platform} (${rustTarget})`);
 
   try {
-    execSync(
-      `cargo build --release --target ${rustTarget} --bin goose-acp-server`,
-      {
-        cwd: ROOT,
-        stdio: "inherit",
-      }
-    );
+    execSync(`cargo build --release --target ${rustTarget} --bin goose`, {
+      cwd: ROOT,
+      stdio: "inherit",
+    });
   } catch (err) {
     console.error(`Failed to build for ${platform}`);
     throw err;
@@ -72,7 +69,7 @@ function buildTarget(platform: string): void {
   mkdirSync(binDir, { recursive: true });
 
   const ext = platform.startsWith("win32") ? ".exe" : "";
-  const binaryName = `goose-acp-server${ext}`;
+  const binaryName = `goose${ext}`;
   const srcPath = resolve(ROOT, "target", rustTarget, "release", binaryName);
   const destPath = resolve(binDir, binaryName);
 
@@ -105,7 +102,9 @@ async function main() {
     for (const platform of args) {
       if (!RUST_TARGETS[platform]) {
         console.error(`Unknown platform: ${platform}`);
-        console.error(`Valid platforms: ${Object.keys(RUST_TARGETS).join(", ")}`);
+        console.error(
+          `Valid platforms: ${Object.keys(RUST_TARGETS).join(", ")}`,
+        );
         process.exit(1);
       }
       buildTarget(platform);
@@ -115,7 +114,7 @@ async function main() {
     const currentPlatform = getCurrentPlatform();
     if (!currentPlatform) {
       console.error(
-        `Unsupported platform: ${process.platform}-${process.arch}`
+        `Unsupported platform: ${process.platform}-${process.arch}`,
       );
       console.error(`Valid platforms: ${Object.keys(RUST_TARGETS).join(", ")}`);
       console.error(`Use --all to build for all platforms`);
@@ -125,7 +124,7 @@ async function main() {
     buildTarget(currentPlatform);
   }
 
-  console.log("==> Done. Native packages staged in ui/goose-acp-server/");
+  console.log("==> Done. Native packages staged in ui/goose-binary/");
 }
 
 main().catch((err) => {

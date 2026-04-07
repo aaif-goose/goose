@@ -4,6 +4,23 @@ import { FixedExtensionEntry, useConfig } from '../../ConfigContext';
 import { ChevronRight } from 'lucide-react';
 import PermissionModal from './PermissionModal';
 import { Button } from '../../ui/button';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'permissionRulesModal.title',
+    defaultMessage: 'Permission Rules',
+  },
+  description: {
+    id: 'permissionRulesModal.description',
+    defaultMessage:
+      'Configure tool permissions for extensions to control how they interact with your system.',
+  },
+  extensionRules: {
+    id: 'permissionRulesModal.extensionRules',
+    defaultMessage: 'Extension rules',
+  },
+});
 
 function RuleItem({ title, description }: { title: string; description: string }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,6 +63,7 @@ interface PermissionRulesModalProps {
 }
 
 export default function PermissionRulesModal({ isOpen, onClose }: PermissionRulesModalProps) {
+  const intl = useIntl();
   const { getExtensions } = useConfig();
   const [extensions, setExtensions] = useState<FixedExtensionEntry[]>([]);
 
@@ -107,11 +125,10 @@ export default function PermissionRulesModal({ isOpen, onClose }: PermissionRule
             </div>
             <div>
               <DialogTitle className="text-3xl font-medium text-text-primary">
-                Permission Rules
+                {intl.formatMessage(i18n.title)}
               </DialogTitle>
               <p className="text-text-secondary">
-                Configure tool permissions for extensions to control how they interact with your
-                system.
+                {intl.formatMessage(i18n.description)}
               </p>
             </div>
           </div>
@@ -121,7 +138,7 @@ export default function PermissionRulesModal({ isOpen, onClose }: PermissionRule
           <div className="space-y-4">
             {/* Extension Rules Section */}
             <RulesSection
-              title="Extension rules"
+              title={intl.formatMessage(i18n.extensionRules)}
               rules={
                 <div className="space-y-2">
                   {extensions.map((extension) => (

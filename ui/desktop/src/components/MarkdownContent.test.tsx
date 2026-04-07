@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, type RenderOptions } from '@testing-library/react';
 import { screen, waitFor } from '@testing-library/dom';
 import MarkdownContent from './MarkdownContent';
+import { IntlTestWrapper } from '../i18n/test-utils';
+
+const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
+  render(ui, { wrapper: IntlTestWrapper, ...options });
 
 // Mock the icons to avoid import issues
 vi.mock('./icons', () => ({
@@ -20,7 +24,7 @@ Contact <admin@example.com> for support.
 
 Use \`Array<T>\` for generics.`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText('Test Title')).toBeInTheDocument();
@@ -44,7 +48,7 @@ This is safe text.
 
 More safe text.`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText('Security Test')).toBeInTheDocument();
@@ -70,7 +74,7 @@ More safe text.`;
 
 Normal text continues.`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText('Comment Test')).toBeInTheDocument();
@@ -93,7 +97,7 @@ console.log(html);
 
 <div>This should be wrapped</div>`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText('Code Block Test')).toBeInTheDocument();
@@ -119,7 +123,7 @@ console.log(html);
 3. Real markup: <input type="text" disabled>
 4. Placeholder path: <project-root>/src`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText('Mixed Content Test')).toBeInTheDocument();
@@ -148,7 +152,7 @@ console.log(html);
 console.log('Hello, World!');
 \`\`\``;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText(/console/)).toBeInTheDocument();
@@ -160,7 +164,7 @@ console.log('Hello, World!');
     it('renders inline code', async () => {
       const content = 'Use `console.log()` to debug.';
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText(/Use/)).toBeInTheDocument();
@@ -176,7 +180,7 @@ console.log('Hello, World!');
 ## H2 Header
 ### H3 Header`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByRole('heading', { level: 1, name: 'H1 Header' })).toBeInTheDocument();
@@ -193,7 +197,7 @@ console.log('Hello, World!');
 1. Numbered 1
 2. Numbered 2`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText('Item 1')).toBeInTheDocument();
@@ -207,7 +211,7 @@ console.log('Hello, World!');
     it('renders links with correct attributes', async () => {
       const content = '[Visit Block](https://block.dev)';
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         const link = screen.getByRole('link', { name: 'Visit Block' });
@@ -224,7 +228,7 @@ console.log('Hello, World!');
 | Test | 123   |
 | Demo | 456   |`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText('Name')).toBeInTheDocument();
@@ -239,7 +243,7 @@ console.log('Hello, World!');
 
   describe('Error Handling', () => {
     it('handles empty content gracefully', async () => {
-      render(<MarkdownContent content="" />);
+      renderWithIntl(<MarkdownContent content="" />);
 
       // Should not throw and should render the component
       const container = document.querySelector('.w-full.overflow-x-hidden');
@@ -252,7 +256,7 @@ console.log('Hello, World!');
 \`\`\`
 Unclosed code block`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         // Should still render what it can
@@ -267,7 +271,7 @@ Unclosed code block`;
 Second line
 Third line`;
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         // Check that all text content is present (text may be split by <br> tags)
@@ -289,7 +293,7 @@ line breaks.
 - List item 1
 - List item 2`;
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByRole('heading', { level: 1, name: 'Header' })).toBeInTheDocument();
@@ -309,7 +313,7 @@ with line break
 \`code\` and
 more text`;
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         // Bold text should still work
@@ -331,7 +335,7 @@ more text`;
 
 Another very long URL: https://www.example.com/very/long/path/with/many/segments/and/parameters?param1=value1&param2=value2&param3=value3&param4=value4&param5=value5`;
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText(/Check out this document/)).toBeInTheDocument();
@@ -354,7 +358,7 @@ Another very long URL: https://www.example.com/very/long/path/with/many/segments
         'https://example-docs.com/document/d/1oruk3lcrnhoOXMFzBJB8X6qQ5AtQTmj4XXxXk3xK-3g/edit?usp=sharing&mode=edit&version=1';
       const content = `[Click here for the document](${longUrl})`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         const link = screen.getByRole('link', { name: 'Click here for the document' });
@@ -370,7 +374,7 @@ Another very long URL: https://www.example.com/very/long/path/with/many/segments
 2. Another long URL: https://www.example.com/very/long/path/with/many/segments/and/parameters?param1=value1&param2=value2&param3=value3
 3. Third URL: https://api.example.com/v1/users/12345/documents/67890/attachments/abcdef123456789?format=json&include=metadata&sort=created_at`;
 
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(screen.getByText(/Here are some long URLs/)).toBeInTheDocument();
@@ -382,7 +386,7 @@ Another very long URL: https://www.example.com/very/long/path/with/many/segments
 
     it('applies word-break CSS classes to the container', () => {
       const content = 'Test content';
-      render(<MarkdownContent content={content} />);
+      renderWithIntl(<MarkdownContent content={content} />);
 
       const markdownContainer = document.querySelector('.prose');
       expect(markdownContainer).toBeInTheDocument();
@@ -395,7 +399,7 @@ Another very long URL: https://www.example.com/very/long/path/with/many/segments
     it('treats single dollar signs as plain text', async () => {
       const content = 'The formula $x_i$ represents the i-th element.';
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         const katexElements = container.querySelectorAll('.katex');
@@ -413,7 +417,7 @@ $$
 
 for the result.`;
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         const katexDisplay = container.querySelector('.katex-display');
@@ -424,7 +428,7 @@ for the result.`;
     it('handles shell commands without triggering math mode', async () => {
       const content = 'Run echo "$FOO_BAR" to see the value.';
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         const katexElements = container.querySelectorAll('.katex');
@@ -436,7 +440,7 @@ for the result.`;
     it('preserves math in code blocks', async () => {
       const content = 'The formula `math\nx^2\n` uses inline code.';
 
-      const { container } = render(<MarkdownContent content={content} />);
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
         expect(container).toHaveTextContent('x^2');

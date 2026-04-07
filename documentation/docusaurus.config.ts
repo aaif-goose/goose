@@ -17,10 +17,10 @@ const config: Config = {
   favicon: "img/favicon.ico",
 
   // Set the production url of your site here
-  url: "https://aaif-goose.github.io/",
+  url: "https://goose-docs.ai/",
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: process.env.TARGET_PATH || "/goose/",
+  baseUrl: process.env.TARGET_PATH || "/",
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
@@ -50,7 +50,7 @@ const config: Config = {
         rel: "alternate",
         type: "text/plain",
         title: "LLM context",
-        href: "/goose/llms.txt",
+        href: "/llms.txt",
       },
     },
   ],
@@ -517,14 +517,6 @@ const config: Config = {
         quickQuestions: ["What is goose?"],
       },
     },
-    // announcementBar: {
-    //   id: 'goose-grants',
-    //   content:
-    //     '✨ goose grant program now open: <a href="/goose/grants">apply now</a>! ✨',
-    //   backgroundColor: '#20232a',
-    //   textColor: '#fff',
-    //   isCloseable: false,
-    // },
   } satisfies Preset.ThemeConfig,
 };
 

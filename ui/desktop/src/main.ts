@@ -49,6 +49,7 @@ import { UPDATES_ENABLED } from './updates';
 import './utils/recipeHash';
 import { Client } from './api/client';
 import { GooseApp } from './api';
+import * as mesh from './mesh';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { BLOCKED_PROTOCOLS, WEB_PROTOCOLS } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
@@ -535,6 +536,7 @@ let appConfig = {
   GOOSE_API_HOST: 'https://localhost',
   GOOSE_PATH_ROOT: resolveGoosePathRoot(),
   GOOSE_WORKING_DIR: '',
+  GOOSE_LOCALE: process.env.GOOSE_LOCALE || undefined,
   // If GOOSE_ALLOWLIST_WARNING env var is not set, defaults to false (strict blocking mode)
   GOOSE_ALLOWLIST_WARNING: process.env.GOOSE_ALLOWLIST_WARNING === 'true',
 };
@@ -710,6 +712,16 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   stopErrorLogCollection();
   errorLog.length = 0;
 
+  // Nudge the user if mesh is their provider but isn't running.
+  // Delay to let the renderer mount before sending the IPC event.
+  setTimeout(() => {
+    mesh.checkProviderRunning(goosedClient).then((ok) => {
+      if (!ok && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mesh-not-running');
+      }
+    }).catch(() => {});
+  }, 5000);
+
   // Let windowStateKeeper manage the window
   mainWindowState.manage(mainWindow);
 
@@ -820,7 +832,6 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     permission: '/permission',
     ConfigureProviders: '/configure-providers',
     sharedSession: '/shared-session',
-    welcome: '/welcome',
   };
 
   if (viewType) {
@@ -1563,6 +1574,12 @@ ipcMain.handle('select-file-or-directory', async (_event, defaultPath?: string) 
   }
   return null;
 });
+
+// ── Mesh-LLM lifecycle (see mesh.ts) ────────────────────────────────
+
+ipcMain.handle('check-mesh', () => mesh.check());
+ipcMain.handle('start-mesh', (_event, args: string[]) => mesh.start(args));
+ipcMain.handle('stop-mesh', () => mesh.stop());
 
 ipcMain.handle('check-ollama', async () => {
   try {
@@ -2473,6 +2490,9 @@ async function getAllowList(): Promise<string[]> {
 }
 
 app.on('will-quit', async () => {
+  // Stop the mesh child process if we spawned one.
+  mesh.cleanup();
+
   for (const [windowId, blockerId] of windowPowerSaveBlockers.entries()) {
     try {
       powerSaveBlocker.stop(blockerId);

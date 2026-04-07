@@ -16,18 +16,143 @@ import {
 import { errorMessage } from '../../../utils/conversionUtils';
 import { startTunnel, stopTunnel, getTunnelStatus } from '../../../api/sdk.gen';
 import type { TunnelInfo } from '../../../api/types.gen';
+import { defineMessages, useIntl } from '../../../i18n';
 
-const STATUS_MESSAGES = {
-  idle: 'Tunnel is not running',
-  starting: 'Starting tunnel...',
-  running: 'Tunnel is active',
-  error: 'Tunnel encountered an error',
-  disabled: 'Tunnel is disabled',
-} as const;
+const i18n = defineMessages({
+  statusIdle: {
+    id: 'tunnelSection.statusIdle',
+    defaultMessage: 'Tunnel is not running',
+  },
+  statusStarting: {
+    id: 'tunnelSection.statusStarting',
+    defaultMessage: 'Starting tunnel...',
+  },
+  statusRunning: {
+    id: 'tunnelSection.statusRunning',
+    defaultMessage: 'Tunnel is active',
+  },
+  statusError: {
+    id: 'tunnelSection.statusError',
+    defaultMessage: 'Tunnel encountered an error',
+  },
+  statusDisabled: {
+    id: 'tunnelSection.statusDisabled',
+    defaultMessage: 'Tunnel is disabled',
+  },
+  mobileApp: {
+    id: 'tunnelSection.mobileApp',
+    defaultMessage: 'Mobile App',
+  },
+  previewFeature: {
+    id: 'tunnelSection.previewFeature',
+    defaultMessage: 'Preview feature:',
+  },
+  previewDescription: {
+    id: 'tunnelSection.previewDescription',
+    defaultMessage: 'Enable remote access to goose from mobile devices using secure tunneling.',
+  },
+  getIosApp: {
+    id: 'tunnelSection.getIosApp',
+    defaultMessage: 'Get the iOS app',
+  },
+  or: {
+    id: 'tunnelSection.or',
+    defaultMessage: 'or',
+  },
+  scanQrCode: {
+    id: 'tunnelSection.scanQrCode',
+    defaultMessage: 'scan QR code',
+  },
+  tunnelStatus: {
+    id: 'tunnelSection.tunnelStatus',
+    defaultMessage: 'Tunnel Status',
+  },
+  starting: {
+    id: 'tunnelSection.starting',
+    defaultMessage: 'Starting...',
+  },
+  showQrCode: {
+    id: 'tunnelSection.showQrCode',
+    defaultMessage: 'Show QR Code',
+  },
+  stopTunnel: {
+    id: 'tunnelSection.stopTunnel',
+    defaultMessage: 'Stop Tunnel',
+  },
+  retry: {
+    id: 'tunnelSection.retry',
+    defaultMessage: 'Retry',
+  },
+  startTunnel: {
+    id: 'tunnelSection.startTunnel',
+    defaultMessage: 'Start Tunnel',
+  },
+  url: {
+    id: 'tunnelSection.url',
+    defaultMessage: 'URL:',
+  },
+  mobileAppConnection: {
+    id: 'tunnelSection.mobileAppConnection',
+    defaultMessage: 'Mobile App Connection',
+  },
+  qrCodeInstructions: {
+    id: 'tunnelSection.qrCodeInstructions',
+    defaultMessage: 'Scan this QR code with the goose mobile app. Do not share this code with anyone else as it is for your personal access.',
+  },
+  connectionDetails: {
+    id: 'tunnelSection.connectionDetails',
+    defaultMessage: 'Connection Details',
+  },
+  tunnelUrl: {
+    id: 'tunnelSection.tunnelUrl',
+    defaultMessage: 'Tunnel URL',
+  },
+  secretKey: {
+    id: 'tunnelSection.secretKey',
+    defaultMessage: 'Secret Key',
+  },
+  close: {
+    id: 'tunnelSection.close',
+    defaultMessage: 'Close',
+  },
+  downloadIosApp: {
+    id: 'tunnelSection.downloadIosApp',
+    defaultMessage: 'Download goose iOS App',
+  },
+  appStoreQrInstructions: {
+    id: 'tunnelSection.appStoreQrInstructions',
+    defaultMessage: 'Scan this QR code with your iPhone camera to install the goose mobile app from the App Store',
+  },
+  openInAppStore: {
+    id: 'tunnelSection.openInAppStore',
+    defaultMessage: 'Open in App Store',
+  },
+  failedToLoadStatus: {
+    id: 'tunnelSection.failedToLoadStatus',
+    defaultMessage: 'Failed to load tunnel status',
+  },
+  failedToStopTunnel: {
+    id: 'tunnelSection.failedToStopTunnel',
+    defaultMessage: 'Failed to stop tunnel',
+  },
+  failedToStartTunnel: {
+    id: 'tunnelSection.failedToStartTunnel',
+    defaultMessage: 'Failed to start tunnel',
+  },
+});
 
 const IOS_APP_STORE_URL = 'https://apps.apple.com/us/app/goose-ai/id6752889295';
 
+const STATUS_MESSAGE_KEYS = {
+  idle: 'statusIdle',
+  starting: 'statusStarting',
+  running: 'statusRunning',
+  error: 'statusError',
+  disabled: 'statusDisabled',
+} as const;
+
 export default function TunnelSection() {
+  const intl = useIntl();
   const [tunnelInfo, setTunnelInfo] = useState<TunnelInfo>({
     state: 'idle',
     url: '',
@@ -49,14 +174,14 @@ export default function TunnelSection() {
           setTunnelInfo(data);
         }
       } catch (err) {
-        const errorMsg = errorMessage(err, 'Failed to load tunnel status');
+        const errorMsg = errorMessage(err, intl.formatMessage(i18n.failedToLoadStatus));
         setError(errorMsg);
         setTunnelInfo({ state: 'error', url: '', hostname: '', secret: '' });
       }
     };
 
     loadTunnelInfo();
-  }, []);
+  }, [intl]);
 
   const handleToggleTunnel = async () => {
     if (tunnelInfo.state === 'running') {
@@ -65,7 +190,7 @@ export default function TunnelSection() {
         setTunnelInfo({ state: 'idle', url: '', hostname: '', secret: '' });
         setShowQRModal(false);
       } catch (err) {
-        setError(errorMessage(err, 'Failed to stop tunnel'));
+        setError(errorMessage(err, intl.formatMessage(i18n.failedToStopTunnel)));
         try {
           const { data } = await getTunnelStatus();
           if (data) {
@@ -86,7 +211,7 @@ export default function TunnelSection() {
           setShowQRModal(true);
         }
       } catch (err) {
-        const errorMsg = errorMessage(err, 'Failed to start tunnel');
+        const errorMsg = errorMessage(err, intl.formatMessage(i18n.failedToStartTunnel));
         setError(errorMsg);
         setTunnelInfo({ state: 'error', url: '', hostname: '', secret: '' });
       }
@@ -127,28 +252,27 @@ export default function TunnelSection() {
     <>
       <Card className="rounded-lg">
         <CardHeader className="pb-0">
-          <CardTitle className="mb-1">Mobile App</CardTitle>
+          <CardTitle className="mb-1">{intl.formatMessage(i18n.mobileApp)}</CardTitle>
           <CardDescription className="flex flex-col gap-2">
             <div className="flex items-start gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
               <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="text-xs text-blue-800 dark:text-blue-200">
-                <strong>Preview feature:</strong> Enable remote access to goose from mobile devices
-                using secure tunneling.{' '}
+                <strong>{intl.formatMessage(i18n.previewFeature)}</strong> {intl.formatMessage(i18n.previewDescription)}{' '}
                 <a
                   href={IOS_APP_STORE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 underline hover:no-underline"
                 >
-                  Get the iOS app
+                  {intl.formatMessage(i18n.getIosApp)}
                   <ExternalLink className="h-3 w-3" />
                 </a>
-                {' or '}
+                {' '}{intl.formatMessage(i18n.or)}{' '}
                 <button
                   onClick={() => setShowAppStoreQRModal(true)}
                   className="inline-flex items-center gap-1 underline hover:no-underline"
                 >
-                  scan QR code
+                  {intl.formatMessage(i18n.scanQrCode)}
                   <QrCode className="h-3 w-3" />
                 </button>
               </div>
@@ -164,29 +288,29 @@ export default function TunnelSection() {
 
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-text-primary text-xs">Tunnel Status</h3>
+              <h3 className="text-text-primary text-xs">{intl.formatMessage(i18n.tunnelStatus)}</h3>
               <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-                {STATUS_MESSAGES[tunnelInfo.state]}
+                {intl.formatMessage(i18n[STATUS_MESSAGE_KEYS[tunnelInfo.state]])}
               </p>
             </div>
             <div className="flex items-center gap-2">
               {tunnelInfo.state === 'starting' ? (
                 <Button disabled variant="secondary" size="sm">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Starting...
+                  {intl.formatMessage(i18n.starting)}
                 </Button>
               ) : tunnelInfo.state === 'running' ? (
                 <>
                   <Button onClick={() => setShowQRModal(true)} variant="default" size="sm">
-                    Show QR Code
+                    {intl.formatMessage(i18n.showQrCode)}
                   </Button>
                   <Button onClick={handleToggleTunnel} variant="destructive" size="sm">
-                    Stop Tunnel
+                    {intl.formatMessage(i18n.stopTunnel)}
                   </Button>
                 </>
               ) : (
                 <Button onClick={handleToggleTunnel} variant="default" size="sm">
-                  {tunnelInfo.state === 'error' ? 'Retry' : 'Start Tunnel'}
+                  {tunnelInfo.state === 'error' ? intl.formatMessage(i18n.retry) : intl.formatMessage(i18n.startTunnel)}
                 </Button>
               )}
             </div>
@@ -195,7 +319,7 @@ export default function TunnelSection() {
           {tunnelInfo.state === 'running' && (
             <div className="p-3 bg-green-100 dark:bg-green-900/20 border border-green-300 dark:border-green-800 rounded">
               <p className="text-xs text-green-800 dark:text-green-200">
-                <strong>URL:</strong> {tunnelInfo.url}
+                <strong>{intl.formatMessage(i18n.url)}</strong> {tunnelInfo.url}
               </p>
             </div>
           )}
@@ -205,7 +329,7 @@ export default function TunnelSection() {
       <Dialog open={showQRModal} onOpenChange={setShowQRModal}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Mobile App Connection</DialogTitle>
+            <DialogTitle>{intl.formatMessage(i18n.mobileAppConnection)}</DialogTitle>
           </DialogHeader>
 
           {tunnelInfo.state === 'running' && (
@@ -217,8 +341,7 @@ export default function TunnelSection() {
               </div>
 
               <div className="text-center text-sm text-text-secondary">
-                Scan this QR code with the goose mobile app. Do not share this code with anyone else
-                as it is for your personal access.
+                {intl.formatMessage(i18n.qrCodeInstructions)}
               </div>
 
               <div className="border-t pt-4">
@@ -226,7 +349,7 @@ export default function TunnelSection() {
                   onClick={() => setShowDetails(!showDetails)}
                   className="flex items-center justify-between w-full text-sm font-medium hover:opacity-70 transition-opacity"
                 >
-                  <span>Connection Details</span>
+                  <span>{intl.formatMessage(i18n.connectionDetails)}</span>
                   {showDetails ? (
                     <ChevronUp className="h-4 w-4" />
                   ) : (
@@ -237,7 +360,7 @@ export default function TunnelSection() {
                 {showDetails && (
                   <div className="mt-3 space-y-3">
                     <div>
-                      <h3 className="text-xs font-medium mb-1 text-text-secondary">Tunnel URL</h3>
+                      <h3 className="text-xs font-medium mb-1 text-text-secondary">{intl.formatMessage(i18n.tunnelUrl)}</h3>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs break-all overflow-hidden">
                           {tunnelInfo.url}
@@ -254,7 +377,7 @@ export default function TunnelSection() {
                     </div>
 
                     <div>
-                      <h3 className="text-xs font-medium mb-1 text-text-secondary">Secret Key</h3>
+                      <h3 className="text-xs font-medium mb-1 text-text-secondary">{intl.formatMessage(i18n.secretKey)}</h3>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs break-all overflow-hidden">
                           {tunnelInfo.secret}
@@ -283,10 +406,10 @@ export default function TunnelSection() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowQRModal(false)}>
-              Close
+              {intl.formatMessage(i18n.close)}
             </Button>
             <Button variant="destructive" onClick={handleToggleTunnel}>
-              Stop Tunnel
+              {intl.formatMessage(i18n.stopTunnel)}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -295,7 +418,7 @@ export default function TunnelSection() {
       <Dialog open={showAppStoreQRModal} onOpenChange={setShowAppStoreQRModal}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>Download goose iOS App</DialogTitle>
+            <DialogTitle>{intl.formatMessage(i18n.downloadIosApp)}</DialogTitle>
           </DialogHeader>
 
           <div className="py-4 space-y-4">
@@ -306,8 +429,7 @@ export default function TunnelSection() {
             </div>
 
             <div className="text-center text-sm text-text-secondary">
-              Scan this QR code with your iPhone camera to install the goose mobile app from the App
-              Store
+              {intl.formatMessage(i18n.appStoreQrInstructions)}
             </div>
 
             <div className="text-center">
@@ -318,14 +440,14 @@ export default function TunnelSection() {
                 className="inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
               >
                 <ExternalLink className="h-4 w-4" />
-                Open in App Store
+                {intl.formatMessage(i18n.openInAppStore)}
               </a>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAppStoreQRModal(false)}>
-              Close
+              {intl.formatMessage(i18n.close)}
             </Button>
           </DialogFooter>
         </DialogContent>

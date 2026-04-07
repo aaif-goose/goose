@@ -10,8 +10,25 @@ import {
 } from '../ui/dropdown-menu';
 import { trackModeChanged } from '../../utils/analytics';
 import { getSession, updateSession } from '../../api';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  autoFallback: {
+    id: 'bottomMenuModeSelection.autoFallback',
+    defaultMessage: 'auto',
+  },
+  automaticModeDescription: {
+    id: 'bottomMenuModeSelection.automaticModeDescription',
+    defaultMessage: 'Automatic mode selection',
+  },
+  currentModeTitle: {
+    id: 'bottomMenuModeSelection.currentModeTitle',
+    defaultMessage: 'Current mode: {label} - {description}',
+  },
+});
 
 export const BottomMenuModeSelection = ({ sessionId }: { sessionId: string | null }) => {
+  const intl = useIntl();
   const [gooseMode, setGooseMode] = useState('auto');
   const { config } = useConfig();
 
@@ -51,18 +68,20 @@ export const BottomMenuModeSelection = ({ sessionId }: { sessionId: string | nul
     }
   };
 
-  function getValueByKey(key: string) {
+  function getValueByKey(key: string): string {
     const mode = all_goose_modes.find((mode) => mode.key === key);
-    return mode ? mode.label : 'auto';
+    if (!mode) return intl.formatMessage(i18n.autoFallback);
+    return intl.formatMessage(mode.labelDescriptor);
   }
 
-  function getModeDescription(key: string) {
+  function getModeDescription(key: string): string {
     const mode = all_goose_modes.find((mode) => mode.key === key);
-    return mode ? mode.description : 'Automatic mode selection';
+    if (!mode) return intl.formatMessage(i18n.automaticModeDescription);
+    return intl.formatMessage(mode.descriptionDescriptor);
   }
 
   return (
-    <div title={`Current mode: ${getValueByKey(gooseMode)} - ${getModeDescription(gooseMode)}`}>
+    <div title={intl.formatMessage(i18n.currentModeTitle, { label: getValueByKey(gooseMode), description: getModeDescription(gooseMode) })}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <span className="flex items-center cursor-pointer [&_svg]:size-4 text-text-primary/70 hover:text-text-primary hover:scale-100 hover:bg-transparent text-xs">

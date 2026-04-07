@@ -31,12 +31,12 @@ For mobile client to work for personal (ie desktop/laptop/PC agents, not really 
 <head>
   <meta property="og:title" content="goose mobile apps and agent clients" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2026/01/20/goose-mobile-apps" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/20/goose-mobile-apps" />
   <meta property="og:description" content="Consolidating agent apps for iOS and Android and ACP" />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/blog/2026/01/20/goose-mobile-apps-banner-38cbd490610895a6c2781c74a34cb9c5.png" />
+  <meta property="og:image" content="https://goose-docs.ai/blog/2026/01/20/goose-mobile-apps-banner-38cbd490610895a6c2781c74a34cb9c5.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose mobile apps and agent clients" />
   <meta name="twitter:description" content="Consolidating agent apps for iOS and Android and ACP" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/blog/2026/01/20/goose-mobile-apps-banner-38cbd490610895a6c2781c74a34cb9c5.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/blog/2026/01/20/goose-mobile-apps-banner-38cbd490610895a6c2781c74a34cb9c5.png" />
 </head>

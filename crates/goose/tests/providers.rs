@@ -121,6 +121,7 @@ struct ProviderTestConfig {
     test_permissions: bool,
     test_smart_approve: bool,
     test_mode_update: bool,
+    test_mcp_tools: bool,
     test_context_length_exceeded: bool,
     expect_context_length_exceeded: bool,
     context_length_exceeded: usize,
@@ -144,6 +145,7 @@ impl ProviderTestConfig {
             test_permissions: true,
             test_smart_approve: true,
             test_mode_update: true,
+            test_mcp_tools: true,
             test_context_length_exceeded: true,
             expect_context_length_exceeded: true,
             context_length_exceeded: 600_000,
@@ -172,6 +174,11 @@ impl ProviderTestConfig {
 
     fn test_smart_approve(mut self, v: bool) -> Self {
         self.test_smart_approve = v;
+        self
+    }
+
+    fn test_mcp_tools(mut self, v: bool) -> Self {
+        self.test_mcp_tools = v;
         self
     }
 
@@ -657,11 +664,13 @@ async fn test_provider(config: ProviderTestConfig) -> Result<()> {
             .await?
             .test_basic_response()
             .await?;
-        run_test(GooseMode::Auto).await?.test_tool_usage().await?;
-        run_test(GooseMode::Auto)
-            .await?
-            .test_image_content_support()
-            .await?;
+        if config.test_mcp_tools {
+            run_test(GooseMode::Auto).await?.test_tool_usage().await?;
+            run_test(GooseMode::Auto)
+                .await?
+                .test_image_content_support()
+                .await?;
+        }
         if config.model_switch_name.is_some() {
             run_test(GooseMode::Auto).await?.test_model_switch().await?;
         }
@@ -888,6 +897,18 @@ async fn test_claude_acp_provider() -> Result<()> {
 async fn test_codex_acp_provider() -> Result<()> {
     ProviderTestConfig::with_agentic_provider("codex-acp", ACP_CURRENT_MODEL, "codex-acp")
         .model_switch_name("gpt-5.4-mini")
+        .run()
+        .await
+}
+
+// Requires: npm install -g @github/copilot
+#[tokio::test]
+async fn test_copilot_acp_provider() -> Result<()> {
+    ProviderTestConfig::with_agentic_provider("copilot-acp", ACP_CURRENT_MODEL, "copilot")
+        .model_switch_name("gpt-4.1")
+        // Copilot ignores mcpServers passed via session/new
+        // https://github.com/github/copilot-cli/issues/1040
+        .test_mcp_tools(false)
         .run()
         .await
 }

@@ -12,6 +12,18 @@ import {
   trackTelemetryPreference,
   setTelemetryEnabled as setAnalyticsTelemetryEnabled,
 } from '../../utils/analytics';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  welcomeTitle: {
+    id: 'onboardingGuard.welcomeTitle',
+    defaultMessage: 'Welcome to goose',
+  },
+  welcomeDescription: {
+    id: 'onboardingGuard.welcomeDescription',
+    defaultMessage: 'Your local AI agent. Connect an AI model provider to get started.',
+  },
+});
 
 const TELEMETRY_CONFIG_KEY = 'GOOSE_TELEMETRY_ENABLED';
 
@@ -20,6 +32,7 @@ interface OnboardingGuardProps {
 }
 
 export default function OnboardingGuard({ children }: OnboardingGuardProps) {
+  const intl = useIntl();
   const navigate = useNavigate();
   const { read, upsert, getProviders } = useConfig();
   const { refreshCurrentModelAndProvider } = useModelAndProvider();
@@ -117,9 +130,9 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
               <div className="mb-4">
                 <Goose className="size-8" />
               </div>
-              <h1 className="text-2xl sm:text-4xl font-light mb-3">Welcome to goose</h1>
+              <h1 className="text-2xl sm:text-4xl font-light mb-3">{intl.formatMessage(i18n.welcomeTitle)}</h1>
               <p className="text-text-muted text-base sm:text-lg">
-                Your local AI agent. Connect an AI model provider to get started.
+                {intl.formatMessage(i18n.welcomeDescription)}
               </p>
             </div>
 

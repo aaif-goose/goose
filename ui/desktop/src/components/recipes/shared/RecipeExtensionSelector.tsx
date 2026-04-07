@@ -4,6 +4,34 @@ import { useConfig } from '../../ConfigContext';
 import { Input } from '../../ui/input';
 import { Switch } from '../../ui/switch';
 import { formatExtensionName } from '../../settings/extensions/subcomponents/ExtensionList';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  label: {
+    id: 'recipeExtensionSelector.label',
+    defaultMessage: 'Extensions (Optional)',
+  },
+  description: {
+    id: 'recipeExtensionSelector.description',
+    defaultMessage: 'Select which extensions should be available when running this recipe. Leave empty to use default extensions.',
+  },
+  searchPlaceholder: {
+    id: 'recipeExtensionSelector.searchPlaceholder',
+    defaultMessage: 'Search extensions...',
+  },
+  extensionsSelected: {
+    id: 'recipeExtensionSelector.extensionsSelected',
+    defaultMessage: '{count, plural, one {# extension} other {# extensions}} selected',
+  },
+  noExtensionsFound: {
+    id: 'recipeExtensionSelector.noExtensionsFound',
+    defaultMessage: 'No extensions found',
+  },
+  noExtensionsAvailable: {
+    id: 'recipeExtensionSelector.noExtensionsAvailable',
+    defaultMessage: 'No extensions available',
+  },
+});
 
 interface RecipeExtensionSelectorProps {
   selectedExtensions: ExtensionConfig[];
@@ -14,6 +42,7 @@ export const RecipeExtensionSelector = ({
   selectedExtensions,
   onExtensionsChange,
 }: RecipeExtensionSelectorProps) => {
+  const intl = useIntl();
   const { extensionsList: allExtensions } = useConfig();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -65,30 +94,29 @@ export const RecipeExtensionSelector = ({
     <div className="space-y-4">
       <div>
         <label className="block text-md text-textProminent mb-2 font-bold">
-          Extensions (Optional)
+          {intl.formatMessage(i18n.label)}
         </label>
         <p className="text-textSubtle text-sm mb-4">
-          Select which extensions should be available when running this recipe. Leave empty to use
-          default extensions.
+          {intl.formatMessage(i18n.description)}
         </p>
 
         <Input
           type="text"
-          placeholder="Search extensions..."
+          placeholder={intl.formatMessage(i18n.searchPlaceholder)}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="mb-3"
         />
 
         <p className="text-xs text-textSubtle mb-3 text-right">
-          {activeCount} extension{activeCount !== 1 ? 's' : ''} selected
+          {intl.formatMessage(i18n.extensionsSelected, { count: activeCount })}
         </p>
       </div>
 
       <div className="max-h-[300px] overflow-y-auto border border-borderSubtle rounded-lg">
         {sortedExtensions.length === 0 ? (
           <div className="px-4 py-6 text-center text-sm text-textSubtle">
-            {searchQuery ? 'No extensions found' : 'No extensions available'}
+            {searchQuery ? intl.formatMessage(i18n.noExtensionsFound) : intl.formatMessage(i18n.noExtensionsAvailable)}
           </div>
         ) : (
           sortedExtensions.map((ext) => {

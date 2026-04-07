@@ -25,6 +25,39 @@ import { errorMessage } from '../../utils/conversionUtils';
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { ViewOptions } from '../../utils/navigationUtils';
 import { trackScheduleCreated, trackScheduleDeleted, getErrorType } from '../../utils/analytics';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  running: { id: 'schedulesView.running', defaultMessage: 'Running' },
+  paused: { id: 'schedulesView.paused', defaultMessage: 'Paused' },
+  lastRun: { id: 'schedulesView.lastRun', defaultMessage: 'Last run: {date}' },
+  edit: { id: 'schedulesView.edit', defaultMessage: 'Edit' },
+  resume: { id: 'schedulesView.resume', defaultMessage: 'Resume' },
+  pause: { id: 'schedulesView.pause', defaultMessage: 'Pause' },
+  inspect: { id: 'schedulesView.inspect', defaultMessage: 'Inspect' },
+  kill: { id: 'schedulesView.kill', defaultMessage: 'Kill' },
+  scheduler: { id: 'schedulesView.scheduler', defaultMessage: 'Scheduler' },
+  refreshing: { id: 'schedulesView.refreshing', defaultMessage: 'Refreshing...' },
+  refresh: { id: 'schedulesView.refresh', defaultMessage: 'Refresh' },
+  createSchedule: { id: 'schedulesView.createSchedule', defaultMessage: 'Create Schedule' },
+  description: { id: 'schedulesView.description', defaultMessage: 'Create and manage scheduled tasks to run recipes automatically at specified times.' },
+  errorPrefix: { id: 'schedulesView.errorPrefix', defaultMessage: 'Error: {error}' },
+  noSchedules: { id: 'schedulesView.noSchedules', defaultMessage: 'No schedules yet' },
+  scheduleUpdated: { id: 'schedulesView.scheduleUpdated', defaultMessage: 'Schedule Updated' },
+  scheduleUpdatedMsg: { id: 'schedulesView.scheduleUpdatedMsg', defaultMessage: 'Successfully updated schedule "{id}"' },
+  confirmDelete: { id: 'schedulesView.confirmDelete', defaultMessage: 'Are you sure you want to delete schedule "{id}"?' },
+  schedulePaused: { id: 'schedulesView.schedulePaused', defaultMessage: 'Schedule Paused' },
+  schedulePausedMsg: { id: 'schedulesView.schedulePausedMsg', defaultMessage: 'Successfully paused schedule "{id}"' },
+  pauseError: { id: 'schedulesView.pauseError', defaultMessage: 'Pause Schedule Error' },
+  scheduleUnpaused: { id: 'schedulesView.scheduleUnpaused', defaultMessage: 'Schedule Unpaused' },
+  scheduleUnpausedMsg: { id: 'schedulesView.scheduleUnpausedMsg', defaultMessage: 'Successfully unpaused schedule "{id}"' },
+  unpauseError: { id: 'schedulesView.unpauseError', defaultMessage: 'Unpause Schedule Error' },
+  jobKilled: { id: 'schedulesView.jobKilled', defaultMessage: 'Job Killed' },
+  killError: { id: 'schedulesView.killError', defaultMessage: 'Kill Job Error' },
+  jobInspection: { id: 'schedulesView.jobInspection', defaultMessage: 'Job Inspection' },
+  inspectNoInfo: { id: 'schedulesView.inspectNoInfo', defaultMessage: 'No detailed information available for this job' },
+  inspectError: { id: 'schedulesView.inspectError', defaultMessage: 'Inspect Job Error' },
+});
 
 interface SchedulesViewProps {
   onClose?: () => void;
@@ -51,6 +84,7 @@ const ScheduleCard: React.FC<{
   onDelete,
   actionInProgress,
 }) => {
+  const intl = useIntl();
   let readableCron: string;
   try {
     readableCron = cronstrue.toString(job.cron);
@@ -74,13 +108,13 @@ const ScheduleCard: React.FC<{
             {job.currently_running && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
                 <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></span>
-                Running
+                {intl.formatMessage(i18n.running)}
               </span>
             )}
             {job.paused && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
                 <Pause className="w-3 h-3 mr-1" />
-                Paused
+                {intl.formatMessage(i18n.paused)}
               </span>
             )}
           </div>
@@ -88,7 +122,7 @@ const ScheduleCard: React.FC<{
             {readableCron}
           </p>
           <div className="flex items-center text-xs text-text-secondary">
-            <span>Last run: {formattedLastRun}</span>
+            <span>{intl.formatMessage(i18n.lastRun, { date: formattedLastRun })}</span>
           </div>
         </div>
 
@@ -106,7 +140,7 @@ const ScheduleCard: React.FC<{
                 className="h-8"
               >
                 <Edit className="w-4 h-4 mr-1" />
-                Edit
+                {intl.formatMessage(i18n.edit)}
               </Button>
               <Button
                 onClick={(e) => {
@@ -125,12 +159,12 @@ const ScheduleCard: React.FC<{
                 {job.paused ? (
                   <>
                     <Play className="w-4 h-4 mr-1" />
-                    Resume
+                    {intl.formatMessage(i18n.resume)}
                   </>
                 ) : (
                   <>
                     <Pause className="w-4 h-4 mr-1" />
-                    Pause
+                    {intl.formatMessage(i18n.pause)}
                   </>
                 )}
               </Button>
@@ -149,7 +183,7 @@ const ScheduleCard: React.FC<{
                 className="h-8"
               >
                 <Eye className="w-4 h-4 mr-1" />
-                Inspect
+                {intl.formatMessage(i18n.inspect)}
               </Button>
               <Button
                 onClick={(e) => {
@@ -162,7 +196,7 @@ const ScheduleCard: React.FC<{
                 className="h-8"
               >
                 <Square className="w-4 h-4 mr-1" />
-                Kill
+                {intl.formatMessage(i18n.kill)}
               </Button>
             </>
           )}
@@ -185,6 +219,7 @@ const ScheduleCard: React.FC<{
 };
 
 const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
+  const intl = useIntl();
   const location = useLocation();
   const [schedules, setSchedules] = useState<ScheduledJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -253,8 +288,8 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
       if (editingSchedule) {
         await updateSchedule(editingSchedule.id, payload as string);
         toastSuccess({
-          title: 'Schedule Updated',
-          msg: `Successfully updated schedule "${editingSchedule.id}"`,
+          title: intl.formatMessage(i18n.scheduleUpdated),
+          msg: intl.formatMessage(i18n.scheduleUpdatedMsg, { id: editingSchedule.id }),
         });
       } else {
         const newPayload = payload as NewSchedulePayload;
@@ -280,7 +315,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
   };
 
   const handleDeleteSchedule = async (id: string) => {
-    if (!window.confirm(`Are you sure you want to delete schedule "${id}"?`)) return;
+    if (!window.confirm(intl.formatMessage(i18n.confirmDelete, { id }))) return;
 
     setActionsInProgress((prev) => new Set(prev).add(id));
     if (viewingScheduleId === id) setViewingScheduleId(null);
@@ -311,8 +346,8 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
     try {
       await pauseSchedule(id);
       toastSuccess({
-        title: 'Schedule Paused',
-        msg: `Successfully paused schedule "${id}"`,
+        title: intl.formatMessage(i18n.schedulePaused),
+        msg: intl.formatMessage(i18n.schedulePausedMsg, { id }),
       });
       await fetchSchedules();
     } catch (error) {
@@ -320,7 +355,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
       const errorMsg = errorMessage(error, `Unknown error pausing "${id}".`);
       setApiError(errorMsg);
       toastError({
-        title: 'Pause Schedule Error',
+        title: intl.formatMessage(i18n.pauseError),
         msg: errorMsg,
       });
     } finally {
@@ -339,8 +374,8 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
     try {
       await unpauseSchedule(id);
       toastSuccess({
-        title: 'Schedule Unpaused',
-        msg: `Successfully unpaused schedule "${id}"`,
+        title: intl.formatMessage(i18n.scheduleUnpaused),
+        msg: intl.formatMessage(i18n.scheduleUnpausedMsg, { id }),
       });
       await fetchSchedules();
     } catch (error) {
@@ -348,7 +383,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
       const errorMsg = errorMessage(error, `Unknown error unpausing "${id}".`);
       setApiError(errorMsg);
       toastError({
-        title: 'Unpause Schedule Error',
+        title: intl.formatMessage(i18n.unpauseError),
         msg: errorMsg,
       });
     } finally {
@@ -367,7 +402,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
     try {
       const result = await killRunningJob(id);
       toastSuccess({
-        title: 'Job Killed',
+        title: intl.formatMessage(i18n.jobKilled),
         msg: result.message,
       });
       await fetchSchedules();
@@ -376,7 +411,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
       const errorMsg = errorMessage(error, `Unknown error killing job "${id}".`);
       setApiError(errorMsg);
       toastError({
-        title: 'Kill Job Error',
+        title: intl.formatMessage(i18n.killError),
         msg: errorMsg,
       });
     } finally {
@@ -399,13 +434,13 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
           ? `${Math.floor(result.runningDurationSeconds / 60)}m ${result.runningDurationSeconds % 60}s`
           : 'Unknown';
         toastSuccess({
-          title: 'Job Inspection',
+          title: intl.formatMessage(i18n.jobInspection),
           msg: `Session: ${result.sessionId}\nRunning for: ${duration}`,
         });
       } else {
         toastSuccess({
-          title: 'Job Inspection',
-          msg: 'No detailed information available for this job',
+          title: intl.formatMessage(i18n.jobInspection),
+          msg: intl.formatMessage(i18n.inspectNoInfo),
         });
       }
     } catch (error) {
@@ -413,7 +448,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
       const errorMsg = errorMessage(error, `Unknown error inspecting job "${id}".`);
       setApiError(errorMsg);
       toastError({
-        title: 'Inspect Job Error',
+        title: intl.formatMessage(i18n.inspectError),
         msg: errorMsg,
       });
     } finally {
@@ -445,7 +480,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
           <div className="bg-background-primary px-8 pb-8 pt-16">
             <div className="flex flex-col page-transition">
               <div className="flex justify-between items-center mb-1">
-                <h1 className="text-4xl font-light">Scheduler</h1>
+                <h1 className="text-4xl font-light">{intl.formatMessage(i18n.scheduler)}</h1>
                 <div className="flex gap-2">
                   <Button
                     onClick={handleRefresh}
@@ -455,7 +490,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
                     className="flex items-center gap-2"
                   >
                     <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                    {isRefreshing ? intl.formatMessage(i18n.refreshing) : intl.formatMessage(i18n.refresh)}
                   </Button>
                   <Button
                     onClick={() => {
@@ -466,12 +501,12 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
                     className="flex items-center gap-2"
                   >
                     <Plus className="h-4 w-4" />
-                    Create Schedule
+                    {intl.formatMessage(i18n.createSchedule)}
                   </Button>
                 </div>
               </div>
               <p className="text-sm text-text-secondary mb-1">
-                Create and manage scheduled tasks to run recipes automatically at specified times.
+                {intl.formatMessage(i18n.description)}
               </p>
             </div>
           </div>
@@ -481,7 +516,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
               <div className="h-full relative">
                 {apiError && (
                   <div className="mb-4 p-4 bg-background-danger border border-border-danger rounded-md">
-                    <p className="text-text-danger text-sm">Error: {apiError}</p>
+                    <p className="text-text-danger text-sm">{intl.formatMessage(i18n.errorPrefix, { error: apiError })}</p>
                   </div>
                 )}
 
@@ -495,7 +530,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
                   <div className="flex flex-col pt-4 pb-12">
                     <CircleDotDashed className="h-5 w-5 text-text-secondary mb-3.5" />
                     <p className="text-base text-text-secondary font-light mb-2">
-                      No schedules yet
+                      {intl.formatMessage(i18n.noSchedules)}
                     </p>
                   </div>
                 )}

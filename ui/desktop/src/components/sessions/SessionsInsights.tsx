@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { defineMessages, useIntl } from '../../i18n';
 import { errorMessage } from '../../utils/conversionUtils';
 import { Card, CardContent, CardDescription } from '../ui/card';
 import { Greeting } from '../common/Greeting';
@@ -16,7 +17,35 @@ import {
 import { resumeSession } from '../../sessions';
 import { useNavigation } from '../../hooks/useNavigation';
 
+const i18n = defineMessages({
+  totalSessions: {
+    id: 'sessionsInsights.totalSessions',
+    defaultMessage: 'Total sessions',
+  },
+  totalTokens: {
+    id: 'sessionsInsights.totalTokens',
+    defaultMessage: 'Total tokens',
+  },
+  recentChats: {
+    id: 'sessionsInsights.recentChats',
+    defaultMessage: 'Recent chats',
+  },
+  seeAll: {
+    id: 'sessionsInsights.seeAll',
+    defaultMessage: 'See all',
+  },
+  noRecentChats: {
+    id: 'sessionsInsights.noRecentChats',
+    defaultMessage: 'No recent chat sessions found.',
+  },
+  failedToLoadInsights: {
+    id: 'sessionsInsights.failedToLoad',
+    defaultMessage: 'Failed to load insights',
+  },
+});
+
 export function SessionInsights() {
+  const intl = useIntl();
   const [insights, setInsights] = useState<ApiSessionInsights | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
@@ -138,7 +167,7 @@ export function SessionInsights() {
             <CardContent className="flex flex-col justify-end h-full p-0">
               <div className="flex flex-col justify-end">
                 <Skeleton className="h-10 w-16 mb-1" />
-                <span className="text-xs text-text-secondary">Total sessions</span>
+                <span className="text-xs text-text-secondary">{intl.formatMessage(i18n.totalSessions)}</span>
               </div>
             </CardContent>
           </Card>
@@ -148,7 +177,7 @@ export function SessionInsights() {
             <CardContent className="flex flex-col justify-end h-full p-0">
               <div className="flex flex-col justify-end">
                 <Skeleton className="h-10 w-24 mb-1" />
-                <span className="text-xs text-text-secondary">Total tokens</span>
+                <span className="text-xs text-text-secondary">{intl.formatMessage(i18n.totalTokens)}</span>
               </div>
             </CardContent>
           </Card>
@@ -160,7 +189,7 @@ export function SessionInsights() {
             <CardContent className="p-0">
               <div className="flex justify-between items-center mb-4">
                 <CardDescription className="mb-0">
-                  <span className="text-lg text-text-primary">Recent chats</span>
+                  <span className="text-lg text-text-primary">{intl.formatMessage(i18n.recentChats)}</span>
                 </CardDescription>
                 <Button
                   variant="ghost"
@@ -168,7 +197,7 @@ export function SessionInsights() {
                   className="text-xs text-text-secondary flex items-center gap-1 !px-0 hover:bg-transparent hover:underline hover:text-text-primary"
                   onClick={navigateToSessionHistory}
                 >
-                  See all
+                  {intl.formatMessage(i18n.seeAll)}
                 </Button>
               </div>
               <div className="space-y-3 min-h-[96px] max-h-[140px] overflow-hidden">
@@ -230,7 +259,7 @@ export function SessionInsights() {
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-orange-400 rounded-full flex-shrink-0"></div>
               <span className="text-xs text-orange-700 dark:text-orange-300">
-                Failed to load insights
+                {intl.formatMessage(i18n.failedToLoadInsights)}
               </span>
             </div>
           </div>
@@ -245,7 +274,7 @@ export function SessionInsights() {
                 <p className="text-4xl font-mono font-light flex items-end">
                   {Math.max(insights?.totalSessions ?? 0, 0)}
                 </p>
-                <span className="text-xs text-text-secondary">Total sessions</span>
+                <span className="text-xs text-text-secondary">{intl.formatMessage(i18n.totalSessions)}</span>
               </div>
             </CardContent>
           </Card>
@@ -271,7 +300,7 @@ export function SessionInsights() {
                 <p className="text-4xl font-mono font-light flex items-end">
                   {formatTokens(insights?.totalTokens)}
                 </p>
-                <span className="text-xs text-text-secondary">Total tokens</span>
+                <span className="text-xs text-text-secondary">{intl.formatMessage(i18n.totalTokens)}</span>
               </div>
             </CardContent>
           </Card>
@@ -284,7 +313,7 @@ export function SessionInsights() {
             <CardContent className="page-transition p-0">
               <div className="flex justify-between items-center mb-4">
                 <CardDescription className="mb-0">
-                  <span className="text-lg text-text-primary">Recent chats</span>
+                  <span className="text-lg text-text-primary">{intl.formatMessage(i18n.recentChats)}</span>
                 </CardDescription>
                 <Button
                   variant="ghost"
@@ -292,7 +321,7 @@ export function SessionInsights() {
                   className="text-xs text-text-secondary flex items-center gap-1 !px-0 hover:bg-transparent hover:underline hover:text-text-primary"
                   onClick={navigateToSessionHistory}
                 >
-                  See all
+                  {intl.formatMessage(i18n.seeAll)}
                 </Button>
               </div>
               <div className="space-y-1 min-h-[96px] max-h-[140px] overflow-hidden transition-all duration-300 ease-in-out">
@@ -346,7 +375,7 @@ export function SessionInsights() {
                   ))
                 ) : (
                   <div className="text-text-secondary text-sm py-2">
-                    No recent chat sessions found.
+                    {intl.formatMessage(i18n.noRecentChats)}
                   </div>
                 )}
               </div>

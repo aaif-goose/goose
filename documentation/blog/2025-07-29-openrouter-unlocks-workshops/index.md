@@ -89,14 +89,14 @@ Want us to run a Goose workshop or hackathon? We’ll bring the API credits. You
 <head>
   <meta property="og:title" content="How OpenRouter Unlocked Our Workshop Strategy" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025/07/29/openrouter-unlocks-workshops" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/07/29/openrouter-unlocks-workshops" />
   <meta property="og:description" content="How we used Open Router to provide frictionless LLM access for Goose workshops" />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/scaling-ai-workshops-open-router-2af052d2b72f502ba14b06c4d784c0cc.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/scaling-ai-workshops-open-router-2af052d2b72f502ba14b06c4d784c0cc.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How OpenRouter Unlocked Our Workshop Strategy" />
   <meta name="twitter:description" content="How we used Open Router to provide frictionless LLM access for Goose workshops" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/scaling-ai-workshops-open-router-2af052d2b72f502ba14b06c4d784c0cc.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/scaling-ai-workshops-open-router-2af052d2b72f502ba14b06c4d784c0cc.png" />
 </head>
 
 

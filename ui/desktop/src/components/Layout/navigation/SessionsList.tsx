@@ -8,6 +8,22 @@ import { getSessionDisplayName } from '../../../hooks/useNavigationSessions';
 import { updateSessionName } from '../../../api';
 import type { Session } from '../../../api';
 import type { SessionStatus } from './types';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  startNewChat: {
+    id: 'sessionsList.startNewChat',
+    defaultMessage: 'Start New Chat',
+  },
+  untitledSession: {
+    id: 'sessionsList.untitledSession',
+    defaultMessage: 'Untitled session',
+  },
+  showAll: {
+    id: 'sessionsList.showAll',
+    defaultMessage: 'Show All',
+  },
+});
 
 interface SessionsListProps {
   sessions: Session[];
@@ -32,6 +48,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
   onNewChat,
   onShowAll,
 }) => {
+  const intl = useIntl();
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
 
   const handleSaveSessionName = useCallback(
@@ -68,7 +85,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               >
                 <div className="w-4 flex-shrink-0" />
                 <Plus className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                <span className="text-text-primary">Start New Chat</span>
+                <span className="text-text-primary">{intl.formatMessage(i18n.startNewChat)}</span>
               </div>
             )}
 
@@ -105,7 +122,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                   <InlineEditText
                     value={getSessionDisplayName(session)}
                     onSave={(newName) => handleSaveSessionName(session.id, newName)}
-                    placeholder="Untitled session"
+                    placeholder={intl.formatMessage(i18n.untitledSession)}
                     disabled={isStreaming}
                     singleClickEdit={false}
                     className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
@@ -134,7 +151,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               >
                 <div className="w-4 flex-shrink-0" />
                 <History className="w-4 h-4 flex-shrink-0" />
-                <span>Show All</span>
+                <span>{intl.formatMessage(i18n.showAll)}</span>
               </div>
             )}
           </div>

@@ -3,6 +3,26 @@ import builtInExtensionsData from '../../../../built-in-extensions.json';
 import { ExtensionConfig } from '../../../../api';
 import { FixedExtensionEntry } from '../../../ConfigContext';
 import { combineCmdAndArgs } from '../utils';
+import { defineMessages, useIntl } from '../../../../i18n';
+
+const i18n = defineMessages({
+  defaultExtensions: {
+    id: 'extensionList.defaultExtensions',
+    defaultMessage: 'Default Extensions ({count})',
+  },
+  availableExtensions: {
+    id: 'extensionList.availableExtensions',
+    defaultMessage: 'Available Extensions ({count})',
+  },
+  noExtensions: {
+    id: 'extensionList.noExtensions',
+    defaultMessage: 'No extensions available',
+  },
+  builtInExtension: {
+    id: 'extensionList.builtInExtension',
+    defaultMessage: 'Built-in extension',
+  },
+});
 
 interface ExtensionListProps {
   extensions: FixedExtensionEntry[];
@@ -35,6 +55,8 @@ export default function ExtensionList({
     );
   };
 
+  const intl = useIntl();
+
   // Separate enabled and disabled extensions, then filter by search term
   const enabledExtensions = extensions.filter((ext) => ext.enabled && matchesSearch(ext));
   const disabledExtensions = extensions.filter((ext) => !ext.enabled && matchesSearch(ext));
@@ -53,7 +75,7 @@ export default function ExtensionList({
         <div>
           <h2 className="text-lg font-medium text-text-primary mb-4 flex items-center gap-2">
             <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-            Default Extensions ({sortedEnabledExtensions.length})
+            {intl.formatMessage(i18n.defaultExtensions, { count: sortedEnabledExtensions.length })}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
             {sortedEnabledExtensions.map((extension) => (
@@ -73,7 +95,7 @@ export default function ExtensionList({
         <div>
           <h2 className="text-lg font-medium text-text-secondary mb-4 flex items-center gap-2">
             <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
-            Available Extensions ({sortedDisabledExtensions.length})
+            {intl.formatMessage(i18n.availableExtensions, { count: sortedDisabledExtensions.length })}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
             {sortedDisabledExtensions.map((extension) => (
@@ -90,7 +112,7 @@ export default function ExtensionList({
       )}
 
       {extensions.length === 0 && (
-        <div className="text-center text-text-secondary py-8">No extensions available</div>
+        <div className="text-center text-text-secondary py-8">{intl.formatMessage(i18n.noExtensions)}</div>
       )}
     </div>
   );

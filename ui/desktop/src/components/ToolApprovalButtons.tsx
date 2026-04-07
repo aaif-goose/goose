@@ -1,6 +1,42 @@
 import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { confirmToolAction, Permission } from '../api';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  allowOnce: {
+    id: 'toolApprovalButtons.allowOnce',
+    defaultMessage: 'Allow Once',
+  },
+  alwaysAllow: {
+    id: 'toolApprovalButtons.alwaysAllow',
+    defaultMessage: 'Always Allow',
+  },
+  deny: {
+    id: 'toolApprovalButtons.deny',
+    defaultMessage: 'Deny',
+  },
+  allowedOnce: {
+    id: 'toolApprovalButtons.allowedOnce',
+    defaultMessage: 'Allowed once',
+  },
+  alwaysAllowed: {
+    id: 'toolApprovalButtons.alwaysAllowed',
+    defaultMessage: 'Always allowed',
+  },
+  denied: {
+    id: 'toolApprovalButtons.denied',
+    defaultMessage: 'Denied',
+  },
+  deniedOnce: {
+    id: 'toolApprovalButtons.deniedOnce',
+    defaultMessage: 'Denied once',
+  },
+  cancelled: {
+    id: 'toolApprovalButtons.cancelled',
+    defaultMessage: 'Cancelled',
+  },
+});
 
 const globalApprovalState = new Map<
   string,
@@ -19,6 +55,7 @@ export interface ToolApprovalData {
 }
 
 export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }) {
+  const intl = useIntl();
   const { id, toolName, prompt, sessionId, isClicked: initialIsClicked } = data;
 
   const storedState = globalApprovalState.get(id);
@@ -60,11 +97,11 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
 
   if (isClicked && decision) {
     const statusMessages: Record<Permission, string> = {
-      allow_once: 'Allowed once',
-      always_allow: 'Always allowed',
-      always_deny: 'Denied',
-      deny_once: 'Denied once',
-      cancel: 'Cancelled',
+      allow_once: intl.formatMessage(i18n.allowedOnce),
+      always_allow: intl.formatMessage(i18n.alwaysAllowed),
+      always_deny: intl.formatMessage(i18n.denied),
+      deny_once: intl.formatMessage(i18n.deniedOnce),
+      cancel: intl.formatMessage(i18n.cancelled),
     };
     return (
       <p className="text-sm text-muted-foreground mt-2">
@@ -80,7 +117,7 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
         variant="secondary"
         onClick={() => handleAction('allow_once')}
       >
-        Allow Once
+        {intl.formatMessage(i18n.allowOnce)}
       </Button>
       {!prompt && (
         <Button
@@ -88,11 +125,11 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
           variant="secondary"
           onClick={() => handleAction('always_allow')}
         >
-          Always Allow
+          {intl.formatMessage(i18n.alwaysAllow)}
         </Button>
       )}
       <Button className="rounded-full" variant="outline" onClick={() => handleAction('deny_once')}>
-        Deny
+        {intl.formatMessage(i18n.deny)}
       </Button>
     </div>
   );

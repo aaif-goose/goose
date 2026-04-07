@@ -1106,9 +1106,13 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
 
     let timeout = prompt_extension_timeout()?;
 
-    let mut parts = command_str.split_whitespace();
-    let cmd = parts.next().unwrap_or("").to_string();
-    let args: Vec<String> = parts.map(String::from).collect();
+    let mut parts = crate::session::split_quoted(&command_str)?;
+    let cmd = if parts.is_empty() {
+        String::new()
+    } else {
+        parts.remove(0)
+    };
+    let args = parts;
 
     let description = prompt_extension_description()?;
     let (envs, env_keys) = collect_env_vars()?;
@@ -1474,7 +1478,11 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
     };
 
     let _ = cliclack::log::info(format!("Current secret storage: {}", current_status));
-    let _ = cliclack::log::warning("Note: Disabling the keyring stores secrets in a plain text file (~/.config/goose/secrets.yaml)");
+    let secrets_path = Paths::config_dir().join("secrets.yaml");
+    let _ = cliclack::log::warning(format!(
+        "Note: Disabling the keyring stores secrets in a plain text file ({})",
+        secrets_path.display()
+    ));
 
     let storage_option = cliclack::select("How would you like to store secrets?")
         .item(
@@ -1500,9 +1508,10 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
         "file" => {
             // Set the disable flag to use file storage
             config.set_param("GOOSE_DISABLE_KEYRING", Value::String("true".to_string()))?;
-            cliclack::outro(
-                "Secret storage set to file (~/.config/goose/secrets.yaml). Keep this file secure!",
-            )?;
+            cliclack::outro(format!(
+                "Secret storage set to file ({}). Keep this file secure!",
+                secrets_path.display(),
+            ))?;
             let _ =
                 cliclack::log::info("You may need to restart goose for this change to take effect");
         }

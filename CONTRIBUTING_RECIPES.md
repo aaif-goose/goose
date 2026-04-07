@@ -62,7 +62,7 @@ parameters:
     default: "default_value"
 ```
 
-📚 **Need help with the format?** Check out the [Recipe Reference Guide](https://aaif-goose.github.io/goose/docs/guides/recipes/recipe-reference) or [existing recipes](documentation/src/pages/recipes/data/recipes/) for examples.
+📚 **Need help with the format?** Check out the [Recipe Reference Guide](https://goose-docs.ai/docs/guides/recipes/recipe-reference) or [existing recipes](documentation/src/pages/recipes/data/recipes/) for examples.
 
 ### Step 4: Create a Pull Request
 
@@ -84,7 +84,7 @@ Your recipe should:
 
 - [ ] **Work correctly** - Test it before submitting
 - [ ] **Be useful** - Solve a real problem or demonstrate a valuable workflow
-- [ ] **Follow the format** - Refer to the [Recipe Reference Guide](https://aaif-goose.github.io/goose/docs/guides/recipes/recipe-reference)
+- [ ] **Follow the format** - Refer to the [Recipe Reference Guide](https://goose-docs.ai/docs/guides/recipes/recipe-reference)
 - [ ] **Have a unique filename** - No conflicts with existing recipe files
 
 ### 📝 **Naming Guidelines:**
@@ -119,7 +119,7 @@ Need inspiration? Consider recipes for:
 - 📖 **Browse existing recipes** for examples
 - 💬 **Ask questions** in your PR
 - 🐛 **Report issues** if something isn't working
-- 📚 **Check the docs** at [aaif-goose.github.io/goose](https://aaif-goose.github.io/goose/docs/guides/recipes/)
+- 📚 **Check the docs** at [goose-docs.ai](https://goose-docs.ai/docs/guides/recipes/)
 
 ## 🤝 Community Guidelines
 

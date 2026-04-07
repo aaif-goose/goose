@@ -2,6 +2,90 @@ import React, { useState } from 'react';
 import { X, Clock, Send, GripVertical, Zap, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImageData } from '../types/message';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  paused: {
+    id: 'messageQueue.paused',
+    defaultMessage: 'Paused',
+  },
+  next: {
+    id: 'messageQueue.next',
+    defaultMessage: 'Next',
+  },
+  sendNow: {
+    id: 'messageQueue.sendNow',
+    defaultMessage: 'Send this message now',
+  },
+  expandQueue: {
+    id: 'messageQueue.expandQueue',
+    defaultMessage: 'Expand queue',
+  },
+  queuePausedCompact: {
+    id: 'messageQueue.queuePausedCompact',
+    defaultMessage: 'Queue paused - click "Send" or add new message to resume',
+  },
+  queuePaused: {
+    id: 'messageQueue.queuePaused',
+    defaultMessage: 'Queue Paused',
+  },
+  messageQueue: {
+    id: 'messageQueue.messageQueue',
+    defaultMessage: 'Message Queue',
+  },
+  messageCount: {
+    id: 'messageQueue.messageCount',
+    defaultMessage: '{count, plural, one {# message} other {# messages}} {status}',
+  },
+  waiting: {
+    id: 'messageQueue.waiting',
+    defaultMessage: 'waiting',
+  },
+  queued: {
+    id: 'messageQueue.queued',
+    defaultMessage: 'queued',
+  },
+  clearAll: {
+    id: 'messageQueue.clearAll',
+    defaultMessage: 'Clear All',
+  },
+  collapseQueue: {
+    id: 'messageQueue.collapseQueue',
+    defaultMessage: 'Collapse queue',
+  },
+  queuePausedExpanded: {
+    id: 'messageQueue.queuePausedExpanded',
+    defaultMessage: 'Queue paused by interruption. Use "Send Now" or add a new message to resume.',
+  },
+  save: {
+    id: 'messageQueue.save',
+    defaultMessage: 'Save',
+  },
+  cancel: {
+    id: 'messageQueue.cancel',
+    defaultMessage: 'Cancel',
+  },
+  clickToEdit: {
+    id: 'messageQueue.clickToEdit',
+    defaultMessage: '{content} (Click to edit)',
+  },
+  cannotSendWhileEditing: {
+    id: 'messageQueue.cannotSendWhileEditing',
+    defaultMessage: 'Cannot send while editing',
+  },
+  stopAndSend: {
+    id: 'messageQueue.stopAndSend',
+    defaultMessage: 'Stop current processing and send this message now',
+  },
+  removeFromQueue: {
+    id: 'messageQueue.removeFromQueue',
+    defaultMessage: 'Remove this message from queue',
+  },
+  dragToReorder: {
+    id: 'messageQueue.dragToReorder',
+    defaultMessage: 'Drag messages to reorder priority',
+  },
+});
 
 export interface QueuedMessage {
   id: string;
@@ -35,6 +119,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
   className = '',
   isPaused = false,
 }) => {
+  const intl = useIntl();
   const [isExpanded, setIsExpanded] = useState(true);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
@@ -118,7 +203,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
               )}
               <span className="text-sm font-medium text-foreground">
-                {isPaused ? 'Paused' : 'Next'}
+                {isPaused ? intl.formatMessage(i18n.paused) : intl.formatMessage(i18n.next)}
               </span>
             </div>
 
@@ -150,7 +235,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
                   onStopAndSend(nextMessage.id);
                 }}
                 className="h-7 px-2 text-xs text-info hover:text-info/80 hover:bg-info/10"
-                title="Send this message now"
+                title={intl.formatMessage(i18n.sendNow)}
               >
                 <Send className="w-3 h-3" />
               </Button>
@@ -161,7 +246,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
               variant="ghost"
               size="sm"
               className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-              title="Expand queue"
+              title={intl.formatMessage(i18n.expandQueue)}
             >
               <ChevronDown className="w-4 h-4" />
             </Button>
@@ -173,7 +258,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
           <div className="px-4 py-1.5 bg-amber-50/60 dark:bg-amber-900/20 border-b border-amber-200/30 dark:border-amber-800/30">
             <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
               <Zap className="w-3 h-3" />
-              <span>Queue paused - click "Send" or add new message to resume</span>
+              <span>{intl.formatMessage(i18n.queuePausedCompact)}</span>
             </div>
           </div>
         )}
@@ -202,11 +287,13 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-medium text-foreground">
-              {isPaused ? 'Queue Paused' : 'Message Queue'}
+              {isPaused ? intl.formatMessage(i18n.queuePaused) : intl.formatMessage(i18n.messageQueue)}
             </span>
             <span className="text-xs text-muted-foreground">
-              {queuedMessages.length} message{queuedMessages.length !== 1 ? 's' : ''}
-              {isPaused ? ' waiting' : ' queued'}
+              {intl.formatMessage(i18n.messageCount, {
+                count: queuedMessages.length,
+                status: isPaused ? intl.formatMessage(i18n.waiting) : intl.formatMessage(i18n.queued),
+              })}
             </span>
           </div>
         </div>
@@ -219,7 +306,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
               onClick={onClearQueue}
               className="text-xs h-7 px-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
             >
-              Clear All
+              {intl.formatMessage(i18n.clearAll)}
             </Button>
           )}
 
@@ -229,7 +316,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
             size="sm"
             onClick={() => setIsExpanded(false)}
             className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            title="Collapse queue"
+            title={intl.formatMessage(i18n.collapseQueue)}
           >
             <ChevronUp className="w-4 h-4" />
           </Button>
@@ -242,7 +329,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
           <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
             <Zap className="w-4 h-4" />
             <span>
-              Queue paused by interruption. Use "Send Now" or add a new message to resume.
+              {intl.formatMessage(i18n.queuePausedExpanded)}
             </span>
           </div>
         </div>
@@ -328,7 +415,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
                         }}
                         className="h-6 px-2 text-xs"
                       >
-                        Save
+                        {intl.formatMessage(i18n.save)}
                       </Button>
                       <Button
                         variant="ghost"
@@ -344,14 +431,14 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
                         }}
                         className="h-6 px-2 text-xs"
                       >
-                        Cancel
+                        {intl.formatMessage(i18n.cancel)}
                       </Button>
                     </div>
                   </div>
                 ) : (
                   <p
                     className="text-sm text-foreground leading-relaxed cursor-pointer hover:bg-muted/30 rounded px-1 py-0.5 transition-colors"
-                    title={`${message.content} (Click to edit)`}
+                    title={intl.formatMessage(i18n.clickToEdit, { content: message.content })}
                     onClick={() => {
                       setEditingMessage(message.id);
                       if (editingMessageIdRef) editingMessageIdRef.current = message.id;
@@ -385,8 +472,8 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
                     }`}
                     title={
                       editingMessage === message.id
-                        ? 'Cannot send while editing'
-                        : 'Stop current processing and send this message now'
+                        ? intl.formatMessage(i18n.cannotSendWhileEditing)
+                        : intl.formatMessage(i18n.stopAndSend)
                     }
                   >
                     <Send className="w-3 h-3" />
@@ -399,7 +486,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
                   size="sm"
                   onClick={() => onRemoveMessage(message.id)}
                   className="opacity-60 hover:opacity-100 transition-opacity h-6 w-6 p-0 hover:bg-destructive/20 hover:text-destructive rounded-full"
-                  title="Remove this message from queue"
+                  title={intl.formatMessage(i18n.removeFromQueue)}
                 >
                   <X className="w-3 h-3" />
                 </Button>
@@ -414,7 +501,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
             {/* Next up indicator */}
             {index === 0 && !isPaused && (
               <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full font-medium shadow-md">
-                Next
+                {intl.formatMessage(i18n.next)}
               </div>
             )}
           </div>
@@ -425,7 +512,7 @@ export const MessageQueue: React.FC<MessageQueueProps> = ({
       {onReorderMessages && queuedMessages.length > 1 && (
         <div className="px-4 pb-3 text-xs text-muted-foreground flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity">
           <GripVertical className="w-3 h-3" />
-          <span>Drag messages to reorder priority</span>
+          <span>{intl.formatMessage(i18n.dragToReorder)}</span>
         </div>
       )}
     </div>

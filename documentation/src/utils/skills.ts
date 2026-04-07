@@ -79,8 +79,8 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
   try {
     // In Docusaurus, baseUrl changes automatically for PR previews.
     // Example:
-    //   prod:      /goose/
-    //   PR preview: /goose/pr-preview/pr-6752/
+    //   prod:      /
+    //   PR preview: /pr-preview/pr-6752/
     const baseUrl = siteConfig.baseUrl.endsWith("/")
       ? siteConfig.baseUrl
       : `${siteConfig.baseUrl}/`;

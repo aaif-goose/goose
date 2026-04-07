@@ -9,7 +9,7 @@ authors:
 ![blog cover](agentic_guardrails_header.jpg)
 
 
-In [our previous blog post](https://aaif-goose.github.io/goose/blog/2025/03/31/securing-mcp/) we detailed the Model Context Protocol (MCP) system and discussed some security concerns and mitigations. As a brief recap, MCP provides agents with a means to accomplish tasks using defined tools; reducing the burden of using complex and varied APIs and integrations on the agent.
+In [our previous blog post](https://goose-docs.ai/blog/2025/03/31/securing-mcp/) we detailed the Model Context Protocol (MCP) system and discussed some security concerns and mitigations. As a brief recap, MCP provides agents with a means to accomplish tasks using defined tools; reducing the burden of using complex and varied APIs and integrations on the agent.
 <!--truncate-->
 <div style={{textAlign: "center"}}>
 
@@ -252,12 +252,12 @@ We also welcome any and all feedback and suggestions on improving the concept. [
 <head>
   <meta property="og:title" content="Agent Guardrails and Controls: Applying the CORS Model to Agents" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2026/01/05/agent-guardrails-cors-model" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/05/agent-guardrails-cors-model" />
   <meta property="og:description" content="Applying the security model of CORS to Agentic technologies to address common attacks against tool calling." />
-  <meta property="og:image" content="http://aaif-goose.github.io/goose/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Agent Guardrails and Controls: Applying the CORS Model to Agents" />
   <meta name="twitter:description" content="Applying the security model of CORS to Agentic technologies to address common attacks against tool calling." />
-  <meta name="twitter:image" content="http://aaif-goose.github.io/goose/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
 </head>

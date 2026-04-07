@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Goose - an open-source AI agent",
   "license": "Apache-2.0",
   "repository": {
@@ -40,14 +40,14 @@
     "react": "^19.2.4"
   },
   "optionalDependencies": {
-    "@aaif/goose-acp-server-darwin-arm64": "workspace:*",
-    "@aaif/goose-acp-server-darwin-x64": "workspace:*",
-    "@aaif/goose-acp-server-linux-arm64": "workspace:*",
-    "@aaif/goose-acp-server-linux-x64": "workspace:*",
-    "@aaif/goose-acp-server-win32-x64": "workspace:*"
+    "@aaif/goose-binary-darwin-arm64": "workspace:*",
+    "@aaif/goose-binary-darwin-x64": "workspace:*",
+    "@aaif/goose-binary-linux-arm64": "workspace:*",
+    "@aaif/goose-binary-linux-x64": "workspace:*",
+    "@aaif/goose-binary-win32-x64": "workspace:*"
   },
   "overrides": {
-    "react": "19.2.4"
+    "react": "^19.2.4"
   },
   "devDependencies": {
     "@types/marked-terminal": "^6.1.1",

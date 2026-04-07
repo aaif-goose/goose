@@ -9,7 +9,7 @@ import styles from '@site/src/components/Card/styles.module.css';
 
 <h1 className={styles.pageTitle}>Managing Tools</h1>
 <p className={styles.pageDescription}>
-  Tools are specific functions within <a href="/goose/docs/getting-started/using-extensions">extensions</a> that give goose its capabilities. Learn to control and customize how these tools work for you.
+  Tools are specific functions within <a href="/docs/getting-started/using-extensions">extensions</a> that give goose its capabilities. Learn to control and customize how these tools work for you.
 </p>
 
 <div className={styles.categorySection}>

@@ -3,20 +3,32 @@ import { View } from '../../../utils/navigationUtils';
 import ModelSettingsButtons from './subcomponents/ModelSettingsButtons';
 import { useConfig } from '../../ConfigContext';
 import {
-  UNKNOWN_PROVIDER_MSG,
-  UNKNOWN_PROVIDER_TITLE,
+  modelAndProviderMessages,
   useModelAndProvider,
 } from '../../ModelAndProviderContext';
 import { toastError } from '../../../toasts';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import ResetProviderSection from '../reset_provider/ResetProviderSection';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  resetTitle: {
+    id: 'modelsSection.resetTitle',
+    defaultMessage: 'Reset Provider and Model',
+  },
+  resetDescription: {
+    id: 'modelsSection.resetDescription',
+    defaultMessage: 'Clear your selected model and provider settings to start fresh',
+  },
+});
 
 interface ModelsSectionProps {
   setView: (view: View) => void;
 }
 
 export default function ModelsSection({ setView }: ModelsSectionProps) {
+  const intl = useIntl();
   const [provider, setProvider] = useState<string | null>(null);
   const [displayModelName, setDisplayModelName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -48,8 +60,8 @@ export default function ModelsSection({ setView }: ModelsSectionProps) {
 
         if (providerDetailsList.length != 1) {
           toastError({
-            title: UNKNOWN_PROVIDER_TITLE,
-            msg: UNKNOWN_PROVIDER_MSG,
+            title: intl.formatMessage(modelAndProviderMessages.unknownProviderTitle),
+            msg: intl.formatMessage(modelAndProviderMessages.unknownProviderMsg),
           });
           setProvider(gooseProvider);
         } else {
@@ -62,7 +74,7 @@ export default function ModelsSection({ setView }: ModelsSectionProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [read, getProviders, getCurrentModelDisplayName, getCurrentProviderDisplayName]);
+  }, [read, getProviders, getCurrentModelDisplayName, getCurrentProviderDisplayName, intl]);
 
   useEffect(() => {
     loadModelData();
@@ -104,9 +116,9 @@ export default function ModelsSection({ setView }: ModelsSectionProps) {
       </Card>
       <Card className="pb-2 rounded-lg">
         <CardHeader className="pb-0">
-          <CardTitle className="">Reset Provider and Model</CardTitle>
+          <CardTitle className="">{intl.formatMessage(i18n.resetTitle)}</CardTitle>
           <CardDescription>
-            Clear your selected model and provider settings to start fresh
+            {intl.formatMessage(i18n.resetDescription)}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-2">

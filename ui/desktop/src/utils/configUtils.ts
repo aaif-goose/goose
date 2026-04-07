@@ -57,6 +57,17 @@ export const configLabels: Record<string, string> = {
   // snowflake
   SNOWFLAKE_HOST: 'Snowflake Host',
   SNOWFLAKE_TOKEN: 'Snowflake Token',
+
+  // github copilot
+  GITHUB_COPILOT_HOST: 'Custom GitHub Host',
+  GITHUB_COPILOT_CLIENT_ID: 'Custom GitHub OAuth Client ID',
+  GITHUB_COPILOT_TOKEN_URL: 'Custom GitHub Copilot Token URL',
+};
+
+export const configPlaceholders: Record<string, string> = {
+  GITHUB_COPILOT_HOST: 'my-enterprise.ghe.com',
+  GITHUB_COPILOT_CLIENT_ID: 'Iv1.xxxxxxxxxxxxxxxx',
+  GITHUB_COPILOT_TOKEN_URL: 'https://my-enterprise.ghe.com/api/copilot_internal/v2/token',
 };
 
 export const providerPrefixes: Record<string, string[]> = {
@@ -70,6 +81,7 @@ export const providerPrefixes: Record<string, string[]> = {
   azure_openai: ['AZURE_'],
   gcp_vertex_ai: ['GCP_'],
   snowflake: ['SNOWFLAKE_'],
+  github_copilot: ['GITHUB_COPILOT_'],
 };
 
 export const getUiNames = (key: string): string => {

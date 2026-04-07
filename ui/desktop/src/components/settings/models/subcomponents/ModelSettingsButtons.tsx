@@ -3,12 +3,25 @@ import { Button } from '../../../ui/button';
 import { SwitchModelModal } from './SwitchModelModal';
 import type { View } from '../../../../utils/navigationUtils';
 import { shouldShowPredefinedModels } from '../predefinedModelsUtils';
+import { defineMessages, useIntl } from '../../../../i18n';
+
+const i18n = defineMessages({
+  switchModels: {
+    id: 'modelSettingsButtons.switchModels',
+    defaultMessage: 'Switch models',
+  },
+  configureProviders: {
+    id: 'modelSettingsButtons.configureProviders',
+    defaultMessage: 'Configure providers',
+  },
+});
 
 interface ConfigureModelButtonsProps {
   setView: (view: View) => void;
 }
 
 export default function ModelSettingsButtons({ setView }: ConfigureModelButtonsProps) {
+  const intl = useIntl();
   const [isAddModelModalOpen, setIsAddModelModalOpen] = useState(false);
   const hasPredefinedModels = shouldShowPredefinedModels();
 
@@ -20,7 +33,7 @@ export default function ModelSettingsButtons({ setView }: ConfigureModelButtonsP
         size="sm"
         onClick={() => setIsAddModelModalOpen(true)}
       >
-        Switch models
+        {intl.formatMessage(i18n.switchModels)}
       </Button>
       {isAddModelModalOpen ? (
         <SwitchModelModal
@@ -38,7 +51,7 @@ export default function ModelSettingsButtons({ setView }: ConfigureModelButtonsP
             setView('ConfigureProviders');
           }}
         >
-          Configure providers
+          {intl.formatMessage(i18n.configureProviders)}
         </Button>
       )}
     </div>

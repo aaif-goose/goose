@@ -732,6 +732,26 @@ enum Command {
         builtins: Vec<String>,
     },
 
+    /// Start ACP server over HTTP and WebSocket
+    #[command(about = "Start ACP server over HTTP and WebSocket")]
+    Serve {
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        #[arg(long, default_value = "3284")]
+        port: u16,
+
+        #[arg(
+            long = "with-builtin",
+            value_name = "NAME",
+            help = "Add builtin extensions by name (e.g., 'developer' or multiple: 'developer,github')",
+            long_help = "Add one or more builtin extensions that are bundled with goose by specifying their names, comma-separated",
+            value_delimiter = ',',
+            action = clap::ArgAction::Append
+        )]
+        builtins: Vec<String>,
+    },
+
     /// Start or resume interactive chat sessions
     #[command(
         about = "Start or resume interactive chat sessions",
@@ -1009,6 +1029,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Info { .. }) => "info",
         Some(Command::Mcp { .. }) => "mcp",
         Some(Command::Acp { .. }) => "acp",
+        Some(Command::Serve { .. }) => "serve",
         Some(Command::Session { .. }) => "session",
         Some(Command::Project {}) => "project",
         Some(Command::Projects) => "projects",
@@ -1035,6 +1056,35 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
         McpCommand::Memory => serve(MemoryServer::new()).await?,
         McpCommand::Tutorial => serve(TutorialServer::new()).await?,
     }
+    Ok(())
+}
+
+async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) -> Result<()> {
+    use goose::config::paths::Paths;
+    use goose_acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+    use tracing::info;
+
+    let builtins = if builtins.is_empty() {
+        vec!["developer".to_string()]
+    } else {
+        builtins
+    };
+
+    let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
+        builtins,
+        data_dir: Paths::data_dir(),
+        config_dir: Paths::config_dir(),
+    }));
+    let router = goose_acp::transport::create_router(server);
+
+    let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
+    info!("Starting ACP server on {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, router).await?;
+
     Ok(())
 }
 
@@ -1708,6 +1758,11 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Info { verbose }) => handle_info(verbose),
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
         Some(Command::Acp { builtins }) => goose_acp::server::run(builtins).await,
+        Some(Command::Serve {
+            host,
+            port,
+            builtins,
+        }) => handle_serve_command(host, port, builtins).await,
         Some(Command::Session {
             command: Some(cmd), ..
         }) => handle_session_subcommand(cmd).await,

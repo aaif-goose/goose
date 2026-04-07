@@ -38,7 +38,7 @@ To keep pace with growing MCP complexity, **automated metadata validation become
 
 ## 2. System Overview: Modular and Composable Goose Recipes
 
-The foundation of this framework is [Goose’s recipe engine](https://aaif-goose.github.io/goose/docs/guides/recipes/). Recipes define reusable, declarative workflows for AI-assisted tasks. Each one encapsulates a step—like generating predictions or comparing results—and can be composed into larger pipelines.
+The foundation of this framework is [Goose’s recipe engine](https://goose-docs.ai/docs/guides/recipes/). Recipes define reusable, declarative workflows for AI-assisted tasks. Each one encapsulates a step—like generating predictions or comparing results—and can be composed into larger pipelines.
 
 We start with a core recipe that maps natural language queries to tool calls. It reads queries, analyzes the toolset, and produces structured JSON mappings. This recipe becomes the building block for workflows like:
 
@@ -564,12 +564,12 @@ With these building blocks in place, teams can confidently expand their automati
 <head>
   <meta property="og:title" content="Automated MCP Testing: Using Composable Goose Recipes to Validate Tool Metadata" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025/08/12/mcp-testing" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/12/mcp-testing" />
   <meta property="og:description" content="Automate MCP tool metadata validation using composable Goose recipes to catch regressions, optimize token usage, and ensure AI agents can reliably discover and use your tools" />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/automated_mcp_testing-296dac2cd2b1b327e58854f4bfb0c89a.jpg" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/automated_mcp_testing-296dac2cd2b1b327e58854f4bfb0c89a.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Automated MCP Testing: Using Composable Goose Recipes to Validate Tool Metadata" />
   <meta name="twitter:description" content="Automate MCP tool metadata validation using composable Goose recipes to catch regressions, optimize token usage, and ensure AI agents can reliably discover and use your tools" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/automated_mcp_testing-296dac2cd2b1b327e58854f4bfb0c89a.jpg" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/automated_mcp_testing-296dac2cd2b1b327e58854f4bfb0c89a.jpg" />
 </head>

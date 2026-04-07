@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   AlertCircle,
 } from 'lucide-react';
+import { defineMessages, useIntl } from '../../i18n';
 import { resumeSession } from '../../sessions';
 import { Button } from '../ui/button';
 import { toast } from 'react-toastify';
@@ -33,6 +34,77 @@ import BackButton from '../ui/BackButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { Message, Session } from '../../api';
 import { useNavigation } from '../../hooks/useNavigation';
+
+const i18n = defineMessages({
+  errorLoadingDetails: {
+    id: 'sessionHistory.error.loading',
+    defaultMessage: 'Error Loading Session Details',
+  },
+  tryAgain: {
+    id: 'sessionHistory.error.tryAgain',
+    defaultMessage: 'Try Again',
+  },
+  searchPlaceholder: {
+    id: 'sessionHistory.searchPlaceholder',
+    defaultMessage: 'Search history...',
+  },
+  noMessages: {
+    id: 'sessionHistory.empty.title',
+    defaultMessage: 'No messages found',
+  },
+  noMessagesDesc: {
+    id: 'sessionHistory.empty.description',
+    defaultMessage: "This session doesn't contain any messages",
+  },
+  loadingDetails: {
+    id: 'sessionHistory.loading',
+    defaultMessage: 'Loading session details...',
+  },
+  sharing: {
+    id: 'sessionHistory.sharing',
+    defaultMessage: 'Sharing...',
+  },
+  share: {
+    id: 'sessionHistory.share',
+    defaultMessage: 'Share',
+  },
+  shareTooltip: {
+    id: 'sessionHistory.shareTooltip',
+    defaultMessage: 'To enable session sharing, go to <b>Settings</b> > <b>Session</b> > <b>Session Sharing</b>.',
+  },
+  resume: {
+    id: 'sessionHistory.resume',
+    defaultMessage: 'Resume',
+  },
+  shareSessionTitle: {
+    id: 'sessionHistory.shareModal.title',
+    defaultMessage: 'Share Session (beta)',
+  },
+  shareSessionDescription: {
+    id: 'sessionHistory.shareModal.description',
+    defaultMessage: 'Share this session link to give others a read only view of your goose chat.',
+  },
+  copy: {
+    id: 'sessionHistory.copy',
+    defaultMessage: 'Copy',
+  },
+  cancel: {
+    id: 'sessionHistory.cancel',
+    defaultMessage: 'Cancel',
+  },
+  failedToShare: {
+    id: 'sessionHistory.toast.shareFailed',
+    defaultMessage: 'Failed to share session: {error}',
+  },
+  failedToCopy: {
+    id: 'sessionHistory.toast.copyFailed',
+    defaultMessage: 'Failed to copy link to clipboard',
+  },
+  couldNotLaunch: {
+    id: 'sessionHistory.toast.launchFailed',
+    defaultMessage: 'Could not launch session: {error}',
+  },
+});
 
 const isUserMessage = (message: Message): boolean => {
   if (message.role === 'assistant') {
@@ -81,6 +153,7 @@ const SessionMessages: React.FC<{
   error: string | null;
   onRetry: () => void;
 }> = ({ messages, isLoading, error, onRetry }) => {
+  const intl = useIntl();
   const filteredMessages = filterMessagesForDisplay(messages);
 
   return (
@@ -96,15 +169,15 @@ const SessionMessages: React.FC<{
               <div className="text-red-500 mb-4">
                 <AlertCircle size={32} />
               </div>
-              <p className="text-md mb-2">Error Loading Session Details</p>
+              <p className="text-md mb-2">{intl.formatMessage(i18n.errorLoadingDetails)}</p>
               <p className="text-sm text-center mb-4">{error}</p>
               <Button onClick={onRetry} variant="default">
-                Try Again
+                {intl.formatMessage(i18n.tryAgain)}
               </Button>
             </div>
           ) : filteredMessages?.length > 0 ? (
             <div className="max-w-4xl mx-auto w-full">
-              <SearchView placeholder="Search history...">
+              <SearchView placeholder={intl.formatMessage(i18n.searchPlaceholder)}>
                 <ProgressiveMessageList
                   messages={filteredMessages}
                   chat={{
@@ -122,8 +195,8 @@ const SessionMessages: React.FC<{
           ) : (
             <div className="flex flex-col items-center justify-center py-8 text-text-secondary">
               <MessageSquareText className="w-12 h-12 mb-4" />
-              <p className="text-lg mb-2">No messages found</p>
-              <p className="text-sm">This session doesn't contain any messages</p>
+              <p className="text-lg mb-2">{intl.formatMessage(i18n.noMessages)}</p>
+              <p className="text-sm">{intl.formatMessage(i18n.noMessagesDesc)}</p>
             </div>
           )}
         </div>
@@ -146,6 +219,7 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
   const [isCopied, setIsCopied] = useState(false);
   const [canShare, setCanShare] = useState(false);
 
+  const intl = useIntl();
   const messages = session.conversation || [];
 
   const setView = useNavigation();
@@ -180,7 +254,7 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
       setIsShareModalOpen(true);
     } catch (error) {
       console.error('Error sharing session:', error);
-      toast.error(`Failed to share session: ${errorMessage(error, 'Unknown error')}`);
+      toast.error(intl.formatMessage(i18n.failedToShare, { error: errorMessage(error, 'Unknown error') }));
     } finally {
       setIsSharing(false);
     }
@@ -195,7 +269,7 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
       })
       .catch((err) => {
         console.error('Failed to copy link:', err);
-        toast.error('Failed to copy link to clipboard');
+        toast.error(intl.formatMessage(i18n.failedToCopy));
       });
   };
 
@@ -203,7 +277,7 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
     try {
       resumeSession(session, setView);
     } catch (error) {
-      toast.error(`Could not launch session: ${errorMessage(error)}`);
+      toast.error(intl.formatMessage(i18n.couldNotLaunch, { error: errorMessage(error) }));
     }
   };
 
@@ -221,12 +295,12 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
             {isSharing ? (
               <>
                 <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
-                Sharing...
+                {intl.formatMessage(i18n.sharing)}
               </>
             ) : (
               <>
                 <Share2 className="w-4 h-4" />
-                Share
+                {intl.formatMessage(i18n.share)}
               </>
             )}
           </Button>
@@ -234,15 +308,16 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
         {!canShare ? (
           <TooltipContent>
             <p>
-              To enable session sharing, go to <b>Settings</b> {'>'} <b>Session</b> {'>'}{' '}
-              <b>Session Sharing</b>.
+              {intl.formatMessage(i18n.shareTooltip, {
+                b: (chunks: React.ReactNode) => <b>{chunks}</b>,
+              })}
             </p>
           </TooltipContent>
         ) : null}
       </Tooltip>
       <Button onClick={handleResumeSession} size="sm" variant="outline">
         <Sparkles className="w-4 h-4" />
-        Resume
+        {intl.formatMessage(i18n.resume)}
       </Button>
     </>
   ) : null;
@@ -285,7 +360,7 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
               ) : (
                 <div className="flex items-center text-text-secondary text-sm">
                   <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
-                  <span>Loading session details...</span>
+                  <span>{intl.formatMessage(i18n.loadingDetails)}</span>
                 </div>
               )}
             </div>
@@ -305,10 +380,10 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
           <DialogHeader>
             <DialogTitle className="flex justify-center items-center gap-2">
               <Share2 className="w-6 h-6 text-text-primary" />
-              Share Session (beta)
+              {intl.formatMessage(i18n.shareSessionTitle)}
             </DialogTitle>
             <DialogDescription>
-              Share this session link to give others a read only view of your goose chat.
+              {intl.formatMessage(i18n.shareSessionDescription)}
             </DialogDescription>
           </DialogHeader>
 
@@ -325,14 +400,14 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
                 disabled={isCopied}
               >
                 {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                <span className="sr-only">Copy</span>
+                <span className="sr-only">{intl.formatMessage(i18n.copy)}</span>
               </Button>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsShareModalOpen(false)}>
-              Cancel
+              {intl.formatMessage(i18n.cancel)}
             </Button>
           </DialogFooter>
         </DialogContent>

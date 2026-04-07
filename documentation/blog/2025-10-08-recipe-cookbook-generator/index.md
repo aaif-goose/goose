@@ -358,12 +358,12 @@ activities:
 <head>
   <meta property="og:title" content="Build Your Own Recipe Cookbook Generator for goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025/10/08/recipe-cookbook-generator" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/10/08/recipe-cookbook-generator" />
   <meta property="og:description" content="Discover how goose can study your past sessions and turn your favorite workflows into reusable automation templates." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Build Your Own Recipe Cookbook Generator for goose" />
   <meta name="twitter:description" content="Discover how goose can study your past sessions and turn your favorite workflows into reusable automation templates." />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
 </head>

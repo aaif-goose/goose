@@ -69,12 +69,12 @@ Thank you to Tetrate for supporting open source and making AI development more a
 <head>
   <meta property="og:title" content="Your First goose Experience Is On Us" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025/08/27/get-started-for-free-with-tetrate" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/27/get-started-for-free-with-tetrate" />
   <meta property="og:description" content="New goose users receive $10 in Tetrate Agent Router credits for instant access to multiple models including GPT-5 and Sonnet-4." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/tetrate-header-9e2afbf5d1ce961d5f25547a7439c65f.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/tetrate-header-9e2afbf5d1ce961d5f25547a7439c65f.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Your First goose Experience Is On Us" />
   <meta name="twitter:description" content="New goose users receive $10 in Tetrate Agent Router credits for instant access to multiple models including GPT-5 and Sonnet-4" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/tetrate-header-9e2afbf5d1ce961d5f25547a7439c65f.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/tetrate-header-9e2afbf5d1ce961d5f25547a7439c65f.png" />
 </head>

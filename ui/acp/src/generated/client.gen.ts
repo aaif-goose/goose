@@ -9,9 +9,12 @@ export interface ExtMethodProvider {
 
 import type {
   AddExtensionRequest,
+  CheckSecretRequest,
+  CheckSecretResponse,
   DeleteSessionRequest,
   ExportSessionRequest,
   ExportSessionResponse,
+  GetExtensionsRequest,
   GetExtensionsResponse,
   GetSessionRequest,
   GetSessionResponse,
@@ -19,18 +22,32 @@ import type {
   GetToolsResponse,
   ImportSessionRequest,
   ImportSessionResponse,
+  ListProvidersRequest,
+  ListProvidersResponse,
+  ReadConfigRequest,
+  ReadConfigResponse,
   ReadResourceRequest,
   ReadResourceResponse,
+  RemoveConfigRequest,
   RemoveExtensionRequest,
+  RemoveSecretRequest,
+  UpdateProviderRequest,
+  UpdateProviderResponse,
   UpdateWorkingDirRequest,
+  UpsertConfigRequest,
+  UpsertSecretRequest,
 } from './types.gen.js';
 import {
+  zCheckSecretResponse,
   zExportSessionResponse,
   zGetExtensionsResponse,
   zGetSessionResponse,
   zGetToolsResponse,
   zImportSessionResponse,
+  zListProvidersResponse,
+  zReadConfigResponse,
   zReadResourceResponse,
+  zUpdateProviderResponse,
 } from './zod.gen.js';
 
 export class GooseExtClient {
@@ -83,8 +100,57 @@ export class GooseExtClient {
     return zImportSessionResponse.parse(raw) as ImportSessionResponse;
   }
 
-  async GooseConfigExtensions(): Promise<GetExtensionsResponse> {
-    const raw = await this.conn.extMethod("_goose/config/extensions", {});
+  async GooseConfigExtensions(
+    params: GetExtensionsRequest,
+  ): Promise<GetExtensionsResponse> {
+    const raw = await this.conn.extMethod("_goose/config/extensions", params);
     return zGetExtensionsResponse.parse(raw) as GetExtensionsResponse;
+  }
+
+  async GooseSessionProviderUpdate(
+    params: UpdateProviderRequest,
+  ): Promise<UpdateProviderResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/session/provider/update",
+      params,
+    );
+    return zUpdateProviderResponse.parse(raw) as UpdateProviderResponse;
+  }
+
+  async GooseProvidersList(
+    params: ListProvidersRequest,
+  ): Promise<ListProvidersResponse> {
+    const raw = await this.conn.extMethod("_goose/providers/list", params);
+    return zListProvidersResponse.parse(raw) as ListProvidersResponse;
+  }
+
+  async GooseConfigRead(
+    params: ReadConfigRequest,
+  ): Promise<ReadConfigResponse> {
+    const raw = await this.conn.extMethod("_goose/config/read", params);
+    return zReadConfigResponse.parse(raw) as ReadConfigResponse;
+  }
+
+  async GooseConfigUpsert(params: UpsertConfigRequest): Promise<void> {
+    await this.conn.extMethod("_goose/config/upsert", params);
+  }
+
+  async GooseConfigRemove(params: RemoveConfigRequest): Promise<void> {
+    await this.conn.extMethod("_goose/config/remove", params);
+  }
+
+  async GooseSecretCheck(
+    params: CheckSecretRequest,
+  ): Promise<CheckSecretResponse> {
+    const raw = await this.conn.extMethod("_goose/secret/check", params);
+    return zCheckSecretResponse.parse(raw) as CheckSecretResponse;
+  }
+
+  async GooseSecretUpsert(params: UpsertSecretRequest): Promise<void> {
+    await this.conn.extMethod("_goose/secret/upsert", params);
+  }
+
+  async GooseSecretRemove(params: RemoveSecretRequest): Promise<void> {
+    await this.conn.extMethod("_goose/secret/remove", params);
   }
 }

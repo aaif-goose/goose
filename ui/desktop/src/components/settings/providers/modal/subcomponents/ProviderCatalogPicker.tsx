@@ -9,6 +9,62 @@ import {
   type ProviderCatalogEntry,
   type ProviderTemplate,
 } from '../../../../../api';
+import { defineMessages, useIntl } from '../../../../../i18n';
+
+const i18n = defineMessages({
+  chooseProvider: {
+    id: 'providerCatalogPicker.chooseProvider',
+    defaultMessage: 'Choose Provider',
+  },
+  selectFormatDescription: {
+    id: 'providerCatalogPicker.selectFormatDescription',
+    defaultMessage: "Select an API format and provider. We'll auto-fill the configuration for you.",
+  },
+  apiFormat: {
+    id: 'providerCatalogPicker.apiFormat',
+    defaultMessage: 'API Format',
+  },
+  openaiCompatible: {
+    id: 'providerCatalogPicker.openaiCompatible',
+    defaultMessage: 'OpenAI Compatible',
+  },
+  anthropicCompatible: {
+    id: 'providerCatalogPicker.anthropicCompatible',
+    defaultMessage: 'Anthropic Compatible',
+  },
+  searchProviders: {
+    id: 'providerCatalogPicker.searchProviders',
+    defaultMessage: 'Search providers...',
+  },
+  loadingProviders: {
+    id: 'providerCatalogPicker.loadingProviders',
+    defaultMessage: 'Loading providers...',
+  },
+  errorPrefix: {
+    id: 'providerCatalogPicker.errorPrefix',
+    defaultMessage: 'Error: {error}',
+  },
+  noProvidersFound: {
+    id: 'providerCatalogPicker.noProvidersFound',
+    defaultMessage: 'No providers found for "{query}"',
+  },
+  noProvidersAvailable: {
+    id: 'providerCatalogPicker.noProvidersAvailable',
+    defaultMessage: 'No providers available',
+  },
+  modelsAvailable: {
+    id: 'providerCatalogPicker.modelsAvailable',
+    defaultMessage: '{count} models available',
+  },
+  requiresEnvVar: {
+    id: 'providerCatalogPicker.requiresEnvVar',
+    defaultMessage: ' • Requires {envVar}',
+  },
+  cancel: {
+    id: 'providerCatalogPicker.cancel',
+    defaultMessage: 'Cancel',
+  },
+});
 
 interface ProviderCatalogPickerProps {
   onSelect: (template: ProviderTemplate) => void;
@@ -21,6 +77,7 @@ export default function ProviderCatalogPicker({
   onCancel,
   embedded,
 }: ProviderCatalogPickerProps) {
+  const intl = useIntl();
   const [selectedFormat, setSelectedFormat] = useState<string>('openai');
   const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
   const [filteredProviders, setFilteredProviders] = useState<ProviderCatalogEntry[]>([]);
@@ -29,8 +86,8 @@ export default function ProviderCatalogPicker({
   const [error, setError] = useState<string | null>(null);
 
   const formatOptions = [
-    { value: 'openai', label: 'OpenAI Compatible' },
-    { value: 'anthropic', label: 'Anthropic Compatible' },
+    { value: 'openai', label: intl.formatMessage(i18n.openaiCompatible) },
+    { value: 'anthropic', label: intl.formatMessage(i18n.anthropicCompatible) },
   ];
 
   // Fetch providers when format changes
@@ -91,15 +148,15 @@ export default function ProviderCatalogPicker({
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h3 className="text-lg font-semibold text-textStandard mb-2">Choose Provider</h3>
+        <h3 className="text-lg font-semibold text-textStandard mb-2">{intl.formatMessage(i18n.chooseProvider)}</h3>
         <p className="text-sm text-textSubtle">
-          Select an API format and provider. We'll auto-fill the configuration for you.
+          {intl.formatMessage(i18n.selectFormatDescription)}
         </p>
       </div>
 
       {/* Format Selection */}
       <div>
-        <label className="text-sm font-medium text-textStandard mb-2 block">API Format</label>
+        <label className="text-sm font-medium text-textStandard mb-2 block">{intl.formatMessage(i18n.apiFormat)}</label>
         <Select
           options={formatOptions}
           value={formatOptions.find((opt) => opt.value === selectedFormat)}
@@ -118,7 +175,7 @@ export default function ProviderCatalogPicker({
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-textSubtle w-4 h-4" />
         <Input
           type="text"
-          placeholder="Search providers..."
+          placeholder={intl.formatMessage(i18n.searchProviders)}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-10"
@@ -126,15 +183,17 @@ export default function ProviderCatalogPicker({
       </div>
 
       {/* Loading/Error */}
-      {loading && <div className="text-center py-8 text-textSubtle">Loading providers...</div>}
-      {error && <div className="text-center py-8 text-red-500">Error: {error}</div>}
+      {loading && <div className="text-center py-8 text-textSubtle">{intl.formatMessage(i18n.loadingProviders)}</div>}
+      {error && <div className="text-center py-8 text-red-500">{intl.formatMessage(i18n.errorPrefix, { error })}</div>}
 
       {/* Provider List */}
       {!loading && !error && (
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {filteredProviders.length === 0 ? (
             <div className="text-center py-8 text-textSubtle">
-              {searchQuery ? `No providers found for "${searchQuery}"` : 'No providers available'}
+              {searchQuery
+                ? intl.formatMessage(i18n.noProvidersFound, { query: searchQuery })
+                : intl.formatMessage(i18n.noProvidersAvailable)}
             </div>
           ) : (
             filteredProviders.map((provider) => (
@@ -161,8 +220,8 @@ export default function ProviderCatalogPicker({
                     </div>
                     <div className="text-sm text-textSubtle mt-1 break-all">{provider.api_url}</div>
                     <div className="text-xs text-textSubtle mt-2">
-                      {provider.model_count} models available
-                      {provider.env_var && ` • Requires ${provider.env_var}`}
+                      {intl.formatMessage(i18n.modelsAvailable, { count: provider.model_count })}
+                      {provider.env_var && intl.formatMessage(i18n.requiresEnvVar, { envVar: provider.env_var })}
                     </div>
                   </div>
                   <Check className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
@@ -177,7 +236,7 @@ export default function ProviderCatalogPicker({
       {!embedded && (
         <div className="flex justify-end space-x-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
         </div>
       )}

@@ -55,12 +55,12 @@ Kudos to my colleague [Mic Neale](https://github.com/michaelneale) for collabora
 <head>
   <meta property="og:title" content="Code Mode MCP in goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025/12/15/code-mode-mcp-in-goose" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/12/15/code-mode-mcp-in-goose" />
   <meta property="og:description" content="An emerging approach to MCP tool calling gets an open source implementation in goose" />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/header-image-1fa39f1d26aea7722e2c10fc424804f5.jpg" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/header-image-1fa39f1d26aea7722e2c10fc424804f5.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Code Mode MCP in goose" />
   <meta name="twitter:description" content="An emerging approach to MCP tool calling gets an open source implementation in goose" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/header-image-1fa39f1d26aea7722e2c10fc424804f5.jpg" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/header-image-1fa39f1d26aea7722e2c10fc424804f5.jpg" />
 </head>

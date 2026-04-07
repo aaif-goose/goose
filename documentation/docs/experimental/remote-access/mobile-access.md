@@ -72,7 +72,7 @@ import mobileShots from '@site/blog/2025-12-19-goose-mobile-terminal/mobile_shot
       title: 'goose Mobile Access and Native Terminal Support',
       description: 'Learn about two new ways to use goose: iOS app for mobile access and native terminal support with seamless session continuity.',
       thumbnailUrl: mobileShots,
-      linkUrl: '/goose/blog/2025/12/19/goose-mobile-terminal',
+      linkUrl: '/blog/2025/12/19/goose-mobile-terminal',
       date: '2025-12-19',
       duration: '4 min read'
     }

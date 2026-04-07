@@ -16,8 +16,73 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../../ui/dropdown-menu';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  voiceDictationProvider: {
+    id: 'dictationSettings.voiceDictationProvider',
+    defaultMessage: 'Voice Dictation Provider',
+  },
+  chooseVoiceConversion: {
+    id: 'dictationSettings.chooseVoiceConversion',
+    defaultMessage: 'Choose how voice is converted to text',
+  },
+  disabled: {
+    id: 'dictationSettings.disabled',
+    defaultMessage: 'Disabled',
+  },
+  notConfigured: {
+    id: 'dictationSettings.notConfigured',
+    defaultMessage: '(not configured)',
+  },
+  configureApiKey: {
+    id: 'dictationSettings.configureApiKey',
+    defaultMessage: 'Configure the API key in <b>{settingsPath}</b>',
+  },
+  configuredIn: {
+    id: 'dictationSettings.configuredIn',
+    defaultMessage: '✓ Configured in {settingsPath}',
+  },
+  apiKey: {
+    id: 'dictationSettings.apiKey',
+    defaultMessage: 'API Key',
+  },
+  requiredForTranscription: {
+    id: 'dictationSettings.requiredForTranscription',
+    defaultMessage: 'Required for transcription',
+  },
+  configured: {
+    id: 'dictationSettings.configured',
+    defaultMessage: '(Configured)',
+  },
+  updateApiKey: {
+    id: 'dictationSettings.updateApiKey',
+    defaultMessage: 'Update API Key',
+  },
+  addApiKey: {
+    id: 'dictationSettings.addApiKey',
+    defaultMessage: 'Add API Key',
+  },
+  removeApiKey: {
+    id: 'dictationSettings.removeApiKey',
+    defaultMessage: 'Remove API Key',
+  },
+  enterApiKey: {
+    id: 'dictationSettings.enterApiKey',
+    defaultMessage: 'Enter your API key',
+  },
+  save: {
+    id: 'dictationSettings.save',
+    defaultMessage: 'Save',
+  },
+  cancel: {
+    id: 'dictationSettings.cancel',
+    defaultMessage: 'Cancel',
+  },
+});
 
 export const DictationSettings = () => {
+  const intl = useIntl();
   const { localInference, isLoading: isFeaturesLoading } = useFeatures();
   const [provider, setProvider] = useState<DictationProvider | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<Record<string, DictationProviderStatus>>(
@@ -110,7 +175,7 @@ export const DictationSettings = () => {
   };
 
   const getProviderLabel = (p: DictationProvider | null): string => {
-    if (!p) return 'Disabled';
+    if (!p) return intl.formatMessage(i18n.disabled);
     return p.charAt(0).toUpperCase() + p.slice(1);
   };
 
@@ -122,9 +187,9 @@ export const DictationSettings = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between py-2 px-2 hover:bg-background-secondary rounded-lg transition-all">
         <div>
-          <h3 className="text-text-primary">Voice Dictation Provider</h3>
+          <h3 className="text-text-primary">{intl.formatMessage(i18n.voiceDictationProvider)}</h3>
           <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-            Choose how voice is converted to text
+            {intl.formatMessage(i18n.chooseVoiceConversion)}
           </p>
         </div>
         <DropdownMenu onOpenChange={(open) => open && refreshStatuses()}>
@@ -137,12 +202,12 @@ export const DictationSettings = () => {
               value={provider ?? 'disabled'}
               onValueChange={handleProviderChange}
             >
-              <DropdownMenuRadioItem value="disabled">Disabled</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="disabled">{intl.formatMessage(i18n.disabled)}</DropdownMenuRadioItem>
               {visibleProviders.map((p) => (
                 <DropdownMenuRadioItem key={p} value={p}>
                   {getProviderLabel(p)}
                   {!providerStatuses[p]?.configured && (
-                    <span className="text-xs ml-1 text-text-secondary">(not configured)</span>
+                    <span className="text-xs ml-1 text-text-secondary">{intl.formatMessage(i18n.notConfigured)}</span>
                   )}
                 </DropdownMenuRadioItem>
               ))}
@@ -161,22 +226,22 @@ export const DictationSettings = () => {
             <div className="py-2 px-2 bg-background-secondary rounded-lg">
               {!providerStatuses[provider].configured ? (
                 <p className="text-xs text-text-secondary">
-                  Configure the API key in <b>{providerStatuses[provider].settings_path}</b>
+                  {intl.formatMessage(i18n.configureApiKey, { settingsPath: providerStatuses[provider].settings_path, b: (chunks: React.ReactNode) => <b>{chunks}</b> })}
                 </p>
               ) : (
                 <p className="text-xs text-green-600">
-                  ✓ Configured in {providerStatuses[provider].settings_path}
+                  {intl.formatMessage(i18n.configuredIn, { settingsPath: providerStatuses[provider].settings_path })}
                 </p>
               )}
             </div>
           ) : (
             <div className="py-2 px-2 bg-background-secondary rounded-lg">
               <div className="mb-2">
-                <h4 className="text-text-primary text-sm">API Key</h4>
+                <h4 className="text-text-primary text-sm">{intl.formatMessage(i18n.apiKey)}</h4>
                 <p className="text-xs text-text-secondary mt-[2px]">
-                  Required for transcription
+                  {intl.formatMessage(i18n.requiredForTranscription)}
                   {providerStatuses[provider]?.configured && (
-                    <span className="text-green-600 ml-2">(Configured)</span>
+                    <span className="text-green-600 ml-2">{intl.formatMessage(i18n.configured)}</span>
                   )}
                 </p>
               </div>
@@ -184,11 +249,11 @@ export const DictationSettings = () => {
               {!isEditingKey ? (
                 <div className="flex gap-2 flex-wrap">
                   <Button variant="outline" size="sm" onClick={() => setIsEditingKey(true)}>
-                    {providerStatuses[provider]?.configured ? 'Update API Key' : 'Add API Key'}
+                    {providerStatuses[provider]?.configured ? intl.formatMessage(i18n.updateApiKey) : intl.formatMessage(i18n.addApiKey)}
                   </Button>
                   {providerStatuses[provider]?.configured && (
                     <Button variant="destructive" size="sm" onClick={handleRemoveKey}>
-                      Remove API Key
+                      {intl.formatMessage(i18n.removeApiKey)}
                     </Button>
                   )}
                 </div>
@@ -198,16 +263,16 @@ export const DictationSettings = () => {
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Enter your API key"
+                    placeholder={intl.formatMessage(i18n.enterApiKey)}
                     className="max-w-md"
                     autoFocus
                   />
                   <div className="flex gap-2">
                     <Button size="sm" onClick={handleSaveKey}>
-                      Save
+                      {intl.formatMessage(i18n.save)}
                     </Button>
                     <Button variant="outline" size="sm" onClick={handleCancelEdit}>
-                      Cancel
+                      {intl.formatMessage(i18n.cancel)}
                     </Button>
                   </div>
                 </div>

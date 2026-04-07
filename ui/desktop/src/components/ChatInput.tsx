@@ -42,6 +42,7 @@ import { getNavigationShortcutText } from '../utils/keyboardShortcuts';
 import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
 import { fetchCanonicalModelInfo } from '../utils/canonical';
+import { defineMessages, useIntl } from '../i18n';
 
 interface PastedImage {
   id: string;
@@ -58,6 +59,77 @@ const TOOLS_MAX_SUGGESTED = 60; // max number of tools before we show a warning
 
 // Manual compact trigger message - must match backend constant
 const MANUAL_COMPACT_TRIGGER = '/compact';
+
+const i18n = defineMessages({
+  dictationError: {
+    id: 'chatInput.dictationError',
+    defaultMessage: 'Dictation Error',
+  },
+  removeImage: {
+    id: 'chatInput.removeImage',
+    defaultMessage: 'Remove image',
+  },
+  removeFile: {
+    id: 'chatInput.removeFile',
+    defaultMessage: 'Remove file',
+  },
+  unknownType: {
+    id: 'chatInput.unknownType',
+    defaultMessage: 'Unknown type',
+  },
+  contextWindow: {
+    id: 'chatInput.contextWindow',
+    defaultMessage: 'Context window',
+  },
+  tooManyTools: {
+    id: 'chatInput.tooManyTools',
+    defaultMessage: 'Too many tools can degrade performance.\nTool count: {toolCount} (recommend: {recommended})',
+  },
+  viewExtensions: {
+    id: 'chatInput.viewExtensions',
+    defaultMessage: 'View extensions',
+  },
+  waitingForImages: {
+    id: 'chatInput.waitingForImages',
+    defaultMessage: 'Waiting for images to save...',
+  },
+  processingDroppedFiles: {
+    id: 'chatInput.processingDroppedFiles',
+    defaultMessage: 'Processing dropped files...',
+  },
+  recording: {
+    id: 'chatInput.recording',
+    defaultMessage: 'Recording...',
+  },
+  transcribing: {
+    id: 'chatInput.transcribing',
+    defaultMessage: 'Transcribing...',
+  },
+  restartingSession: {
+    id: 'chatInput.restartingSession',
+    defaultMessage: 'Restarting session...',
+  },
+  typeMessage: {
+    id: 'chatInput.typeMessage',
+    defaultMessage: 'Type a message to send',
+  },
+  send: {
+    id: 'chatInput.send',
+    defaultMessage: 'Send',
+  },
+  failedToReadImage: {
+    id: 'chatInput.failedToReadImage',
+    defaultMessage: 'Failed to read image file',
+  },
+  viewEditRecipe: {
+    id: 'chatInput.viewEditRecipe',
+    defaultMessage: 'View/Edit Recipe',
+  },
+  createRecipeFromSession: {
+    id: 'chatInput.createRecipeFromSession',
+    defaultMessage: 'Create Recipe from Session',
+  },
+});
 
 interface ChatInputProps {
   sessionId: string | null;
@@ -144,6 +216,7 @@ export default function ChatInput({
   const dropdownRef: React.RefObject<HTMLDivElement> = useRef<HTMLDivElement>(
     null
   ) as React.RefObject<HTMLDivElement>;
+  const intl = useIntl();
   const { getProviders } = useConfig();
   const {
     getCurrentModelAndProvider,
@@ -326,7 +399,7 @@ export default function ChatInput({
       const errorType = 'DictationError';
       trackVoiceDictation('error', undefined, errorType);
       toastError({
-        title: 'Dictation Error',
+        title: intl.formatMessage(i18n.dictationError),
         msg: message,
       });
     },
@@ -471,7 +544,7 @@ export default function ChatInput({
     if ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit)) {
       addAlert({
         type: AlertType.Info,
-        message: 'Context window',
+        message: intl.formatMessage(i18n.contextWindow),
         progress: {
           current: totalTokens || 0,
           total: tokenLimit,
@@ -490,9 +563,9 @@ export default function ChatInput({
     if (toolCount !== null && toolCount > TOOLS_MAX_SUGGESTED) {
       addAlert({
         type: AlertType.Warning,
-        message: `Too many tools can degrade performance.\nTool count: ${toolCount} (recommend: ${TOOLS_MAX_SUGGESTED})`,
+        message: intl.formatMessage(i18n.tooManyTools, { toolCount, recommended: TOOLS_MAX_SUGGESTED }),
         action: {
-          text: 'View extensions',
+          text: intl.formatMessage(i18n.viewExtensions),
           onClick: () => setView('extensions'),
         },
         autoShow: false, // Don't auto-show tool count warnings
@@ -729,7 +802,7 @@ export default function ChatInput({
         setPastedImages((prev) =>
           prev.map((img) =>
             img.id === imageId
-              ? { ...img, error: 'Failed to read image file.', isLoading: false }
+              ? { ...img, error: intl.formatMessage(i18n.failedToReadImage), isLoading: false }
               : img
           )
         );
@@ -1071,7 +1144,7 @@ export default function ChatInput({
         setPastedImages((prev) =>
           prev.map((img) =>
             img.id === uniqueId
-              ? { ...img, isLoading: false, error: 'Failed to read image file' }
+              ? { ...img, isLoading: false, error: intl.formatMessage(i18n.failedToReadImage) }
               : img
           )
         );
@@ -1130,13 +1203,13 @@ export default function ChatInput({
     chatState === ChatState.RestartingAgent;
 
   const getSubmitButtonTooltip = (): string => {
-    if (isAnyImageLoading) return 'Waiting for images to save...';
-    if (isAnyDroppedFileLoading) return 'Processing dropped files...';
-    if (isRecording) return 'Recording...';
-    if (isTranscribing) return 'Transcribing...';
-    if (chatState === ChatState.RestartingAgent) return 'Restarting session...';
-    if (!hasSubmittableContent) return 'Type a message to send';
-    return 'Send';
+    if (isAnyImageLoading) return intl.formatMessage(i18n.waitingForImages);
+    if (isAnyDroppedFileLoading) return intl.formatMessage(i18n.processingDroppedFiles);
+    if (isRecording) return intl.formatMessage(i18n.recording);
+    if (isTranscribing) return intl.formatMessage(i18n.transcribing);
+    if (chatState === ChatState.RestartingAgent) return intl.formatMessage(i18n.restartingSession);
+    if (!hasSubmittableContent) return intl.formatMessage(i18n.typeMessage);
+    return intl.formatMessage(i18n.send);
   };
 
   // Queue management functions - no storage persistence, only in-memory
@@ -1439,7 +1512,7 @@ export default function ChatInput({
                   shape="round"
                   onClick={() => handleRemovePastedImage(img.id)}
                   className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity z-10"
-                  aria-label="Remove image"
+                  aria-label={intl.formatMessage(i18n.removeImage)}
                   variant="outline"
                   size="xs"
                 >
@@ -1485,7 +1558,7 @@ export default function ChatInput({
                     <p className="text-sm text-text-primary truncate" title={file.name}>
                       {file.name}
                     </p>
-                    <p className="text-xs text-text-secondary">{file.type || 'Unknown type'}</p>
+                    <p className="text-xs text-text-secondary">{file.type || intl.formatMessage(i18n.unknownType)}</p>
                   </div>
                 </div>
               )}
@@ -1495,7 +1568,7 @@ export default function ChatInput({
                   shape="round"
                   onClick={() => handleRemoveDroppedFile(file.id)}
                   className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity z-10"
-                  aria-label="Remove file"
+                  aria-label={intl.formatMessage(i18n.removeFile)}
                   variant="outline"
                   size="xs"
                 >
@@ -1597,7 +1670,7 @@ export default function ChatInput({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {recipe ? 'View/Edit Recipe' : 'Create Recipe from Session'}
+                    {recipe ? intl.formatMessage(i18n.viewEditRecipe) : intl.formatMessage(i18n.createRecipeFromSession)}
                   </TooltipContent>
                 </Tooltip>
               </div>

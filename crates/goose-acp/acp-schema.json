@@ -9,12 +9,12 @@
           "type": "string"
         },
         "config": {
-          "description": "Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform)."
+          "description": "Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform).",
+          "default": null
         }
       },
       "required": [
-        "sessionId",
-        "config"
+        "sessionId"
       ],
       "description": "Add an extension to an active session.",
       "x-side": "agent",
@@ -62,13 +62,14 @@
       "properties": {
         "tools": {
           "type": "array",
-          "items": true,
+          "items": {},
           "description": "Array of tool info objects with `name`, `description`, `parameters`, and optional `permission`."
         }
       },
       "required": [
         "tools"
       ],
+      "description": "Tools response.",
       "x-side": "agent",
       "x-method": "_goose/tools"
     },
@@ -98,12 +99,11 @@
       "type": "object",
       "properties": {
         "result": {
-          "description": "The resource result from the extension (MCP ReadResourceResult)."
+          "description": "The resource result from the extension (MCP ReadResourceResult).",
+          "default": null
         }
       },
-      "required": [
-        "result"
-      ],
+      "description": "Resource read response.",
       "x-side": "agent",
       "x-method": "_goose/resource/read"
     },
@@ -147,12 +147,10 @@
       "type": "object",
       "properties": {
         "session": {
-          "description": "The session object with id, name, working_dir, timestamps, tokens, etc."
+          "description": "The session object with id, name, working_dir, timestamps, tokens, etc.",
+          "default": null
         }
       },
-      "required": [
-        "session"
-      ],
       "description": "Get a session response.",
       "x-side": "agent",
       "x-method": "session/get"
@@ -195,6 +193,7 @@
       "required": [
         "data"
       ],
+      "description": "Export session response.",
       "x-side": "agent",
       "x-method": "_goose/session/export"
     },
@@ -216,21 +215,26 @@
       "type": "object",
       "properties": {
         "session": {
-          "description": "The imported session object."
+          "description": "The imported session object.",
+          "default": null
         }
       },
-      "required": [
-        "session"
-      ],
+      "description": "Import session response.",
       "x-side": "agent",
       "x-method": "_goose/session/import"
+    },
+    "GetExtensionsRequest": {
+      "type": "object",
+      "description": "List configured extensions and any warnings.",
+      "x-side": "agent",
+      "x-method": "_goose/config/extensions"
     },
     "GetExtensionsResponse": {
       "type": "object",
       "properties": {
         "extensions": {
           "type": "array",
-          "items": true,
+          "items": {},
           "description": "Array of ExtensionEntry objects with `enabled` flag and config details."
         },
         "warnings": {
@@ -247,6 +251,212 @@
       "description": "List configured extensions and any warnings.",
       "x-side": "agent",
       "x-method": "_goose/config/extensions"
+    },
+    "UpdateProviderRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contextLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "requestParams": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "sessionId",
+        "provider"
+      ],
+      "description": "Atomically update the provider for a live session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/provider/update"
+    },
+    "UpdateProviderResponse": {
+      "type": "object",
+      "properties": {
+        "configOptions": {
+          "type": "array",
+          "items": {},
+          "description": "Refreshed session config options after the provider/model change."
+        }
+      },
+      "required": [
+        "configOptions"
+      ],
+      "description": "Provider update response.",
+      "x-side": "agent",
+      "x-method": "_goose/session/provider/update"
+    },
+    "ListProvidersRequest": {
+      "type": "object",
+      "description": "List providers available through goose, including the config-default sentinel.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/list"
+    },
+    "ListProvidersResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderListEntry"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "description": "Provider list response.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/list"
+    },
+    "ProviderListEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "ReadConfigRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "description": "Read a single non-secret config value.",
+      "x-side": "agent",
+      "x-method": "_goose/config/read"
+    },
+    "ReadConfigResponse": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "default": null
+        }
+      },
+      "description": "Config read response.",
+      "x-side": "agent",
+      "x-method": "_goose/config/read"
+    },
+    "UpsertConfigRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "description": "Upsert a single non-secret config value.",
+      "x-side": "agent",
+      "x-method": "_goose/config/upsert"
+    },
+    "RemoveConfigRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "description": "Remove a single non-secret config value.",
+      "x-side": "agent",
+      "x-method": "_goose/config/remove"
+    },
+    "CheckSecretRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "description": "Check whether a secret exists. Never returns the actual value.",
+      "x-side": "agent",
+      "x-method": "_goose/secret/check"
+    },
+    "CheckSecretResponse": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "exists"
+      ],
+      "description": "Secret check response.",
+      "x-side": "agent",
+      "x-method": "_goose/secret/check"
+    },
+    "UpsertSecretRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "description": "Set a secret value (write-only).",
+      "x-side": "agent",
+      "x-method": "_goose/secret/upsert"
+    },
+    "RemoveSecretRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "description": "Remove a secret.",
+      "x-side": "agent",
+      "x-method": "_goose/secret/remove"
     },
     "ExtRequest": {
       "properties": {
@@ -340,6 +550,87 @@
                   ],
                   "description": "Params for _goose/session/import",
                   "title": "ImportSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetExtensionsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions",
+                  "title": "GetExtensionsRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpdateProviderRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/provider/update",
+                  "title": "UpdateProviderRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ListProvidersRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/list",
+                  "title": "ListProvidersRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ReadConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/read",
+                  "title": "ReadConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpsertConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/upsert",
+                  "title": "UpsertConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/remove",
+                  "title": "RemoveConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CheckSecretRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/secret/check",
+                  "title": "CheckSecretRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpsertSecretRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/secret/upsert",
+                  "title": "UpsertSecretRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveSecretRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/secret/remove",
+                  "title": "RemoveSecretRequest"
                 }
               ]
             },
@@ -426,6 +717,38 @@
                         }
                       ],
                       "title": "GetExtensionsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/UpdateProviderResponse"
+                        }
+                      ],
+                      "title": "UpdateProviderResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ListProvidersResponse"
+                        }
+                      ],
+                      "title": "ListProvidersResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ReadConfigResponse"
+                        }
+                      ],
+                      "title": "ReadConfigResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CheckSecretResponse"
+                        }
+                      ],
+                      "title": "CheckSecretResponse"
                     }
                   ]
                 },

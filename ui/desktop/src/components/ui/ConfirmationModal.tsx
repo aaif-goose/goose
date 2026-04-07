@@ -8,6 +8,22 @@ import {
   DialogTitle,
 } from './dialog';
 import { Button } from './button';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  processing: {
+    id: 'confirmationModal.processing',
+    defaultMessage: 'Processing...',
+  },
+  defaultConfirm: {
+    id: 'confirmationModal.defaultConfirm',
+    defaultMessage: 'Yes',
+  },
+  defaultCancel: {
+    id: 'confirmationModal.defaultCancel',
+    defaultMessage: 'No',
+  },
+});
 
 export function ConfirmationModal({
   isOpen,
@@ -16,8 +32,8 @@ export function ConfirmationModal({
   detail,
   onConfirm,
   onCancel,
-  confirmLabel = 'Yes',
-  cancelLabel = 'No',
+  confirmLabel,
+  cancelLabel,
   isSubmitting = false,
   confirmVariant = 'default',
 }: {
@@ -32,6 +48,8 @@ export function ConfirmationModal({
   isSubmitting?: boolean; // To handle debounce state
   confirmVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
 }) {
+  const intl = useIntl();
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="sm:max-w-[425px] max-h-[85vh] flex flex-col">
@@ -51,7 +69,7 @@ export function ConfirmationModal({
             disabled={isSubmitting}
             className="focus-visible:ring-2 focus-visible:ring-background-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background-default"
           >
-            {cancelLabel}
+            {cancelLabel || intl.formatMessage(i18n.defaultCancel)}
           </Button>
           <Button
             variant={confirmVariant}
@@ -59,7 +77,7 @@ export function ConfirmationModal({
             disabled={isSubmitting}
             className="focus-visible:ring-2 focus-visible:ring-background-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background-default"
           >
-            {isSubmitting ? 'Processing...' : confirmLabel}
+            {isSubmitting ? intl.formatMessage(i18n.processing) : (confirmLabel || intl.formatMessage(i18n.defaultConfirm))}
           </Button>
         </DialogFooter>
       </DialogContent>

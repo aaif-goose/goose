@@ -84,12 +84,12 @@ The [GitHub Action workflow](https://github.com/aaif-goose/goose/blob/main/.gith
 <head>
   <meta property="og:title" content="How We Use goose to Maintain goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025/12/28/goose-maintains-goose" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/12/28/goose-maintains-goose" />
   <meta property="og:description" content="Learn how an AI agent embedded in GitHub Actions helps maintainers triage issues and keep open source moving." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/goose-maintains-goose-4b25a92b0dfd9a6acce8c8f8e9c954f7.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-maintains-goose-4b25a92b0dfd9a6acce8c8f8e9c954f7.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How We Use goose to Maintain goose" />
   <meta name="twitter:description" content="Learn how an AI agent embedded in GitHub Actions helps maintainers triage issues and keep open source moving." />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/goose-maintains-goose-4b25a92b0dfd9a6acce8c8f8e9c954f7.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-maintains-goose-4b25a92b0dfd9a6acce8c8f8e9c954f7.png" />
 </head>

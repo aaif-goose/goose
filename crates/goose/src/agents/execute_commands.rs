@@ -154,11 +154,8 @@ impl Agent {
         if skills.is_empty() {
             output.push_str("No skills installed.\n\n");
             output.push_str("Skills are loaded from SKILL.md files in:\n");
-            output.push_str("  - ~/.claude/skills/\n");
-            output.push_str("  - ~/.config/agents/skills/\n");
-            output.push_str("  - .goose/skills/ (in current directory)\n");
-            output.push_str("  - .claude/skills/ (in current directory)\n");
-            output.push_str("  - .agents/skills/ (in current directory)\n");
+            output.push_str("  - ~/.agents/skills/ (global)\n");
+            output.push_str("  - .agents/skills/ (in current project)\n");
         } else {
             output.push_str(&format!("**Installed skills ({}):**\n\n", skills.len()));
             for skill in &skills {

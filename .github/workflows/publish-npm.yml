@@ -91,9 +91,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Build goose binaries for all platforms
+  # Build goose CLI binaries for all platforms
   build-goose-binaries:
-    name: Build goose (${{ matrix.platform }})
+    name: Build goose CLI (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -111,9 +111,10 @@ jobs:
           - platform: linux-x64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - platform: win32-x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
+          # Temporarily disabled - Windows builds are slow (20+ min) without cache
+          # - platform: win32-x64
+          #   os: windows-latest
+          #   target: x86_64-pc-windows-msvc
     outputs:
       cache-key-base: ${{ steps.cache-key.outputs.key-base }}
     steps:
@@ -164,7 +165,7 @@ jobs:
             target/${{ matrix.target }}/release/goose${{ matrix.platform == 'win32-x64' && '.exe' || '' }}
           key: ${{ steps.cache-key.outputs.key }}
 
-      - name: Build goose binary
+      - name: Build goose CLI binary
         if: steps.binary-cache.outputs.cache-hit != 'true'
         run: cargo build --release --target ${{ matrix.target }} --bin goose
 
@@ -204,6 +205,7 @@ jobs:
         with:
           node-version: '24.10.0'
           registry-url: 'https://registry.npmjs.org'
+          always-auth: true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4
@@ -227,7 +229,7 @@ jobs:
           echo "Downloaded ACP schema:"
           ls -lh crates/goose-acp/acp-*.json
           echo ""
-          echo "Downloaded goose binaries:"
+          echo "Downloaded goose CLI binaries:"
           ls -R goose-binaries/
 
       - name: Install dependencies
@@ -259,7 +261,7 @@ jobs:
             echo "### ACP Schema"
             echo "✅ Generated and cached"
             echo ""
-            echo "### Goose Binaries"
+            echo "### Goose CLI Binaries"
             echo "✅ Built for all platforms:"
             for dir in goose-binaries/goose-*; do
               platform=$(basename "$dir" | sed 's/goose-//')
@@ -268,7 +270,7 @@ jobs:
             echo ""
             echo "### npm Packages"
             echo "✅ @aaif/goose-acp"
-            echo "✅ @aaif/goose-text"
+            echo "✅ @aaif/goose (TUI)"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -292,29 +294,60 @@ jobs:
               echo "⚠️  Skipping actual npm publish (dry-run mode)"
               echo ""
               echo "To publish for real, run this workflow without dry-run enabled."
+              echo ""
+              echo "**Note:** Changesets will still run to verify functionality."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Create Release Pull Request or Publish to npm
+      - name: Configure npm authentication
         if: inputs.dry-run != true && github.ref == 'refs/heads/main'
-        id: changesets
-        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1.7.0
-        with:
-          publish: pnpm run release
-          version: pnpm run version
-          commit: 'chore: version packages'
-          title: 'chore: version packages'
-          cwd: ui
+        run: |
+          cd ui
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+
+      - name: Publish to npm
+        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
+        run: |
+          cd ui
+          # Publish all packages in the workspace
+          pnpm publish -r --access public --no-git-checks
+        env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 
-      - name: Publish summary
-        if: steps.changesets.outputs.published == 'true' && inputs.dry-run != true && github.ref == 'refs/heads/main'
+      - name: Dry run - Show what would be published
+        if: inputs.dry-run == true || github.ref != 'refs/heads/main'
         run: |
+          cd ui
+          echo "## 📦 Packages that would be published:" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
+          
+          # List all publishable packages
+          for pkg in acp text goose-binary/*/; do
+            if [ -f "$pkg/package.json" ]; then
+              name=$(jq -r '.name' "$pkg/package.json")
+              version=$(jq -r '.version' "$pkg/package.json")
+              echo "- $name@$version" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          
+          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "**Note:** This is a dry run. No packages were published." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish summary
+        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
+        run: |
+          cd ui
           {
             echo "## 🚀 Published Packages"
             echo ""
-            echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -r '.[] | "- \(.name)@\(.version)"'
+            for pkg in acp text goose-binary/*/; do
+              if [ -f "$pkg/package.json" ]; then
+                name=$(jq -r '.name' "$pkg/package.json")
+                version=$(jq -r '.version' "$pkg/package.json")
+                echo "- $name@$version"
+              fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"

@@ -13,6 +13,98 @@ import { RecipeFormData } from './shared/recipeFormSchema';
 import { toastSuccess, toastError } from '../../toasts';
 import { saveRecipe } from '../../recipe/recipe_management';
 import { errorMessage } from '../../utils/conversionUtils';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  createRecipeTitle: {
+    id: 'createEditRecipe.createRecipeTitle',
+    defaultMessage: 'Create Recipe',
+  },
+  viewEditRecipeTitle: {
+    id: 'createEditRecipe.viewEditRecipeTitle',
+    defaultMessage: 'View/edit recipe',
+  },
+  createSubtitle: {
+    id: 'createEditRecipe.createSubtitle',
+    defaultMessage: 'Create a new recipe to define agent behavior and capabilities for reusable chat sessions.',
+  },
+  editSubtitle: {
+    id: 'createEditRecipe.editSubtitle',
+    defaultMessage: "You can edit the recipe below to change the agent's behavior in a new session.",
+  },
+  learnMore: {
+    id: 'createEditRecipe.learnMore',
+    defaultMessage: 'Learn more',
+  },
+  copyLinkDescription: {
+    id: 'createEditRecipe.copyLinkDescription',
+    defaultMessage: 'Copy this link to share with friends or paste directly in Chrome to open',
+  },
+  copied: {
+    id: 'createEditRecipe.copied',
+    defaultMessage: 'Copied!',
+  },
+  copy: {
+    id: 'createEditRecipe.copy',
+    defaultMessage: 'Copy',
+  },
+  generatingDeeplink: {
+    id: 'createEditRecipe.generatingDeeplink',
+    defaultMessage: 'Generating deeplink...',
+  },
+  clickToGenerateDeeplink: {
+    id: 'createEditRecipe.clickToGenerateDeeplink',
+    defaultMessage: 'Click to generate deeplink',
+  },
+  close: {
+    id: 'createEditRecipe.close',
+    defaultMessage: 'Close',
+  },
+  saving: {
+    id: 'createEditRecipe.saving',
+    defaultMessage: 'Saving...',
+  },
+  saveRecipe: {
+    id: 'createEditRecipe.saveRecipe',
+    defaultMessage: 'Save Recipe',
+  },
+  saveAndRunRecipe: {
+    id: 'createEditRecipe.saveAndRunRecipe',
+    defaultMessage: 'Save & Run Recipe',
+  },
+  validationFailed: {
+    id: 'createEditRecipe.validationFailed',
+    defaultMessage: 'Validation Failed',
+  },
+  validationMsg: {
+    id: 'createEditRecipe.validationMsg',
+    defaultMessage: 'Please fill in all required fields and ensure JSON schema is valid.',
+  },
+  recipeSavedMsg: {
+    id: 'createEditRecipe.recipeSavedMsg',
+    defaultMessage: 'Recipe saved successfully',
+  },
+  saveFailed: {
+    id: 'createEditRecipe.saveFailed',
+    defaultMessage: 'Save Failed',
+  },
+  saveFailedMsg: {
+    id: 'createEditRecipe.saveFailedMsg',
+    defaultMessage: 'Failed to save recipe: {error}',
+  },
+  recipeSavedAndLaunchedMsg: {
+    id: 'createEditRecipe.recipeSavedAndLaunchedMsg',
+    defaultMessage: 'Recipe saved and launched successfully',
+  },
+  saveAndRunFailed: {
+    id: 'createEditRecipe.saveAndRunFailed',
+    defaultMessage: 'Save and Run Failed',
+  },
+  saveAndRunFailedMsg: {
+    id: 'createEditRecipe.saveAndRunFailedMsg',
+    defaultMessage: 'Failed to save and run recipe: {error}',
+  },
+});
 
 interface CreateEditRecipeModalProps {
   isOpen: boolean;
@@ -31,6 +123,7 @@ export default function CreateEditRecipeModal({
   recipeId,
   onRecipeSaved,
 }: CreateEditRecipeModalProps) {
+  const intl = useIntl();
   const getInitialValues = React.useCallback((): RecipeFormData => {
     if (recipe) {
       return {
@@ -313,8 +406,8 @@ export default function CreateEditRecipeModal({
   const handleSaveRecipeClick = async () => {
     if (!validateForm()) {
       toastError({
-        title: 'Validation Failed',
-        msg: 'Please fill in all required fields and ensure JSON schema is valid.',
+        title: intl.formatMessage(i18n.validationFailed),
+        msg: intl.formatMessage(i18n.validationMsg),
       });
       return;
     }
@@ -333,14 +426,14 @@ export default function CreateEditRecipeModal({
 
       toastSuccess({
         title: (recipe.title || '').trim(),
-        msg: 'Recipe saved successfully',
+        msg: intl.formatMessage(i18n.recipeSavedMsg),
       });
     } catch (error) {
       console.error('Failed to save recipe:', error);
 
       toastError({
-        title: 'Save Failed',
-        msg: `Failed to save recipe: ${errorMessage(error, 'Unknown error')}`,
+        title: intl.formatMessage(i18n.saveFailed),
+        msg: intl.formatMessage(i18n.saveFailedMsg, { error: errorMessage(error, 'Unknown error') }),
         traceback: errorMessage(error),
       });
     } finally {
@@ -351,8 +444,8 @@ export default function CreateEditRecipeModal({
   const handleSaveAndRunRecipeClick = async () => {
     if (!validateForm()) {
       toastError({
-        title: 'Validation Failed',
-        msg: 'Please fill in all required fields and ensure JSON schema is valid.',
+        title: intl.formatMessage(i18n.validationFailed),
+        msg: intl.formatMessage(i18n.validationMsg),
       });
       return;
     }
@@ -369,14 +462,14 @@ export default function CreateEditRecipeModal({
 
       toastSuccess({
         title: recipe.title,
-        msg: 'Recipe saved and launched successfully',
+        msg: intl.formatMessage(i18n.recipeSavedAndLaunchedMsg),
       });
     } catch (error) {
       console.error('Failed to save and run recipe:', error);
 
       toastError({
-        title: 'Save and Run Failed',
-        msg: `Failed to save and run recipe: ${errorMessage(error, 'Unknown error')}`,
+        title: intl.formatMessage(i18n.saveAndRunFailed),
+        msg: intl.formatMessage(i18n.saveAndRunFailedMsg, { error: errorMessage(error, 'Unknown error') }),
         traceback: errorMessage(error),
       });
     } finally {
@@ -397,19 +490,19 @@ export default function CreateEditRecipeModal({
             </div>
             <div>
               <h1 className="text-xl font-medium text-text-primary">
-                {isCreateMode ? 'Create Recipe' : 'View/edit recipe'}
+                {isCreateMode ? intl.formatMessage(i18n.createRecipeTitle) : intl.formatMessage(i18n.viewEditRecipeTitle)}
               </h1>
               <p className="text-text-secondary text-sm">
                 {isCreateMode
-                  ? 'Create a new recipe to define agent behavior and capabilities for reusable chat sessions.'
-                  : "You can edit the recipe below to change the agent's behavior in a new session."}{' '}
+                  ? intl.formatMessage(i18n.createSubtitle)
+                  : intl.formatMessage(i18n.editSubtitle)}{' '}
                 <a
-                  href="https://aaif-goose.github.io/goose/docs/guides/recipes/"
+                  href="https://goose-docs.ai/docs/guides/recipes/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-600 hover:underline"
                 >
-                  Learn more
+                  {intl.formatMessage(i18n.learnMore)}
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </p>
@@ -434,7 +527,7 @@ export default function CreateEditRecipeModal({
             <div className="w-full p-4 bg-background-secondary rounded-lg mt-6">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm text-text-secondary">
-                  Copy this link to share with friends or paste directly in Chrome to open
+                  {intl.formatMessage(i18n.copyLinkDescription)}
                 </div>
                 <Button
                   onClick={handleCopy}
@@ -451,7 +544,7 @@ export default function CreateEditRecipeModal({
                     <Copy className="w-4 h-4 text-iconSubtle" />
                   )}
                   <span className="ml-1 text-sm text-text-secondary">
-                    {copied ? 'Copied!' : 'Copy'}
+                    {copied ? intl.formatMessage(i18n.copied) : intl.formatMessage(i18n.copy)}
                   </span>
                 </Button>
               </div>
@@ -460,8 +553,8 @@ export default function CreateEditRecipeModal({
                 className="text-sm truncate font-mono cursor-pointer text-text-primary"
               >
                 {isGeneratingDeeplink
-                  ? 'Generating deeplink...'
-                  : deeplink || 'Click to generate deeplink'}
+                  ? intl.formatMessage(i18n.generatingDeeplink)
+                  : deeplink || intl.formatMessage(i18n.clickToGenerateDeeplink)}
               </div>
             </div>
           )}
@@ -474,7 +567,7 @@ export default function CreateEditRecipeModal({
             variant="ghost"
             className="px-4 py-2 text-text-secondary rounded-lg hover:bg-background-secondary transition-colors"
           >
-            Close
+            {intl.formatMessage(i18n.close)}
           </Button>
 
           <div className="flex gap-3">
@@ -486,7 +579,7 @@ export default function CreateEditRecipeModal({
               className="inline-flex items-center justify-center gap-2 px-4 py-2"
             >
               <Save className="w-4 h-4" />
-              {isSaving ? 'Saving...' : 'Save Recipe'}
+              {isSaving ? intl.formatMessage(i18n.saving) : intl.formatMessage(i18n.saveRecipe)}
             </Button>
             <Button
               onClick={handleSaveAndRunRecipeClick}
@@ -496,7 +589,7 @@ export default function CreateEditRecipeModal({
               className="inline-flex items-center justify-center gap-2 px-4 py-2"
             >
               <Play className="w-4 h-4" />
-              {isSaving ? 'Saving...' : 'Save & Run Recipe'}
+              {isSaving ? intl.formatMessage(i18n.saving) : intl.formatMessage(i18n.saveAndRunRecipe)}
             </Button>
           </div>
         </div>

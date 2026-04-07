@@ -53,12 +53,12 @@ Excited for many more feature updates and improvements? Stay tuned for more upda
 <head>
   <meta property="og:title" content="Previewing Goose v1.0 Beta" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2024/12/06/previewing-goose-v10-beta" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2024/12/06/previewing-goose-v10-beta" />
   <meta property="og:description" content="AI Agent uses screenshots to assist in styling." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/goose-v1.0-beta-5d469fa73edea37cfccfe8a8ca0b47e2.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-v1.0-beta-5d469fa73edea37cfccfe8a8ca0b47e2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Screenshot-Driven Development" />
   <meta name="twitter:description" content="AI Agent uses screenshots to assist in styling." />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/goose-v1.0-beta-5d469fa73edea37cfccfe8a8ca0b47e2.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-v1.0-beta-5d469fa73edea37cfccfe8a8ca0b47e2.png" />
 </head>

@@ -5303,14 +5303,14 @@
   },
   {
     "id": "alibaba-cn/deepseek-r1",
-    "name": "DeepSeek R1",
+    "name": "DeepSeek R1 0528",
     "family": "deepseek-thinking",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2025-01-01",
-    "last_updated": "2025-01-01",
+    "release_date": "2025-05-28",
+    "last_updated": "2025-05-28",
     "modalities": {
       "input": [
         "text"
@@ -10609,12 +10609,12 @@
   {
     "id": "amazon-bedrock/minimax.minimax-m2.5",
     "name": "MiniMax M2.5",
-    "family": "minimax-m2.5",
+    "family": "minimax",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2026-02-12",
+    "release_date": "2026-03-18",
     "last_updated": "2026-03-18",
     "modalities": {
       "input": [
@@ -10630,8 +10630,8 @@
       "output": 1.2
     },
     "limit": {
-      "context": 1000000,
-      "output": 131072
+      "context": 196608,
+      "output": 98304
     }
   },
   {
@@ -11032,6 +11032,34 @@
     "limit": {
       "context": 128000,
       "output": 4096
+    }
+  },
+  {
+    "id": "amazon-bedrock/nvidia.nemotron-super-3-120b",
+    "name": "NVIDIA Nemotron 3 Super 120B A12B",
+    "family": "nemotron",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-11",
+    "last_updated": "2026-03-11",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.15,
+      "output": 0.65
+    },
+    "limit": {
+      "context": 262144,
+      "output": 131072
     }
   },
   {
@@ -11705,7 +11733,7 @@
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2026-02-11",
+    "release_date": "2026-03-18",
     "last_updated": "2026-03-18",
     "modalities": {
       "input": [
@@ -11721,8 +11749,8 @@
       "output": 3.2
     },
     "limit": {
-      "context": 200000,
-      "output": 131072
+      "context": 202752,
+      "output": 101376
     }
   },
   {
@@ -11826,7 +11854,7 @@
   },
   {
     "id": "anthropic/claude-3.5-haiku",
-    "name": "Claude Haiku 3.5",
+    "name": "Claude Haiku 3.5 (latest)",
     "family": "claude-haiku",
     "attachment": true,
     "reasoning": false,
@@ -11859,15 +11887,15 @@
   },
   {
     "id": "anthropic/claude-3.5-sonnet",
-    "name": "Claude Sonnet 3.5",
+    "name": "Claude Sonnet 3.5 v2",
     "family": "claude-sonnet",
     "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2024-04-30",
-    "release_date": "2024-06-20",
-    "last_updated": "2024-06-20",
+    "release_date": "2024-10-22",
+    "last_updated": "2024-10-22",
     "modalities": {
       "input": [
         "text",
@@ -11892,7 +11920,7 @@
   },
   {
     "id": "anthropic/claude-3.7-sonnet",
-    "name": "Claude Sonnet 3.7",
+    "name": "Claude Sonnet 3.7 (latest)",
     "family": "claude-sonnet",
     "attachment": true,
     "reasoning": true,
@@ -12651,15 +12679,15 @@
   },
   {
     "id": "azure-cognitive-services/deepseek-r1",
-    "name": "DeepSeek-R1-0528",
+    "name": "DeepSeek-R1",
     "family": "deepseek-thinking",
     "attachment": false,
     "reasoning": true,
-    "tool_call": true,
+    "tool_call": false,
     "temperature": true,
     "knowledge": "2024-07",
-    "release_date": "2025-05-28",
-    "last_updated": "2025-05-28",
+    "release_date": "2025-01-20",
+    "last_updated": "2025-01-20",
     "modalities": {
       "input": [
         "text"
@@ -12796,15 +12824,15 @@
   },
   {
     "id": "azure-cognitive-services/gpt-3.5-turbo",
-    "name": "GPT-3.5 Turbo 0301",
+    "name": "GPT-3.5 Turbo 0613",
     "family": "gpt",
     "attachment": false,
     "reasoning": false,
     "tool_call": false,
     "temperature": true,
     "knowledge": "2021-08",
-    "release_date": "2023-03-01",
-    "last_updated": "2023-03-01",
+    "release_date": "2023-06-13",
+    "last_updated": "2023-06-13",
     "modalities": {
       "input": [
         "text"
@@ -12815,12 +12843,12 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.5,
-      "output": 2.0
+      "input": 3.0,
+      "output": 4.0
     },
     "limit": {
-      "context": 4096,
-      "output": 4096
+      "context": 16384,
+      "output": 16384
     }
   },
   {
@@ -14850,10 +14878,10 @@
   },
   {
     "id": "azure-cognitive-services/phi-4",
-    "name": "Phi-4",
+    "name": "Phi-4-reasoning",
     "family": "phi",
     "attachment": false,
-    "reasoning": false,
+    "reasoning": true,
     "tool_call": false,
     "temperature": true,
     "knowledge": "2023-10",
@@ -14873,7 +14901,7 @@
       "output": 0.5
     },
     "limit": {
-      "context": 128000,
+      "context": 32000,
       "output": 4096
     }
   },
@@ -15445,15 +15473,15 @@
   },
   {
     "id": "azure/deepseek-r1",
-    "name": "DeepSeek-R1",
+    "name": "DeepSeek-R1-0528",
     "family": "deepseek-thinking",
     "attachment": false,
     "reasoning": true,
-    "tool_call": false,
+    "tool_call": true,
     "temperature": true,
     "knowledge": "2024-07",
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
+    "release_date": "2025-05-28",
+    "last_updated": "2025-05-28",
     "modalities": {
       "input": [
         "text"
@@ -15590,15 +15618,15 @@
   },
   {
     "id": "azure/gpt-3.5-turbo",
-    "name": "GPT-3.5 Turbo 1106",
+    "name": "GPT-3.5 Turbo 0125",
     "family": "gpt",
     "attachment": false,
     "reasoning": false,
     "tool_call": false,
     "temperature": true,
     "knowledge": "2021-08",
-    "release_date": "2023-11-06",
-    "last_updated": "2023-11-06",
+    "release_date": "2024-01-25",
+    "last_updated": "2024-01-25",
     "modalities": {
       "input": [
         "text"
@@ -15609,8 +15637,8 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.0,
-      "output": 2.0
+      "input": 0.5,
+      "output": 1.5
     },
     "limit": {
       "context": 16384,
@@ -17766,10 +17794,10 @@
   },
   {
     "id": "azure/phi-4",
-    "name": "Phi-4-reasoning",
+    "name": "Phi-4",
     "family": "phi",
     "attachment": false,
-    "reasoning": true,
+    "reasoning": false,
     "tool_call": false,
     "temperature": true,
     "knowledge": "2023-10",
@@ -17789,7 +17817,7 @@
       "output": 0.5
     },
     "limit": {
-      "context": 32000,
+      "context": 128000,
       "output": 4096
     }
   },
@@ -28138,36 +28166,6 @@
     }
   },
   {
-    "id": "firmware/glm-5",
-    "name": "GLM-5",
-    "family": "glm",
-    "attachment": true,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-01-20",
-    "last_updated": "2025-02-22",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 1.0,
-      "output": 3.2,
-      "cache_read": 0.2
-    },
-    "limit": {
-      "context": 198000,
-      "output": 8192
-    }
-  },
-  {
     "id": "firmware/gpt-4o",
     "name": "GPT-4o",
     "family": "gpt",
@@ -28526,6 +28524,36 @@
     },
     "limit": {
       "context": 192000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "firmware/zai-glm-5",
+    "name": "GLM-5",
+    "family": "glm",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2025-01-20",
+    "last_updated": "2025-02-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 3.2,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 198000,
       "output": 8192
     }
   },
@@ -29709,15 +29737,15 @@
   },
   {
     "id": "github-models/deepseek/deepseek-r1",
-    "name": "DeepSeek-R1",
+    "name": "DeepSeek-R1-0528",
     "family": "deepseek-thinking",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2024-06",
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
+    "release_date": "2025-05-28",
+    "last_updated": "2025-05-28",
     "modalities": {
       "input": [
         "text"
@@ -30354,7 +30382,7 @@
   },
   {
     "id": "github-models/microsoft/phi-4",
-    "name": "Phi-4-Reasoning",
+    "name": "Phi-4",
     "family": "phi",
     "attachment": false,
     "reasoning": true,
@@ -30377,7 +30405,7 @@
       "output": 0.0
     },
     "limit": {
-      "context": 128000,
+      "context": 16000,
       "output": 4096
     }
   },
@@ -33702,6 +33730,241 @@
     }
   },
   {
+    "id": "google/gemma-3-12b-it",
+    "name": "Gemma 3 12B",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2025-03-13",
+    "last_updated": "2025-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "google/gemma-3-27b-it",
+    "name": "Gemma 3 27B",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2025-03-12",
+    "last_updated": "2025-03-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    }
+  },
+  {
+    "id": "google/gemma-3-4b-it",
+    "name": "Gemma 3 4B",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2025-03-13",
+    "last_updated": "2025-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "google/gemma-3n-e2b-it",
+    "name": "Gemma 3n 2B",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2025-07-09",
+    "last_updated": "2025-07-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 8192,
+      "output": 2000
+    }
+  },
+  {
+    "id": "google/gemma-3n-e4b-it",
+    "name": "Gemma 3n 4B",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2025-05-20",
+    "last_updated": "2025-05-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 8192,
+      "output": 2000
+    }
+  },
+  {
+    "id": "groq/allam-2-7b",
+    "name": "ALLaM-2-7b",
+    "family": "allam",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-09",
+    "release_date": "2024-09",
+    "last_updated": "2024-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 4096,
+      "output": 4096
+    }
+  },
+  {
+    "id": "groq/canopylabs/orpheus-arabic-saudi",
+    "name": "Orpheus Arabic Saudi",
+    "family": "canopylabs",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2025-12-16",
+    "release_date": "2025-12-16",
+    "last_updated": "2025-12-16",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 40.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 4000,
+      "output": 50000
+    }
+  },
+  {
+    "id": "groq/canopylabs/orpheus-v1-english",
+    "name": "Orpheus V1 English",
+    "family": "canopylabs",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2025-12-19",
+    "release_date": "2025-12-19",
+    "last_updated": "2025-12-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 4000,
+      "output": 50000
+    }
+  },
+  {
     "id": "groq/deepseek-r1-distill-llama-70b",
     "name": "DeepSeek R1 Distill Llama 70B",
     "family": "deepseek-thinking",
@@ -33756,6 +34019,64 @@
     },
     "limit": {
       "context": 8192,
+      "output": 8192
+    }
+  },
+  {
+    "id": "groq/groq/compound",
+    "name": "Compound",
+    "family": "groq",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-09-04",
+    "release_date": "2025-09-04",
+    "last_updated": "2025-09-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    }
+  },
+  {
+    "id": "groq/groq/compound-mini",
+    "name": "Compound Mini",
+    "family": "groq",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-09-04",
+    "release_date": "2025-09-04",
+    "last_updated": "2025-09-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 131072,
       "output": 8192
     }
   },
@@ -33993,6 +34314,64 @@
     }
   },
   {
+    "id": "groq/meta-llama/llama-prompt-guard-2-22m",
+    "name": "Llama Prompt Guard 2 22M",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2024-10-01",
+    "last_updated": "2024-10-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.03,
+      "output": 0.03
+    },
+    "limit": {
+      "context": 512,
+      "output": 512
+    }
+  },
+  {
+    "id": "groq/meta-llama/llama-prompt-guard-2-86m",
+    "name": "Llama Prompt Guard 2 86M",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2024-10-01",
+    "last_updated": "2024-10-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.04,
+      "output": 0.04
+    },
+    "limit": {
+      "context": 512,
+      "output": 512
+    }
+  },
+  {
     "id": "groq/mistral-saba-24b",
     "name": "Mistral Saba 24B",
     "family": "mistral",
@@ -34023,15 +34402,15 @@
   },
   {
     "id": "groq/moonshotai/kimi-k2-instruct",
-    "name": "Kimi K2 Instruct 0905",
+    "name": "Kimi K2 Instruct",
     "family": "kimi",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2024-10",
-    "release_date": "2025-09-05",
-    "last_updated": "2025-09-05",
+    "release_date": "2025-07-14",
+    "last_updated": "2025-07-14",
     "modalities": {
       "input": [
         "text"
@@ -34046,7 +34425,7 @@
       "output": 3.0
     },
     "limit": {
-      "context": 262144,
+      "context": 131072,
       "output": 16384
     }
   },
@@ -34100,6 +34479,35 @@
     "cost": {
       "input": 0.075,
       "output": 0.3
+    },
+    "limit": {
+      "context": 131072,
+      "output": 65536
+    }
+  },
+  {
+    "id": "groq/openai/gpt-oss-safeguard-20b",
+    "name": "Safety GPT OSS 20B",
+    "family": "gpt-oss",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-03-05",
+    "last_updated": "2025-03-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.075,
+      "output": 0.3,
+      "cache_read": 0.037
     },
     "limit": {
       "context": 131072,
@@ -34161,7 +34569,65 @@
     },
     "limit": {
       "context": 131072,
-      "output": 16384
+      "output": 40960
+    }
+  },
+  {
+    "id": "groq/whisper-large-v3",
+    "name": "Whisper Large V3",
+    "family": "whisper",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2023-09",
+    "release_date": "2023-09-01",
+    "last_updated": "2025-09-05",
+    "modalities": {
+      "input": [
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 448,
+      "output": 448
+    }
+  },
+  {
+    "id": "groq/whisper-large-v3-turbo",
+    "name": "Whisper Large v3 Turbo",
+    "family": "whisper",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2024-10-01",
+    "last_updated": "2024-10-01",
+    "modalities": {
+      "input": [
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 448,
+      "output": 448
     }
   },
   {
@@ -35834,15 +36300,15 @@
   },
   {
     "id": "helicone/kimi-k2",
-    "name": "Kimi K2 (07/11)",
+    "name": "Kimi K2 (09/05)",
     "family": "kimi",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-01",
-    "release_date": "2025-01-01",
-    "last_updated": "2025-01-01",
+    "knowledge": "2025-09",
+    "release_date": "2025-09-05",
+    "last_updated": "2025-09-05",
     "modalities": {
       "input": [
         "text"
@@ -35853,11 +36319,12 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.5700000000000001,
-      "output": 2.3
+      "input": 0.5,
+      "output": 2.0,
+      "cache_read": 0.39999999999999997
     },
     "limit": {
-      "context": 131072,
+      "context": 262144,
       "output": 16384
     }
   },
@@ -36698,10 +37165,10 @@
   },
   {
     "id": "helicone/sonar",
-    "name": "Perplexity Sonar Reasoning",
-    "family": "sonar-reasoning",
+    "name": "Perplexity Sonar",
+    "family": "sonar",
     "attachment": false,
-    "reasoning": true,
+    "reasoning": false,
     "tool_call": false,
     "temperature": true,
     "knowledge": "2025-01",
@@ -36718,7 +37185,7 @@
     "open_weights": false,
     "cost": {
       "input": 1.0,
-      "output": 5.0
+      "output": 1.0
     },
     "limit": {
       "context": 127000,
@@ -37487,15 +37954,15 @@
   },
   {
     "id": "iflowcn/kimi-k2",
-    "name": "Kimi-K2-0905",
+    "name": "Kimi-K2",
     "family": "kimi",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-12",
-    "release_date": "2025-09-05",
-    "last_updated": "2025-09-05",
+    "knowledge": "2024-10",
+    "release_date": "2024-12-01",
+    "last_updated": "2024-12-01",
     "modalities": {
       "input": [
         "text"
@@ -37510,7 +37977,7 @@
       "output": 0.0
     },
     "limit": {
-      "context": 256000,
+      "context": 128000,
       "output": 64000
     }
   },
@@ -42088,13 +42555,13 @@
   },
   {
     "id": "kilo/deepseek/deepseek-r1",
-    "name": "DeepSeek: R1",
+    "name": "DeepSeek: R1 0528",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
+    "release_date": "2025-05-28",
+    "last_updated": "2026-03-15",
     "modalities": {
       "input": [
         "text"
@@ -42105,12 +42572,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.7,
-      "output": 2.5
+      "input": 0.45,
+      "output": 2.15,
+      "cache_read": 0.2
     },
     "limit": {
-      "context": 64000,
-      "output": 16000
+      "context": 163840,
+      "output": 65536
     }
   },
   {
@@ -44462,16 +44930,17 @@
   },
   {
     "id": "kilo/mistralai/mistral-large",
-    "name": "Mistral Large",
-    "attachment": false,
+    "name": "Mistral: Mistral Large 3 2512",
+    "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2024-07-24",
-    "last_updated": "2025-12-02",
+    "release_date": "2024-11-01",
+    "last_updated": "2025-12-16",
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "output": [
         "text"
@@ -44479,12 +44948,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 2.0,
-      "output": 6.0
+      "input": 0.5,
+      "output": 1.5
     },
     "limit": {
-      "context": 128000,
-      "output": 25600
+      "context": 262144,
+      "output": 52429
     }
   },
   {
@@ -44820,13 +45289,13 @@
   },
   {
     "id": "kilo/moonshotai/kimi-k2",
-    "name": "MoonshotAI: Kimi K2 0905",
+    "name": "MoonshotAI: Kimi K2 0711",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2025-09-05",
-    "last_updated": "2025-09-05",
+    "release_date": "2025-07-11",
+    "last_updated": "2026-03-15",
     "modalities": {
       "input": [
         "text"
@@ -44837,12 +45306,11 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.4,
-      "output": 2.0,
-      "cache_read": 0.15
+      "input": 0.55,
+      "output": 2.2
     },
     "limit": {
-      "context": 131072,
+      "context": 131000,
       "output": 26215
     }
   },
@@ -45592,12 +46060,12 @@
   },
   {
     "id": "kilo/openai/gpt-4o",
-    "name": "OpenAI: GPT-4o",
+    "name": "OpenAI: GPT-4o (2024-08-06)",
     "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2024-05-13",
+    "release_date": "2024-08-06",
     "last_updated": "2026-03-15",
     "modalities": {
       "input": [
@@ -49576,6 +50044,5520 @@
     }
   },
   {
+    "id": "llmgateway/auto",
+    "name": "Auto Route",
+    "family": "auto",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/claude-3-haiku",
+    "name": "Claude 3 Haiku",
+    "family": "claude",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-03-04",
+    "last_updated": "2024-03-04",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 1.25,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 200000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/claude-3-opus",
+    "name": "Claude 3 Opus",
+    "family": "claude",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-03-04",
+    "last_updated": "2024-03-04",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 15.0,
+      "output": 75.0,
+      "cache_read": 1.5
+    },
+    "limit": {
+      "context": 200000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/claude-3.5-haiku",
+    "name": "Claude 3.5 Haiku",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-10-22",
+    "last_updated": "2024-10-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.8,
+      "output": 4.0,
+      "cache_read": 0.08
+    },
+    "limit": {
+      "context": 200000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/claude-3.5-sonnet",
+    "name": "Claude 3.5 Sonnet (2024-10-22)",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-10-22",
+    "last_updated": "2024-10-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3
+    },
+    "limit": {
+      "context": 200000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/claude-3.7-sonnet",
+    "name": "Claude 3.7 Sonnet",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-02-24",
+    "last_updated": "2025-02-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3
+    },
+    "limit": {
+      "context": 200000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/claude-haiku-4.5",
+    "name": "Claude Haiku 4.5",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-10-15",
+    "last_updated": "2025-10-15",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 5.0,
+      "cache_read": 0.1
+    },
+    "limit": {
+      "context": 200000,
+      "output": 64000
+    }
+  },
+  {
+    "id": "llmgateway/claude-opus-4",
+    "name": "Claude Opus 4 (2025-05-14)",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-05-22",
+    "last_updated": "2025-05-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 15.0,
+      "output": 75.0,
+      "cache_read": 1.5
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/claude-opus-4.1",
+    "name": "Claude Opus 4.1",
+    "family": "claude",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-05",
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 15.0,
+      "output": 75.0,
+      "cache_read": 1.5
+    },
+    "limit": {
+      "context": 200000,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/claude-opus-4.5",
+    "name": "Claude Opus 4.5",
+    "family": "claude",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-24",
+    "last_updated": "2025-11-24",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 5.0,
+      "output": 25.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 200000,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/claude-opus-4.6",
+    "name": "Claude Opus 4.6",
+    "family": "claude",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-05",
+    "last_updated": "2026-02-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 5.0,
+      "output": 25.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/claude-sonnet-4",
+    "name": "Claude Sonnet 4 (2025-05-14)",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-05-14",
+    "last_updated": "2025-05-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/claude-sonnet-4.5",
+    "name": "Claude Sonnet 4.5",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-29",
+    "last_updated": "2025-09-29",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3
+    },
+    "limit": {
+      "context": 200000,
+      "output": 64000
+    }
+  },
+  {
+    "id": "llmgateway/claude-sonnet-4.6",
+    "name": "Claude Sonnet 4.6",
+    "family": "claude",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-17",
+    "last_updated": "2026-02-17",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3
+    },
+    "limit": {
+      "context": 200000,
+      "output": 64000
+    }
+  },
+  {
+    "id": "llmgateway/codestral",
+    "name": "Codestral",
+    "family": "mistral",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 0.9
+    },
+    "limit": {
+      "context": 256000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/cogview-4",
+    "name": "CogView-4",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-04",
+    "last_updated": "2025-03-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/custom",
+    "name": "Custom Model",
+    "family": "auto",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/deepseek-r1",
+    "name": "DeepSeek R1 (0528)",
+    "family": "deepseek",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-05-28",
+    "last_updated": "2025-05-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.8,
+      "output": 2.4
+    },
+    "limit": {
+      "context": 64000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/deepseek-v3.1",
+    "name": "DeepSeek V3.1",
+    "family": "deepseek",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-21",
+    "last_updated": "2025-08-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.56,
+      "output": 1.68,
+      "cache_read": 0.11
+    },
+    "limit": {
+      "context": 128000,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/deepseek-v3.2",
+    "name": "DeepSeek V3.2",
+    "family": "deepseek",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-29",
+    "last_updated": "2025-09-29",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.28,
+      "output": 0.42,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 163840,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/devstral",
+    "name": "Devstral 2",
+    "family": "mistral",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-09",
+    "last_updated": "2025-12-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.4,
+      "output": 2.0
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/devstral-small",
+    "name": "Devstral Small 1.1",
+    "family": "mistral",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-07-21",
+    "last_updated": "2025-07-21",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 131072,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.0-flash",
+    "name": "Gemini 2.0 Flash",
+    "family": "gemini",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-02-05",
+    "last_updated": "2025-02-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.4,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.0-flash-lite",
+    "name": "Gemini 2.0 Flash Lite",
+    "family": "gemini",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-02-25",
+    "last_updated": "2025-02-25",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.08,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.5-flash",
+    "name": "Gemini 2.5 Flash",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-26",
+    "last_updated": "2025-08-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.3,
+      "output": 2.5,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65535
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.5-flash-image",
+    "name": "Gemini 2.5 Flash Image",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-10-02",
+    "last_updated": "2025-10-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.3,
+      "output": 30.0,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 32768,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.5-flash-image-preview",
+    "name": "Gemini 2.5 Flash Image (Preview)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-10-02",
+    "last_updated": "2025-10-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.3,
+      "output": 2.5
+    },
+    "limit": {
+      "context": 32768,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.5-flash-lite",
+    "name": "Gemini 2.5 Flash Lite",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-22",
+    "last_updated": "2025-07-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.4,
+      "cache_read": 0.01
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65535
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.5-flash-lite-preview-09",
+    "name": "Gemini 2.5 Flash Lite Preview (09-2025)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-25",
+    "last_updated": "2025-09-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.4,
+      "cache_read": 0.01
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65535
+    }
+  },
+  {
+    "id": "llmgateway/gemini-2.5-pro",
+    "name": "Gemini 2.5 Pro",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-03-25",
+    "last_updated": "2025-03-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.25,
+      "output": 10.0,
+      "cache_read": 0.13
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/gemini-3-flash-preview",
+    "name": "Gemini 3 Flash (Preview)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-17",
+    "last_updated": "2025-12-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.5,
+      "output": 3.0,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65535
+    }
+  },
+  {
+    "id": "llmgateway/gemini-3-pro-image-preview",
+    "name": "Gemini 3 Pro Image (Preview)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-11-20",
+    "last_updated": "2025-11-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 12.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 65536,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/gemini-3.1-flash-image-preview",
+    "name": "Gemini 3.1 Flash Image (Preview)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-02-26",
+    "last_updated": "2026-02-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 1.5
+    },
+    "limit": {
+      "context": 65536,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/gemini-3.1-flash-lite-preview",
+    "name": "Gemini 3.1 Flash Lite (Preview)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-03",
+    "last_updated": "2026-03-03",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 1.5,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/gemini-3.1-pro-preview",
+    "name": "Gemini 3.1 Pro (Preview)",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-19",
+    "last_updated": "2026-02-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 12.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/gemini-pro",
+    "name": "Gemini Pro Latest",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-27",
+    "last_updated": "2026-02-27",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 12.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/gemma-2-27b-it-together",
+    "name": "Gemma 2 27B IT",
+    "family": "gemma",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-06-27",
+    "last_updated": "2024-06-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.08,
+      "output": 0.08
+    },
+    "limit": {
+      "context": 8192,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gemma-3-12b-it",
+    "name": "Gemma 3 12B IT",
+    "family": "gemma",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-10",
+    "last_updated": "2025-03-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.08,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gemma-3-1b-it",
+    "name": "Gemma 3 1B IT",
+    "family": "gemma",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-12",
+    "last_updated": "2025-03-12",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.08,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gemma-3-27b",
+    "name": "Gemma 3 27B",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-12",
+    "last_updated": "2025-03-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.27,
+      "output": 0.27
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gemma-3-4b-it",
+    "name": "Gemma 3 4B IT",
+    "family": "gemma",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-10",
+    "last_updated": "2025-03-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.08,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gemma-3n-e2b-it",
+    "name": "Gemma 3n E2B IT",
+    "family": "gemma",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-06-26",
+    "last_updated": "2025-06-26",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.08,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gemma-3n-e4b-it",
+    "name": "Gemma 3n E4B IT",
+    "family": "gemma",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-06-26",
+    "last_updated": "2025-06-26",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.08,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4-32b-0414-128k",
+    "name": "GLM-4 32B (0414-128k)",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-14",
+    "last_updated": "2025-04-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.1
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.5",
+    "name": "GLM-4.5",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-28",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.6,
+      "output": 2.2,
+      "cache_read": 0.11
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.5-air",
+    "name": "GLM-4.5 Air",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-25",
+    "last_updated": "2025-07-25",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.2,
+      "output": 1.1,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.5-airx",
+    "name": "GLM-4.5 AirX",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-28",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.1,
+      "output": 4.5,
+      "cache_read": 0.22
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.5-flash",
+    "name": "GLM-4.5 Flash",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-13",
+    "last_updated": "2025-08-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.5-x",
+    "name": "GLM-4.5 X",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-28",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.2,
+      "output": 8.9,
+      "cache_read": 0.45
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.5v",
+    "name": "GLM-4.5V",
+    "family": "glm",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-11",
+    "last_updated": "2025-08-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.6,
+      "output": 1.8,
+      "cache_read": 0.11
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16000
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.6",
+    "name": "GLM-4.6",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-30",
+    "last_updated": "2025-09-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.6,
+      "output": 2.2,
+      "cache_read": 0.11
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.6v",
+    "name": "GLM-4.6V",
+    "family": "glm",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-08",
+    "last_updated": "2025-12-08",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.3,
+      "output": 0.9,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16000
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.6v-flash",
+    "name": "GLM-4.6V Flash",
+    "family": "glm",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-08",
+    "last_updated": "2025-12-08",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16000
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.6v-flashx",
+    "name": "GLM-4.6V FlashX",
+    "family": "glm",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-08",
+    "last_updated": "2025-12-08",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.04,
+      "output": 0.4,
+      "cache_read": 0.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16000
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.7",
+    "name": "GLM-4.7",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-22",
+    "last_updated": "2025-12-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.6,
+      "output": 2.2,
+      "cache_read": 0.11
+    },
+    "limit": {
+      "context": 200000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.7-flash",
+    "name": "GLM-4.7 Flash",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-22",
+    "last_updated": "2025-12-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/glm-4.7-flashx",
+    "name": "GLM-4.7 FlashX",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-22",
+    "last_updated": "2025-12-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.07,
+      "output": 0.4,
+      "cache_read": 0.01
+    },
+    "limit": {
+      "context": 200000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/glm-5",
+    "name": "GLM-5",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-15",
+    "last_updated": "2026-02-15",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 3.2,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 202800,
+      "output": 131100
+    }
+  },
+  {
+    "id": "llmgateway/glm-image",
+    "name": "GLM-Image",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-01-14",
+    "last_updated": "2025-01-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/gpt-3.5-turbo",
+    "name": "GPT-3.5 Turbo",
+    "family": "gpt",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2022-11-30",
+    "last_updated": "2022-11-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.5,
+      "output": 1.5
+    },
+    "limit": {
+      "context": 16385,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4",
+    "name": "GPT-4",
+    "family": "gpt",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2023-03-14",
+    "last_updated": "2023-03-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 30.0,
+      "output": 60.0
+    },
+    "limit": {
+      "context": 8192,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4-turbo",
+    "name": "GPT-4 Turbo",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2023-11-06",
+    "last_updated": "2023-11-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 10.0,
+      "output": 30.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4.1",
+    "name": "GPT-4.1",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-14",
+    "last_updated": "2025-04-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 8.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4.1-mini",
+    "name": "GPT-4.1 Mini",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-14",
+    "last_updated": "2025-04-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.4,
+      "output": 1.6,
+      "cache_read": 0.1
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4.1-nano",
+    "name": "GPT-4.1 Nano",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-14",
+    "last_updated": "2025-04-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.4,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4o",
+    "name": "GPT-4o",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-05-13",
+    "last_updated": "2024-05-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.5,
+      "output": 10.0,
+      "cache_read": 1.25
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4o-mini",
+    "name": "GPT-4o Mini",
+    "family": "gpt",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-07-18",
+    "last_updated": "2024-07-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.15,
+      "output": 0.6,
+      "cache_read": 0.08
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4o-mini-search-preview",
+    "name": "GPT-4o Mini Search Preview",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-10-01",
+    "last_updated": "2024-10-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.15,
+      "output": 0.6
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-4o-search-preview",
+    "name": "GPT-4o Search Preview",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-10-01",
+    "last_updated": "2024-10-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.5,
+      "output": 10.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5",
+    "name": "GPT-5",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-01",
+    "last_updated": "2025-08-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.25,
+      "output": 10.0,
+      "cache_read": 0.13
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5-chat",
+    "name": "GPT-5 Chat Latest",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-08-01",
+    "last_updated": "2025-08-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.25,
+      "output": 10.0,
+      "cache_read": 0.13
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5-mini",
+    "name": "GPT-5 Mini",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-01",
+    "last_updated": "2025-08-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 2.0,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5-nano",
+    "name": "GPT-5 Nano",
+    "family": "gpt",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-01",
+    "last_updated": "2025-08-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.05,
+      "output": 0.4,
+      "cache_read": 0.01
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5-pro",
+    "name": "GPT-5 Pro",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-01",
+    "last_updated": "2025-08-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 15.0,
+      "output": 120.0
+    },
+    "limit": {
+      "context": 400000,
+      "output": 272000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.1",
+    "name": "GPT-5.1",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-01",
+    "last_updated": "2025-11-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.25,
+      "output": 10.0,
+      "cache_read": 0.13
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.1-codex",
+    "name": "GPT-5.1 Codex",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-13",
+    "last_updated": "2025-11-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.25,
+      "output": 10.0
+    },
+    "limit": {
+      "context": 400000,
+      "output": 272000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.1-codex-mini",
+    "name": "GPT-5.1 Codex mini",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-12",
+    "last_updated": "2025-11-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 2.0,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.2",
+    "name": "GPT-5.2",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-11",
+    "last_updated": "2025-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.18
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.2-chat",
+    "name": "GPT-5.2 Chat",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-11",
+    "last_updated": "2025-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.18
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16400
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.2-codex",
+    "name": "GPT-5.2 Codex",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-01-14",
+    "last_updated": "2026-01-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.18
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.2-pro",
+    "name": "GPT-5.2 Pro",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-11",
+    "last_updated": "2025-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 21.0,
+      "output": 168.0
+    },
+    "limit": {
+      "context": 400000,
+      "output": 272000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.3-chat",
+    "name": "GPT-5.3 Chat",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-03",
+    "last_updated": "2026-03-03",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.18
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.3-codex",
+    "name": "GPT-5.3 Codex",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-24",
+    "last_updated": "2026-02-24",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.18
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.4",
+    "name": "GPT-5.4",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-06",
+    "last_updated": "2026-03-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.5,
+      "output": 15.0,
+      "cache_read": 0.25
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.4-mini",
+    "name": "GPT-5.4 Mini",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-17",
+    "last_updated": "2026-03-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.75,
+      "output": 4.5,
+      "cache_read": 0.08
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.4-nano",
+    "name": "GPT-5.4 Nano",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-17",
+    "last_updated": "2026-03-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.2,
+      "output": 1.25,
+      "cache_read": 0.02
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-5.4-pro",
+    "name": "GPT-5.4 Pro",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-01",
+    "last_updated": "2026-03-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 30.0,
+      "output": 180.0
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway/gpt-oss-120b",
+    "name": "GPT OSS 120B",
+    "family": "gpt-oss",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-05",
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.15,
+      "output": 0.75
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32766
+    }
+  },
+  {
+    "id": "llmgateway/gpt-oss-20b",
+    "name": "GPT OSS 20B",
+    "family": "gpt-oss",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-05",
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32766
+    }
+  },
+  {
+    "id": "llmgateway/grok-3",
+    "name": "Grok-3",
+    "family": "grok",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-02-17",
+    "last_updated": "2025-02-17",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/grok-4",
+    "name": "Grok 4 (0709)",
+    "family": "grok",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-09",
+    "last_updated": "2025-07-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "limit": {
+      "context": 256000,
+      "output": 256000
+    }
+  },
+  {
+    "id": "llmgateway/grok-4-20-beta",
+    "name": "Grok 4.20 Beta Reasoning (0309)",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-09",
+    "last_updated": "2026-03-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 6.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 2000000,
+      "output": 30000
+    }
+  },
+  {
+    "id": "llmgateway/grok-4-20-beta-0309-non",
+    "name": "Grok 4.20 Beta Non-Reasoning (0309)",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-09",
+    "last_updated": "2026-03-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 6.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 2000000,
+      "output": 30000
+    }
+  },
+  {
+    "id": "llmgateway/grok-4-20-multi-agent-beta",
+    "name": "Grok 4.20 Multi-Agent Beta (0309)",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-09",
+    "last_updated": "2026-03-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 6.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 2000000,
+      "output": 30000
+    }
+  },
+  {
+    "id": "llmgateway/grok-4-fast",
+    "name": "Grok 4 Fast Reasoning",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-09",
+    "last_updated": "2025-07-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.2,
+      "output": 0.5,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 2000000,
+      "output": 30000
+    }
+  },
+  {
+    "id": "llmgateway/grok-4-fast-non",
+    "name": "Grok 4 Fast Non-Reasoning",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-10-10",
+    "last_updated": "2025-10-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.2,
+      "output": 0.5,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 2000000,
+      "output": 30000
+    }
+  },
+  {
+    "id": "llmgateway/grok-4.1-fast",
+    "name": "Grok 4.1 Fast",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-19",
+    "last_updated": "2025-11-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.2,
+      "output": 0.5,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 2000000,
+      "output": 30000
+    }
+  },
+  {
+    "id": "llmgateway/grok-4.1-fast-non",
+    "name": "Grok 4.1 Fast Non-Reasoning",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-19",
+    "last_updated": "2025-11-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.2,
+      "output": 0.5,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 2000000,
+      "output": 30000
+    }
+  },
+  {
+    "id": "llmgateway/grok-code-fast-1",
+    "name": "Grok Code Fast 1",
+    "family": "grok",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-28",
+    "last_updated": "2025-08-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.2,
+      "output": 1.5
+    },
+    "limit": {
+      "context": 256000,
+      "output": 10000
+    }
+  },
+  {
+    "id": "llmgateway/grok-imagine-image",
+    "name": "Grok Imagine Image",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-03-02",
+    "last_updated": "2026-03-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/grok-imagine-image-pro",
+    "name": "Grok Imagine Image Pro",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-03-02",
+    "last_updated": "2026-03-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/hermes-2-pro-llama-3-8b",
+    "name": "Hermes 2 Pro Llama 3 8B",
+    "family": "nousresearch",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-05-27",
+    "last_updated": "2024-05-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.14,
+      "output": 0.14
+    },
+    "limit": {
+      "context": 8192,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/kimi-k2",
+    "name": "Kimi K2",
+    "family": "kimi",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-11",
+    "last_updated": "2025-07-11",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 3.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 131072,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/kimi-k2-thinking",
+    "name": "Kimi K2 Thinking",
+    "family": "kimi",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-06",
+    "last_updated": "2025-11-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.6,
+      "output": 2.5,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "llmgateway/kimi-k2-thinking-turbo",
+    "name": "Kimi K2 Thinking Turbo",
+    "family": "kimi",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-11-06",
+    "last_updated": "2025-11-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.15,
+      "output": 8.0,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "llmgateway/kimi-k2.5",
+    "name": "Kimi K2.5",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-01-26",
+    "last_updated": "2026-01-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.6,
+      "output": 3.0,
+      "cache_read": 0.1
+    },
+    "limit": {
+      "context": 262144,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/llama-3-70b-instruct",
+    "name": "Llama 3 70B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-04-18",
+    "last_updated": "2024-04-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.51,
+      "output": 0.74
+    },
+    "limit": {
+      "context": 8192,
+      "output": 8000
+    }
+  },
+  {
+    "id": "llmgateway/llama-3-8b-instruct",
+    "name": "Llama 3 8B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-03",
+    "last_updated": "2025-04-03",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.04,
+      "output": 0.04
+    },
+    "limit": {
+      "context": 8192,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/llama-3.1-70b-instruct",
+    "name": "Llama 3.1 70B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-07-23",
+    "last_updated": "2024-07-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.72,
+      "output": 0.72
+    },
+    "limit": {
+      "context": 128000,
+      "output": 2048
+    }
+  },
+  {
+    "id": "llmgateway/llama-3.1-8b-instruct",
+    "name": "Llama 3.1 8B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-07-23",
+    "last_updated": "2024-07-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.22,
+      "output": 0.22
+    },
+    "limit": {
+      "context": 128000,
+      "output": 2048
+    }
+  },
+  {
+    "id": "llmgateway/llama-3.1-nemotron-ultra-253b",
+    "name": "Llama 3.1 Nemotron Ultra 253B",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-07",
+    "last_updated": "2025-04-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.6,
+      "output": 1.8
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/llama-3.2-11b-instruct",
+    "name": "Llama 3.2 11B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-09-25",
+    "last_updated": "2024-09-25",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.07,
+      "output": 0.33
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/llama-3.2-3b-instruct",
+    "name": "Llama 3.2 3B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-09-18",
+    "last_updated": "2024-09-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.03,
+      "output": 0.05
+    },
+    "limit": {
+      "context": 32768,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/llama-3.3-70b-instruct",
+    "name": "Llama 3.3 70B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-12-06",
+    "last_updated": "2024-12-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.13,
+      "output": 0.4
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/llama-4-maverick-17b-instruct",
+    "name": "Llama 4 Maverick 17B Instruct",
+    "family": "llama",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-05",
+    "last_updated": "2025-04-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.24,
+      "output": 0.97
+    },
+    "limit": {
+      "context": 8192,
+      "output": 2048
+    }
+  },
+  {
+    "id": "llmgateway/llama-4-scout",
+    "name": "Llama 4 Scout",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-05",
+    "last_updated": "2025-04-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.18,
+      "output": 0.59
+    },
+    "limit": {
+      "context": 32768,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/llama-4-scout-17b-instruct",
+    "name": "Llama 4 Scout 17B Instruct",
+    "family": "llama",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-05",
+    "last_updated": "2025-04-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.17,
+      "output": 0.66
+    },
+    "limit": {
+      "context": 8192,
+      "output": 2048
+    }
+  },
+  {
+    "id": "llmgateway/llama-guard-4-12b",
+    "name": "Llama Guard 4 12B",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-30",
+    "last_updated": "2025-04-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.2
+    },
+    "limit": {
+      "context": 131072,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/minimax-m2",
+    "name": "MiniMax M2",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-10-27",
+    "last_updated": "2025-10-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 1.0,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 196608,
+      "output": 131072
+    }
+  },
+  {
+    "id": "llmgateway/minimax-m2.1",
+    "name": "MiniMax M2.1",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-23",
+    "last_updated": "2025-12-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.27,
+      "output": 1.1
+    },
+    "limit": {
+      "context": 196608,
+      "output": 131072
+    }
+  },
+  {
+    "id": "llmgateway/minimax-m2.1-lightning",
+    "name": "MiniMax M2.1 Lightning",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-23",
+    "last_updated": "2025-12-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.12,
+      "output": 0.48
+    },
+    "limit": {
+      "context": 196608,
+      "output": 131072
+    }
+  },
+  {
+    "id": "llmgateway/minimax-m2.5",
+    "name": "MiniMax M2.5",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-15",
+    "last_updated": "2026-02-15",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 1.2,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 204800,
+      "output": 131100
+    }
+  },
+  {
+    "id": "llmgateway/minimax-m2.5-highspeed",
+    "name": "MiniMax M2.5 Highspeed",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.6,
+      "output": 2.4,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 204800,
+      "output": 131100
+    }
+  },
+  {
+    "id": "llmgateway/minimax-m2.7",
+    "name": "MiniMax M2.7",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 1.2,
+      "cache_read": 0.06
+    },
+    "limit": {
+      "context": 204800,
+      "output": 131100
+    }
+  },
+  {
+    "id": "llmgateway/minimax-m2.7-highspeed",
+    "name": "MiniMax M2.7 Highspeed",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.6,
+      "output": 2.4,
+      "cache_read": 0.06
+    },
+    "limit": {
+      "context": 204800,
+      "output": 131100
+    }
+  },
+  {
+    "id": "llmgateway/minimax-text-01",
+    "name": "MiniMax Text 01",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-01-15",
+    "last_updated": "2025-01-15",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 1.1
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 131072
+    }
+  },
+  {
+    "id": "llmgateway/ministral-14b",
+    "name": "Ministral 14B",
+    "family": "mistral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-02",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.2
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/ministral-3b",
+    "name": "Ministral 3B",
+    "family": "mistral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-02",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.1
+    },
+    "limit": {
+      "context": 131072,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/ministral-8b",
+    "name": "Ministral 8B",
+    "family": "mistral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-02",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.15,
+      "output": 0.15
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/mistral-large",
+    "name": "Mistral Large 3",
+    "family": "mistral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-02",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.5,
+      "output": 1.5
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/mistral-small",
+    "name": "Mistral Small 3.2",
+    "family": "mistral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-06-20",
+    "last_updated": "2025-06-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/mixtral-8x7b-instruct-together",
+    "name": "Mixtral 8x7B Instruct",
+    "family": "mistral",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2023-12-10",
+    "last_updated": "2023-12-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.06,
+      "output": 0.06
+    },
+    "limit": {
+      "context": 32768,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/o1",
+    "name": "o1",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-09-12",
+    "last_updated": "2024-09-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 15.0,
+      "output": 60.0,
+      "cache_read": 7.5
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/o3",
+    "name": "o3",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-06-01",
+    "last_updated": "2025-06-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 8.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/o3-mini",
+    "name": "o3 Mini",
+    "family": "gpt",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-06-01",
+    "last_updated": "2025-06-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.1,
+      "output": 4.4,
+      "cache_read": 0.55
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/o4-mini",
+    "name": "o4 Mini",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-16",
+    "last_updated": "2025-04-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.1,
+      "output": 4.4,
+      "cache_read": 0.28
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/pixtral-large",
+    "name": "Pixtral Large Latest",
+    "family": "mistral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-11-18",
+    "last_updated": "2024-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 4.0,
+      "output": 12.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/qwen-coder-plus",
+    "name": "Qwen Coder Plus",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-09-18",
+    "last_updated": "2024-09-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.0,
+      "output": 5.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen-flash",
+    "name": "Qwen Flash",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-09-09",
+    "last_updated": "2024-09-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.05,
+      "output": 0.4,
+      "cache_read": 0.01
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/qwen-image",
+    "name": "Qwen Image",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-08-04",
+    "last_updated": "2025-08-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/qwen-image-edit-max",
+    "name": "Qwen Image Edit Max",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-01-16",
+    "last_updated": "2026-01-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/qwen-image-edit-plus",
+    "name": "Qwen Image Edit Plus",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-08-19",
+    "last_updated": "2025-08-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/qwen-image-max",
+    "name": "Qwen Image Max 2025-12-30",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-31",
+    "last_updated": "2025-12-31",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/qwen-image-plus",
+    "name": "Qwen Image Plus",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-08-04",
+    "last_updated": "2025-08-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/qwen-max",
+    "name": "Qwen Max",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-05",
+    "last_updated": "2025-09-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.6,
+      "output": 6.4
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/qwen-omni-turbo",
+    "name": "Qwen Omni Turbo",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-26",
+    "last_updated": "2025-03-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.8
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen-plus",
+    "name": "Qwen Plus",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-01-25",
+    "last_updated": "2025-01-25",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.4,
+      "output": 1.2,
+      "cache_read": 0.08
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/qwen-turbo",
+    "name": "Qwen Turbo",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-02-01",
+    "last_updated": "2025-02-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.05,
+      "output": 0.2
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen-vl-max",
+    "name": "Qwen VL Max",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-02-01",
+    "last_updated": "2025-02-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.8,
+      "output": 3.2
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/qwen-vl-plus",
+    "name": "Qwen VL Plus",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-02-05",
+    "last_updated": "2025-02-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.21,
+      "output": 0.64
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32000
+    }
+  },
+  {
+    "id": "llmgateway/qwen2-5-vl-32b-instruct",
+    "name": "Qwen2.5 VL 32B Instruct",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-02-19",
+    "last_updated": "2025-02-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.4,
+      "output": 4.2
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen2-5-vl-72b-instruct",
+    "name": "Qwen2.5 VL 72B Instruct",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-01-26",
+    "last_updated": "2025-01-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.13,
+      "output": 0.4
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen25-coder-7b",
+    "name": "Qwen2.5 Coder 7B",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-09-19",
+    "last_updated": "2024-09-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.01,
+      "output": 0.03
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-235b-a22b-fp8",
+    "name": "Qwen3 235B A22B FP8",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-28",
+    "last_updated": "2025-04-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.8
+    },
+    "limit": {
+      "context": 40960,
+      "output": 20000
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-235b-a22b-instruct",
+    "name": "Qwen3 235B A22B Instruct 2507",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-21",
+    "last_updated": "2025-07-21",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.6
+    },
+    "limit": {
+      "context": 262000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-235b-a22b-thinking",
+    "name": "Qwen3 235B A22B Thinking 2507",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-25",
+    "last_updated": "2025-07-25",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.6
+    },
+    "limit": {
+      "context": 262000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-30b-a3b-fp8",
+    "name": "Qwen3 30B A3B FP8",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-28",
+    "last_updated": "2025-04-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.09,
+      "output": 0.45
+    },
+    "limit": {
+      "context": 40960,
+      "output": 20000
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-30b-a3b-instruct",
+    "name": "Qwen3 30B A3B Instruct 2507",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 262000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-30b-a3b-thinking",
+    "name": "Qwen3 30B A3B Thinking 2507",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 262000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-32b",
+    "name": "Qwen3 32B",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-28",
+    "last_updated": "2025-04-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-32b-fp8",
+    "name": "Qwen3 32B FP8",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-28",
+    "last_updated": "2025-04-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.45
+    },
+    "limit": {
+      "context": 40960,
+      "output": 20000
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-4b-fp8",
+    "name": "Qwen3 4B FP8",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-04-28",
+    "last_updated": "2025-04-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.03,
+      "output": 0.03
+    },
+    "limit": {
+      "context": 128000,
+      "output": 20000
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-coder-30b-a3b-instruct",
+    "name": "Qwen3 Coder 30B A3B Instruct",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-31",
+    "last_updated": "2025-07-31",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 262000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-coder-480b-a35b-instruct",
+    "name": "Qwen3 Coder 480B A35B Instruct",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-01-31",
+    "last_updated": "2025-01-31",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.4,
+      "output": 1.8
+    },
+    "limit": {
+      "context": 262000,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-coder-flash",
+    "name": "Qwen3 Coder Flash",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-22",
+    "last_updated": "2025-07-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 1.5,
+      "cache_read": 0.06
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-coder-next",
+    "name": "Qwen3 Coder Next",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.11,
+      "output": 0.68,
+      "cache_read": 0.06
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-coder-plus",
+    "name": "Qwen3 Coder Plus",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-23",
+    "last_updated": "2025-09-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 6.0,
+      "output": 60.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 66000
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-max",
+    "name": "Qwen3 Max",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-24",
+    "last_updated": "2025-09-24",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.6
+    },
+    "limit": {
+      "context": 256000,
+      "output": 32800
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-next-80b-a3b-instruct",
+    "name": "Qwen3 Next 80B A3B Instruct",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-10",
+    "last_updated": "2025-09-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.5,
+      "output": 2.0
+    },
+    "limit": {
+      "context": 129024,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-next-80b-a3b-thinking",
+    "name": "Qwen3 Next 80B A3B Thinking",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-10",
+    "last_updated": "2025-09-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.5,
+      "output": 6.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-vl-235b-a22b-instruct",
+    "name": "Qwen3 VL 235B A22B Instruct",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-23",
+    "last_updated": "2025-09-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.5,
+      "output": 2.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-vl-235b-a22b-thinking",
+    "name": "Qwen3 VL 235B A22B Thinking",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-09-23",
+    "last_updated": "2025-09-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.5,
+      "output": 2.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-vl-30b-a3b-instruct",
+    "name": "Qwen3 VL 30B A3B Instruct",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-10-05",
+    "last_updated": "2025-10-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.7
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-vl-30b-a3b-thinking",
+    "name": "Qwen3 VL 30B A3B Thinking",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-10-11",
+    "last_updated": "2025-10-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 1.0
+    },
+    "limit": {
+      "context": 131072,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-vl-8b-instruct",
+    "name": "Qwen3 VL 8B Instruct",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-10-14",
+    "last_updated": "2025-10-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.08,
+      "output": 0.5
+    },
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-vl-flash",
+    "name": "Qwen3 VL Flash",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-10-15",
+    "last_updated": "2025-10-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.05,
+      "output": 0.4,
+      "cache_read": 0.01
+    },
+    "limit": {
+      "context": 262144,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen3-vl-plus",
+    "name": "Qwen3 VL Plus",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-09-23",
+    "last_updated": "2025-09-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 1.6,
+      "cache_read": 0.04
+    },
+    "limit": {
+      "context": 262144,
+      "output": 32768
+    }
+  },
+  {
+    "id": "llmgateway/qwen35-397b-a17b",
+    "name": "Qwen3.5 397B A17B",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-16",
+    "last_updated": "2026-02-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.6,
+      "output": 3.6
+    },
+    "limit": {
+      "context": 262144,
+      "output": 65536
+    }
+  },
+  {
+    "id": "llmgateway/qwq-plus",
+    "name": "QwQ Plus",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-06",
+    "last_updated": "2025-03-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.8,
+      "output": 2.4
+    },
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    }
+  },
+  {
+    "id": "llmgateway/seed-1.6-250615",
+    "name": "Seed 1.6 (250615)",
+    "family": "seed",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-06-25",
+    "last_updated": "2025-06-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 2.0,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 256000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/seed-1.6-250915",
+    "name": "Seed 1.6 (250915)",
+    "family": "seed",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-09-15",
+    "last_updated": "2025-09-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 2.0,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 256000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/seed-1.6-flash-250715",
+    "name": "Seed 1.6 Flash (250715)",
+    "family": "seed",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-07-26",
+    "last_updated": "2025-07-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.07,
+      "output": 0.3,
+      "cache_read": 0.02
+    },
+    "limit": {
+      "context": 256000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/seed-1.8-251228",
+    "name": "Seed 1.8 (251228)",
+    "family": "seed",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-18",
+    "last_updated": "2025-12-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 2.0,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 256000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/seedream-4.0",
+    "name": "Seedream 4.0",
+    "family": "seed",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-09-16",
+    "last_updated": "2025-09-16",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/seedream-4.5",
+    "name": "Seedream 4.5",
+    "family": "seed",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-12-03",
+    "last_updated": "2025-12-03",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 2000,
+      "output": 4096
+    }
+  },
+  {
+    "id": "llmgateway/sonar",
+    "name": "Sonar",
+    "family": "sonar",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-01-01",
+    "last_updated": "2025-01-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 1.0
+    },
+    "limit": {
+      "context": 130000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/sonar-pro",
+    "name": "Sonar Pro",
+    "family": "sonar",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-07",
+    "last_updated": "2025-03-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/sonar-reasoning-pro",
+    "name": "Sonar Reasoning Pro",
+    "family": "sonar",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-03-07",
+    "last_updated": "2025-03-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 8.0
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "llmgateway/veo-3.1-fast-generate-preview",
+    "name": "Veo 3.1 Fast",
+    "family": "gemini",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-03-14",
+    "last_updated": "2026-03-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 32768,
+      "output": 1
+    }
+  },
+  {
+    "id": "llmgateway/veo-3.1-generate-preview",
+    "name": "Veo 3.1",
+    "family": "gemini",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-03-14",
+    "last_updated": "2026-03-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 32768,
+      "output": 1
+    }
+  },
+  {
     "id": "lmstudio/openai/gpt-oss-20b",
     "name": "GPT OSS 20B",
     "family": "gpt-oss",
@@ -51233,15 +57215,15 @@
   },
   {
     "id": "mistralai/devstral-medium",
-    "name": "Devstral 2 (latest)",
+    "name": "Devstral Medium",
     "family": "devstral",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-12",
-    "release_date": "2025-12-02",
-    "last_updated": "2025-12-02",
+    "knowledge": "2025-05",
+    "release_date": "2025-07-10",
+    "last_updated": "2025-07-10",
     "modalities": {
       "input": [
         "text"
@@ -51256,8 +57238,8 @@
       "output": 2.0
     },
     "limit": {
-      "context": 262144,
-      "output": 262144
+      "context": 128000,
+      "output": 128000
     }
   },
   {
@@ -51465,44 +57447,15 @@
   },
   {
     "id": "mistralai/mistral-large",
-    "name": "Mistral Large 2.1",
+    "name": "Mistral Large 3",
     "family": "mistral-large",
-    "attachment": false,
+    "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2024-11",
     "release_date": "2024-11-01",
-    "last_updated": "2024-11-04",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 2.0,
-      "output": 6.0
-    },
-    "limit": {
-      "context": 131072,
-      "output": 16384
-    }
-  },
-  {
-    "id": "mistralai/mistral-medium",
-    "name": "Mistral Medium (latest)",
-    "family": "mistral-medium",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-05",
-    "release_date": "2025-05-07",
-    "last_updated": "2025-05-10",
+    "last_updated": "2025-12-02",
     "modalities": {
       "input": [
         "text",
@@ -51514,12 +57467,42 @@
     },
     "open_weights": true,
     "cost": {
+      "input": 0.5,
+      "output": 1.5
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "mistralai/mistral-medium",
+    "name": "Mistral Medium 3.1",
+    "family": "mistral-medium",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2025-08-12",
+    "last_updated": "2025-08-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
       "input": 0.4,
       "output": 2.0
     },
     "limit": {
-      "context": 128000,
-      "output": 16384
+      "context": 262144,
+      "output": 262144
     }
   },
   {
@@ -51555,13 +57538,13 @@
     "id": "mistralai/mistral-small",
     "name": "Mistral Small (latest)",
     "family": "mistral-small",
-    "attachment": false,
-    "reasoning": false,
+    "attachment": true,
+    "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-03",
-    "release_date": "2024-09-01",
-    "last_updated": "2024-09-04",
+    "knowledge": "2025-06",
+    "release_date": "2026-03-16",
+    "last_updated": "2026-03-16",
     "modalities": {
       "input": [
         "text",
@@ -51573,12 +57556,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.1,
-      "output": 0.3
+      "input": 0.15,
+      "output": 0.6
     },
     "limit": {
-      "context": 128000,
-      "output": 16384
+      "context": 256000,
+      "output": 256000
     }
   },
   {
@@ -57399,17 +63382,16 @@
   },
   {
     "id": "nano-gpt/claude-3.5-sonnet",
-    "name": "Claude 3.5 Sonnet Old",
+    "name": "Claude 3.5 Sonnet",
     "attachment": true,
     "reasoning": false,
     "tool_call": true,
-    "release_date": "2024-06-20",
-    "last_updated": "2024-06-20",
+    "release_date": "2025-08-26",
+    "last_updated": "2025-08-26",
     "modalities": {
       "input": [
         "text",
-        "image",
-        "pdf"
+        "image"
       ],
       "output": [
         "text"
@@ -62719,13 +68701,13 @@
   },
   {
     "id": "nano-gpt/moonshotai/kimi-k2-instruct",
-    "name": "Kimi K2 0711",
+    "name": "Kimi K2 Instruct",
     "family": "kimi",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
-    "release_date": "2025-07-11",
-    "last_updated": "2025-07-11",
+    "release_date": "2025-07-01",
+    "last_updated": "2025-07-01",
     "modalities": {
       "input": [
         "text"
@@ -62740,7 +68722,7 @@
       "output": 2.0
     },
     "limit": {
-      "context": 128000,
+      "context": 256000,
       "output": 8192
     }
   },
@@ -63295,13 +69277,13 @@
   },
   {
     "id": "nano-gpt/openai/gpt-4o",
-    "name": "GPT-4o",
+    "name": "GPT-4o (2024-08-06)",
     "family": "gpt",
     "attachment": true,
     "reasoning": false,
     "tool_call": false,
-    "release_date": "2024-05-13",
-    "last_updated": "2024-05-13",
+    "release_date": "2024-08-06",
+    "last_updated": "2024-08-06",
     "modalities": {
       "input": [
         "text",
@@ -63574,18 +69556,16 @@
   },
   {
     "id": "nano-gpt/openai/gpt-5.1",
-    "name": "GPT 5.1",
+    "name": "GPT-5.1 (2025-11-13)",
     "family": "gpt",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
     "release_date": "2025-11-13",
     "last_updated": "2025-11-13",
     "modalities": {
       "input": [
-        "text",
-        "image",
-        "pdf"
+        "text"
       ],
       "output": [
         "text"
@@ -63597,13 +69577,13 @@
       "output": 10.0
     },
     "limit": {
-      "context": 400000,
-      "output": 128000
+      "context": 1000000,
+      "output": 32768
     }
   },
   {
     "id": "nano-gpt/openai/gpt-5.1-chat",
-    "name": "GPT 5.1 Chat (Latest)",
+    "name": "GPT 5.1 Chat",
     "family": "gpt",
     "attachment": true,
     "reasoning": true,
@@ -63626,7 +69606,7 @@
     },
     "limit": {
       "context": 400000,
-      "output": 16384
+      "output": 128000
     }
   },
   {
@@ -65627,11 +71607,11 @@
   },
   {
     "id": "nano-gpt/x-ai/grok-4.1-fast",
-    "name": "Grok 4.1 Fast",
+    "name": "Grok 4.1 Fast Reasoning",
     "family": "grok",
     "attachment": true,
     "reasoning": true,
-    "tool_call": true,
+    "tool_call": false,
     "release_date": "2025-11-20",
     "last_updated": "2025-11-20",
     "modalities": {
@@ -66079,6 +72059,60 @@
     "limit": {
       "context": 200000,
       "output": 128000
+    }
+  },
+  {
+    "id": "nano-gpt/zai-org/glm-5.1",
+    "name": "GLM 5.1",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "release_date": "2026-03-27",
+    "last_updated": "2026-03-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 2.55
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    }
+  },
+  {
+    "id": "nano-gpt/zai-org/glm-5.1:thinking",
+    "name": "GLM 5.1 Thinking",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "release_date": "2026-03-27",
+    "last_updated": "2026-03-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 2.55
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
     }
   },
   {
@@ -70078,13 +76112,13 @@
   },
   {
     "id": "nvidia/deepseek-ai/deepseek-r1",
-    "name": "Deepseek R1",
+    "name": "Deepseek R1 0528",
     "attachment": false,
     "reasoning": true,
-    "tool_call": false,
+    "tool_call": true,
     "temperature": true,
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
+    "release_date": "2025-05-28",
+    "last_updated": "2025-05-28",
     "modalities": {
       "input": [
         "text"
@@ -71204,14 +77238,14 @@
   },
   {
     "id": "nvidia/moonshotai/kimi-k2-instruct",
-    "name": "Kimi K2 0905",
+    "name": "Kimi K2 Instruct",
     "family": "kimi",
     "attachment": false,
-    "reasoning": false,
+    "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-09-05",
+    "knowledge": "2024-01",
+    "release_date": "2025-01-01",
     "last_updated": "2025-09-05",
     "modalities": {
       "input": [
@@ -71221,14 +77255,14 @@
         "text"
       ]
     },
-    "open_weights": true,
+    "open_weights": false,
     "cost": {
       "input": 0.0,
       "output": 0.0
     },
     "limit": {
-      "context": 262144,
-      "output": 262144
+      "context": 128000,
+      "output": 8192
     }
   },
   {
@@ -73104,14 +79138,14 @@
   },
   {
     "id": "openai/gpt-4o",
-    "name": "GPT-4o",
+    "name": "GPT-4o (2024-08-06)",
     "family": "gpt",
     "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2023-09",
-    "release_date": "2024-05-13",
+    "release_date": "2024-08-06",
     "last_updated": "2024-08-06",
     "modalities": {
       "input": [
@@ -73625,6 +79659,37 @@
     "limit": {
       "context": 400000,
       "output": 128000
+    }
+  },
+  {
+    "id": "openai/gpt-5.3-chat",
+    "name": "GPT-5.3 Chat (latest)",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-08-31",
+    "release_date": "2026-03-03",
+    "last_updated": "2026-03-03",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.175
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
     }
   },
   {
@@ -75773,6 +81838,36 @@
     }
   },
   {
+    "id": "opencode/qwen3.6-plus-free",
+    "name": "Qwen3.6 Plus Free",
+    "family": "qwen-free",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-12",
+    "release_date": "2026-03-30",
+    "last_updated": "2026-03-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 64000
+    }
+  },
+  {
     "id": "opencode/trinity-large-preview-free",
     "name": "Trinity Large Preview",
     "family": "trinity",
@@ -77889,6 +83984,36 @@
     }
   },
   {
+    "id": "openrouter/mistralai/mistral-small",
+    "name": "Mistral Small 4",
+    "family": "mistral-small",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-06",
+    "release_date": "2026-03-16",
+    "last_updated": "2026-03-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.15,
+      "output": 0.6
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
     "id": "openrouter/mistralai/mistral-small-3.1-24b-instruct",
     "name": "Mistral Small 3.1 24B Instruct",
     "family": "mistral-small",
@@ -77950,15 +84075,15 @@
   },
   {
     "id": "openrouter/moonshotai/kimi-k2",
-    "name": "Kimi K2 Instruct 0905",
+    "name": "Kimi K2",
     "family": "kimi",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2024-10",
-    "release_date": "2025-09-05",
-    "last_updated": "2025-09-05",
+    "release_date": "2025-07-11",
+    "last_updated": "2025-07-11",
     "modalities": {
       "input": [
         "text"
@@ -77969,12 +84094,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.6,
-      "output": 2.5
+      "input": 0.55,
+      "output": 2.2
     },
     "limit": {
-      "context": 262144,
-      "output": 16384
+      "context": 131072,
+      "output": 32768
     }
   },
   {
@@ -78243,7 +84368,7 @@
     }
   },
   {
-    "id": "openrouter/nvidia/nemotron-3-super-120b-a12b-free",
+    "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
     "name": "Nemotron 3 Super (free)",
     "family": "nemotron",
     "attachment": false,
@@ -79880,6 +86005,34 @@
     "cost": {
       "input": 0.4,
       "output": 2.4
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 65536
+    }
+  },
+  {
+    "id": "openrouter/qwen/qwen3.6-plus-preview:free",
+    "name": "Qwen3.6 Plus Preview (free)",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-30",
+    "last_updated": "2026-03-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
     },
     "limit": {
       "context": 1000000,
@@ -83061,6 +89214,34 @@
     }
   },
   {
+    "id": "poe/novita/deepseek-v3.2",
+    "name": "DeepSeek-V3.2",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-01",
+    "last_updated": "2025-12-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.27,
+      "output": 0.4,
+      "cache_read": 0.13
+    },
+    "limit": {
+      "context": 128000,
+      "output": 0
+    }
+  },
+  {
     "id": "poe/novita/glm-4.6",
     "name": "GLM-4.6",
     "family": "glm",
@@ -84218,6 +90399,64 @@
     }
   },
   {
+    "id": "poe/openai/gpt-5.4-mini",
+    "name": "GPT-5.4-Mini",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-03-12",
+    "last_updated": "2026-03-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.68,
+      "output": 4.0,
+      "cache_read": 0.068
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "poe/openai/gpt-5.4-nano",
+    "name": "GPT-5.4-Nano",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-03-11",
+    "last_updated": "2026-03-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.18,
+      "output": 1.1,
+      "cache_read": 0.018
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
     "id": "poe/openai/gpt-5.4-pro",
     "name": "GPT-5.4-Pro",
     "attachment": true,
@@ -84990,6 +91229,35 @@
     }
   },
   {
+    "id": "poe/xai/grok-4.20-multi-agent",
+    "name": "Grok-4.20-Multi-Agent",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-03-13",
+    "last_updated": "2026-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 6.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 128000,
+      "output": 0
+    }
+  },
+  {
     "id": "poe/xai/grok-code-fast-1",
     "name": "Grok Code Fast 1",
     "family": "grok",
@@ -85695,7 +91963,7 @@
   },
   {
     "id": "qiniu-ai/deepseek-r1",
-    "name": "DeepSeek-R1",
+    "name": "DeepSeek-R1-0528",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
@@ -85719,13 +91987,13 @@
   },
   {
     "id": "qiniu-ai/deepseek-v3",
-    "name": "DeepSeek-V3-0324",
+    "name": "DeepSeek-V3",
     "attachment": false,
     "reasoning": false,
-    "tool_call": true,
+    "tool_call": false,
     "temperature": true,
-    "release_date": "2025-08-05",
-    "last_updated": "2025-08-05",
+    "release_date": "2025-08-13",
+    "last_updated": "2025-08-13",
     "modalities": {
       "input": [
         "text"
@@ -87364,13 +93632,13 @@
   },
   {
     "id": "qiniu-ai/x-ai/grok-4-fast",
-    "name": "x-AI/Grok-4-Fast",
+    "name": "X-Ai/Grok-4-Fast-Reasoning",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2025-09-20",
-    "last_updated": "2025-09-20",
+    "release_date": "2025-12-18",
+    "last_updated": "2025-12-18",
     "modalities": {
       "input": [
         "text",
@@ -87418,16 +93686,19 @@
   },
   {
     "id": "qiniu-ai/x-ai/grok-4.1-fast",
-    "name": "x-AI/Grok-4.1-Fast",
-    "attachment": false,
+    "name": "X-Ai/Grok 4.1 Fast Reasoning",
+    "attachment": true,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2025-11-20",
-    "last_updated": "2025-11-20",
+    "release_date": "2025-12-19",
+    "last_updated": "2025-12-19",
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "image",
+        "audio",
+        "video"
       ],
       "output": [
         "text"
@@ -87436,7 +93707,7 @@
     "open_weights": false,
     "cost": {},
     "limit": {
-      "context": 2000000,
+      "context": 20000000,
       "output": 2000000
     }
   },
@@ -92306,6 +98577,34 @@
     }
   },
   {
+    "id": "siliconflow/MiniMaxAI/MiniMax-M2.5",
+    "name": "MiniMaxAI/MiniMax-M2.5",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-15",
+    "last_updated": "2026-02-15",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.3,
+      "output": 1.2
+    },
+    "limit": {
+      "context": 197000,
+      "output": 131000
+    }
+  },
+  {
     "id": "siliconflow/Qwen/QwQ-32B",
     "name": "Qwen/QwQ-32B",
     "family": "qwen",
@@ -96431,6 +102730,35 @@
     }
   },
   {
+    "id": "venice/aion-labs.aion-2.0",
+    "name": "Aion 2.0",
+    "family": "o",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-03-24",
+    "last_updated": "2026-03-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 2.0,
+      "cache_read": 0.25
+    },
+    "limit": {
+      "context": 128000,
+      "output": 32768
+    }
+  },
+  {
     "id": "venice/claude-opus-4.6",
     "name": "Claude Opus 4.6",
     "family": "claude-opus",
@@ -96563,11 +102891,11 @@
     "family": "deepseek",
     "attachment": false,
     "reasoning": true,
-    "tool_call": false,
+    "tool_call": true,
     "temperature": true,
     "knowledge": "2025-10",
     "release_date": "2025-12-04",
-    "last_updated": "2026-03-18",
+    "last_updated": "2026-03-24",
     "modalities": {
       "input": [
         "text"
@@ -96619,39 +102947,6 @@
     "limit": {
       "context": 256000,
       "output": 65536
-    }
-  },
-  {
-    "id": "venice/gemini-3-pro-preview",
-    "name": "Gemini 3 Pro Preview",
-    "family": "gemini-pro",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-04",
-    "release_date": "2025-12-02",
-    "last_updated": "2026-03-12",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "audio",
-        "video"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 2.5,
-      "output": 15.0,
-      "cache_read": 0.625
-    },
-    "limit": {
-      "context": 198000,
-      "output": 32768
     }
   },
   {
@@ -100321,6 +106616,35 @@
     }
   },
   {
+    "id": "vercel/kwaipilot/kat-coder-pro-v2",
+    "name": "Kat Coder Pro V2",
+    "family": "kat-coder",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-27",
+    "last_updated": "2026-03-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.3,
+      "output": 1.2,
+      "cache_read": 0.06
+    },
+    "limit": {
+      "context": 256000,
+      "output": 256000
+    }
+  },
+  {
     "id": "vercel/meituan/longcat-flash-chat",
     "name": "LongCat Flash Chat",
     "family": "longcat",
@@ -101258,13 +107582,13 @@
     "id": "vercel/mistral/mistral-small",
     "name": "Mistral Small (latest)",
     "family": "mistral-small",
-    "attachment": false,
-    "reasoning": false,
+    "attachment": true,
+    "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-03",
-    "release_date": "2024-09-01",
-    "last_updated": "2024-09-04",
+    "knowledge": "2025-06",
+    "release_date": "2026-03-16",
+    "last_updated": "2026-03-16",
     "modalities": {
       "input": [
         "text",
@@ -101276,12 +107600,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.1,
-      "output": 0.3
+      "input": 0.15,
+      "output": 0.6
     },
     "limit": {
-      "context": 128000,
-      "output": 16384
+      "context": 256000,
+      "output": 256000
     }
   },
   {
@@ -101605,6 +107929,34 @@
     "limit": {
       "context": 262144,
       "output": 262144
+    }
+  },
+  {
+    "id": "vercel/nvidia/nemotron-3-super-120b-a12b",
+    "name": "NVIDIA Nemotron 3 Super 120B A12B",
+    "family": "nemotron",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-03-18",
+    "last_updated": "2026-03-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.15,
+      "output": 0.65
+    },
+    "limit": {
+      "context": 256000,
+      "output": 32000
     }
   },
   {
@@ -102993,18 +109345,19 @@
   },
   {
     "id": "vercel/perplexity/sonar",
-    "name": "Sonar Reasoning",
-    "family": "sonar-reasoning",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": false,
+    "name": "Sonar",
+    "family": "sonar",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-09",
+    "knowledge": "2025-02",
     "release_date": "2025-02-19",
     "last_updated": "2025-02-19",
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "output": [
         "text"
@@ -103013,7 +109366,7 @@
     "open_weights": false,
     "cost": {
       "input": 1.0,
-      "output": 5.0
+      "output": 1.0
     },
     "limit": {
       "context": 127000,
@@ -104464,16 +110817,16 @@
     }
   },
   {
-    "id": "vivgrid/gemini-3-flash-preview",
-    "name": "Gemini 3 Flash Preview",
-    "family": "gemini-flash",
+    "id": "vivgrid/gemini-3.1-flash-lite-preview",
+    "name": "Gemini 3.1 Flash Lite Preview",
+    "family": "gemini-flash-lite",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2025-01",
-    "release_date": "2025-12-17",
-    "last_updated": "2025-12-17",
+    "release_date": "2026-03-03",
+    "last_updated": "2026-03-03",
     "modalities": {
       "input": [
         "text",
@@ -104488,9 +110841,10 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.5,
-      "output": 3.0,
-      "cache_read": 0.05
+      "input": 0.25,
+      "output": 1.5,
+      "cache_read": 0.025,
+      "cache_write": 1.0
     },
     "limit": {
       "context": 1048576,
@@ -104498,16 +110852,16 @@
     }
   },
   {
-    "id": "vivgrid/gemini-3-pro-preview",
-    "name": "Gemini 3 Pro Preview",
+    "id": "vivgrid/gemini-3.1-pro-preview",
+    "name": "Gemini 3.1 Pro Preview",
     "family": "gemini-pro",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2025-01",
-    "release_date": "2025-11-18",
-    "last_updated": "2025-11-18",
+    "release_date": "2026-02-19",
+    "last_updated": "2026-02-19",
     "modalities": {
       "input": [
         "text",
@@ -104685,61 +111039,35 @@
     }
   },
   {
-    "id": "vultr/DeepSeek-R1-Distill-Llama-70B",
-    "name": "DeepSeek R1 Distill Llama 70B",
-    "family": "deepseek-thinking",
-    "attachment": false,
+    "id": "vivgrid/gpt-5.4",
+    "name": "GPT-5.4",
+    "family": "gpt",
+    "attachment": true,
     "reasoning": true,
     "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
+    "temperature": false,
+    "knowledge": "2025-08-31",
+    "release_date": "2026-03-05",
+    "last_updated": "2026-03-05",
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "image",
+        "pdf"
       ],
       "output": [
         "text"
       ]
     },
-    "open_weights": true,
+    "open_weights": false,
     "cost": {
-      "input": 2.0,
-      "output": 2.0
+      "input": 2.5,
+      "output": 15.0,
+      "cache_read": 0.25
     },
     "limit": {
-      "context": 130000,
-      "output": 4096
-    }
-  },
-  {
-    "id": "vultr/DeepSeek-R1-Distill-Qwen-32B",
-    "name": "DeepSeek R1 Distill Qwen 32B",
-    "family": "qwen",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.3,
-      "output": 0.3
-    },
-    "limit": {
-      "context": 130000,
-      "output": 4096
+      "context": 400000,
+      "output": 128000
     }
   },
   {
@@ -104830,35 +111158,6 @@
     }
   },
   {
-    "id": "vultr/Llama-3_1-Nemotron-Ultra-253B-v1",
-    "name": "Llama 3.1 Nemotron Ultra 253B v1",
-    "family": "llama",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.55,
-      "output": 1.8
-    },
-    "limit": {
-      "context": 32000,
-      "output": 4096
-    }
-  },
-  {
     "id": "vultr/MiniMax-M2.5",
     "name": "MiniMax M2.5",
     "family": "minimax",
@@ -104885,93 +111184,6 @@
     "limit": {
       "context": 196000,
       "output": 4096
-    }
-  },
-  {
-    "id": "vultr/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
-    "name": "NVIDIA Nemotron 3 Super 120B A12B NVFP4",
-    "family": "nemotron",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-01-20",
-    "last_updated": "2025-01-20",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.2,
-      "output": 0.8
-    },
-    "limit": {
-      "context": 260000,
-      "output": 8192
-    }
-  },
-  {
-    "id": "vultr/Qwen2.5-Coder-32B-Instruct",
-    "name": "Qwen2.5 Coder 32B Instruct",
-    "family": "qwen",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2024-11-06",
-    "last_updated": "2024-11-06",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.2,
-      "output": 0.6
-    },
-    "limit": {
-      "context": 15000,
-      "output": 256
-    }
-  },
-  {
-    "id": "vultr/gpt-oss-120b",
-    "name": "GPT OSS 120B",
-    "family": "gpt-oss",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-06-23",
-    "last_updated": "2025-06-23",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.15,
-      "output": 0.6
-    },
-    "limit": {
-      "context": 130000,
-      "output": 8192
     }
   },
   {
@@ -105461,14 +111673,14 @@
   },
   {
     "id": "x-ai/grok-2",
-    "name": "Grok 2 Latest",
+    "name": "Grok 2 (1212)",
     "family": "grok",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2024-08",
-    "release_date": "2024-08-20",
+    "release_date": "2024-12-12",
     "last_updated": "2024-12-12",
     "modalities": {
       "input": [
@@ -105491,7 +111703,7 @@
   },
   {
     "id": "x-ai/grok-2-vision",
-    "name": "Grok 2 Vision Latest",
+    "name": "Grok 2 Vision",
     "family": "grok",
     "attachment": true,
     "reasoning": false,
@@ -105499,7 +111711,7 @@
     "temperature": true,
     "knowledge": "2024-08",
     "release_date": "2024-08-20",
-    "last_updated": "2024-12-12",
+    "last_updated": "2024-08-20",
     "modalities": {
       "input": [
         "text",
@@ -105522,7 +111734,7 @@
   },
   {
     "id": "x-ai/grok-3",
-    "name": "Grok 3 Latest",
+    "name": "Grok 3",
     "family": "grok",
     "attachment": false,
     "reasoning": false,
@@ -105582,7 +111794,7 @@
   },
   {
     "id": "x-ai/grok-3-mini",
-    "name": "Grok 3 Mini",
+    "name": "Grok 3 Mini Latest",
     "family": "grok",
     "attachment": false,
     "reasoning": true,
@@ -106409,6 +112621,36 @@
     }
   },
   {
+    "id": "zai-coding-plan/glm-5.1",
+    "name": "GLM-5.1",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-27",
+    "last_updated": "2026-03-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0,
+      "cache_write": 0.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    }
+  },
+  {
     "id": "zai/glm-4.5",
     "name": "GLM-4.5",
     "family": "glm",
@@ -106657,6 +112899,37 @@
     }
   },
   {
+    "id": "zai/glm-4.7-flashx",
+    "name": "GLM-4.7-FlashX",
+    "family": "glm-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-01-19",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.07,
+      "output": 0.4,
+      "cache_read": 0.01,
+      "cache_write": 0.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    }
+  },
+  {
     "id": "zai/glm-5",
     "name": "GLM-5",
     "family": "glm",
@@ -106741,38 +113014,6 @@
       "output": 4.0,
       "cache_read": 0.08,
       "cache_write": 1.0
-    },
-    "limit": {
-      "context": 200000,
-      "output": 64000
-    }
-  },
-  {
-    "id": "zenmux/anthropic/claude-3.5-sonnet",
-    "name": "Claude 3.5 Sonnet (Retiring Soon)",
-    "attachment": true,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-01-01",
-    "release_date": "2024-10-22",
-    "last_updated": "2024-10-22",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "pdf"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 3.0,
-      "output": 15.0,
-      "cache_read": 0.3,
-      "cache_write": 3.75
     },
     "limit": {
       "context": 200000,
@@ -106871,7 +113112,7 @@
     },
     "limit": {
       "context": 200000,
-      "output": 64000
+      "output": 32000
     }
   },
   {
@@ -107306,40 +113547,6 @@
       "output": 3.0,
       "cache_read": 0.05,
       "cache_write": 1.0
-    },
-    "limit": {
-      "context": 1048000,
-      "output": 64000
-    }
-  },
-  {
-    "id": "zenmux/google/gemini-3-pro-image-preview",
-    "name": "Gemini 3 Pro Image Preview",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-01-01",
-    "release_date": "2025-03-20",
-    "last_updated": "2025-03-20",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "pdf",
-        "audio",
-        "video"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 2.0,
-      "output": 12.0,
-      "cache_read": 0.2,
-      "cache_write": 4.5
     },
     "limit": {
       "context": 1048000,
@@ -107828,7 +114035,7 @@
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
-    "temperature": true,
+    "temperature": false,
     "knowledge": "2025-01-01",
     "release_date": "2026-01-27",
     "last_updated": "2026-01-27",
@@ -109582,6 +115789,68 @@
     }
   },
   {
+    "id": "zhipuai-coding-plan/glm-4.7-flash",
+    "name": "GLM-4.7-Flash",
+    "family": "glm-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-01-19",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0,
+      "cache_write": 0.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    }
+  },
+  {
+    "id": "zhipuai-coding-plan/glm-4.7-flashx",
+    "name": "GLM-4.7-FlashX",
+    "family": "glm-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-01-19",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.07,
+      "output": 0.4,
+      "cache_read": 0.01,
+      "cache_write": 0.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    }
+  },
+  {
     "id": "zhipuai-coding-plan/glm-5",
     "name": "GLM-5",
     "family": "glm",
@@ -109621,6 +115890,36 @@
     "temperature": true,
     "release_date": "2026-03-16",
     "last_updated": "2026-03-16",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0,
+      "cache_write": 0.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    }
+  },
+  {
+    "id": "zhipuai-coding-plan/glm-5.1",
+    "name": "GLM-5.1",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-27",
+    "last_updated": "2026-03-27",
     "modalities": {
       "input": [
         "text"
@@ -109882,6 +116181,37 @@
       "input": 0.0,
       "output": 0.0,
       "cache_read": 0.0,
+      "cache_write": 0.0
+    },
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    }
+  },
+  {
+    "id": "zhipuai/glm-4.7-flashx",
+    "name": "GLM-4.7-FlashX",
+    "family": "glm-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-01-19",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.07,
+      "output": 0.4,
+      "cache_read": 0.01,
       "cache_write": 0.0
     },
     "limit": {

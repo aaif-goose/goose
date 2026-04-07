@@ -2,4 +2,4 @@ packages:
   - 'acp'
   - 'text'
   - 'desktop'
-  - 'goose-acp-server/*'
+  - 'goose-binary/*'

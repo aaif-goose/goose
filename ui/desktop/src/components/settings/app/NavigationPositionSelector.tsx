@@ -1,23 +1,44 @@
 import React from 'react';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
+import { defineMessages, useIntl } from '../../../i18n';
 import { useNavigationContext, NavigationPosition } from '../../Layout/NavigationContext';
 import { cn } from '../../../utils';
+
+const i18n = defineMessages({
+  topLabel: {
+    id: 'navigationPositionSelector.topLabel',
+    defaultMessage: 'Top',
+  },
+  bottomLabel: {
+    id: 'navigationPositionSelector.bottomLabel',
+    defaultMessage: 'Bottom',
+  },
+  leftLabel: {
+    id: 'navigationPositionSelector.leftLabel',
+    defaultMessage: 'Left',
+  },
+  rightLabel: {
+    id: 'navigationPositionSelector.rightLabel',
+    defaultMessage: 'Right',
+  },
+});
 
 interface NavigationPositionSelectorProps {
   className?: string;
 }
 
-const positions: { value: NavigationPosition; label: string; icon: React.ReactNode }[] = [
-  { value: 'top', label: 'Top', icon: <ArrowUp className="w-5 h-5" /> },
-  { value: 'bottom', label: 'Bottom', icon: <ArrowDown className="w-5 h-5" /> },
-  { value: 'left', label: 'Left', icon: <ArrowLeft className="w-5 h-5" /> },
-  { value: 'right', label: 'Right', icon: <ArrowRight className="w-5 h-5" /> },
-];
-
 export const NavigationPositionSelector: React.FC<NavigationPositionSelectorProps> = ({
   className,
 }) => {
   const { navigationPosition, setNavigationPosition } = useNavigationContext();
+  const intl = useIntl();
+
+  const positions: { value: NavigationPosition; label: string; icon: React.ReactNode }[] = [
+    { value: 'top', label: intl.formatMessage(i18n.topLabel), icon: <ArrowUp className="w-5 h-5" /> },
+    { value: 'bottom', label: intl.formatMessage(i18n.bottomLabel), icon: <ArrowDown className="w-5 h-5" /> },
+    { value: 'left', label: intl.formatMessage(i18n.leftLabel), icon: <ArrowLeft className="w-5 h-5" /> },
+    { value: 'right', label: intl.formatMessage(i18n.rightLabel), icon: <ArrowRight className="w-5 h-5" /> },
+  ];
 
   return (
     <div className={className}>

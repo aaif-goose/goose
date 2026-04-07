@@ -232,6 +232,11 @@ impl<'a> SessionUpdateBuilder<'a> {
         self
     }
 
+    pub fn clear_model_config(mut self) -> Self {
+        self.model_config = Some(None);
+        self
+    }
+
     pub fn goose_mode(mut self, mode: GooseMode) -> Self {
         self.goose_mode = Some(mode);
         self

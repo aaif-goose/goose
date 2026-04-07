@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
+import { IntlProvider } from 'react-intl';
 import { ConfigProvider } from './components/ConfigContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import SuspenseLoader from './suspense-loader';
@@ -7,6 +8,7 @@ import { client } from './api/client.gen';
 import { setTelemetryEnabled } from './utils/analytics';
 import { readConfig } from './api';
 import { applyThemeTokens } from './theme/theme-tokens';
+import { currentLocale, currentMessageLocale, loadMessages } from './i18n';
 
 // Apply theme tokens to :root before first paint.
 applyThemeTokens();
@@ -44,15 +46,19 @@ const TELEMETRY_CONFIG_KEY = 'GOOSE_TELEMETRY_ENABLED';
     }
   }
 
+  const messages = await loadMessages(currentMessageLocale);
+
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <Suspense fallback={SuspenseLoader()}>
-        <ConfigProvider>
-          <ErrorBoundary>
-            <App />
-          </ErrorBoundary>
-        </ConfigProvider>
-      </Suspense>
+      <IntlProvider locale={currentLocale} defaultLocale="en" messages={messages}>
+        <Suspense fallback={SuspenseLoader()}>
+          <ConfigProvider>
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
+          </ConfigProvider>
+        </Suspense>
+      </IntlProvider>
     </React.StrictMode>
   );
 })();

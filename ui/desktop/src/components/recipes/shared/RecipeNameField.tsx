@@ -1,4 +1,16 @@
 import { recipeNameSchema, RECIPE_NAME_PLACEHOLDER } from './recipeNameUtils';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  defaultLabel: {
+    id: 'recipeNameField.defaultLabel',
+    defaultMessage: 'Recipe Name',
+  },
+  formatHint: {
+    id: 'recipeNameField.formatHint',
+    defaultMessage: 'Will be automatically formatted (lowercase, dashes for spaces)',
+  },
+});
 
 interface RecipeNameFieldProps {
   id: string;
@@ -17,14 +29,16 @@ export function RecipeNameField({
   onChange,
   onBlur,
   errors,
-  label = 'Recipe Name',
+  label,
   required = true,
   disabled = false,
 }: RecipeNameFieldProps) {
+  const intl = useIntl();
+  const displayLabel = label || intl.formatMessage(i18n.defaultLabel);
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-text-primary mb-2">
-        {label} {required && <span className="text-red-500">*</span>}
+        {displayLabel} {required && <span className="text-red-500">*</span>}
       </label>
       <input
         id={id}
@@ -57,7 +71,7 @@ export function RecipeNameField({
         data-testid="recipe-name-input"
       />
       <p className="text-xs text-text-secondary mt-1">
-        Will be automatically formatted (lowercase, dashes for spaces)
+        {intl.formatMessage(i18n.formatHint)}
       </p>
       {errors.length > 0 && <p className="text-red-500 text-sm mt-1">{errors[0]}</p>}
     </div>

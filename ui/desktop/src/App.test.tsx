@@ -7,6 +7,7 @@ import React from 'react';
 import { screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AppInner } from './App';
+import { IntlTestWrapper } from './i18n/test-utils';
 
 // Set up globals for jsdom
 Object.defineProperty(window, 'location', {
@@ -199,8 +200,8 @@ describe('App Component - Brand New State', () => {
     window.location.hash = '';
     window.location.search = '';
     window.location.pathname = '/';
-    window.sessionStorage.clear();
-    window.localStorage.clear();
+    window.sessionStorage?.clear?.();
+    window.localStorage?.clear?.();
   });
 
   afterEach(() => {
@@ -215,7 +216,7 @@ describe('App Component - Brand New State', () => {
       GOOSE_ALLOWLIST_WARNING: false,
     });
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization
     await waitFor(() => {
@@ -238,17 +239,17 @@ describe('App Component - Brand New State', () => {
     // Set up search params to simulate view=settings deep link
     mockSearchParams.set('view', 'settings');
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization
     await waitFor(() => {
       expect(mockElectron.reactReady).toHaveBeenCalled();
     });
 
-    expect(screen.getByText(/^Select an AI model provider/)).toBeInTheDocument();
+    expect(screen.getByText(/^Welcome to goose/)).toBeInTheDocument();
   });
 
-  it('should not redirect to /welcome when provider is configured', async () => {
+  it('should not redirect when provider is configured', async () => {
     // Mock provider configured
     mockElectron.getConfig.mockReturnValue({
       GOOSE_DEFAULT_PROVIDER: 'openai',
@@ -256,7 +257,7 @@ describe('App Component - Brand New State', () => {
       GOOSE_ALLOWLIST_WARNING: false,
     });
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization
     await waitFor(() => {
@@ -279,7 +280,7 @@ describe('App Component - Brand New State', () => {
       GOOSE_ALLOWLIST_WARNING: false,
     });
 
-    render(<AppInner />);
+    render(<AppInner />, { wrapper: IntlTestWrapper });
 
     // Wait for initialization and recovery
     await waitFor(() => {

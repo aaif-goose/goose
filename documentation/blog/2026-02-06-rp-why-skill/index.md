@@ -258,12 +258,12 @@ A: Yes! The output is designed to be shareable. Screenshot or copy the quadrant 
 <head>
   <meta property="og:title" content="Level Up Your AI Game with rp-why" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2026/02/06/rp-why-skill" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/06/rp-why-skill" />
   <meta property="og:description" content="A goose skill that measures the cognitive complexity of your AI collaboration using the Gas Town × DOK framework." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta property="twitter:domain" content="aaif-goose.github.io" />
   <meta name="twitter:title" content="Level Up Your AI Game with rp-why" />
   <meta name="twitter:description" content="A goose skill that measures the cognitive complexity of your AI collaboration using the Gas Town × DOK framework." />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
 </head>

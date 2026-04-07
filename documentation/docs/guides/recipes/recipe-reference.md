@@ -20,7 +20,7 @@ Recipes can be defined in:
 `.yml` files aren't supported by goose CLI.
 :::
 
-See [Shareable Recipes](/docs/guides/recipes/session-recipes) to learn how to create, use, and manage recipes.
+See [Reusable Recipes](/docs/guides/recipes/session-recipes) to learn how to create, use, and manage recipes.
 
 ## Recipe Location
 

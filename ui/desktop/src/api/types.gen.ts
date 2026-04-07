@@ -216,6 +216,7 @@ export type DeclarativeProviderConfig = {
     dynamic_models?: boolean | null;
     engine: ProviderEngine;
     env_vars?: Array<EnvVarConfig> | null;
+    fast_model?: string | null;
     headers?: {
         [key: string]: string;
     } | null;

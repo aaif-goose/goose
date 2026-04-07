@@ -63,6 +63,7 @@ clap_complete = "4.5.62"
 comfy-table = "7.2.2"
 sha2 = { workspace = true }
 sigstore-verify = { version = "0.6", default-features = false }
+axum.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

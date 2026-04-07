@@ -1,9 +1,17 @@
 import React from 'react';
+import { defineMessages, useIntl } from '../../i18n';
 import { Card } from '../ui/card';
 import { formatDate } from '../../utils/date';
 import { Session } from '../../api';
 import { shouldShowNewChatTitle } from '../../sessions';
 import { DEFAULT_CHAT_TITLE } from '../../contexts/ChatContext';
+
+const i18n = defineMessages({
+  messageCount: {
+    id: 'sessionItem.messageCount',
+    defaultMessage: '{count} messages',
+  },
+});
 
 interface SessionItemProps {
   session: Session;
@@ -11,6 +19,7 @@ interface SessionItemProps {
 }
 
 const SessionItem: React.FC<SessionItemProps> = ({ session, extraActions }) => {
+  const intl = useIntl();
   const displayName = shouldShowNewChatTitle(session) ? DEFAULT_CHAT_TITLE : session.name;
 
   return (
@@ -18,7 +27,7 @@ const SessionItem: React.FC<SessionItemProps> = ({ session, extraActions }) => {
       <div>
         <div className="font-medium">{displayName}</div>
         <div className="text-sm text-muted-foreground">
-          {formatDate(session.updated_at)} • {session.message_count} messages
+          {formatDate(session.updated_at)} • {intl.formatMessage(i18n.messageCount, { count: session.message_count })}
         </div>
         <div className="text-sm text-muted-foreground">{session.working_dir}</div>
       </div>

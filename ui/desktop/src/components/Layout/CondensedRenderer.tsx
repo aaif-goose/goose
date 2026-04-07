@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
 import { GripVertical, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { defineMessages, useIntl } from '../../i18n';
 import { cn } from '../../utils';
 import { DropdownMenu, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { ChatSessionsDropdown, SessionsList } from './navigation';
 import type { NavigationRendererProps } from './navigation/types';
+
+const i18n = defineMessages({
+  newChat: {
+    id: 'condensedRenderer.newChat',
+    defaultMessage: 'New Chat',
+  },
+});
 
 export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
   isOverlayMode,
@@ -26,6 +34,7 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
   drag,
   navFocusRef,
 }) => {
+  const intl = useIntl();
   const [chatPopoverOpen, setChatPopoverOpen] = useState(false);
 
   const isVertical = navigationPosition === 'left' || navigationPosition === 'right';
@@ -176,7 +185,7 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
                                 'bg-background-tertiary hover:bg-background-inverse hover:text-text-inverse',
                                 'flex items-center justify-center'
                               )}
-                              title="New Chat"
+                              title={intl.formatMessage(i18n.newChat)}
                             >
                               <Plus className="w-4 h-4" />
                             </motion.button>

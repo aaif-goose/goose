@@ -75,7 +75,7 @@ When in doubt, don't stress! The goose team is here to help you make the most of
 
 1. 🆘 Maintainer Help: Connect with the maintainers by commenting on the issue or chat with them directly in the #🎃┃hacktoberfest channel on Discord.
 2. 🫶 Community Support: [Join us on Discord](https://discord.gg/goose-oss) to live chat with fellow contributors and get tips for success from participants!
-3. 🎙️ Office Hours: Join us every Tuesday at 1pm Eastern Time on [Discord](https://discord.gg/goose-oss) through the month of October to get live-over-voice help with open PRs, questions you may have, and general help. Keep an eye out on the [goose events calendar](https://aaif-goose.github.io/goose/community/) for future events centered around Hacktoberfest!
+3. 🎙️ Office Hours: Join us every Tuesday at 1pm Eastern Time on [Discord](https://discord.gg/goose-oss) through the month of October to get live-over-voice help with open PRs, questions you may have, and general help. Keep an eye out on the [goose events calendar](https://goose-docs.ai/community/) for future events centered around Hacktoberfest!
 
 
 Happy hacking and cheers to goose x Hacktoberfest 2025! 🎉
@@ -85,12 +85,12 @@ Happy hacking and cheers to goose x Hacktoberfest 2025! 🎉
 <head>
   <meta property="og:title" content="goose is Celebrating Hacktoberfest 2025!" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025-09-26-hacktoberfest2025" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025-09-26-hacktoberfest2025" />
   <meta property="og:description" content="Explore goose prizes you can earn and contributions you can make during Hacktoberfest 2025" />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose is Celebrating Hacktoberfest 2025!" />
   <meta name="twitter:description" content="Explore goose prizes you can earn and contributions you can make during Hacktoberfest 2025" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
 </head>

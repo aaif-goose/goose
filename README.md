@@ -23,16 +23,16 @@ Designed for maximum flexibility, goose works with any LLM and supports multi-mo
 [![Watch the video](https://github.com/user-attachments/assets/ddc71240-3928-41b5-8210-626dfb28af7a)](https://youtu.be/D-DpDunrbpo)
 
 # Quick Links
-- [Quickstart](https://aaif-goose.github.io/goose/docs/quickstart)
-- [Installation](https://aaif-goose.github.io/goose/docs/getting-started/installation)
-- [Tutorials](https://aaif-goose.github.io/goose/docs/category/tutorials)
-- [Documentation](https://aaif-goose.github.io/goose/docs/category/getting-started)
+- [Quickstart](https://goose-docs.ai/docs/quickstart)
+- [Installation](https://goose-docs.ai/docs/getting-started/installation)
+- [Tutorials](https://goose-docs.ai/docs/category/tutorials)
+- [Documentation](https://goose-docs.ai/docs/category/getting-started)
 - [Governance](https://github.com/aaif-goose/goose/blob/main/GOVERNANCE.md)
 - [Custom Distributions](https://github.com/aaif-goose/goose/blob/main/CUSTOM_DISTROS.md) - build your own goose distro with preconfigured providers, extensions, and branding
 
 ## Need Help?
-- [Diagnostics & Reporting](https://aaif-goose.github.io/goose/docs/troubleshooting/diagnostics-and-reporting)
-- [Known Issues](https://aaif-goose.github.io/goose/docs/troubleshooting/known-issues)
+- [Diagnostics & Reporting](https://goose-docs.ai/docs/troubleshooting/diagnostics-and-reporting)
+- [Known Issues](https://goose-docs.ai/docs/troubleshooting/known-issues)
 
 # a little goose humor 🪿
 

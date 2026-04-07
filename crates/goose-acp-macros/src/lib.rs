@@ -1,16 +1,20 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse_macro_input, FnArg, GenericArgument, ImplItem, ItemImpl, Lit, Pat, PathArguments,
-    ReturnType, Type,
+    parse_macro_input, FnArg, GenericArgument, ImplItem, ItemImpl, Pat, PathArguments, ReturnType,
+    Type,
 };
 
-/// Marks an impl block as containing `#[custom_method("...")]`-annotated handlers.
+/// Marks an impl block as containing `#[custom_method(RequestType)]`-annotated handlers.
+///
+/// The request type must derive `sacp::JsonRpcRequest` with a `#[request(method = "...")]`
+/// attribute — the method name is extracted from that type at compile time, eliminating
+/// duplication between the request struct and the handler.
 ///
 /// Generates two methods on the impl:
 ///
 /// 1. `handle_custom_request` — a dispatcher that:
-///    - Uses each annotation string as the method name (include `_goose/` for goose-only methods)
+///    - Uses `<RequestType as sacp::JsonRpcMessage>::matches_method` to match incoming methods
 ///    - Parses JSON params into the handler's typed parameter (if any)
 ///    - Serializes the handler's return value to JSON
 ///
@@ -25,11 +29,11 @@ use syn::{
 ///
 /// ```ignore
 /// // No params — called for requests with no/empty params
-/// #[custom_method("session/list")]
-/// async fn on_list_sessions(&self) -> Result<ListSessionsResponse, sacp::Error> { .. }
+/// #[custom_method(GetExtensionsRequest)]
+/// async fn on_get_extensions(&self) -> Result<GetExtensionsResponse, sacp::Error> { .. }
 ///
 /// // Typed params — JSON params auto-deserialized
-/// #[custom_method("session/get")]
+/// #[custom_method(GetSessionRequest)]
 /// async fn on_get_session(&self, req: GetSessionRequest) -> Result<GetSessionResponse, sacp::Error> { .. }
 /// ```
 ///
@@ -40,15 +44,15 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let mut routes: Vec<Route> = Vec::new();
 
-    // Collect all #[custom_method("...")] annotations and strip them.
+    // Collect all #[custom_method(RequestType)] annotations and strip them.
     for item in &mut impl_block.items {
         if let ImplItem::Fn(method) = item {
-            let mut route_name = None;
+            let mut request_type = None;
             method.attrs.retain(|attr| {
                 if attr.path().is_ident("custom_method") {
                     if let Ok(meta_list) = attr.meta.require_list() {
-                        if let Ok(Lit::Str(s)) = meta_list.parse_args::<Lit>() {
-                            route_name = Some(s.value());
+                        if let Ok(ty) = meta_list.parse_args::<Type>() {
+                            request_type = Some(ty);
                         }
                     }
                     false // strip the attribute
@@ -57,7 +61,7 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             });
 
-            if let Some(name) = route_name {
+            if let Some(req_type) = request_type {
                 let fn_ident = method.sig.ident.clone();
 
                 let param_type = extract_param_type(&method.sig);
@@ -65,7 +69,7 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 let ok_type = extract_result_ok_type(&method.sig);
 
                 routes.push(Route {
-                    method_name: name,
+                    request_type: req_type,
                     fn_ident,
                     param_type,
                     return_type,
@@ -75,31 +79,31 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
-    // Generate the dispatch arms.
+    // Generate the dispatch arms using matches_method for routing.
     let arms: Vec<_> = routes
         .iter()
         .map(|route| {
-            let method = &route.method_name;
+            let req_type = &route.request_type;
             let fn_ident = &route.fn_ident;
 
             match &route.param_type {
                 Some(_) => {
                     quote! {
-                        #method => {
+                        if <#req_type as sacp::JsonRpcMessage>::matches_method(method) {
                             let req = serde_json::from_value(params)
                                 .map_err(|e| sacp::Error::invalid_params().data(e.to_string()))?;
                             let result = self.#fn_ident(req).await?;
-                            serde_json::to_value(&result)
-                                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))
+                            return serde_json::to_value(&result)
+                                .map_err(|e| sacp::Error::internal_error().data(e.to_string()));
                         }
                     }
                 }
                 None => {
                     quote! {
-                        #method => {
+                        if <#req_type as sacp::JsonRpcMessage>::matches_method(method) {
                             let result = self.#fn_ident().await?;
-                            serde_json::to_value(&result)
-                                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))
+                            return serde_json::to_value(&result)
+                                .map_err(|e| sacp::Error::internal_error().data(e.to_string()));
                         }
                     }
                 }
@@ -111,7 +115,7 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let schema_entries: Vec<_> = routes
         .iter()
         .map(|route| {
-            let method = &route.method_name;
+            let req_type = &route.request_type;
 
             let params_expr = if let Some(pt) = &route.param_type {
                 if is_json_value(pt) {
@@ -120,7 +124,12 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! { Some(generator.subschema_for::<#pt>()) }
                 }
             } else {
-                quote! { None }
+                // Even with no handler param, generate schema from the request type
+                if is_json_value(req_type) {
+                    quote! { None }
+                } else {
+                    quote! { Some(generator.subschema_for::<#req_type>()) }
+                }
             };
 
             let response_expr = if let Some(ok_ty) = &route.ok_type {
@@ -141,7 +150,8 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! { Some(#name.to_string()) }
                 }
             } else {
-                quote! { None }
+                let name = type_name(req_type);
+                quote! { Some(#name.to_string()) }
             };
 
             let response_name_expr = if let Some(ok_ty) = &route.ok_type {
@@ -156,12 +166,15 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
             };
 
             quote! {
-                crate::custom_requests::CustomMethodSchema {
-                    method: #method.to_string(),
-                    params_schema: #params_expr,
-                    params_type_name: #params_name_expr,
-                    response_schema: #response_expr,
-                    response_type_name: #response_name_expr,
+                {
+                    let dummy = <#req_type as Default>::default();
+                    crate::custom_requests::CustomMethodSchema {
+                        method: sacp::JsonRpcMessage::method(&dummy).to_string(),
+                        params_schema: #params_expr,
+                        params_type_name: #params_name_expr,
+                        response_schema: #response_expr,
+                        response_type_name: #response_name_expr,
+                    }
                 }
             }
         })
@@ -174,10 +187,8 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
             method: &str,
             params: serde_json::Value,
         ) -> Result<serde_json::Value, sacp::Error> {
-            match method {
-                #(#arms)*
-                _ => Err(sacp::Error::method_not_found()),
-            }
+            #(#arms)*
+            Err(sacp::Error::method_not_found())
         }
     };
 
@@ -202,7 +213,7 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 struct Route {
-    method_name: String,
+    request_type: Type,
     fn_ident: syn::Ident,
     param_type: Option<Type>,
     #[allow(dead_code)]

@@ -1,9 +1,18 @@
 import { useRef, useState } from 'react';
+import { defineMessages, useIntl } from '../i18n';
 import { getInitialWorkingDir } from '../utils/workingDir';
+
+const messages = defineMessages({
+  placeholder: {
+    id: 'launcher.placeholder',
+    defaultMessage: 'Ask goose anything...',
+  },
+});
 
 export default function LauncherView() {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const intl = useIntl();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +46,7 @@ export default function LauncherView() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           className="w-full h-full bg-transparent text-text-primary text-xl px-6 outline-none placeholder:text-text-secondary"
-          placeholder="Ask goose anything..."
+          placeholder={intl.formatMessage(messages.placeholder)}
           autoFocus
         />
       </form>

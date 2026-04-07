@@ -7,6 +7,221 @@ import { UpdateCustomProviderRequest, type ProviderTemplate } from '../../../../
 import { Plus, X, Trash2, AlertTriangle, ExternalLink, Search, Settings } from 'lucide-react';
 import { cn } from '../../../../../../utils';
 import ProviderCatalogPicker from '../ProviderCatalogPicker';
+import { defineMessages, useIntl } from '../../../../../../i18n';
+
+const i18n = defineMessages({
+  chooseSetup: {
+    id: 'customProviderForm.chooseSetup',
+    defaultMessage: "Choose how you'd like to set up your provider.",
+  },
+  startFromTemplate: {
+    id: 'customProviderForm.startFromTemplate',
+    defaultMessage: 'Start from a provider template',
+  },
+  startFromTemplateDesc: {
+    id: 'customProviderForm.startFromTemplateDesc',
+    defaultMessage: "Pick a known provider and we'll auto-fill the configuration",
+  },
+  configureManually: {
+    id: 'customProviderForm.configureManually',
+    defaultMessage: 'Configure manually',
+  },
+  configureManuallyDesc: {
+    id: 'customProviderForm.configureManuallyDesc',
+    defaultMessage: 'Enter all provider details yourself',
+  },
+  cancel: {
+    id: 'customProviderForm.cancel',
+    defaultMessage: 'Cancel',
+  },
+  back: {
+    id: 'customProviderForm.back',
+    defaultMessage: '← Back',
+  },
+  usingTemplate: {
+    id: 'customProviderForm.usingTemplate',
+    defaultMessage: 'Using template: {name}',
+  },
+  docs: {
+    id: 'customProviderForm.docs',
+    defaultMessage: 'Docs',
+  },
+  clear: {
+    id: 'customProviderForm.clear',
+    defaultMessage: 'Clear',
+  },
+  providerType: {
+    id: 'customProviderForm.providerType',
+    defaultMessage: 'Provider Type',
+  },
+  openaiCompatible: {
+    id: 'customProviderForm.openaiCompatible',
+    defaultMessage: 'OpenAI Compatible',
+  },
+  anthropicCompatible: {
+    id: 'customProviderForm.anthropicCompatible',
+    defaultMessage: 'Anthropic Compatible',
+  },
+  ollamaCompatible: {
+    id: 'customProviderForm.ollamaCompatible',
+    defaultMessage: 'Ollama Compatible',
+  },
+  displayName: {
+    id: 'customProviderForm.displayName',
+    defaultMessage: 'Display Name',
+  },
+  displayNamePlaceholder: {
+    id: 'customProviderForm.displayNamePlaceholder',
+    defaultMessage: 'Your Provider Name',
+  },
+  apiUrl: {
+    id: 'customProviderForm.apiUrl',
+    defaultMessage: 'API URL',
+  },
+  apiUrlPlaceholder: {
+    id: 'customProviderForm.apiUrlPlaceholder',
+    defaultMessage: 'https://api.example.com',
+  },
+  apiBasePath: {
+    id: 'customProviderForm.apiBasePath',
+    defaultMessage: 'API Base Path (optional)',
+  },
+  apiBasePathPlaceholder: {
+    id: 'customProviderForm.apiBasePathPlaceholder',
+    defaultMessage: 'e.g., v1/chat/completions or project_id/v1',
+  },
+  apiBasePathHint: {
+    id: 'customProviderForm.apiBasePathHint',
+    defaultMessage: "Override the default API path. Leave blank to use the provider's default path.",
+  },
+  authentication: {
+    id: 'customProviderForm.authentication',
+    defaultMessage: 'Authentication',
+  },
+  authHint: {
+    id: 'customProviderForm.authHint',
+    defaultMessage: "Local LLMs like Ollama typically don't require an API key.",
+  },
+  requiresApiKey: {
+    id: 'customProviderForm.requiresApiKey',
+    defaultMessage: 'This provider requires an API key',
+  },
+  apiKey: {
+    id: 'customProviderForm.apiKey',
+    defaultMessage: 'API Key',
+  },
+  apiKeyPlaceholderExisting: {
+    id: 'customProviderForm.apiKeyPlaceholderExisting',
+    defaultMessage: 'Leave blank to keep existing key',
+  },
+  apiKeyPlaceholderNew: {
+    id: 'customProviderForm.apiKeyPlaceholderNew',
+    defaultMessage: 'Your API key',
+  },
+  availableModels: {
+    id: 'customProviderForm.availableModels',
+    defaultMessage: 'Available Models (comma-separated)',
+  },
+  modelsPlaceholder: {
+    id: 'customProviderForm.modelsPlaceholder',
+    defaultMessage: 'model-a, model-b, model-c',
+  },
+  toolCalling: {
+    id: 'customProviderForm.toolCalling',
+    defaultMessage: 'Tool calling',
+  },
+  reasoning: {
+    id: 'customProviderForm.reasoning',
+    defaultMessage: 'Reasoning',
+  },
+  attachments: {
+    id: 'customProviderForm.attachments',
+    defaultMessage: 'Attachments',
+  },
+  supportsStreaming: {
+    id: 'customProviderForm.supportsStreaming',
+    defaultMessage: 'Provider supports streaming responses',
+  },
+  customHeaders: {
+    id: 'customProviderForm.customHeaders',
+    defaultMessage: 'Custom Headers',
+  },
+  customHeadersHint: {
+    id: 'customProviderForm.customHeadersHint',
+    defaultMessage:
+      'Add custom HTTP headers to include in requests to the provider. Click the "+" button to add after filling both fields.',
+  },
+  headerNamePlaceholder: {
+    id: 'customProviderForm.headerNamePlaceholder',
+    defaultMessage: 'Header name',
+  },
+  valuePlaceholder: {
+    id: 'customProviderForm.valuePlaceholder',
+    defaultMessage: 'Value',
+  },
+  add: {
+    id: 'customProviderForm.add',
+    defaultMessage: 'Add',
+  },
+  headerBothRequired: {
+    id: 'customProviderForm.headerBothRequired',
+    defaultMessage: 'Both header name and value must be entered',
+  },
+  headerNoSpaces: {
+    id: 'customProviderForm.headerNoSpaces',
+    defaultMessage: 'Header name cannot contain spaces',
+  },
+  headerDuplicate: {
+    id: 'customProviderForm.headerDuplicate',
+    defaultMessage: 'A header with this name already exists',
+  },
+  displayNameRequired: {
+    id: 'customProviderForm.displayNameRequired',
+    defaultMessage: 'Display name is required',
+  },
+  apiUrlRequired: {
+    id: 'customProviderForm.apiUrlRequired',
+    defaultMessage: 'API URL is required',
+  },
+  apiKeyRequired: {
+    id: 'customProviderForm.apiKeyRequired',
+    defaultMessage: 'API key is required',
+  },
+  modelsRequired: {
+    id: 'customProviderForm.modelsRequired',
+    defaultMessage: 'At least one model is required',
+  },
+  submitError: {
+    id: 'customProviderForm.submitError',
+    defaultMessage: 'Failed to save provider. Please check your configuration and try again.',
+  },
+  cannotDeleteActive: {
+    id: 'customProviderForm.cannotDeleteActive',
+    defaultMessage:
+      "You cannot delete this provider while it's currently in use. Please switch to a different model first.",
+  },
+  deleteConfirmation: {
+    id: 'customProviderForm.deleteConfirmation',
+    defaultMessage:
+      'Are you sure you want to delete this custom provider? This will permanently remove the provider and its stored API key. This action cannot be undone.',
+  },
+  confirmDelete: {
+    id: 'customProviderForm.confirmDelete',
+    defaultMessage: 'Confirm Delete',
+  },
+  deleteProvider: {
+    id: 'customProviderForm.deleteProvider',
+    defaultMessage: 'Delete Provider',
+  },
+  updateProvider: {
+    id: 'customProviderForm.updateProvider',
+    defaultMessage: 'Update Provider',
+  },
+  createProvider: {
+    id: 'customProviderForm.createProvider',
+    defaultMessage: 'Create Provider',
+  },
+});
 
 type Step = 'choice' | 'catalog' | 'form';
 
@@ -27,6 +242,7 @@ export default function CustomProviderForm({
   initialData,
   isEditable,
 }: CustomProviderFormProps) {
+  const intl = useIntl();
   const [engine, setEngine] = useState('openai_compatible');
   const [displayName, setDisplayName] = useState('');
   const [apiUrl, setApiUrl] = useState('');
@@ -129,19 +345,19 @@ export default function CustomProviderForm({
 
     if (keyEmpty || valueEmpty) {
       setInvalidHeaderFields({ key: keyEmpty, value: valueEmpty });
-      setHeaderValidationError('Both header name and value must be entered');
+      setHeaderValidationError(intl.formatMessage(i18n.headerBothRequired));
       return;
     }
 
     if (keyHasSpaces) {
       setInvalidHeaderFields({ key: true, value: false });
-      setHeaderValidationError('Header name cannot contain spaces');
+      setHeaderValidationError(intl.formatMessage(i18n.headerNoSpaces));
       return;
     }
 
     if (isDuplicate) {
       setInvalidHeaderFields({ key: true, value: false });
-      setHeaderValidationError('A header with this name already exists');
+      setHeaderValidationError(intl.formatMessage(i18n.headerDuplicate));
       return;
     }
 
@@ -192,11 +408,11 @@ export default function CustomProviderForm({
     setValidationErrors({});
 
     const errors: Record<string, string> = {};
-    if (!displayName) errors.displayName = 'Display name is required';
-    if (!apiUrl) errors.apiUrl = 'API URL is required';
+    if (!displayName) errors.displayName = intl.formatMessage(i18n.displayNameRequired);
+    if (!apiUrl) errors.apiUrl = intl.formatMessage(i18n.apiUrlRequired);
     const existingHadAuth = initialData && (initialData.requires_auth ?? true);
-    if (requiresAuth && !apiKey && !existingHadAuth) errors.apiKey = 'API key is required';
-    if (!models) errors.models = 'At least one model is required';
+    if (requiresAuth && !apiKey && !existingHadAuth) errors.apiKey = intl.formatMessage(i18n.apiKeyRequired);
+    if (!models) errors.models = intl.formatMessage(i18n.modelsRequired);
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
@@ -245,7 +461,7 @@ export default function CustomProviderForm({
       });
     } catch (error) {
       console.error('Failed to save custom provider:', error);
-      setSubmitError('Failed to save provider. Please check your configuration and try again.');
+      setSubmitError(intl.formatMessage(i18n.submitError));
     }
   };
 
@@ -266,7 +482,7 @@ export default function CustomProviderForm({
   if (step === 'choice') {
     return (
       <div className="mt-4 space-y-3">
-        <p className="text-sm text-textSubtle">Choose how you'd like to set up your provider.</p>
+        <p className="text-sm text-textSubtle">{intl.formatMessage(i18n.chooseSetup)}</p>
         <button
           type="button"
           onClick={() => setStep('catalog')}
@@ -275,9 +491,9 @@ export default function CustomProviderForm({
           <div className="flex items-center gap-3">
             <Search className="w-5 h-5 text-primary flex-shrink-0" />
             <div>
-              <div className="font-medium text-textStandard">Start from a provider template</div>
+              <div className="font-medium text-textStandard">{intl.formatMessage(i18n.startFromTemplate)}</div>
               <div className="text-sm text-textSubtle mt-0.5">
-                Pick a known provider and we'll auto-fill the configuration
+                {intl.formatMessage(i18n.startFromTemplateDesc)}
               </div>
             </div>
           </div>
@@ -290,16 +506,16 @@ export default function CustomProviderForm({
           <div className="flex items-center gap-3">
             <Settings className="w-5 h-5 text-textSubtle flex-shrink-0" />
             <div>
-              <div className="font-medium text-textStandard">Configure manually</div>
+              <div className="font-medium text-textStandard">{intl.formatMessage(i18n.configureManually)}</div>
               <div className="text-sm text-textSubtle mt-0.5">
-                Enter all provider details yourself
+                {intl.formatMessage(i18n.configureManuallyDesc)}
               </div>
             </div>
           </div>
         </button>
         <div className="flex justify-end pt-2">
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
         </div>
       </div>
@@ -313,10 +529,10 @@ export default function CustomProviderForm({
         <ProviderCatalogPicker onSelect={handleTemplateSelect} onCancel={onCancel} embedded />
         <div className="flex justify-between pt-4">
           <Button type="button" variant="ghost" onClick={() => setStep('choice')}>
-            ← Back
+            {intl.formatMessage(i18n.back)}
           </Button>
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
         </div>
       </div>
@@ -332,7 +548,7 @@ export default function CustomProviderForm({
           <div className="flex items-center justify-between">
             <div className="text-sm">
               <div className="font-medium text-textStandard">
-                Using template: {selectedTemplate.name}
+                {intl.formatMessage(i18n.usingTemplate, { name: selectedTemplate.name })}
               </div>
               <div className="text-textSubtle mt-1">{selectedTemplate.api_url}</div>
             </div>
@@ -344,7 +560,7 @@ export default function CustomProviderForm({
                   rel="noopener noreferrer"
                   className="text-primary hover:underline text-sm flex items-center gap-1"
                 >
-                  Docs <ExternalLink className="w-3 h-3" />
+                  {intl.formatMessage(i18n.docs)} <ExternalLink className="w-3 h-3" />
                 </a>
               )}
               <Button
@@ -354,7 +570,7 @@ export default function CustomProviderForm({
                 onClick={handleClearTemplate}
                 className="text-textSubtle hover:text-textStandard"
               >
-                Clear
+                {intl.formatMessage(i18n.clear)}
               </Button>
             </div>
           </div>
@@ -364,7 +580,7 @@ export default function CustomProviderForm({
       {/* Back to choice (create without template only) */}
       {!initialData && !selectedTemplate && (
         <Button type="button" variant="ghost" size="sm" onClick={() => setStep('choice')}>
-          ← Back
+          {intl.formatMessage(i18n.back)}
         </Button>
       )}
 
@@ -375,7 +591,7 @@ export default function CustomProviderForm({
             htmlFor="provider-select"
             className="flex items-center text-sm font-medium text-text-primary mb-2"
           >
-            Provider Type
+            {intl.formatMessage(i18n.providerType)}
             <span className="text-red-500 ml-1">*</span>
           </label>
           <Select
@@ -383,18 +599,18 @@ export default function CustomProviderForm({
             aria-invalid={!!validationErrors.providerType}
             aria-describedby={validationErrors.providerType ? 'provider-select-error' : undefined}
             options={[
-              { value: 'openai_compatible', label: 'OpenAI Compatible' },
-              { value: 'anthropic_compatible', label: 'Anthropic Compatible' },
-              { value: 'ollama_compatible', label: 'Ollama Compatible' },
+              { value: 'openai_compatible', label: intl.formatMessage(i18n.openaiCompatible) },
+              { value: 'anthropic_compatible', label: intl.formatMessage(i18n.anthropicCompatible) },
+              { value: 'ollama_compatible', label: intl.formatMessage(i18n.ollamaCompatible) },
             ]}
             value={{
               value: engine,
               label:
                 engine === 'openai_compatible'
-                  ? 'OpenAI Compatible'
+                  ? intl.formatMessage(i18n.openaiCompatible)
                   : engine === 'anthropic_compatible'
-                    ? 'Anthropic Compatible'
-                    : 'Ollama Compatible',
+                    ? intl.formatMessage(i18n.anthropicCompatible)
+                    : intl.formatMessage(i18n.ollamaCompatible),
             }}
             onChange={(option: unknown) => {
               const selectedOption = option as { value: string; label: string } | null;
@@ -417,14 +633,14 @@ export default function CustomProviderForm({
             htmlFor="display-name"
             className="flex items-center text-sm font-medium text-text-primary mb-2"
           >
-            Display Name
+            {intl.formatMessage(i18n.displayName)}
             <span className="text-red-500 ml-1">*</span>
           </label>
           <Input
             id="display-name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Your Provider Name"
+            placeholder={intl.formatMessage(i18n.displayNamePlaceholder)}
             aria-invalid={!!validationErrors.displayName}
             aria-describedby={validationErrors.displayName ? 'display-name-error' : undefined}
             className={validationErrors.displayName ? 'border-red-500' : ''}
@@ -444,14 +660,14 @@ export default function CustomProviderForm({
             htmlFor="api-url"
             className="flex items-center text-sm font-medium text-text-primary mb-2"
           >
-            API URL
+            {intl.formatMessage(i18n.apiUrl)}
             <span className="text-red-500 ml-1">*</span>
           </label>
           <Input
             id="api-url"
             value={apiUrl}
             onChange={(e) => setApiUrl(e.target.value)}
-            placeholder="https://api.example.com"
+            placeholder={intl.formatMessage(i18n.apiUrlPlaceholder)}
             aria-invalid={!!validationErrors.apiUrl}
             aria-describedby={validationErrors.apiUrl ? 'api-url-error' : undefined}
             className={validationErrors.apiUrl ? 'border-red-500' : ''}
@@ -471,25 +687,25 @@ export default function CustomProviderForm({
             htmlFor="base-path"
             className="flex items-center text-sm font-medium text-text-primary mb-2"
           >
-            API Base Path (optional)
+            {intl.formatMessage(i18n.apiBasePath)}
           </label>
           <Input
             id="base-path"
             value={basePath}
             onChange={(e) => setBasePath(e.target.value)}
-            placeholder="e.g., v1/chat/completions or project_id/v1"
+            placeholder={intl.formatMessage(i18n.apiBasePathPlaceholder)}
           />
           <p className="text-xs text-textSubtle mt-1">
-            Override the default API path. Leave blank to use the provider's default path.
+            {intl.formatMessage(i18n.apiBasePathHint)}
           </p>
         </div>
       )}
 
       {/* Authentication */}
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">Authentication</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">{intl.formatMessage(i18n.authentication)}</label>
         <p className="text-sm text-text-secondary mb-3">
-          Local LLMs like Ollama typically don't require an API key.
+          {intl.formatMessage(i18n.authHint)}
         </p>
         <div className="flex items-center space-x-2">
           <input
@@ -500,7 +716,7 @@ export default function CustomProviderForm({
             className="rounded border-border-primary"
           />
           <label htmlFor="requires-auth" className="text-sm text-text-secondary">
-            This provider requires an API key
+            {intl.formatMessage(i18n.requiresApiKey)}
           </label>
         </div>
 
@@ -510,7 +726,7 @@ export default function CustomProviderForm({
               htmlFor="api-key"
               className="flex items-center text-sm font-medium text-text-primary mb-2"
             >
-              API Key
+              {intl.formatMessage(i18n.apiKey)}
               {selectedTemplate?.env_var && (
                 <span className="text-textSubtle ml-1 font-normal">
                   ({selectedTemplate.env_var})
@@ -523,7 +739,7 @@ export default function CustomProviderForm({
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={initialData ? 'Leave blank to keep existing key' : 'Your API key'}
+              placeholder={initialData ? intl.formatMessage(i18n.apiKeyPlaceholderExisting) : intl.formatMessage(i18n.apiKeyPlaceholderNew)}
               aria-invalid={!!validationErrors.apiKey}
               aria-describedby={validationErrors.apiKey ? 'api-key-error' : undefined}
               className={validationErrors.apiKey ? 'border-red-500' : ''}
@@ -544,14 +760,14 @@ export default function CustomProviderForm({
             htmlFor="available-models"
             className="flex items-center text-sm font-medium text-text-primary mb-2"
           >
-            Available Models (comma-separated)
+            {intl.formatMessage(i18n.availableModels)}
             <span className="text-red-500 ml-1">*</span>
           </label>
           <Input
             id="available-models"
             value={models}
             onChange={(e) => setModels(e.target.value)}
-            placeholder="model-a, model-b, model-c"
+            placeholder={intl.formatMessage(i18n.modelsPlaceholder)}
             aria-invalid={!!validationErrors.models}
             aria-describedby={validationErrors.models ? 'available-models-error' : undefined}
             className={validationErrors.models ? 'border-red-500' : ''}
@@ -566,17 +782,17 @@ export default function CustomProviderForm({
             <div className="flex gap-2 mt-2">
               {templateModelCapabilities.tool_call && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                  Tool calling
+                  {intl.formatMessage(i18n.toolCalling)}
                 </span>
               )}
               {templateModelCapabilities.reasoning && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                  Reasoning
+                  {intl.formatMessage(i18n.reasoning)}
                 </span>
               )}
               {templateModelCapabilities.attachment && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
-                  Attachments
+                  {intl.formatMessage(i18n.attachments)}
                 </span>
               )}
             </div>
@@ -595,7 +811,7 @@ export default function CustomProviderForm({
             className="rounded border-border-primary"
           />
           <label htmlFor="supports-streaming" className="text-sm text-text-secondary">
-            Provider supports streaming responses
+            {intl.formatMessage(i18n.supportsStreaming)}
           </label>
         </div>
       )}
@@ -603,10 +819,9 @@ export default function CustomProviderForm({
       {/* Custom headers */}
       {isEditable && (
         <div>
-          <label className="text-sm font-medium text-textStandard mb-2 block">Custom Headers</label>
+          <label className="text-sm font-medium text-textStandard mb-2 block">{intl.formatMessage(i18n.customHeaders)}</label>
           <p className="text-xs text-textSubtle mb-4">
-            Add custom HTTP headers to include in requests to the provider. Click the "+" button to
-            add after filling both fields.
+            {intl.formatMessage(i18n.customHeadersHint)}
           </p>
           <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
             {headers.map((header, index) => (
@@ -614,13 +829,13 @@ export default function CustomProviderForm({
                 <Input
                   value={header.key}
                   onChange={(e) => handleHeaderChange(index, 'key', e.target.value)}
-                  placeholder="Header name"
+                  placeholder={intl.formatMessage(i18n.headerNamePlaceholder)}
                   className="w-full text-textStandard border-borderSubtle hover:border-borderStandard"
                 />
                 <Input
                   value={header.value}
                   onChange={(e) => handleHeaderChange(index, 'value', e.target.value)}
-                  placeholder="Value"
+                  placeholder={intl.formatMessage(i18n.valuePlaceholder)}
                   className="w-full text-textStandard border-borderSubtle hover:border-borderStandard"
                 />
                 <Button
@@ -654,7 +869,7 @@ export default function CustomProviderForm({
                 clearHeaderValidation();
               }}
               onKeyDown={handleHeaderKeyDown}
-              placeholder="Value"
+              placeholder={intl.formatMessage(i18n.valuePlaceholder)}
               className={cn(
                 'w-full text-textStandard border-borderSubtle hover:border-borderStandard',
                 invalidHeaderFields.value && 'border-red-500 focus:border-red-500'
@@ -666,7 +881,7 @@ export default function CustomProviderForm({
               type="button"
               className="flex items-center justify-start gap-1 px-2 pr-4 text-sm rounded-full text-textStandard bg-background-primary border border-borderSubtle hover:border-borderStandard transition-colors min-w-[60px] h-9 [&>svg]:!size-4"
             >
-              <Plus /> Add
+              <Plus /> {intl.formatMessage(i18n.add)}
             </Button>
           </div>
           {headerValidationError && (
@@ -686,16 +901,14 @@ export default function CustomProviderForm({
               <p className="text-yellow-500 text-sm flex items-start">
                 <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
                 <span>
-                  You cannot delete this provider while it's currently in use. Please switch to a
-                  different model first.
+                  {intl.formatMessage(i18n.cannotDeleteActive)}
                 </span>
               </p>
             </div>
           ) : (
             <div className="px-4 py-3 bg-red-900/20 border border-red-500/30 rounded">
               <p className="text-red-400 text-sm">
-                Are you sure you want to delete this custom provider? This will permanently remove
-                the provider and its stored API key. This action cannot be undone.
+                {intl.formatMessage(i18n.deleteConfirmation)}
               </p>
             </div>
           )}
@@ -705,12 +918,12 @@ export default function CustomProviderForm({
               variant="outline"
               onClick={() => setShowDeleteConfirmation(false)}
             >
-              Cancel
+              {intl.formatMessage(i18n.cancel)}
             </Button>
             {!isActiveProvider && (
               <Button type="button" variant="destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-2" />
-                Confirm Delete
+                {intl.formatMessage(i18n.confirmDelete)}
               </Button>
             )}
           </div>
@@ -725,13 +938,13 @@ export default function CustomProviderForm({
               onClick={() => setShowDeleteConfirmation(true)}
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Delete Provider
+              {intl.formatMessage(i18n.deleteProvider)}
             </Button>
           )}
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
-          <Button type="submit">{initialData ? 'Update Provider' : 'Create Provider'}</Button>
+          <Button type="submit">{initialData ? intl.formatMessage(i18n.updateProvider) : intl.formatMessage(i18n.createProvider)}</Button>
         </div>
       )}
     </form>

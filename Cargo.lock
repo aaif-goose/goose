@@ -4326,7 +4326,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "agent-client-protocol-schema",
  "ahash",
@@ -4369,6 +4369,7 @@ dependencies = [
  "jsonwebtoken",
  "keyring",
  "lazy_static",
+ "libc",
  "llama-cpp-2",
  "lru",
  "minijinja",
@@ -4446,19 +4447,19 @@ dependencies = [
 
 [[package]]
 name = "goose-acp"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
  "async-stream",
  "async-trait",
  "axum",
- "clap",
  "fs-err",
  "futures",
  "goose",
  "goose-acp-macros",
  "goose-mcp",
+ "goose-sdk",
  "goose-test-support",
  "http-body-util",
  "regex",
@@ -4475,7 +4476,6 @@ dependencies = [
  "tokio-util",
  "tower-http",
  "tracing",
- "tracing-subscriber",
  "url",
  "uuid",
  "wiremock",
@@ -4483,7 +4483,7 @@ dependencies = [
 
 [[package]]
 name = "goose-acp-macros"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -4491,11 +4491,12 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "anstream 0.6.21",
  "anyhow",
  "async-trait",
+ "axum",
  "base64 0.22.1",
  "bat",
  "bzip2",
@@ -4543,7 +4544,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4571,8 +4572,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "goose-sdk"
+version = "1.30.0"
+dependencies = [
+ "agent-client-protocol-schema",
+ "sacp",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "goose-server"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -4619,7 +4633,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -4627,7 +4641,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.29.0"
+version = "1.30.0"
 dependencies = [
  "axum",
  "env-lock",
@@ -5747,9 +5761,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.184"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
 
 [[package]]
 name = "libdbus-sys"

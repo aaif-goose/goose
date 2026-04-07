@@ -4,7 +4,7 @@
     "acp",
     "text",
     "desktop",
-    "goose-acp-server/*"
+    "goose-binary/*"
   ],
   "scripts": {
     "changeset": "changeset",

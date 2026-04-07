@@ -54,10 +54,43 @@ pub const GITHUB_COPILOT_STREAM_MODELS: &[&str] = &[
 
 const GITHUB_COPILOT_DOC_URL: &str =
     "https://docs.github.com/en/copilot/using-github-copilot/ai-models";
-const GITHUB_COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
-const GITHUB_COPILOT_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
-const GITHUB_COPILOT_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
-const GITHUB_COPILOT_API_KEY_URL: &str = "https://api.github.com/copilot_internal/v2/token";
+const DEFAULT_GITHUB_HOST: &str = "github.com";
+const DEFAULT_GITHUB_COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
+
+fn normalize_host(host: &str) -> String {
+    let host = host.trim_end_matches('/');
+    let host = host.strip_prefix("https://").unwrap_or(host);
+    host.to_string()
+}
+
+#[derive(Debug, Clone)]
+struct GithubCopilotUrls {
+    device_code_url: String,
+    access_token_url: String,
+    copilot_token_url: String,
+}
+
+impl GithubCopilotUrls {
+    fn new(host: &str, copilot_token_url: Option<&str>) -> Self {
+        if host == "github.com" {
+            Self {
+                device_code_url: "https://github.com/login/device/code".to_string(),
+                access_token_url: "https://github.com/login/oauth/access_token".to_string(),
+                copilot_token_url: "https://api.github.com/copilot_internal/v2/token".to_string(),
+            }
+        } else {
+            let base = format!("https://{}", host);
+            let copilot_token_url = copilot_token_url
+                .map(|u| u.trim_end_matches('/').to_string())
+                .unwrap_or_else(|| format!("{}/api/copilot_internal/v2/token", base));
+            Self {
+                device_code_url: format!("{}/login/device/code", base),
+                access_token_url: format!("{}/login/oauth/access_token", base),
+                copilot_token_url,
+            }
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct DeviceCodeInfo {
@@ -96,8 +129,13 @@ struct DiskCache {
 }
 
 impl DiskCache {
-    fn new() -> Self {
-        let cache_path = Paths::in_config_dir("githubcopilot/info.json");
+    fn new(host: &str) -> Self {
+        let cache_path = if host == DEFAULT_GITHUB_HOST {
+            Paths::in_config_dir("githubcopilot/info.json")
+        } else {
+            let safe_host = host.replace(['/', ':', '.'], "_");
+            Paths::in_config_dir(&format!("githubcopilot/{}/info.json", safe_host))
+        };
         Self { cache_path }
     }
 
@@ -138,12 +176,22 @@ pub struct GithubCopilotProvider {
     mu: tokio::sync::Mutex<RefCell<Option<CopilotState>>>,
     model: ModelConfig,
     #[serde(skip)]
+    urls: GithubCopilotUrls,
+    #[serde(skip)]
+    client_id: String,
+    #[serde(skip)]
     name: String,
 }
 
 impl GithubCopilotProvider {
     pub async fn cleanup() -> Result<()> {
-        DiskCache::new().clear().await
+        let config = Config::global();
+        let host = normalize_host(
+            &config
+                .get_param::<String>("GITHUB_COPILOT_HOST")
+                .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
+        );
+        DiskCache::new(&host).clear().await
     }
 
     fn payload_contains_image(payload: &Value) -> bool {
@@ -170,16 +218,29 @@ impl GithubCopilotProvider {
     }
 
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
+        let config = Config::global();
+        let host = normalize_host(
+            &config
+                .get_param::<String>("GITHUB_COPILOT_HOST")
+                .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
+        );
+        let client_id: String = config
+            .get_param("GITHUB_COPILOT_CLIENT_ID")
+            .unwrap_or_else(|_| DEFAULT_GITHUB_COPILOT_CLIENT_ID.to_string());
+        let copilot_token_url: Option<String> = config.get_param("GITHUB_COPILOT_TOKEN_URL").ok();
+        let urls = GithubCopilotUrls::new(&host, copilot_token_url.as_deref());
         let client = Client::builder()
             .timeout(Duration::from_secs(600))
             .build()?;
-        let cache = DiskCache::new();
+        let cache = DiskCache::new(&host);
         let mu = tokio::sync::Mutex::new(RefCell::new(None));
         Ok(Self {
             client,
             cache,
             mu,
             model,
+            urls,
+            client_id,
             name: GITHUB_COPILOT_PROVIDER_NAME.to_string(),
         })
     }
@@ -258,7 +319,7 @@ impl GithubCopilotProvider {
         };
         let resp = self
             .client
-            .get(GITHUB_COPILOT_API_KEY_URL)
+            .get(&self.urls.copilot_token_url)
             .headers(self.get_github_headers())
             .header(http::header::AUTHORIZATION, format!("bearer {}", &token))
             .send()
@@ -311,10 +372,10 @@ impl GithubCopilotProvider {
             scope: String,
         }
         self.client
-            .post(GITHUB_COPILOT_DEVICE_CODE_URL)
+            .post(&self.urls.device_code_url)
             .headers(self.get_github_headers())
             .json(&DeviceCodeRequest {
-                client_id: GITHUB_COPILOT_CLIENT_ID.to_string(),
+                client_id: self.client_id.clone(),
                 scope: "read:user".to_string(),
             })
             .send()
@@ -346,10 +407,10 @@ impl GithubCopilotProvider {
         for attempt in 0..MAX_ATTEMPTS {
             let resp = self
                 .client
-                .post(GITHUB_COPILOT_ACCESS_TOKEN_URL)
+                .post(&self.urls.access_token_url)
                 .headers(self.get_github_headers())
                 .json(&AccessTokenRequest {
-                    client_id: GITHUB_COPILOT_CLIENT_ID.to_string(),
+                    client_id: self.client_id.clone(),
                     device_code: device_code.to_string(),
                     grant_type: "urn:ietf:params:oauth:grant-type:device_code".to_string(),
                 })
@@ -412,13 +473,12 @@ impl ProviderDef for GithubCopilotProvider {
             GITHUB_COPILOT_DEFAULT_MODEL,
             GITHUB_COPILOT_KNOWN_MODELS.to_vec(),
             GITHUB_COPILOT_DOC_URL,
-            vec![ConfigKey::new_oauth_device_code(
-                "GITHUB_COPILOT_TOKEN",
-                true,
-                true,
-                None,
-                false,
-            )],
+            vec![
+                ConfigKey::new_oauth_device_code("GITHUB_COPILOT_TOKEN", true, true, None, false),
+                ConfigKey::new("GITHUB_COPILOT_HOST", false, false, None, false),
+                ConfigKey::new("GITHUB_COPILOT_CLIENT_ID", false, false, None, false),
+                ConfigKey::new("GITHUB_COPILOT_TOKEN_URL", false, false, None, false),
+            ],
         )
     }
 
@@ -633,7 +693,7 @@ fn promote_tool_choice(response: Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::promote_tool_choice;
+    use super::{normalize_host, promote_tool_choice, GithubCopilotUrls};
     use serde_json::json;
 
     #[test]
@@ -676,5 +736,60 @@ mod tests {
 
         let promoted = promote_tool_choice(response.clone());
         assert_eq!(promoted, response);
+    }
+
+    #[test]
+    fn normalize_host_strips_prefix_and_slash() {
+        assert_eq!(normalize_host("github.com"), "github.com");
+        assert_eq!(normalize_host("https://github.com"), "github.com");
+        assert_eq!(normalize_host("github.com/"), "github.com");
+        assert_eq!(normalize_host("https://github.com/"), "github.com");
+        assert_eq!(
+            normalize_host("https://my-enterprise.ghe.com/"),
+            "my-enterprise.ghe.com"
+        );
+    }
+
+    #[test]
+    fn urls_default_github_com() {
+        let urls = GithubCopilotUrls::new("github.com", None);
+        assert_eq!(urls.device_code_url, "https://github.com/login/device/code");
+        assert_eq!(
+            urls.access_token_url,
+            "https://github.com/login/oauth/access_token"
+        );
+        assert_eq!(
+            urls.copilot_token_url,
+            "https://api.github.com/copilot_internal/v2/token"
+        );
+    }
+
+    #[test]
+    fn urls_enterprise_host() {
+        let urls = GithubCopilotUrls::new("my-enterprise.ghe.com", None);
+        assert_eq!(
+            urls.device_code_url,
+            "https://my-enterprise.ghe.com/login/device/code"
+        );
+        assert_eq!(
+            urls.access_token_url,
+            "https://my-enterprise.ghe.com/login/oauth/access_token"
+        );
+        assert_eq!(
+            urls.copilot_token_url,
+            "https://my-enterprise.ghe.com/api/copilot_internal/v2/token"
+        );
+    }
+
+    #[test]
+    fn urls_enterprise_with_token_url_override() {
+        let urls = GithubCopilotUrls::new(
+            "my-enterprise.ghe.com",
+            Some("https://my-enterprise.ghe.com/api/v3/copilot_internal/v2/token"),
+        );
+        assert_eq!(
+            urls.copilot_token_url,
+            "https://my-enterprise.ghe.com/api/v3/copilot_internal/v2/token"
+        );
     }
 }

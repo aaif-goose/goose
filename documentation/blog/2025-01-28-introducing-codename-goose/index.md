@@ -60,18 +60,18 @@ Excited for upcoming features and events? Be sure to connect with us!
 - [BlueSky](https://bsky.app/profile/opensource.block.xyz)
 
 
-[extensions-directory]: https://aaif-goose.github.io/goose/v1/extensions
+[extensions-directory]: https://goose-docs.ai/v1/extensions
 
 
 <head>
   <meta property="og:title" content="Introducing codename goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2024/12/11/resolving-ci-issues-with-goose-a-practical-walkthrough" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2024/12/11/resolving-ci-issues-with-goose-a-practical-walkthrough" />
   <meta property="og:description" content="codename goose is your open source AI agent, automating engineering tasks and improving productivity." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Introducing codename goose" />
   <meta name="twitter:description" content="codename goose is your open source AI agent, automating engineering tasks and improving productivity." />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
 </head>

@@ -53,12 +53,12 @@ If you build or port an app, we want to hear from you. File issues, share demos,
 <head>
   <meta property="og:title" content="goose Lands MCP Apps" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2026/01/06/mcp-apps" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/06/mcp-apps" />
   <meta property="og:description" content="goose ships early support for the draft MCP Apps specification, aligning with the emerging standard for interactive UIs in MCP." />
-<meta property="og:image" content="http://aaif-goose.github.io/goose/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
+<meta property="og:image" content="http://goose-docs.ai/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose Lands MCP Apps" />
   <meta name="twitter:description" content="goose ships early support for the draft MCP Apps specification, aligning with the emerging standard for interactive UIs in MCP." />
-  <meta name="twitter:image" content="http://aaif-goose.github.io/goose/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
 </head>

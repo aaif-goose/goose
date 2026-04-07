@@ -5,8 +5,85 @@ import { Switch } from '../../ui/switch';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { trackSettingToggled } from '../../../utils/analytics';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'sessionSharingSection.title',
+    defaultMessage: 'Session Sharing',
+  },
+  descriptionConfigured: {
+    id: 'sessionSharingSection.descriptionConfigured',
+    defaultMessage:
+      'Session sharing is configured but fully opt-in — your sessions are only shared when you explicitly click the share button.',
+  },
+  descriptionDefault: {
+    id: 'sessionSharingSection.descriptionDefault',
+    defaultMessage: 'You can enable session sharing to share your sessions with others.',
+  },
+  alreadyConfigured: {
+    id: 'sessionSharingSection.alreadyConfigured',
+    defaultMessage: 'Session sharing has already been configured',
+  },
+  enableSharing: {
+    id: 'sessionSharingSection.enableSharing',
+    defaultMessage: 'Enable session sharing',
+  },
+  baseUrl: {
+    id: 'sessionSharingSection.baseUrl',
+    defaultMessage: 'Base URL',
+  },
+  urlPlaceholder: {
+    id: 'sessionSharingSection.urlPlaceholder',
+    defaultMessage: 'https://example.com/api',
+  },
+  invalidUrl: {
+    id: 'sessionSharingSection.invalidUrl',
+    defaultMessage:
+      'Invalid URL format. Please enter a valid URL (e.g. https://example.com/api).',
+  },
+  testingConnection: {
+    id: 'sessionSharingSection.testingConnection',
+    defaultMessage: 'Testing connection...',
+  },
+  connectionSuccess: {
+    id: 'sessionSharingSection.connectionSuccess',
+    defaultMessage: 'Connection successful!',
+  },
+  serverError: {
+    id: 'sessionSharingSection.serverError',
+    defaultMessage:
+      'Server error: HTTP {status}. The server may not be configured correctly.',
+  },
+  connectionFailed: {
+    id: 'sessionSharingSection.connectionFailed',
+    defaultMessage: 'Connection failed. ',
+  },
+  unreachableServer: {
+    id: 'sessionSharingSection.unreachableServer',
+    defaultMessage:
+      'Unable to reach the server. Please check the URL and your network connection.',
+  },
+  connectionTimedOut: {
+    id: 'sessionSharingSection.connectionTimedOut',
+    defaultMessage: 'Connection timed out. The server may be slow or unreachable.',
+  },
+  unknownError: {
+    id: 'sessionSharingSection.unknownError',
+    defaultMessage: 'Unknown error occurred.',
+  },
+  testing: {
+    id: 'sessionSharingSection.testing',
+    defaultMessage: 'Testing...',
+  },
+  testConnection: {
+    id: 'sessionSharingSection.testConnection',
+    defaultMessage: 'Test Connection',
+  },
+});
 
 export default function SessionSharingSection() {
+  const intl = useIntl();
   const envBaseUrlShare = window.appConfig.get('GOOSE_BASE_URL_SHARE');
 
   // If env is set, force sharing enabled and set the baseUrl accordingly.
@@ -80,7 +157,7 @@ export default function SessionSharingSection() {
       const updated = { ...sessionSharingConfig, baseUrl: newBaseUrl };
       await window.electron.setSetting('sessionSharing', updated);
     } else {
-      setUrlError('Invalid URL format. Please enter a valid URL (e.g. https://example.com/api).');
+      setUrlError(intl.formatMessage(i18n.invalidUrl));
     }
   };
 
@@ -89,7 +166,7 @@ export default function SessionSharingSection() {
     const baseUrl = sessionSharingConfig.baseUrl;
     if (!baseUrl) return;
 
-    setTestResult({ status: 'testing', message: 'Testing connection...' });
+    setTestResult({ status: 'testing', message: intl.formatMessage(i18n.testingConnection) });
 
     try {
       // Create an AbortController for timeout
@@ -111,29 +188,28 @@ export default function SessionSharingSection() {
       if (response.status < 500) {
         setTestResult({
           status: 'success',
-          message: 'Connection successful!',
+          message: intl.formatMessage(i18n.connectionSuccess),
         });
       } else {
         setTestResult({
           status: 'error',
-          message: `Server error: HTTP ${response.status}. The server may not be configured correctly.`,
+          message: intl.formatMessage(i18n.serverError, { status: response.status }),
         });
       }
     } catch (error) {
       console.error('Connection test failed:', error);
-      let errorMessage = 'Connection failed. ';
+      let errorMessage = intl.formatMessage(i18n.connectionFailed);
 
       if (error instanceof TypeError && error.message.includes('fetch')) {
-        errorMessage +=
-          'Unable to reach the server. Please check the URL and your network connection.';
+        errorMessage += intl.formatMessage(i18n.unreachableServer);
       } else if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          errorMessage += 'Connection timed out. The server may be slow or unreachable.';
+          errorMessage += intl.formatMessage(i18n.connectionTimedOut);
         } else {
           errorMessage += error.message;
         }
       } else {
-        errorMessage += 'Unknown error occurred.';
+        errorMessage += intl.formatMessage(i18n.unknownError);
       }
 
       setTestResult({
@@ -147,11 +223,11 @@ export default function SessionSharingSection() {
     <section id="session-sharing" className="space-y-4 pr-4 mt-1">
       <Card className="pb-2">
         <CardHeader className="pb-0">
-          <CardTitle>Session Sharing</CardTitle>
+          <CardTitle>{intl.formatMessage(i18n.title)}</CardTitle>
           <CardDescription>
             {(envBaseUrlShare as string)
-              ? 'Session sharing is configured but fully opt-in — your sessions are only shared when you explicitly click the share button.'
-              : 'You can enable session sharing to share your sessions with others.'}
+              ? intl.formatMessage(i18n.descriptionConfigured)
+              : intl.formatMessage(i18n.descriptionDefault)}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-4 py-2">
@@ -160,8 +236,8 @@ export default function SessionSharingSection() {
             <div className="flex items-center gap-3">
               <label className="text-sm cursor-pointer">
                 {(envBaseUrlShare as string)
-                  ? 'Session sharing has already been configured'
-                  : 'Enable session sharing'}
+                  ? intl.formatMessage(i18n.alreadyConfigured)
+                  : intl.formatMessage(i18n.enableSharing)}
               </label>
 
               {envBaseUrlShare ? (
@@ -181,7 +257,7 @@ export default function SessionSharingSection() {
               <div className="space-y-2 relative">
                 <div className="flex items-center space-x-2">
                   <label htmlFor="session-sharing-url" className="text-sm text-text-primary">
-                    Base URL
+                    {intl.formatMessage(i18n.baseUrl)}
                   </label>
                   {isUrlConfigured && <Check className="w-5 h-5 text-green-500" />}
                 </div>
@@ -189,7 +265,7 @@ export default function SessionSharingSection() {
                   <Input
                     id="session-sharing-url"
                     type="url"
-                    placeholder="https://example.com/api"
+                    placeholder={intl.formatMessage(i18n.urlPlaceholder)}
                     value={sessionSharingConfig.baseUrl}
                     disabled={!!envBaseUrlShare}
                     {...(envBaseUrlShare ? {} : { onChange: handleBaseUrlChange })}
@@ -209,10 +285,10 @@ export default function SessionSharingSection() {
                       {testResult.status === 'testing' ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          Testing...
+                          {intl.formatMessage(i18n.testing)}
                         </>
                       ) : (
-                        'Test Connection'
+                        intl.formatMessage(i18n.testConnection)
                       )}
                     </Button>
 

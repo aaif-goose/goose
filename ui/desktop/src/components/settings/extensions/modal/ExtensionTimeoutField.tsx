@@ -1,4 +1,12 @@
 import { Input } from '../../../ui/input';
+import { defineMessages, useIntl } from '../../../../i18n';
+
+const i18n = defineMessages({
+  timeoutLabel: {
+    id: 'extensionTimeoutField.timeoutLabel',
+    defaultMessage: 'Timeout',
+  },
+});
 
 interface ExtensionTimeoutFieldProps {
   timeout: number;
@@ -24,12 +32,14 @@ export default function ExtensionTimeoutField({
     return !isNaN(timeoutValue) && timeoutValue > 0;
   };
 
+  const intl = useIntl();
+
   return (
     <div className="flex flex-col gap-4 mb-6">
       {/* Row with Timeout and timeout input side by side */}
       <div className="flex flex-col">
         <div className="flex-1">
-          <label className="text-sm font-medium mb-2 block text-text-primary">Timeout</label>
+          <label className="text-sm font-medium mb-2 block text-text-primary">{intl.formatMessage(i18n.timeoutLabel)}</label>
         </div>
 
         <Input

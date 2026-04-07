@@ -88,7 +88,7 @@ module.exports = {
         name: 'Goose',
         bin: 'Goose',
         maintainer: 'AAIF (Agentic AI Foundation)',
-        homepage: 'https://aaif-goose.github.io/goose/',
+        homepage: 'https://goose-docs.ai/',
         categories: ['Development'],
         desktopTemplate: './forge.deb.desktop',
         options: {
@@ -103,7 +103,7 @@ module.exports = {
         name: 'Goose',
         bin: 'Goose',
         maintainer: 'AAIF (Agentic AI Foundation)',
-        homepage: 'https://aaif-goose.github.io/goose/',
+        homepage: 'https://goose-docs.ai/',
         categories: ['Development'],
         desktopTemplate: './forge.rpm.desktop',
         options: {
@@ -123,7 +123,7 @@ module.exports = {
             scalable: 'src/images/icon.svg',
             '512x512': 'src/images/icon-512.png',
           },
-          homepage: 'https://aaif-goose.github.io/goose/',
+          homepage: 'https://goose-docs.ai/',
           runtimeVersion: '25.08',
           baseVersion: '25.08',
           bin: 'Goose',

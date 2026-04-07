@@ -76,11 +76,11 @@ Project-specific hints can be added via `.goosehints` and/or `AGENT.md` files.
 
 ## Links
 
-- Website: https://aaif-goose.github.io/goose/
+- Website: https://goose-docs.ai/
 - GitHub: https://github.com/aaif-goose/goose
 - Discord: https://discord.gg/goose-oss
-- Extensions Registry: https://aaif-goose.github.io/goose/extensions/
-- Blog: https://aaif-goose.github.io/goose/blog/
+- Extensions Registry: https://goose-docs.ai/extensions/
+- Blog: https://goose-docs.ai/blog/
 
 ## About
 

@@ -9,7 +9,7 @@ export type AddExtensionRequest = {
     /**
      * Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform).
      */
-    config: unknown;
+    config?: unknown;
 };
 
 /**
@@ -34,6 +34,9 @@ export type GetToolsRequest = {
     sessionId: string;
 };
 
+/**
+ * Tools response.
+ */
 export type GetToolsResponse = {
     /**
      * Array of tool info objects with `name`, `description`, `parameters`, and optional `permission`.
@@ -50,11 +53,14 @@ export type ReadResourceRequest = {
     extensionName: string;
 };
 
+/**
+ * Resource read response.
+ */
 export type ReadResourceResponse = {
     /**
      * The resource result from the extension (MCP ReadResourceResult).
      */
-    result: unknown;
+    result?: unknown;
 };
 
 /**
@@ -80,7 +86,7 @@ export type GetSessionResponse = {
     /**
      * The session object with id, name, working_dir, timestamps, tokens, etc.
      */
-    session: unknown;
+    session?: unknown;
 };
 
 /**
@@ -97,6 +103,9 @@ export type ExportSessionRequest = {
     sessionId: string;
 };
 
+/**
+ * Export session response.
+ */
 export type ExportSessionResponse = {
     data: string;
 };
@@ -108,11 +117,21 @@ export type ImportSessionRequest = {
     data: string;
 };
 
+/**
+ * Import session response.
+ */
 export type ImportSessionResponse = {
     /**
      * The imported session object.
      */
-    session: unknown;
+    session?: unknown;
+};
+
+/**
+ * List configured extensions and any warnings.
+ */
+export type GetExtensionsRequest = {
+    [key: string]: unknown;
 };
 
 /**
@@ -126,17 +145,117 @@ export type GetExtensionsResponse = {
     warnings: Array<string>;
 };
 
+/**
+ * Atomically update the provider for a live session.
+ */
+export type UpdateProviderRequest = {
+    sessionId: string;
+    provider: string;
+    model?: string | null;
+    contextLimit?: number | null;
+    requestParams?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * Provider update response.
+ */
+export type UpdateProviderResponse = {
+    /**
+     * Refreshed session config options after the provider/model change.
+     */
+    configOptions: Array<unknown>;
+};
+
+/**
+ * List providers available through goose, including the config-default sentinel.
+ */
+export type ListProvidersRequest = {
+    [key: string]: unknown;
+};
+
+/**
+ * Provider list response.
+ */
+export type ListProvidersResponse = {
+    providers: Array<ProviderListEntry>;
+};
+
+export type ProviderListEntry = {
+    id: string;
+    label: string;
+};
+
+/**
+ * Read a single non-secret config value.
+ */
+export type ReadConfigRequest = {
+    key: string;
+};
+
+/**
+ * Config read response.
+ */
+export type ReadConfigResponse = {
+    value?: unknown;
+};
+
+/**
+ * Upsert a single non-secret config value.
+ */
+export type UpsertConfigRequest = {
+    key: string;
+    value: unknown;
+};
+
+/**
+ * Remove a single non-secret config value.
+ */
+export type RemoveConfigRequest = {
+    key: string;
+};
+
+/**
+ * Check whether a secret exists. Never returns the actual value.
+ */
+export type CheckSecretRequest = {
+    key: string;
+};
+
+/**
+ * Secret check response.
+ */
+export type CheckSecretResponse = {
+    exists: boolean;
+};
+
+/**
+ * Set a secret value (write-only).
+ */
+export type UpsertSecretRequest = {
+    key: string;
+    value: unknown;
+};
+
+/**
+ * Remove a secret.
+ */
+export type RemoveSecretRequest = {
+    key: string;
+};
+
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | GetSessionRequest | DeleteSessionRequest | ExportSessionRequest | ImportSessionRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | GetSessionRequest | DeleteSessionRequest | ExportSessionRequest | ImportSessionRequest | GetExtensionsRequest | UpdateProviderRequest | ListProvidersRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetSessionResponse | ExportSessionResponse | ImportSessionResponse | GetExtensionsResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetSessionResponse | ExportSessionResponse | ImportSessionResponse | GetExtensionsResponse | UpdateProviderResponse | ListProvidersResponse | ReadConfigResponse | CheckSecretResponse | unknown;
 } | {
     error: {
         code: number;

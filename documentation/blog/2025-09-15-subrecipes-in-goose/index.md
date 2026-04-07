@@ -379,7 +379,7 @@ Ready to start building your own subrecipe workflows? The kitchen is open, and a
 
 ## Share Your Recipes with Us!
 
-Do you have a recipe you'd like to share with the community? We'd love to feature them in our [Recipe Cookbook](https://aaif-goose.github.io/goose/recipes/)! 
+Do you have a recipe you'd like to share with the community? We'd love to feature them in our [Recipe Cookbook](https://goose-docs.ai/recipes/)! 
 **How to contribute:**
 1. [Fork the goose repository](https://github.com/aaif-goose/goose/fork)
 2. Add your recipe YAML file to the [`documentation/src/pages/recipes/data/recipes/`](https://github.com/aaif-goose/goose/tree/main/documentation/src/pages/recipes/data/recipes) directory
@@ -390,12 +390,12 @@ Browse [existing recipes](https://github.com/aaif-goose/goose/tree/main/document
 <head>
   <meta property="og:title" content="Automate Your Complex Workflows with Subrecipes in goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025-09-15-subrecipes-in-goose" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025-09-15-subrecipes-in-goose" />
   <meta property="og:description" content="Did you know you can call recipes from within other recipes? Learn how to orchestrate multiple AI tasks using goose subrecipes." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/goose-subrecipes-8a009154ceca95aeb34bf22fcc45dcca.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-subrecipes-8a009154ceca95aeb34bf22fcc45dcca.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Automate Your Complex Workflows with Subrecipes in goose" />
   <meta name="twitter:description" content="Did you know you can call recipes from within other recipes? Learn how to orchestrate multiple AI tasks using goose subrecipes." />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/goose-subrecipes-8a009154ceca95aeb34bf22fcc45dcca.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-subrecipes-8a009154ceca95aeb34bf22fcc45dcca.png" />
 </head>

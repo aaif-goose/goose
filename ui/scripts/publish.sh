@@ -13,7 +13,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ACP_DIR="${REPO_ROOT}/ui/acp"
-NATIVE_DIR="${REPO_ROOT}/ui/goose-acp-server"
+NATIVE_DIR="${REPO_ROOT}/ui/goose-binary"
 TEXT_DIR="${REPO_ROOT}/ui/text"
 
 DRY_RUN="--dry-run"
@@ -36,18 +36,18 @@ echo "==> Building @aaif/goose"
 (cd "${TEXT_DIR}" && npm run build)
 
 NATIVE_PACKAGES=(
-  "goose-acp-server-darwin-arm64"
-  "goose-acp-server-darwin-x64"
-  "goose-acp-server-linux-arm64"
-  "goose-acp-server-linux-x64"
-  "goose-acp-server-win32-x64"
+  "goose-binary-darwin-arm64"
+  "goose-binary-darwin-x64"
+  "goose-binary-linux-arm64"
+  "goose-binary-linux-x64"
+  "goose-binary-win32-x64"
 )
 
 # Publish native binary packages
 for pkg in "${NATIVE_PACKAGES[@]}"; do
   pkg_dir="${NATIVE_DIR}/${pkg}"
 
-  if [ ! -f "${pkg_dir}/bin/goose-acp-server" ] && [ ! -f "${pkg_dir}/bin/goose-acp-server.exe" ]; then
+  if [ ! -f "${pkg_dir}/bin/goose" ] && [ ! -f "${pkg_dir}/bin/goose.exe" ]; then
     echo "    SKIP ${pkg} (no binary found — run npm run build:native:all in ui/acp first)"
     continue
   fi

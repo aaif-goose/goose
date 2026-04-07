@@ -1,6 +1,26 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { errorMessage } from '../../utils/conversionUtils';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  enterText: {
+    id: 'inlineEditText.enterText',
+    defaultMessage: 'Enter text',
+  },
+  failedToSave: {
+    id: 'inlineEditText.failedToSave',
+    defaultMessage: 'Failed to save',
+  },
+  clickToEdit: {
+    id: 'inlineEditText.clickToEdit',
+    defaultMessage: 'Click to edit',
+  },
+  doubleClickToEdit: {
+    id: 'inlineEditText.doubleClickToEdit',
+    defaultMessage: 'Double-click to edit',
+  },
+});
 
 interface InlineEditTextProps {
   value: string;
@@ -20,7 +40,7 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
   value,
   onSave,
   maxLength = 200,
-  placeholder = 'Enter text',
+  placeholder,
   disabled = false,
   className = '',
   editClassName = '',
@@ -29,6 +49,8 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
   allowEmpty = false,
   singleClickEdit = true,
 }) => {
+  const intl = useIntl();
+  const resolvedPlaceholder = placeholder ?? intl.formatMessage(i18n.enterText);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
   const [isSaving, setIsSaving] = useState(false);
@@ -86,7 +108,7 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
       setIsEditing(false);
       onEditEnd?.();
     } catch (error) {
-      const errMsg = errorMessage(error, 'Failed to save');
+      const errMsg = errorMessage(error, intl.formatMessage(i18n.failedToSave));
       console.error('InlineEditText save error:', errMsg);
       toast.error(errMsg);
       setEditValue(originalValue.current);
@@ -94,7 +116,7 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [editValue, isSaving, allowEmpty, onSave, handleCancel, onEditEnd]);
+  }, [editValue, isSaving, allowEmpty, onSave, handleCancel, onEditEnd, intl]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -149,7 +171,7 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
         maxLength={maxLength}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         disabled={isSaving}
         className={`
           w-full px-2 py-1 border rounded
@@ -175,9 +197,9 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
       `}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
-      title={disabled ? '' : singleClickEdit ? 'Click to edit' : 'Double-click to edit'}
+      title={disabled ? '' : singleClickEdit ? intl.formatMessage(i18n.clickToEdit) : intl.formatMessage(i18n.doubleClickToEdit)}
     >
-      {value || <span className="text-text-subtle italic">{placeholder}</span>}
+      {value || <span className="text-text-subtle italic">{resolvedPlaceholder}</span>}
     </div>
   );
 };

@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { defineMessages, useIntl } from '../i18n';
 import { Message, SystemNotificationContent } from '../api';
 import GooseMessage from './GooseMessage';
 import UserMessage from './UserMessage';
@@ -30,6 +31,17 @@ import { NotificationEvent } from '../types/message';
 import LoadingGoose from './LoadingGoose';
 import { ChatType } from '../types/chat';
 import { identifyConsecutiveToolCalls, isInChain } from '../utils/toolCallChaining';
+
+const i18n = defineMessages({
+  loadingMessages: {
+    id: 'progressiveMessageList.loadingMessages',
+    defaultMessage: 'Loading messages... ({renderedCount}/{totalCount})',
+  },
+  searchHint: {
+    id: 'progressiveMessageList.searchHint',
+    defaultMessage: 'Press Cmd/Ctrl+F to load all messages immediately for search',
+  },
+});
 
 interface ProgressiveMessageListProps {
   messages: Message[];
@@ -66,6 +78,7 @@ export default function ProgressiveMessageList({
   onRenderingComplete,
   submitElicitationResponse,
 }: ProgressiveMessageListProps) {
+  const intl = useIntl();
   const [renderedCount, setRenderedCount] = useState(() => {
     // Initialize with either all messages (if small) or first batch (if large)
     return messages.length <= showLoadingThreshold
@@ -270,9 +283,9 @@ export default function ProgressiveMessageList({
       {/* Loading indicator when progressively rendering */}
       {isLoading && (
         <div className="flex flex-col items-center justify-center py-8">
-          <LoadingGoose message={`Loading messages... (${renderedCount}/${messages.length})`} />
+          <LoadingGoose message={intl.formatMessage(i18n.loadingMessages, { renderedCount, totalCount: messages.length })} />
           <div className="text-xs text-text-secondary mt-2">
-            Press Cmd/Ctrl+F to load all messages immediately for search
+            {intl.formatMessage(i18n.searchHint)}
           </div>
         </div>
       )}

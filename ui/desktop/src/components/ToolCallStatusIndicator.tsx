@@ -1,5 +1,13 @@
 import React from 'react';
+import { defineMessages, useIntl } from '../i18n';
 import { cn } from '../utils';
+
+const i18n = defineMessages({
+  toolStatus: {
+    id: 'toolCallStatusIndicator.toolStatus',
+    defaultMessage: 'Tool status: {status}',
+  },
+});
 
 export type ToolCallStatus = 'pending' | 'loading' | 'success' | 'error';
 
@@ -12,6 +20,7 @@ export const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = (
   status,
   className,
 }) => {
+  const intl = useIntl();
   const getStatusStyles = () => {
     switch (status) {
       case 'success':
@@ -33,7 +42,7 @@ export const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = (
         getStatusStyles(),
         className
       )}
-      aria-label={`Tool status: ${status}`}
+      aria-label={intl.formatMessage(i18n.toolStatus, { status })}
     />
   );
 };

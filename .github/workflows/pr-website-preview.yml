@@ -34,7 +34,7 @@ jobs:
           INKEEP_API_KEY: ${{ secrets.INKEEP_API_KEY }}
           INKEEP_INTEGRATION_ID: ${{ secrets.INKEEP_INTEGRATION_ID }}
           INKEEP_ORG_ID: ${{ secrets.INKEEP_ORG_ID }}
-          TARGET_PATH: "/goose/pr-preview/pr-${{ github.event.number }}/"
+          TARGET_PATH: "/pr-preview/pr-${{ github.event.number }}/"
         run: |
           npm install
           npm run build

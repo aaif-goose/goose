@@ -1,5 +1,6 @@
 import React from 'react';
 import { FolderTree, MessageSquare, Code } from 'lucide-react';
+import { defineMessages, useIntl } from '../i18n';
 
 interface PopularChatTopicsProps {
   append: (text: string) => void;
@@ -12,38 +13,65 @@ interface ChatTopic {
   prompt: string;
 }
 
-const POPULAR_TOPICS: ChatTopic[] = [
-  {
-    id: 'organize-photos',
-    icon: <FolderTree className="w-5 h-5" />,
-    description: 'Organize the photos on my desktop into neat little folders by subject matter',
-    prompt: 'Organize the photos on my desktop into neat little folders by subject matter',
+const i18n = defineMessages({
+  heading: {
+    id: 'popularChatTopics.heading',
+    defaultMessage: 'Popular chat topics',
   },
-  {
-    id: 'government-forms',
-    icon: <MessageSquare className="w-5 h-5" />,
-    description:
-      'Describe in detail how various forms of government works and rank each by units of geese',
-    prompt:
+  start: {
+    id: 'popularChatTopics.start',
+    defaultMessage: 'Start',
+  },
+  organizePhotos: {
+    id: 'popularChatTopics.organizePhotos',
+    defaultMessage:
+      'Organize the photos on my desktop into neat little folders by subject matter',
+  },
+  governmentForms: {
+    id: 'popularChatTopics.governmentForms',
+    defaultMessage:
       'Describe in detail how various forms of government works and rank each by units of geese',
   },
-  {
-    id: 'tamagotchi-game',
-    icon: <Code className="w-5 h-5" />,
-    description:
+  tamagotchiGame: {
+    id: 'popularChatTopics.tamagotchiGame',
+    defaultMessage:
       'Develop a tamagotchi game that lives on my computer and follows a pixelated styling',
-    prompt: 'Develop a tamagotchi game that lives on my computer and follows a pixelated styling',
   },
-];
+});
 
 export default function PopularChatTopics({ append }: PopularChatTopicsProps) {
+  const intl = useIntl();
+
+  const POPULAR_TOPICS: ChatTopic[] = [
+    {
+      id: 'organize-photos',
+      icon: <FolderTree className="w-5 h-5" />,
+      description: intl.formatMessage(i18n.organizePhotos),
+      prompt: intl.formatMessage(i18n.organizePhotos),
+    },
+    {
+      id: 'government-forms',
+      icon: <MessageSquare className="w-5 h-5" />,
+      description: intl.formatMessage(i18n.governmentForms),
+      prompt: intl.formatMessage(i18n.governmentForms),
+    },
+    {
+      id: 'tamagotchi-game',
+      icon: <Code className="w-5 h-5" />,
+      description: intl.formatMessage(i18n.tamagotchiGame),
+      prompt: intl.formatMessage(i18n.tamagotchiGame),
+    },
+  ];
+
   const handleTopicClick = (prompt: string) => {
     append(prompt);
   };
 
   return (
     <div className="absolute bottom-0 left-0 p-6 max-w-md">
-      <h3 className="text-text-secondary text-sm mb-1">Popular chat topics</h3>
+      <h3 className="text-text-secondary text-sm mb-1">
+        {intl.formatMessage(i18n.heading)}
+      </h3>
       <div className="space-y-1">
         {POPULAR_TOPICS.map((topic) => (
           <div
@@ -65,7 +93,7 @@ export default function PopularChatTopics({ append }: PopularChatTopicsProps) {
                   handleTopicClick(topic.prompt);
                 }}
               >
-                Start
+                {intl.formatMessage(i18n.start)}
               </button>
             </div>
           </div>

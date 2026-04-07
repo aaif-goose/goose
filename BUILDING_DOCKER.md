@@ -318,5 +318,5 @@ When contributing Docker-related changes:
 ## Related Documentation
 
 - [goose in Docker Tutorial](documentation/docs/tutorials/goose-in-docker.md) - Step-by-step tutorial
-- [Installation Guide](https://aaif-goose.github.io/goose/docs/getting-started/installation) - All installation methods
-- [Configuration Guide](https://aaif-goose.github.io/goose/docs/guides/config-files) - Detailed configuration options
+- [Installation Guide](https://goose-docs.ai/docs/getting-started/installation) - All installation methods
+- [Configuration Guide](https://goose-docs.ai/docs/guides/config-files) - Detailed configuration options

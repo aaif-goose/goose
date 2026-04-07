@@ -136,7 +136,7 @@ import promptBanner from '@site/blog/2025-03-19-better-ai-prompting/prompt.png';
       title: 'AI Prompting 101: How to Get the Best Responses from Your AI Agent',
       description: 'Learn different prompting styles—from instruction-based to chain-of-thought—and discover which approach works best for your needs.',
       thumbnailUrl: promptBanner,
-      linkUrl: '/goose/blog/2025/03/19/better-ai-prompting',
+      linkUrl: '/blog/2025/03/19/better-ai-prompting',
       date: '2025-03-19',
       duration: '8 min read'
     }

@@ -45,6 +45,7 @@ use crate::providers::errors::ProviderError;
 use crate::recipe::{Author, Recipe, Response, Settings};
 use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
+use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::{Session, SessionManager};
@@ -262,6 +263,7 @@ impl Agent {
 
         // Add security inspector (highest priority - runs first)
         tool_inspection_manager.add_inspector(Box::new(SecurityInspector::new()));
+        tool_inspection_manager.add_inspector(Box::new(EgressInspector::new()));
 
         // Add adversary inspector (LLM-based review, enabled by ~/.config/goose/adversary.md)
         tool_inspection_manager.add_inspector(Box::new(AdversaryInspector::new(provider.clone())));
@@ -393,10 +395,12 @@ impl Agent {
         &self,
         response: &Message,
         tools: &[rmcp::model::Tool],
+        suppress_replayed_thinking: bool,
     ) -> ToolCategorizeResult {
         // Categorize tool requests
-        let (frontend_requests, remaining_requests, filtered_response) =
-            self.categorize_tool_requests(response, tools).await;
+        let (frontend_requests, remaining_requests, filtered_response) = self
+            .categorize_tool_requests(response, tools, suppress_replayed_thinking)
+            .await;
 
         ToolCategorizeResult {
             frontend_requests,
@@ -755,6 +759,71 @@ impl Agent {
             })?;
 
         Ok(())
+    }
+
+    /// Load multiple extensions in parallel, persisting state once at the end.
+    ///
+    /// Unlike `add_extension`, this avoids per-extension persistence and acquires
+    /// the container lock once upfront to prevent serialisation of the parallel futures.
+    pub async fn add_extensions_bulk(
+        self: &Arc<Self>,
+        extensions: Vec<ExtensionConfig>,
+        session_id: &str,
+    ) -> anyhow::Result<Vec<ExtensionLoadResult>> {
+        let working_dir = match self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await
+        {
+            Ok(session) => Some(session.working_dir),
+            Err(e) => {
+                warn!("Failed to get session for bulk load: {}", e);
+                None
+            }
+        };
+        let container = self.container.lock().await.clone();
+
+        let extension_futures = extensions
+            .into_iter()
+            .map(|config| {
+                let ext_manager = Arc::clone(&self.extension_manager);
+                let working_dir = working_dir.clone();
+                let container = container.clone();
+                let sid = session_id.to_string();
+
+                async move {
+                    let name = config.name().to_string();
+                    match ext_manager
+                        .add_extension(config, working_dir, container.as_ref(), Some(&sid))
+                        .await
+                    {
+                        Ok(_) => ExtensionLoadResult {
+                            name,
+                            success: true,
+                            error: None,
+                        },
+                        Err(e) => {
+                            let error_msg = e.to_string();
+                            warn!("Failed to load extension {}: {}", name, error_msg);
+                            ExtensionLoadResult {
+                                name,
+                                success: false,
+                                error: Some(error_msg),
+                            }
+                        }
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let results = futures::future::join_all(extension_futures).await;
+
+        if results.iter().any(|r| r.success) {
+            self.persist_extension_state(session_id).await?;
+        }
+
+        Ok(results)
     }
 
     async fn add_extension_inner(
@@ -1222,6 +1291,11 @@ impl Agent {
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
 
+                // Track whether this provider turn has already emitted visible
+                // thinking so a later tool-call chunk can suppress replayed
+                // reasoning without hiding final-only non-streaming thoughts.
+                let mut surfaced_thinking_in_turn = false;
+
                 while let Some(next) = stream.next().await {
                     if is_token_cancelled(&cancel_token) || exit_chat {
                         break;
@@ -1240,7 +1314,23 @@ impl Agent {
                                     frontend_requests,
                                     remaining_requests,
                                     filtered_response,
-                                } = self.categorize_tools(&response, &tools).await;
+                                } = self
+                                    .categorize_tools(
+                                        &response,
+                                        &tools,
+                                        surfaced_thinking_in_turn,
+                                    )
+                                    .await;
+
+                                surfaced_thinking_in_turn |= filtered_response.content.iter().any(
+                                    |content| {
+                                        matches!(
+                                            content,
+                                            MessageContent::Thinking(_)
+                                                | MessageContent::RedactedThinking(_)
+                                        )
+                                    },
+                                );
 
                                 yield AgentEvent::Message(filtered_response.clone());
                                 tokio::task::yield_now().await;
@@ -1488,6 +1578,7 @@ impl Agent {
                                 no_tools_called = false;
                             }
                         }
+                        #[allow(unused_variables)]
                         Err(ref provider_err @ ProviderError::ContextLengthExceeded(_)) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());

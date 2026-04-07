@@ -1,12 +1,13 @@
+import { currentLocale } from '../i18n';
+
 export function formatMessageTimestamp(timestamp?: number): string {
   const date = timestamp ? new Date(timestamp * 1000) : new Date();
   const now = new Date();
 
-  // Format time as HH:MM AM/PM
-  const timeStr = date.toLocaleTimeString('en-US', {
+  // Format time using locale's default hour cycle
+  const timeStr = date.toLocaleTimeString(currentLocale, {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
   });
 
   // Check if the message is from today
@@ -18,8 +19,8 @@ export function formatMessageTimestamp(timestamp?: number): string {
     return timeStr;
   }
 
-  // If not today, format as MM/DD/YYYY HH:MM AM/PM
-  const dateStr = date.toLocaleDateString('en-US', {
+  // If not today, format as localized date + time
+  const dateStr = date.toLocaleDateString(currentLocale, {
     month: '2-digit',
     day: '2-digit',
     year: 'numeric',

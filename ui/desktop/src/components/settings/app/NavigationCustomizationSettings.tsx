@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { GripVertical, Eye, EyeOff } from 'lucide-react';
+import { defineMessages, useIntl } from '../../../i18n';
 import {
   useNavigationContext,
   DEFAULT_ITEM_ORDER,
@@ -7,14 +8,61 @@ import {
 } from '../../Layout/NavigationContext';
 import { cn } from '../../../utils';
 
-const ITEM_LABELS: Record<string, string> = {
-  home: 'Home',
-  chat: 'Chat',
-  recipes: 'Recipes',
-  apps: 'Apps',
-  scheduler: 'Scheduler',
-  extensions: 'Extensions',
-  settings: 'Settings',
+const i18n = defineMessages({
+  dragInstructions: {
+    id: 'navigationCustomization.dragInstructions',
+    defaultMessage: 'Drag to reorder, click the eye icon to show/hide items',
+  },
+  resetToDefaults: {
+    id: 'navigationCustomization.resetToDefaults',
+    defaultMessage: 'Reset to defaults',
+  },
+  hideItem: {
+    id: 'navigationCustomization.hideItem',
+    defaultMessage: 'Hide item',
+  },
+  showItem: {
+    id: 'navigationCustomization.showItem',
+    defaultMessage: 'Show item',
+  },
+  itemHome: {
+    id: 'navigationCustomization.itemHome',
+    defaultMessage: 'Home',
+  },
+  itemChat: {
+    id: 'navigationCustomization.itemChat',
+    defaultMessage: 'Chat',
+  },
+  itemRecipes: {
+    id: 'navigationCustomization.itemRecipes',
+    defaultMessage: 'Recipes',
+  },
+  itemApps: {
+    id: 'navigationCustomization.itemApps',
+    defaultMessage: 'Apps',
+  },
+  itemScheduler: {
+    id: 'navigationCustomization.itemScheduler',
+    defaultMessage: 'Scheduler',
+  },
+  itemExtensions: {
+    id: 'navigationCustomization.itemExtensions',
+    defaultMessage: 'Extensions',
+  },
+  itemSettings: {
+    id: 'navigationCustomization.itemSettings',
+    defaultMessage: 'Settings',
+  },
+});
+
+const ITEM_LABEL_KEYS: Record<string, keyof typeof i18n> = {
+  home: 'itemHome',
+  chat: 'itemChat',
+  recipes: 'itemRecipes',
+  apps: 'itemApps',
+  scheduler: 'itemScheduler',
+  extensions: 'itemExtensions',
+  settings: 'itemSettings',
 };
 
 interface NavigationCustomizationSettingsProps {
@@ -27,6 +75,7 @@ export const NavigationCustomizationSettings: React.FC<NavigationCustomizationSe
   const { preferences, updatePreferences } = useNavigationContext();
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+  const intl = useIntl();
 
   const handleDragStart = (e: React.DragEvent, itemId: string) => {
     setDraggedItem(itemId);
@@ -85,18 +134,26 @@ export const NavigationCustomizationSettings: React.FC<NavigationCustomizationSe
     });
   };
 
+  const getItemLabel = (itemId: string): string => {
+    const key = ITEM_LABEL_KEYS[itemId];
+    if (key) {
+      return intl.formatMessage(i18n[key]);
+    }
+    return itemId;
+  };
+
   return (
     <div className={className}>
       <div className="space-y-3">
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-text-secondary">
-            Drag to reorder, click the eye icon to show/hide items
+            {intl.formatMessage(i18n.dragInstructions)}
           </p>
           <button
             onClick={resetToDefaults}
             className="text-xs text-text-secondary hover:text-text-primary transition-colors"
           >
-            Reset to defaults
+            {intl.formatMessage(i18n.resetToDefaults)}
           </button>
         </div>
 
@@ -104,7 +161,7 @@ export const NavigationCustomizationSettings: React.FC<NavigationCustomizationSe
           const isEnabled = preferences.enabledItems.includes(itemId);
           const isDragging = draggedItem === itemId;
           const isDragOver = dragOverItem === itemId;
-          const label = ITEM_LABELS[itemId] || itemId;
+          const label = getItemLabel(itemId);
 
           return (
             <div
@@ -128,7 +185,7 @@ export const NavigationCustomizationSettings: React.FC<NavigationCustomizationSe
               <button
                 onClick={() => toggleItemEnabled(itemId)}
                 className="p-1 rounded hover:bg-background-tertiary transition-colors flex-shrink-0"
-                title={isEnabled ? 'Hide item' : 'Show item'}
+                title={isEnabled ? intl.formatMessage(i18n.hideItem) : intl.formatMessage(i18n.showItem)}
               >
                 {isEnabled ? (
                   <Eye className="w-4 h-4 text-text-primary" />

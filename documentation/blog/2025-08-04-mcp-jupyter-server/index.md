@@ -149,12 +149,12 @@ For detailed setup and configuration, check out the [complete documentation](htt
 <head>
   <meta property="og:title" content="MCP Jupyter Server: Bringing Notebook Intelligence to AI Agents" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2025/06/24/mcp-jupyter-server" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/06/24/mcp-jupyter-server" />
   <meta property="og:description" content="A powerful MCP server that enables AI agents to interact with Jupyter notebooks while preserving kernel state and variable context" />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="MCP Jupyter Server: Bringing Notebook Intelligence to AI Agents" />
   <meta name="twitter:description" content="A powerful MCP server that enables AI agents to interact with Jupyter notebooks while preserving kernel state and variable context" />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
 </head>

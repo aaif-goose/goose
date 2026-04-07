@@ -12,7 +12,7 @@ This package provides:
 npm install @aaif/goose-acp
 ```
 
-The native `goose-acp-server` binaries are distributed as optional dependencies
+The native `goose` binaries are distributed as optional dependencies
 and will be automatically installed for your platform.
 
 ## Development
@@ -73,16 +73,16 @@ npm run build:schema
 
 ## Native Binary Packages
 
-Platform-specific npm packages for the `goose-acp-server` binary are located in
-`ui/goose-acp-server/`:
+Platform-specific npm packages for the `goose` binary are located in
+`ui/goose-binary/`:
 
 | Package | Platform |
 |---------|----------|
-| `@aaif/goose-acp-server-darwin-arm64` | macOS Apple Silicon |
-| `@aaif/goose-acp-server-darwin-x64` | macOS Intel |
-| `@aaif/goose-acp-server-linux-arm64` | Linux ARM64 |
-| `@aaif/goose-acp-server-linux-x64` | Linux x64 |
-| `@aaif/goose-acp-server-win32-x64` | Windows x64 |
+| `@aaif/goose-binary-darwin-arm64` | macOS Apple Silicon |
+| `@aaif/goose-binary-darwin-x64` | macOS Intel |
+| `@aaif/goose-binary-linux-arm64` | Linux ARM64 |
+| `@aaif/goose-binary-linux-x64` | Linux x64 |
+| `@aaif/goose-binary-win32-x64` | Windows x64 |
 
 These are published separately from `@aaif/goose-acp`.
 

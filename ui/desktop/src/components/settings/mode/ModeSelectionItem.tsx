@@ -2,33 +2,69 @@ import { useEffect, useState, forwardRef } from 'react';
 import { Gear } from '../../icons';
 import { ConfigureApproveMode } from './ConfigureApproveMode';
 import PermissionRulesModal from '../permission/PermissionRulesModal';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  autonomousLabel: {
+    id: 'modeSelectionItem.autonomousLabel',
+    defaultMessage: 'Autonomous',
+  },
+  autonomousDescription: {
+    id: 'modeSelectionItem.autonomousDescription',
+    defaultMessage: 'Full file modification capabilities, edit, create, and delete files freely.',
+  },
+  manualLabel: {
+    id: 'modeSelectionItem.manualLabel',
+    defaultMessage: 'Manual',
+  },
+  manualDescription: {
+    id: 'modeSelectionItem.manualDescription',
+    defaultMessage: 'All tools, extensions and file modifications will require human approval',
+  },
+  smartLabel: {
+    id: 'modeSelectionItem.smartLabel',
+    defaultMessage: 'Smart',
+  },
+  smartDescription: {
+    id: 'modeSelectionItem.smartDescription',
+    defaultMessage: 'Intelligently determine which actions need approval based on risk level',
+  },
+  chatOnlyLabel: {
+    id: 'modeSelectionItem.chatOnlyLabel',
+    defaultMessage: 'Chat only',
+  },
+  chatOnlyDescription: {
+    id: 'modeSelectionItem.chatOnlyDescription',
+    defaultMessage: 'Engage with the selected provider without using tools or extensions.',
+  },
+});
 
 export interface GooseMode {
   key: string;
-  label: string;
-  description: string;
+  labelDescriptor: { id: string; defaultMessage: string };
+  descriptionDescriptor: { id: string; defaultMessage: string };
 }
 
 export const all_goose_modes: GooseMode[] = [
   {
     key: 'auto',
-    label: 'Autonomous',
-    description: 'Full file modification capabilities, edit, create, and delete files freely.',
+    labelDescriptor: i18n.autonomousLabel,
+    descriptionDescriptor: i18n.autonomousDescription,
   },
   {
     key: 'approve',
-    label: 'Manual',
-    description: 'All tools, extensions and file modifications will require human approval',
+    labelDescriptor: i18n.manualLabel,
+    descriptionDescriptor: i18n.manualDescription,
   },
   {
     key: 'smart_approve',
-    label: 'Smart',
-    description: 'Intelligently determine which actions need approval based on risk level ',
+    labelDescriptor: i18n.smartLabel,
+    descriptionDescriptor: i18n.smartDescription,
   },
   {
     key: 'chat',
-    label: 'Chat only',
-    description: 'Engage with the selected provider without using tools or extensions.',
+    labelDescriptor: i18n.chatOnlyLabel,
+    descriptionDescriptor: i18n.chatOnlyDescription,
   },
 ];
 
@@ -42,6 +78,7 @@ interface ModeSelectionItemProps {
 
 export const ModeSelectionItem = forwardRef<HTMLDivElement, ModeSelectionItemProps>(
   ({ currentMode, mode, showDescription, isApproveModeConfigure, handleModeChange }, ref) => {
+    const intl = useIntl();
     const [checked, setChecked] = useState(currentMode == mode.key);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
@@ -58,9 +95,9 @@ export const ModeSelectionItem = forwardRef<HTMLDivElement, ModeSelectionItemPro
         >
           <div className="flex">
             <div>
-              <h3 className="text-text-primary">{mode.label}</h3>
+              <h3 className="text-text-primary">{intl.formatMessage(mode.labelDescriptor)}</h3>
               {showDescription && (
-                <p className="text-text-secondary mt-[2px]">{mode.description}</p>
+                <p className="text-text-secondary mt-[2px]">{intl.formatMessage(mode.descriptionDescriptor)}</p>
               )}
             </div>
           </div>

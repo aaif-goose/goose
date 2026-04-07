@@ -205,7 +205,7 @@ export ANTHROPIC_API_KEY=your_api_key
 ```
 
 ### Step 4: Enable the Screen toolkit
-goose uses [toolkits](https://aaif-goose.github.io/goose/plugins/plugins.html) to extend its capabilities. The [screen](https://aaif-goose.github.io/goose/plugins/available-toolkits.html#6-screen-toolkit) toolkit lets goose take and analyze screenshots.
+goose uses [toolkits](https://goose-docs.ai/plugins/plugins.html) to extend its capabilities. The [screen](https://goose-docs.ai/plugins/available-toolkits.html#6-screen-toolkit) toolkit lets goose take and analyze screenshots.
 
 To enable the Screen toolkit, add it to your goose profile at ~/.config/goose/profiles.yaml.
 
@@ -286,12 +286,12 @@ If you're interested in learning more, check out the [goose repo](https://github
 <head>
     <meta property="og:title" content="Screenshot-Driven Development" />
     <meta property="og:type" content="article" />
-    <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2024/11/22/screenshot-driven-development" />
+    <meta property="og:url" content="https://goose-docs.ai/blog/2024/11/22/screenshot-driven-development" />
     <meta property="og:description" content="AI Agent uses screenshots to assist in styling." />
-    <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/screenshot-driven-development-4ed1beaa10c6062c0bf87e2d27590ad6.png" />
+    <meta property="og:image" content="https://goose-docs.ai/assets/images/screenshot-driven-development-4ed1beaa10c6062c0bf87e2d27590ad6.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+    <meta property="twitter:domain" content="goose-docs.ai" />
     <meta name="twitter:title" content="Screenshot-Driven Development" />
     <meta name="twitter:description" content="AI Agent uses screenshots to assist in styling." />
-    <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/screenshot-driven-development-4ed1beaa10c6062c0bf87e2d27590ad6.png" />
+    <meta name="twitter:image" content="https://goose-docs.ai/assets/images/screenshot-driven-development-4ed1beaa10c6062c0bf87e2d27590ad6.png" />
 </head>

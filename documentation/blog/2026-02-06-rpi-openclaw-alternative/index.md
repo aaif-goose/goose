@@ -126,12 +126,12 @@ Happy hacking!
 <head>
   <meta property="og:title" content="How I Used RPI to Build an OpenClaw Alternative" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://aaif-goose.github.io/goose/blog/2026/02/06/rpi-openclaw-alternative" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/06/rpi-openclaw-alternative" />
   <meta property="og:description" content="Learn how I built a minimal, personal AI agent using goose and the RPI method." />
-  <meta property="og:image" content="https://aaif-goose.github.io/goose/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="aaif-goose.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How I Used RPI to Build an OpenClaw Alternative" />
   <meta name="twitter:description" content="Learn how I built a minimal, personal AI agent using goose and the RPI method." />
-  <meta name="twitter:image" content="https://aaif-goose.github.io/goose/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
 </head>

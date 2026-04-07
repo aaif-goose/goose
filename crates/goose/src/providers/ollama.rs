@@ -182,6 +182,12 @@ impl OllamaProvider {
             ));
         }
 
+        let model = if let Some(ref fast_model_name) = config.fast_model {
+            model.with_fast(fast_model_name, &config.name)?
+        } else {
+            model
+        };
+
         Ok(Self {
             api_client,
             model,

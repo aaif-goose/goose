@@ -11,6 +11,74 @@ import { RecipeParameter } from './shared/recipeFormSchema';
 import { toastError } from '../../toasts';
 import { saveRecipe } from '../../recipe/recipe_management';
 import { errorMessage } from '../../utils/conversionUtils';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'createRecipeFromSession.title',
+    defaultMessage: 'Create Recipe from Session',
+  },
+  subtitle: {
+    id: 'createRecipeFromSession.subtitle',
+    defaultMessage: 'Create a reusable recipe based on your current conversation.',
+  },
+  analyzingTitle: {
+    id: 'createRecipeFromSession.analyzingTitle',
+    defaultMessage: 'Analyzing your conversation',
+  },
+  stageReading: {
+    id: 'createRecipeFromSession.stageReading',
+    defaultMessage: 'Reading your conversation...',
+  },
+  stageIdentifying: {
+    id: 'createRecipeFromSession.stageIdentifying',
+    defaultMessage: 'Identifying key patterns...',
+  },
+  stageExtracting: {
+    id: 'createRecipeFromSession.stageExtracting',
+    defaultMessage: 'Extracting main topics...',
+  },
+  stageGenerating: {
+    id: 'createRecipeFromSession.stageGenerating',
+    defaultMessage: 'Generating recipe structure...',
+  },
+  stageFinalizing: {
+    id: 'createRecipeFromSession.stageFinalizing',
+    defaultMessage: 'Finalizing details...',
+  },
+  stageComplete: {
+    id: 'createRecipeFromSession.stageComplete',
+    defaultMessage: 'Complete!',
+  },
+  extractingInsights: {
+    id: 'createRecipeFromSession.extractingInsights',
+    defaultMessage: 'Extracting insights from your chat',
+  },
+  cancel: {
+    id: 'createRecipeFromSession.cancel',
+    defaultMessage: 'Cancel',
+  },
+  creating: {
+    id: 'createRecipeFromSession.creating',
+    defaultMessage: 'Creating...',
+  },
+  createRecipe: {
+    id: 'createRecipeFromSession.createRecipe',
+    defaultMessage: 'Create Recipe',
+  },
+  createAndRunRecipe: {
+    id: 'createRecipeFromSession.createAndRunRecipe',
+    defaultMessage: 'Create & Run Recipe',
+  },
+  failedToCreateTitle: {
+    id: 'createRecipeFromSession.failedToCreateTitle',
+    defaultMessage: 'Failed to create recipe',
+  },
+  failedToCreateDefaultMsg: {
+    id: 'createRecipeFromSession.failedToCreateDefaultMsg',
+    defaultMessage: 'An unexpected error occurred while creating the recipe. Please try again.',
+  },
+});
 
 interface CreateRecipeFromSessionModalProps {
   isOpen: boolean;
@@ -25,6 +93,7 @@ export default function CreateRecipeFromSessionModal({
   sessionId,
   onRecipeCreated,
 }: CreateRecipeFromSessionModalProps) {
+  const intl = useIntl();
   const [isCreating, setIsCreating] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState<string>('');
@@ -59,11 +128,11 @@ export default function CreateRecipeFromSessionModal({
 
       // Create a sequence of analysis stages for better UX
       const stages = [
-        'Reading your conversation...',
-        'Identifying key patterns...',
-        'Extracting main topics...',
-        'Generating recipe structure...',
-        'Finalizing details...',
+        intl.formatMessage(i18n.stageReading),
+        intl.formatMessage(i18n.stageIdentifying),
+        intl.formatMessage(i18n.stageExtracting),
+        intl.formatMessage(i18n.stageGenerating),
+        intl.formatMessage(i18n.stageFinalizing),
       ];
 
       let currentStageIndex = 0;
@@ -82,7 +151,7 @@ export default function CreateRecipeFromSessionModal({
       })
         .then((response) => {
           clearInterval(stageInterval);
-          setAnalysisStage('Complete!');
+          setAnalysisStage(intl.formatMessage(i18n.stageComplete));
 
           if (response.data?.recipe) {
             const recipe = response.data.recipe;
@@ -118,7 +187,7 @@ export default function CreateRecipeFromSessionModal({
           }, 500); // Brief delay to show completion
         });
     }
-  }, [isOpen, sessionId, hasAnalyzed, form]);
+  }, [isOpen, sessionId, hasAnalyzed, form, intl]);
 
   // Reset analysis state when modal closes
   useEffect(() => {
@@ -209,10 +278,10 @@ export default function CreateRecipeFromSessionModal({
     } catch (error) {
       console.error('Failed to create recipe:', error);
       toastError({
-        title: 'Failed to create recipe',
+        title: intl.formatMessage(i18n.failedToCreateTitle),
         msg: errorMessage(
           error,
-          'An unexpected error occurred while creating the recipe. Please try again.'
+          intl.formatMessage(i18n.failedToCreateDefaultMsg)
         ),
       });
     } finally {
@@ -238,9 +307,9 @@ export default function CreateRecipeFromSessionModal({
               <Geese className="w-6 h-6 text-iconProminent" />
             </div>
             <div>
-              <h1 className="text-xl font-medium text-text-primary">Create Recipe from Session</h1>
+              <h1 className="text-xl font-medium text-text-primary">{intl.formatMessage(i18n.title)}</h1>
               <p className="text-text-secondary text-sm">
-                Create a reusable recipe based on your current conversation.
+                {intl.formatMessage(i18n.subtitle)}
               </p>
             </div>
           </div>
@@ -271,7 +340,7 @@ export default function CreateRecipeFromSessionModal({
                   className="text-lg font-medium text-text-primary"
                   data-testid="analyzing-title"
                 >
-                  Analyzing your conversation
+                  {intl.formatMessage(i18n.analyzingTitle)}
                 </div>
               </div>
               <div
@@ -282,7 +351,7 @@ export default function CreateRecipeFromSessionModal({
               </div>
               <div className="flex items-center space-x-2 text-text-secondary">
                 <Geese className="w-5 h-5 animate-pulse" />
-                <span className="text-sm">Extracting insights from your chat</span>
+                <span className="text-sm">{intl.formatMessage(i18n.extractingInsights)}</span>
               </div>
             </div>
           ) : (
@@ -303,7 +372,7 @@ export default function CreateRecipeFromSessionModal({
             className="px-4 py-2 text-text-secondary rounded-lg hover:bg-background-secondary transition-colors"
             data-testid="cancel-button"
           >
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
 
           <div className="flex gap-3">
@@ -319,7 +388,7 @@ export default function CreateRecipeFromSessionModal({
                   data-testid="create-recipe-button"
                 >
                   <Save className="w-4 h-4 mr-2" />
-                  {isCreating ? 'Creating...' : 'Create Recipe'}
+                  {isCreating ? intl.formatMessage(i18n.creating) : intl.formatMessage(i18n.createRecipe)}
                 </Button>
                 <Button
                   onClick={() => {
@@ -330,7 +399,7 @@ export default function CreateRecipeFromSessionModal({
                   data-testid="create-and-run-recipe-button"
                 >
                   <Play className="w-4 h-4 mr-2" />
-                  {isCreating ? 'Creating...' : 'Create & Run Recipe'}
+                  {isCreating ? intl.formatMessage(i18n.creating) : intl.formatMessage(i18n.createAndRunRecipe)}
                 </Button>
               </>
             )}

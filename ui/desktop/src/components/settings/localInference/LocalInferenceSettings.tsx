@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, Trash2, X, ChevronDown, ChevronUp, Settings2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { useModelAndProvider } from '../../ModelAndProviderContext';
+import { defineMessages, useIntl } from '../../../i18n';
 import {
   listLocalModels,
   downloadHfModel,
@@ -16,6 +17,74 @@ import { HuggingFaceModelSearch } from './HuggingFaceModelSearch';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
 
+const i18n = defineMessages({
+  title: {
+    id: 'localInferenceSettings.title',
+    defaultMessage: 'Local Inference Models',
+  },
+  description: {
+    id: 'localInferenceSettings.description',
+    defaultMessage:
+      'Download and manage local LLM models for inference without API keys. Search HuggingFace for any GGUF model or use the featured picks below.',
+  },
+  downloading: {
+    id: 'localInferenceSettings.downloading',
+    defaultMessage: 'Downloading',
+  },
+  downloadedModels: {
+    id: 'localInferenceSettings.downloadedModels',
+    defaultMessage: 'Downloaded Models',
+  },
+  featuredModels: {
+    id: 'localInferenceSettings.featuredModels',
+    defaultMessage: 'Featured Models',
+  },
+  recommended: {
+    id: 'localInferenceSettings.recommended',
+    defaultMessage: 'Recommended',
+  },
+  download: {
+    id: 'localInferenceSettings.download',
+    defaultMessage: 'Download',
+  },
+  showRecommendedOnly: {
+    id: 'localInferenceSettings.showRecommendedOnly',
+    defaultMessage: 'Show recommended only',
+  },
+  showAllFeatured: {
+    id: 'localInferenceSettings.showAllFeatured',
+    defaultMessage: 'Show all featured ({count} more)',
+  },
+  modelSettings: {
+    id: 'localInferenceSettings.modelSettings',
+    defaultMessage: 'Model Settings',
+  },
+  noModels: {
+    id: 'localInferenceSettings.noModels',
+    defaultMessage: 'No models available',
+  },
+  downloadProgress: {
+    id: 'localInferenceSettings.downloadProgress',
+    defaultMessage: '{downloaded} / {total} ({percent}%)',
+  },
+  remaining: {
+    id: 'localInferenceSettings.remaining',
+    defaultMessage: '{time} remaining',
+  },
+  downloadFailed: {
+    id: 'localInferenceSettings.downloadFailed',
+    defaultMessage: 'Download failed',
+  },
+  deleteConfirm: {
+    id: 'localInferenceSettings.deleteConfirm',
+    defaultMessage: 'Delete this model? You can re-download it later.',
+  },
+  modelSettingsTitle: {
+    id: 'localInferenceSettings.modelSettingsTitle',
+    defaultMessage: 'Model settings',
+  },
+});
+
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
@@ -24,6 +93,7 @@ const formatBytes = (bytes: number): string => {
 };
 
 export const LocalInferenceSettings = () => {
+  const intl = useIntl();
   const [models, setModels] = useState<LocalModelResponse[]>([]);
   const [downloads, setDownloads] = useState<Map<string, DownloadProgress>>(new Map());
   const [showAllFeatured, setShowAllFeatured] = useState(false);
@@ -146,7 +216,7 @@ export const LocalInferenceSettings = () => {
   };
 
   const handleDeleteModel = async (modelId: string) => {
-    if (!window.confirm('Delete this model? You can re-download it later.')) return;
+    if (!window.confirm(intl.formatMessage(i18n.deleteConfirm))) return;
     try {
       await deleteLocalModel({ path: { model_id: modelId } });
       const updatedModels = await loadModels();
@@ -183,17 +253,16 @@ export const LocalInferenceSettings = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-text-default font-medium">Local Inference Models</h3>
+        <h3 className="text-text-default font-medium">{intl.formatMessage(i18n.title)}</h3>
         <p className="text-xs text-text-muted max-w-2xl mt-1">
-          Download and manage local LLM models for inference without API keys. Search HuggingFace
-          for any GGUF model or use the featured picks below.
+          {intl.formatMessage(i18n.description)}
         </p>
       </div>
 
       {/* Active Downloads */}
       {downloads.size > 0 && (
         <div ref={downloadSectionRef}>
-          <h4 className="text-sm font-medium text-text-default mb-2">Downloading</h4>
+          <h4 className="text-sm font-medium text-text-default mb-2">{intl.formatMessage(i18n.downloading)}</h4>
           <div className="space-y-2">
             {Array.from(downloads.entries()).map(([modelId, progress]) => {
               if (progress.status === 'completed') return null;
@@ -227,17 +296,21 @@ export const LocalInferenceSettings = () => {
                       </div>
                       <div className="flex justify-between text-xs text-text-muted">
                         <span>
-                          {formatBytes(progress.bytes_downloaded)} /{' '}
-                          {formatBytes(progress.total_bytes)} (
-                          {progress.progress_percent.toFixed(0)}%)
+                          {intl.formatMessage(i18n.downloadProgress, {
+                            downloaded: formatBytes(progress.bytes_downloaded),
+                            total: formatBytes(progress.total_bytes),
+                            percent: progress.progress_percent.toFixed(0),
+                          })}
                         </span>
                         <span className="flex gap-2">
                           {progress.eta_seconds != null && progress.eta_seconds > 0 && (
                             <span>
-                              {progress.eta_seconds < 60
-                                ? `${Math.round(progress.eta_seconds)}s`
-                                : `${Math.round(progress.eta_seconds / 60)}m`}{' '}
-                              remaining
+                              {intl.formatMessage(i18n.remaining, {
+                                time:
+                                  progress.eta_seconds < 60
+                                    ? `${Math.round(progress.eta_seconds)}s`
+                                    : `${Math.round(progress.eta_seconds / 60)}m`,
+                              })}
                             </span>
                           )}
                           {progress.speed_bps != null && progress.speed_bps > 0 && (
@@ -249,7 +322,7 @@ export const LocalInferenceSettings = () => {
                   )}
                   {progress.status === 'failed' && (
                     <p className="text-xs text-destructive">
-                      {progress.error || 'Download failed'}
+                      {progress.error || intl.formatMessage(i18n.downloadFailed)}
                     </p>
                   )}
                 </div>
@@ -262,7 +335,7 @@ export const LocalInferenceSettings = () => {
       {/* Downloaded Models */}
       {downloadedModels.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-text-default mb-2">Downloaded Models</h4>
+          <h4 className="text-sm font-medium text-text-default mb-2">{intl.formatMessage(i18n.downloadedModels)}</h4>
           <div className="space-y-2">
             {downloadedModels.map((model) => {
               const isSelected = selectedModelId === model.id;
@@ -289,7 +362,7 @@ export const LocalInferenceSettings = () => {
                       </span>
                       {model.recommended && (
                         <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">
-                          Recommended
+                          {intl.formatMessage(i18n.recommended)}
                         </span>
                       )}
                     </div>
@@ -298,7 +371,7 @@ export const LocalInferenceSettings = () => {
                         variant="ghost"
                         size="sm"
                         onClick={() => setSettingsOpenFor(model.id)}
-                        title="Model settings"
+                        title={intl.formatMessage(i18n.modelSettingsTitle)}
                       >
                         <Settings2 className="w-4 h-4" />
                       </Button>
@@ -322,7 +395,7 @@ export const LocalInferenceSettings = () => {
       {/* Featured Models (not yet downloaded) */}
       {displayedFeatured.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-text-default mb-2">Featured Models</h4>
+          <h4 className="text-sm font-medium text-text-default mb-2">{intl.formatMessage(i18n.featuredModels)}</h4>
           <div className="space-y-2">
             {displayedFeatured.map((model) => (
               <div
@@ -338,7 +411,7 @@ export const LocalInferenceSettings = () => {
                       </span>
                       {model.recommended && (
                         <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">
-                          Recommended
+                          {intl.formatMessage(i18n.recommended)}
                         </span>
                       )}
                     </div>
@@ -349,7 +422,7 @@ export const LocalInferenceSettings = () => {
                     onClick={() => startFeaturedDownload(model.id)}
                   >
                     <Download className="w-4 h-4 mr-1" />
-                    Download
+                    {intl.formatMessage(i18n.download)}
                   </Button>
                 </div>
               </div>
@@ -366,12 +439,14 @@ export const LocalInferenceSettings = () => {
               {showAllFeatured ? (
                 <>
                   <ChevronUp className="w-4 h-4 mr-1" />
-                  Show recommended only
+                  {intl.formatMessage(i18n.showRecommendedOnly)}
                 </>
               ) : (
                 <>
                   <ChevronDown className="w-4 h-4 mr-1" />
-                  Show all featured ({notDownloadedModels.length - displayedFeatured.length} more)
+                  {intl.formatMessage(i18n.showAllFeatured, {
+                    count: notDownloadedModels.length - displayedFeatured.length,
+                  })}
                 </>
               )}
             </Button>
@@ -385,7 +460,7 @@ export const LocalInferenceSettings = () => {
       </div>
 
       {models.length === 0 && (
-        <div className="text-center py-6 text-text-muted text-sm">No models available</div>
+        <div className="text-center py-6 text-text-muted text-sm">{intl.formatMessage(i18n.noModels)}</div>
       )}
 
       <Dialog
@@ -396,7 +471,7 @@ export const LocalInferenceSettings = () => {
       >
         <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Model Settings</DialogTitle>
+            <DialogTitle>{intl.formatMessage(i18n.modelSettings)}</DialogTitle>
             <p className="text-sm text-text-muted">{settingsOpenFor || ''}</p>
           </DialogHeader>
           {settingsOpenFor && <ModelSettingsPanel modelId={settingsOpenFor} />}

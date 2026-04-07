@@ -1,17 +1,17 @@
-# Native Binary Packages for goose-acp-server
+# Native Binary Packages for goose
 
 This directory contains the npm package scaffolding for distributing the
-`goose-acp-server` Rust binary as platform-specific npm packages.
+`goose` Rust binary as platform-specific npm packages.
 
 ## Packages
 
 | Package | Platform |
 |---------|----------|
-| `@aaif/goose-acp-server-darwin-arm64` | macOS Apple Silicon |
-| `@aaif/goose-acp-server-darwin-x64` | macOS Intel |
-| `@aaif/goose-acp-server-linux-arm64` | Linux ARM64 |
-| `@aaif/goose-acp-server-linux-x64` | Linux x64 |
-| `@aaif/goose-acp-server-win32-x64` | Windows x64 |
+| `@aaif/goose-binary-darwin-arm64` | macOS Apple Silicon |
+| `@aaif/goose-binary-darwin-x64` | macOS Intel |
+| `@aaif/goose-binary-linux-arm64` | Linux ARM64 |
+| `@aaif/goose-binary-linux-x64` | Linux x64 |
+| `@aaif/goose-binary-win32-x64` | Windows x64 |
 
 ## Building
 
@@ -29,7 +29,7 @@ npm run build:native:all
 npx tsx scripts/build-native.ts darwin-arm64 linux-x64
 ```
 
-The built binaries are placed into `ui/goose-acp-server/goose-acp-server-{platform}/bin/`.
+The built binaries are placed into `ui/goose-binary/goose-binary-{platform}/bin/`.
 These directories are git-ignored.
 
 ## Publishing

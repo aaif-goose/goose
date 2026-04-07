@@ -2,6 +2,82 @@ import { useState, useEffect, useMemo } from 'react';
 import { Switch } from '../../ui/switch';
 import { useConfig } from '../../ConfigContext';
 import { trackSettingToggled } from '../../../utils/analytics';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  enablePromptInjection: {
+    id: 'securityToggle.enablePromptInjection',
+    defaultMessage: 'Enable Prompt Injection Detection',
+  },
+  promptInjectionDescription: {
+    id: 'securityToggle.promptInjectionDescription',
+    defaultMessage: 'Detect and prevent potential prompt injection attacks',
+  },
+  detectionThreshold: {
+    id: 'securityToggle.detectionThreshold',
+    defaultMessage: 'Detection Threshold',
+  },
+  thresholdDescription: {
+    id: 'securityToggle.thresholdDescription',
+    defaultMessage: 'Higher values are more strict (0.01 = very lenient, 1.0 = maximum strict)',
+  },
+  enableCommandInjection: {
+    id: 'securityToggle.enableCommandInjection',
+    defaultMessage: 'Enable Command Injection ML Detection',
+  },
+  commandInjectionDescription: {
+    id: 'securityToggle.commandInjectionDescription',
+    defaultMessage: 'Use ML models to detect malicious shell commands',
+  },
+  commandClassifierActive: {
+    id: 'securityToggle.commandClassifierActive',
+    defaultMessage: 'Command classifier active (auto-configured from environment)',
+  },
+  enablePromptInjectionMl: {
+    id: 'securityToggle.enablePromptInjectionMl',
+    defaultMessage: 'Enable Prompt Injection ML Detection',
+  },
+  promptInjectionMlDescription: {
+    id: 'securityToggle.promptInjectionMlDescription',
+    defaultMessage: 'Use ML models to detect potential prompt injection in your chat',
+  },
+  detectionModel: {
+    id: 'securityToggle.detectionModel',
+    defaultMessage: 'Detection Model',
+  },
+  detectionModelDescription: {
+    id: 'securityToggle.detectionModelDescription',
+    defaultMessage: 'Select which ML model to use for prompt injection detection',
+  },
+  classificationEndpoint: {
+    id: 'securityToggle.classificationEndpoint',
+    defaultMessage: 'Classification Endpoint',
+  },
+  classificationEndpointDescription: {
+    id: 'securityToggle.classificationEndpointDescription',
+    defaultMessage: 'Enter the full URL for your classification service',
+  },
+  apiTokenOptional: {
+    id: 'securityToggle.apiTokenOptional',
+    defaultMessage: 'API Token (Optional)',
+  },
+  apiTokenDescription: {
+    id: 'securityToggle.apiTokenDescription',
+    defaultMessage: 'Authentication token for the classification service',
+  },
+  commandEndpointDescription: {
+    id: 'securityToggle.commandEndpointDescription',
+    defaultMessage: 'Enter the full URL for your command injection classification service',
+  },
+  mlEndpointDescription: {
+    id: 'securityToggle.mlEndpointDescription',
+    defaultMessage: 'Enter the full URL for your ML classification service (including model identifier)',
+  },
+  mlTokenDescription: {
+    id: 'securityToggle.mlTokenDescription',
+    defaultMessage: 'Authentication token for the ML service (e.g., HuggingFace token)',
+  },
+});
 
 interface SecurityConfig {
   SECURITY_PROMPT_ENABLED?: boolean;
@@ -41,10 +117,10 @@ const ClassifierEndpointInputs = ({
   disabled,
   endpointPlaceholder,
   tokenPlaceholder,
-  endpointLabel = 'Classification Endpoint',
-  endpointDescription = 'Enter the full URL for your classification service',
-  tokenLabel = 'API Token (Optional)',
-  tokenDescription = 'Authentication token for the classification service',
+  endpointLabel,
+  endpointDescription,
+  tokenLabel,
+  tokenDescription,
 }: ClassifierEndpointInputsProps) => {
   return (
     <div className="space-y-3">
@@ -96,6 +172,7 @@ const ClassifierEndpointInputs = ({
 };
 
 export const SecurityToggle = () => {
+  const intl = useIntl();
   const { config, upsert } = useConfig();
 
   const modelMapping = useMemo(() => {
@@ -217,9 +294,9 @@ export const SecurityToggle = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between py-2 px-2 hover:bg-background-secondary rounded-lg transition-all">
         <div>
-          <h3 className="text-text-primary">Enable Prompt Injection Detection</h3>
+          <h3 className="text-text-primary">{intl.formatMessage(i18n.enablePromptInjection)}</h3>
           <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-            Detect and prevent potential prompt injection attacks
+            {intl.formatMessage(i18n.promptInjectionDescription)}
           </p>
         </div>
         <div className="flex items-center">
@@ -238,10 +315,10 @@ export const SecurityToggle = () => {
             <label
               className={`text-sm font-medium ${enabled ? 'text-text-primary' : 'text-text-secondary'}`}
             >
-              Detection Threshold
+              {intl.formatMessage(i18n.detectionThreshold)}
             </label>
             <p className="text-xs text-text-secondary mb-2">
-              Higher values are more strict (0.01 = very lenient, 1.0 = maximum strict)
+              {intl.formatMessage(i18n.thresholdDescription)}
             </p>
             <input
               type="number"
@@ -278,10 +355,10 @@ export const SecurityToggle = () => {
                 <h4
                   className={`text-sm font-medium ${enabled ? 'text-text-primary' : 'text-text-secondary'}`}
                 >
-                  Enable Command Injection ML Detection
+                  {intl.formatMessage(i18n.enableCommandInjection)}
                 </h4>
                 <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-                  Use ML models to detect malicious shell commands
+                  {intl.formatMessage(i18n.commandInjectionDescription)}
                 </p>
               </div>
               <div className="flex items-center">
@@ -298,7 +375,7 @@ export const SecurityToggle = () => {
               enabled &&
               effectiveCommandClassifierEnabled && (
                 <div className="text-sm text-gray-700 dark:text-gray-300 mt-2">
-                  ✓ Command classifier active (auto-configured from environment)
+                  ✓ {intl.formatMessage(i18n.commandClassifierActive)}
                 </div>
               )
             ) : (
@@ -320,7 +397,10 @@ export const SecurityToggle = () => {
                     disabled={!enabled || !effectiveCommandClassifierEnabled}
                     endpointPlaceholder="https://example.com/classify"
                     tokenPlaceholder="token..."
-                    endpointDescription="Enter the full URL for your command injection classification service"
+                    endpointLabel={intl.formatMessage(i18n.classificationEndpoint)}
+                    endpointDescription={intl.formatMessage(i18n.commandEndpointDescription)}
+                    tokenLabel={intl.formatMessage(i18n.apiTokenOptional)}
+                    tokenDescription={intl.formatMessage(i18n.apiTokenDescription)}
                   />
                 </div>
               </div>
@@ -334,10 +414,10 @@ export const SecurityToggle = () => {
                 <h4
                   className={`text-sm font-medium ${enabled ? 'text-text-primary' : 'text-text-secondary'}`}
                 >
-                  Enable Prompt Injection ML Detection
+                  {intl.formatMessage(i18n.enablePromptInjectionMl)}
                 </h4>
                 <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-                  Use ML models to detect potential prompt injection in your chat
+                  {intl.formatMessage(i18n.promptInjectionMlDescription)}
                 </p>
               </div>
               <div className="flex items-center">
@@ -363,10 +443,10 @@ export const SecurityToggle = () => {
                       <label
                         className={`text-sm font-medium ${enabled && mlEnabled ? 'text-text-primary' : 'text-text-secondary'}`}
                       >
-                        Detection Model
+                        {intl.formatMessage(i18n.detectionModel)}
                       </label>
                       <p className="text-xs text-text-secondary mb-2">
-                        Select which ML model to use for prompt injection detection
+                        {intl.formatMessage(i18n.detectionModelDescription)}
                       </p>
                       <select
                         value={effectiveModel}
@@ -397,8 +477,10 @@ export const SecurityToggle = () => {
                     disabled={!enabled || !mlEnabled}
                     endpointPlaceholder="https://router.huggingface.co/hf-inference/models/protectai/deberta-v3-base-prompt-injection-v2"
                     tokenPlaceholder="hf_..."
-                    endpointDescription="Enter the full URL for your ML classification service (including model identifier)"
-                    tokenDescription="Authentication token for the ML service (e.g., HuggingFace token)"
+                    endpointLabel={intl.formatMessage(i18n.classificationEndpoint)}
+                    endpointDescription={intl.formatMessage(i18n.mlEndpointDescription)}
+                    tokenLabel={intl.formatMessage(i18n.apiTokenOptional)}
+                    tokenDescription={intl.formatMessage(i18n.mlTokenDescription)}
                   />
                 )}
               </div>

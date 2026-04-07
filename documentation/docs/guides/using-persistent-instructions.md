@@ -4,7 +4,7 @@ sidebar_position: 12
 sidebar_label: Persistent Instructions
 ---
 
-Persistent instructions let you inject text into goose's working memory every turn. Unlike [`.goosehints`](/docs/guides/context-engineering/using-goosehints) which are loaded once at session start, persistent instructions are re-read and injected fresh with every interaction. This makes them ideal for behavioral guardrails that must always be enforced, regardless of how the conversation evolves.
+Persistent instructions let you inject text into goose's working memory every turn. Unlike [`.goosehints`](/docs/guides/context-engineering/using-goosehints), which are loaded at session start and can expand later when goose discovers nested hint files, persistent instructions are re-read and injected fresh with every interaction. This makes them ideal for behavioral guardrails that must always be enforced, regardless of how the conversation evolves.
 
 ## How It Works
 
@@ -116,7 +116,7 @@ unset GOOSE_MOIM_MESSAGE_TEXT
 
 | Feature | Persistent Instructions | [goosehints](/docs/guides/context-engineering/using-goosehints) |
 |---------|------------------------|-------------|
-| When loaded | Every turn | Session start |
+| When loaded | Every turn | Session start, plus nested context files discovered during the session |
 | Can be forgotten | No | Yes, as context fills |
 | Best for | Critical guardrails, security rules | Project context, coding standards |
 | Token cost | Per turn | Once at start |

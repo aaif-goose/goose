@@ -339,6 +339,7 @@ impl Agent {
         &self,
         response: &Message,
         tools: &[Tool],
+        suppress_replayed_thinking: bool,
     ) -> (Vec<ToolRequest>, Vec<ToolRequest>, Message) {
         // First collect all tool requests with coercion applied
         let tool_requests: Vec<ToolRequest> = response
@@ -367,7 +368,16 @@ impl Agent {
             })
             .collect();
 
-        // Create a filtered message with frontend tool requests removed
+        let has_tool_requests = !tool_requests.is_empty();
+        let should_suppress_replayed_thinking = suppress_replayed_thinking && has_tool_requests;
+
+        // Create a filtered message with frontend tool requests removed.
+        // When a response contains tool calls, keep reasoning in the original
+        // message for provider/state purposes but only suppress it from the
+        // user-visible filtered message if the caller already surfaced
+        // thinking earlier in this provider turn. That avoids replaying full
+        // accumulated reasoning after streamed thought chunks while still
+        // preserving final-only non-streaming thoughts.
         let mut filtered_content = Vec::new();
         let mut tool_request_index = 0;
 
@@ -389,6 +399,8 @@ impl Agent {
                         }
                     }
                 }
+                MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+                    if should_suppress_replayed_thinking => {}
                 _ => {
                     filtered_content.push(content.clone());
                 }
@@ -660,6 +672,52 @@ mod tests {
             error_seen,
             "Error should have been propagated, not silently ignored"
         );
+    }
+
+    #[tokio::test]
+    async fn categorize_tool_requests_keeps_thinking_when_not_previously_streamed() {
+        let agent = crate::agents::Agent::new();
+        let response = Message::assistant()
+            .with_thinking("final-only reasoning", "")
+            .with_tool_request(
+                "tool-1",
+                Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+            );
+
+        let (_frontend_requests, other_requests, filtered_message) =
+            agent.categorize_tool_requests(&response, &[], false).await;
+
+        assert_eq!(other_requests.len(), 1);
+        assert_eq!(filtered_message.content.len(), 2);
+        assert!(matches!(
+            filtered_message.content[0],
+            MessageContent::Thinking(_)
+        ));
+        assert!(matches!(
+            filtered_message.content[1],
+            MessageContent::ToolRequest(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn categorize_tool_requests_drops_replayed_thinking_after_streaming() {
+        let agent = crate::agents::Agent::new();
+        let response = Message::assistant()
+            .with_thinking("replayed reasoning", "")
+            .with_tool_request(
+                "tool-1",
+                Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+            );
+
+        let (_frontend_requests, other_requests, filtered_message) =
+            agent.categorize_tool_requests(&response, &[], true).await;
+
+        assert_eq!(other_requests.len(), 1);
+        assert_eq!(filtered_message.content.len(), 1);
+        assert!(matches!(
+            filtered_message.content[0],
+            MessageContent::ToolRequest(_)
+        ));
     }
 
     fn make_tool_with_meta(meta_json: Option<serde_json::Value>) -> Tool {

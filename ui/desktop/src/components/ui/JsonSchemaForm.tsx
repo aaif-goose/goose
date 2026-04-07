@@ -1,6 +1,46 @@
 import React, { useState, useCallback } from 'react';
 import { Input } from './input';
 import { Button } from './button';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  submit: {
+    id: 'jsonSchemaForm.submit',
+    defaultMessage: 'Submit',
+  },
+  cancel: {
+    id: 'jsonSchemaForm.cancel',
+    defaultMessage: 'Cancel',
+  },
+  fieldRequired: {
+    id: 'jsonSchemaForm.fieldRequired',
+    defaultMessage: 'This field is required',
+  },
+  minLength: {
+    id: 'jsonSchemaForm.minLength',
+    defaultMessage: 'Minimum length is {minLength}',
+  },
+  maxLength: {
+    id: 'jsonSchemaForm.maxLength',
+    defaultMessage: 'Maximum length is {maxLength}',
+  },
+  minValue: {
+    id: 'jsonSchemaForm.minValue',
+    defaultMessage: 'Minimum value is {minimum}',
+  },
+  maxValue: {
+    id: 'jsonSchemaForm.maxValue',
+    defaultMessage: 'Maximum value is {maximum}',
+  },
+  selectPlaceholder: {
+    id: 'jsonSchemaForm.selectPlaceholder',
+    defaultMessage: 'Select...',
+  },
+  noFields: {
+    id: 'jsonSchemaForm.noFields',
+    defaultMessage: 'No fields to display',
+  },
+});
 
 interface JsonSchemaProperty {
   type?: string;
@@ -34,10 +74,11 @@ export default function JsonSchemaForm({
   schema,
   onSubmit,
   onCancel,
-  submitLabel = 'Submit',
-  cancelLabel = 'Cancel',
+  submitLabel,
+  cancelLabel,
   disabled = false,
 }: JsonSchemaFormProps) {
+  const intl = useIntl();
   const [formData, setFormData] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = {};
     if (schema.properties) {
@@ -66,32 +107,32 @@ export default function JsonSchemaForm({
       const isRequired = schema.required?.includes(key);
 
       if (isRequired && (value === '' || value === null || value === undefined)) {
-        return 'This field is required';
+        return intl.formatMessage(i18n.fieldRequired);
       }
 
       if (prop.type === 'string' && typeof value === 'string') {
         if (!isRequired && value === '') return null;
 
         if (prop.minLength !== undefined && value.length < prop.minLength) {
-          return `Minimum length is ${prop.minLength}`;
+          return intl.formatMessage(i18n.minLength, { minLength: prop.minLength });
         }
         if (prop.maxLength !== undefined && value.length > prop.maxLength) {
-          return `Maximum length is ${prop.maxLength}`;
+          return intl.formatMessage(i18n.maxLength, { maxLength: prop.maxLength });
         }
       }
 
       if ((prop.type === 'number' || prop.type === 'integer') && typeof value === 'number') {
         if (prop.minimum !== undefined && value < prop.minimum) {
-          return `Minimum value is ${prop.minimum}`;
+          return intl.formatMessage(i18n.minValue, { minimum: prop.minimum });
         }
         if (prop.maximum !== undefined && value > prop.maximum) {
-          return `Maximum value is ${prop.maximum}`;
+          return intl.formatMessage(i18n.maxValue, { maximum: prop.maximum });
         }
       }
 
       return null;
     },
-    [schema]
+    [schema, intl]
   );
 
   const handleChange = useCallback(
@@ -149,7 +190,7 @@ export default function JsonSchemaForm({
           disabled={disabled}
           className="flex h-9 w-full rounded-md border focus:border-border-secondary hover:border-border-secondary bg-background-primary px-3 py-1 text-base transition-colors focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
         >
-          {!isRequired && <option value="">Select...</option>}
+          {!isRequired && <option value="">{intl.formatMessage(i18n.selectPlaceholder)}</option>}
           {prop.enum.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -210,7 +251,7 @@ export default function JsonSchemaForm({
   };
 
   if (!schema.properties || Object.keys(schema.properties).length === 0) {
-    return <div className="text-text-secondary text-sm">No fields to display</div>;
+    return <div className="text-text-secondary text-sm">{intl.formatMessage(i18n.noFields)}</div>;
   }
 
   return (
@@ -245,11 +286,11 @@ export default function JsonSchemaForm({
 
       <div className="flex gap-2 mt-2">
         <Button type="submit" disabled={disabled}>
-          {submitLabel}
+          {submitLabel ?? intl.formatMessage(i18n.submit)}
         </Button>
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel} disabled={disabled}>
-            {cancelLabel}
+            {cancelLabel ?? intl.formatMessage(i18n.cancel)}
           </Button>
         )}
       </div>

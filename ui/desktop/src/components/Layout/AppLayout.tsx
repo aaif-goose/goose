@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Menu } from 'lucide-react';
+import { defineMessages, useIntl } from '../../i18n';
 import { Button } from '../ui/button';
 import ChatSessionsContainer from '../ChatSessionsContainer';
 import { useChatContext } from '../../contexts/ChatContext';
@@ -11,6 +12,17 @@ import { NAV_DIMENSIONS, Z_INDEX } from './constants';
 import { cn } from '../../utils';
 import { UserInput } from '../../types/message';
 
+const i18n = defineMessages({
+  closeNavigation: {
+    id: 'appLayout.closeNavigation',
+    defaultMessage: 'Close navigation',
+  },
+  openNavigation: {
+    id: 'appLayout.openNavigation',
+    defaultMessage: 'Open navigation',
+  },
+});
+
 interface AppLayoutContentProps {
   activeSessions: Array<{
     sessionId: string;
@@ -19,6 +31,7 @@ interface AppLayoutContentProps {
 }
 
 const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) => {
+  const intl = useIntl();
   const location = useLocation();
   const safeIsMacOS = (window?.electron?.platform || 'darwin') === 'darwin';
   const chatContext = useChatContext();
@@ -199,7 +212,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
           className="no-drag hover:!bg-background-tertiary"
           variant="ghost"
           size="xs"
-          title={isNavExpanded ? 'Close navigation' : 'Open navigation'}
+          title={isNavExpanded ? intl.formatMessage(i18n.closeNavigation) : intl.formatMessage(i18n.openNavigation)}
         >
           <Menu className="w-5 h-5" />
         </Button>

@@ -47,8 +47,48 @@
     },
     {
       "method": "_goose/config/extensions",
-      "requestType": null,
+      "requestType": "GetExtensionsRequest",
       "responseType": "GetExtensionsResponse"
+    },
+    {
+      "method": "_goose/session/provider/update",
+      "requestType": "UpdateProviderRequest",
+      "responseType": "UpdateProviderResponse"
+    },
+    {
+      "method": "_goose/providers/list",
+      "requestType": "ListProvidersRequest",
+      "responseType": "ListProvidersResponse"
+    },
+    {
+      "method": "_goose/config/read",
+      "requestType": "ReadConfigRequest",
+      "responseType": "ReadConfigResponse"
+    },
+    {
+      "method": "_goose/config/upsert",
+      "requestType": "UpsertConfigRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/remove",
+      "requestType": "RemoveConfigRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/secret/check",
+      "requestType": "CheckSecretRequest",
+      "responseType": "CheckSecretResponse"
+    },
+    {
+      "method": "_goose/secret/upsert",
+      "requestType": "UpsertSecretRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/secret/remove",
+      "requestType": "RemoveSecretRequest",
+      "responseType": "EmptyResponse"
     }
   ]
 }
