@@ -428,3 +428,4 @@ You can also configure Extensions to extend goose's functionality, including add
 [handling-rate-limits]: /docs/guides/handling-llm-rate-limits-with-goose
 [mcp]: https://www.anthropic.com/news/model-context-protocol
 [config-files]: /docs/guides/config-files.md
+
