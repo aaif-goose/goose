@@ -140,8 +140,7 @@ impl Agent {
     }
 
     async fn handle_skills_command(&self, session_id: &str) -> Result<Option<Message>> {
-        use super::platform_extensions::skills::list_installed_skills;
-        use super::platform_extensions::SourceKind;
+        use super::platform_extensions::summon::{list_installed_sources, SourceKind};
 
         let working_dir = self
             .config
@@ -150,7 +149,7 @@ impl Agent {
             .await
             .ok()
             .map(|s| s.working_dir);
-        let sources = list_installed_skills(working_dir.as_deref());
+        let sources = list_installed_sources(working_dir.as_deref());
         let skills: Vec<_> = sources
             .iter()
             .filter(|s| matches!(s.kind, SourceKind::Skill | SourceKind::BuiltinSkill))

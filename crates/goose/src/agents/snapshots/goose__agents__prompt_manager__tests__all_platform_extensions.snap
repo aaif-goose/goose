@@ -93,19 +93,16 @@ Use write and edit to efficiently make changes. Test and verify as appropriate.
 
 ### Instructions
 Manage agent sessions: list, view, start, send messages, and interrupt agents.
-## skills
+## summarize
+
+
+## summon
 
 ### Instructions
 
 
 You have these skills at your disposal, when it is clear they can help you solve a problem or you are asked to use them:
 • goose-doc-guide - Reference goose documentation to create, configure, or explain goose-specific features like recipes, extensions, sessions, and providers. You MUST fetch relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
-## summarize
-
-
-## summon
-
-
 ## todo
 
 ### Instructions
