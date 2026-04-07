@@ -400,7 +400,26 @@ fn parse_plan_command(input: String) -> Option<InputResult> {
 }
 
 fn get_input_prompt_string() -> String {
+    if is_vte_with_broken_emoji_width() {
+        return "> ".to_string();
+    }
     "🪿 ".to_string()
+}
+
+/// Older VTE-based terminals (e.g. GNOME Terminal on RHEL 9, VTE 0.64.2)
+/// render U+1FABF (🪿) as 1 terminal cell while unicode-width counts it as 2,
+/// causing a persistent cursor offset. Detect these via VTE_VERSION < 0.70.
+fn is_vte_with_broken_emoji_width() -> bool {
+    let Ok(vte_version) = std::env::var("VTE_VERSION") else {
+        return false;
+    };
+    // VTE_VERSION is a flat integer like "6402" for 0.64.2, or "7003" for 0.70.3
+    let Ok(version) = vte_version.parse::<u32>() else {
+        // If we can't parse, assume it's old enough to be broken
+        return true;
+    };
+    // Versions < 7000 (0.70.0) have inconsistent emoji width handling
+    version < 7000
 }
 
 fn print_help() {
@@ -686,5 +705,41 @@ mod tests {
         // Test recipe with invalid extension
         let result = handle_slash_command("/recipe /path/to/file.txt");
         assert!(matches!(result, Some(InputResult::Retry)));
+    }
+
+    #[test]
+    fn test_vte_broken_emoji_width_detection() {
+        // No VTE_VERSION set — not a VTE terminal
+        std::env::remove_var("VTE_VERSION");
+        assert!(!is_vte_with_broken_emoji_width());
+
+        // VTE 0.64.2 (RHEL 9) — flat integer "6402"
+        std::env::set_var("VTE_VERSION", "6402");
+        assert!(is_vte_with_broken_emoji_width());
+
+        // VTE 0.70.3 — fixed
+        std::env::set_var("VTE_VERSION", "7003");
+        assert!(!is_vte_with_broken_emoji_width());
+
+        // Unparseable version — assume broken (conservative)
+        std::env::set_var("VTE_VERSION", "unknown");
+        assert!(is_vte_with_broken_emoji_width());
+
+        // Cleanup
+        std::env::remove_var("VTE_VERSION");
+    }
+
+    #[test]
+    fn test_input_prompt_vte_fallback() {
+        std::env::remove_var("VTE_VERSION");
+        assert_eq!(get_input_prompt_string(), "🪿 ");
+
+        std::env::set_var("VTE_VERSION", "6402");
+        assert_eq!(get_input_prompt_string(), "> ");
+
+        std::env::set_var("VTE_VERSION", "7003");
+        assert_eq!(get_input_prompt_string(), "🪿 ");
+
+        std::env::remove_var("VTE_VERSION");
     }
 }
