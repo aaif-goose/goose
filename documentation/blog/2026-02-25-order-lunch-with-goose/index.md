@@ -136,12 +136,12 @@ See the entire flow in action:
 <head>
   <meta property="og:title" content="Order Lunch Without Leaving Your AI Agent" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/02/25/order-lunch-with-goose" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/25/order-lunch-with-goose" />
   <meta property="og:description" content="Use the Neighborhood extension in goose to discover nearby restaurants, browse interactive menus, and place a takeout order, all from a simple chat prompt." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/banner-2d9dbe53ddf9f459a8c5f6615af8333b.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/banner-2d9dbe53ddf9f459a8c5f6615af8333b.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Order Lunch Without Leaving Your AI Agent" />
   <meta name="twitter:description" content="Use the Neighborhood extension in goose to discover nearby restaurants, browse interactive menus, and place a takeout order, all from a simple chat prompt." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/banner-2d9dbe53ddf9f459a8c5f6615af8333b.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/banner-2d9dbe53ddf9f459a8c5f6615af8333b.png" />
 </head>

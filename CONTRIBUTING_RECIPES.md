@@ -4,7 +4,7 @@ Thank you for your interest in contributing to the goose Recipe Cookbook! This g
 
 ## 🚀 Quick Start
 
-1. [Fork this repository](https://github.com/block/goose/fork)
+1. [Fork this repository](https://github.com/aaif-goose/goose/fork)
 2. Add your recipe file here: `documentation/src/pages/recipes/data/recipes/`
 3. Create a pull request
 
@@ -62,7 +62,7 @@ parameters:
     default: "default_value"
 ```
 
-📚 **Need help with the format?** Check out the [Recipe Reference Guide](https://block.github.io/goose/docs/guides/recipes/recipe-reference) or [existing recipes](documentation/src/pages/recipes/data/recipes/) for examples.
+📚 **Need help with the format?** Check out the [Recipe Reference Guide](https://goose-docs.ai/docs/guides/recipes/recipe-reference) or [existing recipes](documentation/src/pages/recipes/data/recipes/) for examples.
 
 ### Step 4: Create a Pull Request
 
@@ -84,7 +84,7 @@ Your recipe should:
 
 - [ ] **Work correctly** - Test it before submitting
 - [ ] **Be useful** - Solve a real problem or demonstrate a valuable workflow
-- [ ] **Follow the format** - Refer to the [Recipe Reference Guide](https://block.github.io/goose/docs/guides/recipes/recipe-reference)
+- [ ] **Follow the format** - Refer to the [Recipe Reference Guide](https://goose-docs.ai/docs/guides/recipes/recipe-reference)
 - [ ] **Have a unique filename** - No conflicts with existing recipe files
 
 ### 📝 **Naming Guidelines:**
@@ -119,7 +119,7 @@ Need inspiration? Consider recipes for:
 - 📖 **Browse existing recipes** for examples
 - 💬 **Ask questions** in your PR
 - 🐛 **Report issues** if something isn't working
-- 📚 **Check the docs** at [block.github.io/goose](https://block.github.io/goose/docs/guides/recipes/)
+- 📚 **Check the docs** at [goose-docs.ai](https://goose-docs.ai/docs/guides/recipes/)
 
 ## 🤝 Community Guidelines
 
@@ -128,6 +128,6 @@ Need inspiration? Consider recipes for:
 
 ---
 
-**Ready to contribute?** [Fork the repo](https://github.com/block/goose/fork) and start creating! 
+**Ready to contribute?** [Fork the repo](https://github.com/aaif-goose/goose/fork) and start creating! 
 
 *Questions? Ask in your PR or hop into [discord](https://discord.gg/goose-oss) - we're here to help!* 💙

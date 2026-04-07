@@ -102,7 +102,7 @@ extensions:
 
 ---
 
-*Questions? Join our [GitHub discussions](https://github.com/block/goose) or [Discord](https://discord.gg/goose-oss). Learn more about Dagger at [dagger.io](https://dagger.io/).*
+*Questions? Join our [GitHub discussions](https://github.com/aaif-goose/goose) or [Discord](https://discord.gg/goose-oss). Learn more about Dagger at [dagger.io](https://dagger.io/).*
 
 {/* Video Player */}
 <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto' }}>
@@ -121,12 +121,12 @@ extensions:
 <head>
   <meta property="og:title" content="Isolated Dev Environments in Goose with container-use" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/06/19/isolated-development-environments" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/06/19/isolated-development-environments" />
   <meta property="og:description" content="Never worry about breaking your development setup again with containerized, git-branch-isolated development environments powered by container-use" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/sandbox-0b0f5e6f871cbf48ea1a0be243440aa1.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/sandbox-0b0f5e6f871cbf48ea1a0be243440aa1.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Isolated Dev Environments in Goose with container-use" />
   <meta name="twitter:description" content="Never worry about breaking your development setup again with containerized, git-branch-isolated development environments powered by container-use" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/sandbox-0b0f5e6f871cbf48ea1a0be243440aa1.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/sandbox-0b0f5e6f871cbf48ea1a0be243440aa1.png" />
 </head>

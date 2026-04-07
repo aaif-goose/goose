@@ -91,7 +91,7 @@ In goose, enable the [Summon extension](/docs/mcp/summon-mcp) to load Agent Skil
 Give goose a single prompt that describes what you want to test:
 
 ```
-Using the Playwright CLI skill, open block.github.io/goose, click on the Docs menu, click on Context Engineering, 
+Using the Playwright CLI skill, open goose-docs.ai, click on the Docs menu, click on Context Engineering, 
 then click on Using Skills and generate a test with video and traces
 ```
 
@@ -111,7 +111,7 @@ await page.getByRole('link', { name: 'Docs' }).click();
 
 ### What goose does
 
-1. Opens the browser: `playwright-cli open block.github.io/goose`
+1. Opens the browser: `playwright-cli open goose-docs.ai`
 2. Starts recording: `playwright-cli video-start` and `playwright-cli tracing-start`
 3. Takes snapshots to find elements: `playwright-cli snapshot`
 4. Performs clicks: `playwright-cli click <ref>`
@@ -134,7 +134,7 @@ The generated test might look like:
 import { test, expect } from '@playwright/test';
 
 test('navigate to Using Skills guide via docs menu', async ({ page }) => {
-  await page.goto('https://block.github.io/goose');
+  await page.goto('https://goose-docs.ai');
   await expect(page).toHaveTitle(/goose/);
   
   // Click on Docs in the navigation

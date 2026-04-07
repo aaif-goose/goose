@@ -86,12 +86,12 @@ By following these tips, you'll be able to work more effectively with goose, get
 <head>
   <meta property="og:title" content="6 Essential Tips for Working with goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/06/goose-tips" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/06/goose-tips" />
   <meta property="og:description" content="Practical tips to help you use goose more effectively and efficiently." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-tips-4add28cc7201737dfb468ad11980f070.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-tips-4add28cc7201737dfb468ad11980f070.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="6 Essential Tips for Working with goose" />
   <meta name="twitter:description" content="Practical tips to help you use goose more effectively and efficiently." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-tips-4add28cc7201737dfb468ad11980f070.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-tips-4add28cc7201737dfb468ad11980f070.png" />
 </head>

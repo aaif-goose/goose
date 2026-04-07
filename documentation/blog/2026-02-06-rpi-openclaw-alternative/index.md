@@ -9,7 +9,7 @@ authors:
 
 Everyone on Tech Twitter has been buying Mac Minis, so they could run a local agentic tool called [OpenClaw](https://openclaw.ai/). OpenClaw is a messaging-based AI assistant that connects to platforms such as Discord and Telegram allowing you to interact with an AI agent through DMs or @mentions. Under the hood, it uses an agent called Pi to execute tasks, browse the web, write code, and more.
 
-Seeing the hype made me want to get my hands dirty. I wanted to see if I could build a lite version for myself. I wanted something minimal that used [goose](https://github.com/block/goose) as the engine instead of Pi. I tentatively dubbed it AltOpenClaw.
+Seeing the hype made me want to get my hands dirty. I wanted to see if I could build a lite version for myself. I wanted something minimal that used [goose](https://github.com/aaif-goose/goose) as the engine instead of Pi. I tentatively dubbed it AltOpenClaw.
 
 <!-- truncate -->
 
@@ -126,12 +126,12 @@ Happy hacking!
 <head>
   <meta property="og:title" content="How I Used RPI to Build an OpenClaw Alternative" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/02/06/rpi-openclaw-alternative" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/06/rpi-openclaw-alternative" />
   <meta property="og:description" content="Learn how I built a minimal, personal AI agent using goose and the RPI method." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How I Used RPI to Build an OpenClaw Alternative" />
   <meta name="twitter:description" content="Learn how I built a minimal, personal AI agent using goose and the RPI method." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blogbanner-7c71d1a80441079767f7fd25b9e27385.png" />
 </head>

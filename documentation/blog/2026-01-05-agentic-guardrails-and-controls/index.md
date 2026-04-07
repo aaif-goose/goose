@@ -9,7 +9,7 @@ authors:
 ![blog cover](agentic_guardrails_header.jpg)
 
 
-In [our previous blog post](https://block.github.io/goose/blog/2025/03/31/securing-mcp/) we detailed the Model Context Protocol (MCP) system and discussed some security concerns and mitigations. As a brief recap, MCP provides agents with a means to accomplish tasks using defined tools; reducing the burden of using complex and varied APIs and integrations on the agent.
+In [our previous blog post](https://goose-docs.ai/blog/2025/03/31/securing-mcp/) we detailed the Model Context Protocol (MCP) system and discussed some security concerns and mitigations. As a brief recap, MCP provides agents with a means to accomplish tasks using defined tools; reducing the burden of using complex and varied APIs and integrations on the agent.
 <!--truncate-->
 <div style={{textAlign: "center"}}>
 
@@ -247,17 +247,17 @@ In this post we have contextualised the risks associated with LLM Content Inject
 We’re working on a proof of concept and benchmarking for goose in the background. Once released we will update this blog with the results (either good or bad) outlining the effectiveness of the mitigation.  
 Another area we intend to explore is the application to multi-agent systems. Our application of this is intended for human facing agentic systems. However, it likely has applications in fully autonomous player-coach systems (similar to what is described in [Anthropic’s Multi-Agent Research Systems](https://www.anthropic.com/engineering/multi-agent-research-system) or [Block’s Adversarial Cooperation in Code Synthesis](https://block.xyz/documents/adversarial-cooperation-in-code-synthesis.pdf)) where the orchestrating Agent takes the role of the human providing initial prompts, but also defining allowable tool-calls or interactions.
 
-We also welcome any and all feedback and suggestions on improving the concept. [Hit us up on the goose GitHub discussion](https://github.com/block/goose/discussions/6328)
+We also welcome any and all feedback and suggestions on improving the concept. [Hit us up on the goose GitHub discussion](https://github.com/aaif-goose/goose/discussions/6328)
 
 <head>
   <meta property="og:title" content="Agent Guardrails and Controls: Applying the CORS Model to Agents" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/01/05/agentic-guardrails-and-controls" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/05/agent-guardrails-cors-model" />
   <meta property="og:description" content="Applying the security model of CORS to Agentic technologies to address common attacks against tool calling." />
-  <meta property="og:image" content="http://block.github.io/goose/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Agent Guardrails and Controls: Applying the CORS Model to Agents" />
   <meta name="twitter:description" content="Applying the security model of CORS to Agentic technologies to address common attacks against tool calling." />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/agentic_guardrails_header-bb29f4bf9535195b45a0483af23feb14.png" />
 </head>

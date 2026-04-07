@@ -15,11 +15,11 @@ Do NOT use this skill for:
 
 ## Steps (COMPLETE ALL BEFORE RESPONDING)
 1. **Fetch official docs**
-   - Fetch the doc map from `https://block.github.io/goose/goose-docs-map.md`
+   - Fetch the doc map from `https://goose-docs.ai/goose-docs-map.md`
    - Search the doc map for pages relevant to the user's topic and get the paths for these pages
    - Use the EXACT paths from the doc map. For example:
    - If doc map shows: `docs/guides/sessions/session-management.md`
-   - Fetch: `https://block.github.io/goose/docs/guides/sessions/session-management.md`
+   - Fetch: `https://goose-docs.ai/docs/guides/sessions/session-management.md`
    - Do NOT modify or guess paths.
    - **ONLY fetch paths that are explicitly listed in the doc map - do not guess or infer URLs**
    - Make multiple fetch calls in parallel and save to temp files
@@ -53,4 +53,4 @@ Do NOT use this skill for:
 5. **List documentation links**
    - Only include docs actually used
    - Remove `.md` suffix from URLs
-   - Example: If you fetched `https://block.github.io/goose/docs/guides/sessions/session-management.md`, list it as `https://block.github.io/goose/docs/guides/sessions/session-management`
+   - Example: If you fetched `https://goose-docs.ai/docs/guides/sessions/session-management.md`, list it as `https://goose-docs.ai/docs/guides/sessions/session-management`

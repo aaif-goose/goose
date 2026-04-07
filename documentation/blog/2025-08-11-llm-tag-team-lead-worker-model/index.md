@@ -111,12 +111,12 @@ Got questions or want to share your own Lead/Worker success stories? Join us in 
 <head>
   <meta property="og:title" content="LLM Tag Team: Who Plans, Who Executes?" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/11/llm-tag-team-lead-worker-model" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/11/llm-tag-team-lead-worker-model" />
   <meta property="og:description" content="Dive into Goose's Lead/Worker model where one LLM plans while another executes - a game-changing approach to AI collaboration that can save costs and boost efficiency." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="LLM Tag Team: Who Plans, Who Executes?" />
   <meta name="twitter:description" content="Dive into Goose's Lead/Worker model where one LLM plans while another executes - a game-changing approach to AI collaboration that can save costs and boost efficiency." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
 </head>

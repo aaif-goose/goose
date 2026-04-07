@@ -43,9 +43,9 @@ Either way, Goose gives you the flexibility.
 
 That said, if you’re looking for the best performance with Goose right now, Anthropic's Claude 3.5 Sonnet and OpenAI's GPT-4o (2024-11-20) are recommended, as they currently offer the strongest support for tool calling. 
 
-Curious how other models stack up? Check out the [Community-Inspired Benchmark Leaderboard](https://block.github.io/goose/blog/2025/03/31/goose-benchmark/#leaderboard) to see how your favorite model performs with Goose.
+Curious how other models stack up? Check out the [Community-Inspired Benchmark Leaderboard](https://goose-docs.ai/blog/2025/03/31/goose-benchmark/#leaderboard) to see how your favorite model performs with Goose.
 
-And if you’re still deciding, here’s the full list of [available LLM providers](https://block.github.io/goose/docs/getting-started/providers#available-providers).
+And if you’re still deciding, here’s the full list of [available LLM providers](https://goose-docs.ai/docs/getting-started/providers#available-providers).
 
 ---
 
@@ -65,7 +65,7 @@ Goose itself? Totally free and open source. 🎉 But your LLM provider might not
 
 Most models give you a free tier to play around with, but if you're doing anything intensive or using it often, you’ll eventually run into rate limits or token charges. That’s normal but it can sneak up on you if you’re not expecting it.
 
-To help you manage this, there is a [Handling Rate Limits Guide](https://block.github.io/goose/docs/guides/handling-llm-rate-limits-with-goose/) that you can check out. 
+To help you manage this, there is a [Handling Rate Limits Guide](https://goose-docs.ai/docs/guides/handling-llm-rate-limits-with-goose/) that you can check out. 
 
 ---
 
@@ -73,7 +73,7 @@ To help you manage this, there is a [Handling Rate Limits Guide](https://block.g
 
 This part matters more than most people realize.
 
-Goose has an entire community behind it—folks building, exploring, breaking things (and fixing them), and sharing everything they learn along the way. We hang out on [Discord](https://discord.gg/goose-oss), we answer questions in [GitHub Discussions](https://github.com/block/goose/discussions), and we host livestreams every week to show off what Goose can do and how to make it do more.
+Goose has an entire community behind it—folks building, exploring, breaking things (and fixing them), and sharing everything they learn along the way. We hang out on [Discord](https://discord.gg/goose-oss), we answer questions in [GitHub Discussions](https://github.com/aaif-goose/goose/discussions), and we host livestreams every week to show off what Goose can do and how to make it do more.
 
 There’s:
 
@@ -81,27 +81,27 @@ There’s:
 - **Wild Goose Case** – showcasing cool community projects
 - **Great Goose Off** - same task, same time limit, but different prompts, MCP servers, and strategies
 
-You’ll find those livestreams on our [YouTube channel](https://www.youtube.com/@goose-oss/streams), and upcoming ones on the Discord calendar. Plus, if you prefer documentation, the [Goose docs](https://block.github.io/goose/) and [blog](https://block.github.io/goose/blog) are constantly being updated with new guides, tips, and tutorials.
+You’ll find those livestreams on our [YouTube channel](https://www.youtube.com/@goose-oss/streams), and upcoming ones on the Discord calendar. Plus, if you prefer documentation, the [Goose docs](https://goose-docs.ai/) and [blog](https://goose-docs.ai/blog) are constantly being updated with new guides, tips, and tutorials.
 
 ---
 
 If you've got those four things: a performant LLM, the right MCP servers, a basic understanding of LLM cost, and a place to ask questions, you're more than ready to Goose.
 
-Now, head over to the [Quickstart Guide](https://block.github.io/goose/docs/quickstart) and get started.  
+Now, head over to the [Quickstart Guide](https://goose-docs.ai/docs/quickstart) and get started.  
 
-Oh and when you get to the [Tic-Tac-Toe game](https://block.github.io/goose/docs/quickstart/#write-prompt), I’ll bet you 10 Goosebucks you won’t beat the bot. 
+Oh and when you get to the [Tic-Tac-Toe game](https://goose-docs.ai/docs/quickstart/#write-prompt), I’ll bet you 10 Goosebucks you won’t beat the bot. 
 
 
 
 <head>
   <meta property="og:title" content="4 Things You Need to Know Before Using Goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/04/23/things-need-to-know" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/04/23/things-need-to-know" />
   <meta property="og:description" content="Learn what you need to get started with Goose - a local open source AI agent that's powered by the LLM of your choice." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/cover-2ba7c2e15786be2db6108c91d27dc1ec.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/cover-2ba7c2e15786be2db6108c91d27dc1ec.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="4 Things You Need to Know Before Using Goose" />
   <meta name="twitter:description" content="Learn what you need to get started with Goose - a local open source AI agent that's powered by the LLM of your choice." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/cover-2ba7c2e15786be2db6108c91d27dc1ec.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/cover-2ba7c2e15786be2db6108c91d27dc1ec.png" />
 </head>

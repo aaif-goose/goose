@@ -6,7 +6,7 @@ Native desktop app for goose built with [Electron](https://www.electronjs.org/) 
 goose uses [Hermit](https://github.com/cashapp/hermit) to manage dependencies, so you will need to have it installed and activated.
 
 ```
-git clone git@github.com:block/goose.git
+git clone git@github.com:aaif-goose/goose.git
 cd goose
 source ./bin/activate-hermit
 cd ui/desktop

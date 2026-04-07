@@ -32,7 +32,7 @@ download_release_binary() {
     echo "Downloading goose $version from GitHub releases..." >&2
     
     # Use the official download script with custom bin dir and specific version
-    curl -fsSL "https://github.com/block/goose/releases/download/stable/download_cli.sh" | \
+    curl -fsSL "https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh" | \
         CONFIGURE=false GOOSE_BIN_DIR="$bin_dir" GOOSE_VERSION="$version" bash >&2 2>&1 || {
         echo "Error: Failed to download goose $version" >&2
         return 1

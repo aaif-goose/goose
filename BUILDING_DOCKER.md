@@ -10,17 +10,17 @@ The easiest way to use goose with Docker is to pull the pre-built image from Git
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/block/goose:latest
+docker pull ghcr.io/aaif-goose/goose:latest
 
 # Run goose CLI
-docker run --rm ghcr.io/block/goose:latest --version
+docker run --rm ghcr.io/aaif-goose/goose:latest --version
 
 # Run with LLM configuration
 docker run --rm \
   -e GOOSE_PROVIDER=openai \
   -e GOOSE_MODEL=gpt-4o \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  ghcr.io/block/goose:latest run -t "Hello, world!"
+  ghcr.io/aaif-goose/goose:latest run -t "Hello, world!"
 ```
 
 ## Building from Source
@@ -35,7 +35,7 @@ docker run --rm \
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/block/goose.git
+git clone https://github.com/aaif-goose/goose.git
 cd goose
 ```
 
@@ -110,7 +110,7 @@ version: '3.8'
 
 services:
   goose:
-    image: ghcr.io/block/goose:latest
+    image: ghcr.io/aaif-goose/goose:latest
     environment:
       - GOOSE_PROVIDER=${GOOSE_PROVIDER:-openai}
       - GOOSE_MODEL=${GOOSE_MODEL:-gpt-4o}
@@ -163,7 +163,7 @@ docker run --rm \
   -c "apt-get update && apt-get install -y vim && goose --version"
 
 # Or create a custom Dockerfile
-FROM ghcr.io/block/goose:latest
+FROM ghcr.io/aaif-goose/goose:latest
 USER root
 RUN apt-get update && apt-get install -y \
     vim \
@@ -181,7 +181,7 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/block/goose:latest
+      image: ghcr.io/aaif-goose/goose:latest
       env:
         GOOSE_PROVIDER: openai
         GOOSE_MODEL: gpt-4o
@@ -197,7 +197,7 @@ jobs:
 
 ```yaml
 analyze:
-  image: ghcr.io/block/goose:latest
+  image: ghcr.io/aaif-goose/goose:latest
   variables:
     GOOSE_PROVIDER: openai
     GOOSE_MODEL: gpt-4o
@@ -298,7 +298,7 @@ For production deployments:
 
 Example production Dockerfile:
 ```dockerfile
-FROM ghcr.io/block/goose:v1.6.0
+FROM ghcr.io/aaif-goose/goose:v1.6.0
 # Add any additional tools needed for your use case
 USER root
 RUN apt-get update && apt-get install -y your-tools && rm -rf /var/lib/apt/lists/*
@@ -318,5 +318,5 @@ When contributing Docker-related changes:
 ## Related Documentation
 
 - [goose in Docker Tutorial](documentation/docs/tutorials/goose-in-docker.md) - Step-by-step tutorial
-- [Installation Guide](https://block.github.io/goose/docs/getting-started/installation) - All installation methods
-- [Configuration Guide](https://block.github.io/goose/docs/guides/config-files) - Detailed configuration options
+- [Installation Guide](https://goose-docs.ai/docs/getting-started/installation) - All installation methods
+- [Configuration Guide](https://goose-docs.ai/docs/guides/config-files) - Detailed configuration options

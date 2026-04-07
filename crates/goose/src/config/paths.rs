@@ -13,6 +13,9 @@ impl Paths {
                 DirType::State => base.join("state"),
             }
         } else {
+            // NOTE: "Block" is kept here for backwards compatibility with existing
+            // user config/data directories (e.g. ~/Library/Application Support/Block/goose/).
+            // Changing this would orphan existing installations.
             let strategy = choose_app_strategy(AppStrategyArgs {
                 top_level_domain: "Block".to_string(),
                 author: "Block".to_string(),

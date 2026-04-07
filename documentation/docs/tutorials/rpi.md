@@ -24,14 +24,14 @@ Copy the snippet below and paste it in your terminal. This will download the mai
 ```sh
 mkdir -p ~/.config/goose/recipes/subrecipes
 
-curl -sL https://raw.githubusercontent.com/block/goose/main/documentation/src/pages/recipes/data/recipes/rpi-research.yaml -o ~/.config/goose/recipes/rpi-research.yaml
-curl -sL https://raw.githubusercontent.com/block/goose/main/documentation/src/pages/recipes/data/recipes/rpi-plan.yaml -o ~/.config/goose/recipes/rpi-plan.yaml
-curl -sL https://raw.githubusercontent.com/block/goose/main/documentation/src/pages/recipes/data/recipes/rpi-implement.yaml -o ~/.config/goose/recipes/rpi-implement.yaml
-curl -sL https://raw.githubusercontent.com/block/goose/main/documentation/src/pages/recipes/data/recipes/rpi-iterate.yaml -o ~/.config/goose/recipes/rpi-iterate.yaml
+curl -sL https://raw.githubusercontent.com/aaif-goose/goose/main/documentation/src/pages/recipes/data/recipes/rpi-research.yaml -o ~/.config/goose/recipes/rpi-research.yaml
+curl -sL https://raw.githubusercontent.com/aaif-goose/goose/main/documentation/src/pages/recipes/data/recipes/rpi-plan.yaml -o ~/.config/goose/recipes/rpi-plan.yaml
+curl -sL https://raw.githubusercontent.com/aaif-goose/goose/main/documentation/src/pages/recipes/data/recipes/rpi-implement.yaml -o ~/.config/goose/recipes/rpi-implement.yaml
+curl -sL https://raw.githubusercontent.com/aaif-goose/goose/main/documentation/src/pages/recipes/data/recipes/rpi-iterate.yaml -o ~/.config/goose/recipes/rpi-iterate.yaml
 
-curl -sL https://raw.githubusercontent.com/block/goose/main/documentation/src/pages/recipes/data/recipes/subrecipes/rpi-codebase-locator.yaml -o ~/.config/goose/recipes/subrecipes/rpi-codebase-locator.yaml
-curl -sL https://raw.githubusercontent.com/block/goose/main/documentation/src/pages/recipes/data/recipes/subrecipes/rpi-codebase-analyzer.yaml -o ~/.config/goose/recipes/subrecipes/rpi-codebase-analyzer.yaml
-curl -sL https://raw.githubusercontent.com/block/goose/main/documentation/src/pages/recipes/data/recipes/subrecipes/rpi-pattern-finder.yaml -o ~/.config/goose/recipes/subrecipes/rpi-pattern-finder.yaml
+curl -sL https://raw.githubusercontent.com/aaif-goose/goose/main/documentation/src/pages/recipes/data/recipes/subrecipes/rpi-codebase-locator.yaml -o ~/.config/goose/recipes/subrecipes/rpi-codebase-locator.yaml
+curl -sL https://raw.githubusercontent.com/aaif-goose/goose/main/documentation/src/pages/recipes/data/recipes/subrecipes/rpi-codebase-analyzer.yaml -o ~/.config/goose/recipes/subrecipes/rpi-codebase-analyzer.yaml
+curl -sL https://raw.githubusercontent.com/aaif-goose/goose/main/documentation/src/pages/recipes/data/recipes/subrecipes/rpi-pattern-finder.yaml -o ~/.config/goose/recipes/subrecipes/rpi-pattern-finder.yaml
 ```
 </details>
 
@@ -134,7 +134,7 @@ I start the prompt with the `/research_codebase` command followed by a topic wri
 ```
 
 
-This command invokes the **[RPI Research Codebase](https://raw.githubusercontent.com/block/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-research.yaml)** recipe, whose job is very strict:
+This command invokes the **[RPI Research Codebase](https://raw.githubusercontent.com/aaif-goose/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-research.yaml)** recipe, whose job is very strict:
 
 - Document what exists
 - Do not suggest changes
@@ -189,7 +189,7 @@ It's important to do each phase in a new session to keep the LLM laser focused o
 /create_plan a removal of the Tool Selection Strategy feature
 ```
 
-The **[RPI Create Plan](https://raw.githubusercontent.com/block/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-plan.yaml)** recipe starts by reading the research document goose created.
+The **[RPI Create Plan](https://raw.githubusercontent.com/aaif-goose/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-plan.yaml)** recipe starts by reading the research document goose created.
 
 Then it did three key things:
 
@@ -231,7 +231,7 @@ At this point, the plan became the source of truth. The key shift here is that w
 
 The plan is explicit enough that someone else could execute it. That's not an accident. Remember that the implementation will be in a fresh new session, so the plan must have enough context to actually execute it.
 
-Again, you as the human need to step in here to review the plan and make sure it's solid. If there's anything amiss, instead of starting over you can run the **[RPI Iterate Plan](https://raw.githubusercontent.com/block/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-iterate.yaml)** plan (`/iterate_plan`) with details on what's wrong. goose will then read the existing plan, research only what needs rethinking, propose targeted updates, and edit the plan accordingly.
+Again, you as the human need to step in here to review the plan and make sure it's solid. If there's anything amiss, instead of starting over you can run the **[RPI Iterate Plan](https://raw.githubusercontent.com/aaif-goose/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-iterate.yaml)** plan (`/iterate_plan`) with details on what's wrong. goose will then read the existing plan, research only what needs rethinking, propose targeted updates, and edit the plan accordingly.
 
 ## Session 3: Implement
 
@@ -241,7 +241,7 @@ Only after research and planning are complete should you move to implementation.
 /implement_plan thoughts/plans/2025-12-23-remove-tool-selection-strategy.md
 ```
 
-The **[RPI Implement Plan](https://raw.githubusercontent.com/block/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-implement.yaml)** recipe is intentionally boring. In fact, I fell asleep while goose was running it. Implementation should feel mechanical. If it feels creative, something upstream is missing. But knowing that you have a rock solid plan, I advise you to go do something else with your time while goose works (unless there are manual steps in the plan).
+The **[RPI Implement Plan](https://raw.githubusercontent.com/aaif-goose/goose/refs/heads/main/documentation/src/pages/recipes/data/recipes/rpi-implement.yaml)** recipe is intentionally boring. In fact, I fell asleep while goose was running it. Implementation should feel mechanical. If it feels creative, something upstream is missing. But knowing that you have a rock solid plan, I advise you to go do something else with your time while goose works (unless there are manual steps in the plan).
 
 It will read the plan completely, execute the phases in order, run verification after each phase, and update the checkboxes directly in the plan file as it goes.
 
@@ -251,7 +251,7 @@ That last bit was really helpful because my context window filled up partway thr
 
 For 10 phases of work that spanned 32 files, the Research phase took 9 minutes, the Plan phase took 4 minutes, and the Implement phase took 39 minutes. So in total, this took just shy of an hour... 52 minutes to be exact. This included goose working and testing as well as me answering questions.
 
-Definitely not a fast process. BUT! When I put up [this PR](https://github.com/block/goose/pull/6250), the build passed and the separate Code Review Agent didn't have a single comment. That's just how well done the work was.
+Definitely not a fast process. BUT! When I put up [this PR](https://github.com/aaif-goose/goose/pull/6250), the build passed and the separate Code Review Agent didn't have a single comment. That's just how well done the work was.
 
 Had I done this without AI, it would have likely taken me several hours of work as the feature was complex and deeply integrated. And had I had AI jump straight to implementation, I have no doubt it would have surely drifted and messed something up.
 

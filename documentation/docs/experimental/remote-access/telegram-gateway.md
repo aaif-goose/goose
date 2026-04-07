@@ -103,4 +103,4 @@ From the Desktop app's Gateway settings, you can:
 ## Additional Resources
 
 - [Telegram Bot API Documentation](https://core.telegram.org/bots)
-- [Gateway PR #7199](https://github.com/block/goose/pull/7199)
+- [Gateway PR #7199](https://github.com/aaif-goose/goose/pull/7199)

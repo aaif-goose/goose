@@ -68,7 +68,7 @@ jobs:
          - name: Install goose CLI
            run: |
               mkdir -p /home/runner/.local/bin
-              curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh \
+              curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
                 | GOOSE_VERSION=REPLACE_WITH_VERSION CONFIGURE=false GOOSE_BIN_DIR=/home/runner/.local/bin bash
               echo "/home/runner/.local/bin" >> $GITHUB_PATH
 
@@ -158,7 +158,7 @@ steps:
     - name: Install goose CLI
       run: |
           mkdir -p /home/runner/.local/bin
-          curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh \
+          curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
             | GOOSE_VERSION=REPLACE_WITH_VERSION CONFIGURE=false GOOSE_BIN_DIR=/home/runner/.local/bin bash
           echo "/home/runner/.local/bin" >> $GITHUB_PATH
 

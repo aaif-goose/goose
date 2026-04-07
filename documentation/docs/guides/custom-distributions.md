@@ -24,7 +24,7 @@ goose is designed to be forked and customized. You can create your own "distro" 
 
 The full guide lives in the repo root since you'll need to work at the code level to build a custom distribution:
 
-👉 **[CUSTOM_DISTROS.md](https://github.com/block/goose/blob/main/CUSTOM_DISTROS.md)**
+👉 **[CUSTOM_DISTROS.md](https://github.com/aaif-goose/goose/blob/main/CUSTOM_DISTROS.md)**
 
 It covers:
 
@@ -53,4 +53,4 @@ GOOSE_PROVIDER: ollama
 GOOSE_MODEL: qwen3-coder:latest
 ```
 
-See the [full guide](https://github.com/block/goose/blob/main/CUSTOM_DISTROS.md) for more scenarios including corporate API key distribution, audience-specific builds, and custom UIs.
+See the [full guide](https://github.com/aaif-goose/goose/blob/main/CUSTOM_DISTROS.md) for more scenarios including corporate API key distribution, audience-specific builds, and custom UIs.

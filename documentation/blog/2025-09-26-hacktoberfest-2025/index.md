@@ -15,9 +15,9 @@ October is around the corner, which means spooky season is upon us, and with tha
 [Hacktoberfest](https://hacktoberfest.com/participation/) is a month-long celebration every October of open source and participating open source projects. It's a great chance to earn fun prizes for contributing to your favorite projects, or a perfect opportunity to get your feet wet in a new project. 
 
 # 🎉 How Can I Contribute to goose?
-In the [goose repo](https://github.com/block/goose), there's something for everyone no matter if you're a newbie or a veteran.
+In the [goose repo](https://github.com/aaif-goose/goose), there's something for everyone no matter if you're a newbie or a veteran.
 
-We've created an official [goose Hacktoberfest 2025 Project Hub](https://github.com/block/goose/issues/4705). This hub will serve as your source of truth for all open `hacktoberfest` labeled-issues and resources you will need throughout the month. It will be updated every week with new issues as we experience contributions, so make sure to bookmark it!
+We've created an official [goose Hacktoberfest 2025 Project Hub](https://github.com/aaif-goose/goose/issues/4705). This hub will serve as your source of truth for all open `hacktoberfest` labeled-issues and resources you will need throughout the month. It will be updated every week with new issues as we experience contributions, so make sure to bookmark it!
 
 From writing blog posts about goose, fixing bugs, or adding new features, our goal is to give contributors of various practices the chance to contribute to goose! Here are all the categories of issues you can expect to make your impact:
 
@@ -33,9 +33,9 @@ From writing blog posts about goose, fixing bugs, or adding new features, our go
 To help you make the most of each of your contributions, below is a quick guide on general rules to follow, important resources, how top contributors are tallied, and more below:
 
 ## ✅ Key Rules
-1. Read the [code of conduct](https://github.com/block/.github/blob/main/CODE_OF_CONDUCT.md).
-2. Refer to the [Responsible AI-Assisted Coding Guide](https://web.archive.org/web/20260305122657/https://github.com/block/goose/blob/main/HOWTOAI.md), [Contributing Guide](https://github.com/block/goose/blob/main/CONTRIBUTING.md) & [README](https://github.com/block/goose/blob/main/README.md) for your contributions.
-3. Choose a task from this project's Hacktoberfest [Project Hub](https://github.com/block/goose/issues/4705). Each issue has the 🏷️ `hacktoberfest` label.
+1. Read the [code of conduct](https://github.com/aaif-goose/.github/blob/main/CODE_OF_CONDUCT.md).
+2. Refer to the [Responsible AI-Assisted Coding Guide](https://web.archive.org/web/20260305122657/https://github.com/aaif-goose/goose/blob/main/HOWTOAI.md), [Contributing Guide](https://github.com/aaif-goose/goose/blob/main/CONTRIBUTING.md) & [README](https://github.com/aaif-goose/goose/blob/main/README.md) for your contributions.
+3. Choose a task from this project's Hacktoberfest [Project Hub](https://github.com/aaif-goose/goose/issues/4705). Each issue has the 🏷️ `hacktoberfest` label.
 4. Comment ".take" on the corresponding issue to get assigned the task.
 5. Fork the repository and create a new branch for your work.
 6. Make your changes and submit a pull request.
@@ -75,7 +75,7 @@ When in doubt, don't stress! The goose team is here to help you make the most of
 
 1. 🆘 Maintainer Help: Connect with the maintainers by commenting on the issue or chat with them directly in the #🎃┃hacktoberfest channel on Discord.
 2. 🫶 Community Support: [Join us on Discord](https://discord.gg/goose-oss) to live chat with fellow contributors and get tips for success from participants!
-3. 🎙️ Office Hours: Join us every Tuesday at 1pm Eastern Time on [Discord](https://discord.gg/goose-oss) through the month of October to get live-over-voice help with open PRs, questions you may have, and general help. Keep an eye out on the [goose events calendar](https://block.github.io/goose/community/) for future events centered around Hacktoberfest!
+3. 🎙️ Office Hours: Join us every Tuesday at 1pm Eastern Time on [Discord](https://discord.gg/goose-oss) through the month of October to get live-over-voice help with open PRs, questions you may have, and general help. Keep an eye out on the [goose events calendar](https://goose-docs.ai/community/) for future events centered around Hacktoberfest!
 
 
 Happy hacking and cheers to goose x Hacktoberfest 2025! 🎉
@@ -85,12 +85,12 @@ Happy hacking and cheers to goose x Hacktoberfest 2025! 🎉
 <head>
   <meta property="og:title" content="goose is Celebrating Hacktoberfest 2025!" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025-09-26-hacktoberfest2025" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025-09-26-hacktoberfest2025" />
   <meta property="og:description" content="Explore goose prizes you can earn and contributions you can make during Hacktoberfest 2025" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose is Celebrating Hacktoberfest 2025!" />
   <meta name="twitter:description" content="Explore goose prizes you can earn and contributions you can make during Hacktoberfest 2025" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/hacktoberfest2025-49342480747ee95fe69415c0f2de26f2.png" />
 </head>

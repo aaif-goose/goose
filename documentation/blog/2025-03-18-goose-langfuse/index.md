@@ -44,7 +44,7 @@ As developers focus on operational efficiency, researchers can use the analytica
 # The Future of AI Observability
 These powerful debugging and analysis capabilities are only the beginning. This integration between goose and Langfuse represents a significant step forward in making AI agents as transparent and debuggable as traditional code.
 
-To keep up with the exciting developments as they release, you can check out both of the [goose](https://github.com/block/goose) and [Langfuse](https://github.com/langfuse/langfuse) repositories on GitHub. 
+To keep up with the exciting developments as they release, you can check out both of the [goose](https://github.com/aaif-goose/goose) and [Langfuse](https://github.com/langfuse/langfuse) repositories on GitHub. 
 
 You can also watch the [livestream discussing the goose and Langfuse integration](https://www.youtube.com/live/W39BQjsTS9E?feature=shared), and follow the [tutorial showing you how to integrate Langfuse with goose](/docs/tutorials/langfuse).
 
@@ -53,12 +53,12 @@ Also, be sure to subscribe to our [events calendar](https://calget.com/c/t7jszri
 <head>
   <meta property="og:title" content="How goose Catches AI Errors with Langfuse" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/18/goose-langfuse" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/18/goose-langfuse" />
   <meta property="og:description" content="Get detailed insights into goose's behavior with Langfuse's observability tools." />
-  <meta property="og:image" content="http://block.github.io/goose/assets/images/goose_aierrors-22154af884db86789ce1a12a72897e8e.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/goose_aierrors-22154af884db86789ce1a12a72897e8e.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How goose Catches AI Errors with Langfuse" />
   <meta name="twitter:description" content="Get detailed insights into goose's behavior with Langfuse's observability tools." />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/goose_aierrors-22154af884db86789ce1a12a72897e8e.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/goose_aierrors-22154af884db86789ce1a12a72897e8e.png" />
 </head>

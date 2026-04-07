@@ -112,19 +112,19 @@ The choice depends on your specific needs and workflow requirements. Quick tasks
 
 Your workflow requirements should drive the decision.
 
-Share your subagent prompts or subrecipe ideas with us on our [Discord community](https://discord.gg/goose-oss) or [GitHub discussions](https://github.com/block/goose/discussions).
+Share your subagent prompts or subrecipe ideas with us on our [Discord community](https://discord.gg/goose-oss) or [GitHub discussions](https://github.com/aaif-goose/goose/discussions).
 
 
 
 <head>
   <meta property="og:title" content="How to Choose Between Subagents and Subrecipes in goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025-09-26-subagents-vs-subrecipes" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025-09-26-subagents-vs-subrecipes" />
   <meta property="og:description" content="When you need to break complex work into multiple AI tasks, should you use subagents or subrecipes? Learn the key differences and when to use each approach." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/subrecipes-vs-subagents-19bca16b86a951e4618be8ab6ce90fb2.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/subrecipes-vs-subagents-19bca16b86a951e4618be8ab6ce90fb2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How to Choose Between Subagents and Subrecipes in goose" />
   <meta name="twitter:description" content="When you need to break complex work into multiple AI tasks, should you use subagents or subrecipes? Learn the key differences and when to use each approach." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/subrecipes-vs-subagents-19bca16b86a951e4618be8ab6ce90fb2.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/subrecipes-vs-subagents-19bca16b86a951e4618be8ab6ce90fb2.png" />
 </head>

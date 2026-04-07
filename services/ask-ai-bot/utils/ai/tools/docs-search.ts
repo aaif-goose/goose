@@ -93,7 +93,7 @@ function initializeSearch(): MiniSearch<DocFile> {
 }
 
 function generateWebUrl(filePath: string): string {
-  const baseUrl = "https://block.github.io/goose/docs";
+  const baseUrl = "https://goose-docs.ai/docs";
   // Remove file extension for the URL path
   const urlPath = filePath.replace(/\.[^/.]+$/, "");
   return `${baseUrl}/${urlPath}`;

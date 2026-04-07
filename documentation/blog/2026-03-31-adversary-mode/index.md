@@ -65,6 +65,6 @@ For full configuration details — including how to expand which tools get revie
 <head>
   <meta property="og:title" content="Adversary Agent: using a hidden agent to keep the main agent safe" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/03/31/adversary-mode" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/03/31/adversary-mode" />
   <meta property="og:description" content="Introducing adversary mode — an independent agent reviewer that silently watches the main agent to keep it away from danger." />
 </head>

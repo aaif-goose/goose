@@ -51,7 +51,7 @@ env:
       - 📚 **Documentation** - Documentation updates
 
       Format each item as:
-      - Concise description [#XXXX](https://github.com/block/goose/pull/XXXX)
+      - Concise description [#XXXX](https://github.com/aaif-goose/goose/pull/XXXX)
 
       Rules:
       - Extract PR numbers from commit messages (look for (#XXXX) pattern)
@@ -85,7 +85,7 @@ jobs:
        github.event.workflow_run.head_branch != 'stable')
 
     container:
-      image: ghcr.io/block/goose:latest
+      image: ghcr.io/aaif-goose/goose:latest
       options: --user root
       env:
         GOOSE_PROVIDER: ${{ vars.GOOSE_PROVIDER || 'anthropic' }}
@@ -190,7 +190,7 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_RELEASE_BOT_TOKEN }}
           DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_RELEASE_BOT_CHANNEL_ID }}
           RELEASE_TAG: ${{ needs.generate-release-notes.outputs.release_tag }}
-          RELEASE_URL: https://github.com/block/goose/releases/tag/${{ needs.generate-release-notes.outputs.release_tag }}
+          RELEASE_URL: https://github.com/aaif-goose/goose/releases/tag/${{ needs.generate-release-notes.outputs.release_tag }}
           RELEASE_NOTES: ${{ needs.generate-release-notes.outputs.release_notes }}
           NOTES_LENGTH: ${{ needs.generate-release-notes.outputs.notes_length }}
         shell: bash

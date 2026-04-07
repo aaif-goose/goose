@@ -39,7 +39,7 @@ The whole process takes minutes instead of days, and the submitter gets immediat
 
 ## Goose in Headless Mode
 
-We've covered headless mode in [tutorials](https://block.github.io/goose/docs/tutorials/headless-goose/) and [videos](https://www.youtube.com/@goose-oss/search?query=headless), but here's a quick recap: headless mode allows Goose to run without a graphical user interface, making it faster and more efficient for automated tasks. It excels in server environments as long as we're being _really_ clear about the instructions to follow, or a fallback if the instructions cannot be followed -- we don't want something half-finished or broken as a result if Goose gets stuck on what to do.
+We've covered headless mode in [tutorials](https://goose-docs.ai/docs/tutorials/headless-goose/) and [videos](https://www.youtube.com/@goose-oss/search?query=headless), but here's a quick recap: headless mode allows Goose to run without a graphical user interface, making it faster and more efficient for automated tasks. It excels in server environments as long as we're being _really_ clear about the instructions to follow, or a fallback if the instructions cannot be followed -- we don't want something half-finished or broken as a result if Goose gets stuck on what to do.
 
 We launch the Docker container with something like this:
 
@@ -89,12 +89,12 @@ Anyone can submit a recipe knowing it'll get a fair, thorough review. And when y
 <head>
   <meta property="og:title" content="I had Goose Build its Own Secure Recipe Scanner" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/kljaslkjasd" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/kljaslkjasd" />
   <meta property="og:description" content="Goose headless mode runs a containerized scanner for community recipe submissions." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-security-scanner-7fbe93f4a738fed2002e656fe66e715f.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-security-scanner-7fbe93f4a738fed2002e656fe66e715f.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="I had Goose Build its Own Secure Recipe Scanner" />
   <meta name="twitter:description" content="Goose headless mode runs a containerized scanner for community recipe submissions." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-security-scanner-7fbe93f4a738fed2002e656fe66e715f.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-security-scanner-7fbe93f4a738fed2002e656fe66e715f.png" />
 </head>

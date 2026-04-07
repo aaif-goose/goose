@@ -149,12 +149,12 @@ Hopefully this has provided clear insight into what are AI agents, how they work
 <head>
   <meta property="og:title" content="Agentic AI and the MCP Ecosystem" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/02/17/agentic-ai-mcp" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/02/17/agentic-ai-mcp" />
   <meta property="og:description" content="A 101 introduction to AI Agents" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/agentic-ai-with-mcp-1e3050cc8d8ae7a620440e871ad9f0d2.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/agentic-ai-with-mcp-1e3050cc8d8ae7a620440e871ad9f0d2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Agentic AI and the MCP Ecosystem" />
   <meta name="twitter:description" content="A 101 introduction to AI Agents" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/agentic-ai-with-mcp-1e3050cc8d8ae7a620440e871ad9f0d2.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/agentic-ai-with-mcp-1e3050cc8d8ae7a620440e871ad9f0d2.png" />
 </head>

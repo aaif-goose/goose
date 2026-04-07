@@ -17,7 +17,7 @@ In this guide, we build an MCP server using the [Python SDK for MCP][mcp-python]
 You can check out other example servers in the [MCP servers repository][mcp-servers]. MCP SDKs are also available for other common languages, such as [TypeScript][mcp-typescript] and [Kotlin][mcp-kotlin].
 
 :::info
-goose supports Tools, Resources, and Prompts from the [Model Context Protocol](https://modelcontextprotocol.io/). See [`mcp_client.rs`](https://github.com/block/goose/blob/main/crates/goose/src/agents/mcp_client.rs) for the supported protocol version and client capabilities.
+goose supports Tools, Resources, and Prompts from the [Model Context Protocol](https://modelcontextprotocol.io/). See [`mcp_client.rs`](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/mcp_client.rs) for the supported protocol version and client capabilities.
 :::
 
 ---
@@ -348,7 +348,7 @@ goose supports advanced MCP features that can enhance your extensions.
 
 **Getting Started:**
 - Use the `sampling/createMessage` method in your MCP server to request AI assistance
-- [goose's implementation](https://github.com/block/goose/blob/main/crates/goose/src/agents/mcp_client.rs) currently supports text and image content types
+- [goose's implementation](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/mcp_client.rs) currently supports text and image content types
 - goose automatically advertises sampling capability to all MCP servers
 
 **Use Cases:** Document summarization, smart search filtering, code analysis, data insights

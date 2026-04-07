@@ -63,7 +63,7 @@ module.exports = {
       name: '@electron-forge/publisher-github',
       config: {
         repository: {
-          owner: process.env.GITHUB_OWNER || 'block',
+          owner: process.env.GITHUB_OWNER || 'aaif-goose',
           name: process.env.GITHUB_REPO || 'goose',
         },
         prerelease: false,
@@ -87,8 +87,8 @@ module.exports = {
       config: {
         name: 'Goose',
         bin: 'Goose',
-        maintainer: 'Block, Inc.',
-        homepage: 'https://block.github.io/goose/',
+        maintainer: 'AAIF (Agentic AI Foundation)',
+        homepage: 'https://goose-docs.ai/',
         categories: ['Development'],
         desktopTemplate: './forge.deb.desktop',
         options: {
@@ -102,8 +102,8 @@ module.exports = {
       config: {
         name: 'Goose',
         bin: 'Goose',
-        maintainer: 'Block, Inc.',
-        homepage: 'https://block.github.io/goose/',
+        maintainer: 'AAIF (Agentic AI Foundation)',
+        homepage: 'https://goose-docs.ai/',
         categories: ['Development'],
         desktopTemplate: './forge.rpm.desktop',
         options: {
@@ -117,13 +117,13 @@ module.exports = {
       name: '@electron-forge/maker-flatpak',
       config: {
         options: {
-          id: 'io.github.block.Goose',
+          id: 'io.github.block.Goose', // NOTE: kept for backwards compat with existing installs
           categories: ['Development'],
           icon: {
             scalable: 'src/images/icon.svg',
             '512x512': 'src/images/icon-512.png',
           },
-          homepage: 'https://block.github.io/goose/',
+          homepage: 'https://goose-docs.ai/',
           runtimeVersion: '25.08',
           baseVersion: '25.08',
           bin: 'Goose',
