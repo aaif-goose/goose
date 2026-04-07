@@ -1,11 +1,13 @@
 ---
-title: "Goose Has a New Home"
-description: "Goose has moved to the AI & Automation Infrastructure Foundation at the Linux Foundation"
+title: "goose repo and site migrating to aaif"
+description: "goose has moved to the Agentic AI Foundation (aaif) at the Linux Foundation"
 authors: 
     - mic
 ---
 
-Goose has moved! The project now lives under the [AI & Automation Infrastructure Foundation (AAIF)](https://aaif.io/) at the Linux Foundation.
+goose has moved! The project now lives under the [AI & Automation Infrastructure Foundation (AAIF)](https://aaif.io/) at the Linux Foundation.
+
+There is also a new docs site  [https://goose-docs.ai/](https://goose-docs.ai/) with a nice .ai TLD!
 
 <!-- truncate -->
 
@@ -17,7 +19,7 @@ The GitHub repository and related projects have moved from `block/goose` to a ne
 
 This includes related repositories in the [aaif-goose](https://github.com/aaif-goose) organization.
 
-Everything else — the project, the community, the mission — remains the same. Goose is still open source, still actively developed, and still the same agent you know.
+Everything else — the project, the community, the mission — remains the same. goose is still open source, still actively developed, and still the same agent you know.
 
 ## Migration in progress
 
