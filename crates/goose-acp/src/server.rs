@@ -31,7 +31,7 @@ use sacp::schema::{
     ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
     EmbeddedResourceResource, FileSystemCapabilities, ImageContent, InitializeRequest,
     InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
-    LoadSessionResponse, McpCapabilities, McpServer, ModelId, ModelInfo, NewSessionRequest,
+    LoadSessionResponse, McpCapabilities, McpServer, Meta, ModelId, ModelInfo, NewSessionRequest,
     NewSessionResponse, PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest,
     PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, ResourceLink,
     SessionCapabilities, SessionCloseCapabilities, SessionConfigOption,
@@ -90,34 +90,46 @@ pub struct GooseAcpAgent {
     disable_session_naming: bool,
 }
 
+fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
+    meta.as_ref()
+        .and_then(|m| m.get("timeout"))
+        .and_then(|v| v.as_u64())
+}
+
 fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConfig, String> {
     match mcp_server {
-        McpServer::Stdio(stdio) => Ok(ExtensionConfig::Stdio {
-            name: stdio.name,
-            description: String::new(),
-            cmd: stdio.command.to_string_lossy().to_string(),
-            args: stdio.args,
-            envs: Envs::new(stdio.env.into_iter().map(|e| (e.name, e.value)).collect()),
-            env_keys: vec![],
-            timeout: None,
-            bundled: Some(false),
-            available_tools: vec![],
-        }),
-        McpServer::Http(http) => Ok(ExtensionConfig::StreamableHttp {
-            name: http.name,
-            description: String::new(),
-            uri: http.url,
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: http
-                .headers
-                .into_iter()
-                .map(|h| (h.name, h.value))
-                .collect(),
-            timeout: None,
-            bundled: Some(false),
-            available_tools: vec![],
-        }),
+        McpServer::Stdio(stdio) => {
+            let timeout = extract_timeout_from_meta(&stdio.meta);
+            Ok(ExtensionConfig::Stdio {
+                name: stdio.name,
+                description: String::new(),
+                cmd: stdio.command.to_string_lossy().to_string(),
+                args: stdio.args,
+                envs: Envs::new(stdio.env.into_iter().map(|e| (e.name, e.value)).collect()),
+                env_keys: vec![],
+                timeout,
+                bundled: Some(false),
+                available_tools: vec![],
+            })
+        }
+        McpServer::Http(http) => {
+            let timeout = extract_timeout_from_meta(&http.meta);
+            Ok(ExtensionConfig::StreamableHttp {
+                name: http.name,
+                description: String::new(),
+                uri: http.url,
+                envs: Envs::default(),
+                env_keys: vec![],
+                headers: http
+                    .headers
+                    .into_iter()
+                    .map(|h| (h.name, h.value))
+                    .collect(),
+                timeout,
+                bundled: Some(false),
+                available_tools: vec![],
+            })
+        }
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
         _ => Err("Unknown MCP server type".to_string()),
     }
