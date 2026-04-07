@@ -105,7 +105,7 @@ const HelpText = () => {
               className="text-blue-500 hover:text-blue-600 p-0 h-auto"
               onClick={() =>
                 window.open(
-                  'https://block.github.io/goose/docs/guides/using-goosehints/',
+                  'https://github.com/aaif-goose/goose/docs/guides/using-goosehints/',
                   '_blank'
                 )
               }
