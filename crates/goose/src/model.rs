@@ -155,6 +155,19 @@ impl ModelConfig {
         self
     }
 
+    pub fn with_known_model_context_limit(mut self, known_models: &[(String, usize)]) -> Self {
+        if self.context_limit.is_none() {
+            if let Some((_, context_limit)) = known_models
+                .iter()
+                .find(|(name, context_limit)| name == &self.model_name && *context_limit > 0)
+            {
+                self.context_limit = Some(*context_limit);
+            }
+        }
+
+        self
+    }
+
     fn validate_context_limit(val: &str, env_var: &str) -> Result<usize, ConfigError> {
         let limit = val.parse::<usize>().map_err(|_| {
             ConfigError::InvalidValue(
@@ -498,6 +511,41 @@ mod tests {
             assert_eq!(config.context_limit, None);
             assert_eq!(config.max_tokens, None);
             assert_eq!(config.reasoning, None);
+        }
+    }
+
+    mod with_known_model_context_limit {
+        use super::*;
+
+        #[test]
+        fn applies_context_limit_from_known_models_when_missing() {
+            let _guard = env_lock::lock_env([("GOOSE_CONTEXT_LIMIT", None::<&str>)]);
+            let config =
+                ModelConfig::new_or_fail("custom-model").with_known_model_context_limit(&[
+                    ("custom-model".to_string(), 256_000),
+                    ("other-model".to_string(), 128_000),
+                ]);
+
+            assert_eq!(config.context_limit, Some(256_000));
+        }
+
+        #[test]
+        fn does_not_override_existing_context_limit() {
+            let _guard = env_lock::lock_env([("GOOSE_CONTEXT_LIMIT", None::<&str>)]);
+            let config = ModelConfig::new_or_fail("custom-model")
+                .with_context_limit(Some(64_000))
+                .with_known_model_context_limit(&[("custom-model".to_string(), 256_000)]);
+
+            assert_eq!(config.context_limit, Some(64_000));
+        }
+
+        #[test]
+        fn ignores_zero_context_limit_from_known_models() {
+            let _guard = env_lock::lock_env([("GOOSE_CONTEXT_LIMIT", None::<&str>)]);
+            let config = ModelConfig::new_or_fail("custom-model")
+                .with_known_model_context_limit(&[("custom-model".to_string(), 0)]);
+
+            assert_eq!(config.context_limit, None);
         }
     }
 
