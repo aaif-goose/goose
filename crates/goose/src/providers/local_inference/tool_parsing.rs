@@ -76,9 +76,11 @@ pub(super) fn split_content_and_tool_calls(text: &str) -> (String, Option<String
 /// be the start of a tool-call JSON block still being generated.
 /// If all braces are balanced the entire text is safe.
 pub(super) fn safe_stream_end(text: &str) -> usize {
-    // Hold back from the start of any incomplete <tool_call> tag.
+    // Hold back from the start of any incomplete <tool_call> or <|tool_call> tag.
     // If we find an unmatched opening, nothing from that point should be streamed.
     let xml_hold = text.find("<tool_call>").unwrap_or(text.len());
+    let gemma4_hold = text.find(GEMMA4_TOOL_CALL_OPEN).unwrap_or(text.len());
+    let xml_hold = xml_hold.min(gemma4_hold);
 
     let bytes = text.as_bytes();
     let mut safe_end = bytes.len();
@@ -306,6 +308,152 @@ fn parse_xml_arg_key_value_format(block: &str) -> Option<(String, serde_json::Ma
     }
 
     Some((func_name, args))
+}
+
+/// Gemma 4 tool call delimiters.
+/// Opening tag is `<|tool_call>`, closing tag is `<tool_call|>`.
+const GEMMA4_TOOL_CALL_OPEN: &str = "<|tool_call>";
+const GEMMA4_TOOL_CALL_CLOSE: &str = "<tool_call|>";
+
+/// Parse Gemma 4-style tool calls.
+/// Format: `<|tool_call>call:function_name{"arg": "value"}<tool_call|>`
+/// Gemma 4 escapes quotes as `<|"|>`.
+/// Returns (content_before_tool_calls, vec_of_(name, args)) or None if no Gemma 4 tool calls found.
+#[allow(clippy::type_complexity)]
+pub(super) fn split_content_and_gemma4_tool_calls(
+    text: &str,
+) -> Option<(String, Vec<(String, serde_json::Map<String, Value>)>)> {
+    let (content, first_block_and_rest) = text.split_once(GEMMA4_TOOL_CALL_OPEN)?;
+    let content = content.trim_end().to_string();
+    let mut tool_calls = Vec::new();
+
+    let mut remaining = first_block_and_rest;
+    loop {
+        let (block, after_close) = remaining
+            .split_once(GEMMA4_TOOL_CALL_CLOSE)
+            .unwrap_or((remaining, ""));
+
+        if let Some(tc) = parse_gemma4_tool_call(block) {
+            tool_calls.push(tc);
+        }
+
+        match after_close.split_once(GEMMA4_TOOL_CALL_OPEN) {
+            Some((_between, next_remaining)) => remaining = next_remaining,
+            None => break,
+        }
+    }
+
+    if tool_calls.is_empty() {
+        None
+    } else {
+        Some((content, tool_calls))
+    }
+}
+
+/// Parse a single Gemma 4 tool call block like `call:function_name{key:<|"|>value<|"|>}`.
+/// Gemma 4 may emit unquoted keys (e.g. `{path:<|"|>.<|"|>}`) which is not valid JSON.
+/// We unescape `<|"|>` → `"` and quote bare keys before parsing.
+fn parse_gemma4_tool_call(block: &str) -> Option<(String, serde_json::Map<String, Value>)> {
+    let block = block.trim();
+    let rest = block.strip_prefix("call:")?;
+
+    // Find where the function name ends and args begin
+    let json_start = rest.find('{')?;
+    #[allow(clippy::string_slice)]
+    let func_name = rest[..json_start].trim().to_string();
+    if func_name.is_empty() {
+        return None;
+    }
+
+    #[allow(clippy::string_slice)]
+    let json_str = &rest[json_start..];
+    // Unescape Gemma 4's quote encoding: <|"|> -> "
+    let unescaped = json_str.replace("<|\"|>", "\"");
+
+    // Try parsing as-is first (properly quoted JSON)
+    if let Ok(args) = serde_json::from_str::<serde_json::Map<String, Value>>(&unescaped) {
+        return Some((func_name, args));
+    }
+
+    // Fix unquoted keys: `{path: "."}`  → `{"path": "."}`
+    let fixed = fix_unquoted_json_keys(&unescaped);
+    let args: serde_json::Map<String, Value> = serde_json::from_str(&fixed).ok()?;
+    Some((func_name, args))
+}
+
+/// Add quotes around unquoted JSON keys.
+/// Transforms `{key: "value", other_key: 123}` → `{"key": "value", "other_key": 123}`
+fn fix_unquoted_json_keys(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() + 16);
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut in_string = false;
+
+    while i < len {
+        if bytes[i] == b'"' {
+            // Toggle string mode (skip escaped quotes)
+            in_string = !in_string;
+            result.push('"');
+            i += 1;
+        } else if in_string {
+            result.push(bytes[i] as char);
+            if bytes[i] == b'\\' && i + 1 < len {
+                i += 1;
+                result.push(bytes[i] as char);
+            }
+            i += 1;
+        } else if bytes[i] == b'{' || bytes[i] == b',' {
+            result.push(bytes[i] as char);
+            i += 1;
+            // Skip whitespace
+            while i < len && bytes[i].is_ascii_whitespace() {
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+            // If next char is not `"` or `}`, it's an unquoted key
+            if i < len && bytes[i] != b'"' && bytes[i] != b'}' {
+                let key_start = i;
+                while i < len && bytes[i] != b':' && bytes[i] != b'}' {
+                    i += 1;
+                }
+                #[allow(clippy::string_slice)]
+                let key = s[key_start..i].trim();
+                result.push('"');
+                result.push_str(key);
+                result.push('"');
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+/// Extract Gemma 4 tool call messages from parsed tool calls.
+pub(super) fn extract_gemma4_tool_call_messages(
+    tool_calls: Vec<(String, serde_json::Map<String, Value>)>,
+    message_id: &str,
+) -> Vec<Message> {
+    tool_calls
+        .into_iter()
+        .map(|(name, args)| {
+            let tool_call = if args.is_empty() {
+                CallToolRequestParams::new(Cow::Owned(name))
+            } else {
+                CallToolRequestParams::new(Cow::Owned(name)).with_arguments(args)
+            };
+            let mut msg = Message::assistant();
+            msg.content.push(MessageContent::tool_request(
+                Uuid::new_v4().to_string(),
+                Ok(tool_call),
+            ));
+            msg.id = Some(message_id.to_string());
+            msg
+        })
+        .collect()
 }
 
 pub(super) fn extract_xml_tool_call_messages(
@@ -592,5 +740,64 @@ mod tests {
     fn test_safe_stream_end_no_braces() {
         let text = "plain text here";
         assert_eq!(safe_stream_end(text), text.len());
+    }
+
+    #[test]
+    fn test_parse_gemma4_tool_call_single() {
+        let text = "I'll look at that.\n<|tool_call>call:developer__shell{command: <|\"|>ls -la<|\"|>}<tool_call|>";
+        let result = split_content_and_gemma4_tool_calls(text);
+        assert!(result.is_some());
+        let (content, calls) = result.unwrap();
+        assert_eq!(content, "I'll look at that.");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, SHELL_TOOL);
+        assert_eq!(calls[0].1.get("command").unwrap(), "ls -la");
+    }
+
+    #[test]
+    fn test_parse_gemma4_tool_call_multiple() {
+        let text = "Running two commands:\n<|tool_call>call:foo__bar{x: 1}<tool_call|>\n<|tool_call>call:baz__qux{y: <|\"|>hello<|\"|>}<tool_call|>";
+        let result = split_content_and_gemma4_tool_calls(text);
+        assert!(result.is_some());
+        let (content, calls) = result.unwrap();
+        assert_eq!(content, "Running two commands:");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "foo__bar");
+        assert_eq!(calls[1].0, "baz__qux");
+    }
+
+    #[test]
+    fn test_parse_gemma4_tool_call_no_tool_call() {
+        let text = "Just some regular text.";
+        assert!(split_content_and_gemma4_tool_calls(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_gemma4_tool_call_with_path() {
+        let text = "<|tool_call>call:tree{path: <|\"|>.<|\"|>}<tool_call|>";
+        let result = split_content_and_gemma4_tool_calls(text);
+        assert!(result.is_some());
+        let (content, calls) = result.unwrap();
+        assert!(content.is_empty());
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "tree");
+        assert_eq!(calls[0].1.get("path").unwrap(), ".");
+    }
+
+    #[test]
+    fn test_parse_gemma4_tool_call_quoted_keys() {
+        let text = "<|tool_call>call:developer__shell{<|\"|>command<|\"|>: <|\"|>ls -la<|\"|>}<tool_call|>";
+        let result = split_content_and_gemma4_tool_calls(text);
+        assert!(result.is_some());
+        let (_, calls) = result.unwrap();
+        assert_eq!(calls[0].0, SHELL_TOOL);
+        assert_eq!(calls[0].1.get("command").unwrap(), "ls -la");
+    }
+
+    #[test]
+    fn test_safe_stream_end_holds_back_gemma4_tool_call() {
+        let text = "Some text before <|tool_call>call:foo{";
+        let safe = safe_stream_end(text);
+        assert!(safe <= text.find("<|tool_call>").unwrap());
     }
 }

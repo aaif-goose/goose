@@ -13,8 +13,9 @@ use goose::providers::local_inference::{
     available_inference_memory_bytes,
     hf_models::{resolve_model_spec, HfGgufFile},
     local_model_registry::{
-        get_registry, is_featured_model, model_id_from_repo, LocalModelEntry,
-        ModelDownloadStatus as RegistryDownloadStatus, ModelSettings, FEATURED_MODELS,
+        default_settings_for_spec, get_registry, is_featured_model, model_id_from_repo,
+        LocalModelEntry, ModelDownloadStatus as RegistryDownloadStatus, ModelSettings,
+        FEATURED_MODELS,
     },
     recommend_local_model,
 };
@@ -97,7 +98,7 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
             quantization,
             local_path,
             source_url: hf_file.download_url,
-            settings: ModelSettings::default(),
+            settings: default_settings_for_spec(spec),
             size_bytes: hf_file.size_bytes,
         });
     }
@@ -273,7 +274,7 @@ pub async fn download_hf_model(
         quantization,
         local_path: local_path.clone(),
         source_url: download_url.clone(),
-        settings: ModelSettings::default(),
+        settings: default_settings_for_spec(&req.spec),
         size_bytes: hf_file.size_bytes,
     };
 

@@ -97,7 +97,26 @@ pub const FEATURED_MODELS: &[&str] = &[
     "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M",
     "bartowski/Hermes-2-Pro-Mistral-7B-GGUF:Q4_K_M",
     "bartowski/Mistral-Small-24B-Instruct-2501-GGUF:Q4_K_M",
+    "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+    "unsloth/gemma-4-26B-A4B-it-GGUF:Q4_K_M",
 ];
+
+/// Returns the appropriate default ModelSettings for a model spec.
+/// Models known to support native tool calling get those flags enabled;
+/// all others get standard defaults.
+pub fn default_settings_for_spec(spec: &str) -> ModelSettings {
+    let lower = spec.to_lowercase();
+
+    if lower.contains("gemma-4") {
+        ModelSettings {
+            native_tool_calling: true,
+            use_jinja: true,
+            ..ModelSettings::default()
+        }
+    } else {
+        ModelSettings::default()
+    }
+}
 
 /// Check if a model ID corresponds to a featured model.
 pub fn is_featured_model(model_id: &str) -> bool {

@@ -9,8 +9,9 @@ use super::inference_engine::{
     validate_and_compute_context, GenerationContext, TokenAction,
 };
 use super::tool_parsing::{
-    extract_tool_call_messages, extract_xml_tool_call_messages, safe_stream_end,
-    split_content_and_tool_calls, split_content_and_xml_tool_calls,
+    extract_gemma4_tool_call_messages, extract_tool_call_messages, extract_xml_tool_call_messages,
+    safe_stream_end, split_content_and_gemma4_tool_calls, split_content_and_tool_calls,
+    split_content_and_xml_tool_calls,
 };
 
 pub(super) fn generate_with_native_tools(
@@ -116,9 +117,14 @@ pub(super) fn generate_with_native_tools(
         |piece| {
             generated_text.push_str(piece);
 
+            let has_gemma4_tc = split_content_and_gemma4_tool_calls(&generated_text).is_some();
             let has_xml_tc = split_content_and_xml_tool_calls(&generated_text).is_some();
             let (content, tc) = split_content_and_tool_calls(&generated_text);
-            let stream_up_to = if tc.is_some() {
+            let stream_up_to = if has_gemma4_tc {
+                split_content_and_gemma4_tool_calls(&generated_text)
+                    .map(|(c, _)| c.len())
+                    .unwrap_or(0)
+            } else if tc.is_some() {
                 content.len()
             } else if has_xml_tc {
                 split_content_and_xml_tool_calls(&generated_text)
@@ -152,17 +158,23 @@ pub(super) fn generate_with_native_tools(
         },
     )?;
 
-    let (content, tool_call_msgs) =
-        if let Some((xml_content, xml_calls)) = split_content_and_xml_tool_calls(&generated_text) {
-            let msgs = extract_xml_tool_call_messages(xml_calls, message_id);
-            (xml_content, msgs)
-        } else {
-            let (json_content, tool_calls_json) = split_content_and_tool_calls(&generated_text);
-            let msgs = tool_calls_json
-                .map(|tc| extract_tool_call_messages(&tc, message_id))
-                .unwrap_or_default();
-            (json_content, msgs)
-        };
+    let (content, tool_call_msgs) = if let Some((gemma4_content, gemma4_calls)) =
+        split_content_and_gemma4_tool_calls(&generated_text)
+    {
+        let msgs = extract_gemma4_tool_call_messages(gemma4_calls, message_id);
+        (gemma4_content, msgs)
+    } else if let Some((xml_content, xml_calls)) =
+        split_content_and_xml_tool_calls(&generated_text)
+    {
+        let msgs = extract_xml_tool_call_messages(xml_calls, message_id);
+        (xml_content, msgs)
+    } else {
+        let (json_content, tool_calls_json) = split_content_and_tool_calls(&generated_text);
+        let msgs = tool_calls_json
+            .map(|tc| extract_tool_call_messages(&tc, message_id))
+            .unwrap_or_default();
+        (json_content, msgs)
+    };
 
     if content.len() > streamed_len {
         #[allow(clippy::string_slice)]
