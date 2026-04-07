@@ -23,7 +23,7 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use super::container::Container;
 use super::extension::{
@@ -39,7 +39,7 @@ use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
 use crate::config::{get_all_extensions, Config};
-use crate::oauth::oauth_flow;
+use crate::oauth::{has_stored_credentials, oauth_flow};
 use crate::prompt_template;
 use crate::subprocess::configure_subprocess;
 use rmcp::model::{
@@ -412,6 +412,43 @@ const GOOSE_USER_AGENT: reqwest::header::HeaderValue =
     reqwest::header::HeaderValue::from_static(concat!("goose/", env!("CARGO_PKG_VERSION")));
 
 #[allow(clippy::too_many_arguments)]
+async fn connect_with_auth(
+    auth_manager: rmcp::transport::AuthorizationManager,
+    uri: &str,
+    timeout: Duration,
+    provider: SharedProvider,
+    client_name: String,
+    capabilities: GooseMcpClientCapabilities,
+    roots_dir: &std::path::Path,
+) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    let mut auth_headers = HeaderMap::new();
+    auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
+    let auth_http_client = reqwest::Client::builder()
+        .default_headers(auth_headers)
+        .build()
+        .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
+    let auth_client = AuthClient::new(auth_http_client, auth_manager);
+    let transport = StreamableHttpClientTransport::with_client(
+        auth_client,
+        StreamableHttpClientTransportConfig {
+            uri: uri.into(),
+            ..Default::default()
+        },
+    );
+    Ok(Box::new(
+        McpClient::connect(
+            transport,
+            timeout,
+            provider,
+            client_name,
+            capabilities,
+            roots_dir.to_path_buf(),
+        )
+        .await?,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn create_streamable_http_client(
     uri: &str,
     timeout: Option<u64>,
@@ -451,6 +488,35 @@ async fn create_streamable_http_client(
 
     let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
 
+    // If we have stored OAuth credentials, try refreshing and connecting directly.
+    // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
+    if has_stored_credentials(name) {
+        info!(
+            "[OAuth:{}] Stored credentials found, attempting proactive token refresh",
+            name
+        );
+        match oauth_flow(&uri.to_string(), &name.to_string()).await {
+            Ok(auth_manager) => {
+                return connect_with_auth(
+                    auth_manager,
+                    uri,
+                    timeout_duration,
+                    provider,
+                    client_name,
+                    capabilities,
+                    roots_dir,
+                )
+                .await;
+            }
+            Err(e) => {
+                warn!(
+                    "[OAuth:{}] Proactive refresh failed: {}, falling back to unauthenticated attempt",
+                    name, e
+                );
+            }
+        }
+    }
+
     let client_res = McpClient::connect(
         transport,
         timeout_duration,
@@ -464,33 +530,16 @@ async fn create_streamable_http_client(
     if should_attempt_oauth_fallback(&client_res) {
         match oauth_flow(&uri.to_string(), &name.to_string()).await {
             Ok(auth_manager) => {
-                let mut auth_headers = HeaderMap::new();
-                auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
-                let auth_http_client = reqwest::Client::builder()
-                    .default_headers(auth_headers)
-                    .build()
-                    .map_err(|_| {
-                        ExtensionError::ConfigError("could not construct http client".to_string())
-                    })?;
-                let auth_client = AuthClient::new(auth_http_client, auth_manager);
-                let transport = StreamableHttpClientTransport::with_client(
-                    auth_client,
-                    StreamableHttpClientTransportConfig {
-                        uri: uri.into(),
-                        ..Default::default()
-                    },
-                );
-                Ok(Box::new(
-                    McpClient::connect(
-                        transport,
-                        timeout_duration,
-                        provider,
-                        client_name,
-                        capabilities,
-                        roots_dir.to_path_buf(),
-                    )
-                    .await?,
-                ))
+                connect_with_auth(
+                    auth_manager,
+                    uri,
+                    timeout_duration,
+                    provider,
+                    client_name,
+                    capabilities,
+                    roots_dir,
+                )
+                .await
             }
             Err(_) => Ok(Box::new(client_res?)),
         }

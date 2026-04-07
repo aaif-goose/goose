@@ -1,5 +1,7 @@
 mod persist;
 
+pub use persist::has_stored_credentials;
+
 use axum::extract::{Query, State};
 use axum::response::Html;
 use axum::routing::get;
@@ -12,7 +14,7 @@ use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
-use tracing::warn;
+use tracing::{debug, info, warn};
 
 use crate::oauth::persist::GooseCredentialStore;
 
@@ -38,13 +40,37 @@ pub async fn oauth_flow(
     auth_manager.set_credential_store(credential_store.clone());
 
     if auth_manager.initialize_from_store().await? {
-        if auth_manager.refresh_token().await.is_ok() {
-            return Ok(auth_manager);
+        info!(
+            "[OAuth:{}] Found stored credentials, attempting token refresh",
+            name
+        );
+
+        match auth_manager.refresh_token().await {
+            Ok(token_response) => {
+                let has_refresh = token_response.refresh_token().is_some();
+                let expires_in = token_response.expires_in();
+                info!(
+                    "[OAuth:{}] Token refresh succeeded - has_refresh_token: {}, expires_in: {:?}",
+                    name, has_refresh, expires_in
+                );
+                return Ok(auth_manager);
+            }
+            Err(e) => {
+                warn!(
+                    "[OAuth:{}] Token refresh failed: {} - clearing stored credentials and falling back to browser auth",
+                    name, e
+                );
+            }
         }
 
         if let Err(e) = credential_store.clear().await {
-            warn!("error clearing bad credentials: {}", e);
+            warn!("[OAuth:{}] error clearing bad credentials: {}", name, e);
         }
+    } else {
+        info!(
+            "[OAuth:{}] No stored credentials found, starting browser OAuth flow",
+            name
+        );
     }
 
     // No existing credentials or they were invalid - need to do the full oauth flow
@@ -97,6 +123,22 @@ pub async fn oauth_flow(
     oauth_state.handle_callback(&auth_code, &csrf_token).await?;
 
     let (client_id, token_response) = oauth_state.get_credentials().await?;
+
+    let has_refresh_token = token_response
+        .as_ref()
+        .and_then(|tr| tr.refresh_token())
+        .is_some();
+    let expires_in = token_response.as_ref().and_then(|tr| tr.expires_in());
+    let scopes: Vec<String> = token_response
+        .as_ref()
+        .and_then(|tr| tr.scopes())
+        .map(|s| s.iter().map(|sc| sc.to_string()).collect())
+        .unwrap_or_default();
+
+    debug!(
+        "[OAuth:{}] Browser auth completed - has_refresh_token: {}, expires_in: {:?}, scopes: {:?}",
+        name, has_refresh_token, expires_in, scopes
+    );
 
     let mut auth_manager = oauth_state
         .into_authorization_manager()
