@@ -53,20 +53,6 @@
   color: var(--text-standard);
 }
 
-.heroCli {
-  font-size: 0.85rem;
-  color: var(--text-subtle);
-  margin-bottom: 2.5rem;
-}
-
-.heroCli code {
-  font-size: 0.8rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 6px;
-  background: var(--background-subtle);
-  word-break: break-all;
-}
-
 .heroStats {
   display: flex;
   gap: 2rem;

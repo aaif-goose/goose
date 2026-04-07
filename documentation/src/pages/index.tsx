@@ -93,7 +93,7 @@ function FeaturesSection() {
       <div className={styles.container}>
         <h2 className={styles.sectionTitle}>What goose does</h2>
         <p className={styles.sectionSubtitle}>
-          Goose is a general-purpose AI agent that runs on your machine. Not
+          goose is a general-purpose AI agent that runs on your machine. Not
           just for code — use it for research, writing, automation, data
           analysis, or anything you need to get done.
         </p>
@@ -207,7 +207,7 @@ function StandardsSection() {
             <p>
               <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">MCP</a>{" "}
               is the open standard for connecting AI agents to tools and data
-              sources. Goose was one of the earliest adopters and has one of the
+              sources. goose was one of the earliest adopters and has one of the
               deepest integrations in the ecosystem — with 70+ documented
               extensions and growing.
             </p>
@@ -217,7 +217,7 @@ function StandardsSection() {
             <h3>Agent Client Protocol</h3>
             <p>
               <a href="https://agentclientprotocol.com/" target="_blank" rel="noopener">ACP</a>{" "}
-              is a standard for communicating with coding agents. Goose works as
+              is a standard for communicating with coding agents. goose works as
               an ACP server — connect from Zed, JetBrains, or VS Code — and can
               use ACP agents like Claude Code and Codex as providers.
             </p>
@@ -226,7 +226,7 @@ function StandardsSection() {
           <div className={styles.standardCard}>
             <h3>Agentic AI Foundation</h3>
             <p>
-              Goose is part of the{" "}
+              goose is part of the{" "}
               <a href="https://aaif.io/" target="_blank" rel="noopener">
                 Agentic AI Foundation
               </a>{" "}
@@ -274,7 +274,7 @@ function CommunitySection() {
           >
             <h3>🐙 GitHub</h3>
             <p>
-              Star, fork, file issues, contribute code. Goose is built in the
+              Star, fork, file issues, contribute code. goose is built in the
               open.
             </p>
           </a>
