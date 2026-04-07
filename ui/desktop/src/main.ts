@@ -128,6 +128,20 @@ function isLocalhost(hostname: string): boolean {
   return hostname === '127.0.0.1' || hostname === 'localhost';
 }
 
+function isTrustedHost(hostname: string): boolean {
+  if (isLocalhost(hostname)) return true;
+  const settings = getSettings();
+  if (settings.externalGoosed?.enabled && settings.externalGoosed.url) {
+    try {
+      const parsed = new URL(settings.externalGoosed.url);
+      return parsed.hostname === hostname;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 function normalizeFingerprint(fp: string): string {
   if (fp.startsWith('sha256/')) {
     const b64 = fp.slice('sha256/'.length);
@@ -145,7 +159,7 @@ function normalizeFingerprint(fp: string): string {
 // window) any localhost cert is accepted so the server can come up.
 app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
   const parsed = new URL(url);
-  if (!isLocalhost(parsed.hostname)) {
+  if (!isTrustedHost(parsed.hostname)) {
     callback(false);
     return;
   }
@@ -163,7 +177,7 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
 // Main-process net.fetch: pin to the exact cert goosed generated.
 app.whenReady().then(() => {
   session.defaultSession.setCertificateVerifyProc((request, callback) => {
-    if (!isLocalhost(request.hostname)) {
+    if (!isTrustedHost(request.hostname)) {
       callback(-3);
       return;
     }
