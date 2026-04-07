@@ -176,30 +176,24 @@ impl LinuxAutomation {
         }
     }
 
-    fn create_python_script(&self, commands: &[&str]) -> String {
-        let mut script = String::from(
+    fn create_python_script(&self, _commands: &[&str]) -> String {
+        String::from(
             r#"#!/usr/bin/env python3
 import subprocess
-import os
 import sys
-import time
 
 def run_command(cmd):
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        result = subprocess.run(cmd.split(), shell=False, capture_output=True, text=True)
         return result.stdout
     except Exception as e:
         print(f"Error executing {cmd}: {e}", file=sys.stderr)
         return ""
 
+for cmd in sys.argv[1:]:
+    run_command(cmd)
 "#,
-        );
-
-        for cmd in commands {
-            script.push_str(&format!("run_command('{}')\n", cmd));
-        }
-
-        script
+        )
     }
 }
 
@@ -229,7 +223,10 @@ impl SystemAutomation for LinuxAutomation {
                 // The script will be executed by the Python interpreter directly
             }
 
-            let output = Command::new("python3").arg(&temp_path).output()?;
+            let output = Command::new("python3")
+                .arg(&temp_path)
+                .args(commands.iter())
+                .output()?;
 
             std::fs::remove_file(temp_path)?;
 
