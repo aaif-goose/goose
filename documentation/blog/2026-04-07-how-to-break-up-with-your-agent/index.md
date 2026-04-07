@@ -5,7 +5,7 @@ authors:
     - codefromthecrypt
 ---
 
-![Goose in the ACP Agent Registry on JetBrains](header.png)
+![Editors connect to Goose via ACP, and Goose connects to multiple agents](header.png)
 
 The biggest shift in developer tooling over the last year wasn't the rise of agents. It was the rise of agent subscriptions. We stopped choosing LLM platforms and counting tokens. We started choosing an agent CLI and paying a flat monthly fee.
 
