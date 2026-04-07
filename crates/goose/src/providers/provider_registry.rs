@@ -23,14 +23,19 @@ pub struct ProviderEntry {
 }
 
 impl ProviderEntry {
+    pub fn metadata(&self) -> &ProviderMetadata {
+        &self.metadata
+    }
+
     pub async fn create_with_default_model(
         &self,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
         let default_model = &self.metadata.default_model;
         let provider_name = &self.metadata.name;
-        let model_config =
-            ModelConfig::new(default_model.as_str())?.with_canonical_limits(provider_name);
+        let model_config = ModelConfig::new(default_model.as_str())?
+            .with_canonical_limits(provider_name)
+            .with_provider_known_model_limits(&self.metadata.known_models);
         (self.constructor)(model_config, extensions).await
     }
 }
@@ -153,18 +158,6 @@ impl ProviderRegistry {
             ProviderEntry {
                 metadata: custom_metadata,
                 constructor: Arc::new(move |model, _extensions| {
-                    // Apply context_limit from known_models if not already set
-                    let model = if model.context_limit.is_none() {
-                        if let Some(model_info) =
-                            known_models.iter().find(|m| m.name == model.model_name)
-                        {
-                            model.with_context_limit(Some(model_info.context_limit))
-                        } else {
-                            model
-                        }
-                    } else {
-                        model
-                    };
                     let result = constructor(model);
                     Box::pin(async move {
                         let provider = result?;

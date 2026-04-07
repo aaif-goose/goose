@@ -140,7 +140,9 @@ pub async fn create(
     model: ModelConfig,
     extensions: Vec<ExtensionConfig>,
 ) -> Result<Arc<dyn Provider>> {
-    let constructor = get_from_registry(name).await?.constructor.clone();
+    let entry = get_from_registry(name).await?;
+    let constructor = entry.constructor.clone();
+    let model = model.with_provider_known_model_limits(&entry.metadata().known_models);
     constructor(model, extensions).await
 }
 

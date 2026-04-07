@@ -6,6 +6,7 @@ use thiserror::Error;
 use utoipa::ToSchema;
 
 pub const DEFAULT_CONTEXT_LIMIT: usize = 128_000;
+const MIN_CONTEXT_LIMIT: usize = 4 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 struct PredefinedModel {
@@ -155,6 +156,24 @@ impl ModelConfig {
         self
     }
 
+    pub fn with_provider_known_model_limits(
+        mut self,
+        known_models: &[crate::providers::base::ModelInfo],
+    ) -> Self {
+        if self.context_limit.is_none() {
+            if let Some(model) = known_models.iter().find(|m| m.name == self.model_name) {
+                if Self::is_valid_context_limit(model.context_limit) {
+                    self.context_limit = Some(model.context_limit);
+                }
+            }
+        }
+        self
+    }
+
+    fn is_valid_context_limit(limit: usize) -> bool {
+        limit >= MIN_CONTEXT_LIMIT
+    }
+
     fn validate_context_limit(val: &str, env_var: &str) -> Result<usize, ConfigError> {
         let limit = val.parse::<usize>().map_err(|_| {
             ConfigError::InvalidValue(
@@ -164,7 +183,7 @@ impl ModelConfig {
             )
         })?;
 
-        if limit < 4 * 1024 {
+        if !Self::is_valid_context_limit(limit) {
             return Err(ConfigError::InvalidRange(
                 env_var.to_string(),
                 "must be greater than 4K".to_string(),
@@ -498,6 +517,68 @@ mod tests {
             assert_eq!(config.context_limit, None);
             assert_eq!(config.max_tokens, None);
             assert_eq!(config.reasoning, None);
+        }
+
+        #[test]
+        fn with_provider_known_model_limits_applies_valid_limit_when_context_is_none() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+            let config =
+                ModelConfig::new_or_fail("custom-model").with_provider_known_model_limits(&[
+                    crate::providers::base::ModelInfo {
+                        name: "custom-model".to_string(),
+                        context_limit: 256_000,
+                        input_token_cost: None,
+                        output_token_cost: None,
+                        currency: None,
+                        supports_cache_control: None,
+                    },
+                ]);
+
+            assert_eq!(config.context_limit, Some(256_000));
+        }
+
+        #[test]
+        fn with_provider_known_model_limits_ignores_invalid_limit() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+            let config =
+                ModelConfig::new_or_fail("custom-model").with_provider_known_model_limits(&[
+                    crate::providers::base::ModelInfo {
+                        name: "custom-model".to_string(),
+                        context_limit: 0,
+                        input_token_cost: None,
+                        output_token_cost: None,
+                        currency: None,
+                        supports_cache_control: None,
+                    },
+                ]);
+
+            assert_eq!(config.context_limit, None);
+        }
+
+        #[test]
+        fn with_provider_known_model_limits_does_not_override_existing_context_limit() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+            let mut config = ModelConfig::new_or_fail("custom-model");
+            config.context_limit = Some(64_000);
+            let config = config.with_provider_known_model_limits(&[crate::providers::base::ModelInfo {
+                name: "custom-model".to_string(),
+                context_limit: 256_000,
+                input_token_cost: None,
+                output_token_cost: None,
+                currency: None,
+                supports_cache_control: None,
+            }]);
+
+            assert_eq!(config.context_limit, Some(64_000));
         }
     }
 
