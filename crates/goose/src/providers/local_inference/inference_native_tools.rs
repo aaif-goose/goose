@@ -1,17 +1,16 @@
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use crate::providers::errors::ProviderError;
 use llama_cpp_2::model::AddBos;
 use llama_cpp_2::openai::OpenAIChatTemplateParams;
+use rmcp::model::CallToolRequestParams;
+use serde_json::Value;
+use std::borrow::Cow;
+use uuid::Uuid;
 
 use super::finalize_usage;
 use super::inference_engine::{
     context_cap, create_and_prefill_context, estimate_max_context_for_memory, generation_loop,
     validate_and_compute_context, GenerationContext, TokenAction,
-};
-use super::tool_parsing::{
-    extract_gemma4_tool_call_messages, extract_tool_call_messages, extract_xml_tool_call_messages,
-    safe_stream_end, split_content_and_gemma4_tool_calls, split_content_and_tool_calls,
-    split_content_and_xml_tool_calls,
 };
 
 pub(super) fn generate_with_native_tools(
@@ -77,6 +76,15 @@ pub(super) fn generate_with_native_tools(
         })?,
     };
 
+    tracing::info!(
+        generation_prompt = %template_result.generation_prompt,
+        chat_format = template_result.chat_format,
+        parse_tool_calls = template_result.parse_tool_calls,
+        has_parser = template_result.parser.is_some(),
+        additional_stops = ?template_result.additional_stops,
+        "Template result fields"
+    );
+
     let _ = ctx.log.write(
         &serde_json::json!({"applied_prompt": &template_result.prompt}),
         None,
@@ -106,7 +114,20 @@ pub(super) fn generate_with_native_tools(
     let message_id = ctx.message_id;
     let tx = ctx.tx;
     let mut generated_text = String::new();
-    let mut streamed_len: usize = 0;
+
+    // Initialize streaming parser — handles thinking tokens, tool calls, etc.
+    let mut stream_parser = template_result.streaming_state_oaicompat().map_err(|e| {
+        ProviderError::ExecutionError(format!("Failed to init streaming parser: {}", e))
+    })?;
+
+    // Feed the generation prompt to the parser so it knows the context.
+    // The model may echo this prefix; the parser needs to see it to strip it.
+    if !template_result.generation_prompt.is_empty() {
+        let _ = stream_parser.update(&template_result.generation_prompt, true);
+    }
+
+    // Accumulate tool calls across streaming deltas
+    let mut accumulated_tool_calls: Vec<Value> = Vec::new();
 
     let output_token_count = generation_loop(
         &ctx.loaded.model,
@@ -117,33 +138,35 @@ pub(super) fn generate_with_native_tools(
         |piece| {
             generated_text.push_str(piece);
 
-            let has_gemma4_tc = split_content_and_gemma4_tool_calls(&generated_text).is_some();
-            let has_xml_tc = split_content_and_xml_tool_calls(&generated_text).is_some();
-            let (content, tc) = split_content_and_tool_calls(&generated_text);
-            let stream_up_to = if has_gemma4_tc {
-                split_content_and_gemma4_tool_calls(&generated_text)
-                    .map(|(c, _)| c.len())
-                    .unwrap_or(0)
-            } else if tc.is_some() {
-                content.len()
-            } else if has_xml_tc {
-                split_content_and_xml_tool_calls(&generated_text)
-                    .map(|(c, _)| c.len())
-                    .unwrap_or(0)
-            } else {
-                safe_stream_end(&generated_text)
-            };
-            if stream_up_to > streamed_len {
-                #[allow(clippy::string_slice)]
-                let new_text = &generated_text[streamed_len..stream_up_to];
-                if !new_text.is_empty() {
-                    let mut msg = Message::assistant().with_text(new_text);
-                    msg.id = Some(message_id.to_string());
-                    if tx.blocking_send(Ok((Some(msg), None))).is_err() {
-                        return Ok(TokenAction::Stop);
+            // Feed the new piece to the streaming parser
+            match stream_parser.update(piece, true) {
+                Ok(deltas) => {
+                    for delta_json in deltas {
+                        if let Ok(delta) = serde_json::from_str::<Value>(&delta_json) {
+                            // Stream content text to the UI
+                            if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
+                                if !content.is_empty() {
+                                    let mut msg = Message::assistant().with_text(content);
+                                    msg.id = Some(message_id.to_string());
+                                    if tx.blocking_send(Ok((Some(msg), None))).is_err() {
+                                        return Ok(TokenAction::Stop);
+                                    }
+                                }
+                            }
+                            // Accumulate tool call deltas
+                            if let Some(tool_calls) =
+                                delta.get("tool_calls").and_then(|v| v.as_array())
+                            {
+                                for tc in tool_calls {
+                                    accumulated_tool_calls.push(tc.clone());
+                                }
+                            }
+                        }
                     }
                 }
-                streamed_len = stream_up_to;
+                Err(e) => {
+                    tracing::warn!("Streaming parser error: {}", e);
+                }
             }
 
             let should_stop = template_result
@@ -158,41 +181,29 @@ pub(super) fn generate_with_native_tools(
         },
     )?;
 
-    let (content, tool_call_msgs) = if let Some((gemma4_content, gemma4_calls)) =
-        split_content_and_gemma4_tool_calls(&generated_text)
-    {
-        let msgs = extract_gemma4_tool_call_messages(gemma4_calls, message_id);
-        (gemma4_content, msgs)
-    } else if let Some((xml_content, xml_calls)) =
-        split_content_and_xml_tool_calls(&generated_text)
-    {
-        let msgs = extract_xml_tool_call_messages(xml_calls, message_id);
-        (xml_content, msgs)
-    } else {
-        let (json_content, tool_calls_json) = split_content_and_tool_calls(&generated_text);
-        let msgs = tool_calls_json
-            .map(|tc| extract_tool_call_messages(&tc, message_id))
-            .unwrap_or_default();
-        (json_content, msgs)
-    };
-
-    if content.len() > streamed_len {
-        #[allow(clippy::string_slice)]
-        let remaining = &content[streamed_len..];
-        if !remaining.is_empty() {
-            let mut msg = Message::assistant().with_text(remaining);
-            msg.id = Some(message_id.to_string());
-            let _ = tx.blocking_send(Ok((Some(msg), None)));
+    // Finalize the streaming parser with is_partial=false
+    if let Ok(final_deltas) = stream_parser.update("", false) {
+        for delta_json in final_deltas {
+            if let Ok(delta) = serde_json::from_str::<Value>(&delta_json) {
+                if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
+                    if !content.is_empty() {
+                        let mut msg = Message::assistant().with_text(content);
+                        msg.id = Some(message_id.to_string());
+                        let _ = tx.blocking_send(Ok((Some(msg), None)));
+                    }
+                }
+                if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                    for tc in tool_calls {
+                        accumulated_tool_calls.push(tc.clone());
+                    }
+                }
+            }
         }
     }
 
-    if !tool_call_msgs.is_empty() {
-        for msg in tool_call_msgs {
-            let _ = tx.blocking_send(Ok((Some(msg), None)));
-        }
-    } else if content.is_empty() && !generated_text.is_empty() {
-        let mut msg = Message::assistant().with_text(&generated_text);
-        msg.id = Some(message_id.to_string());
+    // Convert accumulated tool calls to messages
+    let tool_call_msgs = extract_oai_tool_call_messages(&accumulated_tool_calls, message_id);
+    for msg in tool_call_msgs {
         let _ = tx.blocking_send(Ok((Some(msg), None)));
     }
 
@@ -206,4 +217,48 @@ pub(super) fn generate_with_native_tools(
     );
     let _ = ctx.tx.blocking_send(Ok((None, Some(provider_usage))));
     Ok(())
+}
+
+/// Convert OpenAI-format tool call values to Goose Message objects.
+fn extract_oai_tool_call_messages(tool_calls: &[Value], message_id: &str) -> Vec<Message> {
+    tool_calls
+        .iter()
+        .filter_map(|tc| {
+            let func = tc.get("function")?;
+            let name = func.get("name")?.as_str()?;
+            if name.is_empty() {
+                return None;
+            }
+
+            let arguments: Option<serde_json::Map<String, Value>> =
+                func.get("arguments").and_then(|a| {
+                    if let Some(s) = a.as_str() {
+                        serde_json::from_str(s).ok()
+                    } else if let Some(obj) = a.as_object() {
+                        Some(obj.clone())
+                    } else {
+                        None
+                    }
+                });
+
+            let id = tc
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+            let tool_call = match arguments {
+                Some(args) => {
+                    CallToolRequestParams::new(Cow::Owned(name.to_string())).with_arguments(args)
+                }
+                None => CallToolRequestParams::new(Cow::Owned(name.to_string())),
+            };
+
+            let mut msg = Message::assistant();
+            msg.content
+                .push(MessageContent::tool_request(id, Ok(tool_call)));
+            msg.id = Some(message_id.to_string());
+            Some(msg)
+        })
+        .collect()
 }
