@@ -104,6 +104,7 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
 
                 match goose::model::ModelConfig::new(&model) {
                     Ok(model_config) => {
+                        let model_config = model_config.with_canonical_limits(&provider);
                         match goose::providers::create(&provider, model_config, Vec::new()).await {
                             Ok(p) => {
                                 let test_msg = Message::user().with_text("Say 'ok'");
