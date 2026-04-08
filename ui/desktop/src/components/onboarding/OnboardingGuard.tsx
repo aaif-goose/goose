@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../ConfigContext';
 import { useModelAndProvider } from '../ModelAndProviderContext';
 import { Goose } from '../icons';
+import { Button } from '../ui/button';
 import ProviderSelector from './ProviderSelector';
 import OnboardingSuccess from './OnboardingSuccess';
 import {
@@ -60,18 +61,24 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
   const [configuredModel, setConfiguredModel] = useState<string | null>(null);
   const hasTrackedOnboardingStart = useRef(false);
 
-  const checkProvider = useCallback(async () => {
+  const checkProvider = useCallback(async (retries = 3, delay = 1000) => {
     setIsCheckingProvider(true);
     setCheckProviderError(false);
-    try {
-      const provider = await read('GOOSE_PROVIDER', false, { throwOnError: true });
-      setHasProvider(!!provider);
-    } catch (error) {
-      console.error('Error checking provider:', error);
-      setCheckProviderError(true);
-    } finally {
-      setIsCheckingProvider(false);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const provider = await read('GOOSE_PROVIDER', false, { throwOnError: true });
+        setHasProvider(!!provider);
+        setIsCheckingProvider(false);
+        return;
+      } catch (error) {
+        console.error(`Error checking provider (attempt ${attempt + 1}/${retries + 1}):`, error);
+        if (attempt < retries) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
     }
+    setCheckProviderError(true);
+    setIsCheckingProvider(false);
   }, [read]);
 
   useEffect(() => {
@@ -127,14 +134,14 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     return (
       <div className="h-screen w-full bg-background-default flex flex-col items-center justify-center">
         <div className="text-center max-w-md">
+          <div className="mb-4">
+            <Goose className="size-8 mx-auto" />
+          </div>
           <h1 className="text-xl font-light mb-3">{intl.formatMessage(i18n.checkProviderErrorTitle)}</h1>
           <p className="text-text-muted mb-6">{intl.formatMessage(i18n.checkProviderErrorDescription)}</p>
-          <button
-            onClick={checkProvider}
-            className="px-4 py-2 bg-button-primary text-button-primary-text rounded hover:opacity-90"
-          >
+          <Button onClick={() => checkProvider()}>
             {intl.formatMessage(i18n.retry)}
-          </button>
+          </Button>
         </div>
       </div>
     );
