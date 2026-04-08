@@ -643,8 +643,6 @@ export function useChatStream({
           activeRequestSessionIdRef.current = null;
           activeAbortRef.current = null;
         }
-        // Reset to idle instead of setting sessionLoadError, which would
-        // show a blocking full-page error screen. The user can retry.
         dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.Idle });
         console.warn('Submit failed:', errorMessage(error));
       }

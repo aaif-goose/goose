@@ -125,8 +125,6 @@ impl SessionEventBus {
     }
 
     /// Atomically check no requests are active and register one. Returns Err if busy.
-    /// Cancelled requests are cleaned up first so a new request can proceed
-    /// immediately after cancellation without waiting for the async cleanup task.
     pub async fn try_register_request(
         &self,
         request_id: String,
