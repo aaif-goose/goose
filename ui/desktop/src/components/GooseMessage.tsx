@@ -117,7 +117,7 @@ export default function GooseMessage({
         {thinkingContent && (
           <ThinkingContent
             content={thinkingContent}
-            isExpanded={isStreaming && !displayText.trim()}
+            isExpanded={isStreaming && !displayText.trim() && imagePaths.length === 0 && toolRequests.length === 0}
           />
         )}
 
