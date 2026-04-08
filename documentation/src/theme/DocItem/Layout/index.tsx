@@ -393,7 +393,7 @@ function PageActionsMenu(): ReactNode {
   
   const handleViewMarkdown = () => {
     const source = metadata?.source?.replace('@site/', '') || '';
-    window.open(`https://raw.githubusercontent.com/block/goose/refs/heads/main/documentation/${source}`, '_blank');
+    window.open(`https://raw.githubusercontent.com/aaif-goose/goose/refs/heads/main/documentation/${source}`, '_blank');
     setDropdownOpen(false);
   };
   

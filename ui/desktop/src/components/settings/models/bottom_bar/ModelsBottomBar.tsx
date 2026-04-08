@@ -162,7 +162,7 @@ export default function ModelsBottomBar({
 
       {isLocalModelSettingsOpen && currentModel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-background-default rounded-lg shadow-lg w-[480px] max-h-[80vh] flex flex-col">
+          <div className="bg-background-primary border border-border-primary rounded-lg shadow-lg w-[480px] max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
               <h3 className="text-sm font-medium text-text-default">
                 {intl.formatMessage(i18n.localModelSettingsTitle, { modelName: getModelDisplayName(currentModel) })}

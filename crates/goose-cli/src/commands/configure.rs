@@ -852,7 +852,11 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         }
         Err(e) => {
             spin.stop(style(e.to_string()).red());
-            cliclack::outro(style("Failed to configure provider: init chat completion request with tool did not succeed.").on_red().white())?;
+            cliclack::outro(
+                style(format!("Failed to configure provider: {e}"))
+                    .on_red()
+                    .white(),
+            )?;
             Ok(false)
         }
     }
