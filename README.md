@@ -28,7 +28,7 @@ goose is part of the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Lin
 
 **[Download the desktop app](https://goose-docs.ai/docs/getting-started/installation)** for macOS, Linux, and Windows.
 
-Or install the CLI:
+Or install the CLI: 
 
 ```bash
 curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
