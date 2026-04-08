@@ -81,42 +81,6 @@ function extractTextLines(content: ToolCallContent[], maxWidth: number): string[
   return lines;
 }
 
-function summarizeContent(info: ToolCallInfo, maxWidth: number): string {
-  const parts: string[] = [];
-
-  if (info.locations && info.locations.length > 0) {
-    for (const loc of info.locations) {
-      parts.push(loc.path + (loc.line ? `:${loc.line}` : ""));
-    }
-  }
-
-  if (info.content && info.content.length > 0) {
-    const textLines = extractTextLines(info.content, maxWidth);
-    if (textLines.length > 0) {
-      const first = textLines[0]!.trim();
-      if (first.length > 60) {
-        parts.push(first.slice(0, 57) + "…");
-      } else if (first) {
-        parts.push(first);
-      }
-    }
-  }
-
-  if (parts.length === 0 && info.rawOutput !== undefined && info.rawOutput !== null) {
-    const raw = String(
-      typeof info.rawOutput === "string" ? info.rawOutput : JSON.stringify(info.rawOutput),
-    );
-    const firstLine = raw.split("\n")[0] ?? "";
-    if (firstLine.length > 60) {
-      parts.push(firstLine.slice(0, 57) + "…");
-    } else if (firstLine) {
-      parts.push(firstLine);
-    }
-  }
-
-  return truncateLine(parts.join(" · "), maxWidth);
-}
-
 export function renderToolCallLines(
   info: ToolCallInfo,
   width: number,
@@ -171,12 +135,7 @@ export function renderToolCallLines(
     </>
   ));
 
-  if (!expanded) {
-    const summary = summarizeContent(info, innerWidth);
-    if (summary) {
-      row(`${k}-s`, <Text wrap="truncate-end" color={TEXT_DIM}>{summary}</Text>);
-    }
-  } else {
+  if (expanded) {
     if (info.locations) {
       for (let i = 0; i < info.locations.length; i++) {
         const loc = info.locations[i]!;

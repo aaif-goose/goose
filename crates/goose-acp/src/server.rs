@@ -290,30 +290,48 @@ fn read_resource_link(link: ResourceLink) -> Option<String> {
 }
 
 fn format_tool_name(tool_name: &str) -> String {
-    let capitalize = |s: &str| {
-        s.split_whitespace()
-            .map(|word| {
-                let mut chars = word.chars();
-                match chars.next() {
-                    None => String::new(),
-                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-
     if let Some((extension, tool)) = tool_name.split_once("__") {
-        let formatted_extension = extension.replace('_', " ");
-        let formatted_tool = tool.replace('_', " ");
         format!(
             "{}: {}",
-            capitalize(&formatted_extension),
-            capitalize(&formatted_tool)
+            extension.replace('_', " "),
+            tool.replace('_', " ")
         )
     } else {
-        let formatted = tool_name.replace('_', " ");
-        capitalize(&formatted)
+        tool_name.replace('_', " ")
+    }
+}
+
+/// Build a short fallback title from the tool name and arguments by extracting
+/// the most useful value (file path, command, query, url, etc.).
+fn summarize_tool_call(tool_name: &str, arguments: Option<&serde_json::Value>) -> String {
+    let base = format_tool_name(tool_name);
+
+    let detail = arguments.and_then(|args| {
+        let obj = args.as_object()?;
+        let keys = [
+            "path", "file", "command", "query", "url", "uri", "name", "pattern", "source",
+        ];
+        for key in &keys {
+            if let Some(v) = obj.get(*key) {
+                let s = match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                if !s.is_empty() {
+                    let first_line = s.lines().next().unwrap_or(&s);
+                    if first_line.len() > 60 {
+                        return Some(format!("{}…", goose::utils::safe_truncate(first_line, 57)));
+                    }
+                    return Some(first_line.to_string());
+                }
+            }
+        }
+        None
+    });
+
+    match detail {
+        Some(d) => format!("{base} · {d}"),
+        None => base,
     }
 }
 
@@ -718,16 +736,106 @@ impl GooseAcpAgent {
             Err(_) => "error".to_string(),
         };
 
+        let args_value = tool_request
+            .tool_call
+            .as_ref()
+            .ok()
+            .and_then(|tc| tc.arguments.as_ref())
+            .map(|a| serde_json::Value::Object(a.clone()));
+        let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
+
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
             SessionUpdate::ToolCall(
                 ToolCall::new(
                     ToolCallId::new(tool_request.id.clone()),
-                    format_tool_name(&tool_name),
+                    fallback_title.clone(),
                 )
                 .status(ToolCallStatus::Pending),
             ),
         ))?;
+
+        if let Ok(tool_call) = &tool_request.tool_call {
+            let agent = session.agent.clone();
+            let sid = session_id.clone();
+            let request_id = tool_request.id.clone();
+            let cx = cx.clone();
+            let name = tool_call.name.to_string();
+            let args_json = tool_call
+                .arguments
+                .as_ref()
+                .map(|a| {
+                    let s = serde_json::to_string(a).unwrap_or_default();
+                    if s.len() > 300 {
+                        format!("{}…", goose::utils::safe_truncate(&s, 300))
+                    } else {
+                        s
+                    }
+                })
+                .unwrap_or_default();
+
+            tokio::spawn(async move {
+                let provider = match agent.provider().await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!("tool call summary: failed to get provider: {e}");
+                        let fields = ToolCallUpdateFields::new().title(fallback_title);
+                        let _ = cx.send_notification(SessionNotification::new(
+                            sid,
+                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                                ToolCallId::new(request_id),
+                                fields,
+                            )),
+                        ));
+                        return;
+                    }
+                };
+                let system = "Summarize this tool call in a short lowercase phrase (3-8 words). \
+                              No punctuation. No quotes. Examples: reading project configuration, \
+                              checking network connectivity, listing files in src directory";
+                let user_text = format!("Tool: {name}\nArguments: {args_json}");
+                let message = goose::conversation::message::Message::user().with_text(&user_text);
+                let summary_session_id = uuid::Uuid::now_v7().to_string();
+                match provider
+                    .complete_fast(&summary_session_id, system, &[message], &[])
+                    .await
+                {
+                    Ok((response, _)) => {
+                        let summary: String = response
+                            .content
+                            .iter()
+                            .filter_map(|c| c.as_text())
+                            .collect::<String>()
+                            .trim()
+                            .to_string();
+                        let title = if summary.is_empty() {
+                            fallback_title
+                        } else {
+                            summary
+                        };
+                        let fields = ToolCallUpdateFields::new().title(title);
+                        let _ = cx.send_notification(SessionNotification::new(
+                            sid,
+                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                                ToolCallId::new(request_id),
+                                fields,
+                            )),
+                        ));
+                    }
+                    Err(e) => {
+                        warn!("tool call summary: fast_complete failed: {e}");
+                        let fields = ToolCallUpdateFields::new().title(fallback_title);
+                        let _ = cx.send_notification(SessionNotification::new(
+                            sid,
+                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                                ToolCallId::new(request_id),
+                                fields,
+                            )),
+                        ));
+                    }
+                }
+            });
+        }
 
         Ok(())
     }
@@ -2231,19 +2339,54 @@ print(\"hello, world\")
 
     #[test]
     fn test_format_tool_name_with_extension() {
-        assert_eq!(format_tool_name("developer__edit"), "Developer: Edit");
+        assert_eq!(format_tool_name("developer__edit"), "developer: edit");
         assert_eq!(
             format_tool_name("platform__manage_extensions"),
-            "Platform: Manage Extensions"
+            "platform: manage extensions"
         );
-        assert_eq!(format_tool_name("todo__write"), "Todo: Write");
+        assert_eq!(format_tool_name("todo__write"), "todo: write");
     }
 
     #[test]
     fn test_format_tool_name_without_extension() {
-        assert_eq!(format_tool_name("simple_tool"), "Simple Tool");
-        assert_eq!(format_tool_name("another_name"), "Another Name");
-        assert_eq!(format_tool_name("single"), "Single");
+        assert_eq!(format_tool_name("simple_tool"), "simple tool");
+        assert_eq!(format_tool_name("another_name"), "another name");
+        assert_eq!(format_tool_name("single"), "single");
+    }
+
+    #[test]
+    fn test_summarize_tool_call_no_args() {
+        assert_eq!(
+            summarize_tool_call("developer__shell", None),
+            "developer: shell"
+        );
+    }
+
+    #[test]
+    fn test_summarize_tool_call_with_path() {
+        let args = serde_json::json!({"path": "/src/main.rs", "content": "fn main() {}"});
+        assert_eq!(
+            summarize_tool_call("developer__edit", Some(&args)),
+            "developer: edit · /src/main.rs"
+        );
+    }
+
+    #[test]
+    fn test_summarize_tool_call_with_command() {
+        let args = serde_json::json!({"command": "cargo build"});
+        assert_eq!(
+            summarize_tool_call("developer__shell", Some(&args)),
+            "developer: shell · cargo build"
+        );
+    }
+
+    #[test]
+    fn test_summarize_tool_call_long_value_truncated() {
+        let long_path = "a".repeat(80);
+        let args = serde_json::json!({"path": long_path});
+        let result = summarize_tool_call("developer__read_file", Some(&args));
+        assert!(result.ends_with('…'));
+        assert!(result.len() < 90);
     }
 
     #[test_case(
