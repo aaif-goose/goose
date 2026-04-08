@@ -191,7 +191,7 @@ pub fn recommend_local_model(runtime: &InferenceRuntime) -> String {
     }
 
     // Fallback to first featured model
-    FEATURED_MODELS[0].to_string()
+    FEATURED_MODELS[0].spec.to_string()
 }
 
 fn build_openai_messages_json(system: &str, messages: &[Message]) -> String {
@@ -360,7 +360,7 @@ impl LocalInferenceProvider {
             }
         };
 
-        tracing::info!("Model loaded successfully");
+        tracing::info!(model_id = model_id, "Model loaded successfully");
 
         Ok(LoadedModel { model, template })
     }
@@ -377,7 +377,7 @@ impl ProviderDef for LocalInferenceProvider {
             get_registry, FEATURED_MODELS,
         };
 
-        let mut known_models: Vec<&str> = FEATURED_MODELS.to_vec();
+        let mut known_models: Vec<&str> = FEATURED_MODELS.iter().map(|m| m.spec).collect();
 
         // Add any registry models not already in the featured list
         let mut dynamic_models = Vec::new();
@@ -477,13 +477,10 @@ impl Provider for LocalInferenceProvider {
             }
         }
 
-        // Models that support native OpenAI-compatible tool-call JSON use the
-        // native path (template-based tool calling with JSON output). All other
-        // models use the emulator which parses `$ command` and ```execute blocks.
-        // Only use emulator when there are actually tools to emulate - utility calls
-        // like compaction and session naming pass empty tools and should preserve
-        // their system prompts.
-        let use_emulator = !model_settings.native_tool_calling && !tools.is_empty();
+        // Use the model's native_tool_calling setting to decide the path.
+        // Featured models have this set explicitly; user-added models default to false.
+        let native_tool_calling = model_settings.native_tool_calling;
+        let use_emulator = !native_tool_calling && !tools.is_empty();
         let system_prompt = if use_emulator {
             load_tiny_model_prompt()
         } else {
@@ -539,7 +536,7 @@ impl Provider for LocalInferenceProvider {
             (None, None)
         };
 
-        let oai_messages_json = if model_settings.use_jinja {
+        let oai_messages_json = if model_settings.use_jinja || native_tool_calling {
             Some(build_openai_messages_json(&system_prompt, messages))
         } else {
             None
