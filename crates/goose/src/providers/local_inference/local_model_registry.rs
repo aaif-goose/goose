@@ -60,6 +60,12 @@ pub struct ModelSettings {
     pub native_tool_calling: bool,
     #[serde(default)]
     pub use_jinja: bool,
+    #[serde(default = "default_true")]
+    pub enable_thinking: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_repeat_penalty() -> f32 {
@@ -87,6 +93,7 @@ impl Default for ModelSettings {
             n_threads: None,
             native_tool_calling: false,
             use_jinja: false,
+            enable_thinking: true,
         }
     }
 }

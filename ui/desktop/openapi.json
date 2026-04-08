@@ -6486,6 +6486,9 @@
             "nullable": true,
             "minimum": 0
           },
+          "enable_thinking": {
+            "type": "boolean"
+          },
           "flash_attention": {
             "type": "boolean",
             "nullable": true

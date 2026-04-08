@@ -485,6 +485,14 @@ impl Provider for LocalInferenceProvider {
             }
         }
 
+        // Allow request_params to override thinking
+        let mut model_settings = model_settings;
+        if let Some(false) =
+            model_config.get_config_param::<bool>("enable_thinking", "GOOSE_LOCAL_ENABLE_THINKING")
+        {
+            model_settings.enable_thinking = false;
+        }
+
         // Use the model's native_tool_calling setting to decide the path.
         // Featured models have this set explicitly; user-added models default to false.
         let native_tool_calling = model_settings.native_tool_calling;
