@@ -406,19 +406,14 @@ fn get_input_prompt_string() -> String {
     "🪿 ".to_string()
 }
 
-/// Older VTE-based terminals (e.g. GNOME Terminal on RHEL 9, VTE 0.64.2)
-/// render U+1FABF (🪿) as 1 terminal cell while unicode-width counts it as 2,
-/// causing a persistent cursor offset. Detect these via VTE_VERSION < 0.70.
+/// VTE < 0.70 renders 🪿 as 1 cell while unicode-width counts 2, causing cursor offset.
 fn is_vte_with_broken_emoji_width() -> bool {
     let Ok(vte_version) = std::env::var("VTE_VERSION") else {
         return false;
     };
-    // VTE_VERSION is a flat integer like "6402" for 0.64.2, or "7003" for 0.70.3
     let Ok(version) = vte_version.parse::<u32>() else {
-        // If we can't parse, assume it's old enough to be broken
         return true;
     };
-    // Versions < 7000 (0.70.0) have inconsistent emoji width handling
     version < 7000
 }
 
