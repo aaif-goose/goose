@@ -55,7 +55,7 @@ The recipe:
 - Handles different flag implementations, ranging in complexity
 - Attempts refactoring for outdated code paths
 - Can automatically create draft pull requests, via the GitHub CLI
-- Integrates with [Xcode Index MCP](https://github.com/aaif-goose/xcode-index-mcp) for deep iOS project understanding
+- Integrates with [Xcode Index MCP](https://github.com/block/xcode-index-mcp) for deep iOS project understanding
 - Plans, implements, builds and tests locally to improve the accuracy of the flag removal result
 
 

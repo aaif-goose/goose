@@ -103,7 +103,7 @@ export default function SkillsPage() {
             <Button
               onClick={() =>
                 window.open(
-                  "https://github.com/aaif-goose/Agent-Skills?tab=readme-ov-file#contributing-a-skill",
+                  "https://github.com/block/Agent-Skills?tab=readme-ov-file#contributing-a-skill",
                   "_blank",
                 )
               }

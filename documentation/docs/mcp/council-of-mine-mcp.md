@@ -13,7 +13,7 @@ import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
 <YouTubeShortEmbed videoUrl="https://www.youtube.com/embed/7Vn_Rixi3tQ" />
 
 
-This tutorial covers how to add the [Council of Mine MCP Server](https://github.com/aaif-goose/mcp-council-of-mine) as a goose extension featuring 9 LLM council members with distinct personalities who debate topics, vote on each other's opinions, and generate synthesized conclusions through AI-powered deliberation. This is great for helping you make a decision.
+This tutorial covers how to add the [Council of Mine MCP Server](https://github.com/block/mcp-council-of-mine) as a goose extension featuring 9 LLM council members with distinct personalities who debate topics, vote on each other's opinions, and generate synthesized conclusions through AI-powered deliberation. This is great for helping you make a decision.
 
 :::tip Quick Install
 <Tabs groupId="interface">
@@ -23,7 +23,7 @@ This tutorial covers how to add the [Council of Mine MCP Server](https://github.
   <TabItem value="cli" label="goose CLI">
   **Command**
   ```sh
-  uvx --from git+https://github.com/aaif-goose/mcp-council-of-mine mcp_council_of_mine
+  uvx --from git+https://github.com/block/mcp-council-of-mine mcp_council_of_mine
   ```
   </TabItem>
 </Tabs>
@@ -43,7 +43,7 @@ Note that you'll need [uv](https://docs.astral.sh/uv/#installation) installed on
       description="LLM debate"
       type="stdio"
       command="uvx"
-      args={["--from", "git+https://github.com/aaif-goose/mcp-council-of-mine", "mcp_council_of_mine"]}
+      args={["--from", "git+https://github.com/block/mcp-council-of-mine", "mcp_council_of_mine"]}
     />
   </TabItem>
   <TabItem value="cli" label="goose CLI">
@@ -51,7 +51,7 @@ Note that you'll need [uv](https://docs.astral.sh/uv/#installation) installed on
       name="Council of Mine"
       description="LLM debate"
       type="stdio"
-      command="uvx --from git+https://github.com/aaif-goose/mcp-council-of-mine mcp_council_of_mine"
+      command="uvx --from git+https://github.com/block/mcp-council-of-mine mcp_council_of_mine"
       timeout={300}
     />
   </TabItem>

@@ -252,7 +252,7 @@ function generateInstallCommand(
  * Generate the view source URL for a skill in the Agent-Skills repo
  */
 function generateViewSourceUrl(skillId: string): string {
-  return `https://github.com/aaif-goose/Agent-Skills/tree/main/${skillId}`;
+  return `https://github.com/block/Agent-Skills/tree/main/${skillId}`;
 }
 
 /**

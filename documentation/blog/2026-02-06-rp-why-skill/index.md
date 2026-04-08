@@ -196,7 +196,7 @@ What's the most strategic question you could ask right now?
 Install the skill:
 
 ```bash
-npx skills add https://github.com/aaif-goose/agent-skills --skill rp-why
+npx skills add https://github.com/block/agent-skills --skill rp-why
 ```
 
 Make sure you have the built-in [Skills extension](/docs/mcp/skills-mcp/) enabled in goose.

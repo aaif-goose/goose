@@ -49,7 +49,7 @@ It’s the same model and the same agent, but the behavior changes completely.
 
 ## Where Council of Mine fits in
 
-Seeing the flow change helped me understand sampling conceptually. [Council of Mine](https://github.com/aaif-goose/mcp-council-of-mine) helped me understand it viscerally.
+Seeing the flow change helped me understand sampling conceptually. [Council of Mine](https://github.com/block/mcp-council-of-mine) helped me understand it viscerally.
 
 It’s not MCP sampling itself. It’s an example of what becomes possible once sampling exists.
 

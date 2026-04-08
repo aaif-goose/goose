@@ -54,7 +54,7 @@ The `ctx.sample()` call sends a prompt back to the connected AI and waits for a 
 
 ## A Real Example: Council of Mine
 
-[Council of Mine](https://github.com/aaif-goose/mcp-council-of-mine) is an MCP server that takes sampling to an extreme. It simulates a council of nine AI personas who debate topics and vote on each other's opinions.
+[Council of Mine](https://github.com/block/mcp-council-of-mine) is an MCP server that takes sampling to an extreme. It simulates a council of nine AI personas who debate topics and vote on each other's opinions.
 
 But there's no LLM running inside the server. Every opinion, every vote, every bit of reasoning comes from sampling requests back to the user's connected LLM.
 
