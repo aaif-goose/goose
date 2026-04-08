@@ -1,98 +1,411 @@
 /**
-* CSS files with the .module.css suffix will be treated as CSS modules
-* and scoped locally.
-*/
+ * Homepage styles
+ */
 
-.header {
-  padding: 4rem 2rem;
-}
-
-
-.wrapper {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3rem;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-}
-
-.textColumn {
-  flex: 1 1 300px;
-  max-width: 500px;
+/* Hero */
+.hero {
+  padding: 5rem 2rem 3rem;
   text-align: center;
+}
+
+.heroInner {
+  max-width: 800px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: -40px;
 }
 
-.logo {
+.heroBadge {
+  display: inline-block;
+  padding: 0.35rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  font-size: 0.8rem;
+  color: var(--text-subtle);
+  margin-bottom: 2rem;
+  letter-spacing: 0.02em;
+}
+
+.heroLogo {
+  max-width: 300px;
+  margin-bottom: 1.5rem;
+}
+
+.heroSubtitle {
+  font-size: 1.35rem;
+  line-height: 1.6;
+  color: var(--text-standard);
+  max-width: 600px;
+  margin-bottom: 2rem;
+}
+
+.heroActions {
   display: flex;
+  gap: 1rem;
+  margin-bottom: 3rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.secondaryButton {
+  border-color: var(--border-standard);
+  color: var(--text-standard);
+}
+
+.heroStats {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
   align-items: center;
 }
 
-.subtitle {
+.statNumber {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-prominent);
+}
+
+.statLabel {
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+}
+
+.statDivider {
+  width: 1px;
+  height: 2.5rem;
+  background: var(--border-subtle);
+}
+
+/* Sections */
+.section {
+  padding: 4rem 2rem;
+}
+
+.sectionAlt {
+  background: var(--background-subtle);
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.sectionTitle {
+  font-size: 1.75rem;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 0.75rem;
+  color: var(--text-prominent);
+}
+
+.sectionSubtitle {
+  text-align: center;
+  max-width: 700px;
+  margin: 0 auto 2.5rem;
+  color: var(--text-subtle);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+/* Features — top row (3 big cards) */
+.featuresGridTop {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.featureCard {
+  padding: 1.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--background-app);
+  transition: border-color 0.2s ease;
+}
+
+.featureCard:hover {
+  border-color: var(--border-standard);
+}
+
+.featureIcon {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.featureTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-prominent);
+}
+
+.featureDescription {
+  font-size: 0.9rem;
+  color: var(--text-subtle);
+  line-height: 1.6;
+}
+
+.featureDescription p {
+  margin: 0;
+}
+
+.featureDescription a {
+  font-weight: 500;
+}
+
+/* Features — bottom row (4 smaller cards) */
+.featuresGridBottom {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.smallCard {
+  padding: 1.25rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--background-app);
+  transition: border-color 0.2s ease;
+}
+
+.smallCard:hover {
+  border-color: var(--border-standard);
+}
+
+.smallCardIcon {
   font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.smallCardTitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  color: var(--text-prominent);
+}
+
+.smallCardDescription {
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+  line-height: 1.55;
+}
+
+.smallCardDescription p {
+  margin: 0;
+}
+
+.smallCardDescription a {
+  font-weight: 500;
+}
+
+/* Standards Grid */
+.standardsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.standardCard {
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--background-app);
+}
+
+.standardCard h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text-prominent);
+}
+
+.standardCard p {
+  font-size: 0.9rem;
+  color: var(--text-subtle);
+  line-height: 1.6;
+  margin-bottom: 0.75rem;
+}
+
+.standardCard a {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Community Grid */
+.communityGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.communityCard {
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--background-app);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.communityCard:hover {
+  border-color: var(--border-standard);
+  transform: translateY(-2px);
+  text-decoration: none;
+  color: inherit;
+}
+
+.communityCard h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-prominent);
+}
+
+.communityCard p {
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Install */
+.installBlock {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.installDesktop {
+  text-align: center;
   margin-bottom: 1.5rem;
-  max-width: 30ch;
 }
 
-.videoColumn {
-  flex: 1 1 400px;
+.installPlatforms {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-subtle);
+}
+
+.installDivider {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+}
+
+.installTerminal {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--grey-10);
+}
+
+.terminalBar {
+  display: flex;
+  gap: 6px;
+  padding: 12px 16px;
+  background: var(--grey-20);
+}
+
+.terminalDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--grey-50);
+}
+
+.terminalBody {
+  padding: 1.25rem 1.5rem;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: #e0e0e0;
+  overflow-x: auto;
+}
+
+.installNote {
+  text-align: center;
+  margin-top: 1.25rem;
+  font-size: 0.9rem;
+  color: var(--text-subtle);
+}
+
+/* Video */
+.videoWrapper {
+  max-width: 800px;
+  margin: 0 auto;
   aspect-ratio: 16 / 9;
+}
+
+.video {
   width: 100%;
-  max-width: 640px;
+  height: 100%;
+  border: none;
+  border-radius: 12px;
 }
 
-.aspect-ratio{
-  aspect-ratio: 16 / 9;
-  width: 100%;
-}
+/* Responsive */
+@media (max-width: 996px) {
+  .featuresGridTop {
+    grid-template-columns: repeat(2, 1fr);
+  }
 
- 
+  .featuresGridBottom {
+    grid-template-columns: repeat(2, 1fr);
+  }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
+  .standardsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .communityGrid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media screen and (max-width: 768px) {
-  .header {
-    padding: 1rem 1rem;
+@media (max-width: 640px) {
+  .hero {
+    padding: 3rem 1.5rem 2rem;
   }
 
-  .wrapper {
-    flex-direction: column;
-    text-align: center;
-    gap: 1rem;
-    padding: 1rem 1rem;
-  }
-
-  .textColumn {
-    text-align: center;
-    max-width: 100%;
-    flex: 1 1 400px;
-    margin-top: 0;
-  }
-
-  .subtitle {
+  .heroSubtitle {
     font-size: 1.1rem;
-    line-height: 1.5;
-    margin: 0 auto 1.5rem;
   }
 
-  .ctaButton {
-    font-size: 1rem;
-    width: auto;
+  .heroStats {
+    gap: 1.5rem;
   }
 
-  .videoColumn {
-    flex: 1 1 180px;
-    aspect-ratio: 16 / 9;
-    width: 100%;
+  .statDivider {
+    display: none;
+  }
+
+  .featuresGridTop {
+    grid-template-columns: 1fr;
+  }
+
+  .featuresGridBottom {
+    grid-template-columns: 1fr;
+  }
+
+  .standardsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .communityGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 3rem 1.5rem;
   }
 }

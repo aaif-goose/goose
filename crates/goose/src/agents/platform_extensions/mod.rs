@@ -259,8 +259,8 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 display_name: "Skills",
                 description: "Discover and provide skill instructions from filesystem and builtins",
                 default_enabled: true,
-                unprefixed_tools: false,
-                hidden: true,
+                unprefixed_tools: true,
+                hidden: false,
                 client_factory: |ctx| Box::new(skills::SkillsClient::new(ctx).unwrap()),
             },
         );

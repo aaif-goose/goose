@@ -29,11 +29,16 @@ pub struct NanoGptProvider {
 }
 
 impl NanoGptProvider {
-    async fn check_subscription(api_key: &str) -> bool {
-        let client = match ApiClient::new(
-            NANOGPT_SUBSCRIPTION_HOST.to_string(),
+    fn build_client(host: &str, api_key: &str) -> Result<ApiClient> {
+        ApiClient::new(
+            host.to_string(),
             AuthMethod::BearerToken(api_key.to_string()),
-        ) {
+        )?
+        .with_header("x-client", "goose")
+    }
+
+    async fn check_subscription(api_key: &str) -> bool {
+        let client = match Self::build_client(NANOGPT_SUBSCRIPTION_HOST, api_key) {
             Ok(c) => c,
             Err(_) => return false,
         };
@@ -62,7 +67,7 @@ impl NanoGptProvider {
             NANOGPT_API_HOST.to_string()
         };
 
-        let api_client = ApiClient::new(host, AuthMethod::BearerToken(api_key))?;
+        let api_client = Self::build_client(&host, &api_key)?;
 
         Ok(Self {
             api_client,

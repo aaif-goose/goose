@@ -1,5 +1,6 @@
 ---
 source: crates/goose/src/agents/prompt_manager.rs
+assertion_line: 458
 expression: system_prompt
 ---
 You are a general-purpose AI agent called goose, created by AAIF (Agentic AI Foundation).
