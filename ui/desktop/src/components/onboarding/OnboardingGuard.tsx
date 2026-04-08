@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../ConfigContext';
 import { useModelAndProvider } from '../ModelAndProviderContext';
@@ -61,7 +61,7 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
   const [configuredModel, setConfiguredModel] = useState<string | null>(null);
   const hasTrackedOnboardingStart = useRef(false);
 
-  const checkProvider = useCallback(async (retries = 3, delay = 1000) => {
+  const checkProvider = async (retries = 3, delay = 1000) => {
     setIsCheckingProvider(true);
     setCheckProviderError(false);
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -79,11 +79,12 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     }
     setCheckProviderError(true);
     setIsCheckingProvider(false);
-  }, [read]);
+  };
 
   useEffect(() => {
     checkProvider();
-  }, [checkProvider]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!isCheckingProvider && !hasProvider && !checkProviderError && !hasTrackedOnboardingStart.current) {
