@@ -1469,11 +1469,6 @@ ipcMain.handle('open-notifications-settings', async () => {
         return true;
       }
 
-      // Fallback: Try to open general settings
-      if (canSpawn('gnome-control-center')) {
-        spawn('gnome-control-center');
-        return true;
-      }
       console.warn('Could not find a suitable settings application for Linux');
       return false;
     } else {
