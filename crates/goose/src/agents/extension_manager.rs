@@ -23,7 +23,7 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 use super::container::Container;
 use super::extension::{
@@ -39,14 +39,14 @@ use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
 use crate::config::{get_all_extensions, Config};
-use crate::oauth::{has_stored_credentials, oauth_flow};
+use crate::oauth::{oauth_flow, GooseCredentialStore};
 use crate::prompt_template;
 use crate::subprocess::configure_subprocess;
 use rmcp::model::{
     CallToolRequestParams, Content, ErrorCode, ErrorData, GetPromptResult, Prompt, Resource,
     ResourceContents, ServerInfo, Tool,
 };
-use rmcp::transport::auth::AuthClient;
+use rmcp::transport::auth::{AuthClient, CredentialStore};
 use schemars::_private::NoSerialize;
 use serde_json::Value;
 
@@ -490,11 +490,8 @@ async fn create_streamable_http_client(
 
     // If we have stored OAuth credentials, try refreshing and connecting directly.
     // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
-    if has_stored_credentials(name) {
-        info!(
-            "[OAuth:{}] Stored credentials found, attempting proactive token refresh",
-            name
-        );
+    let credential_store = GooseCredentialStore::new(name.to_string());
+    if credential_store.load().await.is_ok_and(|c| c.is_some()) {
         match oauth_flow(&uri.to_string(), &name.to_string()).await {
             Ok(auth_manager) => {
                 return connect_with_auth(
