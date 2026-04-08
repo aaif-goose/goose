@@ -122,12 +122,20 @@ pub fn resolve_model_path(
     usize,
     crate::providers::local_inference::local_model_registry::ModelSettings,
 )> {
-    use crate::providers::local_inference::local_model_registry::get_registry;
+    use crate::providers::local_inference::local_model_registry::{
+        default_settings_for_model, get_registry,
+    };
 
     if let Ok(registry) = get_registry().lock() {
         if let Some(entry) = registry.get_model(model_id) {
             let ctx = entry.settings.context_size.unwrap_or(0) as usize;
-            return Some((entry.local_path.clone(), ctx, entry.settings.clone()));
+            let mut settings = entry.settings.clone();
+            // Capability flags are inherent to the model family, not user-configurable.
+            // Re-derive them so that registry entries persisted before a model was
+            // recognized (or with a different quantization) still get the right behavior.
+            let defaults = default_settings_for_model(model_id);
+            settings.native_tool_calling = defaults.native_tool_calling;
+            return Some((entry.local_path.clone(), ctx, settings));
         }
     }
 

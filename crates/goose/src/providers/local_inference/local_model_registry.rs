@@ -127,15 +127,16 @@ pub const FEATURED_MODELS: &[FeaturedModel] = &[
 
 pub fn default_settings_for_model(model_id: &str) -> ModelSettings {
     use super::hf_models::parse_model_spec;
-    let native = FEATURED_MODELS.iter().any(|m| {
-        if let Ok((repo_id, quant)) = parse_model_spec(m.spec) {
-            model_id_from_repo(&repo_id, &quant) == model_id && m.native_tool_calling
+    let model_repo = model_id.split(':').next().unwrap_or(model_id);
+    let featured = FEATURED_MODELS.iter().find(|m| {
+        if let Ok((repo_id, _quant)) = parse_model_spec(m.spec) {
+            repo_id == model_repo
         } else {
             false
         }
     });
     ModelSettings {
-        native_tool_calling: native,
+        native_tool_calling: featured.is_some_and(|m| m.native_tool_calling),
         ..ModelSettings::default()
     }
 }

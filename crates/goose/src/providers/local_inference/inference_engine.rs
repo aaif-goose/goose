@@ -118,15 +118,15 @@ pub(super) fn effective_context_size(
 ) -> usize {
     let limit = context_cap(settings, context_limit, n_ctx_train, memory_max_ctx);
     let min_generation_headroom = 512;
-    let needed = prompt_token_count + min_generation_headroom;
-    if needed > limit {
+    if prompt_token_count + min_generation_headroom > limit {
         tracing::warn!(
-            "Prompt ({} tokens) + headroom exceeds context limit ({}), capping to limit",
+            "Prompt ({} tokens) + minimum headroom ({}) exceeds context limit ({})",
             prompt_token_count,
+            min_generation_headroom,
             limit,
         );
     }
-    needed.min(limit)
+    limit
 }
 
 pub(super) fn build_context_params(
@@ -269,7 +269,8 @@ pub(super) enum TokenAction {
 
 /// Run the autoregressive generation loop. Calls `on_piece` for each non-empty
 /// token piece. The callback returns `TokenAction::Stop` to break early.
-/// Returns the total number of generated tokens.
+/// Returns the total number of generated tokens, or `ContextLengthExceeded`
+/// if the model exhausted the available context window.
 pub(super) fn generation_loop(
     model: &LlamaModel,
     ctx: &mut llama_cpp_2::context::LlamaContext<'_>,
@@ -279,19 +280,25 @@ pub(super) fn generation_loop(
     mut on_piece: impl FnMut(&str) -> Result<TokenAction, ProviderError>,
 ) -> Result<i32, ProviderError> {
     let mut sampler = build_sampler(settings);
+    let context_headroom = effective_ctx.saturating_sub(prompt_token_count);
     let max_output = if let Some(max) = settings.max_output_tokens {
-        effective_ctx.saturating_sub(prompt_token_count).min(max)
+        context_headroom.min(max)
     } else {
-        effective_ctx.saturating_sub(prompt_token_count)
+        context_headroom
     };
+    let hit_context_limit = settings
+        .max_output_tokens
+        .is_none_or(|max| context_headroom <= max);
     let mut decoder = encoding_rs::UTF_8.new_decoder();
     let mut output_token_count: i32 = 0;
+    let mut exhausted_loop = true;
 
     for _ in 0..max_output {
         let token = sampler.sample(ctx, -1);
         sampler.accept(token);
 
         if model.is_eog_token(token) {
+            exhausted_loop = false;
             break;
         }
 
@@ -302,6 +309,7 @@ pub(super) fn generation_loop(
             .map_err(|e| ProviderError::ExecutionError(format!("Failed to decode token: {}", e)))?;
 
         if !piece.is_empty() && matches!(on_piece(&piece)?, TokenAction::Stop) {
+            exhausted_loop = false;
             break;
         }
 
@@ -310,6 +318,16 @@ pub(super) fn generation_loop(
             .map_err(|e| ProviderError::ExecutionError(format!("Failed to create batch: {}", e)))?;
         ctx.decode(&mut next_batch)
             .map_err(|e| ProviderError::ExecutionError(format!("Decode failed: {}", e)))?;
+    }
+
+    if exhausted_loop && hit_context_limit {
+        return Err(ProviderError::ContextLengthExceeded(format!(
+            "Generation exhausted context window ({} prompt + {} generated = {} of {} limit)",
+            prompt_token_count,
+            output_token_count,
+            prompt_token_count as i32 + output_token_count,
+            effective_ctx,
+        )));
     }
 
     Ok(output_token_count)
@@ -325,10 +343,10 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_context_size_basic() {
+    fn test_effective_context_size_uses_full_limit() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 4096, 4096, None),
-            612
+            4096
         );
     }
 
@@ -336,7 +354,7 @@ mod tests {
     fn test_effective_context_size_capped_by_limit() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 1024, 8192, None),
-            612
+            1024
         );
     }
 
@@ -344,12 +362,12 @@ mod tests {
     fn test_effective_context_size_capped_by_memory() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 4096, 4096, Some(800)),
-            612
+            800
         );
     }
 
     #[test]
-    fn test_effective_context_size_memory_smaller_than_needed() {
+    fn test_effective_context_size_memory_smaller_than_prompt() {
         assert_eq!(
             effective_context_size(600, &default_settings(), 4096, 4096, Some(700)),
             700
@@ -360,7 +378,7 @@ mod tests {
     fn test_effective_context_size_zero_limit_uses_train() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 0, 2048, None),
-            612
+            2048
         );
     }
 

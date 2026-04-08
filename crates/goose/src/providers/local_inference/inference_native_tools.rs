@@ -33,12 +33,12 @@ pub(super) fn generate_with_native_tools(
                 tool_choice: None,
                 json_schema: None,
                 grammar: None,
-                reasoning_format: None,
+                reasoning_format: Some("auto"),
                 chat_template_kwargs: None,
                 add_generation_prompt: true,
                 use_jinja: true,
                 parallel_tool_calls: false,
-                enable_thinking: false,
+                enable_thinking: true,
                 add_bos: false,
                 add_eos: false,
                 parse_tool_calls: true,
@@ -134,6 +134,18 @@ pub(super) fn generate_with_native_tools(
                 Ok(deltas) => {
                     for delta_json in deltas {
                         if let Ok(delta) = serde_json::from_str::<Value>(&delta_json) {
+                            // Stream thinking/reasoning content
+                            if let Some(reasoning) =
+                                delta.get("reasoning_content").and_then(|v| v.as_str())
+                            {
+                                if !reasoning.is_empty() {
+                                    let mut msg = Message::assistant().with_thinking(reasoning, "");
+                                    msg.id = Some(message_id.to_string());
+                                    if tx.blocking_send(Ok((Some(msg), None))).is_err() {
+                                        return Ok(TokenAction::Stop);
+                                    }
+                                }
+                            }
                             // Stream content text to the UI
                             if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
                                 if !content.is_empty() {
@@ -176,6 +188,13 @@ pub(super) fn generate_with_native_tools(
     if let Ok(final_deltas) = stream_parser.update("", false) {
         for delta_json in final_deltas {
             if let Ok(delta) = serde_json::from_str::<Value>(&delta_json) {
+                if let Some(reasoning) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
+                    if !reasoning.is_empty() {
+                        let mut msg = Message::assistant().with_thinking(reasoning, "");
+                        msg.id = Some(message_id.to_string());
+                        let _ = tx.blocking_send(Ok((Some(msg), None)));
+                    }
+                }
                 if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
                     if !content.is_empty() {
                         let mut msg = Message::assistant().with_text(content);
