@@ -22,14 +22,6 @@ impl GooseCredentialStore {
     }
 }
 
-/// Check if stored OAuth credentials exist for an extension.
-/// Used to decide whether to attempt token refresh before connecting.
-pub fn has_stored_credentials(name: &str) -> bool {
-    let config = Config::global();
-    let key = format!("oauth_creds_{}", name);
-    config.get_secret::<StoredCredentials>(&key).is_ok()
-}
-
 #[async_trait::async_trait]
 impl CredentialStore for GooseCredentialStore {
     async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
