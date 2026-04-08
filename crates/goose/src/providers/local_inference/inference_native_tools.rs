@@ -76,15 +76,6 @@ pub(super) fn generate_with_native_tools(
         })?,
     };
 
-    tracing::info!(
-        generation_prompt = %template_result.generation_prompt,
-        chat_format = template_result.chat_format,
-        parse_tool_calls = template_result.parse_tool_calls,
-        has_parser = template_result.parser.is_some(),
-        additional_stops = ?template_result.additional_stops,
-        "Template result fields"
-    );
-
     let _ = ctx.log.write(
         &serde_json::json!({"applied_prompt": &template_result.prompt}),
         None,
@@ -158,7 +149,6 @@ pub(super) fn generate_with_native_tools(
                                 delta.get("tool_calls").and_then(|v| v.as_array())
                             {
                                 for tc in tool_calls {
-                                    tracing::info!(delta = %tc, "Streaming tool call delta");
                                     accumulated_tool_calls.push(tc.clone());
                                 }
                             }
@@ -203,16 +193,7 @@ pub(super) fn generate_with_native_tools(
     }
 
     // Convert accumulated tool calls to messages
-    tracing::info!(
-        delta_count = accumulated_tool_calls.len(),
-        raw_deltas = %serde_json::to_string(&accumulated_tool_calls).unwrap_or_default(),
-        "Merging tool call deltas"
-    );
     let tool_call_msgs = extract_oai_tool_call_messages(&accumulated_tool_calls, message_id);
-    tracing::info!(
-        tool_call_count = tool_call_msgs.len(),
-        "Tool calls extracted from deltas"
-    );
     for msg in tool_call_msgs {
         let _ = tx.blocking_send(Ok((Some(msg), None)));
     }
@@ -285,9 +266,7 @@ fn extract_oai_tool_call_messages(deltas: &[Value], message_id: &str) -> Vec<Mes
             };
 
             let tool_call = match arguments {
-                Some(args) => {
-                    CallToolRequestParams::new(Cow::Owned(name)).with_arguments(args)
-                }
+                Some(args) => CallToolRequestParams::new(Cow::Owned(name)).with_arguments(args),
                 None => CallToolRequestParams::new(Cow::Owned(name)),
             };
 

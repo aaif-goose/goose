@@ -99,12 +99,30 @@ pub struct FeaturedModel {
 }
 
 pub const FEATURED_MODELS: &[FeaturedModel] = &[
-    FeaturedModel { spec: "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M", native_tool_calling: false },
-    FeaturedModel { spec: "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M", native_tool_calling: false },
-    FeaturedModel { spec: "bartowski/Hermes-2-Pro-Mistral-7B-GGUF:Q4_K_M", native_tool_calling: false },
-    FeaturedModel { spec: "bartowski/Mistral-Small-24B-Instruct-2501-GGUF:Q4_K_M", native_tool_calling: false },
-    FeaturedModel { spec: "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M", native_tool_calling: true },
-    FeaturedModel { spec: "unsloth/gemma-4-26B-A4B-it-GGUF:Q4_K_M", native_tool_calling: true },
+    FeaturedModel {
+        spec: "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+        native_tool_calling: false,
+    },
+    FeaturedModel {
+        spec: "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M",
+        native_tool_calling: false,
+    },
+    FeaturedModel {
+        spec: "bartowski/Hermes-2-Pro-Mistral-7B-GGUF:Q4_K_M",
+        native_tool_calling: false,
+    },
+    FeaturedModel {
+        spec: "bartowski/Mistral-Small-24B-Instruct-2501-GGUF:Q4_K_M",
+        native_tool_calling: false,
+    },
+    FeaturedModel {
+        spec: "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+        native_tool_calling: true,
+    },
+    FeaturedModel {
+        spec: "unsloth/gemma-4-26B-A4B-it-GGUF:Q4_K_M",
+        native_tool_calling: true,
+    },
 ];
 
 pub fn default_settings_for_model(model_id: &str) -> ModelSettings {

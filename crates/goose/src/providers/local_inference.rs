@@ -362,10 +362,7 @@ impl LocalInferenceProvider {
 
         tracing::info!(model_id = model_id, "Model loaded successfully");
 
-        Ok(LoadedModel {
-            model,
-            template,
-        })
+        Ok(LoadedModel { model, template })
     }
 }
 
@@ -484,13 +481,6 @@ impl Provider for LocalInferenceProvider {
         // Featured models have this set explicitly; user-added models default to false.
         let native_tool_calling = model_settings.native_tool_calling;
         let use_emulator = !native_tool_calling && !tools.is_empty();
-        tracing::info!(
-            model = %model_config.model_name,
-            native_tool_calling = native_tool_calling,
-            use_emulator = use_emulator,
-            tool_count = tools.len(),
-            "Tool calling path resolved"
-        );
         let system_prompt = if use_emulator {
             load_tiny_model_prompt()
         } else {
