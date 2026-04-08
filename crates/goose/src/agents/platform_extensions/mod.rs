@@ -19,7 +19,6 @@ use crate::agents::mcp_client::McpClientTrait;
 use crate::session::Session;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
-use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct Source {
@@ -61,23 +60,19 @@ impl Source {
     }
 }
 
-pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(content: &str) -> Option<(T, String)> {
+pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
+    content: &str,
+) -> Result<Option<(T, String)>, serde_yaml::Error> {
     let parts: Vec<&str> = content.split("---").collect();
     if parts.len() < 3 {
-        return None;
+        return Ok(None);
     }
 
     let yaml_content = parts[1].trim();
-    let metadata: T = match serde_yaml::from_str(yaml_content) {
-        Ok(m) => m,
-        Err(e) => {
-            warn!("Failed to parse frontmatter: {}", e);
-            return None;
-        }
-    };
+    let metadata: T = serde_yaml::from_str(yaml_content)?;
 
     let body = parts[2..].join("---").trim().to_string();
-    Some((metadata, body))
+    Ok(Some((metadata, body)))
 }
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;

@@ -25,7 +25,14 @@ struct SkillMetadata {
 }
 
 fn parse_skill_content(content: &str, path: PathBuf) -> Option<Source> {
-    let (metadata, body): (SkillMetadata, String) = parse_frontmatter(content)?;
+    let (metadata, body): (SkillMetadata, String) = match parse_frontmatter(content) {
+        Ok(Some(parsed)) => parsed,
+        Ok(None) => return None,
+        Err(e) => {
+            warn!("Failed to parse skill frontmatter: {}", e);
+            return None;
+        }
+    };
 
     if metadata.name.contains('/') {
         warn!("Skill name '{}' contains '/', skipping", metadata.name);
