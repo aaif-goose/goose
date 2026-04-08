@@ -427,19 +427,13 @@ pub async fn get_slash_commands(
 
     let working_dir = query.working_dir.map(std::path::PathBuf::from);
     for source in
-        goose::agents::platform_extensions::summon::list_installed_sources(working_dir.as_deref())
+        goose::agents::platform_extensions::skills::list_installed_skills(working_dir.as_deref())
     {
-        if matches!(
-            source.kind,
-            goose::agents::platform_extensions::summon::SourceKind::Skill
-                | goose::agents::platform_extensions::summon::SourceKind::BuiltinSkill
-        ) {
-            commands.push(SlashCommand {
-                command: source.name,
-                help: source.description,
-                command_type: CommandType::Skill,
-            });
-        }
+        commands.push(SlashCommand {
+            command: source.name,
+            help: source.description,
+            command_type: CommandType::Skill,
+        });
     }
 
     Ok(Json(SlashCommandsResponse { commands }))
