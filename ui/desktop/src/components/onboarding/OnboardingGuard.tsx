@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../ConfigContext';
 import { useModelAndProvider } from '../ModelAndProviderContext';
@@ -23,6 +23,18 @@ const i18n = defineMessages({
     id: 'onboardingGuard.welcomeDescription',
     defaultMessage: 'Your local AI agent. Connect an AI model provider to get started.',
   },
+  checkProviderErrorTitle: {
+    id: 'onboardingGuard.checkProviderErrorTitle',
+    defaultMessage: 'Unable to connect to Goose server',
+  },
+  checkProviderErrorDescription: {
+    id: 'onboardingGuard.checkProviderErrorDescription',
+    defaultMessage: 'The server may be starting up or temporarily unavailable.',
+  },
+  retry: {
+    id: 'onboardingGuard.retry',
+    defaultMessage: 'Retry',
+  },
 });
 
 const TELEMETRY_CONFIG_KEY = 'GOOSE_TELEMETRY_ENABLED';
@@ -39,6 +51,7 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
 
   const [isCheckingProvider, setIsCheckingProvider] = useState(true);
   const [hasProvider, setHasProvider] = useState(false);
+  const [checkProviderError, setCheckProviderError] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
   const [configuredProvider, setConfiguredProvider] = useState<string | null>(null);
   const [configuredProviderDisplayName, setConfiguredProviderDisplayName] = useState<string | null>(
@@ -47,27 +60,30 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
   const [configuredModel, setConfiguredModel] = useState<string | null>(null);
   const hasTrackedOnboardingStart = useRef(false);
 
-  useEffect(() => {
-    const checkProvider = async () => {
-      try {
-        const provider = ((await read('GOOSE_PROVIDER', false)) as string) || '';
-        setHasProvider(provider.trim() !== '');
-      } catch (error) {
-        console.error('Error checking provider:', error);
-        setHasProvider(false);
-      } finally {
-        setIsCheckingProvider(false);
-      }
-    };
-    checkProvider();
+  const checkProvider = useCallback(async () => {
+    setIsCheckingProvider(true);
+    setCheckProviderError(false);
+    try {
+      const provider = await read('GOOSE_PROVIDER', false, { throwOnError: true });
+      setHasProvider(!!provider);
+    } catch (error) {
+      console.error('Error checking provider:', error);
+      setCheckProviderError(true);
+    } finally {
+      setIsCheckingProvider(false);
+    }
   }, [read]);
 
   useEffect(() => {
-    if (!isCheckingProvider && !hasProvider && !hasTrackedOnboardingStart.current) {
+    checkProvider();
+  }, [checkProvider]);
+
+  useEffect(() => {
+    if (!isCheckingProvider && !hasProvider && !checkProviderError && !hasTrackedOnboardingStart.current) {
       trackOnboardingStarted();
       hasTrackedOnboardingStart.current = true;
     }
-  }, [isCheckingProvider, hasProvider]);
+  }, [isCheckingProvider, hasProvider, checkProviderError]);
 
   const handleConfigured = async (providerName: string, modelId?: string) => {
     trackOnboardingProviderSelected({ provider: providerName });
@@ -105,6 +121,23 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
 
   if (isCheckingProvider) {
     return null;
+  }
+
+  if (checkProviderError) {
+    return (
+      <div className="h-screen w-full bg-background-default flex flex-col items-center justify-center">
+        <div className="text-center max-w-md">
+          <h1 className="text-xl font-light mb-3">{intl.formatMessage(i18n.checkProviderErrorTitle)}</h1>
+          <p className="text-text-muted mb-6">{intl.formatMessage(i18n.checkProviderErrorDescription)}</p>
+          <button
+            onClick={checkProvider}
+            className="px-4 py-2 bg-button-primary text-button-primary-text rounded hover:opacity-90"
+          >
+            {intl.formatMessage(i18n.retry)}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (hasProvider) {
