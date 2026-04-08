@@ -12,7 +12,7 @@ const inkeepIntegrationId = process.env.INKEEP_INTEGRATION_ID;
 const inkeepOrgId = process.env.INKEEP_ORG_ID;
 
 const config: Config = {
-  title: "goose",
+  title: "goose | Your open source AI agent",
   tagline: "your local AI agent, automating engineering tasks seamlessly",
   favicon: "img/favicon.ico",
 
@@ -516,6 +516,14 @@ const config: Config = {
         ],
         quickQuestions: ["What is goose?"],
       },
+    },
+    announcementBar: {
+      id: 'goose-aaif-announcement', // Increment on new announcements to reuse the bar
+      content:
+        '✨ goose has moved to the Agentic AI Foundation (AAIF): <a href="/blog/2026/04/07/goose-moves-to-aaif">Learn more</a>! ✨',
+      backgroundColor: '#20232a',
+      textColor: '#fff',
+      isCloseable: true,
     },
   } satisfies Preset.ThemeConfig,
 };
