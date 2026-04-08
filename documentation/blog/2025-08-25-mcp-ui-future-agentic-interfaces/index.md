@@ -138,12 +138,12 @@ The future of interacting with AI relies on smarter interfaces. And with MCP-UI,
 <head>
   <meta property="og:title" content="MCP-UI: The Future of Agentic Interfaces" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/25/mcp-ui-future-agentic-interfaces" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/25/mcp-ui-future-agentic-interfaces" />
   <meta property="og:description" content="Discover how MCP-UI is revolutionizing AI agent interactions by bringing rich, interactive web components directly into agent conversations, making AI more accessible and intuitive for everyone." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/mcpui-goose-44f248ede0eb5d2e0bddccf76e98b07e.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/mcpui-goose-44f248ede0eb5d2e0bddccf76e98b07e.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="MCP-UI: The Future of Agentic Interfaces" />
   <meta name="twitter:description" content="Discover how MCP-UI is revolutionizing AI agent interactions by bringing rich, interactive web components directly into agent conversations, making AI more accessible and intuitive for everyone." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/mcpui-goose-44f248ede0eb5d2e0bddccf76e98b07e.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/mcpui-goose-44f248ede0eb5d2e0bddccf76e98b07e.png" />
 </head>

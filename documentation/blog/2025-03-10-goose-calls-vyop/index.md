@@ -38,12 +38,12 @@ For those eager to experiment with [VOYP](https://github.com/paulotaylor/voyp-mc
 <head>
   <meta property="og:title" content="Wild goose Case: Automating Phone Calls with goose and VOYP" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/06/goose-tips" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/06/goose-tips" />
   <meta property="og:description" content="Give goose the ability to make phone calls with the VOYP extension." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-voyp-215f3391cfbe2132542a2be63db84999.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-voyp-215f3391cfbe2132542a2be63db84999.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Wild goose Case: Automating Phone Calls with goose and VOYP" />
   <meta name="twitter:description" content="Give goose the ability to make phone calls with the VOYP extension." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-voyp-215f3391cfbe2132542a2be63db84999.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-voyp-215f3391cfbe2132542a2be63db84999.png" />
 </head>

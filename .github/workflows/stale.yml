@@ -24,7 +24,7 @@ jobs:
   stale:
     name: 'Mark and Close Stale PRs'
     runs-on: ubuntu-latest
-    if: github.repository == 'block/goose'
+    if: github.repository == 'aaif-goose/goose'
     
     steps:
       # Use the official stale action from GitHub

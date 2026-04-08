@@ -24,7 +24,7 @@ const config: Config = {
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: "block", // Usually your GitHub org/user name.
+  organizationName: "aaif-goose", // Usually your GitHub org/user name.
   projectName: "goose", // Usually your repo name.
 
   onBrokenLinks: "throw",
@@ -357,7 +357,7 @@ const config: Config = {
     navbar: {
       title: "",
       logo: {
-        alt: "Block Logo",
+        alt: "goose Logo", // TODO: replace logo assets with AAIF branding
         src: "img/logo_light.png",
         srcDark: "img/logo_dark.png",
       },
@@ -421,7 +421,7 @@ const config: Config = {
           position: "right",
         },
         {
-          href: "https://github.com/block/goose",
+          href: "https://github.com/aaif-goose/goose",
           label: "GitHub",
           position: "right",
         },
@@ -484,12 +484,12 @@ const config: Config = {
             },
             {
               label: "GitHub",
-              href: "https://github.com/block/goose",
+              href: "https://github.com/aaif-goose/goose",
             },
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Block, Inc.`,
+      copyright: `Copyright © ${new Date().getFullYear()} AAIF (Agentic AI Foundation)`,
     },
     prism: {
       theme: prismThemes.github,
@@ -508,7 +508,7 @@ const config: Config = {
         getHelpCallToActions: [
           {
             name: "GitHub",
-            url: "https://github.com/block/goose",
+            url: "https://github.com/aaif-goose/goose",
             icon: {
               builtIn: "FaGithub",
             },

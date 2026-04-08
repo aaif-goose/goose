@@ -97,12 +97,12 @@ If a model passes this multi-turn prompt sequence, it's safe to assume that it i
 <head>
   <meta property="og:title" content="3 Prompts to Test for Agent Readiness" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/05/22/llm-agent-readiness" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/05/22/llm-agent-readiness" />
   <meta property="og:description" content="A series of prompts to test an LLM's capabilities to be used with AI agents" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/llm-agent-test-86ce2379ce4dde48ae1448f0f9d75c1f.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/llm-agent-test-86ce2379ce4dde48ae1448f0f9d75c1f.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="3 Prompts to Test for Agent Readiness" />
   <meta name="twitter:description" content="A series of prompts to test an LLM's capabilities to be used with AI agents" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/llm-agent-test-86ce2379ce4dde48ae1448f0f9d75c1f.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/llm-agent-test-86ce2379ce4dde48ae1448f0f9d75c1f.png" />
 </head>

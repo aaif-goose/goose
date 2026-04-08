@@ -149,12 +149,12 @@ We're always excited to see what the community is up to. If you're working on yo
 <head>
   <meta property="og:title" content="Goose Gets a Driver's License!" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/05/06/goose-gets-a-drivers-license" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/05/06/goose-gets-a-drivers-license" />
   <meta property="og:description" content="Control a MakeBlock mbot2 rover through MQTT and MCP as a Goose Extension" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-rover-blog-3f3cbe549ebbfb0f951ff61a86788475.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-rover-blog-3f3cbe549ebbfb0f951ff61a86788475.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Goose Gets a Driver's License!" />
   <meta name="twitter:description" content="Control a MakeBlock mbot2 rover through MQTT and MCP as a Goose Extension" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-rover-blog-3f3cbe549ebbfb0f951ff61a86788475.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-rover-blog-3f3cbe549ebbfb0f951ff61a86788475.png" />
 </head>

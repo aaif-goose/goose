@@ -3,7 +3,7 @@
   "description": "Amazing blog posts, videos, and tutorials created by our community for goose!",
   "lastUpdated": "2025-10-15",
   "hacktoberfestYear": 2025,
-  "submissionUrl": "https://github.com/block/goose/issues/4705",
+  "submissionUrl": "https://github.com/aaif-goose/goose/issues/4705",
   "submissions": [
     {
       "title": "Hacktoberfest 2025: Contributing to goose",
@@ -12,7 +12,7 @@
         "handle": "taniacryptid"
       },
       "type": "blog",
-      "url": "https://block.github.io/goose/blog/2025/09/26/hacktoberfest-2025",
+      "url": "https://goose-docs.ai/blog/2025/09/26/hacktoberfest-2025",
       "thumbnail": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=400&h=225&fit=crop&crop=entropy&auto=format",
       "submittedDate": "2025-09-26",
       "tags": [

@@ -21,7 +21,7 @@ But something still felt off.
 
 The tools still weren’t really *thinking*. They were fetching data, returning text, and leaving all the heavy reasoning to my LLM. That’s when I realized the issue wasn’t my descriptions. It was how the system actually worked under the hood.
 
-That’s where [MCP sampling](https://block.github.io/goose/docs/guides/mcp-sampling/) came in.
+That’s where [MCP sampling](https://goose-docs.ai/docs/guides/mcp-sampling/) came in.
 Not as a magic feature, but as a different way of structuring how tools and the LLM actually collaborate.
 
 ## What actually changed my understanding
@@ -49,7 +49,7 @@ It’s the same model and the same agent, but the behavior changes completely.
 
 ## Where Council of Mine fits in
 
-Seeing the flow change helped me understand sampling conceptually. [Council of Mine](https://github.com/block/mcp-council-of-mine) helped me understand it viscerally.
+Seeing the flow change helped me understand sampling conceptually. [Council of Mine](https://github.com/aaif-goose/mcp-council-of-mine) helped me understand it viscerally.
 
 It’s not MCP sampling itself. It’s an example of what becomes possible once sampling exists.
 
@@ -67,17 +67,17 @@ But on their own, they won’t get you to truly agentic behavior. Descriptions s
 
 That distinction was the missing piece for me. And once I could actually see the flow, everything else started to make more sense.
 
-If this helped make things click, I’d recommend trying the [Council of Mine extension](https://block.github.io/goose/docs/mcp/council-of-mine-mcp) for yourself. It’s one of the clearest ways to see MCP sampling in action.
+If this helped make things click, I’d recommend trying the [Council of Mine extension](https://goose-docs.ai/docs/mcp/council-of-mine-mcp) for yourself. It’s one of the clearest ways to see MCP sampling in action.
 
 <head>
   <meta property="og:title" content="Why Tool Descriptions Aren’t Enough" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/01/15/why-tool-descriptions-arent-enough" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/15/why-tool-descriptions-arent-enough" />
   <meta property="og:description" content="I thought better tool descriptions would solve everything. They didn’t. Here’s what finally made MCP sampling click for me." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/blogbanner-97fb5e20248b53e838888082ac9f5860.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blogbanner-97fb5e20248b53e838888082ac9f5860.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Why Tool Descriptions Aren’t Enough" />
   <meta name="twitter:description" content="I thought better tool descriptions would solve everything. They didn’t. Here’s what finally made MCP sampling click for me." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/blogbanner-97fb5e20248b53e838888082ac9f5860.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blogbanner-97fb5e20248b53e838888082ac9f5860.png" />
 </head>

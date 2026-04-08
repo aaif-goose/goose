@@ -12,7 +12,7 @@
       "name": "Google Drive",
       "command": "npx -y @modelcontextprotocol/server-gdrive",
       "is_builtin": false,
-      "link": "https://block.github.io/goose/v1/extensions/google-drive",
+      "link": "https://goose-docs.ai/v1/extensions/google-drive",
       "environmentVariables": [
         {
           "name": "GDRIVE_OAUTH_PATH",

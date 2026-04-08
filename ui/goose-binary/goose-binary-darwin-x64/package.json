@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/block/goose.git"
+    "url": "git+https://github.com/aaif-goose/goose.git"
   },
   "keywords": [
     "goose",

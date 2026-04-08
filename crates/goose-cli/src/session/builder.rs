@@ -665,7 +665,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                 "Error {}.\n\
                 Please check your system keychain and run 'goose configure' again.\n\
                 If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                For more info, see: https://block.github.io/goose/docs/troubleshooting/#keychainkeyring-errors",
+                For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
                 e
             ));
             process::exit(1);

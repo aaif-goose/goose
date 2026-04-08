@@ -129,10 +129,10 @@ function CommunityAllStarsSection() {
           </div>
           <div className="text-sm">
             Want to be a Community All Star? Just start contributing on{' '}
-            <Link href="https://github.com/block/goose">GitHub</Link>, helping others on{' '}
+            <Link href="https://github.com/aaif-goose/goose">GitHub</Link>, helping others on{' '}
             <Link href="https://discord.gg/goose-oss">Discord</Link>, or share your 
             goose projects with the community! You can check out the{' '}
-            <Link href="https://github.com/block/goose/blob/main/CONTRIBUTING.md">contributing guide</Link>{' '}
+            <Link href="https://github.com/aaif-goose/goose/blob/main/CONTRIBUTING.md">contributing guide</Link>{' '}
             for more tips.
           </div>
         </div>

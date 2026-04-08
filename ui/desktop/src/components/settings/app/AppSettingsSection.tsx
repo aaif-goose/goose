@@ -469,7 +469,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
             <Button
               onClick={() => {
                 window.open(
-                  'https://github.com/block/goose/issues/new?template=bug_report.md',
+                  'https://github.com/aaif-goose/goose/issues/new?template=bug_report.md',
                   '_blank'
                 );
               }}
@@ -481,7 +481,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
             <Button
               onClick={() => {
                 window.open(
-                  'https://github.com/block/goose/issues/new?template=feature_request.md',
+                  'https://github.com/aaif-goose/goose/issues/new?template=feature_request.md',
                   '_blank'
                 );
               }}
@@ -504,7 +504,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
             <div className="flex items-center gap-3">
               <img
                 src={isDarkMode ? BlockLogoWhite : BlockLogoBlack}
-                alt="Block Logo"
+                alt="Block Logo" // TODO: replace with AAIF logo asset
                 className="h-8 w-auto"
               />
               <span className="text-2xl font-mono text-black dark:text-white">

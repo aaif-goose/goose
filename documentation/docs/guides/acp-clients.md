@@ -27,7 +27,7 @@ ACP sessions are saved to goose's session history where you can access and manag
 :::
 
 :::tip Reference Implementation
-The [goose for VS Code](/docs/experimental/vs-code-extension) extension uses ACP to communicate with goose. See the [vscode-goose](https://github.com/block/vscode-goose) repository for implementation details.
+The [goose for VS Code](/docs/experimental/vs-code-extension) extension uses ACP to communicate with goose. See the [vscode-goose](https://github.com/aaif-goose/vscode-goose) repository for implementation details.
 :::
 
 ## Setup in ACP Clients

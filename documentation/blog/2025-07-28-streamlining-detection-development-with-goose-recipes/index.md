@@ -9,7 +9,7 @@ authors:
 
 Creating effective security detections in Panther traditionally requires deep knowledge of detection logic, testing frameworks, and development workflows. The detection engineering team at Block has streamlined this process by building Goose recipes that automate the entire detection creation lifecycle from initial repository set up to pull request creation.
 
-This blog post explores how to leverage Goose's [recipe](https://block.github.io/goose/docs/guides/recipes/) and [subrecipe](https://block.github.io/goose/docs/guides/recipes/subrecipes) system to create new detections in Panther with minimal manual intervention, ensuring consistency, quality, and adherence to team standards.
+This blog post explores how to leverage Goose's [recipe](https://goose-docs.ai/docs/guides/recipes/) and [subrecipe](https://goose-docs.ai/docs/guides/recipes/subrecipes) system to create new detections in Panther with minimal manual intervention, ensuring consistency, quality, and adherence to team standards.
 
 <!-- truncate -->
 
@@ -70,7 +70,7 @@ The detection creation recipe demonstrates the power of this approach by coordin
 6. [**pr_creator**](#6-pr_creator-automated-pull-request-pipeline) - Pull request creation with proper formatting
 
 ### What about .goosehints?
-In our [previous post](https://block.github.io/goose/blog/2025/06/02/goose-panther-mcp), we discussed using [.goosehints](/docs/guides/context-engineering/using-goosehints/) to provide persistent context to the Large Language Model (LLM). We continue to use `.goosehints` to define coding standards and universal preferences that guide LLM behavior.
+In our [previous post](https://goose-docs.ai/blog/2025/06/02/goose-panther-mcp), we discussed using [.goosehints](/docs/guides/context-engineering/using-goosehints/) to provide persistent context to the Large Language Model (LLM). We continue to use `.goosehints` to define coding standards and universal preferences that guide LLM behavior.
 
 However, to minimize redundancy and avoid conflicting guidance, we adopted a single reference file, `AGENTS.md`, as the source of truth for all agents. Each agent is directed to consult this file, while still supporting agent-specific instructions through their default context files (e.g. `.goosehints`, `CLAUDE.md` etc.) or rules (e.g. `.cursor/rules/`).
 
@@ -622,13 +622,13 @@ Whether you're building your first Goose recipe or looking to optimize existing 
 <head>
   <meta property="og:title" content="Streamlining Detection Development with Goose Recipes" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/07/28/streamlining-detection-development-with-goose-recipes" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/07/28/streamlining-detection-development-with-goose-recipes" />
   <meta property="og:description" content="A comprehensive guide to using recipes in Goose to streamline security detection development" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-recipes-detection-development-cover.png" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-recipes-detection-development-cover-cac8a9bea2d090ec2758a0b907bc9da8.png" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-recipes-detection-development-cover.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-recipes-detection-development-cover-cac8a9bea2d090ec2758a0b907bc9da8.png" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Streamlining Detection Development with Goose Recipes" />
   <meta name="twitter:description" content="A comprehensive guide to using recipes in Goose to streamline security detection development" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-recipes-detection-development-cover.png" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-recipes-detection-development-cover-cac8a9bea2d090ec2758a0b907bc9da8.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-recipes-detection-development-cover.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-recipes-detection-development-cover-cac8a9bea2d090ec2758a0b907bc9da8.png" />
 </head>

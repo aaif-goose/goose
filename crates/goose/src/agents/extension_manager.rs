@@ -58,6 +58,14 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
 
+fn resolve_timeout(timeout: Option<u64>) -> u64 {
+    timeout.unwrap_or_else(|| {
+        Config::global()
+            .get_goose_default_extension_timeout()
+            .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
+    })
+}
+
 struct Extension {
     pub config: ExtensionConfig,
     /// Resolved config snapshot (with secrets from keyring substituted)
@@ -275,7 +283,7 @@ async fn child_process_client(
 
     let client_result = McpClient::connect_with_container(
         transport,
-        Duration::from_secs(timeout.unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)),
+        Duration::from_secs(resolve_timeout(*timeout)),
         provider,
         docker_container,
         client_name,
@@ -441,8 +449,7 @@ async fn create_streamable_http_client(
         },
     );
 
-    let timeout_duration =
-        Duration::from_secs(timeout.unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT));
+    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
 
     let client_res = McpClient::connect(
         transport,
@@ -636,7 +643,7 @@ impl ExtensionManager {
                     (def.client_factory)(context)
                 } else {
                     // Builtin MCP server extension
-                    let timeout_secs = timeout.unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT);
+                    let timeout_secs = resolve_timeout(timeout);
                     let extension_fn =
                         get_builtin_extension(normalized_name.as_str()).ok_or_else(|| {
                             ExtensionError::ConfigError(format!("Unknown extension: {}", name))

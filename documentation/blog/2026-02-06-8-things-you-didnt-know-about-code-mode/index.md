@@ -218,20 +218,20 @@ If you want to experiment with Code Mode, here are some resources:
 
 **Community:**
 - Join our [Discord](https://discord.gg/goose-oss) to share what you learn
-- File issues on [GitHub](https://github.com/block/goose) if something does not work as expected
+- File issues on [GitHub](https://github.com/aaif-goose/goose) if something does not work as expected
 
 Run your own experiments and let us know what you find.
 
 <head>
   <meta property="og:title" content="8 Things You Didn't Know About Code Mode" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/02/06/8-things-you-didnt-know-about-code-mode" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/06/8-things-you-didnt-know-about-code-mode" />
   <meta property="og:description" content="Discover how Code mode reduces context rot and token usage in AI agents making them more efficient for long running sessions." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/header-image-bf242a438cd67caab097fab1d8bd31c5.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/header-image-bf242a438cd67caab097fab1d8bd31c5.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="8 Things You Didn't Know About Code Mode" />
   <meta name="twitter:description" content="Discover how Code mode reduces context rot and token usage in AI agents making them more efficient for long running sessions." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/header-image-bf242a438cd67caab097fab1d8bd31c5.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/header-image-bf242a438cd67caab097fab1d8bd31c5.png" />
   <meta name="keywords" content="goose, MCP, Model Context Protocol, Code Mode, AI agents, context rot, token usage, JavaScript, developer tools, ACP, Neovim" />
 </head>

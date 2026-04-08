@@ -98,7 +98,7 @@ In this example, goose sends a LinkedIn post draft to gotoHuman for approval usi
 Send this blog draft about goose to gotoHuman for review using my `n8n news to post` form. 
 
 Include today’s date as the timestamp, these links: 
-[goose Docs: https://block.github.io/goose/, gotoHuman: https://gotohuman.com/], 
+[goose Docs: https://goose-docs.ai/, gotoHuman: https://gotohuman.com/], 
 summarize it as ‘Introducing goose’s integration with gotoHuman for human approvals,’ 
 and here’s the draft:
 

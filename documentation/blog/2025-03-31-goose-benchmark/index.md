@@ -23,7 +23,7 @@ These community evals aren't the rigorous, peer-reviewed benchmarks that researc
 
 In this spirit, we're introducing our **Goose Vibe Check** leaderboard. 
 
-Thank you to the Ollama team for their help and support in our experimentation contributing to this blog! We used Ollama’s [structured outputs](https://ollama.com/blog/structured-outputs) feature to enable our [toolshim implementation](https://block.github.io/goose/docs/experimental/ollama) (more below) and their recently released [context length parameter override](https://github.com/ollama/ollama/blob/main/docs/faq.mdx#how-can-i-specify-the-context-window-size) to enable testing on longer contexts.
+Thank you to the Ollama team for their help and support in our experimentation contributing to this blog! We used Ollama’s [structured outputs](https://ollama.com/blog/structured-outputs) feature to enable our [toolshim implementation](https://goose-docs.ai/docs/experimental/ollama) (more below) and their recently released [context length parameter override](https://github.com/ollama/ollama/blob/main/docs/faq.mdx#how-can-i-specify-the-context-window-size) to enable testing on longer contexts.
 
 ## Leaderboard
 
@@ -136,7 +136,7 @@ Tool calling enables models to interact with [MCP extensions](https://github.com
 
 ### Evaluation Suites
 
-Our evaluations are defined in the [Goose repository](https://github.com/block/goose/tree/main/crates/goose-bench/src/eval_suites) (PRs welcome to add additional evals!) and are grouped into two categories:
+Our evaluations are defined in the [Goose repository](https://github.com/aaif-goose/goose/tree/main/crates/goose-bench/src/eval_suites) (PRs welcome to add additional evals!) and are grouped into two categories:
 
 #### Core Suite
 These evals focus on certain tasks fundamental to developer workflows:
@@ -237,7 +237,7 @@ However, this solution has limited performance due to:
 - **Structured output interference:** Ollama’s structured output feature influences the model’s token sampling process, where the output is impacted by the model’s fundamental ability to extract information and generate JSON appropriately.
 
 Despite these challenges, there could be potential in fine-tuning these toolshim models to specifically optimize them for tool call generation. 
-If you’d like to try out the toolshim, check out our [documentation](https://block.github.io/goose/docs/experimental/ollama)
+If you’d like to try out the toolshim, check out our [documentation](https://goose-docs.ai/docs/experimental/ollama)
 
 ## Practical Advice for Local Model Users
 
@@ -422,13 +422,13 @@ For runs that successfully created an index.html for the Wiki page task, here’
 <head>
   <meta property="og:title" content="Community-Inspired Benchmarking: The Goose Vibe Check" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/31/goose-benchmark" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/31/goose-benchmark" />
   <meta property="og:description" content="See how open source AI models measure up in our first Goose agent benchmark tests" />
-  <meta property="og:image" content="http://block.github.io/goose/assets/images/goose-benchmark-d9726c203290ef892fe3fe3adc7d898f.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/goose-benchmark-d9726c203290ef892fe3fe3adc7d898f.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Community-Inspired Benchmarking: The Goose Vibe Check" />
   <meta name="twitter:description" content="See how open source AI models measure up in our first Goose agent benchmark tests" />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/goose-benchmark-d9726c203290ef892fe3fe3adc7d898f.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/goose-benchmark-d9726c203290ef892fe3fe3adc7d898f.png" />
 </head>
 

@@ -23,7 +23,7 @@ concurrency:
 jobs:
   rebuild-docs:
     runs-on: ubuntu-latest
-    if: github.repository == 'block/goose'
+    if: github.repository == 'aaif-goose/goose'
     permissions:
       contents: write
 

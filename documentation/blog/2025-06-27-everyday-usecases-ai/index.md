@@ -114,12 +114,12 @@ What everyday tasks are you delegating to AI agents? Let us know in [Discord](ht
 <head>
   <meta property="og:title" content="5 Boring Tasks I Gave to My AI Agent Today (That Saved Me Hours)" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/06/27/everyday-usecases-ai" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/06/27/everyday-usecases-ai" />
   <meta property="og:description" content="Forget the flashy demos. Here's everyday use cases for AI." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/everyday-usage-of-ai-69f4444328b28bdc945e5ff9fc92034d.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/everyday-usage-of-ai-69f4444328b28bdc945e5ff9fc92034d.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="5 Boring Tasks I Gave to My AI Agent Today (That Saved Me Hours)" />
   <meta name="twitter:description" content="Forget the flashy demos. Here's everyday use cases for AI." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/everyday-usage-of-ai-69f4444328b28bdc945e5ff9fc92034d.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/everyday-usage-of-ai-69f4444328b28bdc945e5ff9fc92034d.png" />
 </head>

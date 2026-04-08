@@ -47,10 +47,10 @@ jobs:
           fetch-tags: true  # Fetch all tags so we can checkout version tags
       
       - name: Fetch upstream tags (for forks)
-        if: github.repository != 'block/goose'
+        if: github.repository != 'aaif-goose/goose'
         run: |
           # Add upstream remote and fetch tags (only needed when testing in forks)
-          git remote add upstream https://github.com/block/goose.git || git remote set-url upstream https://github.com/block/goose.git
+          git remote add upstream https://github.com/aaif-goose/goose.git || git remote set-url upstream https://github.com/aaif-goose/goose.git
           git fetch upstream --tags --force
           echo "✅ Fetched tags from upstream (fork mode)"
           echo "Total tags available: $(git tag | wc -l)"
@@ -68,7 +68,7 @@ jobs:
       - name: Install goose CLI
         run: |
           mkdir -p /home/runner/.local/bin
-          curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh \
+          curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
             | CONFIGURE=false GOOSE_BIN_DIR=/home/runner/.local/bin bash
           echo "/home/runner/.local/bin" >> $GITHUB_PATH
           goose --version

@@ -1064,6 +1064,7 @@ config_value!(GEMINI3_THINKING_LEVEL, String);
 config_value!(CLAUDE_THINKING_TYPE, String);
 config_value!(CLAUDE_THINKING_EFFORT, String);
 config_value!(CLAUDE_THINKING_BUDGET, i32);
+config_value!(GOOSE_DEFAULT_EXTENSION_TIMEOUT, u64);
 
 fn find_workspace_or_exe_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;

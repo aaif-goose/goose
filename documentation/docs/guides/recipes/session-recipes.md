@@ -162,7 +162,7 @@ You can turn your current goose session into a reusable recipe that includes the
 
 
   <TabItem value="generator" label="Recipe Generator">
-    Use the online [Recipe Generator](https://block.github.io/goose/recipe-generator) tool to create a recipe. First choose your preferred format:
+    Use the online [Recipe Generator](https://goose-docs.ai/recipe-generator) tool to create a recipe. First choose your preferred format:
 
     - **URL Format**: Generates a shareable link that opens a session in goose Desktop
     - **YAML Format**: Generates YAML content that you can save to file and then run in goose CLI

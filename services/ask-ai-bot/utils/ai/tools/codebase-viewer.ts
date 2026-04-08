@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-const GITHUB_BASE_URL = "https://github.com/block/goose/blob/main";
+const GITHUB_BASE_URL = "https://github.com/aaif-goose/goose/blob/main";
 
 function getCodebaseDir(): string {
   return process.env.CODEBASE_PATH || path.join(process.cwd(), "../..");

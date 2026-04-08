@@ -1,12 +1,12 @@
 use crate::recipes::github_recipe::GOOSE_RECIPE_GITHUB_REPO_CONFIG_KEY;
 use cliclack::spinner;
 use console::style;
-use goose::agents::extension::{ToolInfo, PLATFORM_EXTENSIONS};
-use goose::agents::extension_manager::get_parameter_names;
 use goose::agents::Agent;
-use goose::agents::{extension::Envs, ExtensionConfig};
+use goose::agents::extension::{PLATFORM_EXTENSIONS, ToolInfo};
+use goose::agents::extension_manager::get_parameter_names;
+use goose::agents::{ExtensionConfig, extension::Envs};
 use goose::config::declarative_providers::{
-    create_custom_provider, remove_custom_provider, CreateCustomProviderParams,
+    CreateCustomProviderParams, create_custom_provider, remove_custom_provider,
 };
 use goose::config::extensions::{
     get_all_extension_names, get_all_extensions, get_enabled_extensions, get_extension_by_name,
@@ -16,17 +16,17 @@ use goose::config::paths::Paths;
 use goose::config::permission::PermissionLevel;
 use goose::config::signup_tetrate::TetrateAuth;
 use goose::config::{
-    configure_tetrate, Config, ConfigError, ExperimentManager, ExtensionEntry, GooseMode,
-    PermissionManager,
+    Config, ConfigError, ExperimentManager, ExtensionEntry, GooseMode, PermissionManager,
+    configure_tetrate,
 };
 use goose::model::ModelConfig;
 #[cfg(feature = "telemetry")]
-use goose::posthog::{get_telemetry_choice, TELEMETRY_ENABLED_KEY};
+use goose::posthog::{TELEMETRY_ENABLED_KEY, get_telemetry_choice};
 use goose::providers::base::ConfigKey;
 use goose::providers::chatgpt_codex::reasoning_levels_for_model;
 use goose::providers::formats::anthropic::supports_adaptive_thinking;
 use goose::providers::provider_test::test_provider_configuration;
-use goose::providers::{create, providers, retry_operation, RetryConfig};
+use goose::providers::{RetryConfig, create, providers, retry_operation};
 use goose::session::SessionType;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -853,7 +853,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         Err(e) => {
             spin.stop(style(e.to_string()).red());
             cliclack::outro(
-                style(format!("Failed to configure provider: {}", e))
+                style(format!("Failed to configure provider: {e}"))
                     .on_red()
                     .white(),
             )?;
@@ -1366,7 +1366,9 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_MODE").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_MODE environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_MODE environment variable is set and will override the configuration here.",
+        );
     }
 
     let mode = cliclack::select("Which goose mode would you like to configure?")
@@ -1408,7 +1410,9 @@ pub fn configure_telemetry_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_TELEMETRY_OFF").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_TELEMETRY_OFF environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_TELEMETRY_OFF environment variable is set and will override the configuration here.",
+        );
     }
 
     let current_choice = get_telemetry_choice();
@@ -1439,7 +1443,9 @@ pub fn configure_tool_output_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_CLI_MIN_PRIORITY").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_CLI_MIN_PRIORITY environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_CLI_MIN_PRIORITY environment variable is set and will override the configuration here.",
+        );
     }
     let tool_log_level = cliclack::select("Which tool output would you like to show?")
         .item("high", "High Importance", "")
@@ -1470,7 +1476,9 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_DISABLE_KEYRING").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_DISABLE_KEYRING environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_DISABLE_KEYRING environment variable is set and will override the configuration here.",
+        );
     }
 
     let currently_disabled = config.get_param::<String>("GOOSE_DISABLE_KEYRING").is_ok();
@@ -1863,7 +1871,9 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     eprintln!("⚠️  Configuration test failed: {}", e);
-                    eprintln!("Your settings have been saved, but there may be an issue with the connection.");
+                    eprintln!(
+                        "Your settings have been saved, but there may be an issue with the connection."
+                    );
                 }
             }
         }
@@ -1934,7 +1944,9 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     eprintln!("⚠️  Configuration test failed: {}", e);
-                    eprintln!("Your settings have been saved, but there may be an issue with the connection.");
+                    eprintln!(
+                        "Your settings have been saved, but there may be an issue with the connection."
+                    );
                 }
             }
         }

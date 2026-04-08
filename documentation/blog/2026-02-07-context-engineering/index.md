@@ -19,7 +19,7 @@ Saying “one shot prompting is dead” isn’t revolutionary. It’s just catch
 
 ## The blog post that aged faster than oat milk
 
-Last year, I wrote a post about [how to prompt better](https://block.github.io/goose/blog/2025/03/19/better-ai-prompting). I shared tricks, phrasing tips, and even said to add a few “pleases” and “thank yous” and your AI agent would give you the world. At the time it felt cutting edge, because it was. There were livestreams and conference talks entirely about how to prompt better.
+Last year, I wrote a post about [how to prompt better](https://goose-docs.ai/blog/2025/03/19/better-ai-prompting). I shared tricks, phrasing tips, and even said to add a few “pleases” and “thank yous” and your AI agent would give you the world. At the time it felt cutting edge, because it was. There were livestreams and conference talks entirely about how to prompt better.
 
 Less than a year later, it feels… quaint. Not because prompting stopped mattering, but because prompting stopped being the main character.
 
@@ -31,7 +31,7 @@ to
 
 > “What environment am I dropping this model into?”
 
-That’s a completely different problem, and now it has a name. **[Context engineering](https://block.github.io/goose/docs/guides/context-engineering/)**.
+That’s a completely different problem, and now it has a name. **[Context engineering](https://goose-docs.ai/docs/guides/context-engineering/)**.
 
 
 ---
@@ -78,7 +78,7 @@ Here’s what that loop looked like in practice:
 
 > *Even **this** demo is powered by persistent context.*
 
-That was the moment I experimented with [RPI](https://block.github.io/goose/docs/tutorials/rpi). Not because it was trendy, but because the alternative had become tedious.
+That was the moment I experimented with [RPI](https://goose-docs.ai/docs/tutorials/rpi). Not because it was trendy, but because the alternative had become tedious.
 
 You don’t have to adopt RPI, or any new pattern, tomorrow to benefit from this. You can simulate the shift in your next session with a small change in how you start.
 
@@ -147,12 +147,12 @@ And honestly, that’s progress.
 <head>
   <meta property="og:title" content="One Shot Prompting is Dead" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog//2026/02/07/context-engineering" />
+  <meta property="og:url" content="https://goose-docs.ai/blog//2026/02/07/context-engineering" />
   <meta property="og:description" content="Practical steps and mental models for building context-engineered workflows instead of clever prompts." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/blogbanner-2fa90c93a49496447d38217739242dec.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blogbanner-2fa90c93a49496447d38217739242dec.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="One Shot Prompting is Dead" />
   <meta name="twitter:description" content="Practical steps and mental models for building context-engineered workflows instead of clever prompts.." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/blogbanner-2fa90c93a49496447d38217739242dec.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blogbanner-2fa90c93a49496447d38217739242dec.png" />
 </head>

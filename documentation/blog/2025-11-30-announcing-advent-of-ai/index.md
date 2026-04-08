@@ -55,12 +55,12 @@ The first challenge unlocks December 1st at 12 PM ET. The Winter Festival needs 
 <head>
   <meta property="og:title" content="Announcing Advent of AI" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/11/30/announcing-advent-of-ai" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/11/30/announcing-advent-of-ai" />
   <meta property="og:description" content="We're launching an advent calendar of AI engineering challenges to help you build applicable projects with goose." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/advent-of-ai-header-7076e6e92caf243b488ff6ea0082c48e.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/advent-of-ai-header-7076e6e92caf243b488ff6ea0082c48e.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Announcing Advent of AI" />
   <meta name="twitter:description" content="We're launching an advent calendar of AI engineering challenges to help you build applicable projects with goose." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/advent-of-ai-header-7076e6e92caf243b488ff6ea0082c48e.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/advent-of-ai-header-7076e6e92caf243b488ff6ea0082c48e.png" />
 </head>

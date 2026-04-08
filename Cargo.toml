@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/*", 
+    "crates/*",
     # Mainly for cargo-machete to not error out during inspection.
     "vendor/v8"
 ]
@@ -9,9 +9,9 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 version = "1.30.0"
-authors = ["Block <ai-oss-tools@block.xyz>"]
+authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
-repository = "https://github.com/block/goose"
+repository = "https://github.com/aaif-goose/goose"
 description = "An AI agent"
 
 [workspace.lints.clippy]

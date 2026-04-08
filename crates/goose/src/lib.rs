@@ -12,6 +12,7 @@ pub mod config;
 pub mod context_mgmt;
 pub mod conversation;
 pub mod dictation;
+pub mod doctor;
 pub mod download_manager;
 pub mod execution;
 pub mod gateway;

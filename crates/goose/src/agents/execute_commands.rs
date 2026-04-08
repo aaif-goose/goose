@@ -37,6 +37,10 @@ static COMMANDS: &[CommandDef] = &[
         name: "skills",
         description: "List installed skills and other available sources",
     },
+    CommandDef {
+        name: "doctor",
+        description: "Check that your Goose setup is working",
+    },
 ];
 
 pub fn list_commands() -> &'static [CommandDef] {
@@ -77,6 +81,7 @@ impl Agent {
             "compact" => self.handle_compact_command(session_id).await,
             "clear" => self.handle_clear_command(session_id).await,
             "skills" => self.handle_skills_command(session_id).await,
+            "doctor" => Ok(Some(crate::doctor::run(self, session_id).await?)),
             _ => {
                 self.handle_recipe_command(command, params_str, session_id)
                     .await
@@ -135,7 +140,8 @@ impl Agent {
     }
 
     async fn handle_skills_command(&self, session_id: &str) -> Result<Option<Message>> {
-        use super::platform_extensions::summon::{list_installed_sources, SourceKind};
+        use super::platform_extensions::skills::list_installed_skills;
+        use super::platform_extensions::SourceKind;
 
         let working_dir = self
             .config
@@ -144,7 +150,7 @@ impl Agent {
             .await
             .ok()
             .map(|s| s.working_dir);
-        let sources = list_installed_sources(working_dir.as_deref());
+        let sources = list_installed_skills(working_dir.as_deref());
         let skills: Vec<_> = sources
             .iter()
             .filter(|s| matches!(s.kind, SourceKind::Skill | SourceKind::BuiltinSkill))
