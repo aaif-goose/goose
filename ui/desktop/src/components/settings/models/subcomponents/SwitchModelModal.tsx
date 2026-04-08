@@ -115,6 +115,14 @@ const i18n = defineMessages({
     id: 'switchModelModal.checkProviderConfig',
     defaultMessage: 'Check your provider configuration in Settings → Providers',
   },
+  couldNotFetchModels: {
+    id: 'switchModelModal.couldNotFetchModels',
+    defaultMessage: 'Could not fetch models from provider',
+  },
+  manualEntryHint: {
+    id: 'switchModelModal.manualEntryHint',
+    defaultMessage: 'You can still enter a model name manually, or check your provider configuration in Settings → Providers.',
+  },
   loadingModels: {
     id: 'switchModelModal.loadingModels',
     defaultMessage: 'Loading models…',
@@ -841,21 +849,33 @@ export const SwitchModelModal = ({
                       </div>
                     </div>
                   ) : providerErrors[provider] ? (
-                    /* Show error message when provider failed to connect */
-                    <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3">
-                      <div className="flex items-start">
-                        <div className="flex-1">
-                          <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-                            {intl.formatMessage(i18n.couldNotContactProvider)}
-                          </h3>
-                          <div className="mt-1 text-sm text-red-700 dark:text-red-300">
-                            {providerErrors[provider]}
-                          </div>
-                          <div className="mt-2 text-xs text-red-600 dark:text-red-400">
-                            {intl.formatMessage(i18n.checkProviderConfig)}
+                    /* Show error with custom model input so users aren't stuck */
+                    <div className="flex flex-col gap-2">
+                      <div className="rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3">
+                        <div className="flex items-start">
+                          <div className="flex-1">
+                            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                              {intl.formatMessage(i18n.couldNotFetchModels)}
+                            </h3>
+                            <div className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+                              {providerErrors[provider]}
+                            </div>
+                            <div className="mt-2 text-xs text-yellow-600 dark:text-yellow-400">
+                              {intl.formatMessage(i18n.manualEntryHint)}
+                            </div>
                           </div>
                         </div>
                       </div>
+                      <label className="text-sm text-text-secondary">{intl.formatMessage(i18n.customModelName)}</label>
+                      <Input
+                        className="border-2 px-4 py-5"
+                        placeholder={intl.formatMessage(i18n.typeModelName)}
+                        onChange={(event) => setModel(event.target.value)}
+                        value={model}
+                      />
+                      {attemptedSubmit && validationErrors.model && (
+                        <div className="text-red-500 text-sm mt-1">{validationErrors.model}</div>
+                      )}
                     </div>
                   ) : !isCustomModel ? (
                     <div>
