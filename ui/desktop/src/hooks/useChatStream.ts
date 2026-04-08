@@ -633,7 +633,7 @@ export function useChatStream({
       } catch (error) {
         // Abort is expected when stopStreaming races with the POST
         if (abortController.signal.aborted) return;
-        // POST failed — clean up listener and report error.
+        // POST failed — clean up listener and reset to Idle.
         // Only clear global refs if this request is still the active one;
         // a newer request may have already replaced them.
         unsubscribe();
@@ -643,7 +643,10 @@ export function useChatStream({
           activeRequestSessionIdRef.current = null;
           activeAbortRef.current = null;
         }
-        onFinish('Submit error: ' + errorMessage(error));
+        // Reset to idle instead of setting sessionLoadError, which would
+        // show a blocking full-page error screen. The user can retry.
+        dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.Idle });
+        console.warn('Submit failed:', errorMessage(error));
       }
     },
     [addListener, onFinish, reloadConversation]
@@ -783,7 +786,13 @@ export function useChatStream({
       const { msg: userMessage, images } = input;
       const currentState = stateRef.current;
 
-      if (!currentState.session || currentState.chatState === ChatState.LoadingConversation) {
+      if (
+        !currentState.session ||
+        currentState.chatState === ChatState.LoadingConversation ||
+        currentState.chatState === ChatState.Streaming ||
+        currentState.chatState === ChatState.Thinking ||
+        currentState.chatState === ChatState.Compacting
+      ) {
         return;
       }
 
