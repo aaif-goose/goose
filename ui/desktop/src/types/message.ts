@@ -94,19 +94,35 @@ export function getTextAndImageContent(message: Message): {
     }
   }
 
+  // Strip <think> tags from text content — the thinking is surfaced via getThinkingContent
+  textContent = textContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
   return { textContent, imagePaths };
 }
 
 export function getThinkingContent(message: Message): string | null {
-  const thinkingContents = message.content
-    .filter((content) => content.type === 'thinking')
-    .map((content) => {
-      if ('thinking' in content) return content.thinking;
-      return '';
-    })
-    .filter((text) => text.length > 0);
+  const parts: string[] = [];
 
-  return thinkingContents.length > 0 ? thinkingContents.join('') : null;
+  // Structured thinking content blocks
+  for (const content of message.content) {
+    if (content.type === 'thinking' && 'thinking' in content && content.thinking) {
+      parts.push(content.thinking);
+    }
+  }
+
+  // Inline <think> tags in text content
+  for (const content of message.content) {
+    if (content.type === 'text') {
+      const regex = /<think>([\s\S]*?)<\/think>/gi;
+      let match;
+      while ((match = regex.exec(content.text)) !== null) {
+        const text = match[1].trim();
+        if (text) parts.push(text);
+      }
+    }
+  }
+
+  return parts.length > 0 ? parts.join('') : null;
 }
 
 export function getToolRequests(message: Message): (ToolRequest & { type: 'toolRequest' })[] {
