@@ -86,12 +86,13 @@ Pick the UI you like. Pick the agent you like. They don't have to be the same th
 <head>
   <meta property="og:title" content="How to Break Up with Your Agent" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/04/08/how-to-break-up-with-your-agent" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/04/08/how-to-break-up-with-your-agent" />
   <meta property="og:description" content="ACP lets you keep your favorite editor but swap the AI agent, or keep your agent but use it from any editor. Here's what actually works today in Goose." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta property="twitter:domain" content="block.github.io/goose" />
   <meta name="twitter:title" content="How to Break Up with Your Agent" />
   <meta name="twitter:description" content="ACP lets you keep your favorite editor but swap the AI agent, or keep your agent but use it from any editor. Here's what actually works today in Goose." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/header-f8e0e7e5dfa082ad8d33c0fdf84163d4.png" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/header-f8e0e7e5dfa082ad8d33c0fdf84163d4.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/header-f8e0e7e5dfa082ad8d33c0fdf84163d4.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/header-f8e0e7e5dfa082ad8d33c0fdf84163d4.png" />
+  
 </head>
