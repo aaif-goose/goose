@@ -409,7 +409,7 @@ export default function BaseChat({
           {/* Goose watermark - top right */}
           <div className="absolute top-3 right-4 z-[60] flex flex-row items-center gap-1">
             <a
-              href="https://block.github.io/goose"
+              href="https://goose-docs.ai"
               target="_blank"
               rel="noopener noreferrer"
               className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"

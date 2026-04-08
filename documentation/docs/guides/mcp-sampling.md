@@ -93,7 +93,7 @@ import mcpSampling from '@site/blog/2025-12-04-mcp-sampling/mcp-sampling.png';
       title: 'MCP Sampling: When Your Tools Need to Think',
       description: 'Learn how MCP Sampling lets your tools call the AI instead of the other way around.',
       thumbnailUrl: mcpSampling,
-      linkUrl: '/goose/blog/2025/12/04/mcp-sampling',
+      linkUrl: '/blog/2025/12/04/mcp-sampling',
       date: '2025-12-04',
       duration: '6 min read'
     }

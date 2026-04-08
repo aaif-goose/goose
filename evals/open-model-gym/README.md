@@ -70,7 +70,7 @@ runners:
 ```
 
 **Supported runner types:**
-- `goose` — [Goose](https://github.com/block/goose) agent framework
+- `goose` — [Goose](https://github.com/aaif-goose/goose) agent framework
 - `opencode` — [OpenCode](https://opencode.ai) agent framework
 - `pi` — [Pi](https://github.com/badlogic/pi-mono) coding agent
 
@@ -80,7 +80,7 @@ Each runner has different setup requirements, MCP integration methods, and sessi
 
 ### Goose
 
-[Goose](https://github.com/block/goose) is Block's open-source coding agent with built-in MCP support.
+[Goose](https://github.com/aaif-goose/goose) is an open-source coding agent with built-in MCP support.
 
 **Setup:** Install via `brew install goose` or from source.
 

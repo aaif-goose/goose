@@ -2,8 +2,8 @@
 
 Early stage and part of goose's broader move to ACP
 
-https://github.com/block/goose/issues/6642
-https://github.com/block/goose/discussions/7309
+https://github.com/aaif-goose/goose/issues/6642
+https://github.com/aaif-goose/goose/discussions/7309
 
 ## Running
 

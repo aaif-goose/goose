@@ -176,12 +176,12 @@ What will you build with subagents?
 <head>
   <meta property="og:title" content="Orchestrating 6 Subagents to Build a Collaborative API Playground for Kids" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/07/21/orchestrating-subagents" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/07/21/orchestrating-subagents" />
   <meta property="og:description" content="Delegating backend, frontend, docs, and tests so six subagents could build collaborative API tool for kids." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Orchestrating 6 Subagents to Build a Collaborative API Playground for Kids" />
   <meta name="twitter:description" content="Delegating backend, frontend, docs, and tests so six subagents could build collaborative API tool for kids." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
 </head>

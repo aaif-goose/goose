@@ -79,7 +79,7 @@ async function main() {
     }
   }
 
-  output += `---\n\n> Full docs: https://block.github.io/goose/\n`;
+  output += `---\n\n> Full docs: https://goose-docs.ai/\n`;
 
   fs.writeFileSync(OUTPUT_FILE, output);
   console.log(`[generate-docs-map] Generated: ${OUTPUT_FILE}`);

@@ -2021,6 +2021,12 @@
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item found} other{# items found}}"
   },
+  "mentionPopover.loadingCommands": {
+    "defaultMessage": "Loading commands..."
+  },
+  "mentionPopover.noCommandsFound": {
+    "defaultMessage": "No commands found matching \"{query}\""
+  },
   "mentionPopover.noItemsFound": {
     "defaultMessage": "No items found matching \"{query}\""
   },
@@ -2380,6 +2386,15 @@
   },
   "navigationStyleSelector.tileLabel": {
     "defaultMessage": "Tile"
+  },
+  "onboardingGuard.checkProviderErrorDescription": {
+    "defaultMessage": "The server may be starting up or temporarily unavailable."
+  },
+  "onboardingGuard.checkProviderErrorTitle": {
+    "defaultMessage": "Unable to connect to Goose server"
+  },
+  "onboardingGuard.retry": {
+    "defaultMessage": "Retry"
   },
   "onboardingGuard.welcomeDescription": {
     "defaultMessage": "Your local AI agent. Connect an AI model provider to get started."

@@ -27,17 +27,17 @@ Thank you so much for your contribution, ATrueLight4! Your work brings us one st
 To show our deep gratitude for your contribution, we've granted you the exclusive ✨Top Contributor✨ badge on the Block Open Source Discord! You'll also be one of the first contributors to receive exclusive codename goose swag. (more info on that to be announced later 👀🪿)
 
 ## Get Your Own Spotlight
-Interested in contributing to goose and having your contribution featured? Whether it's improving platform support, adding new features, or fixing bugs, we welcome all contributions from the open source community. You can [join the Block Open Source Discord](https://discord.gg/goose-oss) or [get started using codename goose](https://block.github.io/goose/) today.
+Interested in contributing to goose and having your contribution featured? Whether it's improving platform support, adding new features, or fixing bugs, we welcome all contributions from the open source community. You can [join the Block Open Source Discord](https://discord.gg/goose-oss) or [get started using codename goose](https://goose-docs.ai/) today.
 
 <head>
   <meta property="og:title" content="How ATrueLight4 Helped Goose Navigate Windows" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/04/14/community-atruelight4" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/04/14/community-atruelight4" />
   <meta property="og:description" content="Block Open Source Top Contributor of the Month" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose4win-7f57433fa3f19849e74b18ebffe08bcf.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose4win-7f57433fa3f19849e74b18ebffe08bcf.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How ATrueLight4 Helped Goose Navigate Windows" />
   <meta name="twitter:description" content="Block Open Source Top Contributor of the Month" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose4win-7f57433fa3f19849e74b18ebffe08bcf.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose4win-7f57433fa3f19849e74b18ebffe08bcf.png" />
 </head>

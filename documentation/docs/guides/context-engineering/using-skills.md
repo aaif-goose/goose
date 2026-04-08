@@ -278,7 +278,7 @@ import skillsvsmcp from '@site/blog/2025-12-22-agent-skills-vs-mcp/skills-vs-mcp
       title: 'Did Skills Kill MCP?',
       description: 'An overview of Agent Skills vs MCP',
       thumbnailUrl: skillsvsmcp,
-      linkUrl: '/goose/blog/2025/12/22/agent-skills-vs-mcp',
+      linkUrl: '/blog/2025/12/22/agent-skills-vs-mcp',
       date: '2025-12-22',
       duration: '4 min read'
     }

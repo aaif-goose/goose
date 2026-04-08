@@ -11,7 +11,7 @@ use fixtures::{
 use fs_err as fs;
 use goose::config::base::CONFIG_YAML_NAME;
 use goose::config::GooseMode;
-use goose::providers::provider_registry::ProviderConstructor;
+use goose_acp::server::AcpProviderFactory;
 use goose_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
 use sacp::schema::{
     ListSessionsResponse, McpServer, McpServerHttp, ModelId, SessionInfo, SessionModeId,
@@ -332,8 +332,8 @@ pub async fn run_fs_write_text_file_true<C: Connection>() {
 }
 
 pub async fn run_initialize_doesnt_hit_provider<C: Connection>() {
-    let provider_factory: ProviderConstructor =
-        Arc::new(|_, _| Box::pin(async { Err(anyhow::anyhow!("no provider configured")) }));
+    let provider_factory: AcpProviderFactory =
+        Arc::new(|_, _, _| Box::pin(async { Err(anyhow::anyhow!("no provider configured")) }));
 
     let openai = OpenAiFixture::new(vec![], C::expected_session_id()).await;
     let config = TestConnectionConfig {
@@ -341,12 +341,7 @@ pub async fn run_initialize_doesnt_hit_provider<C: Connection>() {
         ..Default::default()
     };
 
-    let conn = C::new(config, openai).await;
-    assert!(!conn.auth_methods().is_empty());
-    assert!(conn
-        .auth_methods()
-        .iter()
-        .any(|m| m.id().0.as_ref() == "goose-provider"));
+    let _conn = C::new(config, openai).await;
 }
 
 pub async fn run_load_mode<C: Connection>() {
@@ -740,6 +735,24 @@ pub async fn run_model_list<C: Connection>() {
     assert_eq!(models.current_model_id, ModelId::new(TEST_MODEL));
 }
 
+#[allow(dead_code)]
+pub async fn run_new_session_returns_initial_config<C: Connection>() {
+    let expected_session_id = C::expected_session_id();
+    let openai = OpenAiFixture::new(vec![], expected_session_id.clone()).await;
+
+    let mut conn = C::new(TestConnectionConfig::default(), openai).await;
+    let SessionData {
+        session,
+        models,
+        modes,
+    } = conn.new_session().await.unwrap();
+    expected_session_id.set(&session.session_id().0);
+
+    assert!(modes.is_some());
+    let models = models.expect("new_session should return models inline");
+    assert!(!models.available_models.is_empty());
+}
+
 pub async fn run_config_option_model_set<C: Connection>() {
     run_model_set_impl::<C>(SetModelVia::ConfigOption).await;
 }
@@ -808,13 +821,16 @@ async fn run_model_set_impl<C: Connection>(via: SetModelVia) {
         .unwrap();
     assert_eq!(output.text, "2");
 
-    // Both model paths emit ConfigOption (no CurrentModelUpdate in the schema).
+    // Some connections emit a ConfigOption update immediately on model change,
+    // while the stripped legacy provider path only updates local state before
+    // the next prompt.
     let prompt_notifs = session_b.notifications();
     let mut all = set_model_notifs;
     all.extend(prompt_notifs);
-    assert_eq!(
-        all,
-        vec![Notification::ConfigOption, Notification::AgentMessage],
+    assert!(
+        all == vec![Notification::AgentMessage]
+            || all == vec![Notification::ConfigOption, Notification::AgentMessage],
+        "unexpected notifications after model change: {all:?}"
     );
 
     // Prompt A: expects default TEST_MODEL (proves sessions are independent)

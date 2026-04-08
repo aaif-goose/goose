@@ -586,7 +586,7 @@ These variables control recipe discovery and management.
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
 | `GOOSE_RECIPE_PATH` | Additional directories to search for recipes | Colon-separated paths on Unix, semicolon-separated on Windows | None |
-| `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository to search for recipes | Format: "owner/repo" (e.g., "block/goose-recipes") | None |
+| `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository to search for recipes | Format: "owner/repo" (e.g., "aaif-goose/goose-recipes") | None |
 | `GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS` | Global timeout for recipe success check commands | Integer (seconds) | Recipe-specific default |
 | `GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS` | Global timeout for recipe on_failure commands | Integer (seconds) | Recipe-specific default |
 

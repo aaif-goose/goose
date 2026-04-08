@@ -183,7 +183,7 @@ Sometimes the right move is to reduce instead of add, and this new version ended
 To fully automate this workflow, you must schedule your recipe. 
 In goose Desktop, open the `recipe` section, click the `calendar icon` , and choose when it should run (I set mine to 10 AM daily).
 
-You can read more in the [Reusable Recipes Guide](https://block.github.io/goose/docs/guides/recipes/session-recipes#schedule-recipe).
+You can read more in the [Shareable Recipes Guide](https://goose-docs.ai/docs/guides/recipes/session-recipes#schedule-recipe).
 :::
 
 <details>
@@ -459,12 +459,12 @@ Got questions or ideas? Come chat with us on [Discord](https://discord.gg/block-
 <head>
   <meta property="og:title" content="Building a Social Media Agent" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/11/21/building-social-media-agent" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/11/21/building-social-media-agent" />
   <meta property="og:description" content="I built a fully automated social media agent using MCP servers to fetch content and post through Sprout Social." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/header-image-7f5ab50f65332fb53302ca30a3f86e46.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/header-image-7f5ab50f65332fb53302ca30a3f86e46.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Building a Social Media Agent" />
   <meta name="twitter:description" content="I built a fully automated social media agent using MCP servers to fetch content and post through Sprout Social." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/header-image-7f5ab50f65332fb53302ca30a3f86e46.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/header-image-7f5ab50f65332fb53302ca30a3f86e46.png" />
 </head>

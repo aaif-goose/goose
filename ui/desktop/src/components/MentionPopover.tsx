@@ -17,6 +17,10 @@ const i18n = defineMessages({
     id: 'mentionPopover.scanningFiles',
     defaultMessage: 'Scanning files...',
   },
+  loadingCommands: {
+    id: 'mentionPopover.loadingCommands',
+    defaultMessage: 'Loading commands...',
+  },
   itemsFound: {
     id: 'mentionPopover.itemsFound',
     defaultMessage: '{count, plural, one {# item} other {# items}} found',
@@ -24,6 +28,10 @@ const i18n = defineMessages({
   noItemsFound: {
     id: 'mentionPopover.noItemsFound',
     defaultMessage: 'No items found matching "{query}"',
+  },
+  noCommandsFound: {
+    id: 'mentionPopover.noCommandsFound',
+    defaultMessage: 'No commands found matching "{query}"',
   },
 });
 
@@ -374,30 +382,11 @@ const MentionPopover = forwardRef<
       []
     );
 
-    const scanFilesFromRoot = useCallback(async () => {
-      setIsLoading(true);
-      try {
-        let startPath = currentWorkingDir;
-
-        if (!startPath) {
-          if (window.electron.platform === 'win32') {
-            startPath = 'C:\\Users';
-          } else if (window.electron.platform === 'linux') {
-            startPath = '/home';
-          } else {
-            startPath = '/Users'; // Default to macOS
-          }
-        }
-
-        const scannedFiles = await scanDirectoryFromRoot(startPath);
-        setItems(scannedFiles);
-      } catch (error) {
-        console.error('Error scanning items from root:', error);
-        setItems([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }, [scanDirectoryFromRoot, currentWorkingDir]);
+    const getDefaultStartPath = (): string => {
+      if (window.electron.platform === 'win32') return 'C:\\Users';
+      if (window.electron.platform === 'linux') return '/home';
+      return '/Users';
+    };
 
     const compareByType = (a: DisplayItemWithMatch, b: DisplayItemWithMatch) => {
       const orderA = typeOrder[a.itemType] ?? Number.MAX_SAFE_INTEGER;
@@ -485,28 +474,50 @@ const MentionPopover = forwardRef<
     );
 
     useEffect(() => {
+      let cancelled = false;
+
       const loadData = async () => {
-        if (isSlashCommand) {
-          const response = await getSlashCommands({
-            query: { working_dir: currentWorkingDir },
-            throwOnError: true,
-          });
-          const commandItems: DisplayItem[] = (response.data?.commands || []).map((cmd) => ({
-            name: cmd.command,
-            extra: cmd.help,
-            itemType: cmd.command_type,
-            relativePath: cmd.command,
-          }));
-          setItems(commandItems);
-        } else {
-          await scanFilesFromRoot();
+        setItems([]);
+        setIsLoading(true);
+        try {
+          if (isSlashCommand) {
+            const response = await getSlashCommands({
+              query: { working_dir: currentWorkingDir },
+              throwOnError: true,
+            });
+            if (cancelled) return;
+            const commandItems: DisplayItem[] = (response.data?.commands || []).map((cmd) => ({
+              name: cmd.command,
+              extra: cmd.help,
+              itemType: cmd.command_type,
+              relativePath: cmd.command,
+            }));
+            setItems(commandItems);
+          } else {
+            const scannedFiles = await scanDirectoryFromRoot(currentWorkingDir || getDefaultStartPath());
+            if (cancelled) return;
+            setItems(scannedFiles);
+          }
+        } catch (error) {
+          if (!cancelled) {
+            console.error('Error loading popover items:', error);
+            setItems([]);
+          }
+        } finally {
+          if (!cancelled) {
+            setIsLoading(false);
+          }
         }
       };
 
       if (isOpen) {
         loadData();
       }
-    }, [isOpen, isSlashCommand, scanFilesFromRoot, currentWorkingDir]);
+
+      return () => {
+        cancelled = true;
+      };
+    }, [isOpen, isSlashCommand, scanDirectoryFromRoot, currentWorkingDir]);
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -561,7 +572,7 @@ const MentionPopover = forwardRef<
           {isLoading ? (
             <div className="flex items-center justify-center py-4">
               <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2"></div>
-              <span className="ml-2 text-sm text-text-secondary">{intl.formatMessage(i18n.scanningFiles)}</span>
+              <span className="ml-2 text-sm text-text-secondary">{intl.formatMessage(isSlashCommand ? i18n.loadingCommands : i18n.scanningFiles)}</span>
             </div>
           ) : (
             <>
@@ -596,7 +607,7 @@ const MentionPopover = forwardRef<
 
                 {!isLoading && displayItems.length === 0 && query && (
                   <div className="p-4 text-center text-text-secondary text-sm">
-                    {intl.formatMessage(i18n.noItemsFound, { query })}
+                    {intl.formatMessage(isSlashCommand ? i18n.noCommandsFound : i18n.noItemsFound, { query })}
                   </div>
                 )}
               </div>

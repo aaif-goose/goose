@@ -7,7 +7,7 @@ unmaintained = "none"
 unsound = "none"
 
 # Ignore proc-macro-error unmaintained warning
-# See: https://github.com/block/goose/issues/7008
+# See: https://github.com/aaif-goose/goose/issues/7008
 ignore = [
     "RUSTSEC-2023-0071",  # rsa: Marvin Attack timing sidechannel (no safe upgrade available, via jsonwebtoken)
 ]

@@ -55,7 +55,7 @@ The recipe:
 - Handles different flag implementations, ranging in complexity
 - Attempts refactoring for outdated code paths
 - Can automatically create draft pull requests, via the GitHub CLI
-- Integrates with [Xcode Index MCP](https://github.com/block/xcode-index-mcp) for deep iOS project understanding
+- Integrates with [Xcode Index MCP](https://github.com/aaif-goose/xcode-index-mcp) for deep iOS project understanding
 - Plans, implements, builds and tests locally to improve the accuracy of the flag removal result
 
 
@@ -96,12 +96,12 @@ Want to tweak the base recipe for your own needs? Check out [Clean up feature fl
 <head>
   <meta property="og:title" content="When AI Becomes Your New Team Member: The Story of Goose Janitor" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/28/ai-teammate" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/28/ai-teammate" />
   <meta property="og:description" content="How an engineering team is trialling autonomous AI-powered technical debt cleanup" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-janitor-129889884d9265d001fe12cbfde03d57.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-janitor-129889884d9265d001fe12cbfde03d57.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="When AI Becomes Your New Team Member: The Story of Goose Janitor" />
   <meta name="twitter:description" content="How an engineering team is trialling autonomous AI-powered technical debt cleanup" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-janitor-129889884d9265d001fe12cbfde03d57.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-janitor-129889884d9265d001fe12cbfde03d57.png" />
 </head>

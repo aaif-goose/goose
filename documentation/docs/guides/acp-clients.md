@@ -27,7 +27,7 @@ ACP sessions are saved to goose's session history where you can access and manag
 :::
 
 :::tip Reference Implementation
-The [goose for VS Code](/docs/experimental/vs-code-extension) extension uses ACP to communicate with goose. See the [vscode-goose](https://github.com/block/vscode-goose) repository for implementation details.
+The [goose for VS Code](/docs/experimental/vs-code-extension) extension uses ACP to communicate with goose. See the [vscode-goose](https://github.com/aaif-goose/vscode-goose) repository for implementation details.
 :::
 
 ## Setup in ACP Clients
@@ -247,7 +247,7 @@ import chooseYourIde from '@site/blog/2025-10-24-intro-to-agent-client-protocol-
       title: 'Intro to Agent Client Protocol (ACP): The Standard for AI Agent-Editor Integration',
       description: 'Learn how to integrate AI agents like goose directly into your code editor via ACP, eliminating window-switching and vendor lock-in.',
       thumbnailUrl: chooseYourIde,
-      linkUrl: '/goose/blog/2025/10/24/intro-to-agent-client-protocol-acp',
+      linkUrl: '/blog/2025/10/24/intro-to-agent-client-protocol-acp',
       date: '2025-10-24',
       duration: '7 min read'
     }

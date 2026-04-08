@@ -17,9 +17,9 @@ Together, they create a self-contained AI agent workflow that puts advanced capa
 
 # Getting Started
 
-Before diving deep into various capabilities, Rizel walked us through how to set yourself up for success by integrating goose with Ollama. To follow along, you can [download goose](https://block.github.io/goose/) and follow a step-by-step walk through in the [Configure LLM Provider](https://block.github.io/goose/docs/getting-started/providers) guide.
+Before diving deep into various capabilities, Rizel walked us through how to set yourself up for success by integrating goose with Ollama. To follow along, you can [download goose](https://goose-docs.ai/) and follow a step-by-step walk through in the [Configure LLM Provider](https://goose-docs.ai/docs/getting-started/providers) guide.
 
-If you have any questions or get stuck, feel free to chat with us on [Discord](https://discord.gg/goose-oss) or post an issue/discussion on [GitHub](https://github.com/block/goose/). Thanks for reading!
+If you have any questions or get stuck, feel free to chat with us on [Discord](https://discord.gg/goose-oss) or post an issue/discussion on [GitHub](https://github.com/aaif-goose/goose/). Thanks for reading!
 
 # Why Go Local?
 Using cloud-based LLMs and providers make it so you don't need substantial computing resources, so why go local? Here's some benefits you may want to consider:
@@ -88,12 +88,12 @@ The benefits of owning your AI experience can be compelling for a variety of use
 <head>
   <meta property="og:title" content="Goosing Around: AI, But Make It Local With goose and Ollama" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/13/goose-ollama-local" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/13/goose-ollama-local" />
   <meta property="og:description" content="Integrate goose with Ollama for a fully local experience." />
-  <meta property="og:image" content="http://block.github.io/goose/assets/images/gooseollama-fbb2cb67117c81eaa189a6b6174e6c6c.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/gooseollama-fbb2cb67117c81eaa189a6b6174e6c6c.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Goosing Around: AI, But Make It Local With goose and Ollama" />
   <meta name="twitter:description" content="Integrate goose with Ollama for a fully local experience." />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/gooseollama-fbb2cb67117c81eaa189a6b6174e6c6c.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/gooseollama-fbb2cb67117c81eaa189a6b6174e6c6c.png" />
 </head>

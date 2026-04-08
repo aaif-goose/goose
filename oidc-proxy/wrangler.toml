@@ -16,7 +16,7 @@ MAX_TOKEN_AGE_SECONDS = "1200"  # 20 minutes
 MAX_REQUESTS_PER_TOKEN = "200"
 RATE_LIMIT_PER_SECOND = "2"
 
-ALLOWED_REPOS = "block/goose,aaif/goose"
+ALLOWED_REPOS = "aaif-goose/goose,aaif/goose"
 
 # Upstream configuration
 UPSTREAM_URL = "https://api.anthropic.com"

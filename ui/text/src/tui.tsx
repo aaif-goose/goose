@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
-import TextInput from "ink-text-input";
+import { MultilineInput } from "ink-multiline-input";
 import meow from "meow";
 import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
@@ -178,6 +178,35 @@ function Header({
   );
 }
 
+const PASTE_THRESHOLD = 80;
+const PASTE_PREVIEW_LEN = 40;
+const INPUT_MAX_ROWS = 8;
+const SENT_PREVIEW_LEN = 60;
+
+function collapseForDisplay(text: string, availableWidth = PASTE_PREVIEW_LEN): string {
+  const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+  if (flat.length <= availableWidth) return flat;
+  const suffix = ` (${flat.length.toLocaleString()} chars)`;
+  const previewLen = Math.max(availableWidth - suffix.length - 1, 10);
+  return flat.slice(0, previewLen) + "…" + suffix;
+}
+
+function collapsedUserPrompt(text: string, width: number): React.ReactElement {
+  const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+  const maxPreview = Math.max(width - 30, SENT_PREVIEW_LEN);
+  if (flat.length <= maxPreview + 10) {
+    return <Text color={TEXT_PRIMARY} bold>{flat}</Text>;
+  }
+  const preview = flat.slice(0, maxPreview) + "…";
+  const remaining = flat.length - maxPreview;
+  return (
+    <Text>
+      <Text color={TEXT_PRIMARY} bold>{preview}</Text>
+      <Text color={TEXT_DIM}> ({remaining.toLocaleString()} more chars)</Text>
+    </Text>
+  );
+}
+
 function InputBar({
   width,
   input,
@@ -186,6 +215,9 @@ function InputBar({
   queued,
   scrollHint,
   placeholder,
+  focused,
+  pastedFull,
+  onPastedFullChange,
 }: {
   width: number;
   input: string;
@@ -194,7 +226,65 @@ function InputBar({
   queued: boolean;
   scrollHint: boolean;
   placeholder?: string;
+  focused: boolean;
+  pastedFull: string | null;
+  onPastedFullChange: (v: string | null) => void;
 }) {
+  const prevLenRef = useRef(input.length);
+
+  const handleChange = useCallback(
+    (newValue: string) => {
+      const delta = newValue.length - prevLenRef.current;
+      prevLenRef.current = newValue.length;
+      if (delta >= PASTE_THRESHOLD) {
+        onPastedFullChange(newValue);
+        onChange(newValue);
+      } else {
+        if (pastedFull !== null) onPastedFullChange(null);
+        onChange(newValue);
+      }
+    },
+    [onChange, pastedFull, onPastedFullChange],
+  );
+
+  const handleSubmit = useCallback(
+    (value: string) => {
+      prevLenRef.current = 0;
+      onPastedFullChange(null);
+      onSubmit(value);
+    },
+    [onSubmit, onPastedFullChange],
+  );
+
+  useInput(
+    (ch, key) => {
+      if (key.return) {
+        handleSubmit(input);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        prevLenRef.current = 0;
+        onPastedFullChange(null);
+        onChange("");
+        return;
+      }
+      if (key.escape) {
+        prevLenRef.current = 0;
+        onPastedFullChange(null);
+        onChange("");
+        return;
+      }
+      if (ch && !key.ctrl && !key.meta) {
+        prevLenRef.current = ch.length;
+        onPastedFullChange(null);
+        onChange(ch);
+      }
+    },
+    { isActive: focused && pastedFull !== null },
+  );
+
+  const isPasteMode = pastedFull !== null;
+
   return (
     <Box
       flexDirection="column"
@@ -204,18 +294,47 @@ function InputBar({
       width={width}
       flexShrink={0}
     >
-      <Box justifyContent="space-between">
-        <Box flexGrow={1}>
-          <Text color={CRANBERRY} bold>{"❯ "}</Text>
-          <TextInput
-            value={input}
-            onChange={onChange}
-            onSubmit={onSubmit}
-            placeholder={placeholder}
-          />
-        </Box>
-        {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
+      <Box>
+        <Text color={CRANBERRY} bold>{"❯ "}</Text>
+        {isPasteMode ? (
+          <Box width={width - 4 - 2} justifyContent="space-between">
+            <Text color={TEXT_PRIMARY} wrap="truncate-end">
+              {collapseForDisplay(pastedFull, width - 4 - 2)}
+            </Text>
+            {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
+          </Box>
+        ) : (
+          <Box flexGrow={1} justifyContent="space-between">
+            <MultilineInput
+              value={input}
+              onChange={handleChange}
+              onSubmit={handleSubmit}
+              rows={1}
+              maxRows={INPUT_MAX_ROWS}
+              placeholder={placeholder}
+              focus={focused}
+              keyBindings={{
+                submit: (key) => key.return && !key.ctrl,
+                newline: (key) => key.return && key.ctrl,
+              }}
+              useCustomInput={(handler, isActive) => {
+                useInput((ch, key) => {
+                  if (key.shift && (key.upArrow || key.downArrow)) return;
+                  handler(ch, key);
+                }, { isActive });
+              }}
+            />
+            {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
+          </Box>
+        )}
       </Box>
+      {isPasteMode && (
+        <Box>
+          <Text color={TEXT_DIM} italic>
+            enter to send · esc to clear
+          </Text>
+        </Box>
+      )}
       {queued && (
         <Box>
           <Text color={GOLD} dimColor italic>
@@ -315,12 +434,11 @@ function buildContentLines({
   const lines: React.ReactElement[] = [];
   if (!turn) return lines;
 
-  // User prompt
   lines.push(emptyLine("u-gap", width));
   lines.push(
     <Box key="u-prompt" width={width} height={1}>
       <Text color={CRANBERRY} bold>{"❯ "}</Text>
-      <Text wrap="truncate-end" color={TEXT_PRIMARY} bold>{turn.userText}</Text>
+      {collapsedUserPrompt(turn.userText, width - 4)}
     </Box>,
   );
 
@@ -458,12 +576,14 @@ function Viewport({
 function SplashScreen({
   animFrame,
   width,
+  height,
   status,
   loading,
   spinIdx,
 }: {
   animFrame: number;
   width: number;
+  height: number;
   status: string;
   loading: boolean;
   spinIdx: number;
@@ -472,14 +592,19 @@ function SplashScreen({
   const statusColor =
     status === "ready" ? TEAL : isErrorStatus(status) ? CRANBERRY : TEXT_DIM;
 
+  const contentHeight = frame.length + 1 + 1 + 1 + 2 + 1;
+
+  const topPad = Math.max(0, Math.floor((height - contentHeight) / 2));
+
   return (
     <Box
       flexDirection="column"
       alignItems="center"
-      justifyContent="center"
-      flexGrow={1}
       width={width}
+      height={height}
+      overflow="hidden"
     >
+      {topPad > 0 && <Box height={topPad} />}
       <Box flexDirection="column" alignItems="center">
         {frame.map((line, i) => (
           <Text key={i} color={TEXT_PRIMARY}>{line}</Text>
@@ -524,6 +649,7 @@ function App({
   const [viewTurnIdx, setViewTurnIdx] = useState(-1);
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [pastedFull, setPastedFull] = useState<string | null>(null);
 
   const clientRef = useRef<GooseClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -778,6 +904,7 @@ function App({
       const trimmed = value.trim();
       if (!trimmed) return;
       setInput("");
+      setPastedFull(null);
       setViewTurnIdx(-1);
       setToolCallsExpanded(false);
       setScrollOffset(0);
@@ -795,6 +922,7 @@ function App({
   useInput((ch, key) => {
     if (key.escape || (ch === "c" && key.ctrl)) {
       if (pendingPermission) { resolvePermission("cancelled"); return; }
+      if (key.escape && pastedFull !== null) return;
       exit();
     }
 
@@ -818,6 +946,10 @@ function App({
       return;
     }
 
+    const viewingHistory = viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
+    const multilineOwnsArrows =
+      !pendingPermission && !initialPrompt && !viewingHistory && pastedFull === null;
+
     if (key.tab) {
       const idx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
       const t = turns[idx];
@@ -828,11 +960,11 @@ function App({
     }
 
     if (key.upArrow && !key.shift) {
-      setScrollOffset((prev) => prev + 3);
+      if (!multilineOwnsArrows) setScrollOffset((prev) => prev + 3);
       return;
     }
     if (key.downArrow && !key.shift) {
-      setScrollOffset((prev) => Math.max(prev - 3, 0));
+      if (!multilineOwnsArrows) setScrollOffset((prev) => Math.max(prev - 3, 0));
       return;
     }
 
@@ -872,7 +1004,15 @@ function App({
   const showInputBar = !pendingPermission && !initialPrompt && !isViewingHistory;
 
   const headerH = 2;
-  const inputBarH = showInputBar ? (queuedMessages.length > 0 ? 4 : 3) : 0;
+  const isPasteMode = pastedFull !== null;
+  const inputContentRows = showInputBar
+    ? isPasteMode
+      ? 1
+      : Math.min(Math.max(input.split("\n").length, 1), INPUT_MAX_ROWS)
+    : 0;
+  const inputExtraLines =
+    (isPasteMode ? 1 : 0) + (queuedMessages.length > 0 ? 1 : 0);
+  const inputBarH = showInputBar ? 2 + inputContentRows + inputExtraLines : 0;
   const historyBarH = isViewingHistory ? 2 : 0;
   const viewportHeight = Math.max(
     termHeight - PAD_Y * 2 - headerH - inputBarH - historyBarH,
@@ -903,6 +1043,7 @@ function App({
         <SplashScreen
           animFrame={gooseFrame}
           width={contentWidth}
+          height={Math.max(termHeight - PAD_Y * 2 - inputBarH, 0)}
           status={status}
           loading={loading}
           spinIdx={spinIdx}
@@ -951,6 +1092,9 @@ function App({
           queued={queuedMessages.length > 0}
           scrollHint={!bannerVisible && turns.length > 1}
           placeholder={bannerVisible ? INITIAL_GREETING : undefined}
+          focused={showInputBar}
+          pastedFull={pastedFull}
+          onPastedFullChange={setPastedFull}
         />
       )}
     </Box>

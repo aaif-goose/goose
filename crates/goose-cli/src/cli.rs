@@ -711,6 +711,9 @@ enum Command {
         verbose: bool,
     },
 
+    #[command(about = "Check that your Goose setup is working")]
+    Doctor {},
+
     /// Manage system prompts and behaviors
     #[command(about = "Run one of the mcp servers bundled with goose")]
     Mcp {
@@ -1026,6 +1029,7 @@ pub struct InputConfig {
 fn get_command_name(command: &Option<Command>) -> &'static str {
     match command {
         Some(Command::Configure {}) => "configure",
+        Some(Command::Doctor {}) => "doctor",
         Some(Command::Info { .. }) => "info",
         Some(Command::Mcp { .. }) => "mcp",
         Some(Command::Acp { .. }) => "acp",
@@ -1755,6 +1759,7 @@ pub async fn cli() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Configure {}) => handle_configure().await,
+        Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
         Some(Command::Info { verbose }) => handle_info(verbose),
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
         Some(Command::Acp { builtins }) => goose_acp::server::run(builtins).await,

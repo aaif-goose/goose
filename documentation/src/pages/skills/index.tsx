@@ -6,14 +6,19 @@ import { motion } from "framer-motion";
 import Layout from "@theme/Layout";
 import Admonition from "@theme/Admonition";
 import { Button } from "@site/src/components/ui/button";
-import { SidebarFilter, type SidebarFilterGroup } from "@site/src/components/ui/sidebar-filter";
+import {
+  SidebarFilter,
+  type SidebarFilterGroup,
+} from "@site/src/components/ui/sidebar-filter";
 import { Menu, X } from "lucide-react";
-import Link from '@docusaurus/Link';
+import Link from "@docusaurus/Link";
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({});
+  const [selectedFilters, setSelectedFilters] = useState<
+    Record<string, string[]>
+  >({});
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,30 +26,26 @@ export default function SkillsPage() {
   const skillsPerPage = 10;
 
   // Build tag filter options from loaded skills
-  const uniqueTags = Array.from(
-    new Set(
-      skills.flatMap((s) => s.tags || [])
-    )
-  ).sort().map((tag) => ({
-    label: tag.charAt(0).toUpperCase() + tag.slice(1),
-    value: tag
-  }));
+  const uniqueTags = Array.from(new Set(skills.flatMap((s) => s.tags || [])))
+    .sort()
+    .map((tag) => ({
+      label: tag.charAt(0).toUpperCase() + tag.slice(1),
+      value: tag,
+    }));
 
   // Build source filter options (Community only - official is the default)
-  const sourceOptions = [
-    { label: "Community", value: "community" }
-  ];
+  const sourceOptions = [{ label: "Community", value: "community" }];
 
   const sidebarFilterGroups: SidebarFilterGroup[] = [
     {
       title: "Source",
-      options: sourceOptions
+      options: sourceOptions,
     },
     {
       title: "Tags",
       options: uniqueTags,
-      maxHeight: "max-h-64 overflow-y-auto"
-    }
+      maxHeight: "max-h-64 overflow-y-auto",
+    },
   ];
 
   useEffect(() => {
@@ -55,7 +56,8 @@ export default function SkillsPage() {
         const results = await searchSkills(searchQuery);
         setSkills(results);
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        const errorMessage =
+          err instanceof Error ? err.message : "Unknown error";
         setError(`Failed to load skills: ${errorMessage}`);
         console.error("Error loading skills:", err);
       } finally {
@@ -99,21 +101,40 @@ export default function SkillsPage() {
               Skills Marketplace
             </h1>
             <Button
-              onClick={() => window.open('https://github.com/block/Agent-Skills?tab=readme-ov-file#contributing-a-skill', '_blank')}
+              onClick={() =>
+                window.open(
+                  "https://github.com/aaif-goose/Agent-Skills?tab=readme-ov-file#contributing-a-skill",
+                  "_blank",
+                )
+              }
               className="bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-2 cursor-pointer"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14M5 12h14"/>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 5v14M5 12h14" />
               </svg>
               Submit Skill
             </Button>
           </div>
           <p className="text-textProminent">
             Browse community-contributed{" "}
-            <Link to="/docs/guides/context-engineering/using-skills" className="text-purple-600 hover:underline">
+            <Link
+              to="/docs/guides/context-engineering/using-skills"
+              className="text-purple-600 hover:underline"
+            >
               skills
             </Link>{" "}
-            that teach goose how to perform specific tasks. Skills are reusable instruction sets with optional supporting files.
+            that teach goose how to perform specific tasks. Skills are reusable
+            instruction sets with optional supporting files.
           </p>
         </div>
 
@@ -137,12 +158,14 @@ export default function SkillsPage() {
         </div>
 
         <div className="flex flex-col md:flex-row gap-8">
-          <div className={`${isMobileFilterOpen ? "block" : "hidden"} md:block md:w-64 mt-6`}>
+          <div
+            className={`${isMobileFilterOpen ? "block" : "hidden"} md:block md:w-64 mt-6`}
+          >
             <SidebarFilter
               groups={sidebarFilterGroups}
               selectedValues={selectedFilters}
               onChange={(group, values) => {
-                setSelectedFilters(prev => ({ ...prev, [group]: values }));
+                setSelectedFilters((prev) => ({ ...prev, [group]: values }));
                 setCurrentPage(1);
               }}
             />
@@ -164,7 +187,9 @@ export default function SkillsPage() {
             )}
 
             {isLoading ? (
-              <div className="py-8 text-xl text-gray-600">Loading skills...</div>
+              <div className="py-8 text-xl text-gray-600">
+                Loading skills...
+              </div>
             ) : filteredSkills.length === 0 ? (
               <Admonition type="info">
                 <p>
@@ -177,7 +202,10 @@ export default function SkillsPage() {
               <>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
                   {filteredSkills
-                    .slice((currentPage - 1) * skillsPerPage, currentPage * skillsPerPage)
+                    .slice(
+                      (currentPage - 1) * skillsPerPage,
+                      currentPage * skillsPerPage,
+                    )
                     .map((skill) => (
                       <motion.div
                         key={skill.id}
@@ -194,7 +222,9 @@ export default function SkillsPage() {
                 {filteredSkills.length > skillsPerPage && (
                   <div className="flex justify-center items-center gap-2 md:gap-4 mt-6 md:mt-8">
                     <Button
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.max(prev - 1, 1))
+                      }
                       disabled={currentPage === 1}
                       className="px-3 md:px-4 py-2 rounded-md border border-border bg-surfaceHighlight hover:bg-surface text-textProminent disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm md:text-base"
                     >
@@ -202,12 +232,23 @@ export default function SkillsPage() {
                     </Button>
 
                     <span className="text-textProminent text-sm md:text-base">
-                      Page {currentPage} of {Math.ceil(filteredSkills.length / skillsPerPage)}
+                      Page {currentPage} of{" "}
+                      {Math.ceil(filteredSkills.length / skillsPerPage)}
                     </span>
 
                     <Button
-                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredSkills.length / skillsPerPage), prev + 1))}
-                      disabled={currentPage >= Math.ceil(filteredSkills.length / skillsPerPage)}
+                      onClick={() =>
+                        setCurrentPage((prev) =>
+                          Math.min(
+                            Math.ceil(filteredSkills.length / skillsPerPage),
+                            prev + 1,
+                          ),
+                        )
+                      }
+                      disabled={
+                        currentPage >=
+                        Math.ceil(filteredSkills.length / skillsPerPage)
+                      }
                       className="px-3 md:px-4 py-2 rounded-md border border-border bg-surfaceHighlight hover:bg-surface text-textProminent disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm md:text-base"
                     >
                       Next

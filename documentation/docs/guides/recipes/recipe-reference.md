@@ -767,7 +767,7 @@ Built-in template parameters are automatically supported and don't need to be de
 
 ## Validation Rules
 
-Validation rules from [`validate_recipe.rs`](https://github.com/block/goose/blob/main/crates/goose/src/recipe/validate_recipe.rs) are enforced when loading recipes and used by the [`goose recipe validate`](/docs/guides/goose-cli-commands#recipe) subcommand:
+Validation rules from [`validate_recipe.rs`](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/recipe/validate_recipe.rs) are enforced when loading recipes and used by the [`goose recipe validate`](/docs/guides/goose-cli-commands#recipe) subcommand:
 
 ### Recipe-Level Validation
 

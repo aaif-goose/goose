@@ -95,7 +95,7 @@ export default function RecipePage() {
               Recipes Cookbook
             </h1>
             <Button
-              onClick={() => window.open('https://github.com/block/goose/blob/main/CONTRIBUTING_RECIPES.md', '_blank')}
+              onClick={() => window.open('https://github.com/aaif-goose/goose/blob/main/CONTRIBUTING_RECIPES.md', '_blank')}
               className="bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-2 cursor-pointer"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -21,7 +21,7 @@ Lately, there's been a healthy debate in the industry about planning in AI codin
 
 This reveals an interesting truth: the value of a plan mode isn't just about the plan itself. It's about creating the right mental model and workflow for the developer using it. Sometimes you want the agent to just execute. Other times, you want to see its thinking, provide feedback, and collaborate on the approach before any code changes happen.
 
-Rather than picking one philosophy, [goose](https://github.com/block/goose) supports multiple approaches because different situations call for different methods.
+Rather than picking one philosophy, [goose](https://github.com/aaif-goose/goose) supports multiple approaches because different situations call for different methods.
 
 ---
 
@@ -91,13 +91,13 @@ The question isn't whether to plan. The question is which kind of planning fits 
 <head>
   <meta property="og:title" content="Does Your AI Agent Need a Plan?" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/12/19/does-your-ai-agent-need-a-plan" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/12/19/does-your-ai-agent-need-a-plan" />
   <meta property="og:description" content="Planning with an AI produces good results. Knowing when and how to plan with an AI agent produces even better ones." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/blog-banner-69252aa3455f8a3a303f102c530922f3.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blog-banner-69252aa3455f8a3a303f102c530922f3.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Does Your AI Agent Need a Plan?" />
   <meta name="twitter:description" content="Planning with an AI produces good results. Knowing when and how to plan with an AI agent produces even better ones." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/blog-banner-69252aa3455f8a3a303f102c530922f3.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blog-banner-69252aa3455f8a3a303f102c530922f3.png" />
   <meta name="keywords" content="goose, AI planning, AI agents, plan mode, developer workflow, context engineering, goosehints, todo extension, AI coding assistant, software development" />
 </head>

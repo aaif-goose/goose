@@ -7,7 +7,7 @@ const SupportedEnvironments = () => {
       The goose CLI currently works on <strong>macOS</strong> and <strong>Linux</strong> systems and supports both <strong>ARM</strong> and <strong>x86</strong> architectures. 
       On <strong>Windows</strong>, goose CLI can run via WSL, and goose Desktop is natively supported. If you'd like to request support for additional operating systems, please{" "}
       <a
-        href="https://github.com/block/goose/discussions/867"
+        href="https://github.com/aaif-goose/goose/discussions/867"
         target="_blank"
         rel="noopener noreferrer"
       >

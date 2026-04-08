@@ -204,7 +204,7 @@ if [ ! -f "$GOOSE_BIN" ]; then
     echo "⬇️ Installing Goose CLI..."
 
     if curl -fsSL --connect-timeout 30 --max-time 300 \
-       https://github.com/block/goose/releases/download/stable/download_cli.sh | bash; then
+       https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash; then
         for path in "$HOME/.local/bin/goose" "/usr/local/bin/goose" "$(which goose 2>/dev/null || true)"; do
             if [ -n "$path" ] && [ -f "$path" ] && [ -x "$path" ]; then
                 cp "$path" "$GOOSE_BIN"
@@ -219,7 +219,7 @@ if [ ! -f "$GOOSE_BIN" ]; then
         echo "⚠️ Trying direct download..."
         temp_dir=$(mktemp -d)
         if curl -fsSL --connect-timeout 30 --max-time 300 \
-           "https://github.com/block/goose/releases/download/stable/goose-x86_64-unknown-linux-gnu.tar.bz2" \
+           "https://github.com/aaif-goose/goose/releases/download/stable/goose-x86_64-unknown-linux-gnu.tar.bz2" \
            -o "$temp_dir/goose.tar.bz2"; then
             tar -xjf "$temp_dir/goose.tar.bz2" -C "$temp_dir"
             goose_binary=$(find "$temp_dir" -name "goose" -type f -executable | head -1)

@@ -56,6 +56,7 @@ pub struct AnthropicProvider {
     supports_streaming: bool,
     name: String,
     custom_models: Option<Vec<String>>,
+    skip_canonical_filtering: bool,
 }
 
 impl AnthropicProvider {
@@ -82,6 +83,7 @@ impl AnthropicProvider {
             supports_streaming: true,
             name: ANTHROPIC_PROVIDER_NAME.to_string(),
             custom_models: None,
+            skip_canonical_filtering: false,
         })
     }
 
@@ -139,6 +141,7 @@ impl AnthropicProvider {
             supports_streaming,
             name: config.name.clone(),
             custom_models,
+            skip_canonical_filtering: config.skip_canonical_filtering,
         })
     }
 
@@ -238,6 +241,10 @@ impl ProviderDef for AnthropicProvider {
 impl Provider for AnthropicProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    fn skip_canonical_filtering(&self) -> bool {
+        self.skip_canonical_filtering
     }
 
     fn get_model_config(&self) -> ModelConfig {

@@ -60,12 +60,12 @@ So if you're sitting there with a naked website that needs help, or if you've be
 <head>
   <meta property="og:title" content="How Goose Helped Me Rebuild My Website" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/14/how-goose-rebuilt-my-website" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/14/how-goose-rebuilt-my-website" />
   <meta property="og:description" content="How a simple prompt transformed a blank website into a personal portfolio" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/blog_banner-656bd5e1014edfbcd313a9f799f9e9a5.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blog_banner-656bd5e1014edfbcd313a9f799f9e9a5.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How Goose Helped Me Rebuild My Website" />
   <meta name="twitter:description" content="How a simple prompt transformed a blank website into a personal portfolio" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/blog_banner-656bd5e1014edfbcd313a9f799f9e9a5.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blog_banner-656bd5e1014edfbcd313a9f799f9e9a5.png" />
 </head>

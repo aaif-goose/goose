@@ -56,7 +56,7 @@ I won't list every single character here (it gets deep), but the takeaway is: Ga
 
 ## Introducing Goosetown
 
-This is exactly the kind of futuristic thinking we're building toward at [goose](https://block.github.io/goose). So the goose team, specifically Tyler Longwell, built our own take on this called [Goosetown](https://github.com/block/goosetown).
+This is exactly the kind of futuristic thinking we're building toward at [goose](https://goose-docs.ai). So the goose team, specifically Tyler Longwell, built our own take on this called [Goosetown](https://github.com/aaif-goose/goosetown).
 
 Goosetown is a multi-agent orchestration layer built on top of goose. Like Gas Town, it coordinates parallel agents. Unlike Gas Town, it's deliberately minimal and built for research-first parallel work.
 
@@ -68,7 +68,7 @@ Here's a real Town Wall snippet from a session where parallel researchers conver
 * **[10:14] researcher-endpoints** - 💡 Found: native endpoint already exists with minimal deps. Alternative path viable.   
 * **[10:15] researcher-source** - ✅ Done. Confirmed: native path requires zero new dependencies. Recommending pivot.
 
-Goosetown operates on 4 components: [skills](/docs/guides/context-engineering/using-skills), [subagents](/docs/guides/subagents), [beads](https://github.com/steveyegge/beads), and a [gtwall](https://github.com/block/goosetown/blob/main/gtwall).
+Goosetown operates on 4 components: [skills](/docs/guides/context-engineering/using-skills), [subagents](/docs/guides/subagents), [beads](https://github.com/steveyegge/beads), and a [gtwall](https://github.com/aaif-goose/goosetown/blob/main/gtwall).
 
 ### Skills
 
@@ -84,7 +84,7 @@ Goosetown uses [Beads](https://github.com/steveyegge/beads) to track progress so
 
 ### gtwall
 
-[gtwall](https://github.com/block/goosetown/blob/main/gtwall) is an append-only log that delegates use to communicate and coordinate. All delegates post and read activity.
+[gtwall](https://github.com/aaif-goose/goosetown/blob/main/gtwall) is an append-only log that delegates use to communicate and coordinate. All delegates post and read activity.
 
 ## A Note from the Creator 
 
@@ -100,19 +100,19 @@ Goosetown uses [Beads](https://github.com/steveyegge/beads) to track progress so
 
 ## Get Started
 
-Ready to try parallel agentic engineering for yourself? [Goosetown](https://github.com/block/goosetown) is open source and available on GitHub. Clone the [repo](https://github.com/block/goosetown), follow the setup instructions in the README, and you'll be orchestrating multiple agents in no time. If you're new to this workflow, watching the video below is a great way to see what a real session looks like before diving in.
+Ready to try parallel agentic engineering for yourself? [Goosetown](https://github.com/aaif-goose/goosetown) is open source and available on GitHub. Clone the [repo](https://github.com/aaif-goose/goosetown), follow the setup instructions in the README, and you'll be orchestrating multiple agents in no time. If you're new to this workflow, watching the video below is a great way to see what a real session looks like before diving in.
 
 <iframe class="aspect-ratio" src="https://www.youtube.com/embed/H2hJjNmvEEA" title="Rizel's first time using Goosetown" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 <head>
   <meta property="og:title" content="Gas Town Explained: How to Use Goosetown for Parallel Agentic Engineering" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/02/19/gastown-explained-goosetown" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/19/gastown-explained-goosetown" />
   <meta property="og:description" content="Learn how Gas Town and Goosetown lead the industrial coding revolution by teaching AI agents to work together in a team. This beginner guide explains the infrastructure we're using to move from talking to one AI to coordinating many agents at once." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goosetown-6e1bda1a4bd160c0c01cfc58c118492e.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goosetown-6e1bda1a4bd160c0c01cfc58c118492e.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Gas Town Explained: How to Use Goosetown for Parallel Agentic Engineering" />
   <meta name="twitter:description" content="Learn how Gas Town and Goosetown lead the industrial coding revolution by teaching AI agents to work together in a team." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goosetown-6e1bda1a4bd160c0c01cfc58c118492e.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goosetown-6e1bda1a4bd160c0c01cfc58c118492e.png" />
 </head>

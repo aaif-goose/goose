@@ -1,6 +1,10 @@
-import type { Skill, SkillStatus, SkillInstallMethod, SupportingFilesType } from "@site/src/pages/skills/types";
+import type {
+  Skill,
+  SkillStatus,
+  SkillInstallMethod,
+  SupportingFilesType,
+} from "@site/src/pages/skills/types";
 import siteConfig from "@generated/docusaurus.config";
-
 
 // Skills data is loaded from a generated JSON manifest at build time
 // Generated at: documentation/static/skills-manifest.json
@@ -30,7 +34,7 @@ export async function searchSkills(query: string): Promise<Skill[]> {
     (skill) =>
       skill.name?.toLowerCase().includes(lowerQuery) ||
       skill.description?.toLowerCase().includes(lowerQuery) ||
-      skill.tags?.some((tag) => tag.toLowerCase().includes(lowerQuery))
+      skill.tags?.some((tag) => tag.toLowerCase().includes(lowerQuery)),
   );
 }
 
@@ -75,8 +79,8 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
   try {
     // In Docusaurus, baseUrl changes automatically for PR previews.
     // Example:
-    //   prod:      /goose/
-    //   PR preview: /goose/pr-preview/pr-6752/
+    //   prod:      /
+    //   PR preview: /pr-preview/pr-6752/
     const baseUrl = siteConfig.baseUrl.endsWith("/")
       ? siteConfig.baseUrl
       : `${siteConfig.baseUrl}/`;
@@ -85,7 +89,11 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
 
     const response = await fetch(manifestUrl);
     if (!response.ok) {
-      console.error("Failed to fetch skills manifest:", response.status, manifestUrl);
+      console.error(
+        "Failed to fetch skills manifest:",
+        response.status,
+        manifestUrl,
+      );
       return [];
     }
 
@@ -97,7 +105,6 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
   }
 }
 
-
 /**
  * Normalize raw frontmatter-like data to Skill type
  * (kept here in case you reuse it elsewhere)
@@ -105,7 +112,7 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
 export function normalizeSkill(
   parsed: { frontmatter: Record<string, any>; content: string },
   id: string,
-  supportingFiles: string[]
+  supportingFiles: string[],
 ): Skill {
   const { frontmatter, content } = parsed;
 
@@ -142,14 +149,28 @@ export function normalizeSkill(
 /**
  * Determine the supporting files type based on file contents
  */
-function determineSupportingFilesType(supportingFiles: string[]): SupportingFilesType {
+function determineSupportingFilesType(
+  supportingFiles: string[],
+): SupportingFilesType {
   if (supportingFiles.length === 0) {
-    return 'none';
+    return "none";
   }
 
   // Executable file extensions
-  const executableExtensions = ['.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd', '.py', '.rb', '.js', '.mjs', '.ts'];
-  
+  const executableExtensions = [
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".ps1",
+    ".bat",
+    ".cmd",
+    ".py",
+    ".rb",
+    ".js",
+    ".mjs",
+    ".ts",
+  ];
+
   // Template-like patterns
   const templatePatterns = [
     /\.template\./i,
@@ -169,32 +190,35 @@ function determineSupportingFilesType(supportingFiles: string[]): SupportingFile
     /\.erb$/i,
   ];
 
-  const hasExecutable = supportingFiles.some(file => {
-    const ext = file.substring(file.lastIndexOf('.')).toLowerCase();
+  const hasExecutable = supportingFiles.some((file) => {
+    const ext = file.substring(file.lastIndexOf(".")).toLowerCase();
     return executableExtensions.includes(ext);
   });
 
   if (hasExecutable) {
-    return 'scripts';
+    return "scripts";
   }
 
-  const hasTemplates = supportingFiles.some(file => {
-    return templatePatterns.some(pattern => pattern.test(file));
+  const hasTemplates = supportingFiles.some((file) => {
+    return templatePatterns.some((pattern) => pattern.test(file));
   });
 
   if (hasTemplates) {
-    return 'templates';
+    return "templates";
   }
 
-  return 'multi-file';
+  return "multi-file";
 }
 
 /**
  * Determine the install method based on source URL
  */
-function determineInstallMethod(sourceUrl: string | undefined, skillId: string): SkillInstallMethod {
+function determineInstallMethod(
+  sourceUrl: string | undefined,
+  skillId: string,
+): SkillInstallMethod {
   if (!sourceUrl) return "download";
-  if (sourceUrl.includes("block/goose")) return "npx-multi";
+  if (sourceUrl.includes("aaif-goose/goose")) return "npx-multi";
 
   const simpleRepoPattern = /^https:\/\/github\.com\/[^\/]+\/[^\/]+\/?$/;
   if (simpleRepoPattern.test(sourceUrl)) return "npx-single";
@@ -208,7 +232,7 @@ function determineInstallMethod(sourceUrl: string | undefined, skillId: string):
 function generateInstallCommand(
   sourceUrl: string | undefined,
   skillId: string,
-  method: SkillInstallMethod
+  method: SkillInstallMethod,
 ): string | undefined {
   if (method === "download" || !sourceUrl) return undefined;
 
@@ -228,7 +252,7 @@ function generateInstallCommand(
  * Generate the view source URL for a skill in the Agent-Skills repo
  */
 function generateViewSourceUrl(skillId: string): string {
-  return `https://github.com/block/Agent-Skills/tree/main/${skillId}`;
+  return `https://github.com/aaif-goose/Agent-Skills/tree/main/${skillId}`;
 }
 
 /**

@@ -22,7 +22,7 @@ jobs:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     # `publish_results: true` only works when run from the default branch. conditional can be removed if disabled.
-    if: github.repository == 'block/goose' && (github.event.repository.default_branch == github.ref_name || github.event_name == 'pull_request')
+    if: github.repository == 'aaif-goose/goose' && (github.event.repository.default_branch == github.ref_name || github.event_name == 'pull_request')
     permissions:
       # Needed to upload the results to code-scanning dashboard.
       security-events: write

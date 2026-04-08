@@ -12,7 +12,7 @@ In our previous episode of [goose Flight School](https://www.youtube.com/playlis
 <!--truncate-->
 
 # How It Works
-[Extensions](https://block.github.io/goose/docs/getting-started/using-extensions) enhance goose's functionality by connecting with your existing tools and workflows. They add new features, access external data resources, and integrate with other systems. Learn how multiple extensions, including Figma and Developer, worked together seamlessly to dramatically accelerate development.
+[Extensions](https://goose-docs.ai/docs/getting-started/using-extensions) enhance goose's functionality by connecting with your existing tools and workflows. They add new features, access external data resources, and integrate with other systems. Learn how multiple extensions, including Figma and Developer, worked together seamlessly to dramatically accelerate development.
 
 # Live Tutorial: goose Builds Live
 During the livestream, Adewale demonstrated step-by-step how goose handled each development phase, from creating the basic application structure to generating responsive layouts using Tailwind CSS. Adewale also highlighted how goose addresses potential limitations as you go, showcasing the powerful balance between the goose's automation and developer control.
@@ -27,19 +27,19 @@ Throughout the stream, Adewale shared valuable tips to prepare your design for g
 * make sure you thoroughly test for functionality and responsiveness
 
 # Getting Started with goose and Figma
-Whether you're a designer wanting to rapidly turn concepts into working code or a developer curious about streamlining design implementation, you can download goose with its built-in [Developer extension](https://block.github.io/goose/docs/getting-started/installation) and add the [Figma extension](https://block.github.io/goose/v1/extensions/). 
+Whether you're a designer wanting to rapidly turn concepts into working code or a developer curious about streamlining design implementation, you can download goose with its built-in [Developer extension](https://goose-docs.ai/docs/getting-started/installation) and add the [Figma extension](https://goose-docs.ai/v1/extensions/). 
 
 For step-by-step instructions, check out the [Figma tutorial](/docs/mcp/figma-mcp).
 
 <head>
   <meta property="og:title" content="goose Flight School: Turn Figma Designs Into Code With goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/12/goose-figma-mcp" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/12/goose-figma-mcp" />
   <meta property="og:description" content="Give goose the ability to turn Figma designs into code with the Figma extension." />
-  <meta property="og:image" content="http://block.github.io/goose/assets/images/goosefigma-e6f84a734bd56cb431bb02452331a5d5.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/goosefigma-e6f84a734bd56cb431bb02452331a5d5.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose Flight School: Turn Figma Designs Into Code With goose" />
   <meta name="twitter:description" content="Give goose the ability to turn Figma designs into code with the Figma extension." />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/goosefigma-e6f84a734bd56cb431bb02452331a5d5.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/goosefigma-e6f84a734bd56cb431bb02452331a5d5.png" />
 </head>

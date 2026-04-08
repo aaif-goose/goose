@@ -54,7 +54,7 @@ The `ctx.sample()` call sends a prompt back to the connected AI and waits for a 
 
 ## A Real Example: Council of Mine
 
-[Council of Mine](https://github.com/block/mcp-council-of-mine) is an MCP server that takes sampling to an extreme. It simulates a council of nine AI personas who debate topics and vote on each other's opinions.
+[Council of Mine](https://github.com/aaif-goose/mcp-council-of-mine) is an MCP server that takes sampling to an extreme. It simulates a council of nine AI personas who debate topics and vote on each other's opinions.
 
 But there's no LLM running inside the server. Every opinion, every vote, every bit of reasoning comes from sampling requests back to the user's connected LLM.
 
@@ -200,12 +200,12 @@ If you want to see sampling in action, [Council of Mine](/docs/mcp/council-of-mi
 <head>
   <meta property="og:title" content="MCP Sampling: When Your Tools Need to Think" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/12/04/mcp-sampling" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/12/04/mcp-sampling" />
   <meta property="og:description" content="Learn how MCP Sampling lets your tools call the AI instead of the other way around." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/mcp-sampling-4e857d422eb4fcbfbf474003069ba732.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/mcp-sampling-4e857d422eb4fcbfbf474003069ba732.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="MCP Sampling: When Your Tools Need to Think" />
   <meta name="twitter:description" content="Learn how MCP Sampling lets your tools call the AI instead of the other way around." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/mcp-sampling-4e857d422eb4fcbfbf474003069ba732.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/mcp-sampling-4e857d422eb4fcbfbf474003069ba732.png" />
 </head>

@@ -13,8 +13,9 @@ use goose::providers::local_inference::{
     available_inference_memory_bytes,
     hf_models::{resolve_model_spec, HfGgufFile},
     local_model_registry::{
-        get_registry, is_featured_model, model_id_from_repo, LocalModelEntry,
-        ModelDownloadStatus as RegistryDownloadStatus, ModelSettings, FEATURED_MODELS,
+        default_settings_for_model, get_registry, is_featured_model, model_id_from_repo,
+        LocalModelEntry, ModelDownloadStatus as RegistryDownloadStatus, ModelSettings,
+        FEATURED_MODELS,
     },
     recommend_local_model,
 };
@@ -51,8 +52,8 @@ pub struct LocalModelResponse {
 async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
     let mut entries_to_add = Vec::new();
 
-    for spec in FEATURED_MODELS {
-        let (repo_id, quantization) = match hf_models::parse_model_spec(spec) {
+    for featured in FEATURED_MODELS {
+        let (repo_id, quantization) = match hf_models::parse_model_spec(featured.spec) {
             Ok(parts) => parts,
             Err(_) => continue,
         };
@@ -68,7 +69,7 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
             }
         }
 
-        let hf_file = match resolve_model_spec(spec).await {
+        let hf_file = match resolve_model_spec(featured.spec).await {
             Ok((_repo, file)) => file,
             Err(_) => {
                 let filename = format!(
@@ -91,13 +92,13 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
         let local_path = Paths::in_data_dir("models").join(&hf_file.filename);
 
         entries_to_add.push(LocalModelEntry {
-            id: model_id,
+            id: model_id.clone(),
             repo_id,
             filename: hf_file.filename,
             quantization,
             local_path,
             source_url: hf_file.download_url,
-            settings: ModelSettings::default(),
+            settings: default_settings_for_model(&model_id),
             size_bytes: hf_file.size_bytes,
         });
     }
@@ -273,7 +274,7 @@ pub async fn download_hf_model(
         quantization,
         local_path: local_path.clone(),
         source_url: download_url.clone(),
-        settings: ModelSettings::default(),
+        settings: default_settings_for_model(&model_id),
         size_bytes: hf_file.size_bytes,
     };
 

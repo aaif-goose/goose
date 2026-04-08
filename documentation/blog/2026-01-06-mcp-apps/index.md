@@ -13,7 +13,7 @@ The MCP ecosystem is standardizing how servers deliver interactive UIs to hosts,
 
 ## What's Shipping
 
-This release ([v1.19.0](https://github.com/block/goose/releases/tag/v1.19.0)) brings a minimal-but-functional implementation of MCP Apps:
+This release ([v1.19.0](https://github.com/aaif-goose/goose/releases/tag/v1.19.0)) brings a minimal-but-functional implementation of MCP Apps:
 
 - Discovery of MCP App resources connected to tools
 - HTML content rendering in sandboxed iframes
@@ -46,19 +46,19 @@ MCP-UI isn't going away overnight. We'll keep supporting it while the community 
 
 - **Get started:** Update goose and point it at an MCP server that returns App resources
 - **Read the spec:** [github.com/modelcontextprotocol/ext-apps](https://github.com/modelcontextprotocol/ext-apps)
-- **Join the conversation:** [goose GitHub discussion](https://github.com/block/goose/discussions/6069) · [MCP Contributors Discord](https://discord.gg/6CSzBmMkjX)
+- **Join the conversation:** [goose GitHub discussion](https://github.com/aaif-goose/goose/discussions/6069) · [MCP Contributors Discord](https://discord.gg/6CSzBmMkjX)
 
 If you build or port an app, we want to hear from you. File issues, share demos, tell us what's broken. Early feedback shapes what comes next.
 
 <head>
   <meta property="og:title" content="goose Lands MCP Apps" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/01/06/mcp-apps" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/06/mcp-apps" />
   <meta property="og:description" content="goose ships early support for the draft MCP Apps specification, aligning with the emerging standard for interactive UIs in MCP." />
-<meta property="og:image" content="http://block.github.io/goose/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
+<meta property="og:image" content="http://goose-docs.ai/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose Lands MCP Apps" />
   <meta name="twitter:description" content="goose ships early support for the draft MCP Apps specification, aligning with the emerging standard for interactive UIs in MCP." />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/goose-lands-mcp-apps-header-image-eb1f899d6de24f21cc2c45e46727f11d.png" />
 </head>

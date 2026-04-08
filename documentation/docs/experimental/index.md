@@ -69,7 +69,7 @@ The list of experimental features may change as goose development progresses. So
     <Card 
       title="GitHub Issues"
       description="Report bugs, request features, or contribute to the development of experimental features."
-      link="https://github.com/block/goose/issues"
+      link="https://github.com/aaif-goose/goose/issues"
     />
     <Card 
       title="Discord Community"

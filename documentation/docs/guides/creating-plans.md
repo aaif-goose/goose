@@ -334,7 +334,7 @@ import blogBanner from '@site/blog/2025-12-19-does-your-ai-agent-need-a-plan/blo
       title: 'Does Your AI Agent Need a Plan?',
       description: 'Knowing when and how to plan with an AI agent can produce better results.',
       thumbnailUrl: blogBanner,
-      linkUrl: '/goose/blog/2025/12/19/does-your-ai-agent-need-a-plan',
+      linkUrl: '/blog/2025/12/19/does-your-ai-agent-need-a-plan',
       date: '2025-12-19',
       duration: '7 min read'
     },
@@ -342,7 +342,7 @@ import blogBanner from '@site/blog/2025-12-19-does-your-ai-agent-need-a-plan/blo
       type: 'topic',
       title: 'Planning Complex Tasks',
       description: 'Learn how to use the Plan feature to break down complex tasks into manageable, executable steps.',
-      linkUrl: '/goose/docs/tutorials/plan-feature-devcontainer-setup',
+      linkUrl: '/docs/tutorials/plan-feature-devcontainer-setup',
     }
   ]}
 />

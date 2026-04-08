@@ -1,5 +1,5 @@
 # Community Stars Team Lists
-# This file categorizes contributors for the block/goose Community Stars program
+# This file categorizes contributors for the aaif-goose/goose Community Stars program
 # Format: One username per line under each category header
 #
 # Note: External contributors (eligible for Community All-Stars) are automatically

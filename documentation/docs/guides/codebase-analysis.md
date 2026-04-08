@@ -5,7 +5,7 @@ description: Understand codebases with semantic analysis and call graphs
 sidebar_position: 111
 ---
 
-The [Developer extension](/docs/mcp/developer-mcp) includes an `analyze` tool that helps you understand code structure, track symbol usage, and explore call graphs across your codebase. It's automatically available when the Developer extension is enabled and supports file types for [multiple programming languages](https://github.com/block/goose/blob/main/crates/goose-mcp/src/developer/analyze/languages/mod.rs).
+The [Developer extension](/docs/mcp/developer-mcp) includes an `analyze` tool that helps you understand code structure, track symbol usage, and explore call graphs across your codebase. It's automatically available when the Developer extension is enabled and supports file types for [multiple programming languages](https://github.com/aaif-goose/goose/blob/main/crates/goose-mcp/src/developer/analyze/languages/mod.rs).
 
 <details>
 <summary>Example analysis: Tracking a function across files</summary>

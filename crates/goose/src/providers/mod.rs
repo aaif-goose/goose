@@ -1,3 +1,4 @@
+pub mod amp_acp;
 pub mod anthropic;
 pub mod api_client;
 pub mod avian;
@@ -36,6 +37,7 @@ pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
 pub mod openrouter;
+pub mod pi_acp;
 pub mod provider_registry;
 pub mod provider_test;
 mod retry;

@@ -50,7 +50,7 @@ All configuration is via environment variables. Defaults are designed to be secu
 
 ### File System
 
-The [seatbelt sandbox profile](https://github.com/block/goose/blob/main/ui/desktop/src/sandbox/index.ts) blocks write operations to these sensitive files:
+The [seatbelt sandbox profile](https://github.com/aaif-goose/goose/blob/main/ui/desktop/src/sandbox/index.ts) blocks write operations to these sensitive files:
 
 - `~/.ssh/` - Prevent SSH key tampering
 - `~/.bashrc`, `~/.zshrc`, `~/.bash_profile`, `~/.zprofile` - Prevent shell config injection

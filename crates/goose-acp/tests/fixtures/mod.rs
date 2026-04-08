@@ -3,19 +3,18 @@
 
 use async_trait::async_trait;
 use fs_err as fs;
-pub use goose::acp::{map_permission_response, PermissionDecision, PermissionMapping};
+pub use goose::acp::{map_permission_response, PermissionDecision};
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::paths::Paths;
 use goose::config::{GooseMode, PermissionManager};
 use goose::providers::api_client::{ApiClient, AuthMethod as ApiAuthMethod};
 use goose::providers::base::Provider;
 use goose::providers::openai::OpenAiProvider;
-use goose::providers::provider_registry::ProviderConstructor;
 use goose::session_context::SESSION_ID_HEADER;
-use goose_acp::server::{serve, GooseAcpAgent};
+use goose_acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
 use goose_test_support::{ExpectedSessionId, TEST_MODEL};
 use sacp::schema::{
-    AuthMethod, CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
+    CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
     ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalResponse, SessionModeState,
     SessionModelState, SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputResponse,
     ToolCallContent, ToolCallStatus, ToolKind, WaitForTerminalExitResponse, WriteTextFileRequest,
@@ -155,7 +154,7 @@ pub async fn spawn_acp_server_in_process(
     builtins: &[String],
     data_root: &std::path::Path,
     goose_mode: GooseMode,
-    provider_factory: Option<ProviderConstructor>,
+    provider_factory: Option<AcpProviderFactory>,
     current_model: &str,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
@@ -171,7 +170,7 @@ pub async fn spawn_acp_server_in_process(
     }
     let provider_factory = provider_factory.unwrap_or_else(|| {
         let base_url = openai_base_url.to_string();
-        Arc::new(move |model_config, _extensions| {
+        Arc::new(move |_provider_name, model_config, _extensions| {
             let base_url = base_url.clone();
             Box::pin(async move {
                 let api_client =
@@ -472,7 +471,7 @@ pub struct TestConnectionConfig {
     pub goose_mode: GooseMode,
     pub cwd: Option<tempfile::TempDir>,
     pub data_root: PathBuf,
-    pub provider_factory: Option<ProviderConstructor>,
+    pub provider_factory: Option<AcpProviderFactory>,
     pub read_text_file: Option<ReadTextFileHandler>,
     pub write_text_file: Option<WriteTextFileHandler>,
     pub terminal: Option<Arc<TerminalFixture>>,
@@ -524,7 +523,6 @@ pub trait Connection: Sized {
         config_id: &str,
         value: &str,
     ) -> anyhow::Result<()>;
-    fn auth_methods(&self) -> &[AuthMethod];
     fn data_root(&self) -> std::path::PathBuf;
     fn reset_openai(&self);
     fn reset_permissions(&self);

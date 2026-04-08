@@ -56,7 +56,7 @@ import notMcpReplacement from '@site/blog/2025-12-21-code-mode-doesnt-replace-mc
       title: 'Code Mode for MCP',
       description: 'Learn about the code execution approach to MCP tool calling.',
       thumbnailUrl: gooseCodeMode,
-      linkUrl: '/goose/blog/2025/12/15/code-mode-mcp',
+      linkUrl: '/blog/2025/12/15/code-mode-mcp',
       date: '2025-12-15',
       duration: '5 min read'
     },
@@ -65,7 +65,7 @@ import notMcpReplacement from '@site/blog/2025-12-21-code-mode-doesnt-replace-mc
       title: 'Code Mode Doesn\'t Replace MCP',
       description: 'Understanding how Code Mode and MCP work together.',
       thumbnailUrl: notMcpReplacement,
-      linkUrl: '/goose/blog/2025/12/21/code-mode-doesnt-replace-mcp',
+      linkUrl: '/blog/2025/12/21/code-mode-doesnt-replace-mcp',
       date: '2025-12-21',
       duration: '8 min read'
     }

@@ -4,5 +4,5 @@ contact_links:
     url: https://discord.gg/goose-oss
     about: Please ask and answer questions here.
   - name: Report a security vulnerability
-    url: https://github.com/block/goose/security/policy
+    url: https://github.com/aaif-goose/goose/security/policy
     about: Please report security vulnerabilities here.

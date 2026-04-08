@@ -81,7 +81,7 @@ GOOSE_TOOLSHIM: true
 GOOSE_CLI_MIN_PRIORITY: 0.2
 
 # Recipe Configuration
-GOOSE_RECIPE_GITHUB_REPO: "block/goose-recipes"
+GOOSE_RECIPE_GITHUB_REPO: "aaif-goose/goose-recipes"
 
 # Search Path Configuration
 GOOSE_SEARCH_PATHS:

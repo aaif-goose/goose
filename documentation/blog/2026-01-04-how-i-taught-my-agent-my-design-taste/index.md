@@ -123,12 +123,12 @@ The code and full transcripts live in [my Genuary 2026 repo](https://github.com/
 <head>
   <meta property="og:title" content="How I Taught My Agent My Design Taste" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/01/04/how-i-taught-my-agent-my-design-taste" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/04/how-i-taught-my-agent-my-design-taste" />
   <meta property="og:description" content="I used Agent Skills and recipes to automate execution so I could study taste, constraint design, feedback loops, and avoid AI smells." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/automate-taste-9a928fdbc3c8e4d335dba61401ede6bc.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/automate-taste-9a928fdbc3c8e4d335dba61401ede6bc.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="How I Taught My Agent My Design Taste" />
   <meta name="twitter:description" content="I used Agent Skills and recipes to automate execution so I could study taste, constraint design, feedback loops, and avoid AI smells." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/automate-taste-9a928fdbc3c8e4d335dba61401ede6bc.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/automate-taste-9a928fdbc3c8e4d335dba61401ede6bc.png" />
 </head>
