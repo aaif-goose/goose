@@ -27,17 +27,21 @@ impl ProviderEntry {
         &self.metadata
     }
 
-    fn normalize_model_config(&self, model: ModelConfig) -> ModelConfig {
-        let known_model_limits: Vec<(String, usize)> = self
-            .metadata
-            .known_models
-            .iter()
-            .map(|m| (m.name.clone(), m.context_limit))
-            .collect();
+    fn normalize_model_config(&self, mut model: ModelConfig) -> ModelConfig {
+        model = model.with_canonical_limits(&self.metadata.name);
+
+        if model.context_limit.is_none() {
+            if let Some(info) = self
+                .metadata
+                .known_models
+                .iter()
+                .find(|m| m.name == model.model_name && m.context_limit > 0)
+            {
+                model.context_limit = Some(info.context_limit);
+            }
+        }
 
         model
-            .with_canonical_limits(&self.metadata.name)
-            .with_known_model_context_limit(&known_model_limits)
     }
 
     pub async fn create_with_default_model(
