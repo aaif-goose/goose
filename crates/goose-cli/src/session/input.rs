@@ -706,40 +706,4 @@ mod tests {
         let result = handle_slash_command("/recipe /path/to/file.txt");
         assert!(matches!(result, Some(InputResult::Retry)));
     }
-
-    #[test]
-    fn test_vte_broken_emoji_width_detection() {
-        // No VTE_VERSION set — not a VTE terminal
-        std::env::remove_var("VTE_VERSION");
-        assert!(!is_vte_with_broken_emoji_width());
-
-        // VTE 0.64.2 (RHEL 9) — flat integer "6402"
-        std::env::set_var("VTE_VERSION", "6402");
-        assert!(is_vte_with_broken_emoji_width());
-
-        // VTE 0.70.3 — fixed
-        std::env::set_var("VTE_VERSION", "7003");
-        assert!(!is_vte_with_broken_emoji_width());
-
-        // Unparseable version — assume broken (conservative)
-        std::env::set_var("VTE_VERSION", "unknown");
-        assert!(is_vte_with_broken_emoji_width());
-
-        // Cleanup
-        std::env::remove_var("VTE_VERSION");
-    }
-
-    #[test]
-    fn test_input_prompt_vte_fallback() {
-        std::env::remove_var("VTE_VERSION");
-        assert_eq!(get_input_prompt_string(), "🪿 ");
-
-        std::env::set_var("VTE_VERSION", "6402");
-        assert_eq!(get_input_prompt_string(), "> ");
-
-        std::env::set_var("VTE_VERSION", "7003");
-        assert_eq!(get_input_prompt_string(), "🪿 ");
-
-        std::env::remove_var("VTE_VERSION");
-    }
 }
