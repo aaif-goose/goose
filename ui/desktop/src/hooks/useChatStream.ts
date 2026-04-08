@@ -633,7 +633,7 @@ export function useChatStream({
       } catch (error) {
         // Abort is expected when stopStreaming races with the POST
         if (abortController.signal.aborted) return;
-        // POST failed — clean up listener and reset to Idle.
+        // POST failed — clean up listener and report error.
         // Only clear global refs if this request is still the active one;
         // a newer request may have already replaced them.
         unsubscribe();
@@ -643,8 +643,12 @@ export function useChatStream({
           activeRequestSessionIdRef.current = null;
           activeAbortRef.current = null;
         }
-        dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.Idle });
-        console.warn('Submit failed:', errorMessage(error));
+        const msg = errorMessage(error);
+        if (msg.includes('already has an active request')) {
+          dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.Idle });
+        } else {
+          onFinish('Submit error: ' + msg);
+        }
       }
     },
     [addListener, onFinish, reloadConversation]
