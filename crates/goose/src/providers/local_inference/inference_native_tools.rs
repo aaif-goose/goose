@@ -262,7 +262,10 @@ fn extract_oai_tool_call_messages(deltas: &[Value], message_id: &str) -> Vec<Mes
             let arguments: Option<serde_json::Map<String, Value>> = if args_str.is_empty() {
                 None
             } else {
-                serde_json::from_str(&args_str).ok()
+                match serde_json::from_str(&args_str) {
+                    Ok(args) => Some(args),
+                    Err(_) => return None,
+                }
             };
 
             let tool_call = match arguments {
@@ -277,4 +280,123 @@ fn extract_oai_tool_call_messages(deltas: &[Value], message_id: &str) -> Vec<Mes
             Some(msg)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn get_tool_call_name(msg: &Message) -> &str {
+        match &msg.content[0] {
+            MessageContent::ToolRequest(req) => {
+                let call = req.tool_call.as_ref().unwrap();
+                &call.name
+            }
+            _ => panic!("Expected ToolRequest"),
+        }
+    }
+
+    fn get_tool_call_args(msg: &Message) -> Option<&serde_json::Map<String, Value>> {
+        match &msg.content[0] {
+            MessageContent::ToolRequest(req) => {
+                let call = req.tool_call.as_ref().unwrap();
+                call.arguments.as_ref()
+            }
+            _ => panic!("Expected ToolRequest"),
+        }
+    }
+
+    #[test]
+    fn test_merge_streaming_deltas() {
+        // Simulates OpenAI streaming: name in first delta, arguments split across multiple
+        let deltas = vec![
+            json!({"index": 0, "id": "call_1", "type": "function", "function": {"name": "developer__shell", "arguments": ""}}),
+            json!({"index": 0, "function": {"arguments": "{\"command\":"}}),
+            json!({"index": 0, "function": {"arguments": " \"ls\"}"}}),
+        ];
+        let msgs = extract_oai_tool_call_messages(&deltas, "msg-1");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(get_tool_call_name(&msgs[0]), "developer__shell");
+        let args = get_tool_call_args(&msgs[0]).unwrap();
+        assert_eq!(args.get("command").unwrap(), "ls");
+    }
+
+    #[test]
+    fn test_multiple_tool_calls_by_index() {
+        let deltas = vec![
+            json!({"index": 0, "id": "call_1", "function": {"name": "developer__shell", "arguments": "{\"command\": \"ls\"}"}}),
+            json!({"index": 1, "id": "call_2", "function": {"name": "developer__shell", "arguments": "{\"command\": \"pwd\"}"}}),
+        ];
+        let msgs = extract_oai_tool_call_messages(&deltas, "msg-1");
+        assert_eq!(msgs.len(), 2);
+        let args0 = get_tool_call_args(&msgs[0]).unwrap();
+        let args1 = get_tool_call_args(&msgs[1]).unwrap();
+        assert_eq!(args0.get("command").unwrap(), "ls");
+        assert_eq!(args1.get("command").unwrap(), "pwd");
+    }
+
+    #[test]
+    fn test_multiple_arguments_streamed() {
+        // Arguments with multiple keys streamed token by token
+        let deltas = vec![
+            json!({"index": 0, "id": "call_1", "function": {"name": "developer__shell", "arguments": ""}}),
+            json!({"index": 0, "function": {"arguments": "{\"command\""}}),
+            json!({"index": 0, "function": {"arguments": ": \"ls -la\","}}),
+            json!({"index": 0, "function": {"arguments": " \"timeout\":"}}),
+            json!({"index": 0, "function": {"arguments": " 30}"}}),
+        ];
+        let msgs = extract_oai_tool_call_messages(&deltas, "msg-1");
+        assert_eq!(msgs.len(), 1);
+        let args = get_tool_call_args(&msgs[0]).unwrap();
+        assert_eq!(args.get("command").unwrap(), "ls -la");
+        assert_eq!(args.get("timeout").unwrap(), 30);
+    }
+
+    #[test]
+    fn test_empty_name_skipped() {
+        let deltas = vec![json!({"index": 0, "function": {"name": "", "arguments": "{}"}})];
+        let msgs = extract_oai_tool_call_messages(&deltas, "msg-1");
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn test_no_deltas() {
+        let msgs = extract_oai_tool_call_messages(&[], "msg-1");
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn test_tool_call_without_arguments() {
+        let deltas = vec![json!({"index": 0, "id": "call_1", "function": {"name": "some_tool"}})];
+        let msgs = extract_oai_tool_call_messages(&deltas, "msg-1");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(get_tool_call_name(&msgs[0]), "some_tool");
+        assert!(get_tool_call_args(&msgs[0]).is_none());
+    }
+
+    #[test]
+    fn test_malformed_arguments_drops_tool_call() {
+        let deltas = vec![
+            json!({"index": 0, "id": "call_1", "function": {"name": "developer__shell", "arguments": ""}}),
+            json!({"index": 0, "function": {"arguments": "{\"command\": \"rm -rf"}}),
+        ];
+        let msgs = extract_oai_tool_call_messages(&deltas, "msg-1");
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn test_generates_id_when_missing() {
+        let deltas =
+            vec![json!({"index": 0, "function": {"name": "some_tool", "arguments": "{}"}})];
+        let msgs = extract_oai_tool_call_messages(&deltas, "msg-1");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(get_tool_call_name(&msgs[0]), "some_tool");
+        match &msgs[0].content[0] {
+            MessageContent::ToolRequest(req) => {
+                assert!(!req.id.is_empty());
+            }
+            _ => panic!("Expected ToolRequest"),
+        }
+    }
 }
