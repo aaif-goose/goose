@@ -157,6 +157,11 @@ pub(super) fn generate_with_native_tools(
                 }
                 Err(e) => {
                     tracing::warn!("Streaming parser error: {}", e);
+                    let mut msg = Message::assistant().with_text(piece);
+                    msg.id = Some(message_id.to_string());
+                    if tx.blocking_send(Ok((Some(msg), None))).is_err() {
+                        return Ok(TokenAction::Stop);
+                    }
                 }
             }
 
