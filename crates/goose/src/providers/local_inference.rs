@@ -360,20 +360,11 @@ impl LocalInferenceProvider {
             }
         };
 
-        let has_native_tool_calling = template
-            .to_str()
-            .map(|s| s.contains("tool_call"))
-            .unwrap_or(false);
-
-        tracing::info!(
-            "Model loaded successfully (native_tool_calling={})",
-            has_native_tool_calling
-        );
+        tracing::info!(model_id = model_id, "Model loaded successfully");
 
         Ok(LoadedModel {
             model,
             template,
-            has_native_tool_calling,
         })
     }
 }
@@ -489,20 +480,17 @@ impl Provider for LocalInferenceProvider {
             }
         }
 
-        // Detect native tool calling from the loaded model's template.
-        // Models whose template supports tool calling use the native path;
-        // all others use the emulator which parses `$ command` and ```execute blocks.
-        // Only use emulator when there are actually tools to emulate - utility calls
-        // like compaction and session naming pass empty tools and should preserve
-        // their system prompts.
-        let detected_native_tool_calling = {
-            let model_lock = self.model.lock().await;
-            model_lock
-                .as_ref()
-                .map(|m| m.has_native_tool_calling)
-                .unwrap_or(false)
-        };
-        let use_emulator = !detected_native_tool_calling && !tools.is_empty();
+        // Use the model's native_tool_calling setting to decide the path.
+        // Featured models have this set explicitly; user-added models default to false.
+        let native_tool_calling = model_settings.native_tool_calling;
+        let use_emulator = !native_tool_calling && !tools.is_empty();
+        tracing::info!(
+            model = %model_config.model_name,
+            native_tool_calling = native_tool_calling,
+            use_emulator = use_emulator,
+            tool_count = tools.len(),
+            "Tool calling path resolved"
+        );
         let system_prompt = if use_emulator {
             load_tiny_model_prompt()
         } else {
@@ -558,7 +546,7 @@ impl Provider for LocalInferenceProvider {
             (None, None)
         };
 
-        let oai_messages_json = if model_settings.use_jinja || detected_native_tool_calling {
+        let oai_messages_json = if model_settings.use_jinja || native_tool_calling {
             Some(build_openai_messages_json(&system_prompt, messages))
         } else {
             None

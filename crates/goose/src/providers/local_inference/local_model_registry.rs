@@ -101,6 +101,27 @@ pub const FEATURED_MODELS: &[&str] = &[
     "unsloth/gemma-4-26B-A4B-it-GGUF:Q4_K_M",
 ];
 
+/// Models whose GGUF templates support native tool calling via llama.cpp.
+/// These models have tool call syntax in their chat templates and are
+/// capable enough to produce valid tool calls.
+const NATIVE_TOOL_CALLING_MODELS: &[&str] = &[
+    "unsloth/gemma-4-E4B-it-GGUF",
+    "unsloth/gemma-4-26B-A4B-it-GGUF",
+    "bartowski/Mistral-Small-24B-Instruct-2501-GGUF",
+];
+
+/// Return default settings for a model, with native_tool_calling set
+/// based on known model capabilities.
+pub fn default_settings_for_model(model_id: &str) -> ModelSettings {
+    let native = NATIVE_TOOL_CALLING_MODELS
+        .iter()
+        .any(|prefix| model_id.starts_with(prefix));
+    ModelSettings {
+        native_tool_calling: native,
+        ..ModelSettings::default()
+    }
+}
+
 /// Check if a model ID corresponds to a featured model.
 pub fn is_featured_model(model_id: &str) -> bool {
     use super::hf_models::parse_model_spec;

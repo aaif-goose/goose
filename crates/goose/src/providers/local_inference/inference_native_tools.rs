@@ -158,6 +158,7 @@ pub(super) fn generate_with_native_tools(
                                 delta.get("tool_calls").and_then(|v| v.as_array())
                             {
                                 for tc in tool_calls {
+                                    tracing::info!(delta = %tc, "Streaming tool call delta");
                                     accumulated_tool_calls.push(tc.clone());
                                 }
                             }
@@ -202,7 +203,16 @@ pub(super) fn generate_with_native_tools(
     }
 
     // Convert accumulated tool calls to messages
+    tracing::info!(
+        delta_count = accumulated_tool_calls.len(),
+        raw_deltas = %serde_json::to_string(&accumulated_tool_calls).unwrap_or_default(),
+        "Merging tool call deltas"
+    );
     let tool_call_msgs = extract_oai_tool_call_messages(&accumulated_tool_calls, message_id);
+    tracing::info!(
+        tool_call_count = tool_call_msgs.len(),
+        "Tool calls extracted from deltas"
+    );
     for msg in tool_call_msgs {
         let _ = tx.blocking_send(Ok((Some(msg), None)));
     }
@@ -219,39 +229,66 @@ pub(super) fn generate_with_native_tools(
     Ok(())
 }
 
-/// Convert OpenAI-format tool call values to Goose Message objects.
-fn extract_oai_tool_call_messages(tool_calls: &[Value], message_id: &str) -> Vec<Message> {
-    tool_calls
-        .iter()
-        .filter_map(|tc| {
-            let func = tc.get("function")?;
-            let name = func.get("name")?.as_str()?;
+/// Merge OpenAI streaming deltas by `index` into complete tool calls, then
+/// convert to Goose Message objects.
+///
+/// The streaming parser emits partial deltas like:
+///   {"tool_calls": [{"index": 0, "id": "abc", "function": {"name": "shell"}}]}
+///   {"tool_calls": [{"index": 0, "function": {"arguments": "{\"command\":"}}]}
+///   {"tool_calls": [{"index": 0, "function": {"arguments": " \"ls\"}"}}]}
+///
+/// These must be merged by `index` before extracting complete tool calls.
+fn extract_oai_tool_call_messages(deltas: &[Value], message_id: &str) -> Vec<Message> {
+    let mut merged: std::collections::BTreeMap<u64, (String, String, String)> =
+        std::collections::BTreeMap::new();
+
+    for delta in deltas {
+        let index = delta.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+        let entry = merged
+            .entry(index)
+            .or_insert_with(|| (String::new(), String::new(), String::new()));
+
+        if let Some(id) = delta.get("id").and_then(|v| v.as_str()) {
+            if !id.is_empty() {
+                entry.0 = id.to_string();
+            }
+        }
+        if let Some(func) = delta.get("function") {
+            if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
+                if !name.is_empty() {
+                    entry.1 = name.to_string();
+                }
+            }
+            if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
+                entry.2.push_str(args);
+            }
+        }
+    }
+
+    merged
+        .into_values()
+        .filter_map(|(id, name, args_str)| {
             if name.is_empty() {
                 return None;
             }
 
-            let arguments: Option<serde_json::Map<String, Value>> =
-                func.get("arguments").and_then(|a| {
-                    if let Some(s) = a.as_str() {
-                        serde_json::from_str(s).ok()
-                    } else if let Some(obj) = a.as_object() {
-                        Some(obj.clone())
-                    } else {
-                        None
-                    }
-                });
+            let id = if id.is_empty() {
+                Uuid::new_v4().to_string()
+            } else {
+                id
+            };
 
-            let id = tc
-                .get("id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| Uuid::new_v4().to_string());
+            let arguments: Option<serde_json::Map<String, Value>> = if args_str.is_empty() {
+                None
+            } else {
+                serde_json::from_str(&args_str).ok()
+            };
 
             let tool_call = match arguments {
                 Some(args) => {
-                    CallToolRequestParams::new(Cow::Owned(name.to_string())).with_arguments(args)
+                    CallToolRequestParams::new(Cow::Owned(name)).with_arguments(args)
                 }
-                None => CallToolRequestParams::new(Cow::Owned(name.to_string())),
+                None => CallToolRequestParams::new(Cow::Owned(name)),
             };
 
             let mut msg = Message::assistant();

@@ -397,6 +397,8 @@ pub(super) fn generate_with_emulated_tools(
     let mut tool_call_emitted = false;
     let mut send_failed = false;
 
+    let mut generated_text = String::new();
+
     let output_token_count = generation_loop(
         &ctx.loaded.model,
         &mut llama_ctx,
@@ -404,9 +406,21 @@ pub(super) fn generate_with_emulated_tools(
         prompt_token_count,
         effective_ctx,
         |piece| {
+            generated_text.push_str(piece);
             let actions = emulator_parser.process_chunk(piece);
-            for action in actions {
-                match send_emulator_action(&action, message_id, tx) {
+            for action in &actions {
+                match action {
+                    EmulatorAction::Text(t) => {
+                        tracing::info!(text = %t, "Emulator: text chunk");
+                    }
+                    EmulatorAction::ShellCommand(cmd) => {
+                        tracing::info!(command = %cmd, "Emulator: shell command detected");
+                    }
+                    EmulatorAction::ExecuteCode(code) => {
+                        tracing::info!(code_len = code.len(), "Emulator: execute block detected");
+                    }
+                }
+                match send_emulator_action(action, message_id, tx) {
                     Ok(is_tool) => {
                         if is_tool {
                             tool_call_emitted = true;
@@ -428,11 +442,28 @@ pub(super) fn generate_with_emulated_tools(
 
     if !send_failed {
         for action in emulator_parser.flush() {
+            match &action {
+                EmulatorAction::Text(t) => {
+                    tracing::info!(text = %t, "Emulator flush: text");
+                }
+                EmulatorAction::ShellCommand(cmd) => {
+                    tracing::info!(command = %cmd, "Emulator flush: shell command");
+                }
+                EmulatorAction::ExecuteCode(code) => {
+                    tracing::info!(code_len = code.len(), "Emulator flush: execute block");
+                }
+            }
             if send_emulator_action(&action, message_id, tx).is_err() {
                 break;
             }
         }
     }
+
+    tracing::info!(
+        generated_text = %generated_text,
+        tool_call_emitted = tool_call_emitted,
+        "Emulator generation complete"
+    );
 
     let provider_usage = finalize_usage(
         ctx.log,
