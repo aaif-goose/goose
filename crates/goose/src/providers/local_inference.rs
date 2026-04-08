@@ -191,7 +191,7 @@ pub fn recommend_local_model(runtime: &InferenceRuntime) -> String {
     }
 
     // Fallback to first featured model
-    FEATURED_MODELS[0].to_string()
+    FEATURED_MODELS[0].spec.to_string()
 }
 
 fn build_openai_messages_json(system: &str, messages: &[Message]) -> String {
@@ -380,7 +380,7 @@ impl ProviderDef for LocalInferenceProvider {
             get_registry, FEATURED_MODELS,
         };
 
-        let mut known_models: Vec<&str> = FEATURED_MODELS.to_vec();
+        let mut known_models: Vec<&str> = FEATURED_MODELS.iter().map(|m| m.spec).collect();
 
         // Add any registry models not already in the featured list
         let mut dynamic_models = Vec::new();

@@ -91,31 +91,31 @@ impl Default for ModelSettings {
     }
 }
 
-/// Featured models — HuggingFace specs in "author/repo-GGUF:quantization" format.
-pub const FEATURED_MODELS: &[&str] = &[
-    "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
-    "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M",
-    "bartowski/Hermes-2-Pro-Mistral-7B-GGUF:Q4_K_M",
-    "bartowski/Mistral-Small-24B-Instruct-2501-GGUF:Q4_K_M",
-    "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
-    "unsloth/gemma-4-26B-A4B-it-GGUF:Q4_K_M",
+pub struct FeaturedModel {
+    /// HuggingFace spec in "author/repo-GGUF:quantization" format.
+    pub spec: &'static str,
+    /// Whether this model's GGUF template supports native tool calling via llama.cpp.
+    pub native_tool_calling: bool,
+}
+
+pub const FEATURED_MODELS: &[FeaturedModel] = &[
+    FeaturedModel { spec: "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M", native_tool_calling: false },
+    FeaturedModel { spec: "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M", native_tool_calling: false },
+    FeaturedModel { spec: "bartowski/Hermes-2-Pro-Mistral-7B-GGUF:Q4_K_M", native_tool_calling: false },
+    FeaturedModel { spec: "bartowski/Mistral-Small-24B-Instruct-2501-GGUF:Q4_K_M", native_tool_calling: false },
+    FeaturedModel { spec: "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M", native_tool_calling: true },
+    FeaturedModel { spec: "unsloth/gemma-4-26B-A4B-it-GGUF:Q4_K_M", native_tool_calling: true },
 ];
 
-/// Models whose GGUF templates support native tool calling via llama.cpp.
-/// These models have tool call syntax in their chat templates and are
-/// capable enough to produce valid tool calls.
-const NATIVE_TOOL_CALLING_MODELS: &[&str] = &[
-    "unsloth/gemma-4-E4B-it-GGUF",
-    "unsloth/gemma-4-26B-A4B-it-GGUF",
-    "bartowski/Mistral-Small-24B-Instruct-2501-GGUF",
-];
-
-/// Return default settings for a model, with native_tool_calling set
-/// based on known model capabilities.
 pub fn default_settings_for_model(model_id: &str) -> ModelSettings {
-    let native = NATIVE_TOOL_CALLING_MODELS
-        .iter()
-        .any(|prefix| model_id.starts_with(prefix));
+    use super::hf_models::parse_model_spec;
+    let native = FEATURED_MODELS.iter().any(|m| {
+        if let Ok((repo_id, quant)) = parse_model_spec(m.spec) {
+            model_id_from_repo(&repo_id, &quant) == model_id && m.native_tool_calling
+        } else {
+            false
+        }
+    });
     ModelSettings {
         native_tool_calling: native,
         ..ModelSettings::default()
@@ -125,8 +125,8 @@ pub fn default_settings_for_model(model_id: &str) -> ModelSettings {
 /// Check if a model ID corresponds to a featured model.
 pub fn is_featured_model(model_id: &str) -> bool {
     use super::hf_models::parse_model_spec;
-    FEATURED_MODELS.iter().any(|spec| {
-        if let Ok((repo_id, quant)) = parse_model_spec(spec) {
+    FEATURED_MODELS.iter().any(|m| {
+        if let Ok((repo_id, quant)) = parse_model_spec(m.spec) {
             model_id_from_repo(&repo_id, &quant) == model_id
         } else {
             false

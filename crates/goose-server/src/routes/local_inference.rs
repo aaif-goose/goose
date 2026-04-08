@@ -52,8 +52,8 @@ pub struct LocalModelResponse {
 async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
     let mut entries_to_add = Vec::new();
 
-    for spec in FEATURED_MODELS {
-        let (repo_id, quantization) = match hf_models::parse_model_spec(spec) {
+    for featured in FEATURED_MODELS {
+        let (repo_id, quantization) = match hf_models::parse_model_spec(featured.spec) {
             Ok(parts) => parts,
             Err(_) => continue,
         };
@@ -69,7 +69,7 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
             }
         }
 
-        let hf_file = match resolve_model_spec(spec).await {
+        let hf_file = match resolve_model_spec(featured.spec).await {
             Ok((_repo, file)) => file,
             Err(_) => {
                 let filename = format!(
