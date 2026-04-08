@@ -2,7 +2,7 @@ use agent_client_protocol_schema::AGENT_METHOD_NAMES;
 use anyhow::{Context, Result};
 use async_stream::try_stream;
 use futures::future::BoxFuture;
-use rmcp::model::{Role, Tool};
+use rmcp::model::{CallToolRequestParams, CallToolResult, Content as RmcpContent, Role, Tool};
 use sacp::schema::{
     ClientCapabilities, CloseSessionRequest, ContentBlock, ContentChunk, EnvVariable, HttpHeader,
     ImageContent, InitializeRequest, InitializeResponse, McpCapabilities, McpServer, McpServerHttp,
@@ -11,7 +11,7 @@ use sacp::schema::{
     SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TextContent, ToolCallContent,
+    TextContent, ToolCallContent, ToolCallStatus,
 };
 use sacp::{Agent, Client, ConnectionTo};
 use std::collections::{HashMap, HashSet};
@@ -26,7 +26,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt 
 
 use crate::acp::{map_permission_response, PermissionDecision};
 use crate::config::{ExtensionConfig, GooseMode};
-use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::{Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY};
 use crate::model::ModelConfig;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -88,9 +88,14 @@ enum AcpUpdate {
     Thought(String),
     ToolCallStart {
         id: String,
+        name: String,
+        raw_input: Option<serde_json::Value>,
     },
     ToolCallComplete {
         id: String,
+        raw_output: Option<serde_json::Value>,
+        content: Option<Vec<ToolCallContent>>,
+        is_error: bool,
     },
     PermissionRequest {
         request: Box<RequestPermissionRequest>,
@@ -98,6 +103,14 @@ enum AcpUpdate {
     },
     Complete(StopReason),
     Error(String),
+}
+
+/// Per-tool-call buffer for accumulating ACP ToolCallUpdate fields across
+/// non-terminal updates, drained on the terminal status update.
+#[derive(Debug, Default)]
+struct AccumulatedToolCall {
+    raw_output: Option<serde_json::Value>,
+    content: Vec<ToolCallContent>,
 }
 
 /// The single ACP session backing this provider instance.
@@ -117,6 +130,7 @@ pub struct AcpProvider {
 
     pending_confirmations:
         Arc<TokioMutex<HashMap<String, oneshot::Sender<PermissionConfirmation>>>>,
+    pending_tool_updates: Arc<Mutex<HashMap<String, AccumulatedToolCall>>>,
 
     tx: Option<mpsc::Sender<ClientRequest>>,
     loop_thread: Option<JoinHandle<()>>,
@@ -193,7 +207,13 @@ impl AcpProvider {
         let (init_tx, init_rx) = oneshot::channel();
         let mode_mapping = config.mode_mapping.clone();
         let goose_mode_shared = Arc::new(Mutex::new(goose_mode));
-        let client_loop = AcpClientLoop::new(config, goose_mode_shared.clone());
+        let pending_tool_updates: Arc<Mutex<HashMap<String, AccumulatedToolCall>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let client_loop = AcpClientLoop::new(
+            config,
+            goose_mode_shared.clone(),
+            pending_tool_updates.clone(),
+        );
         let loop_thread = spawn_client_loop(run(client_loop, rx, init_tx));
 
         let _init_response = init_rx
@@ -238,6 +258,7 @@ impl AcpProvider {
             mode_mapping,
             session,
             pending_confirmations: Arc::new(TokioMutex::new(HashMap::new())),
+            pending_tool_updates,
             tx: Some(tx),
             loop_thread: Some(loop_thread),
         })
@@ -378,6 +399,11 @@ impl Provider for AcpProvider {
         let session_id = self.acp_session_id();
 
         let prompt_blocks = messages_to_prompt(messages);
+        // Drop any tool-call buffer state left over from a prior prompt
+        // (e.g. cancelled or interrupted before its terminal status arrived).
+        if let Ok(mut buffer) = self.pending_tool_updates.lock() {
+            buffer.clear();
+        }
         let mut rx = self
             .prompt(session_id, prompt_blocks)
             .await
@@ -408,15 +434,59 @@ impl Provider for AcpProvider {
                             .with_visibility(true, false);
                         yield (Some(message), None);
                     }
-                    AcpUpdate::ToolCallStart { id, .. } => {
+                    AcpUpdate::ToolCallStart { id, name, raw_input } => {
                         if reject_all_tools {
                             suppress_text = true;
                             rejected_tool_calls.insert(id);
+                        } else {
+                            let mut params = CallToolRequestParams::new(name);
+                            if let Some(serde_json::Value::Object(map)) = raw_input {
+                                params = params.with_arguments(map);
+                            }
+                            // Marker tells the agent loop not to redispatch this call.
+                            let tool_meta = Some(serde_json::json!({
+                                TOOL_META_EXTERNAL_DISPATCH_KEY: true,
+                            }));
+                            let message = Message::assistant().with_tool_request_with_metadata(
+                                id,
+                                Ok(params),
+                                None,
+                                tool_meta,
+                            );
+                            yield (Some(message), None);
                         }
                     }
-                    AcpUpdate::ToolCallComplete { id, .. } => {
+                    AcpUpdate::ToolCallComplete {
+                        id,
+                        raw_output,
+                        content,
+                        is_error,
+                    } => {
                         if rejected_tool_calls.remove(&id) {
-                            let message = Message::assistant().with_text("Tool call was denied.");
+                            // In chat mode no tool_request was emitted (suppressed at
+                            // ToolCallStart), so surface a plain text message. In other
+                            // modes a tool_request WAS emitted, so pair it with an error
+                            // tool_response so downstream consumers see the rejection.
+                            if reject_all_tools {
+                                let message = Message::assistant()
+                                    .with_text("Tool call was denied.");
+                                yield (Some(message), None);
+                            } else {
+                                let denial = vec![RmcpContent::text("Tool call was denied.")];
+                                let result = CallToolResult::error(denial);
+                                let message =
+                                    Message::user().with_tool_response(id, Ok(result));
+                                yield (Some(message), None);
+                            }
+                        } else {
+                            let result_content =
+                                acp_tool_call_content_to_rmcp(content, raw_output);
+                            let result = if is_error {
+                                CallToolResult::error(result_content)
+                            } else {
+                                CallToolResult::success(result_content)
+                            };
+                            let message = Message::user().with_tool_response(id, Ok(result));
                             yield (Some(message), None);
                         }
                     }
@@ -486,14 +556,20 @@ struct AcpClientLoop {
     config: AcpProviderConfig,
     goose_mode: Arc<Mutex<GooseMode>>,
     prompt_response_tx: Arc<Mutex<Option<mpsc::Sender<AcpUpdate>>>>,
+    pending_tool_updates: Arc<Mutex<HashMap<String, AccumulatedToolCall>>>,
 }
 
 impl AcpClientLoop {
-    fn new(config: AcpProviderConfig, goose_mode: Arc<Mutex<GooseMode>>) -> Self {
+    fn new(
+        config: AcpProviderConfig,
+        goose_mode: Arc<Mutex<GooseMode>>,
+        pending_tool_updates: Arc<Mutex<HashMap<String, AccumulatedToolCall>>>,
+    ) -> Self {
         Self {
             config,
             goose_mode,
             prompt_response_tx: Arc::new(Mutex::new(None)),
+            pending_tool_updates,
         }
     }
 
@@ -539,6 +615,7 @@ impl AcpClientLoop {
             config,
             goose_mode,
             prompt_response_tx,
+            pending_tool_updates,
         } = self;
         let notification_callback = config.notification_callback.clone();
         let reverse_modes = reverse_mode_mapping(&config.mode_mapping);
@@ -550,6 +627,7 @@ impl AcpClientLoop {
                     let prompt_response_tx = prompt_response_tx.clone();
                     let reverse_modes = reverse_modes.clone();
                     let goose_mode = goose_mode.clone();
+                    let pending_tool_updates = pending_tool_updates.clone();
                     async move |notification: SessionNotification, _cx| {
                         if let Some(ref cb) = notification_callback {
                             cb(notification.clone());
@@ -605,14 +683,91 @@ impl AcpClientLoop {
                                     let _ = tx.try_send(AcpUpdate::Thought(text));
                                 }
                                 SessionUpdate::ToolCall(tool_call) => {
+                                    let id = tool_call.tool_call_id.0.to_string();
+                                    let initial_status = tool_call.status;
+                                    let synchronous_terminal = matches!(
+                                        initial_status,
+                                        ToolCallStatus::Completed | ToolCallStatus::Failed
+                                    );
+                                    // Seed the buffer; drain immediately if the call is
+                                    // already terminal (synchronous tool, no follow-up).
+                                    let synchronous_accumulated =
+                                        if let Ok(mut buffer) = pending_tool_updates.lock() {
+                                            let entry = buffer.entry(id.clone()).or_default();
+                                            if let Some(raw_output) = tool_call.raw_output.clone() {
+                                                entry.raw_output = Some(raw_output);
+                                            }
+                                            entry.content.extend(tool_call.content.clone());
+                                            if synchronous_terminal {
+                                                buffer.remove(&id)
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        };
                                     let _ = tx.try_send(AcpUpdate::ToolCallStart {
-                                        id: tool_call.tool_call_id.0.to_string(),
+                                        id: id.clone(),
+                                        name: tool_call.title.clone(),
+                                        raw_input: tool_call.raw_input.clone(),
                                     });
+                                    if let Some(accumulated) = synchronous_accumulated {
+                                        let content = if accumulated.content.is_empty() {
+                                            None
+                                        } else {
+                                            Some(accumulated.content)
+                                        };
+                                        let _ = tx.try_send(AcpUpdate::ToolCallComplete {
+                                            id,
+                                            raw_output: accumulated.raw_output,
+                                            content,
+                                            is_error: matches!(
+                                                initial_status,
+                                                ToolCallStatus::Failed
+                                            ),
+                                        });
+                                    }
                                 }
                                 SessionUpdate::ToolCallUpdate(update) => {
-                                    if update.fields.status.is_some() {
+                                    let id = update.tool_call_id.0.to_string();
+                                    // Merge patch-like fields; only emit on terminal status.
+                                    let terminal_status = update.fields.status.filter(|s| {
+                                        matches!(
+                                            s,
+                                            ToolCallStatus::Completed | ToolCallStatus::Failed
+                                        )
+                                    });
+                                    let accumulated = if let Ok(mut buffer) =
+                                        pending_tool_updates.lock()
+                                    {
+                                        let entry = buffer.entry(id.clone()).or_default();
+                                        if let Some(raw_output) = update.fields.raw_output.clone() {
+                                            entry.raw_output = Some(raw_output);
+                                        }
+                                        if let Some(content) = update.fields.content.clone() {
+                                            entry.content.extend(content);
+                                        }
+                                        if terminal_status.is_some() {
+                                            buffer.remove(&id)
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    };
+                                    if let (Some(accumulated), Some(status)) =
+                                        (accumulated, terminal_status)
+                                    {
+                                        let content = if accumulated.content.is_empty() {
+                                            None
+                                        } else {
+                                            Some(accumulated.content)
+                                        };
                                         let _ = tx.try_send(AcpUpdate::ToolCallComplete {
-                                            id: update.tool_call_id.0.to_string(),
+                                            id,
+                                            raw_output: accumulated.raw_output,
+                                            content,
+                                            is_error: matches!(status, ToolCallStatus::Failed),
                                         });
                                     }
                                 }
@@ -976,6 +1131,63 @@ fn messages_to_prompt(messages: &[Message]) -> Vec<ContentBlock> {
     }
 
     content_blocks
+}
+
+/// Convert ACP `ToolCallContent` blocks into the rmcp `Content` shape goose's
+/// `Message::with_tool_response` consumes. Handles `Content` (text/image/other),
+/// `Diff`, and `Terminal` variants; falls back to a JSON serialization of
+/// `raw_output` when no blocks are present so the renderer always has something.
+fn acp_tool_call_content_to_rmcp(
+    content: Option<Vec<ToolCallContent>>,
+    raw_output: Option<serde_json::Value>,
+) -> Vec<RmcpContent> {
+    let mut out = Vec::new();
+    if let Some(blocks) = content {
+        for block in blocks {
+            match block {
+                ToolCallContent::Content(val) => match val.content {
+                    ContentBlock::Text(text) => {
+                        out.push(RmcpContent::text(text.text));
+                    }
+                    ContentBlock::Image(image) => {
+                        out.push(RmcpContent::image(image.data, image.mime_type));
+                    }
+                    other => {
+                        if let Ok(json) = serde_json::to_string(&other) {
+                            out.push(RmcpContent::text(json));
+                        }
+                    }
+                },
+                ToolCallContent::Diff(diff) => {
+                    let path = diff.path.display();
+                    let body = match diff.old_text.as_deref() {
+                        Some(old) => {
+                            format!("--- {path}\n{old}\n+++ {path}\n{}", diff.new_text)
+                        }
+                        None => format!("+++ {path}\n{}", diff.new_text),
+                    };
+                    out.push(RmcpContent::text(body));
+                }
+                ToolCallContent::Terminal(terminal) => {
+                    out.push(RmcpContent::text(format!(
+                        "[terminal {}]",
+                        terminal.terminal_id.0
+                    )));
+                }
+                _ => {}
+            }
+        }
+    }
+    if out.is_empty() {
+        if let Some(raw) = raw_output {
+            let text = match raw {
+                serde_json::Value::String(s) => s,
+                other => other.to_string(),
+            };
+            out.push(RmcpContent::text(text));
+        }
+    }
+    out
 }
 
 fn build_action_required_message(request: &RequestPermissionRequest) -> Option<Message> {
@@ -1370,5 +1582,64 @@ mod tests {
         } else {
             assert_eq!(result, expected);
         }
+    }
+
+    #[test]
+    fn acp_tool_call_content_handles_text_diff_terminal_and_image() {
+        use sacp::schema::{Diff, Terminal, TerminalId, TextContent};
+
+        let diff_block = ToolCallContent::Diff(
+            Diff::new(std::path::PathBuf::from("/tmp/file.txt"), "new\n").old_text("old\n"),
+        );
+        let terminal_block = ToolCallContent::Terminal(Terminal::new(TerminalId::new("term-7")));
+        let text_block = ToolCallContent::Content(sacp::schema::Content::new(ContentBlock::Text(
+            TextContent::new("hello"),
+        )));
+        let image_block = ToolCallContent::Content(sacp::schema::Content::new(
+            ContentBlock::Image(ImageContent::new("base64data", "image/png")),
+        ));
+
+        let out = acp_tool_call_content_to_rmcp(
+            Some(vec![text_block, diff_block, terminal_block, image_block]),
+            None,
+        );
+
+        assert_eq!(out.len(), 4, "all four block kinds should produce output");
+        let serialized: Vec<String> = out
+            .iter()
+            .map(|c| serde_json::to_string(c).unwrap())
+            .collect();
+        assert!(
+            serialized[0].contains("hello"),
+            "text block lost: {serialized:?}"
+        );
+        assert!(
+            serialized[1].contains("/tmp/file.txt"),
+            "diff path lost: {serialized:?}"
+        );
+        assert!(
+            serialized[1].contains("new"),
+            "diff body lost: {serialized:?}"
+        );
+        assert!(
+            serialized[2].contains("term-7"),
+            "terminal id lost: {serialized:?}"
+        );
+        assert!(
+            serialized[3].contains("base64data"),
+            "image data lost: {serialized:?}"
+        );
+    }
+
+    #[test]
+    fn acp_tool_call_content_falls_back_to_raw_output_when_blocks_empty() {
+        let out =
+            acp_tool_call_content_to_rmcp(Some(vec![]), Some(serde_json::json!({"key": "value"})));
+        assert_eq!(out.len(), 1);
+        let serialized = serde_json::to_string(&out[0]).unwrap();
+        assert!(
+            serialized.contains("key"),
+            "fallback raw_output lost: {serialized}"
+        );
     }
 }

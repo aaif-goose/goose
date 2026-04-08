@@ -335,6 +335,11 @@ impl ProviderFixture {
             None => return Ok(response1),
         };
 
+        // Provider already executed an externally-dispatched tool — don't redispatch.
+        if tool_req.is_externally_dispatched() {
+            return Ok(response1);
+        }
+
         let params = tool_req.tool_call.as_ref().unwrap().clone();
         let ctx = goose::agents::ToolCallContext::new(
             self.session_id.to_string(),
