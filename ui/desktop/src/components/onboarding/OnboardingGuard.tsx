@@ -66,8 +66,8 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     setCheckProviderError(false);
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const provider = await read('GOOSE_PROVIDER', false, { throwOnError: true });
-        setHasProvider(!!provider);
+        const provider = (await read('GOOSE_PROVIDER', false, { throwOnError: true })) as string | null;
+        setHasProvider(!!provider?.trim());
         setIsCheckingProvider(false);
         return;
       } catch (error) {
