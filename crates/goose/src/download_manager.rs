@@ -251,7 +251,7 @@ impl DownloadManager {
 
             let eta_seconds = if let Some(speed) = speed_bps {
                 if speed > 0 && total_bytes > 0 {
-                    Some((total_bytes - bytes_downloaded) / speed)
+                    Some(total_bytes.saturating_sub(bytes_downloaded) / speed)
                 } else {
                     None
                 }
