@@ -1,10 +1,12 @@
 use anyhow::Result;
 use console::style;
-use goose::config::paths::Paths;
 use goose::config::Config;
+use goose::config::paths::Paths;
 use goose::conversation::message::Message;
+use goose::providers::errors::ProviderError;
 use goose::session::session_manager::{DB_NAME, SESSIONS_FOLDER};
 use serde_yaml;
+use std::time::Duration;
 
 fn print_aligned(label: &str, value: &str, width: usize) {
     println!("  {:<width$} {}", label, value, width = width);
@@ -31,6 +33,73 @@ fn check_path_status(path: &Path) -> String {
         }
         style("missing (no writable parent)").red().to_string()
     }
+}
+
+struct ProviderCheckSuccess {
+    provider: String,
+    model: String,
+    elapsed: Duration,
+}
+
+enum ProviderCheckError {
+    NotConfigured {
+        label: &'static str,
+        error: String,
+    },
+    InvalidModel(String),
+    ProviderCreate {
+        error: String,
+        show_api_key_hint: bool,
+    },
+    ProviderRequest(ProviderError),
+}
+
+async fn check_provider(
+    config: &Config,
+) -> std::result::Result<ProviderCheckSuccess, ProviderCheckError> {
+    let (provider, model) = match (config.get_goose_provider(), config.get_goose_model()) {
+        (Ok(provider), Ok(model)) => (provider, model),
+        (Err(e), _) => {
+            return Err(ProviderCheckError::NotConfigured {
+                label: "Provider:",
+                error: e.to_string(),
+            });
+        }
+        (_, Err(e)) => {
+            return Err(ProviderCheckError::NotConfigured {
+                label: "Model:",
+                error: e.to_string(),
+            });
+        }
+    };
+
+    let model_config = goose::model::ModelConfig::new(&model)
+        .map_err(|e| ProviderCheckError::InvalidModel(e.to_string()))?
+        .with_canonical_limits(&provider);
+
+    let provider_client = goose::providers::create(&provider, model_config, Vec::new())
+        .await
+        .map_err(|e| {
+            let error = e.to_string();
+            ProviderCheckError::ProviderCreate {
+                show_api_key_hint: error.contains("not found") || error.contains("API_KEY"),
+                error,
+            }
+        })?;
+
+    let test_msg = Message::user().with_text("Say 'ok'");
+    let model_config = provider_client.get_model_config();
+    let start = std::time::Instant::now();
+    provider_client
+        .complete(&model_config, "check", "", &[test_msg], &[])
+        .await
+        .map_err(ProviderCheckError::ProviderRequest)?;
+
+    Ok(ProviderCheckSuccess {
+        provider,
+        model,
+        elapsed: start.elapsed(),
+    })
 }
 
 pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
@@ -94,147 +163,84 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
     if check {
         println!("\n{}", style("Provider Check:").cyan().bold());
 
-        let provider_name: Result<String, _> = config.get_goose_provider();
-        let model_name: Result<String, _> = config.get_goose_model();
-
-        match (provider_name, model_name) {
-            (Ok(provider), Ok(model)) => {
-                print_aligned("Provider:", &provider, label_padding);
-                print_aligned("Model:", &model, label_padding);
-
-                match goose::model::ModelConfig::new(&model) {
-                    Ok(model_config) => {
-                        let model_config = model_config.with_canonical_limits(&provider);
-                        match goose::providers::create(&provider, model_config, Vec::new()).await {
-                            Ok(p) => {
-                                let test_msg = Message::user().with_text("Say 'ok'");
-                                let model_config = p.get_model_config();
-                                let start = std::time::Instant::now();
-                                match p
-                                    .complete(&model_config, "check", "", &[test_msg], &[])
-                                    .await
-                                {
-                                    Ok(_) => {
-                                        let elapsed = start.elapsed();
-                                        print_aligned(
-                                            "Auth:",
-                                            &style("ok").green().to_string(),
-                                            label_padding,
-                                        );
-                                        print_aligned(
-                                            "Connection:",
-                                            &format!(
-                                                "{} (verified in {:.1}s)",
-                                                style("ok").green(),
-                                                elapsed.as_secs_f64()
-                                            ),
-                                            label_padding,
-                                        );
-                                    }
-                                    Err(e) => {
-                                        let err_str = e.to_string();
-                                        if err_str.contains("401")
-                                            || err_str.contains("Authentication")
-                                            || err_str.contains("Unauthorized")
-                                        {
-                                            print_aligned(
-                                                "Auth:",
-                                                &format!(
-                                                    "{} {}",
-                                                    style("FAILED").red().bold(),
-                                                    err_str
-                                                ),
-                                                label_padding,
-                                            );
-                                            print_aligned(
-                                                "Hint:",
-                                                &format!(
-                                                    "Check your API key or run '{}'",
-                                                    style("goose configure").cyan()
-                                                ),
-                                                label_padding,
-                                            );
-                                        } else {
-                                            print_aligned(
-                                                "Check:",
-                                                &format!(
-                                                    "{} {}",
-                                                    style("FAILED").red().bold(),
-                                                    err_str
-                                                ),
-                                                label_padding,
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                let err_str = e.to_string();
-                                print_aligned(
-                                    "Auth:",
-                                    &format!("{} {}", style("FAILED").red().bold(), err_str),
-                                    label_padding,
-                                );
-                                if err_str.contains("not found") || err_str.contains("API_KEY") {
-                                    print_aligned(
-                                        "Hint:",
-                                        &format!(
-                                            "Set the API key in your environment or run '{}'",
-                                            style("goose configure").cyan()
-                                        ),
-                                        label_padding,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        print_aligned(
-                            "Model:",
-                            &format!("{} {}", style("invalid:").red(), e),
-                            label_padding,
-                        );
-                    }
-                }
-            }
-            (Err(e), _) => {
+        match check_provider(&config).await {
+            Ok(success) => {
+                print_aligned("Provider:", &success.provider, label_padding);
+                print_aligned("Model:", &success.model, label_padding);
+                print_aligned("Auth:", &style("ok").green().to_string(), label_padding);
                 print_aligned(
-                    "Provider:",
+                    "Connection:",
                     &format!(
-                        "{} {}",
-                        style("not configured:").red(),
-                        e
+                        "{} (verified in {:.1}s)",
+                        style("ok").green(),
+                        success.elapsed.as_secs_f64()
                     ),
+                    label_padding,
+                );
+            }
+            Err(ProviderCheckError::NotConfigured { label, error }) => {
+                print_aligned(
+                    label,
+                    &format!("{} {}", style("not configured:").red(), error),
                     label_padding,
                 );
                 print_aligned(
                     "Hint:",
-                    &format!(
-                        "Run '{}'",
-                        style("goose configure").cyan()
-                    ),
+                    &format!("Run '{}'", style("goose configure").cyan()),
                     label_padding,
                 );
             }
-            (_, Err(e)) => {
+            Err(ProviderCheckError::InvalidModel(error)) => {
                 print_aligned(
                     "Model:",
-                    &format!(
-                        "{} {}",
-                        style("not configured:").red(),
-                        e
-                    ),
-                    label_padding,
-                );
-                print_aligned(
-                    "Hint:",
-                    &format!(
-                        "Run '{}'",
-                        style("goose configure").cyan()
-                    ),
+                    &format!("{} {}", style("invalid:").red(), error),
                     label_padding,
                 );
             }
+            Err(ProviderCheckError::ProviderCreate {
+                error,
+                show_api_key_hint,
+            }) => {
+                print_aligned(
+                    "Auth:",
+                    &format!("{} {}", style("FAILED").red().bold(), error),
+                    label_padding,
+                );
+                if show_api_key_hint {
+                    print_aligned(
+                        "Hint:",
+                        &format!(
+                            "Set the API key in your environment or run '{}'",
+                            style("goose configure").cyan()
+                        ),
+                        label_padding,
+                    );
+                }
+            }
+            Err(ProviderCheckError::ProviderRequest(error)) => match error {
+                ProviderError::Authentication(_) => {
+                    print_aligned(
+                        "Auth:",
+                        &format!("{} {}", style("FAILED").red().bold(), error),
+                        label_padding,
+                    );
+                    print_aligned(
+                        "Hint:",
+                        &format!(
+                            "Check your API key or run '{}'",
+                            style("goose configure").cyan()
+                        ),
+                        label_padding,
+                    );
+                }
+                _ => {
+                    print_aligned(
+                        "Check:",
+                        &format!("{} {}", style("FAILED").red().bold(), error),
+                        label_padding,
+                    );
+                }
+            },
         }
     }
 
