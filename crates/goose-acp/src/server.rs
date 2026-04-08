@@ -790,14 +790,20 @@ impl GooseAcpAgent {
                         return;
                     }
                 };
+
+                // in these case, the title summarization request would
+                // be added to the conversation which we don't want
+                if provider.manages_own_context() {
+                    return;
+                }
+
                 let system = "Summarize this tool call in a short lowercase phrase (3-8 words). \
                               No punctuation. No quotes. Examples: reading project configuration, \
                               checking network connectivity, listing files in src directory";
                 let user_text = format!("Tool: {name}\nArguments: {args_json}");
-                let message = goose::conversation::message::Message::user().with_text(&user_text);
-                let summary_session_id = uuid::Uuid::now_v7().to_string();
+                let message = Message::user().with_text(&user_text);
                 match provider
-                    .complete_fast(&summary_session_id, system, &[message], &[])
+                    .complete_fast(&sid.0, system, &[message], &[])
                     .await
                 {
                     Ok((response, _)) => {
