@@ -115,14 +115,6 @@ const i18n = defineMessages({
     id: 'switchModelModal.checkProviderConfig',
     defaultMessage: 'Check your provider configuration in Settings → Providers',
   },
-  couldNotFetchModels: {
-    id: 'switchModelModal.couldNotFetchModels',
-    defaultMessage: 'Could not fetch models from provider',
-  },
-  manualEntryHint: {
-    id: 'switchModelModal.manualEntryHint',
-    defaultMessage: 'You can still enter a model name manually, or check your provider configuration in Settings → Providers.',
-  },
   loadingModels: {
     id: 'switchModelModal.loadingModels',
     defaultMessage: 'Loading models…',
@@ -855,13 +847,13 @@ export const SwitchModelModal = ({
                         <div className="flex items-start">
                           <div className="flex-1">
                             <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                              {intl.formatMessage(i18n.couldNotFetchModels)}
+                              {intl.formatMessage(i18n.couldNotContactProvider)}
                             </h3>
                             <div className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
                               {providerErrors[provider]}
                             </div>
                             <div className="mt-2 text-xs text-yellow-600 dark:text-yellow-400">
-                              {intl.formatMessage(i18n.manualEntryHint)}
+                              {intl.formatMessage(i18n.checkProviderConfig)}
                             </div>
                           </div>
                         </div>
