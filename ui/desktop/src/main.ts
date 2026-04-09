@@ -23,7 +23,7 @@ import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
 import path from 'node:path';
 import os from 'node:os';
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync, spawn, execFile } from 'child_process';
 import 'dotenv/config';
 import { checkServerStatus } from './goosed';
 import { startGoosed } from './goosed';
@@ -96,6 +96,36 @@ function updateSettings(modifier: (settings: Settings) => void): void {
   const settings = getSettings();
   modifier(settings);
   fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+
+function listGitWorktreeDirs(dir: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    if (!dir?.trim()) {
+      resolve([]);
+      return;
+    }
+
+    execFile(
+      'git',
+      ['-C', dir, 'worktree', 'list', '--porcelain'],
+      { timeout: 3000 },
+      (error, stdout) => {
+        if (error) {
+          resolve([]);
+          return;
+        }
+
+        const dirs = stdout
+          .split('\n')
+          .filter((line) => line.startsWith('worktree '))
+          .map((line) => line.slice('worktree '.length).trim())
+          .filter(Boolean)
+          .filter((worktreeDir, index, allDirs) => allDirs.indexOf(worktreeDir) === index);
+
+        resolve(dirs);
+      }
+    );
+  });
 }
 
 async function configureProxy() {
@@ -749,11 +779,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   // Nudge the user if mesh is their provider but isn't running.
   // Delay to let the renderer mount before sending the IPC event.
   setTimeout(() => {
-    mesh.checkProviderRunning(goosedClient).then((ok) => {
-      if (!ok && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mesh-not-running');
-      }
-    }).catch(() => {});
+    mesh
+      .checkProviderRunning(goosedClient)
+      .then((ok) => {
+        if (!ok && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mesh-not-running');
+        }
+      })
+      .catch(() => {});
   }, 5000);
 
   // Let windowStateKeeper manage the window
@@ -1347,6 +1380,14 @@ ipcMain.handle('add-recent-dir', (_event, dir: string) => {
   if (dir) {
     addRecentDir(dir);
   }
+});
+
+ipcMain.handle('list-recent-dirs', () => {
+  return loadRecentDirs();
+});
+
+ipcMain.handle('list-git-worktree-dirs', async (_event, dir: string) => {
+  return await listGitWorktreeDirs(dir);
 });
 
 ipcMain.handle('get-setting', (_event, key: SettingKey) => {
