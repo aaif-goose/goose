@@ -266,7 +266,7 @@
   {
     "id": "dsm-memory",
     "name": "DSM Memory",
-    "description": "Append-only, hash-chained memory layer for Goose via MCP",
+    "description": "Append-only, hash-chained memory layer for goose via MCP",
     "command": "uvx dsm-mcp",
     "link": "https://github.com/daryl-labs-ai/daryl/tree/main/src/dsm/integrations/goose",
     "installation_notes": "Install via pip: pip install dsm-mcp. Or run directly without installing: uvx dsm-mcp. Requires Python 3.8+.",
