@@ -72,5 +72,18 @@ This is all happening in the open. Follow along or jump in:
 
 - **Tracking issue:** [#6642](https://github.com/aaif-goose/goose/issues/6642)
 - **Try the TUI:** `npx @aaif/goose`
-- **Discord:** Follow along and give feedback in [#goose-2-dev](https://discord.com/channels/1287729918100246654/1491527078892540056). Join the goose discord [here](https://discord.gg/goose-oss).
+- **Discord:** Follow along and give feedback in [#goose-2-dev](https://discord.gg/goose-oss).
 - **Feedback?** Open an issue or drop a comment on #6642 — we'd love to hear from you.
+
+<head>
+  <meta property="og:title" content="goose 2.0 beta - new architecture and clients" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/04/08/goose-acp-and-new-tui" />
+  <meta property="og:description" content="We're shipping a new TUI, rewriting the desktop app in Tauri, and unifying everything under ACP." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta property="twitter:domain" content="https://goose-docs.ai" />
+  <meta name="twitter:title" content="goose 2.0 beta - new architecture and clients" />
+  <meta name="twitter:description" content="We're shipping a new TUI, rewriting the desktop app in Tauri, and unifying everything under ACP." />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-2-blog-cover-aaee1526bc905939e34f5766d377a793.jpg" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-2-blog-cover-aaee1526bc905939e34f5766d377a793.jpg" />
+</head>
