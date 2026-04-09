@@ -67,6 +67,16 @@ const HubRouteWrapper = () => {
   return <Hub setView={setView} />;
 };
 
+export function resolveSessionInitialMessage(
+  session: { recipe?: { prompt?: string | null } | null },
+  initialMessage?: UserInput
+): UserInput | undefined {
+  return (
+    initialMessage ??
+    (session.recipe?.prompt ? { msg: session.recipe.prompt, images: [] } : undefined)
+  );
+}
+
 const PairRouteWrapper = ({
   activeSessions,
 }: {
@@ -104,12 +114,13 @@ const PairRouteWrapper = ({
             recipeId: recipeIdFromConfig,
             allExtensions: extensionsList,
           });
+          const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
 
           window.dispatchEvent(
             new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
               detail: {
                 sessionId: newSession.id,
-                initialMessage,
+                initialMessage: sessionInitialMessage,
               },
             })
           );
@@ -458,13 +469,18 @@ export function AppInner() {
   // Show a toast if mesh is the configured provider but isn't running.
   useEffect(() => {
     const handler = () => {
-      toast.warn('Inference Mesh is set as your provider but isn\'t running. Open Settings → Mesh to start it. Keep goose running to stay connected.', {
-        autoClose: false,
-        toastId: 'mesh-not-running',
-      });
+      toast.warn(
+        "Inference Mesh is set as your provider but isn't running. Open Settings → Mesh to start it. Keep goose running to stay connected.",
+        {
+          autoClose: false,
+          toastId: 'mesh-not-running',
+        }
+      );
     };
     window.electron.on('mesh-not-running', handler);
-    return () => { window.electron.off('mesh-not-running', handler); };
+    return () => {
+      window.electron.off('mesh-not-running', handler);
+    };
   }, []);
 
   // Prevent default drag and drop behavior globally to avoid opening files in new windows
