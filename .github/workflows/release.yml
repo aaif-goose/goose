@@ -154,6 +154,8 @@ jobs:
   publish-npm:
     needs: [release]
     uses: ./.github/workflows/publish-npm.yml
+    with:
+      release-tag: ${{ github.ref_name }}
     permissions:
       contents: write
       pull-requests: write
