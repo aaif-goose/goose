@@ -9,9 +9,10 @@ on:
 name: Release
 
 permissions:
-  id-token: write   # Required for Sigstore OIDC signing and AWS OIDC (Windows signing)
+  id-token: write   # Required for Sigstore OIDC signing, AWS OIDC (Windows signing), and npm trusted publishing
   contents: write   # Required for creating releases and by actions/checkout
   actions: read     # May be needed for some workflows
+  pull-requests: write  # Required for npm publish workflow
   attestations: write  # Required for SLSA build provenance attestations
 
 concurrency:
@@ -146,3 +147,14 @@ jobs:
           allowUpdates: true
           omitBody: true
           omitPrereleaseDuringUpdate: true
+
+  # ------------------------------------
+  # 8) Publish npm packages
+  # ------------------------------------
+  publish-npm:
+    needs: [release]
+    uses: ./.github/workflows/publish-npm.yml
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write

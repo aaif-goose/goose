@@ -11,13 +11,16 @@ name: Publish to npm
 # automatically issued by GitHub Actions.
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'crates/goose-acp/**'
-      - 'ui/acp/**'
-      - '.github/workflows/publish-npm.yml'
+  workflow_call:
+    inputs:
+      dry-run:
+        required: false
+        type: boolean
+        default: false
+      skip-cache:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       dry-run:
@@ -277,32 +280,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dry run notice
-        if: inputs.dry-run == true || github.ref != 'refs/heads/main'
+        if: inputs.dry-run == true
         run: |
           {
             echo "## 🧪 Dry Run Mode"
             echo ""
+            echo "⚠️  Skipping actual npm publish (dry-run mode)"
+            echo ""
+            echo "To publish for real, run this workflow without dry-run enabled."
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            {
-              echo "⚠️  Skipping actual npm publish (not on main branch)"
-              echo ""
-              echo "**Current branch:** \`${{ github.ref }}\`"
-              echo ""
-              echo "Publishing is only allowed from the \`main\` branch for security."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "⚠️  Skipping actual npm publish (dry-run mode)"
-              echo ""
-              echo "To publish for real, run this workflow without dry-run enabled."
-              echo ""
-              echo "**Note:** Changesets will still run to verify functionality."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - name: Publish to npm
-        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
+        if: inputs.dry-run != true
         run: |
           cd ui
           # Publish all packages in the workspace
@@ -310,12 +299,12 @@ jobs:
           pnpm publish -r --access public --no-git-checks --provenance
 
       - name: Dry run - Show what would be published
-        if: inputs.dry-run == true || github.ref != 'refs/heads/main'
+        if: inputs.dry-run == true
         run: |
           cd ui
           echo "## 📦 Packages that would be published:" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "" | tee -a "$GITHUB_STEP_SUMMARY"
-          
+
           # List all publishable packages
           for pkg in acp text goose-binary/*/; do
             if [ -f "$pkg/package.json" ]; then
@@ -324,12 +313,12 @@ jobs:
               echo "- $name@$version" | tee -a "$GITHUB_STEP_SUMMARY"
             fi
           done
-          
+
           echo "" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "**Note:** This is a dry run. No packages were published." | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Publish summary
-        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
+        if: inputs.dry-run != true
         run: |
           cd ui
           {
