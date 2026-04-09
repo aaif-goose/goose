@@ -13,33 +13,23 @@
       "max_tokens": 262144
     },
     {
+      "name": "minimax/minimax-m2.7",
+      "context_limit": 204800,
+      "max_tokens": 131072
+    },
+    {
+      "name": "zai-org/glm-5.1",
+      "context_limit": 204800,
+      "max_tokens": 131072
+    },
+    {
       "name": "deepseek/deepseek-v3.2",
       "context_limit": 163840,
       "max_tokens": 65536
     },
     {
-      "name": "deepseek/deepseek-r1",
-      "context_limit": 163840,
-      "max_tokens": 32768
-    },
-    {
-      "name": "zai-org/glm-5",
-      "context_limit": 202800,
-      "max_tokens": 131072
-    },
-    {
-      "name": "minimax/minimax-m2.5",
-      "context_limit": 204800,
-      "max_tokens": 131100
-    },
-    {
-      "name": "qwen/qwen3-coder-480b-a35b-instruct",
+      "name": "google/gemma-4-31b-it",
       "context_limit": 262144,
-      "max_tokens": 65536
-    },
-    {
-      "name": "meta-llama/llama-4-maverick-17b-128e-instruct",
-      "context_limit": 131072,
       "max_tokens": 131072
     }
   ],

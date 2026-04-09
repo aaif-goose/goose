@@ -699,11 +699,10 @@ To set up Groq with goose, follow these steps:
 
 Novita AI offers many models that support tool calling, including:
 - **moonshotai/kimi-k2.5** - Moonshot's latest model with 262K context window
+- **minimax/minimax-m2.7** - MiniMax M2.7 with 205K context
+- **zai-org/glm-5.1** - Zhipu's GLM-5.1 with 205K context
 - **deepseek/deepseek-v3.2** - DeepSeek V3.2 with 164K context
-- **deepseek/deepseek-r1** - DeepSeek reasoning model
-- **zai-org/glm-5** - Zhipu's GLM-5 with 203K context
-- **minimax/minimax-m2.5** - MiniMax M2.5 with 205K context
-- **qwen/qwen3-coder-480b-a35b-instruct** - Qwen3 Coder with 262K context
+- **google/gemma-4-31b-it** - Google Gemma 4 31B with 262K context
 
 For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/novita.json).
 
