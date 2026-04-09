@@ -1,13 +1,14 @@
 name: Publish to npm
 
-# Security: This workflow uses the 'npm-production-publishing' environment to protect against
-# accidental publishes from feature branches. The environment must be configured in
-# GitHub Settings → Environments with:
+# Security: This workflow uses npm trusted publishing via GitHub Actions OIDC tokens.
+# The 'npm-production-publishing' environment is configured in GitHub Settings → Environments with:
 #   - Deployment branches: Selected branches → main
-#   - Environment secret: NPM_PUBLISH_TOKEN (npm publish token with write access)
 #
-# This ensures that even if the workflow file is modified on a feature branch to
-# bypass the ref checks, GitHub will block access to the NPM_PUBLISH_TOKEN secret.
+# npm packages are configured to trust this repository's OIDC claims via:
+#   https://docs.npmjs.com/trusted-publishers
+#
+# No npm access tokens are needed — authentication uses short-lived OIDC tokens
+# automatically issued by GitHub Actions.
 
 on:
   push:
@@ -35,7 +36,7 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 permissions:
   contents: write
   pull-requests: write
-  id-token: write  # Required for npm provenance
+  id-token: write  # Required for npm trusted publishing (OIDC)
 
 jobs:
   # Generate ACP TypeScript schema first - this is needed before building npm packages
@@ -196,6 +197,7 @@ jobs:
     name: Release to npm
     runs-on: ubuntu-latest
     needs: [generate-schema, build-goose-binaries]
+    environment: npm-production-publishing
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -299,23 +301,13 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Configure npm authentication
-        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
-        run: |
-          cd ui
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
-
       - name: Publish to npm
         if: inputs.dry-run != true && github.ref == 'refs/heads/main'
         run: |
           cd ui
           # Publish all packages in the workspace
-          pnpm publish -r --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+          # Authentication is handled via OIDC trusted publishing (no token needed)
+          pnpm publish -r --access public --no-git-checks --provenance
 
       - name: Dry run - Show what would be published
         if: inputs.dry-run == true || github.ref != 'refs/heads/main'
