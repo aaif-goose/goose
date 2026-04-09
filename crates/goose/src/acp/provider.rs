@@ -11,7 +11,7 @@ use sacp::schema::{
     SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TextContent, ToolCallContent, ToolCallStatus,
+    TextContent, ToolCallContent, ToolCallStatus, ToolKind,
 };
 use sacp::{Agent, Client, ConnectionTo};
 use std::collections::{HashMap, HashSet};
@@ -89,6 +89,7 @@ enum AcpUpdate {
     ToolCallStart {
         id: String,
         name: String,
+        kind: ToolKind,
         raw_input: Option<serde_json::Value>,
     },
     ToolCallComplete {
@@ -434,7 +435,7 @@ impl Provider for AcpProvider {
                             .with_visibility(true, false);
                         yield (Some(message), None);
                     }
-                    AcpUpdate::ToolCallStart { id, name, raw_input } => {
+                    AcpUpdate::ToolCallStart { id, name, kind, raw_input } => {
                         if reject_all_tools {
                             suppress_text = true;
                             rejected_tool_calls.insert(id);
@@ -443,9 +444,13 @@ impl Provider for AcpProvider {
                             if let Some(serde_json::Value::Object(map)) = raw_input {
                                 params = params.with_arguments(map);
                             }
-                            // Marker tells the agent loop not to redispatch this call.
+                            // external_dispatch tells the agent loop not to redispatch this
+                            // call. goose.acp.kind preserves ACP's stable categorization for
+                            // downstream consumers (metrics, observability, icon selection)
+                            // independent of the display title we put in `name`.
                             let tool_meta = Some(serde_json::json!({
                                 TOOL_META_EXTERNAL_DISPATCH_KEY: true,
+                                "goose.acp.kind": kind,
                             }));
                             let message = Message::assistant().with_tool_request_with_metadata(
                                 id,
@@ -706,9 +711,16 @@ impl AcpClientLoop {
                                         } else {
                                             None
                                         };
+                                    // ACP carries no canonical tool name to clients — only
+                                    // `title` (display) and `kind` (category). We pass `title`
+                                    // for renderer affordance, surface `kind` separately via
+                                    // tool_meta for stable categorization, and the
+                                    // goose.external_dispatch marker keeps `name` off the
+                                    // agent loop's routing/auth paths.
                                     let _ = tx.try_send(AcpUpdate::ToolCallStart {
                                         id: id.clone(),
                                         name: tool_call.title.clone(),
+                                        kind: tool_call.kind,
                                         raw_input: tool_call.raw_input.clone(),
                                     });
                                     if let Some(accumulated) = synchronous_accumulated {
@@ -1641,5 +1653,36 @@ mod tests {
             serialized.contains("key"),
             "fallback raw_output lost: {serialized}"
         );
+    }
+
+    /// Pins the tool_meta shape that the `AcpUpdate::ToolCallStart` consumer
+    /// emits onto the synthesized `ToolRequest`. ACP doesn't expose a canonical
+    /// tool name to clients, so we surface `kind` here as a stable categorization
+    /// signal alongside the `external_dispatch` marker that bypasses agent-loop
+    /// routing.
+    #[test]
+    fn tool_meta_pairs_external_dispatch_marker_with_acp_kind() {
+        let cases = [
+            (ToolKind::Execute, "execute"),
+            (ToolKind::Read, "read"),
+            (ToolKind::Edit, "edit"),
+            (ToolKind::Other, "other"),
+        ];
+        for (kind, expected) in cases {
+            let tool_meta = serde_json::json!({
+                TOOL_META_EXTERNAL_DISPATCH_KEY: true,
+                "goose.acp.kind": kind,
+            });
+            assert_eq!(
+                tool_meta[TOOL_META_EXTERNAL_DISPATCH_KEY],
+                serde_json::Value::Bool(true),
+                "external_dispatch marker missing for kind={kind:?}"
+            );
+            assert_eq!(
+                tool_meta["goose.acp.kind"],
+                serde_json::Value::String(expected.to_string()),
+                "goose.acp.kind serialized wrong for kind={kind:?}"
+            );
+        }
     }
 }
