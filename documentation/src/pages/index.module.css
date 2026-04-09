@@ -292,14 +292,14 @@
 .installPlatforms {
   margin-top: 0.75rem;
   font-size: 0.9rem;
-  color: var(--text-subtle);
+  color: var(--text-prominent);
 }
 
 .installDivider {
   text-align: center;
   margin-bottom: 1.5rem;
   font-size: 0.85rem;
-  color: var(--text-subtle);
+  color: var(--text-prominent);
 }
 
 .installTerminal {
@@ -328,7 +328,7 @@
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.7;
-  color: #e0e0e0;
+  color: var(--text-prominent);
   overflow-x: auto;
 }
 

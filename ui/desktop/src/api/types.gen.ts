@@ -818,6 +818,7 @@ export type ModelInfoResponse = {
 
 export type ModelSettings = {
     context_size?: number | null;
+    enable_thinking?: boolean;
     flash_attention?: boolean | null;
     frequency_penalty?: number;
     max_output_tokens?: number | null;
