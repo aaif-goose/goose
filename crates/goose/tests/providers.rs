@@ -906,6 +906,14 @@ async fn test_codex_acp_provider() -> Result<()> {
         .await
 }
 
+// Requires: cursor-agent CLI installed and authenticated
+#[tokio::test]
+async fn test_cursor_acp_provider() -> Result<()> {
+    ProviderTestConfig::with_agentic_provider("cursor-acp", ACP_CURRENT_MODEL, "cursor-agent")
+        .run()
+        .await
+}
+
 // Requires: npm install -g @github/copilot
 #[tokio::test]
 async fn test_copilot_acp_provider() -> Result<()> {
