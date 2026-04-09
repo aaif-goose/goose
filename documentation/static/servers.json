@@ -807,5 +807,16 @@
     "is_builtin": false,
     "endorsed": true,
     "environmentVariables": []
+  },
+  {
+    "id": "sats4ai",
+    "name": "Sats4AI",
+    "description": "Bitcoin-powered AI tools marketplace. 33+ tools — image generation, background removal, upscaling, face restoration, object detection/removal, video generation, image animation, TTS (467 voices, 45+ languages, voice cloning), transcription, music, OCR, 3D model generation, translation (119 languages), file conversion, email, SMS, phone calls, and AI voice agents. Pay per request with Bitcoin Lightning — no signup, no API keys, no KYC.",
+    "type": "streamable-http",
+    "url": "https://sats4ai.com/api/mcp",
+    "link": "https://sats4ai.com/mcp",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
   }
 ]

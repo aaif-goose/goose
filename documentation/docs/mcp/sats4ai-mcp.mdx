@@ -1,0 +1,155 @@
+---
+title: Sats4AI Extension
+description: Add Sats4AI MCP Server as a goose Extension
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructions';
+import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
+
+This tutorial covers how to add the [Sats4AI MCP Server](https://sats4ai.com/mcp) as a goose extension to access 33+ AI tools — image generation, background removal, upscaling, video, TTS, transcription, translation, OCR, file conversion, email, SMS, phone calls, and more — paying per request with Bitcoin Lightning. No accounts, no API keys, no KYC.
+
+:::tip Quick Install
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  [Launch the installer](goose://extension?url=https%3A%2F%2Fsats4ai.com%2Fapi%2Fmcp&id=sats4ai&name=Sats4AI&description=33%2B%20AI%20tools%20paid%20with%20Bitcoin%20Lightning%20%E2%80%94%20image%20gen%2C%20background%20removal%2C%20TTS%2C%20video%2C%20transcription%2C%20translation%2C%20OCR%2C%20and%20more.%20No%20API%20keys.)
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+  **URL**
+  ```
+  https://sats4ai.com/api/mcp
+  ```
+  </TabItem>
+</Tabs>
+:::
+
+## Configuration
+
+Sats4AI is a remote streamable-HTTP MCP server — no install or local process required. No API keys or environment variables are needed upfront; each tool call is paid with a Bitcoin Lightning micropayment at request time.
+
+You will need a Lightning wallet with sats loaded (any wallet works: [Phoenix](https://phoenix.acinq.co/), [Wallet of Satoshi](https://www.walletofsatoshi.com/), [Alby](https://getalby.com/), etc.).
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+    <GooseDesktopInstaller
+      extensionId="sats4ai"
+      extensionName="Sats4AI"
+      description="33+ AI tools paid with Bitcoin Lightning — image gen, background removal, TTS, video, transcription, translation, OCR, and more. No API keys."
+      type="http"
+      url="https://sats4ai.com/api/mcp"
+      timeout={300}
+      envVars={[]}
+    />
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    <CLIExtensionInstructions
+      name="Sats4AI"
+      description="33+ AI tools paid with Bitcoin Lightning — image gen, background removal, TTS, video, transcription, translation, OCR, and more. No API keys."
+      type="http"
+      url="https://sats4ai.com/api/mcp"
+      timeout={300}
+      envVars={[]}
+      infoNote={
+        <>
+          No API key needed. Each tool call returns a Lightning invoice — pay it with any Lightning wallet, then the tool executes. Full docs at{" "}
+          <a href="https://sats4ai.com/mcp" target="_blank" rel="noopener noreferrer">
+            sats4ai.com/mcp
+          </a>.
+        </>
+      }
+    />
+  </TabItem>
+</Tabs>
+
+## Payment Flow
+
+Every Sats4AI tool follows the same payment pattern:
+
+1. Call `create_payment` with the tool name → receive a Lightning invoice and a `paymentId`
+2. Pay the invoice with any Lightning wallet (confirms in seconds)
+3. Call `check_payment_status({ paymentId })` → wait for `{ paid: true }`
+4. Call the tool with `{ paymentId, ...params }` → receive the result
+
+If a tool call fails after payment, call `request_refund({ paymentId })` to mark it as refundable.
+
+## Example Usage
+
+Remove the background from a product photo and upscale the result — two tools chained together, each paid with a Lightning micropayment.
+
+### goose Prompt
+
+> Remove the background from this product image and upscale the result to 4x: https://example.com/sneaker.jpg
+
+### goose Output
+
+:::note Desktop
+
+I'll handle this in two steps — background removal first, then upscaling.
+
+**Step 1: Check pricing**
+
+-------- list_models --------
+
+- `remove_background`: 5 sats
+- `upscale_image`: 5 sats
+
+Total: 10 sats (~$0.003)
+
+**Step 2: Create payment for background removal**
+
+-------- create_payment --------
+
+```
+paymentId: pay_abc123
+invoice: lnbc50n1p...
+amountSats: 5
+```
+
+Please pay this Lightning invoice, then I'll proceed.
+
+*(after payment)*
+
+-------- check_payment_status --------
+
+Payment confirmed.
+
+-------- remove_background --------
+
+Background removed successfully.
+Result: https://sats4ai.com/results/sneaker-nobg.png
+
+**Step 3: Upscale the result**
+
+-------- create_payment --------
+
+```
+paymentId: pay_def456
+invoice: lnbc50n1p...
+amountSats: 5
+```
+
+-------- upscale_image --------
+
+Upscaled 4x with Real-ESRGAN.
+Result: https://sats4ai.com/results/sneaker-nobg-4x.png
+
+**Done.** Total spent: 10 sats.
+
+:::
+
+## Available Tools
+
+| Category | Tools |
+|---|---|
+| **Image generation** | `generate_image`, `edit_image` |
+| **Image processing** | `remove_background`, `upscale_image`, `restore_face`, `detect_nsfw`, `detect_objects`, `remove_object`, `colorize_image`, `deblur_image` |
+| **Video & 3D** | `generate_video`, `animate_image`, `generate_3d_model` |
+| **Audio** | `text_to_speech`, `clone_voice`, `transcribe_audio`, `generate_music` |
+| **Documents** | `extract_document`, `extract_receipt`, `convert_file`, `merge_pdfs`, `convert_html_to_pdf`, `epub_to_audiobook` |
+| **Text** | `generate_text`, `analyze_image`, `translate_text` |
+| **Communication** | `send_email`, `send_sms`, `place_call`, `ai_call` |
+| **Discovery** | `list_models`, `get_model_pricing`, `list_planned_services` |
+| **Payments** | `create_payment`, `check_payment_status`, `request_refund` |
+
+Full catalog with pricing: [sats4ai.com/mcp](https://sats4ai.com/mcp)
