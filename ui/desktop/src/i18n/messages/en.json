@@ -2303,6 +2303,9 @@
   "modelsBottomBar.currentModel": {
     "defaultMessage": "Current model"
   },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "Loading model..."
+  },
   "modelsBottomBar.localModelSettings": {
     "defaultMessage": "Local Model Settings"
   },

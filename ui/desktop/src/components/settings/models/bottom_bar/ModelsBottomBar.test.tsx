@@ -6,6 +6,9 @@ import { IntlTestWrapper } from '../../../../i18n/test-utils';
 const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
   render(ui, { wrapper: IntlTestWrapper, ...options });
 
+const createDropdownRef = (): React.RefObject<HTMLDivElement> =>
+  ({ current: document.createElement('div') }) as React.RefObject<HTMLDivElement>;
+
 let mockCurrentModel: string | null = 'config-model';
 let mockCurrentProvider: string | null = 'config-provider';
 const mockGetProviders = vi.fn();
@@ -63,7 +66,7 @@ describe('ModelsBottomBar', () => {
     renderWithIntl(
       <ModelsBottomBar
         sessionId="session-123"
-        dropdownRef={{ current: null }}
+        dropdownRef={createDropdownRef()}
         setView={vi.fn()}
         alerts={[]}
         onModelChanged={mockOnModelChanged}
@@ -78,7 +81,7 @@ describe('ModelsBottomBar', () => {
     renderWithIntl(
       <ModelsBottomBar
         sessionId="session-123"
-        dropdownRef={{ current: null }}
+        dropdownRef={createDropdownRef()}
         setView={vi.fn()}
         alerts={[]}
         sessionModel="session-model"
@@ -96,7 +99,7 @@ describe('ModelsBottomBar', () => {
     renderWithIntl(
       <ModelsBottomBar
         sessionId={null}
-        dropdownRef={{ current: null }}
+        dropdownRef={createDropdownRef()}
         setView={vi.fn()}
         alerts={[]}
         onModelChanged={mockOnModelChanged}
