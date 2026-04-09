@@ -72,59 +72,10 @@ export type UpdateWorkingDirRequest = {
 };
 
 /**
- * Get a session by ID.
- */
-export type GetSessionRequest = {
-    sessionId: string;
-    includeMessages?: boolean;
-};
-
-/**
- * Get a session response.
- */
-export type GetSessionResponse = {
-    /**
-     * The session object with id, name, working_dir, timestamps, tokens, etc.
-     */
-    session?: unknown;
-};
-
-/**
  * Delete a session.
  */
 export type DeleteSessionRequest = {
     sessionId: string;
-};
-
-/**
- * Export a session as a JSON string.
- */
-export type ExportSessionRequest = {
-    sessionId: string;
-};
-
-/**
- * Export session response.
- */
-export type ExportSessionResponse = {
-    data: string;
-};
-
-/**
- * Import a session from a JSON string.
- */
-export type ImportSessionRequest = {
-    data: string;
-};
-
-/**
- * Import session response.
- */
-export type ImportSessionResponse = {
-    /**
-     * The imported session object.
-     */
-    session?: unknown;
 };
 
 /**
@@ -245,17 +196,62 @@ export type RemoveSecretRequest = {
     key: string;
 };
 
+/**
+ * Export a session as a JSON string.
+ */
+export type ExportSessionRequest = {
+    sessionId: string;
+};
+
+/**
+ * Export session response — raw JSON of the goose session with `conversation`.
+ */
+export type ExportSessionResponse = {
+    data: string;
+};
+
+/**
+ * Import a session from a JSON string.
+ */
+export type ImportSessionRequest = {
+    data: string;
+};
+
+/**
+ * Import session response — metadata about the newly created session.
+ */
+export type ImportSessionResponse = {
+    sessionId: string;
+    title?: string | null;
+    updatedAt?: string | null;
+    messageCount: number;
+};
+
+/**
+ * Archive a session (soft delete).
+ */
+export type ArchiveSessionRequest = {
+    sessionId: string;
+};
+
+/**
+ * Unarchive a previously archived session.
+ */
+export type UnarchiveSessionRequest = {
+    sessionId: string;
+};
+
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | GetSessionRequest | DeleteSessionRequest | ExportSessionRequest | ImportSessionRequest | GetExtensionsRequest | UpdateProviderRequest | ListProvidersRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | UpdateProviderRequest | ListProvidersRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetSessionResponse | ExportSessionResponse | ImportSessionResponse | GetExtensionsResponse | UpdateProviderResponse | ListProvidersResponse | ReadConfigResponse | CheckSecretResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | UpdateProviderResponse | ListProvidersResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | unknown;
 } | {
     error: {
         code: number;

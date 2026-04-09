@@ -58,13 +58,19 @@ pub async fn run_list_sessions<C: Connection>() {
     for s in &mut response.sessions {
         s.updated_at = None;
     }
+    let mut expected_meta = serde_json::Map::new();
+    expected_meta.insert(
+        "messageCount".to_string(),
+        serde_json::Value::Number(2.into()),
+    );
     assert_eq!(
         response,
         ListSessionsResponse::new(vec![SessionInfo::new(
             session.session_id().clone(),
             session.work_dir()
         )
-        .title("ACP Session".to_string())])
+        .title("New Chat".to_string())
+        .meta(expected_meta)])
     );
 }
 

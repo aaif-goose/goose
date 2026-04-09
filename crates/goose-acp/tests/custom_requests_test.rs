@@ -3,14 +3,15 @@ mod common_tests;
 
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
-    run_test, send_custom, Connection, Session, SessionData, TestConnectionConfig,
+    run_test, send_custom, Connection, PermissionDecision, Session, SessionData,
+    TestConnectionConfig,
 };
 use goose::model::ModelConfig;
 use goose::providers::base::{MessageStream, Provider};
 use goose::providers::errors::ProviderError;
 use goose_acp::server::AcpProviderFactory;
-use goose_test_support::EnforceSessionId;
-use std::sync::Arc;
+use goose_test_support::{EnforceSessionId, IgnoreSessionId};
+use std::sync::{Arc, Mutex};
 
 use common_tests::fixtures::OpenAiFixture;
 
@@ -63,34 +64,6 @@ fn mock_provider_factory() -> AcpProviderFactory {
             }) as Arc<dyn Provider>)
         })
     })
-}
-
-#[test]
-fn test_custom_session_get() {
-    run_test(async {
-        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
-
-        let SessionData { session, .. } = conn.new_session().await.unwrap();
-        let session_id = session.session_id().0.clone();
-
-        let result = send_custom(
-            conn.cx(),
-            "session/get",
-            serde_json::json!({
-                "sessionId": session_id,
-            }),
-        )
-        .await;
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-
-        let response = result.unwrap();
-        let returned_session = response.get("session").expect("missing 'session' field");
-        assert_eq!(
-            returned_session.get("id").and_then(|v| v.as_str()),
-            Some(session_id.as_ref())
-        );
-    });
 }
 
 #[test]
@@ -239,27 +212,6 @@ fn test_provider_switching_updates_session_state() {
 
         let response = send_custom(
             conn.cx(),
-            "session/get",
-            serde_json::json!({
-                "sessionId": session_id,
-            }),
-        )
-        .await
-        .expect("session/get should succeed");
-        let session_value = response.get("session").expect("missing session");
-        assert_eq!(
-            session_value.get("provider_name"),
-            Some(&serde_json::json!("anthropic"))
-        );
-        assert_eq!(
-            session_value
-                .get("model_config")
-                .and_then(|value| value.get("model_name")),
-            Some(&serde_json::json!("current"))
-        );
-
-        let response = send_custom(
-            conn.cx(),
             "_goose/session/provider/update",
             serde_json::json!({
                 "sessionId": session_id,
@@ -276,27 +228,6 @@ fn test_provider_switching_updates_session_state() {
         assert!(
             !config_options.is_empty(),
             "expected refreshed config options"
-        );
-
-        let response = send_custom(
-            conn.cx(),
-            "session/get",
-            serde_json::json!({
-                "sessionId": session_id,
-            }),
-        )
-        .await
-        .expect("session/get after provider update should succeed");
-        let session_value = response.get("session").expect("missing session");
-        assert_eq!(
-            session_value.get("provider_name"),
-            Some(&serde_json::json!("openai"))
-        );
-        assert_eq!(
-            session_value
-                .get("model_config")
-                .and_then(|value| value.get("model_name")),
-            Some(&serde_json::json!("o4-mini"))
         );
 
         let response = send_custom(
@@ -319,25 +250,6 @@ fn test_provider_switching_updates_session_state() {
                 .any(|option| option.get("id") == Some(&serde_json::json!("provider"))),
             "missing provider config option after reset"
         );
-
-        let response = send_custom(
-            conn.cx(),
-            "session/get",
-            serde_json::json!({
-                "sessionId": session_id,
-            }),
-        )
-        .await
-        .expect("session/get after provider reset should succeed");
-        let session_value = response.get("session").expect("missing session");
-        assert_eq!(
-            session_value.get("provider_name"),
-            Some(&serde_json::json!("goose"))
-        );
-        assert_eq!(
-            session_value.get("model_config"),
-            Some(&serde_json::Value::Null)
-        );
     });
 }
 
@@ -349,5 +261,56 @@ fn test_custom_unknown_method() {
 
         let result = send_custom(conn.cx(), "_unknown/method", serde_json::json!({})).await;
         assert!(result.is_err(), "expected method_not_found error");
+    });
+}
+
+#[test]
+fn test_developer_fs_requests_use_acp_session_id() {
+    run_test(async {
+        let seen_session_id = Arc::new(Mutex::new(None::<String>));
+        let seen_session_id_clone = Arc::clone(&seen_session_id);
+        let openai = OpenAiFixture::new(
+            vec![
+                (
+                    "Use the read tool to read /tmp/test_acp_read.txt and output only its contents."
+                        .to_string(),
+                    include_str!("test_data/openai_fs_read_tool_call.txt"),
+                ),
+                (
+                    r#""content":"test-read-content-12345""#.into(),
+                    include_str!("test_data/openai_fs_read_tool_result.txt"),
+                ),
+            ],
+            Arc::new(IgnoreSessionId),
+        )
+        .await;
+        let config = TestConnectionConfig {
+            read_text_file: Some(Arc::new(move |req| {
+                *seen_session_id_clone.lock().unwrap() = Some(req.session_id.0.to_string());
+                Ok(sacp::schema::ReadTextFileResponse::new(
+                    "test-read-content-12345",
+                ))
+            })),
+            ..Default::default()
+        };
+        let mut conn = AcpServerConnection::new(config, openai).await;
+
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        let acp_session_id = session.session_id().0.to_string();
+
+        let output = session
+            .prompt(
+                "Use the read tool to read /tmp/test_acp_read.txt and output only its contents.",
+                PermissionDecision::Cancel,
+            )
+            .await
+            .expect("prompt should succeed");
+
+        assert_eq!(output.text, "test-read-content-12345");
+        assert_eq!(
+            seen_session_id.lock().unwrap().as_deref(),
+            Some(acp_session_id.as_str()),
+            "ACP read request should use the ACP session/thread ID",
+        );
     });
 }

@@ -4,7 +4,7 @@ use super::{
 };
 use async_trait::async_trait;
 use goose::config::PermissionManager;
-use goose_test_support::{EnforceSessionId, ExpectedSessionId};
+use goose_test_support::{ExpectedSessionId, IgnoreSessionId};
 use sacp::schema::{
     ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
     FileSystemCapabilities, ImageContent, InitializeRequest, KillTerminalRequest,
@@ -99,7 +99,10 @@ impl Connection for AcpServerConnection {
     type Session = AcpServerSession;
 
     fn expected_session_id() -> Arc<dyn ExpectedSessionId> {
-        Arc::new(EnforceSessionId::default())
+        // The ACP session ID returned to clients is now a thread ID, which is
+        // intentionally different from the internal session ID the agent sends
+        // to the LLM provider. Skip strict matching.
+        Arc::new(IgnoreSessionId)
     }
 
     async fn new(config: TestConnectionConfig, openai: super::OpenAiFixture) -> Self {

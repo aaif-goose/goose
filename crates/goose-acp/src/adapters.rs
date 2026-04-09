@@ -6,7 +6,6 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::mpsc;
-use tracing::error;
 
 /// Converts an mpsc::Receiver<String> to AsyncRead
 /// Each message is terminated with a newline for JSON-RPC framing
@@ -61,15 +60,18 @@ impl tokio::io::AsyncRead for ReceiverToAsyncRead {
     }
 }
 
-/// Converts an mpsc::Sender<String> to AsyncWrite
-/// Splits incoming data on newlines for JSON-RPC framing
+/// Converts an unbounded mpsc::Sender<String> to AsyncWrite.
+/// Splits incoming data on newlines for JSON-RPC framing.
+///
+/// Uses an unbounded sender so that bursts of outgoing messages (e.g. replaying
+/// a long session history) are never silently dropped due to backpressure.
 pub(crate) struct SenderToAsyncWrite {
-    tx: mpsc::Sender<String>,
+    tx: mpsc::UnboundedSender<String>,
     buffer: Vec<u8>,
 }
 
 impl SenderToAsyncWrite {
-    pub(crate) fn new(tx: mpsc::Sender<String>) -> Self {
+    pub(crate) fn new(tx: mpsc::UnboundedSender<String>) -> Self {
         Self {
             tx,
             buffer: Vec::new(),
@@ -89,24 +91,11 @@ impl tokio::io::AsyncWrite for SenderToAsyncWrite {
             let line = String::from_utf8_lossy(&self.buffer[..pos]).to_string();
             self.buffer.drain(..=pos);
 
-            if !line.is_empty() {
-                if let Err(e) = self.tx.try_send(line.clone()) {
-                    match e {
-                        mpsc::error::TrySendError::Full(_) => {
-                            let truncated: String = line.chars().take(100).collect();
-                            error!(
-                                "Channel full, dropping message (backpressure): {}",
-                                truncated
-                            );
-                        }
-                        mpsc::error::TrySendError::Closed(_) => {
-                            return Poll::Ready(Err(std::io::Error::new(
-                                std::io::ErrorKind::BrokenPipe,
-                                "Channel closed",
-                            )));
-                        }
-                    }
-                }
+            if !line.is_empty() && self.tx.send(line).is_err() {
+                return Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Channel closed",
+                )));
             }
         }
 

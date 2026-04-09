@@ -62,53 +62,10 @@ export const zUpdateWorkingDirRequest = z.object({
 });
 
 /**
- * Get a session by ID.
- */
-export const zGetSessionRequest = z.object({
-    sessionId: z.string(),
-    includeMessages: z.boolean().optional().default(false)
-});
-
-/**
- * Get a session response.
- */
-export const zGetSessionResponse = z.object({
-    session: z.unknown().optional().default(null)
-});
-
-/**
  * Delete a session.
  */
 export const zDeleteSessionRequest = z.object({
     sessionId: z.string()
-});
-
-/**
- * Export a session as a JSON string.
- */
-export const zExportSessionRequest = z.object({
-    sessionId: z.string()
-});
-
-/**
- * Export session response.
- */
-export const zExportSessionResponse = z.object({
-    data: z.string()
-});
-
-/**
- * Import a session from a JSON string.
- */
-export const zImportSessionRequest = z.object({
-    data: z.string()
-});
-
-/**
- * Import session response.
- */
-export const zImportSessionResponse = z.object({
-    session: z.unknown().optional().default(null)
 });
 
 /**
@@ -226,6 +183,57 @@ export const zRemoveSecretRequest = z.object({
     key: z.string()
 });
 
+/**
+ * Export a session as a JSON string.
+ */
+export const zExportSessionRequest = z.object({
+    sessionId: z.string()
+});
+
+/**
+ * Export session response — raw JSON of the goose session with `conversation`.
+ */
+export const zExportSessionResponse = z.object({
+    data: z.string()
+});
+
+/**
+ * Import a session from a JSON string.
+ */
+export const zImportSessionRequest = z.object({
+    data: z.string()
+});
+
+/**
+ * Import session response — metadata about the newly created session.
+ */
+export const zImportSessionResponse = z.object({
+    sessionId: z.string(),
+    title: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    updatedAt: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    messageCount: z.coerce.bigint().gte(BigInt(0)).max(BigInt('18446744073709551615'), { message: 'Invalid value: Expected uint64 to be <= 18446744073709551615' })
+});
+
+/**
+ * Archive a session (soft delete).
+ */
+export const zArchiveSessionRequest = z.object({
+    sessionId: z.string()
+});
+
+/**
+ * Unarchive a previously archived session.
+ */
+export const zUnarchiveSessionRequest = z.object({
+    sessionId: z.string()
+});
+
 export const zExtRequest = z.object({
     id: z.string(),
     method: z.string(),
@@ -236,10 +244,7 @@ export const zExtRequest = z.object({
             zGetToolsRequest,
             zReadResourceRequest,
             zUpdateWorkingDirRequest,
-            zGetSessionRequest,
             zDeleteSessionRequest,
-            zExportSessionRequest,
-            zImportSessionRequest,
             zGetExtensionsRequest,
             zUpdateProviderRequest,
             zListProvidersRequest,
@@ -248,7 +253,11 @@ export const zExtRequest = z.object({
             zRemoveConfigRequest,
             zCheckSecretRequest,
             zUpsertSecretRequest,
-            zRemoveSecretRequest
+            zRemoveSecretRequest,
+            zExportSessionRequest,
+            zImportSessionRequest,
+            zArchiveSessionRequest,
+            zUnarchiveSessionRequest
         ]),
         z.union([
             z.record(z.unknown()),
@@ -265,14 +274,13 @@ export const zExtResponse = z.union([
                 zEmptyResponse,
                 zGetToolsResponse,
                 zReadResourceResponse,
-                zGetSessionResponse,
-                zExportSessionResponse,
-                zImportSessionResponse,
                 zGetExtensionsResponse,
                 zUpdateProviderResponse,
                 zListProvidersResponse,
                 zReadConfigResponse,
-                zCheckSecretResponse
+                zCheckSecretResponse,
+                zExportSessionResponse,
+                zImportSessionResponse
             ]),
             z.unknown()
         ]).optional()

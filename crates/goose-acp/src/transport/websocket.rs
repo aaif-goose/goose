@@ -30,7 +30,7 @@ impl WsState {
 
     async fn create_connection(&self) -> Result<String> {
         let (to_agent_tx, to_agent_rx) = mpsc::channel::<String>(256);
-        let (from_agent_tx, from_agent_rx) = mpsc::channel::<String>(256);
+        let (from_agent_tx, from_agent_rx) = mpsc::unbounded_channel::<String>();
 
         let agent = self.server.create_agent().await?;
 

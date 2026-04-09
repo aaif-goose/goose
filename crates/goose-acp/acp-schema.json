@@ -125,36 +125,6 @@
       "x-side": "agent",
       "x-method": "_goose/working_dir/update"
     },
-    "GetSessionRequest": {
-      "type": "object",
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "includeMessages": {
-          "type": "boolean",
-          "default": false
-        }
-      },
-      "required": [
-        "sessionId"
-      ],
-      "description": "Get a session by ID.",
-      "x-side": "agent",
-      "x-method": "session/get"
-    },
-    "GetSessionResponse": {
-      "type": "object",
-      "properties": {
-        "session": {
-          "description": "The session object with id, name, working_dir, timestamps, tokens, etc.",
-          "default": null
-        }
-      },
-      "description": "Get a session response.",
-      "x-side": "agent",
-      "x-method": "session/get"
-    },
     "DeleteSessionRequest": {
       "type": "object",
       "properties": {
@@ -168,60 +138,6 @@
       "description": "Delete a session.",
       "x-side": "agent",
       "x-method": "session/delete"
-    },
-    "ExportSessionRequest": {
-      "type": "object",
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "sessionId"
-      ],
-      "description": "Export a session as a JSON string.",
-      "x-side": "agent",
-      "x-method": "_goose/session/export"
-    },
-    "ExportSessionResponse": {
-      "type": "object",
-      "properties": {
-        "data": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "description": "Export session response.",
-      "x-side": "agent",
-      "x-method": "_goose/session/export"
-    },
-    "ImportSessionRequest": {
-      "type": "object",
-      "properties": {
-        "data": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "description": "Import a session from a JSON string.",
-      "x-side": "agent",
-      "x-method": "_goose/session/import"
-    },
-    "ImportSessionResponse": {
-      "type": "object",
-      "properties": {
-        "session": {
-          "description": "The imported session object.",
-          "default": null
-        }
-      },
-      "description": "Import session response.",
-      "x-side": "agent",
-      "x-method": "_goose/session/import"
     },
     "GetExtensionsRequest": {
       "type": "object",
@@ -458,6 +374,108 @@
       "x-side": "agent",
       "x-method": "_goose/secret/remove"
     },
+    "ExportSessionRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Export a session as a JSON string.",
+      "x-side": "agent",
+      "x-method": "_goose/session/export"
+    },
+    "ExportSessionResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "description": "Export session response — raw JSON of the goose session with `conversation`.",
+      "x-side": "agent",
+      "x-method": "_goose/session/export"
+    },
+    "ImportSessionRequest": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "description": "Import a session from a JSON string.",
+      "x-side": "agent",
+      "x-method": "_goose/session/import"
+    },
+    "ImportSessionResponse": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updatedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "messageCount": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId",
+        "messageCount"
+      ],
+      "description": "Import session response — metadata about the newly created session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/import"
+    },
+    "ArchiveSessionRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Archive a session (soft delete).",
+      "x-side": "agent",
+      "x-method": "_goose/session/archive"
+    },
+    "UnarchiveSessionRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Unarchive a previously archived session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/unarchive"
+    },
     "ExtRequest": {
       "properties": {
         "id": {
@@ -518,38 +536,11 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GetSessionRequest"
-                    }
-                  ],
-                  "description": "Params for session/get",
-                  "title": "GetSessionRequest"
-                },
-                {
-                  "allOf": [
-                    {
                       "$ref": "#/$defs/DeleteSessionRequest"
                     }
                   ],
                   "description": "Params for session/delete",
                   "title": "DeleteSessionRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/ExportSessionRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/session/export",
-                  "title": "ExportSessionRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/ImportSessionRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/session/import",
-                  "title": "ImportSessionRequest"
                 },
                 {
                   "allOf": [
@@ -631,6 +622,42 @@
                   ],
                   "description": "Params for _goose/secret/remove",
                   "title": "RemoveSecretRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ExportSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/export",
+                  "title": "ExportSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ImportSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/import",
+                  "title": "ImportSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ArchiveSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/archive",
+                  "title": "ArchiveSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UnarchiveSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/unarchive",
+                  "title": "UnarchiveSessionRequest"
                 }
               ]
             },
@@ -689,30 +716,6 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/GetSessionResponse"
-                        }
-                      ],
-                      "title": "GetSessionResponse"
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "$ref": "#/$defs/ExportSessionResponse"
-                        }
-                      ],
-                      "title": "ExportSessionResponse"
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "$ref": "#/$defs/ImportSessionResponse"
-                        }
-                      ],
-                      "title": "ImportSessionResponse"
-                    },
-                    {
-                      "allOf": [
-                        {
                           "$ref": "#/$defs/GetExtensionsResponse"
                         }
                       ],
@@ -749,6 +752,22 @@
                         }
                       ],
                       "title": "CheckSecretResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ExportSessionResponse"
+                        }
+                      ],
+                      "title": "ExportSessionResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ImportSessionResponse"
+                        }
+                      ],
+                      "title": "ImportSessionResponse"
                     }
                   ]
                 },

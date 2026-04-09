@@ -26,24 +26,9 @@
       "responseType": "EmptyResponse"
     },
     {
-      "method": "session/get",
-      "requestType": "GetSessionRequest",
-      "responseType": "GetSessionResponse"
-    },
-    {
       "method": "session/delete",
       "requestType": "DeleteSessionRequest",
       "responseType": "EmptyResponse"
-    },
-    {
-      "method": "_goose/session/export",
-      "requestType": "ExportSessionRequest",
-      "responseType": "ExportSessionResponse"
-    },
-    {
-      "method": "_goose/session/import",
-      "requestType": "ImportSessionRequest",
-      "responseType": "ImportSessionResponse"
     },
     {
       "method": "_goose/config/extensions",
@@ -88,6 +73,26 @@
     {
       "method": "_goose/secret/remove",
       "requestType": "RemoveSecretRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/session/export",
+      "requestType": "ExportSessionRequest",
+      "responseType": "ExportSessionResponse"
+    },
+    {
+      "method": "_goose/session/import",
+      "requestType": "ImportSessionRequest",
+      "responseType": "ImportSessionResponse"
+    },
+    {
+      "method": "_goose/session/archive",
+      "requestType": "ArchiveSessionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/session/unarchive",
+      "requestType": "UnarchiveSessionRequest",
       "responseType": "EmptyResponse"
     }
   ]
