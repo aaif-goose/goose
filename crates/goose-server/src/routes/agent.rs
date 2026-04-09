@@ -263,6 +263,29 @@ async fn start_agent(
             }
         })?;
 
+    // Capture current provider and model from config and save to session
+    // This ensures the session has provider info when it's resumed later
+    if let Ok(provider_name) = config.get_goose_provider() {
+        let model_config = if let Ok(model_name) = config.get_goose_model() {
+            ModelConfig::new(&model_name).ok()
+        } else {
+            None
+        };
+
+        let mut update = manager.update(&session.id).provider_name(&provider_name);
+        if let Some(model_config) = model_config {
+            update = update.model_config(model_config);
+        }
+
+        update.apply().await.map_err(|err| {
+            error!("Failed to save provider/model to session: {}", err);
+            ErrorResponse {
+                message: format!("Failed to save provider/model to session: {}", err),
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+            }
+        })?;
+    }
+
     let recipe_extensions = original_recipe
         .as_ref()
         .and_then(|r| r.extensions.as_deref());

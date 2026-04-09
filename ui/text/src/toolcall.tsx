@@ -41,8 +41,9 @@ const STATUS_INDICATORS: Record<string, { icon: string; color: string }> = {
 };
 
 function truncateLine(line: string, maxWidth: number): string {
-  if (line.length <= maxWidth) return line;
-  return maxWidth > 1 ? line.slice(0, maxWidth - 1) + "…" : line.slice(0, maxWidth);
+  const safeMaxWidth = Math.max(maxWidth, 1);
+  if (line.length <= safeMaxWidth) return line;
+  return safeMaxWidth > 1 ? line.slice(0, safeMaxWidth - 1) + "…" : line.slice(0, safeMaxWidth);
 }
 
 function formatJsonLines(value: unknown, maxWidth: number): string[] {
@@ -92,22 +93,23 @@ export function renderToolCallLines(
   const borderColor = info.status === "failed" ? CRANBERRY : CEDAR;
   const dimBorder = info.status !== "failed";
 
-  const innerWidth = Math.max(width - 4, 10);
-  const indentedWidth = Math.max(innerWidth - 2, 8);
+  const safeWidth = Math.max(width, 10);
+  const innerWidth = Math.max(safeWidth - 4, 6);
+  const indentedWidth = Math.max(innerWidth - 2, 4);
 
   const lines: React.ReactElement[] = [];
   const k = info.toolCallId;
 
-  const hRule = "─".repeat(Math.max(width - 2, 0));
+  const hRule = "─".repeat(Math.max(safeWidth - 2, 0));
   lines.push(
-    <Box key={`${k}-t`} width={width} height={1}>
+    <Box key={`${k}-t`} width={safeWidth} height={1}>
       <Text color={borderColor} dimColor={dimBorder}>╭{hRule}╮</Text>
     </Box>,
   );
 
   const row = (key: string, content: React.ReactNode) => {
     lines.push(
-      <Box key={key} width={width} height={1}>
+      <Box key={key} width={safeWidth} height={1}>
         <Text color={borderColor} dimColor={dimBorder}>│ </Text>
         <Box width={innerWidth} height={1}>
           {content}
@@ -166,7 +168,7 @@ export function renderToolCallLines(
   }
 
   lines.push(
-    <Box key={`${k}-b`} width={width} height={1}>
+    <Box key={`${k}-b`} width={safeWidth} height={1}>
       <Text color={borderColor} dimColor={dimBorder}>╰{hRule}╯</Text>
     </Box>,
   );

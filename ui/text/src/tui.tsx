@@ -19,195 +19,33 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { ndJsonStream } from "@agentclientprotocol/sdk";
 import { GooseClient } from "@aaif/goose-acp";
-import { renderMarkdown } from "./markdown.js";
-import { renderToolCallLines } from "./toolcall.js";
-import type { ToolCallInfo } from "./toolcall.js";
+import Onboarding from "./onboarding.js";
+import type { PendingPermission, ResponseItem, Turn } from "./types.js";
+import {
+  emptyLine,
+  renderUserPrompt,
+  renderToolCallItem,
+  renderErrorItem,
+  renderContentItem,
+  renderLoadingIndicator,
+  renderQueuedMessages,
+} from "./components/ContentRenderers.js";
+import { Header } from "./components/Header.js";
+import { Rule } from "./components/Rule.js";
+import { isErrorStatus, formatError } from "./utils.js";
 import { CRANBERRY, TEAL, GOLD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM, RULE_COLOR } from "./colors.js";
+import { Spinner, SPINNER_FRAMES } from "./components/Spinner.js";
+import {
+  PASTE_THRESHOLD,
+  INPUT_MAX_ROWS,
+  SENT_PREVIEW_LEN,
+  GOOSE_FRAMES,
+  INITIAL_GREETING,
+  PERMISSION_LABELS,
+  PERMISSION_KEYS,
+} from "./constants.js";
 
-interface PendingPermission {
-  toolTitle: string;
-  options: Array<{ optionId: string; name: string; kind: string }>;
-  resolve: (response: RequestPermissionResponse) => void;
-}
-
-type ResponseItem =
-  | (ContentChunk & { itemType: "content_chunk" })
-  | (ToolCall & { itemType: "tool_call" });
-
-interface Turn {
-  userText: string;
-  responseItems: ResponseItem[];
-  toolCallsById: Map<string, number>;
-}
-
-function isErrorStatus(status: string): boolean {
-  return status.startsWith("error") || status.startsWith("failed");
-}
-
-const GOOSE_FRAMES = [
-  [
-    "    ,_",
-    "   (o >",
-    "   //\\",
-    "   \\\\ \\",
-    "    \\\\_/",
-    "     |  |",
-    "     ^ ^",
-  ],
-  [
-    "     ,_",
-    "    (o >",
-    "    //\\",
-    "    \\\\ \\",
-    "     \\\\_/",
-    "    /  |",
-    "   ^   ^",
-  ],
-  [
-    "    ,_",
-    "   (o >",
-    "   //\\",
-    "   \\\\ \\",
-    "    \\\\_/",
-    "     |  |",
-    "     ^  ^",
-  ],
-  [
-    "   ,_",
-    "  (o >",
-    "  //\\",
-    "  \\\\ \\",
-    "   \\\\_/",
-    "    |  \\",
-    "    ^   ^",
-  ],
-];
-
-const GREETING_MESSAGES = [
-  "What would you like to work on?",
-  "Ready to build something amazing?",
-  "What would you like to explore?",
-  "What's on your mind?",
-  "What shall we create today?",
-  "What project needs attention?",
-  "What would you like to tackle?",
-  "What needs to be done?",
-  "What's the plan for today?",
-  "Ready to create something great?",
-  "What can be built today?",
-  "What's the next challenge?",
-  "What progress can be made?",
-  "What would you like to accomplish?",
-  "What task awaits?",
-  "What's the mission today?",
-  "What can be achieved?",
-  "What project is ready to begin?",
-];
-
-const INITIAL_GREETING =
-  GREETING_MESSAGES[Math.floor(Math.random() * GREETING_MESSAGES.length)]!;
-
-const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"];
-
-const PERMISSION_LABELS: Record<string, string> = {
-  allow_once: "Allow once",
-  allow_always: "Always allow",
-  reject_once: "Reject once",
-  reject_always: "Always reject",
-};
-
-const PERMISSION_KEYS: Record<string, string> = {
-  allow_once: "y",
-  allow_always: "a",
-  reject_once: "n",
-  reject_always: "N",
-};
-
-function Rule({ width }: { width: number }) {
-  return <Text color={RULE_COLOR}>{"─".repeat(Math.max(width, 1))}</Text>;
-}
-
-function Spinner({ idx }: { idx: number }) {
-  return (
-    <Text color={CRANBERRY}>
-      {SPINNER_FRAMES[idx % SPINNER_FRAMES.length]}
-    </Text>
-  );
-}
-
-function Header({
-  width,
-  status,
-  loading,
-  spinIdx,
-  hasPendingPermission,
-  turnInfo,
-}: {
-  width: number;
-  status: string;
-  loading: boolean;
-  spinIdx: number;
-  hasPendingPermission: boolean;
-  turnInfo?: { current: number; total: number };
-}) {
-  const statusColor =
-    status === "ready" ? TEAL : isErrorStatus(status) ? CRANBERRY : TEXT_DIM;
-
-  return (
-    <Box flexDirection="column" width={width} flexShrink={0}>
-      <Box justifyContent="space-between" width={width}>
-        <Box>
-          <Text color={TEXT_PRIMARY} bold>goose</Text>
-          <Text color={RULE_COLOR}> · </Text>
-          <Text color={statusColor}>{status}</Text>
-          {loading && !hasPendingPermission && (
-            <Text> <Spinner idx={spinIdx} /></Text>
-          )}
-        </Box>
-        <Box>
-          {turnInfo && turnInfo.total > 1 && (
-            <Text color={TEXT_DIM}>
-              {turnInfo.current}/{turnInfo.total}{"  "}
-            </Text>
-          )}
-          <Text color={TEXT_DIM}>^C exit</Text>
-        </Box>
-      </Box>
-      <Rule width={width} />
-    </Box>
-  );
-}
-
-const PASTE_THRESHOLD = 80;
-const PASTE_PREVIEW_LEN = 40;
-const INPUT_MAX_ROWS = 8;
-const SENT_PREVIEW_LEN = 60;
-
-function collapseForDisplay(text: string, availableWidth = PASTE_PREVIEW_LEN): string {
-  const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
-  if (flat.length <= availableWidth) return flat;
-  const suffix = ` (${flat.length.toLocaleString()} chars)`;
-  const previewLen = Math.max(availableWidth - suffix.length - 1, 10);
-  return flat.slice(0, previewLen) + "…" + suffix;
-}
-
-function collapsedUserPrompt(text: string, width: number): React.ReactElement {
-  const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
-  const maxPreview = Math.max(width - 30, SENT_PREVIEW_LEN);
-  if (flat.length <= maxPreview + 10) {
-    return <Text color={TEXT_PRIMARY} bold>{flat}</Text>;
-  }
-  const preview = flat.slice(0, maxPreview) + "…";
-  const remaining = flat.length - maxPreview;
-  return (
-    <Text>
-      <Text color={TEXT_PRIMARY} bold>{preview}</Text>
-      <Text color={TEXT_DIM}> ({remaining.toLocaleString()} more chars)</Text>
-    </Text>
-  );
-}
-
-function InputBar({
+const InputBar = React.memo(function InputBar({
   width,
   input,
   onChange,
@@ -284,6 +122,8 @@ function InputBar({
   );
 
   const isPasteMode = pastedFull !== null;
+  const constrainedWidth = Math.max(width, 20);
+  const contentWidth = Math.max(constrainedWidth - 6, 10);
 
   return (
     <Box
@@ -291,16 +131,26 @@ function InputBar({
       borderStyle="round"
       borderColor={RULE_COLOR}
       paddingX={1}
-      width={width}
+      width={constrainedWidth}
       flexShrink={0}
     >
       <Box>
         <Text color={CRANBERRY} bold>{"❯ "}</Text>
         {isPasteMode ? (
-          <Box width={width - 4 - 2} justifyContent="space-between">
-            <Text color={TEXT_PRIMARY} wrap="truncate-end">
-              {collapseForDisplay(pastedFull, width - 4 - 2)}
-            </Text>
+          <Box width={contentWidth} justifyContent="space-between">
+            <Box width={Math.max(contentWidth - 20, 10)}>
+              <Text color={TEXT_PRIMARY} wrap="truncate-end">
+                {(() => {
+                  const text = pastedFull;
+                  const availableWidth = Math.max(contentWidth - 20, 10);
+                  const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+                  if (flat.length <= availableWidth) return flat;
+                  const suffix = ` (${flat.length.toLocaleString()} chars)`;
+                  const previewLen = Math.max(availableWidth - suffix.length - 1, 5);
+                  return flat.slice(0, previewLen) + "…" + suffix;
+                })()}
+              </Text>
+            </Box>
             {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
           </Box>
         ) : (
@@ -344,71 +194,7 @@ function InputBar({
       )}
     </Box>
   );
-}
-
-function emptyLine(key: string, width: number): React.ReactElement {
-  return <Box key={key} width={width} height={1}><Text> </Text></Box>;
-}
-
-function buildPermissionLines(
-  perm: PendingPermission,
-  selectedIdx: number,
-  fullWidth: number,
-): React.ReactElement[] {
-  const dialogWidth = Math.min(fullWidth - 2, 58);
-  const innerWidth = Math.max(dialogWidth - 4, 10);
-  const hRule = "─".repeat(Math.max(dialogWidth - 2, 0));
-  const lines: React.ReactElement[] = [];
-
-  lines.push(emptyLine("pm-gap", fullWidth));
-
-  lines.push(
-    <Box key="pm-t" width={fullWidth} height={1}>
-      <Text color={GOLD}>╭{hRule}╮</Text>
-    </Box>,
-  );
-
-  const row = (key: string, content: React.ReactNode) => {
-    lines.push(
-      <Box key={key} width={fullWidth} height={1}>
-        <Text color={GOLD}>│ </Text>
-        <Box width={innerWidth} height={1}>{content}</Box>
-        <Text color={GOLD}> │</Text>
-      </Box>,
-    );
-  };
-
-  row("pm-title", <Text color={GOLD} bold>🔒 Permission required</Text>);
-  row("pm-g1", <Text> </Text>);
-  row("pm-tool", <Text wrap="truncate-end" color={TEXT_PRIMARY}>{perm.toolTitle}</Text>);
-  row("pm-g2", <Text> </Text>);
-
-  for (let i = 0; i < perm.options.length; i++) {
-    const opt = perm.options[i]!;
-    const k = PERMISSION_KEYS[opt.kind] ?? String(i + 1);
-    const label = PERMISSION_LABELS[opt.kind] ?? opt.name;
-    const active = i === selectedIdx;
-    row(`pm-o${i}`, (
-      <>
-        <Text color={active ? GOLD : RULE_COLOR}>{active ? "▸ " : "  "}</Text>
-        <Text color={active ? TEXT_PRIMARY : TEXT_SECONDARY} bold={active}>
-          [{k}] {label}
-        </Text>
-      </>
-    ));
-  }
-
-  row("pm-g3", <Text> </Text>);
-  row("pm-help", <Text color={TEXT_DIM}>↑↓ select · enter confirm · esc cancel</Text>);
-
-  lines.push(
-    <Box key="pm-b" width={fullWidth} height={1}>
-      <Text color={GOLD}>╰{hRule}╯</Text>
-    </Box>,
-  );
-
-  return lines;
-}
+});
 
 function buildContentLines({
   turn,
@@ -434,15 +220,32 @@ function buildContentLines({
   const lines: React.ReactElement[] = [];
   if (!turn) return lines;
 
-  lines.push(emptyLine("u-gap", width));
-  lines.push(
-    <Box key="u-prompt" width={width} height={1}>
-      <Text color={CRANBERRY} bold>{"❯ "}</Text>
-      {collapsedUserPrompt(turn.userText, width - 4)}
-    </Box>,
-  );
+  const safeWidth = Math.max(width, 20);
 
-  // Response items
+  // Render user prompt  
+  const turnId = turn.userText.slice(0, 20).replace(/[^a-zA-Z0-9]/g, '') || 'turn';
+  lines.push(...renderUserPrompt(turn.userText, safeWidth, turnId, (text: string, availableWidth: number) => {
+    const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+    const safeWidth = Math.max(availableWidth, 10);
+    const maxPreview = Math.max(safeWidth - 30, Math.min(SENT_PREVIEW_LEN, safeWidth - 10));
+    if (flat.length <= maxPreview + 10) {
+      return (
+        <Box width={safeWidth}>
+          <Text color={TEXT_PRIMARY} bold wrap="wrap">{flat}</Text>
+        </Box>
+      );
+    }
+    const preview = flat.slice(0, maxPreview) + "…";
+    const remaining = flat.length - maxPreview;
+    return (
+      <Box width={safeWidth}>
+        <Text color={TEXT_PRIMARY} bold wrap="wrap">{preview}</Text>
+        <Text color={TEXT_DIM}> ({remaining.toLocaleString()} more chars)</Text>
+      </Box>
+    );
+  }));
+
+  // Process response items
   const hasToolCalls = turn.responseItems.some((it) => it.itemType === "tool_call");
   let tcIdx = 0;
 
@@ -450,69 +253,87 @@ function buildContentLines({
     const item = turn.responseItems[i]!;
 
     if (item.itemType === "tool_call") {
-      const info: ToolCallInfo = {
-        toolCallId: item.toolCallId,
-        title: item.title,
-        status: item.status ?? "pending",
-        kind: item.kind,
-        rawInput: item.rawInput,
-        rawOutput: item.rawOutput,
-        content: item.content,
-        locations: item.locations,
-      };
-      lines.push(emptyLine(`tc-gap-${i}`, width));
-      lines.push(
-        ...renderToolCallLines(info, width, toolCallsExpanded, tcIdx === 0 && hasToolCalls),
-      );
+      lines.push(...renderToolCallItem(item, i, safeWidth, toolCallsExpanded, tcIdx === 0, hasToolCalls));
       tcIdx++;
-    } else if (
-      item.itemType === "content_chunk" &&
-      item.content.type === "text" &&
-      item.content.text
-    ) {
-      const mdLines = renderMarkdown(item.content.text, width);
-      lines.push(emptyLine(`md-gap-${i}`, width));
-      for (let j = 0; j < mdLines.length; j++) {
-        lines.push(
-          <Box key={`md-${i}-${j}`} width={width} height={1}>
-            <Text wrap="truncate-end">{mdLines[j]}</Text>
-          </Box>,
-        );
-      }
+    } else if (item.itemType === "error") {
+      lines.push(...renderErrorItem(item, i, safeWidth));
+    } else if (item.itemType === "content_chunk") {
+      lines.push(...renderContentItem(item, i, safeWidth));
     }
   }
 
   // Loading indicator
   if (loading && !pendingPermission) {
-    lines.push(emptyLine("ld-gap", width));
-    lines.push(
-      <Box key="ld" width={width} height={1}>
-        <Spinner idx={spinIdx} />
-        <Text color={TEXT_DIM} italic> {status}</Text>
-      </Box>,
-    );
+    lines.push(...renderLoadingIndicator(status, spinIdx, safeWidth));
   }
 
   // Permission dialog
   if (pendingPermission) {
-    lines.push(...buildPermissionLines(pendingPermission, permissionIdx, width));
+    const perm = pendingPermission;
+    const selectedIdx = permissionIdx;
+    const fullWidth = safeWidth;
+    const dialogWidth = Math.min(fullWidth - 2, 58);
+    const innerWidth = Math.max(dialogWidth - 4, 10);
+    const hRule = "─".repeat(Math.max(dialogWidth - 2, 0));
+    const permissionLines: React.ReactElement[] = [];
+
+    permissionLines.push(emptyLine(`pm-gap-${perm.toolTitle.slice(0, 10).replace(/[^a-zA-Z0-9]/g, '')}`, fullWidth));
+
+    permissionLines.push(
+      <Box key="pm-t" width={fullWidth} height={1}>
+        <Text color={GOLD}>╭{hRule}╮</Text>
+      </Box>,
+    );
+
+    const row = (key: string, content: React.ReactNode) => {
+      permissionLines.push(
+        <Box key={key} width={fullWidth} height={1}>
+          <Text color={GOLD}>│ </Text>
+          <Box width={innerWidth} height={1}>{content}</Box>
+          <Text color={GOLD}> │</Text>
+        </Box>,
+      );
+    };
+
+    row("pm-title", <Text color={GOLD} bold>🔒 Permission required</Text>);
+    row("pm-g1", <Text> </Text>);
+    row("pm-tool", <Text wrap="truncate-end" color={TEXT_PRIMARY}>{perm.toolTitle}</Text>);
+    row("pm-g2", <Text> </Text>);
+
+    for (let i = 0; i < perm.options.length; i++) {
+      const opt = perm.options[i]!;
+      const k = PERMISSION_KEYS[opt.kind] ?? String(i + 1);
+      const label = PERMISSION_LABELS[opt.kind] ?? opt.name;
+      const active = i === selectedIdx;
+      row(`pm-o${i}`, (
+        <>
+          <Text color={active ? GOLD : RULE_COLOR}>{active ? "▸ " : "  "}</Text>
+          <Text color={active ? TEXT_PRIMARY : TEXT_SECONDARY} bold={active}>
+            [{k}] {label}
+          </Text>
+        </>
+      ));
+    }
+
+    row("pm-g3", <Text> </Text>);
+    row("pm-help", <Text color={TEXT_DIM}>↑↓ select · enter confirm · esc cancel</Text>);
+
+    permissionLines.push(
+      <Box key="pm-b" width={fullWidth} height={1}>
+        <Text color={GOLD}>╰{hRule}╯</Text>
+      </Box>,
+    );
+
+    lines.push(...permissionLines);
   }
 
   // Queued messages
-  for (let i = 0; i < queuedMessages.length; i++) {
-    lines.push(
-      <Box key={`q-${i}`} width={width} height={1}>
-        <Text color={TEXT_DIM}>{"❯ "}</Text>
-        <Text wrap="truncate-end" color={TEXT_DIM}>{queuedMessages[i]}</Text>
-        <Text color={GOLD} dimColor> (queued)</Text>
-      </Box>,
-    );
-  }
+  lines.push(...renderQueuedMessages(queuedMessages, safeWidth));
 
   return lines;
 }
 
-function Viewport({
+const Viewport = React.memo(function Viewport({
   lines,
   height,
   width,
@@ -551,7 +372,7 @@ function Viewport({
   }
 
   for (let i = 0; i < padCount; i++) {
-    elements.push(emptyLine(`vp-${i}`, width));
+    elements.push(emptyLine(`vp-pad-${i}`, width));
   }
   elements.push(...visible);
 
@@ -566,14 +387,17 @@ function Viewport({
     );
   }
 
+  const constrainedWidth = Math.max(width, 10);
+  const constrainedHeight = Math.max(height, 1);
+
   return (
-    <Box flexDirection="column" height={height} width={width}>
+    <Box flexDirection="column" height={constrainedHeight} width={constrainedWidth}>
       {elements}
     </Box>
   );
-}
+});
 
-function SplashScreen({
+const SplashScreen = React.memo(function SplashScreen({
   animFrame,
   width,
   height,
@@ -596,12 +420,16 @@ function SplashScreen({
 
   const topPad = Math.max(0, Math.floor((height - contentHeight) / 2));
 
+  // Use original dimensions for outer container to maintain centering
+  const safeWidth = Math.max(width, 20);
+  const safeHeight = Math.max(height, 10);
+
   return (
     <Box
       flexDirection="column"
       alignItems="center"
-      width={width}
-      height={height}
+      width={safeWidth}
+      height={safeHeight}
       overflow="hidden"
     >
       {topPad > 0 && <Box height={topPad} />}
@@ -613,14 +441,16 @@ function SplashScreen({
       <Box marginTop={1}>
         <Text color={TEXT_PRIMARY} bold>goose</Text>
       </Box>
-      <Text color={TEXT_DIM}>your on-machine AI agent</Text>
-      <Box marginTop={2} gap={1}>
+      <Box alignItems="center">
+        <Text color={TEXT_DIM}>your on-machine AI agent</Text>
+      </Box>
+      <Box marginTop={2} gap={1} alignItems="center">
         {loading && <Spinner idx={spinIdx} />}
         <Text color={statusColor}>{status}</Text>
       </Box>
     </Box>
   );
-}
+});
 
 function App({
   serverConnection,
@@ -650,6 +480,7 @@ function App({
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [pastedFull, setPastedFull] = useState<string | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const clientRef = useRef<GooseClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -700,6 +531,16 @@ function App({
         newItems.push({ itemType: "content_chunk", content: { type: "text", text } });
       }
 
+      return [...prev.slice(0, -1), { ...last, responseItems: newItems }];
+    });
+  }, []);
+
+  const appendError = useCallback((errorMessage: string) => {
+    setTurns((prev) => {
+      if (prev.length === 0) return prev;
+      const last = { ...prev[prev.length - 1]! };
+      const newItems = [...last.responseItems];
+      newItems.push({ itemType: "error", message: errorMessage });
       return [...prev.slice(0, -1), { ...last, responseItems: newItems }];
     });
   }, []);
@@ -790,12 +631,14 @@ function App({
             : `stopped: ${result.stopReason}`,
         );
       } catch (e: unknown) {
-        setStatus(`error: ${e instanceof Error ? e.message : String(e)}`);
+        const errorMsg = formatError(e);
+        setStatus(`error`);
+        appendError(errorMsg);
       } finally {
         setLoading(false);
       }
     },
-    [appendAgent, addUserTurn],
+    [appendAgent, appendError, addUserTurn],
   );
 
   const processQueue = useCallback(async () => {
@@ -816,6 +659,36 @@ function App({
     },
     [executePrompt, processQueue],
   );
+
+  const createSession = useCallback(async (client: GooseClient) => {
+    setStatus("creating session…");
+    setLoading(true);
+    try {
+      const session = await client.newSession({
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+      sessionIdRef.current = session.sessionId;
+      setLoading(false);
+      setStatus("ready");
+
+      if (initialPrompt && !sentInitialPrompt.current) {
+        sentInitialPrompt.current = true;
+        await sendPrompt(initialPrompt);
+        setTimeout(() => exit(), 100);
+      }
+    } catch (e: unknown) {
+      const errorMsg = formatError(e);
+      setStatus(`failed: ${errorMsg}`);
+      setLoading(false);
+    }
+  }, [initialPrompt, sendPrompt, exit]);
+
+  const handleOnboardingComplete = useCallback(() => {
+    setNeedsOnboarding(false);
+    const client = clientRef.current;
+    if (client) createSession(client);
+  }, [createSession]);
 
   useEffect(() => {
     let cancelled = false;
@@ -870,32 +743,35 @@ function App({
         });
         if (cancelled) return;
 
-        setStatus("creating session…");
-        const session = await client.newSession({
-          cwd: process.cwd(),
-          mcpServers: [],
-        });
+        setStatus("checking provider…");
+        let hasProvider = false;
+        try {
+          const resp = await client.goose.GooseConfigRead({ key: "GOOSE_PROVIDER" });
+          hasProvider = resp.value != null && resp.value !== "" && resp.value !== "null";
+        } catch {
+          hasProvider = false;
+        }
         if (cancelled) return;
 
-        sessionIdRef.current = session.sessionId;
-        setLoading(false);
-        setStatus("ready");
-
-        if (initialPrompt && !sentInitialPrompt.current) {
-          sentInitialPrompt.current = true;
-          await sendPrompt(initialPrompt);
-          setTimeout(() => exit(), 100);
+        if (!hasProvider && !initialPrompt) {
+          setNeedsOnboarding(true);
+          setLoading(false);
+          setStatus("setup required");
+          return;
         }
+
+        await createSession(client);
       } catch (e: unknown) {
         if (cancelled) return;
-        setStatus(`failed: ${e instanceof Error ? e.message : String(e)}`);
+        const errorMsg = formatError(e);
+        setStatus(`failed: ${errorMsg}`);
         setLoading(false);
       }
     })();
 
     return () => { cancelled = true; };
   }, [
-    serverConnection, initialPrompt, sendPrompt,
+    serverConnection, initialPrompt, createSession,
     appendAgent, handleToolCall, handleToolCallUpdate, exit,
   ]);
 
@@ -991,11 +867,13 @@ function App({
       });
       return;
     }
-  });
+  }, { isActive: !needsOnboarding });
 
   const PAD_X = 2;
   const PAD_Y = 1;
-  const contentWidth = Math.max(termWidth - PAD_X * 2, 20);
+  const safeTermWidth = Math.max(termWidth, 40);
+  const safeTermHeight = Math.max(termHeight, 10);
+  const contentWidth = Math.max(safeTermWidth - PAD_X * 2, 20);
 
   const effectiveTurnIdx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
   const currentTurn = turns[effectiveTurnIdx];
@@ -1015,7 +893,7 @@ function App({
   const inputBarH = showInputBar ? 2 + inputContentRows + inputExtraLines : 0;
   const historyBarH = isViewingHistory ? 2 : 0;
   const viewportHeight = Math.max(
-    termHeight - PAD_Y * 2 - headerH - inputBarH - historyBarH,
+    safeTermHeight - PAD_Y * 2 - headerH - inputBarH - historyBarH,
     3,
   );
 
@@ -1031,11 +909,28 @@ function App({
     queuedMessages: isLatest ? queuedMessages : [],
   });
 
+  if (needsOnboarding && clientRef.current) {
+    return (
+      <Box
+        flexDirection="column"
+        width={safeTermWidth}
+        height={safeTermHeight}
+      >
+        <Onboarding
+          client={clientRef.current}
+          width={safeTermWidth}
+          height={safeTermHeight}
+          onComplete={handleOnboardingComplete}
+        />
+      </Box>
+    );
+  }
+
   return (
     <Box
       flexDirection="column"
-      width={termWidth}
-      height={termHeight}
+      width={safeTermWidth}
+      height={safeTermHeight}
       paddingX={PAD_X}
       paddingY={PAD_Y}
     >
@@ -1043,7 +938,7 @@ function App({
         <SplashScreen
           animFrame={gooseFrame}
           width={contentWidth}
-          height={Math.max(termHeight - PAD_Y * 2 - inputBarH, 0)}
+          height={Math.max(safeTermHeight - PAD_Y * 2 - inputBarH, 0)}
           status={status}
           loading={loading}
           spinIdx={spinIdx}
@@ -1119,22 +1014,7 @@ const cli = meow(
   },
 );
 
-function findServerBinary(): string | null {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    join(__dirname, "..", "server-binary.json"),
-    join(__dirname, "server-binary.json"),
-  ];
-  for (const candidate of candidates) {
-    try {
-      const data = JSON.parse(readFileSync(candidate, "utf-8"));
-      return data.binaryPath ?? null;
-    } catch {
-      // not found here, try next
-    }
-  }
-  return null;
-}
+
 
 let serverProcess: ReturnType<typeof spawn> | null = null;
 
@@ -1196,7 +1076,22 @@ async function main() {
   if (cli.flags.server) {
     serverConnection = cli.flags.server;
   } else {
-    const binary = findServerBinary();
+    const binary = (() => {
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+      const candidates = [
+        join(__dirname, "..", "server-binary.json"),
+        join(__dirname, "server-binary.json"),
+      ];
+      for (const candidate of candidates) {
+        try {
+          const data = JSON.parse(readFileSync(candidate, "utf-8"));
+          return data.binaryPath ?? null;
+        } catch {
+          // not found here, try next
+        }
+      }
+      return null;
+    })();
     if (!binary) {
       console.error(
         "No goose binary found. Use --server <url> or install the native package.",

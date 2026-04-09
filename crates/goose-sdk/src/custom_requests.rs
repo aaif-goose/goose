@@ -254,6 +254,47 @@ pub struct ImportSessionResponse {
     pub message_count: u64,
 }
 
+/// List providers with full metadata (config keys, setup steps, etc.).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/providers/details", response = GetProviderDetailsResponse)]
+pub struct GetProviderDetailsRequest {}
+
+/// Provider details response.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetProviderDetailsResponse {
+    pub providers: Vec<ProviderDetailEntry>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderDetailEntry {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub default_model: String,
+    pub is_configured: bool,
+    pub provider_type: String,
+    pub config_keys: Vec<ProviderConfigKey>,
+    #[serde(default)]
+    pub setup_steps: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigKey {
+    pub name: String,
+    pub required: bool,
+    pub secret: bool,
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub oauth_flow: bool,
+    #[serde(default)]
+    pub device_code_flow: bool,
+    #[serde(default)]
+    pub primary: bool,
+}
+
 /// Empty success response for operations that return no data.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct EmptyResponse {}
