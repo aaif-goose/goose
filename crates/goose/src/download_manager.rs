@@ -310,6 +310,15 @@ impl DownloadManager {
                 continue;
             }
 
+            // We sent a Range request but the server ignored it and returned
+            // the full body (200 OK instead of 206). Truncate and restart so
+            // we don't append a full copy onto the existing partial data.
+            if bytes_downloaded > 0 && status == reqwest::StatusCode::OK {
+                info!(model_id = %model_id, "Server ignored Range header, restarting download from scratch");
+                bytes_downloaded = 0;
+                let _ = tokio::fs::remove_file(&partial_path).await;
+            }
+
             // Update total_bytes from Content-Range or Content-Length if not yet known
             if total_bytes == 0 {
                 let new_total = if bytes_downloaded > 0 {

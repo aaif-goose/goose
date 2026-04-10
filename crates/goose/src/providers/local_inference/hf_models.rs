@@ -271,28 +271,10 @@ fn group_into_variants(repo_id: &str, files: Vec<HfApiSibling>) -> Vec<HfQuantVa
         });
     }
 
-    // Add sharded variants (only if no single-file variant exists for that quant)
-    for (quant, shards) in &shard_groups {
-        if seen_quants.contains(quant) {
-            continue;
-        }
-        let total_size: u64 = shards.iter().map(|s| s.size.unwrap_or(0)).sum();
-        // Use the first shard as representative filename
-        let first_shard = shards
-            .iter()
-            .min_by_key(|s| &s.rfilename)
-            .expect("shard group is non-empty");
-        let info = quant_info(quant);
-        let download_url = build_download_url(repo_id, &first_shard.rfilename);
-        variants.push(HfQuantVariant {
-            quantization: quant.clone(),
-            size_bytes: total_size,
-            filename: first_shard.rfilename.clone(),
-            download_url,
-            description: info.description,
-            quality_rank: info.quality_rank,
-        });
-    }
+    // TODO: Once the download path supports fetching all shards for a
+    // quantization, expose shard-only variants here. For now we only show
+    // quants that have a single-file download available.
+    let _ = shard_groups;
 
     // Sort descending by quality_rank, then by size descending as tiebreaker
     variants.sort_by(|a, b| {
@@ -621,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn test_group_into_variants_aggregates_shards() {
+    fn test_group_into_variants_excludes_shard_only_quants() {
         let files = vec![
             HfApiSibling {
                 rfilename: "BF16/gemma-3-27b-it-BF16-00001-of-00002.gguf".into(),
@@ -637,11 +619,10 @@ mod tests {
             },
         ];
         let variants = group_into_variants("unsloth/gemma-3-27b-it-GGUF", files);
-        assert_eq!(variants.len(), 2);
-        // Sorted descending by quality_rank: BF16 (27) > Q4_K_M (19)
-        assert_eq!(variants[0].quantization, "BF16");
-        assert_eq!(variants[0].size_bytes, 50_000_000_000);
-        assert_eq!(variants[1].quantization, "Q4_K_M");
+        // BF16 only exists as shards, so it should be excluded until
+        // the download path supports fetching multiple shard files.
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].quantization, "Q4_K_M");
     }
 
     #[test]
