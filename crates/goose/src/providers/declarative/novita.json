@@ -4,7 +4,7 @@
   "display_name": "Novita AI",
   "description": "90+ open-source models with OpenAI-compatible API and competitive pricing",
   "api_key_env": "NOVITA_API_KEY",
-  "base_url": "https://api.novita.ai/openai",
+  "base_url": "https://api.novita.ai/openai/chat/completions",
   "catalog_provider_id": "novita-ai",
   "models": [
     {
