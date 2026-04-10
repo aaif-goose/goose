@@ -807,5 +807,22 @@
     "is_builtin": false,
     "endorsed": true,
     "environmentVariables": []
+  },
+  {
+    "id": "easybits",
+    "name": "EasyBits",
+    "description": "Storage, databases, websites, documents and forms for AI agents",
+    "command": "npx -y @easybits.cloud/mcp",
+    "link": "https://github.com/easybits-cloud/easybits",
+    "installation_notes": "Install using npx package manager. Requires an EasyBits account and API key from https://www.easybits.cloud.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "EASYBITS_API_KEY",
+        "description": "EasyBits API key (format: eb_sk_live_...). Get one at https://www.easybits.cloud/dash/developer",
+        "required": true
+      }
+    ]
   }
 ]
