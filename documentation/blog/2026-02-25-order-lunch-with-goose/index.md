@@ -3,7 +3,7 @@ title: "Order Lunch Without Leaving Your AI Agent"
 description: "Use the Neighborhood extension in goose to discover nearby restaurants, browse interactive menus, and place a takeout order, all from a simple chat prompt."
 authors:
   - debbie
-image: img/blog/lunch-with-goose.png
+image: /img/blog/lunch-with-goose.png
 ---
 
 ![Ba'al Falafel salads menu in goose showing Couscous Salad, Red Cabbage Salad, and Beets Apple Salad with photos and prices](/img/blog/lunch-with-goose.png)
