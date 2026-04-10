@@ -1,6 +1,6 @@
 ---
 title: "The AI Skeptic’s Guide to Context Windows"
-description: Why do AI agents forget? Learn how context windows, tokens, and goose help you manage memory and long conversations.
+description: Why do AI agents forget? Learn how context windows, tokens, and Goose help you manage memory and long conversations.
 authors: 
     - rizel
 ---
@@ -31,9 +31,9 @@ Tokens are how AI models break down text for processing. They're roughly equival
 
 Test it yourself: paste any text into [OpenAI’s tokenizer tool](https://platform.openai.com/tokenizer) and explore how tokens are counted across models.
 
-### How goose uses tokens
+### How Goose uses tokens
 
-Let's talk about how this works in practice. When you use an AI agent like goose, you start a session and choose a model like Claude Sonnet 3.7. This model has a context window of 128,000 tokens. This means every session (or conversation) can handle up to 128,000 tokens. If you message "hey" to goose, you would have used one token. And when goose responds back, you would have used several more tokens. Now you've used a small portion of your 128,000 tokens, and you have the remainder left.
+Let's talk about how this works in practice. When you use an AI agent like Goose, you start a session and choose a model like Claude Sonnet 3.7. This model has a context window of 128,000 tokens. This means every session (or conversation) can handle up to 128,000 tokens. If you message "hey" to Goose, you would have used one token. And when Goose responds back, you would have used several more tokens. Now you've used a small portion of your 128,000 tokens, and you have the remainder left.
 
 :::note
 Context windows vary per LLM.
@@ -41,27 +41,27 @@ Context windows vary per LLM.
 
 Once the conversation goes past 128,000 tokens or gets close to it, your agent may start to forget key details from earlier in the conversation, and it might prioritize the most recent information.
 
-But your conversation isn't the only thing using your tokens. Here are other things within goose that consume your token budget:
+But your conversation isn't the only thing using your tokens. Here are other things within Goose that consume your token budget:
 
 * **System prompt:** A built-in prompt that instructs your agent on how to behave and defines its identity  
-  * The system prompt defines goose’s name, creator (Block), current date/time, task and extension handling, and response format.  
+  * The system prompt defines Goose’s name, creator (Block), current date/time, task and extension handling, and response format.  
 * **Extensions and their tool definitions** - Many extensions have more than one tool built in. For example, a Google Drive extension may include tools like read file, create file, and comment on file. In addition, each tool comes with instructions on how to use it and an explanation of what the tool does.  
 * **Tool response** - The response that the tool returns. For example, the tool could respond with "Here's the entire contents of your 500-line code file."  
-* In addition to your conversation history, goose keeps metadata about your conversation, such as timestamps.
+* In addition to your conversation history, Goose keeps metadata about your conversation, such as timestamps.
 
 This is a lot of data, and it can easily consume your context window. In addition to impacting performance, token usage affects costs. The more tokens you use, the more money you pay, and you may feel frustrated wasting your tokens on your agent misinterpreting your request.
 
-Luckily, goose has an intelligent design for helping you save your context window.
+Luckily, Goose has an intelligent design for helping you save your context window.
 
-## How goose automatically manages your context window
+## How Goose automatically manages your context window
 
-goose has a method that auto-compacts (or summarizes) your conversation once it reaches a certain threshold. By default, when you reach 80% of your context window, goose summarizes the conversation, preserving key parts while compressing the rest, reducing context window usage so you can stay in your session without starting a new one.
+Goose has a method that auto-compacts (or summarizes) your conversation once it reaches a certain threshold. By default, when you reach 80% of your context window, Goose summarizes the conversation, preserving key parts while compressing the rest, reducing context window usage so you can stay in your session without starting a new one.
 
 You actually have the ability to customize the threshold. If you think 80% is too little or too much for your workflow, you can set the environment variable `GOOSE_AUTO_COMPACT_THRESHOLD` to your preferred threshold.
 
 ## How to manage your context window
 
-While goose is adept at helping you manage your context window, you can proactively manage it, too. Here are some tips for efficiently managing your context window and your wallet.
+While Goose is adept at helping you manage your context window, you can proactively manage it, too. Here are some tips for efficiently managing your context window and your wallet.
 
 **1. Manual summarization**
 
@@ -69,7 +69,7 @@ When your conversation gets too long, you can summarize the key points and start
 
 **2. `.goosehints`**
 
-Use [.goosehints](/docs/guides/context-engineering/using-goosehints/) files to avoid repeating the same instructions. Instead of typing out your project context, coding standards, and preferences in every conversation, define them once in a .goosehints file. This prevents wasting tokens on repetitive explanations and helps goose understand your requirements more quickly.
+Use [.goosehints](/docs/guides/context-engineering/using-goosehints/) files to avoid repeating the same instructions. Instead of typing out your project context, coding standards, and preferences in every conversation, define them once in a .goosehints file. This prevents wasting tokens on repetitive explanations and helps Goose understand your requirements more quickly.
 
 **3. Memory extension**
 
@@ -89,7 +89,7 @@ Keep individual sessions focused on specific tasks. When you complete a task or 
 
 **7. Planner model + focused execution**
 
-Use a dedicated planner model for complex reasoning and keep your default model focused on execution. This gives you control over cost and quality while keeping model behavior explicit and predictable.
+Use a dedicated [planner model](/docs/guides/creating-plans) for complex reasoning and keep your default model focused on execution. This gives you control over cost and quality while keeping model behavior explicit and predictable.
 
 ---
 
@@ -100,11 +100,11 @@ The next time your AI agent seems to 'forget' something important or goes off tr
   <meta property="og:title" content="The AI Skeptic’s Guide to Context Windows" />
   <meta property="og:type" content="article" />
   <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/18/understanding-context-windows" />
-  <meta property="og:description" content="Why do AI agents forget? Learn how context windows, tokens, and goose help you manage memory and long conversations." />
+  <meta property="og:description" content="Why do AI agents forget? Learn how context windows, tokens, and Goose help you manage memory and long conversations." />
   <meta property="og:image" content="https://goose-docs.ai/assets/images/contextwindow-fa46f7a54cfb23a538d62f0e4502e19e.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="The AI Skeptic’s Guide to Context Windows" />
-  <meta name="twitter:description" content="Why do AI agents forget? Learn how context windows, tokens, and goose help you manage memory and long conversations." />
+  <meta name="twitter:description" content="Why do AI agents forget? Learn how context windows, tokens, and Goose help you manage memory and long conversations." />
   <meta name="twitter:image" content="https://goose-docs.ai/assets/images/contextwindow-fa46f7a54cfb23a538d62f0e4502e19e.png" />
 </head>
