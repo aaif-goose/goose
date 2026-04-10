@@ -30,92 +30,77 @@ function BlogListPageMetadata(props: Props): ReactNode {
   );
 }
 
-function AuthorDisplay({ authors }: { authors: string[] }) {
-  if (!authors || authors.length === 0) return null;
+const formatDate = (dateString: string): string =>
+  new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
-  // Author data mapping
-  const authorData: Record<string, { name: string; image_url?: string }> = {
-    adewale: {
-      name: "Adewale Abati",
-      image_url: "https://avatars.githubusercontent.com/u/4003538?v=4"
-    },
-    angie: {
-      name: "Angie Jones",
-      image_url: "https://avatars.githubusercontent.com/u/15972783?v=4"
-    },
-    tania: {
-      name: "Tania Chakraborty",
-      image_url: "https://avatars.githubusercontent.com/u/126204004?v=4"
-    },
-    mic: {
-      name: "Michael Neale",
-      image_url: "https://avatars.githubusercontent.com/u/14976?v=4"
-    }
-  };
+const getAuthorName = (author: any): string =>
+  typeof author === 'string' ? author : (author.name || author.key || author);
+
+function AuthorDisplay({ authors }: { authors: any[] }) {
+  if (!authors?.length) return null;
 
   const authorsToDisplay = authors.slice(0, 3);
   const hasMore = authors.length > 3;
+  const hasResolvedAuthors = authorsToDisplay.some(author =>
+    typeof author === 'object' && author.image_url
+  );
 
-  return (
-    <div className={styles.postAuthors}>
-      {authorsToDisplay.map((authorKey, index) => {
-        const author = authorData[authorKey] || { name: authorKey };
-        return (
+  if (hasResolvedAuthors) {
+    return (
+      <div className={styles.postAuthors}>
+        {authorsToDisplay.map((author, index) => (
           <div key={index} className={styles.authorInfo}>
             {author.image_url && (
               <img
                 src={author.image_url}
-                alt={author.name}
+                alt={getAuthorName(author)}
                 className={styles.authorAvatar}
               />
             )}
-            <span className={styles.authorName}>{author.name}</span>
+            <span className={styles.authorName}>{getAuthorName(author)}</span>
           </div>
-        );
-      })}
-      {hasMore && <span className={styles.authorName}>+{authors.length - 3} more</span>}
+        ))}
+        {hasMore && <span className={styles.authorName}>+{authors.length - 3} more</span>}
+      </div>
+    );
+  }
+
+  const authorNames = authorsToDisplay.map(getAuthorName);
+  const displayText = authorNames.join(', ') + (hasMore ? `, +${authors.length - 3} more` : '');
+
+  return (
+    <div className={styles.postAuthors}>
+      <span className={styles.authorName}>{displayText}</span>
     </div>
   );
 }
 
 function FeaturedPost({ post }: { post: any }) {
-  const postUrl = useBaseUrl(post.content.metadata.permalink);
-
-  // Get image from frontmatter
-  const image = post.content.frontMatter.image;
-  let imageUrl = null;
-
-  if (image) {
-    // Simple path construction - images are directly in /img/blog/
-    imageUrl = useBaseUrl(`/img/blog/${image}`);
-  }
-
-  const authors = post.content.frontMatter.authors || [];
+  const url = useBaseUrl(post.content.metadata.permalink);
+  const imageUrl = post.content.frontMatter.image ? useBaseUrl(post.content.frontMatter.image) : null;
+  const title = post.content.metadata.title;
+  const date = post.content.metadata.date;
+  const description = post.content.metadata.description || post.content.frontMatter.description;
+  const authors = post.content?.metadata?.authors || post.content?.frontMatter?.authors || [];
 
   return (
     <article className={styles.featuredPost}>
       <div className={styles.featuredContent}>
+        <div className={styles.featuredDate}>{formatDate(date)}</div>
         <h2 className={styles.featuredTitle}>
-          <a href={postUrl}>{post.content.metadata.title}</a>
+          <a href={url}>{title}</a>
         </h2>
-
-        <div className={styles.featuredMeta}>
-          <AuthorDisplay authors={authors} />
-          <span>{new Date(post.content.metadata.date).toLocaleDateString()}</span>
-        </div>
-
-        <div className={styles.featuredDescription}>
-          {post.content.metadata.description || post.content.frontMatter.description}
-        </div>
-
-        <a href={postUrl} className={styles.featuredButton}>
-          Read full article
-        </a>
+        <AuthorDisplay authors={authors} />
+        <div className={styles.featuredDescription}>{description}</div>
+        <a href={url} className={styles.featuredButton}>Read full article</a>
       </div>
-
       {imageUrl && (
         <div className={styles.featuredImage}>
-          <img src={imageUrl} alt={post.content.metadata.title} />
+          <img src={imageUrl} alt={title} />
         </div>
       )}
     </article>
@@ -126,43 +111,27 @@ function BlogPostGrid({ posts }: { posts: any[] }) {
   return (
     <div className={styles.postsGrid}>
       {posts.map((post, index) => {
-        const postUrl = useBaseUrl(post.content.metadata.permalink);
-
-        // Get image from frontmatter
-        const image = post.content.frontMatter.image;
-        let imageUrl = null;
-
-        if (image) {
-          // Simple path construction - images are directly in /img/blog/
-          imageUrl = useBaseUrl(`/img/blog/${image}`);
-        }
-
-        const authors = post.content.frontMatter.authors || [];
+        const url = useBaseUrl(post.content.metadata.permalink);
+        const imageUrl = post.content.frontMatter.image ? useBaseUrl(post.content.frontMatter.image) : null;
+        const title = post.content.metadata.title;
+        const date = post.content.metadata.date;
+        const description = post.content.metadata.description || post.content.frontMatter.description;
+        const authors = post.content?.metadata?.authors || post.content?.frontMatter?.authors || [];
 
         return (
           <article key={index} className={styles.postCard}>
             {imageUrl && (
               <div className={styles.postImage}>
-                <img src={imageUrl} alt={post.content.metadata.title} />
+                <img src={imageUrl} alt={title} />
               </div>
             )}
-
             <div className={styles.postContent}>
-              <div className={styles.postDate}>
-                {new Date(post.content.metadata.date).toLocaleDateString()}
-              </div>
-
+              <div className={styles.postDate}>{formatDate(date)}</div>
               <h3 className={styles.postTitle}>
-                <a href={postUrl}>{post.content.metadata.title}</a>
+                <a href={url}>{title}</a>
               </h3>
-
-              <div className={styles.postAuthors}>
-                <AuthorDisplay authors={authors} />
-              </div>
-
-              <div className={styles.postDescription}>
-                {post.content.metadata.description || post.content.frontMatter.description}
-              </div>
+              <AuthorDisplay authors={authors} />
+              <div className={styles.postDescription}>{description}</div>
             </div>
           </article>
         );
@@ -172,25 +141,17 @@ function BlogPostGrid({ posts }: { posts: any[] }) {
 }
 
 function BlogListPageContent(props: Props): ReactNode {
-  const { metadata, items, sidebar } = props;
-
-  // Check if this is the first page
+  const { metadata, items } = props;
   const isFirstPage = !metadata.permalink.includes('/page/');
 
-  // Filter valid items
   const validItems = items.filter(item =>
-    item.content &&
-    item.content.metadata &&
-    item.content.metadata.title &&
-    item.content.frontMatter
+    item.content?.metadata?.title && item.content?.frontMatter
   );
 
-  // Find featured posts (only show on first page)
   const featuredPosts = isFirstPage
     ? validItems.filter(item => item.content.frontMatter.featured === true)
     : [];
 
-  // Get regular posts (exclude featured posts on first page)
   const regularPosts = isFirstPage
     ? validItems.filter(item => item.content.frontMatter.featured !== true)
     : validItems;
@@ -198,21 +159,12 @@ function BlogListPageContent(props: Props): ReactNode {
   return (
     <BlogLayout sidebar={undefined}>
       <div className={styles.blogContainer}>
-        {/* Featured Posts Section */}
         {featuredPosts.length > 0 && (
           <div className={styles.featuredSection}>
-            {featuredPosts.slice(0, 1).map((post, index) => (
-              <FeaturedPost key={index} post={post} />
-            ))}
+            <FeaturedPost post={featuredPosts[0]} />
           </div>
         )}
-
-        {/* Regular Posts Grid */}
-        {regularPosts.length > 0 && (
-          <BlogPostGrid posts={regularPosts} />
-        )}
-
-        {/* Pagination */}
+        {regularPosts.length > 0 && <BlogPostGrid posts={regularPosts} />}
         <div className={styles.paginationWrapper}>
           <BlogListPaginator metadata={metadata} />
         </div>

@@ -75,6 +75,7 @@ const config: Config = {
           onInlineAuthors: "warn",
           onUntruncatedBlogPosts: "warn",
           blogSidebarCount: "ALL",
+          postsPerPage: 20, // Show 20 posts per page for better performance
         },
         theme: {
           customCss: [

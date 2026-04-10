@@ -35,19 +35,26 @@
 }
 
 .featuredImage {
-  flex: 0 0 300px;
+  flex: 0 0 350px;
   order: 2;
+  display: flex;
 }
 
 .featuredImage img {
   width: 100%;
-  height: 200px;
+  height: 100%;
   object-fit: cover;
   border-radius: 8px;
 }
 
+.featuredDate {
+  font-size: 0.9rem;
+  color: var(--ifm-color-content-secondary);
+  margin-bottom: 0.5rem;
+}
+
 .featuredTitle {
-  font-size: 2rem;
+  font-size: 2.5rem;
   font-weight: bold;
   margin-bottom: 0.75rem;
   color: var(--ifm-color-content);
@@ -63,14 +70,6 @@
   color: var(--ifm-color-primary);
 }
 
-.featuredMeta {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  color: var(--ifm-color-content-secondary);
-  font-size: 0.9rem;
-}
 
 .postAuthors {
   display: flex;
@@ -189,14 +188,6 @@
   color: var(--ifm-color-primary);
 }
 
-.postMeta {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  color: var(--ifm-color-content-secondary);
-  font-size: 0.85rem;
-}
 
 .postDescription {
   color: var(--ifm-color-content-secondary);
