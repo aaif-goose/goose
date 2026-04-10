@@ -159,6 +159,9 @@ jobs:
           name: npm-packages
           path: ui/
 
+      - name: Restore executable bits on goose binaries
+        run: find ui/goose-binary -name 'goose' -type f -exec chmod +x {} +
+
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -174,10 +177,34 @@ jobs:
       - name: Publish to npm
         run: |
           cd ui
-          # Authentication is handled via OIDC trusted publishing (no token needed)
-          pnpm publish -r --access public --no-git-checks --provenance
+          # Publish each package individually so one failure doesn't abort the rest.
+          # Skips packages whose version is already published (409/403).
+          failed=0
+          for pkg in acp goose-binary/*/ text; do
+            if [ -f "$pkg/package.json" ]; then
+              name=$(jq -r '.name' "$pkg/package.json")
+              version=$(jq -r '.version' "$pkg/package.json")
+              echo "Publishing $name@$version..."
+              if (cd "$pkg" && pnpm publish --access public --no-git-checks --provenance); then
+                echo "  ✅ $name@$version published"
+              else
+                # Check if it failed because the version already exists
+                if npm view "$name@$version" version > /dev/null 2>&1; then
+                  echo "  ⏭️  $name@$version already published, skipping"
+                else
+                  echo "  ❌ $name@$version failed to publish"
+                  failed=1
+                fi
+              fi
+            fi
+          done
+          if [ "$failed" -eq 1 ]; then
+            echo "::error::One or more packages failed to publish"
+            exit 1
+          fi
 
       - name: Publish summary
+        if: always()
         run: |
           cd ui
           {
