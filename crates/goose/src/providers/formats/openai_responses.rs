@@ -2,6 +2,7 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::providers::base::{ProviderUsage, Usage};
+use crate::providers::formats::openai::validate_tool_schemas;
 use crate::providers::utils::extract_reasoning_effort;
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -487,7 +488,7 @@ pub fn create_responses_request(
     }
 
     if !tools.is_empty() {
-        let tools_spec: Vec<Value> = tools
+        let mut tools_spec: Vec<Value> = tools
             .iter()
             .map(|tool| {
                 json!({
@@ -498,6 +499,8 @@ pub fn create_responses_request(
                 })
             })
             .collect();
+
+        validate_tool_schemas(&mut tools_spec);
 
         payload
             .as_object_mut()
@@ -808,8 +811,19 @@ mod tests {
     use crate::conversation::message::MessageContent;
     use crate::model::ModelConfig;
     use futures::StreamExt;
-    use rmcp::model::CallToolRequestParams;
+    use rmcp::model::{CallToolRequestParams, Tool};
     use rmcp::object;
+
+    fn schema_contains_key(value: &Value, needle: &str) -> bool {
+        match value {
+            Value::Object(map) => {
+                map.contains_key(needle)
+                    || map.values().any(|child| schema_contains_key(child, needle))
+            }
+            Value::Array(items) => items.iter().any(|child| schema_contains_key(child, needle)),
+            _ => false,
+        }
+    }
 
     #[tokio::test]
     async fn test_responses_stream_ignores_keepalive_event() -> anyhow::Result<()> {
@@ -1082,5 +1096,64 @@ mod tests {
         let info: ResponseReasoningInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.effort.as_deref(), Some("high"));
         assert_eq!(info.summary.as_deref(), Some("Thought deeply"));
+    }
+
+    #[test]
+    fn test_responses_request_sanitizes_tool_schema() {
+        let model_config = ModelConfig {
+            model_name: "gpt-5.2-codex".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let tool = Tool::new(
+            "show_chart",
+            "Show a chart",
+            object!({
+                "$defs": {
+                    "ChartPoint": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number" },
+                            "y": { "type": "number" }
+                        },
+                        "required": ["x", "y"],
+                        "additionalProperties": false
+                    }
+                },
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "anyOf": [
+                                { "type": "number" },
+                                { "$ref": "#/$defs/ChartPoint" }
+                            ]
+                        }
+                    }
+                },
+                "required": ["data"],
+                "additionalProperties": false
+            }),
+        );
+
+        let payload =
+            create_responses_request(&model_config, "system prompt", &[], &[tool]).unwrap();
+        let parameters = &payload["tools"][0]["parameters"];
+
+        assert!(!schema_contains_key(parameters, "$defs"));
+        assert!(!schema_contains_key(parameters, "$ref"));
+        assert!(!schema_contains_key(parameters, "anyOf"));
+        assert_eq!(
+            parameters["properties"]["data"]["items"]["type"],
+            json!(["number", "object"])
+        );
     }
 }

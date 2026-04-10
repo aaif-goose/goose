@@ -4,6 +4,7 @@ use crate::model::ModelConfig;
 use crate::providers::api_client::AuthProvider;
 use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use crate::providers::errors::ProviderError;
+use crate::providers::formats::openai::validate_tool_schemas;
 use crate::providers::formats::openai_responses::responses_api_to_streaming_message;
 use crate::providers::openai_compatible::handle_status_openai_compat;
 use crate::providers::retry::ProviderRetry;
@@ -268,7 +269,7 @@ fn create_codex_request(
         .ok_or_else(|| anyhow!("Codex payload must be a JSON object"))?;
 
     if !tools.is_empty() {
-        let tools_spec: Vec<Value> = tools
+        let mut tools_spec: Vec<Value> = tools
             .iter()
             .map(|tool| {
                 json!({
@@ -279,6 +280,8 @@ fn create_codex_request(
                 })
             })
             .collect();
+
+        validate_tool_schemas(&mut tools_spec);
 
         payload_obj.insert("tools".to_string(), json!(tools_spec));
         payload_obj.insert("tool_choice".to_string(), json!("auto"));
@@ -1015,7 +1018,7 @@ mod tests {
     use crate::conversation::message::Message;
     use goose_test_support::TEST_IMAGE_B64;
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
-    use rmcp::model::{CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData};
+    use rmcp::model::{CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData, Tool};
     use rmcp::object;
     use test_case::test_case;
     use wiremock::matchers::{body_string_contains, method, path};
@@ -1040,6 +1043,17 @@ mod tests {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn schema_contains_key(value: &Value, needle: &str) -> bool {
+        match value {
+            Value::Object(map) => {
+                map.contains_key(needle)
+                    || map.values().any(|child| schema_contains_key(child, needle))
+            }
+            Value::Array(items) => items.iter().any(|child| schema_contains_key(child, needle)),
+            _ => false,
+        }
     }
 
     #[test_case(
@@ -1311,5 +1325,43 @@ mod tests {
         let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
         let instructions = payload["instructions"].as_str().unwrap();
         assert_eq!(instructions, "system prompt");
+    }
+
+    #[test]
+    fn test_codex_request_sanitizes_tool_schema() {
+        let model = ModelConfig::new("gpt-5.4").unwrap();
+        let tool = Tool::new(
+            "render_treemap",
+            "Render a treemap",
+            object!({
+                "$defs": {
+                    "TreemapNode": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "children": {
+                                "type": ["array", "null"],
+                                "items": { "$ref": "#/$defs/TreemapNode" }
+                            }
+                        },
+                        "required": ["name"],
+                        "additionalProperties": false
+                    }
+                },
+                "$ref": "#/$defs/TreemapNode"
+            }),
+        );
+
+        let payload = create_codex_request(&model, "system prompt", &[], &[tool]).unwrap();
+        let parameters = &payload["tools"][0]["parameters"];
+
+        assert!(!schema_contains_key(parameters, "$defs"));
+        assert!(!schema_contains_key(parameters, "$ref"));
+        assert!(!schema_contains_key(parameters, "anyOf"));
+        assert_eq!(parameters["type"], "object");
+        assert_eq!(
+            parameters["properties"]["children"]["items"]["type"],
+            "object"
+        );
     }
 }
