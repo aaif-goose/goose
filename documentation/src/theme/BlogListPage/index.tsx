@@ -30,13 +30,6 @@ function BlogListPageMetadata(props: Props): ReactNode {
   );
 }
 
-const formatDate = (dateString: string): string =>
-  new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-
 const getAuthorName = (author: any): string =>
   typeof author === 'string' ? author : (author.name || author.key || author);
 
@@ -83,14 +76,14 @@ function FeaturedPost({ post }: { post: any }) {
   const url = useBaseUrl(post.content.metadata.permalink);
   const imageUrl = post.content.frontMatter.image ? useBaseUrl(post.content.frontMatter.image) : null;
   const title = post.content.metadata.title;
-  const date = post.content.metadata.date;
+  const formattedDate = post.content.metadata.formattedDate;
   const description = post.content.metadata.description || post.content.frontMatter.description;
   const authors = post.content?.metadata?.authors || post.content?.frontMatter?.authors || [];
 
   return (
     <article className={styles.featuredPost}>
       <div className={styles.featuredContent}>
-        <div className={styles.featuredDate}>{formatDate(date)}</div>
+        <div className={styles.featuredDate}>{formattedDate}</div>
         <h2 className={styles.featuredTitle}>
           <a href={url}>{title}</a>
         </h2>
@@ -114,7 +107,7 @@ function BlogPostGrid({ posts }: { posts: any[] }) {
         const url = useBaseUrl(post.content.metadata.permalink);
         const imageUrl = post.content.frontMatter.image ? useBaseUrl(post.content.frontMatter.image) : null;
         const title = post.content.metadata.title;
-        const date = post.content.metadata.date;
+        const formattedDate = post.content.metadata.formattedDate;
         const description = post.content.metadata.description || post.content.frontMatter.description;
         const authors = post.content?.metadata?.authors || post.content?.frontMatter?.authors || [];
 
@@ -126,7 +119,7 @@ function BlogPostGrid({ posts }: { posts: any[] }) {
               </div>
             )}
             <div className={styles.postContent}>
-              <div className={styles.postDate}>{formatDate(date)}</div>
+              <div className={styles.postDate}>{formattedDate}</div>
               <h3 className={styles.postTitle}>
                 <a href={url}>{title}</a>
               </h3>
