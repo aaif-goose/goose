@@ -428,7 +428,10 @@ fn find_binary(extract_dir: &Path, binary_name: &str) -> Option<PathBuf> {
 /// On Windows we must rename the running exe (Windows allows rename but not
 /// delete/overwrite of a locked file) then copy the new file in.
 ///
-/// On Unix we can simply copy over the existing binary.
+/// On Unix, we write to a temp file in the same directory to avoid ETXTBSY
+/// ("Text file busy") on Linux, which blocks writing to a running executable.
+/// Renaming then atomically replaces the directory entry without affecting
+/// the file currently in use by the kernel.
 fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
@@ -462,18 +465,34 @@ fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        // On Unix, copy the new binary over the existing one
-        fs::copy(new_binary, current_exe)
-            .with_context(|| format!("Failed to copy new binary to {}", current_exe.display()))?;
+        // Write to a temp file and avoids ETXTBSY ("Text file busy") on Linux
+        // where the kernel refuses to open write a running executable.
+        let dest_dir = current_exe
+            .parent()
+            .context("Current executable has no parent directory")?;
+
+        let tmp_file = tempfile::Builder::new()
+            .prefix("goose-update-")
+            .tempfile_in(dest_dir)?;
+
+        let tmp_path = tmp_file.path();
+
+        fs::copy(new_binary, tmp_path)
+            .with_context(|| format!("Failed to write update to {}", tmp_path.display()))?;
 
         // Ensure the binary is executable
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(current_exe)?.permissions();
+            let mut perms = fs::metadata(tmp_path)?.permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(current_exe, perms)?;
+            fs::set_permissions(tmp_path, perms)?;
         }
+
+        fs::rename(tmp_path, current_exe).with_context(|| {
+            let _ = fs::remove_file(tmp_path);
+            format!("Failed to replace binary at {}", current_exe.display())
+        })?;
     }
 
     Ok(())
@@ -599,6 +618,34 @@ mod tests {
 
         let content = fs::read_to_string(&current).unwrap();
         assert_eq!(content, "new version");
+    }
+
+    // On Unix the replacement must go through a rename so that it avoids
+    // ETXTBSY on Linux.
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_replace_binary_unix_no_leftover_tmp() {
+        let tmp = tempdir().unwrap();
+        let new_bin = tmp.path().join("new_goose");
+        let current = tmp.path().join("goose");
+
+        fs::write(&new_bin, b"new version").unwrap();
+        fs::write(&current, b"old version").unwrap();
+
+        replace_binary(&new_bin, &current).unwrap();
+
+        assert_eq!(fs::read_to_string(&current).unwrap(), "new version");
+
+        // No stray goose-update-* temp files should remain.
+        let leftovers: Vec<_> = fs::read_dir(tmp.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("goose-update-"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "stray temp files left behind: {leftovers:?}"
+        );
     }
 
     #[cfg(target_os = "windows")]
