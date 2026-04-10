@@ -25,6 +25,7 @@ use super::{
     gemini_oauth::GeminiOAuthProvider,
     githubcopilot::GithubCopilotProvider,
     google::GoogleProvider,
+    kimicode::KimiCodeProvider,
     litellm::LiteLLMProvider,
     nanogpt::NanoGptProvider,
     ollama::OllamaProvider,
@@ -72,6 +73,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<GeminiOAuthProvider>(true);
         registry.register::<GithubCopilotProvider>(false);
         registry.register::<GoogleProvider>(true);
+        registry.register::<KimiCodeProvider>(true);
         registry.register::<LiteLLMProvider>(false);
         registry.register::<NanoGptProvider>(true);
         registry.register::<OllamaProvider>(true);
@@ -93,6 +95,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     registry.set_cleanup(
         "databricks",
         Arc::new(|| Box::pin(DatabricksProvider::cleanup())),
+    );
+    registry.set_cleanup(
+        "kimi_code",
+        Arc::new(|| Box::pin(KimiCodeProvider::cleanup())),
     );
 
     if let Err(e) = load_custom_providers_into_registry(&mut registry) {
