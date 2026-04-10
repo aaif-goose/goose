@@ -21,12 +21,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "npm run build:schema && npm run build:ts",
-    "build:schema": "tsx scripts/build-schema.ts",
+    "build": "npm run generate && npm run build:ts",
     "build:ts": "tsc",
     "build:native": "tsx scripts/build-native.ts",
     "build:native:all": "tsx scripts/build-native.ts --all",
-    "generate": "npm run build:schema && npm run build:ts",
+    "generate": "tsx generate-schema.ts",
     "lint": "tsc --noEmit",
     "format": "prettier --write src/"
   },

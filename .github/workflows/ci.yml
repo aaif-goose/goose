@@ -121,8 +121,8 @@ jobs:
           export CARGO_INCREMENTAL=0
           cargo clippy --workspace --all-targets --exclude v8 -- -D warnings
 
-  openapi-schema-check:
-    name: Check OpenAPI Schema is Up-to-Date
+  schema-check:
+    name: Check Generated Schemas are Up-to-Date
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
@@ -140,15 +140,22 @@ jobs:
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae  # v2
 
-      - name: Install Node.js Dependencies for OpenAPI Check
-        run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
-        working-directory: ui/desktop
+      - name: Install Node.js Dependencies
+        run: |
+          source ./bin/activate-hermit
+          cd ui/desktop && pnpm install --frozen-lockfile
+          cd ../acp && pnpm install --frozen-lockfile
 
       - name: Check OpenAPI Schema is Up-to-Date
         run: |
           source ./bin/activate-hermit
           hermit uninstall rustup
           just check-openapi-schema
+
+      - name: Check ACP Schema is Up-to-Date
+        run: |
+          source ./bin/activate-hermit
+          just check-acp-schema
 
   desktop-lint:
     name: Test and Lint Electron Desktop App

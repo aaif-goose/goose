@@ -217,7 +217,7 @@ export const zImportSessionResponse = z.object({
         z.string(),
         z.null()
     ]).optional(),
-    messageCount: z.coerce.bigint().gte(BigInt(0)).max(BigInt('18446744073709551615'), { message: 'Invalid value: Expected uint64 to be <= 18446744073709551615' })
+    messageCount: z.number().int().gte(0)
 });
 
 /**
