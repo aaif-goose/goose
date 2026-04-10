@@ -336,6 +336,10 @@ const config: Config = {
             from: "/docs/experimental/subagents",
             to: "/docs/guides/subagents",
           },
+          {
+            from: "/docs/tutorials/lead-worker",
+            to: "/docs/guides/creating-plans",
+          },
         ],
       },
     ],
