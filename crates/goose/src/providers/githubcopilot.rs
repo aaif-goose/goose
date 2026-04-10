@@ -317,6 +317,13 @@ impl GithubCopilotProvider {
                 _ => return Err(err.into()),
             },
         };
+        let api_key_url = match config.get_param::<String>("GITHUB_COPILOT_HOST") {
+            Ok(host) => {
+                let host = host.trim_end_matches('/');
+                format!("{}/api/copilot_internal/v2/token", host)
+            }
+            Err(_) => GITHUB_COPILOT_API_KEY_URL.to_string(),
+        };
         let resp = self
             .client
             .get(&self.urls.copilot_token_url)
@@ -324,7 +331,8 @@ impl GithubCopilotProvider {
             .header(http::header::AUTHORIZATION, format!("bearer {}", &token))
             .send()
             .await?
-            .error_for_status()?
+            .error_for_status()
+            .map_err(|e| anyhow!("failed to fetch copilot token from {}: {}", api_key_url, e))?
             .text()
             .await?;
         tracing::trace!("copilot token response: {}", resp);
