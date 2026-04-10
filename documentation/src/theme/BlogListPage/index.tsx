@@ -39,7 +39,7 @@ function AuthorDisplay({ authors }: { authors: any[] }) {
   const authorsToDisplay = authors.slice(0, 3);
   const hasMore = authors.length > 3;
   const hasResolvedAuthors = authorsToDisplay.some(author =>
-    typeof author === 'object' && author.image_url
+    typeof author === 'object' && (author.imageURL || author.image_url)
   );
 
   if (hasResolvedAuthors) {
@@ -47,9 +47,9 @@ function AuthorDisplay({ authors }: { authors: any[] }) {
       <div className={styles.postAuthors}>
         {authorsToDisplay.map((author, index) => (
           <div key={index} className={styles.authorInfo}>
-            {author.image_url && (
+            {(author.imageURL || author.image_url) && (
               <img
-                src={author.image_url}
+                src={author.imageURL || author.image_url}
                 alt={getAuthorName(author)}
                 className={styles.authorAvatar}
               />
@@ -146,7 +146,7 @@ function BlogListPageContent(props: Props): ReactNode {
     : [];
 
   const regularPosts = isFirstPage
-    ? validItems.filter(item => item.content.frontMatter.featured !== true)
+    ? validItems.filter(item => item !== featuredPosts[0])
     : validItems;
 
   return (
