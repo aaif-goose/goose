@@ -84,7 +84,7 @@ export GOOSE_MODEL="claude-4-sonnet"
 
 From there, Goose takes care of the hand off, the fallback, and the recovery. You just... keep vibing.
 
-If you're curious how it all works under the hood, we've got a [full tutorial](/docs/tutorials/lead-worker).
+If you're curious how it all works under the hood, see the [planning guide](/docs/guides/creating-plans).
 
 ---
 

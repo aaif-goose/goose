@@ -42,7 +42,7 @@ This is where it gets really cool - you can use Claude for reasoning and OpenAI 
 - 🏃‍♂️ Handle Long Dev Sessions
 Perfect for those marathon coding sessions where you need sustained performance without breaking the bank.
 
-## [Setting It Up](/docs/tutorials/lead-worker#configuration)
+## [Setting It Up](/docs/guides/creating-plans)
 
 Getting started with the Lead/Worker model is surprisingly straightforward. In the Goose desktop app, you just need to:
 
@@ -104,7 +104,7 @@ The best part? The models made smart decisions we hadn't even thought of, like a
 
 ## Ready to Try It Yourself?
 
-The [Lead/Worker model](/docs/tutorials/lead-worker) is available now in Goose. Whether you're working on documentation, building features, or tackling complex refactoring, having two specialized models working together can be a game changer.
+The [Lead/Worker model](/docs/guides/creating-plans) is available now in Goose. Whether you're working on documentation, building features, or tackling complex refactoring, having two specialized models working together can be a game changer.
 
 Want to see it in action? Check out the full stream where we built this feature live:
 
