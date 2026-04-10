@@ -1208,8 +1208,8 @@ This method simplifies authentication and enhances security for enterprise envir
 
 Beyond single-model setups, goose supports [multi-model configurations](/docs/guides/multi-model/) that can use different models and providers for specialized tasks:
 
-- **Lead/Worker Model** - Automatic switching between a lead model for initial turns and a worker model for execution tasks
-- **Planning Mode** - Manual planning phase using a dedicated model to create detailed project breakdowns before execution
+- **Planning Mode** - Use a dedicated planner model to create detailed project breakdowns before execution
+- **Subagents** - Delegate scoped tasks to isolated sessions to keep your primary workflow focused and efficient
 
 ## Gemini 3 Thinking Levels
 

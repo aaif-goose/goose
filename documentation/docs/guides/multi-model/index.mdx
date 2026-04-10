@@ -19,9 +19,9 @@ import VideoCarousel from '@site/src/components/VideoCarousel';
   <h2 className={styles.categoryTitle}>📚 Documentation & Guides</h2>
   <div className={styles.cardGrid}>
     <Card 
-      title="Lead/Worker Multi-Model Setup"
-      description="Automatic switching between models using a lead model for initial turns and a worker model for execution."
-      link="/docs/tutorials/lead-worker"
+      title="Planner + Execution Model Setup"
+      description="Use a dedicated planner model for strategic reasoning and a separate default model for execution."
+      link="/docs/guides/creating-plans"
     />
     <Card 
       title="Creating Plans Before Working"
@@ -45,9 +45,9 @@ import VideoCarousel from '@site/src/components/VideoCarousel';
       link="/blog/2025/06/16/multi-model-in-goose"
     />
     <Card
-      title="LLM Tag Team: Who Plans, Who Executes?"
-      description="Learn how lead/worker model configuration creates an effective AI tag team, with one model for planning and another for execution."
-      link="/blog/2025/08/11/llm-tag-team-lead-worker-model"
+      title="The AI Skeptic's Guide to Context Windows"
+      description="Learn practical ways to manage context windows and token usage in long-running sessions."
+      link="/blog/2025/08/18/understanding-context-windows"
     />
   </div>
 </div>
@@ -62,15 +62,8 @@ import VideoCarousel from '@site/src/components/VideoCarousel';
       type: 'iframe', 
       src: 'https://www.youtube.com/embed/ZyhUTsChFUw',
       title: 'goose\'s Multi-Model Setup',
-      description: 'Learn about lead/worker mode, from configuration to best practices',
+      description: 'Learn practical multi-model workflows in goose',
       duration: '5:01'
-    },
-    { 
-      type: 'iframe', 
-      src: 'https://www.youtube.com/embed/SJ6EZpyCKrk',
-      title: 'Livestream - LLM Tag Team: Who Plans, Who Executes?',
-      description: 'Using lead/worker mode to add features to the goose docs in real time',
-      duration: '9:36'
     }
   ]}
 />

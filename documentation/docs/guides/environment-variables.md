@@ -130,40 +130,6 @@ export GOOSE_PREDEFINED_MODELS='[
 
 Custom context limits and request parameters are applied when the model is used. Custom context limits are displayed in goose CLI's [token usage indicator](/docs/guides/sessions/smart-context-management#token-usage).
 
-### Lead/Worker Model Configuration
-
-These variables configure a [lead/worker model pattern](/docs/tutorials/lead-worker) where a powerful lead model handles initial planning and complex reasoning, then switches to a faster/cheaper worker model for execution. The switch happens automatically based on your settings.
-
-| Variable | Purpose | Values | Default |
-|----------|---------|---------|---------|
-| `GOOSE_LEAD_MODEL` | **Required to enable lead mode.** Name of the lead model | Model name (e.g., "gpt-4o", "claude-sonnet-4-20250514") | None |
-| `GOOSE_LEAD_PROVIDER` | Provider for the lead model | [See available providers](/docs/getting-started/providers#available-providers) | Falls back to `GOOSE_PROVIDER` |
-| `GOOSE_LEAD_TURNS` | Number of initial turns using the lead model before switching to the worker model | Integer | 3 |
-| `GOOSE_LEAD_FAILURE_THRESHOLD` | Consecutive failures before falling back to the lead model | Integer | 2 |
-| `GOOSE_LEAD_FALLBACK_TURNS` | Number of turns to use the lead model in fallback mode | Integer | 2 |
-
-A _turn_ is one complete prompt-response interaction. Here's how it works with the default settings:
-- Use the lead model for the first 3 turns
-- Use the worker model starting on the 4th turn
-- Fallback to the lead model if the worker model struggles for 2 consecutive turns
-- Use the lead model for 2 turns and then switch back to the worker model
-
-The lead model and worker model names are displayed at the start of the goose CLI session. If you don't export a `GOOSE_MODEL` for your session, the worker model defaults to the `GOOSE_MODEL` in your [configuration file](/docs/guides/config-files).
-
-**Examples**
-
-```bash
-# Basic lead/worker setup
-export GOOSE_LEAD_MODEL="o4"
-
-# Advanced lead/worker configuration
-export GOOSE_LEAD_MODEL="claude4-opus"
-export GOOSE_LEAD_PROVIDER="anthropic"
-export GOOSE_LEAD_TURNS=5
-export GOOSE_LEAD_FAILURE_THRESHOLD=3
-export GOOSE_LEAD_FALLBACK_TURNS=2
-```
-
 ### Claude Thinking Configuration
 
 These variables control Claude's reasoning behavior. Supported on Anthropic and Databricks providers.
@@ -350,8 +316,6 @@ These variables allow you to override the default context window size (token lim
 |----------|---------|---------|---------|
 | `GOOSE_CONTEXT_LIMIT` | Override context limit for the main model | Integer (number of tokens) | Model-specific default or 128,000 |
 | `GOOSE_INPUT_LIMIT` | Override input prompt limit for ollama requests (maps to `num_ctx`) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
-| `GOOSE_LEAD_CONTEXT_LIMIT` | Override context limit for the lead model in [lead/worker mode](/docs/tutorials/lead-worker) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
-| `GOOSE_WORKER_CONTEXT_LIMIT` | Override context limit for the worker model in lead/worker mode | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
 | `GOOSE_PLANNER_CONTEXT_LIMIT` | Override context limit for the [planner model](/docs/guides/creating-plans) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
 
 **Examples**
@@ -361,10 +325,6 @@ These variables allow you to override the default context window size (token lim
 export GOOSE_CONTEXT_LIMIT=200000
 # Override ollama input prompt limit
 export GOOSE_INPUT_LIMIT=32000
-
-# Set different context limits for lead/worker models
-export GOOSE_LEAD_CONTEXT_LIMIT=500000   # Large context for planning
-export GOOSE_WORKER_CONTEXT_LIMIT=128000 # Smaller context for execution
 
 # Set context limit for planner
 export GOOSE_PLANNER_CONTEXT_LIMIT=1000000
