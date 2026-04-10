@@ -1095,6 +1095,8 @@ export type RemoveExtensionRequest = {
 };
 
 export type RepoVariantsResponse = {
+    available_memory_bytes: number;
+    downloaded_quants: Array<string>;
     recommended_index?: number | null;
     variants: Array<HfQuantVariant>;
 };

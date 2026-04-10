@@ -284,6 +284,8 @@ pub struct SearchQuery {
 pub struct RepoVariantsResponse {
     pub variants: Vec<HfQuantVariant>,
     pub recommended_index: Option<usize>,
+    pub available_memory_bytes: u64,
+    pub downloaded_quants: Vec<String>,
 }
 
 #[utoipa::path(
@@ -327,9 +329,23 @@ pub async fn get_repo_files(
     let available_memory = available_inference_memory_bytes(&state.inference_runtime);
     let recommended_index = hf_models::recommend_variant(&variants, available_memory);
 
+    let downloaded_quants = {
+        let registry = get_registry()
+            .lock()
+            .map_err(|_| ErrorResponse::internal("Failed to acquire registry lock"))?;
+        registry
+            .list_models()
+            .iter()
+            .filter(|m| m.repo_id == repo_id && m.is_downloaded())
+            .map(|m| m.quantization.clone())
+            .collect()
+    };
+
     Ok(Json(RepoVariantsResponse {
         variants,
         recommended_index,
+        available_memory_bytes: available_memory,
+        downloaded_quants,
     }))
 }
 
