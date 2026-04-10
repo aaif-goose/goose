@@ -4,7 +4,7 @@
 // optional dependency. Writes the result to a JSON file that the CLI reads at
 // startup so it can spawn the server automatically.
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,13 @@ try {
       `You will need to provide a server URL manually with --server.`,
   );
   process.exit(0);
+}
+
+// Ensure the binary is executable (npm may strip permissions during packaging)
+if (process.platform !== "win32") {
+  try {
+    chmodSync(binaryPath, 0o755);
+  } catch {}
 }
 
 const outDir = join(__dirname, "..");
