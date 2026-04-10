@@ -102,9 +102,9 @@ By the end of our session, we had:
 
 The best part? The models made smart decisions we hadn't even thought of, like automatically categorizing the servers and improving the overall page layout.
 
-## Ready to Try It Yourself?
+## Ready to Try Multi-Model Workflows?
 
-The [Lead/Worker model](/docs/guides/creating-plans) is available now in Goose. Whether you're working on documentation, building features, or tackling complex refactoring, having two specialized models working together can be a game changer.
+Lead/Worker mode has been removed, but goose now supports [Planning Mode](/docs/guides/creating-plans) for multi-model workflows. Whether you're working on documentation, building features, or tackling complex refactoring, pairing a strong planner model with a fast execution model can be a game changer.
 
 Want to see it in action? Check out the full stream where we built this feature live:
 
