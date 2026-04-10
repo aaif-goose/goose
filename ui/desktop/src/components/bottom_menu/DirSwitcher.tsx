@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FolderDot, FolderOpen, GitBranch, Plus } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/Tooltip';
 import {
@@ -67,12 +67,16 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [worktreeDirs, setWorktreeDirs] = useState<string[]>([]);
+  const refreshVersionRef = useRef(0);
 
   const refreshMenuData = useCallback(async () => {
+    const version = ++refreshVersionRef.current;
     const [recent, worktrees] = await Promise.all([
       window.electron.listRecentDirs().catch(() => []),
       window.electron.listGitWorktreeDirs(workingDir).catch(() => []),
     ]);
+
+    if (version !== refreshVersionRef.current) return;
 
     setRecentDirs(recent);
     setWorktreeDirs(worktrees);
