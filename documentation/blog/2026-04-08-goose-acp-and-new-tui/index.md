@@ -3,11 +3,13 @@ title: "goose 2.0 beta - new architecture and clients"
 description: "We're shipping a new TUI, rewriting the desktop app in Tauri, and unifying everything under ACP."
 authors:
     - alexhancock
+featured: true
+image: /img/blog/goose-2-blog-cover.jpg
 ---
 
 # goose 2.0 beta - new architecture and clients
 
-![blog cover](goose-2-blog-cover.jpg)
+![blog cover](/img/blog/goose-2-blog-cover.jpg)
 
 goose started life in the terminal. The earliest versions were a Python CLI that ran the agent in-process — you typed a message, the model responded, tools executed, and everything happened in a single loop. That simplicity was a strength: it meant anyone with a terminal could start using goose immediately, no app to install, no server to run.
 

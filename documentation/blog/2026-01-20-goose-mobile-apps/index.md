@@ -1,11 +1,12 @@
 ---
 title: "goose mobile apps and agent clients"
 description: Consolidating agent apps for iOS and Android and ACP
+image: /img/blog/goose-mobile-apps-banner.png
 authors:
     - mic
 ---
 
-![goose mobile apps](goose-mobile-apps-banner.png)
+![goose mobile apps](/img/blog/goose-mobile-apps-banner.png)
 
 
 In 2025 we did a fairly cutting edge take on whole device automation using Android (code name was gosling) which was an on-device agent that would take over your device (mic even used it to do some shopping - which he realized after some things arrived at his door that it had automatically purchased as the result of an email - hence the PoC/experimental label!)

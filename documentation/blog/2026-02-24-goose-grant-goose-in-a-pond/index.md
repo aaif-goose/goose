@@ -3,9 +3,10 @@ title: "Grant Winner: Goose In A Pond"
 description: "Introducing  a privacy-first, local AI home assistant powered by Goose on edge hardware."
 authors:
   - angie
+image: /img/blog/goose-grant-goose-in-a-pond.png
 ---
 
-![blog banner](banner.png)
+![blog banner](/img/blog/goose-grant-goose-in-a-pond.png)
 
 We launched the [goose grant program](/grants/) awarding $100K grants for developers building the future of agentic AI. We're looking for ambitious, open source projects that push goose into new territory, and today, We're thrilled to introduce one of our grant recipients: **Goose In A Pond**, a project that's taking goose off the desktop and into your home.
 

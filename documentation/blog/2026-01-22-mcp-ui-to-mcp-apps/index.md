@@ -1,11 +1,12 @@
 ---
 title: "From MCP-UI to MCP Apps: Evolving Interactive Agent UIs"
 description: "I migrated a real MCP-UI server to MCP Apps. Here’s what actually changed, what broke, and why this shift matters."
+image: /img/blog/mcp-ui-to-apps-blogbanner.png
 authors: 
     - ebony
 ---
 
-![blog banner](blogbanner.png)
+![blog banner](/img/blog/mcp-ui-to-apps-blogbanner.png)
 
 MCP-UI is fun. It’s scrappy. It’s early. And like I said in my last post, there’s something genuinely addictive about building this close to the edges of an ecosystem while everything is still taking shape.
 

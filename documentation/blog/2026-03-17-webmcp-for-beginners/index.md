@@ -3,9 +3,10 @@ title: "WebMCP for Beginners"
 description: "WebMCP lets websites expose structured actions that AI agents can call directly. This guide explains how it works, how it differs from MCP and browser automation, and how to build your own WebMCP-enabled site."
 authors: 
     - rizel
+image: /img/blog/webmcp-for-beginners.png
 ---
 
-![blog cover](webmcp-for-beginners.png)
+![blog cover](/img/blog/webmcp-for-beginners.png)
 
 Raise your hand if you thought WebMCP was just an MCP server. Guilty as charged. I did too. It turns out it's a W3C standard that uses similar concepts to MCP. Here's what it actually is.
 

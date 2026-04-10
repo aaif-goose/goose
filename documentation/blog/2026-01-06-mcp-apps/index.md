@@ -3,9 +3,10 @@ title: "goose Lands MCP Apps"
 description: "goose ships early support for the draft MCP Apps specification, aligning with the emerging standard for interactive UIs in MCP."
 authors:
   - aharvard
+image: /img/blog/goose-lands-mcp-apps-header-image.png
 ---
 
-![Retro 1980s hardware lab with three CRT monitors displaying "goose Lands MCP Apps" in glowing green text, with a small goose figurine on the desk](goose-lands-mcp-apps-header-image.png)
+![Retro 1980s hardware lab with three CRT monitors displaying "goose Lands MCP Apps" in glowing green text, with a small goose figurine on the desk](/img/blog/goose-lands-mcp-apps-header-image.png)
 
 The MCP ecosystem is standardizing how servers deliver interactive UIs to hosts, and goose is an early adopter. Today we're shipping support for the draft MCP Apps specification ([SEP-1865](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/draft/apps.mdx)), bringing goose in line with the emerging standard, as other hosts like Claude and ChatGPT move toward adoption.
 
