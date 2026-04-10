@@ -211,13 +211,6 @@ export const HuggingFaceModelSearch = ({ onDownloadStarted }: Props) => {
         body: { spec },
       });
       if (response.data) {
-        setRepoData((prev) => {
-          const existing = prev[repoId];
-          if (!existing) return prev;
-          const updated = new Set(existing.downloadedQuants);
-          updated.add(quantization);
-          return { ...prev, [repoId]: { ...existing, downloadedQuants: updated } };
-        });
         onDownloadStarted(response.data);
       }
     } catch (e) {
