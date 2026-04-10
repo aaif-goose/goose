@@ -100,35 +100,39 @@ function FeaturedPost({ post }: { post: any }) {
   );
 }
 
+function BlogPostCard({ post }: { post: any }) {
+  const url = useBaseUrl(post.content.metadata.permalink);
+  const imageUrl = post.content.frontMatter.image ? useBaseUrl(post.content.frontMatter.image) : null;
+  const title = post.content.metadata.title;
+  const formattedDate = post.content.metadata.formattedDate;
+  const description = post.content.metadata.description || post.content.frontMatter.description;
+  const authors = post.content?.metadata?.authors || post.content?.frontMatter?.authors || [];
+
+  return (
+    <article className={styles.postCard}>
+      {imageUrl && (
+        <div className={styles.postImage}>
+          <img src={imageUrl} alt={title} />
+        </div>
+      )}
+      <div className={styles.postContent}>
+        <div className={styles.postDate}>{formattedDate}</div>
+        <h3 className={styles.postTitle}>
+          <a href={url}>{title}</a>
+        </h3>
+        <AuthorDisplay authors={authors} />
+        <div className={styles.postDescription}>{description}</div>
+      </div>
+    </article>
+  );
+}
+
 function BlogPostGrid({ posts }: { posts: any[] }) {
   return (
     <div className={styles.postsGrid}>
-      {posts.map((post, index) => {
-        const url = useBaseUrl(post.content.metadata.permalink);
-        const imageUrl = post.content.frontMatter.image ? useBaseUrl(post.content.frontMatter.image) : null;
-        const title = post.content.metadata.title;
-        const formattedDate = post.content.metadata.formattedDate;
-        const description = post.content.metadata.description || post.content.frontMatter.description;
-        const authors = post.content?.metadata?.authors || post.content?.frontMatter?.authors || [];
-
-        return (
-          <article key={index} className={styles.postCard}>
-            {imageUrl && (
-              <div className={styles.postImage}>
-                <img src={imageUrl} alt={title} />
-              </div>
-            )}
-            <div className={styles.postContent}>
-              <div className={styles.postDate}>{formattedDate}</div>
-              <h3 className={styles.postTitle}>
-                <a href={url}>{title}</a>
-              </h3>
-              <AuthorDisplay authors={authors} />
-              <div className={styles.postDescription}>{description}</div>
-            </div>
-          </article>
-        );
-      })}
+      {posts.map((post, index) => (
+        <BlogPostCard key={index} post={post} />
+      ))}
     </div>
   );
 }
