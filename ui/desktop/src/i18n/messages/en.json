@@ -1436,20 +1436,11 @@
   "headersSection.value": {
     "defaultMessage": "Value"
   },
-  "huggingFaceModelSearch.directDownload": {
-    "defaultMessage": "Direct Download"
-  },
-  "huggingFaceModelSearch.directDownloadDescription": {
-    "defaultMessage": "Specify a model directly: {format}"
-  },
-  "huggingFaceModelSearch.directDownloadErrorMsg": {
-    "defaultMessage": "Failed to start the download. Check the spec: {error}"
-  },
-  "huggingFaceModelSearch.directDownloadFailed": {
-    "defaultMessage": "Direct download failed"
-  },
   "huggingFaceModelSearch.download": {
     "defaultMessage": "Download"
+  },
+  "huggingFaceModelSearch.downloaded": {
+    "defaultMessage": "Downloaded"
   },
   "huggingFaceModelSearch.loadingVariants": {
     "defaultMessage": "Loading variants..."
@@ -1474,6 +1465,9 @@
   },
   "huggingFaceModelSearch.searchPlaceholder": {
     "defaultMessage": "Search for GGUF models..."
+  },
+  "huggingFaceModelSearch.tooLarge": {
+    "defaultMessage": "May not fit in memory ({size} model, {available} available)"
   },
   "imagePreview.altText": {
     "defaultMessage": "goose image"
