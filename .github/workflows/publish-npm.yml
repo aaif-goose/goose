@@ -135,7 +135,7 @@ jobs:
               artifact="goose-${target}.zip"
               gh release download "${TAG}" --pattern "${artifact}" --dir /tmp
               unzip -o "/tmp/${artifact}" -d /tmp/goose-extract
-              cp /tmp/goose-extract/goose.exe "${pkg_dir}/goose.exe"
+              cp /tmp/goose-extract/goose-package/goose.exe "${pkg_dir}/goose.exe"
               rm -rf /tmp/goose-extract "/tmp/${artifact}"
             else
               artifact="goose-${target}.tar.bz2"
