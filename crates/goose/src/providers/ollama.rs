@@ -72,10 +72,19 @@ fn resolve_ollama_stream_usage() -> bool {
     let config = crate::config::Config::global();
     match config.get_param::<bool>("OLLAMA_STREAM_USAGE") {
         Ok(val) => val,
-        // Default to true: Ollama supports stream_options since mid-2025 and
-        // most installs will benefit from token usage tracking. Users on older
-        // Ollama builds that hang can set OLLAMA_STREAM_USAGE=false to opt out.
-        Err(_) => true,
+        // Key not set: default to true. Ollama supports stream_options since
+        // mid-2025 and most installs benefit from token usage tracking.
+        Err(crate::config::ConfigError::NotFound(_)) => true,
+        // Invalid value (e.g. "0", "yes", typo): warn and disable stream_options
+        // so users who intended to opt out aren't silently left hanging.
+        Err(e) => {
+            tracing::warn!(
+                "Invalid OLLAMA_STREAM_USAGE value ({}); disabling stream_options. \
+                 Use true or false.",
+                e
+            );
+            false
+        }
     }
 }
 
