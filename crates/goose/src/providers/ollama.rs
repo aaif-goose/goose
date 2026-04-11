@@ -68,12 +68,27 @@ fn resolve_ollama_num_ctx(model_config: &ModelConfig) -> Option<usize> {
     input_limit.or(model_config.context_limit)
 }
 
+fn resolve_ollama_stream_usage() -> bool {
+    let config = crate::config::Config::global();
+    match config.get_param::<bool>("OLLAMA_STREAM_USAGE") {
+        Ok(val) => val,
+        // Default to true: Ollama supports stream_options since mid-2025 and
+        // most installs will benefit from token usage tracking. Users on older
+        // Ollama builds that hang can set OLLAMA_STREAM_USAGE=false to opt out.
+        Err(_) => true,
+    }
+}
+
 fn apply_ollama_options(payload: &mut Value, model_config: &ModelConfig) {
     if let Some(obj) = payload.as_object_mut() {
-        // Ollama supports stream_options since mid-2025. Keeping it enabled allows
-        // token usage tracking in streaming responses. The per-chunk timeout in
-        // with_line_timeout() protects against hangs if an older Ollama version
-        // doesn't handle stream_options properly.
+        // Gate stream_options behind OLLAMA_STREAM_USAGE (default: true).
+        // Older Ollama builds that don't support stream_options may stall before
+        // emitting any SSE data, blocking until the client timeout (600s).
+        // with_line_timeout() only protects after the first line arrives, so
+        // users on older builds should set OLLAMA_STREAM_USAGE=false.
+        if !resolve_ollama_stream_usage() {
+            obj.remove("stream_options");
+        }
 
         // Convert max_completion_tokens / max_tokens to Ollama's options.num_predict.
         // Reasoning models emit max_completion_tokens; non-reasoning models emit max_tokens.
@@ -331,7 +346,9 @@ impl Provider for OllamaProvider {
 
 /// Per-chunk timeout for Ollama streaming responses.
 /// If no new raw SSE data arrives within this duration, the connection is considered dead.
-const OLLAMA_CHUNK_TIMEOUT_SECS: u64 = 30;
+/// Set to 120s to accommodate slower models (CPU inference, large parameter counts,
+/// or complex reasoning) that may pause for extended periods between tokens.
+const OLLAMA_CHUNK_TIMEOUT_SECS: u64 = 120;
 
 /// Wraps a line stream with a per-item timeout at the raw SSE level.
 /// This detects dead connections without false-positive stalls during long
@@ -461,11 +478,14 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_ollama_options_transforms_fields() {
+    fn test_apply_ollama_options_preserves_stream_options_by_default() {
         use crate::providers::formats::ollama::create_request;
         use crate::providers::utils::ImageFormat;
 
-        let _guard = env_lock::lock_env([("GOOSE_INPUT_LIMIT", None::<&str>)]);
+        let _guard = env_lock::lock_env([
+            ("GOOSE_INPUT_LIMIT", None::<&str>),
+            ("OLLAMA_STREAM_USAGE", None::<&str>),
+        ]);
         let model_config = ModelConfig::new("llama3.1")
             .unwrap()
             .with_max_tokens(Some(4096));
@@ -485,7 +505,7 @@ mod tests {
 
         assert!(
             payload.get("stream_options").is_some(),
-            "stream_options should be preserved for Ollama to enable usage tracking"
+            "stream_options should be preserved by default for usage tracking"
         );
         assert!(
             payload.get("max_tokens").is_none(),
@@ -500,6 +520,38 @@ mod tests {
             "max_tokens should be moved to options.num_predict"
         );
         assert_eq!(payload["stream"], true, "stream field should be preserved");
+    }
+
+    #[test]
+    fn test_apply_ollama_options_strips_stream_options_when_disabled() {
+        use crate::providers::formats::ollama::create_request;
+        use crate::providers::utils::ImageFormat;
+
+        let _guard = env_lock::lock_env([
+            ("GOOSE_INPUT_LIMIT", None::<&str>),
+            ("OLLAMA_STREAM_USAGE", Some("false")),
+        ]);
+        let model_config = ModelConfig::new("llama3.1")
+            .unwrap()
+            .with_max_tokens(Some(4096));
+        let messages = vec![crate::conversation::message::Message::user().with_text("hi")];
+
+        let mut payload = create_request(
+            &model_config,
+            "You are a helpful assistant.",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )
+        .unwrap();
+
+        apply_ollama_options(&mut payload, &model_config);
+
+        assert!(
+            payload.get("stream_options").is_none(),
+            "stream_options should be removed when OLLAMA_STREAM_USAGE=false"
+        );
     }
 
     #[tokio::test]
