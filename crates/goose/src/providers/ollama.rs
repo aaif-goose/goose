@@ -70,8 +70,10 @@ fn resolve_ollama_num_ctx(model_config: &ModelConfig) -> Option<usize> {
 
 fn apply_ollama_options(payload: &mut Value, model_config: &ModelConfig) {
     if let Some(obj) = payload.as_object_mut() {
-        // Ollama does not support stream_options; remove it to prevent hangs.
-        obj.remove("stream_options");
+        // Ollama supports stream_options since mid-2025. Keeping it enabled allows
+        // token usage tracking in streaming responses. The per-chunk timeout in
+        // with_line_timeout() protects against hangs if an older Ollama version
+        // doesn't handle stream_options properly.
 
         // Convert max_completion_tokens / max_tokens to Ollama's options.num_predict.
         // Reasoning models emit max_completion_tokens; non-reasoning models emit max_tokens.
@@ -450,7 +452,7 @@ mod tests {
 
         assert!(
             payload.get("stream_options").is_some(),
-            "create_request should produce stream_options (unsupported by Ollama)"
+            "create_request should produce stream_options for usage tracking"
         );
         assert!(
             payload.get("max_tokens").is_some(),
@@ -459,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_ollama_options_strips_unsupported_fields() {
+    fn test_apply_ollama_options_transforms_fields() {
         use crate::providers::formats::ollama::create_request;
         use crate::providers::utils::ImageFormat;
 
@@ -482,8 +484,8 @@ mod tests {
         apply_ollama_options(&mut payload, &model_config);
 
         assert!(
-            payload.get("stream_options").is_none(),
-            "stream_options should be removed for Ollama"
+            payload.get("stream_options").is_some(),
+            "stream_options should be preserved for Ollama to enable usage tracking"
         );
         assert!(
             payload.get("max_tokens").is_none(),
