@@ -325,7 +325,13 @@ impl GithubCopilotProvider {
             .send()
             .await?
             .error_for_status()
-            .map_err(|e| anyhow!("failed to fetch copilot token from {}: {}", self.urls.copilot_token_url, e))?
+            .map_err(|e| {
+                anyhow!(
+                    "failed to fetch copilot token from {}: {}",
+                    self.urls.copilot_token_url,
+                    e
+                )
+            })?
             .text()
             .await?;
         tracing::trace!("copilot token response: {}", resp);
