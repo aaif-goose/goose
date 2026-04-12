@@ -617,7 +617,10 @@ mod tests {
             ("GOOSE_STREAM_TIMEOUT", None::<&str>),
             ("OLLAMA_TIMEOUT", None::<&str>),
         ]);
-        assert_eq!(resolve_ollama_chunk_timeout(), OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS);
+        assert_eq!(
+            resolve_ollama_chunk_timeout(),
+            OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS
+        );
     }
 
     #[test]
