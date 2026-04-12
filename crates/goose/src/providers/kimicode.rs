@@ -39,9 +39,6 @@ const KIMI_MSH_VERSION: &str = "0.1.0";
 
 /// Refresh the access token if it expires within this many seconds.
 const REFRESH_THRESHOLD_SECS: i64 = 300;
-/// Max polling attempts for device flow (60 × 5 s = 5 min).
-const MAX_POLL_ATTEMPTS: u32 = 60;
-
 // ── Token persistence ────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -214,6 +211,7 @@ impl KimiCodeProvider {
             verification_uri_complete: Option<String>,
             verification_uri: String,
             interval: Option<u64>,
+            expires_in: Option<u64>,
         }
 
         let resp: DeviceAuthResp = self
@@ -250,10 +248,17 @@ impl KimiCodeProvider {
             verify_url, resp.user_code
         );
 
-        self.poll_for_token(&resp.device_code, interval).await
+        let expires_in = resp.expires_in.unwrap_or(300);
+        self.poll_for_token(&resp.device_code, interval, expires_in)
+            .await
     }
 
-    async fn poll_for_token(&self, device_code: &str, interval_secs: u64) -> Result<KimiToken> {
+    async fn poll_for_token(
+        &self,
+        device_code: &str,
+        interval_secs: u64,
+        expires_in_secs: u64,
+    ) -> Result<KimiToken> {
         #[derive(Serialize)]
         struct PollReq<'a> {
             client_id: &'a str,
@@ -268,8 +273,13 @@ impl KimiCodeProvider {
             error: Option<String>,
         }
 
+        let deadline =
+            tokio::time::Instant::now() + tokio::time::Duration::from_secs(expires_in_secs);
         let mut effective_interval = interval_secs;
-        for attempt in 0..MAX_POLL_ATTEMPTS {
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                return Err(anyhow!("timed out waiting for user authorization"));
+            }
             tokio::time::sleep(tokio::time::Duration::from_secs(effective_interval)).await;
 
             let resp: PollResp = self
@@ -301,11 +311,7 @@ impl KimiCodeProvider {
 
             match resp.error.as_deref() {
                 Some("authorization_pending") => {
-                    tracing::debug!(
-                        "authorization pending (attempt {}/{})",
-                        attempt + 1,
-                        MAX_POLL_ATTEMPTS
-                    );
+                    tracing::debug!("authorization pending, continuing to poll");
                 }
                 // RFC 8628: client MUST increase polling interval by 5 seconds
                 Some("slow_down") => {
@@ -320,7 +326,6 @@ impl KimiCodeProvider {
                 }
             }
         }
-        Err(anyhow!("timed out waiting for user authorization"))
     }
 
     async fn do_refresh_token(&self, refresh_token: &str) -> Result<KimiToken> {
@@ -498,13 +503,17 @@ impl Provider for KimiCodeProvider {
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
-        // Try refresh first; fall back to full device flow.
+        // Try refresh first; fall back to still-valid token; then full device flow.
         if let Some(token) = self.token_cache.load().await {
             if let Ok(refreshed) = self.do_refresh_token(&token.refresh_token).await {
                 self.token_cache.save(&refreshed).await.map_err(|e| {
                     ProviderError::ExecutionError(format!("Failed to save token: {}", e))
                 })?;
                 *self.cached_token.lock().await = Some(refreshed);
+                return Ok(());
+            }
+            if token.expires_at > Utc::now() {
+                *self.cached_token.lock().await = Some(token);
                 return Ok(());
             }
         }
