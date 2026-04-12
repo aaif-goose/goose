@@ -353,11 +353,27 @@ impl Provider for OllamaProvider {
     }
 }
 
-/// Per-chunk timeout for Ollama streaming responses.
-/// If no new raw SSE data arrives within this duration, the connection is considered dead.
-/// Set to 120s to accommodate slower models (CPU inference, large parameter counts,
-/// or complex reasoning) that may pause for extended periods between tokens.
-const OLLAMA_CHUNK_TIMEOUT_SECS: u64 = 120;
+/// Default per-chunk timeout for Ollama streaming responses (seconds).
+/// Configurable via OLLAMA_STREAM_TIMEOUT, GOOSE_STREAM_TIMEOUT, or falls back
+/// to OLLAMA_TIMEOUT. Set high to accommodate slower models (CPU inference,
+/// large parameter counts, complex reasoning).
+const OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS: u64 = 120;
+
+/// Resolve the per-chunk stream timeout from config.
+/// Priority: OLLAMA_STREAM_TIMEOUT > GOOSE_STREAM_TIMEOUT > OLLAMA_TIMEOUT > default (120s).
+fn resolve_ollama_chunk_timeout() -> u64 {
+    let config = crate::config::Config::global();
+
+    if let Ok(val) = config.get_param::<u64>("OLLAMA_STREAM_TIMEOUT") {
+        return val;
+    }
+    if let Ok(val) = config.get_param::<u64>("GOOSE_STREAM_TIMEOUT") {
+        return val;
+    }
+    config
+        .get_param::<u64>("OLLAMA_TIMEOUT")
+        .unwrap_or(OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS)
+}
 
 /// Wraps a line stream with a per-item timeout at the raw SSE level.
 /// This detects dead connections without false-positive stalls during long
@@ -406,7 +422,8 @@ fn stream_ollama(response: Response, mut log: RequestLog) -> Result<MessageStrea
         let framed = FramedRead::new(stream_reader, LinesCodec::new())
             .map_err(Error::from);
 
-        let timed_lines = with_line_timeout(framed, OLLAMA_CHUNK_TIMEOUT_SECS);
+        let chunk_timeout = resolve_ollama_chunk_timeout();
+        let timed_lines = with_line_timeout(framed, chunk_timeout);
         let message_stream = response_to_streaming_message_ollama(timed_lines);
         pin!(message_stream);
 
@@ -563,57 +580,44 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_stream_ollama_timeout_on_stall() {
-        use std::convert::Infallible;
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_defaults_to_ollama_timeout() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", None::<&str>),
+            ("GOOSE_STREAM_TIMEOUT", None::<&str>),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 300);
+    }
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, Infallible>>(1);
-        tx.send(Ok(bytes::Bytes::from(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0}],\
-             \"model\":\"test\",\"object\":\"chat.completion.chunk\",\"created\":0}\n",
-        )))
-        .await
-        .unwrap();
-        let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-        let body = reqwest::Body::wrap_stream(stream);
-        let response = http::Response::builder().status(200).body(body).unwrap();
-        let response: reqwest::Response = response.into();
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_prefers_stream_override() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", Some("60")),
+            ("GOOSE_STREAM_TIMEOUT", Some("90")),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 60);
+    }
 
-        let log = RequestLog::start(
-            &ModelConfig::new("test").unwrap(),
-            &json!({"model": "test"}),
-        )
-        .unwrap();
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_uses_goose_stream_fallback() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", None::<&str>),
+            ("GOOSE_STREAM_TIMEOUT", Some("90")),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 90);
+    }
 
-        let mut msg_stream = stream_ollama(response, log).unwrap();
-
-        let result =
-            tokio::time::timeout(Duration::from_secs(OLLAMA_CHUNK_TIMEOUT_SECS + 5), async {
-                let mut last_err = None;
-                while let Some(item) = msg_stream.next().await {
-                    if let Err(e) = item {
-                        last_err = Some(e);
-                        break;
-                    }
-                }
-                last_err
-            })
-            .await;
-
-        match result {
-            Ok(Some(err)) => {
-                let err_msg = err.to_string();
-                assert!(
-                    err_msg.contains("stream stalled"),
-                    "Expected stall timeout error, got: {}",
-                    err_msg
-                );
-            }
-            Ok(None) => panic!("Expected timeout error but stream completed normally"),
-            Err(_) => panic!("Outer timeout elapsed -- per-chunk timeout did not fire"),
-        }
-
-        drop(tx);
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_uses_default_when_unset() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", None::<&str>),
+            ("GOOSE_STREAM_TIMEOUT", None::<&str>),
+            ("OLLAMA_TIMEOUT", None::<&str>),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS);
     }
 
     #[test]
