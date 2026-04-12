@@ -461,6 +461,20 @@ mod tests {
         }
 
         #[test]
+        fn sets_limits_from_canonical_ollama_cloud_model() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+            let config = ModelConfig::new_or_fail("gemini-3-flash-preview")
+                .with_canonical_limits("ollama_cloud");
+
+            assert_eq!(config.context_limit, Some(1_048_576));
+            assert_eq!(config.max_tokens, Some(65_536));
+            assert_eq!(config.reasoning, Some(true));
+        }
+
+        #[test]
         fn does_not_override_existing_context_limit() {
             let _guard = env_lock::lock_env([
                 ("GOOSE_MAX_TOKENS", None::<&str>),

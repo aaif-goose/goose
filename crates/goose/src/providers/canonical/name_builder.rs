@@ -47,6 +47,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "aws_bedrock" => "amazon-bedrock",
         "gcp_vertex_ai" => "google-vertex",
         "gemini_oauth" => "google",
+        "ollama_cloud" => "ollama-cloud",
         "zhipu" => "zhipuai",
         _ => provider,
     }
@@ -303,6 +304,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_map_provider_name_for_ollama_cloud() {
+        assert_eq!(map_provider_name("ollama_cloud"), "ollama-cloud");
+    }
+
+    #[test]
     fn test_map_to_canonical_model() {
         let r = super::super::CanonicalModelRegistry::bundled().unwrap();
 
@@ -499,6 +505,16 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("zhipu", "glm-5", r),
             Some("zhipuai/glm-5".to_string())
+        );
+
+        // === Ollama Cloud ===
+        assert_eq!(
+            map_to_canonical_model("ollama_cloud", "glm-5", r),
+            Some("ollama-cloud/glm-5".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("ollama_cloud", "gemini-3-flash-preview", r),
+            Some("ollama-cloud/gemini-3-flash-preview".to_string())
         );
 
         // === GCP Vertex AI ===
