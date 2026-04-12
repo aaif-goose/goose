@@ -53,6 +53,50 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
+fn normalize_delegate_override(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("inherit"))
+        .map(str::to_string)
+}
+
+fn resolve_delegate_provider_name(
+    params: &DelegateParams,
+    recipe: &Recipe,
+    session: &crate::session::Session,
+) -> Option<String> {
+    normalize_delegate_override(params.provider.as_deref())
+        .or_else(|| {
+            recipe
+                .settings
+                .as_ref()
+                .and_then(|s| normalize_delegate_override(s.goose_provider.as_deref()))
+        })
+        .or_else(|| {
+            Config::global()
+                .get_param::<String>("GOOSE_SUBAGENT_PROVIDER")
+                .ok()
+                .and_then(|value| normalize_delegate_override(Some(value.as_str())))
+        })
+        .or_else(|| normalize_delegate_override(session.provider_name.as_deref()))
+}
+
+fn resolve_delegate_model_override(params: &DelegateParams, recipe: &Recipe) -> Option<String> {
+    normalize_delegate_override(params.model.as_deref())
+        .or_else(|| {
+            recipe
+                .settings
+                .as_ref()
+                .and_then(|s| normalize_delegate_override(s.goose_model.as_deref()))
+        })
+        .or_else(|| {
+            Config::global()
+                .get_param::<String>("GOOSE_SUBAGENT_MODEL")
+                .ok()
+                .and_then(|value| normalize_delegate_override(Some(value.as_str())))
+        })
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct DelegateParams {
     pub instructions: Option<String>,
@@ -111,9 +155,7 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<Source> {
     };
 
     let description = metadata.description.unwrap_or_else(|| {
-        let model_info = metadata
-            .model
-            .as_ref()
+        let model_info = normalize_delegate_override(metadata.model.as_deref())
             .map(|m| format!(" ({})", m))
             .unwrap_or_default();
         format!("Agent{}", model_info)
@@ -1198,14 +1240,14 @@ impl SummonClient {
             .map_err(|e| format!("Failed to parse agent frontmatter: {}", e))?
             .ok_or("No frontmatter found in agent file")?;
 
-        let model = metadata.model;
+        let model = normalize_delegate_override(metadata.model.as_deref());
 
         // max_turns is set later in build_task_config so it can incorporate params.max_turns
         // with the correct priority ordering; setting it here would cause it to be overridden
         // by the parent session's recipe instead.
         let settings = model.map(|m| Settings {
             goose_model: Some(m),
-            goose_provider: params.provider.clone(),
+            goose_provider: normalize_delegate_override(params.provider.as_deref()),
             temperature: params.temperature,
             max_turns: None,
         });
@@ -1275,21 +1317,7 @@ impl SummonClient {
         recipe: &Recipe,
         session: &crate::session::Session,
     ) -> Result<Arc<dyn crate::providers::base::Provider>, anyhow::Error> {
-        let provider_name = params
-            .provider
-            .clone()
-            .or_else(|| {
-                recipe
-                    .settings
-                    .as_ref()
-                    .and_then(|s| s.goose_provider.clone())
-            })
-            .or_else(|| {
-                Config::global()
-                    .get_param::<String>("GOOSE_SUBAGENT_PROVIDER")
-                    .ok()
-            })
-            .or_else(|| session.provider_name.clone())
+        let provider_name = resolve_delegate_provider_name(params, recipe, session)
             .ok_or_else(|| anyhow::anyhow!("No provider configured"))?;
 
         let mut model_config = session.model_config.clone().map(Ok).unwrap_or_else(|| {
@@ -1297,15 +1325,7 @@ impl SummonClient {
                 .map(|c| c.with_canonical_limits(&provider_name))
         })?;
 
-        if let Some(model) = &params.model {
-            model_config.model_name = model.clone();
-        } else if let Some(model) = recipe
-            .settings
-            .as_ref()
-            .and_then(|s| s.goose_model.as_ref())
-        {
-            model_config.model_name = model.clone();
-        } else if let Ok(model) = Config::global().get_param::<String>("GOOSE_SUBAGENT_MODEL") {
+        if let Some(model) = resolve_delegate_model_override(params, recipe) {
             model_config.model_name = model;
         }
 
@@ -1683,6 +1703,121 @@ You review code."#;
         let source = parse_agent_content(agent, Path::new("")).unwrap();
         assert_eq!(source.name, "reviewer");
         assert!(source.description.contains("sonnet"));
+    }
+
+    #[test]
+    fn test_agent_frontmatter_parsing_omits_inherit_model_label() {
+        let agent = r#"---
+name: reviewer
+model: inherit
+---
+You review code."#;
+        let source = parse_agent_content(agent, Path::new("")).unwrap();
+        assert_eq!(source.name, "reviewer");
+        assert_eq!(source.description, "Agent");
+    }
+
+    #[test]
+    fn test_build_recipe_from_agent_ignores_inherit_model() {
+        let temp_dir = TempDir::new().unwrap();
+        let agent_path = temp_dir.path().join("reviewer.md");
+        fs::write(
+            &agent_path,
+            "---\nname: reviewer\nmodel: inherit\n---\nYou review code carefully.",
+        )
+        .unwrap();
+
+        let source = Source {
+            name: "reviewer".to_string(),
+            kind: SourceKind::Agent,
+            description: "Agent".to_string(),
+            path: agent_path,
+            content: "You review code carefully.".to_string(),
+            supporting_files: Vec::new(),
+        };
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let recipe = client
+            .build_recipe_from_agent(&source, &DelegateParams::default())
+            .unwrap();
+
+        assert!(recipe.settings.is_none());
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_delegate_model_override_ignores_inherit() {
+        std::env::set_var("GOOSE_SUBAGENT_MODEL", "inherit");
+
+        let params = DelegateParams {
+            model: Some(" inherit ".to_string()),
+            ..Default::default()
+        };
+        let recipe = Recipe {
+            version: "1.0.0".to_string(),
+            title: "Test".to_string(),
+            description: String::new(),
+            instructions: None,
+            prompt: None,
+            extensions: None,
+            settings: Some(Settings {
+                goose_provider: None,
+                goose_model: Some("inherit".to_string()),
+                temperature: None,
+                max_turns: None,
+            }),
+            activities: None,
+            author: None,
+            parameters: None,
+            response: None,
+            sub_recipes: None,
+            retry: None,
+        };
+
+        let model_override = resolve_delegate_model_override(&params, &recipe);
+        std::env::remove_var("GOOSE_SUBAGENT_MODEL");
+
+        assert_eq!(model_override, None);
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_delegate_provider_name_falls_back_to_session_provider() {
+        std::env::set_var("GOOSE_SUBAGENT_PROVIDER", "inherit");
+
+        let params = DelegateParams {
+            provider: Some(" inherit ".to_string()),
+            ..Default::default()
+        };
+        let recipe = Recipe {
+            version: "1.0.0".to_string(),
+            title: "Test".to_string(),
+            description: String::new(),
+            instructions: None,
+            prompt: None,
+            extensions: None,
+            settings: Some(Settings {
+                goose_provider: Some("inherit".to_string()),
+                goose_model: None,
+                temperature: None,
+                max_turns: None,
+            }),
+            activities: None,
+            author: None,
+            parameters: None,
+            response: None,
+            sub_recipes: None,
+            retry: None,
+        };
+        let session = crate::session::Session {
+            provider_name: Some("ollama".to_string()),
+            ..Default::default()
+        };
+
+        let provider_name = resolve_delegate_provider_name(&params, &recipe, &session);
+        std::env::remove_var("GOOSE_SUBAGENT_PROVIDER");
+
+        assert_eq!(provider_name, Some("ollama".to_string()));
     }
 
     #[test]
