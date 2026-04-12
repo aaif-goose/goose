@@ -220,7 +220,7 @@ impl KimiCodeProvider {
             .client
             .post(format!("{}/api/oauth/device_authorization", KIMI_AUTH_HOST))
             .headers(self.kimi_headers())
-            .json(&DeviceAuthReq {
+            .form(&DeviceAuthReq {
                 client_id: KIMI_CODE_CLIENT_ID,
             })
             .send()
@@ -276,7 +276,7 @@ impl KimiCodeProvider {
                 .client
                 .post(format!("{}/api/oauth/token", KIMI_AUTH_HOST))
                 .headers(self.kimi_headers())
-                .json(&PollReq {
+                .form(&PollReq {
                     client_id: KIMI_CODE_CLIENT_ID,
                     device_code,
                     grant_type: "urn:ietf:params:oauth:grant-type:device_code",
@@ -341,7 +341,7 @@ impl KimiCodeProvider {
             .client
             .post(format!("{}/api/oauth/token", KIMI_AUTH_HOST))
             .headers(self.kimi_headers())
-            .json(&RefreshReq {
+            .form(&RefreshReq {
                 client_id: KIMI_CODE_CLIENT_ID,
                 grant_type: "refresh_token",
                 refresh_token,
