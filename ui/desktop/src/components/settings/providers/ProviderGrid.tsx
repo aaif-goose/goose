@@ -160,7 +160,7 @@ function ProviderCards({
       setShowCustomProviderModal(false);
       setEditingProvider(null);
       if (refreshProviders) {
-        refreshProviders();
+        await refreshProviders();
       }
       setSwitchModelProvider(providerId);
       setShowSwitchModelModal(true);
@@ -180,7 +180,7 @@ function ProviderCards({
     setEditingProvider(null);
     setIsActiveProvider(false);
     if (refreshProviders) {
-      refreshProviders();
+      await refreshProviders();
     }
   }, [editingProvider, refreshProviders]);
 
