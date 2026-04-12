@@ -171,6 +171,9 @@ impl KimiCodeProvider {
                 *guard = Some(refreshed);
                 return Ok(access);
             }
+            if token.expires_at > Utc::now() {
+                return Ok(token.access_token.clone());
+            }
         }
 
         // 2. Disk cache
@@ -184,6 +187,10 @@ impl KimiCodeProvider {
                 let access = refreshed.access_token.clone();
                 *guard = Some(refreshed);
                 return Ok(access);
+            }
+            if token.expires_at > Utc::now() {
+                *guard = Some(token.clone());
+                return Ok(token.access_token);
             }
         }
 
@@ -277,8 +284,6 @@ impl KimiCodeProvider {
                 .send()
                 .await
                 .context("failed to poll for token")?
-                .error_for_status()
-                .context("token poll request failed")?
                 .json()
                 .await
                 .context("failed to parse token poll response")?;
