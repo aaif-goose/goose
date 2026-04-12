@@ -137,7 +137,12 @@ where
                 (None, RecipeParameterRequirement::UserPrompt) if user_prompt_fn.is_some() => {
                     let input_value =
                         user_prompt_fn.as_ref().unwrap()(&param.key, &param.description)?;
-                    param_map.insert(param.key.clone(), input_value)
+                    let value = if matches!(param.input_type, RecipeParameterInputType::File) {
+                        read_parameter_file_content(input_value)?
+                    } else {
+                        input_value
+                    };
+                    param_map.insert(param.key.clone(), value)
                 }
                 _ => {
                     missing_params.push(param.key.clone());
