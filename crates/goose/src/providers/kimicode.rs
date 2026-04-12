@@ -504,12 +504,14 @@ impl Provider for KimiCodeProvider {
             }
         }
 
-        let token = self.device_flow_login().await.map_err(|e| {
-            ProviderError::Authentication(format!("OAuth flow failed: {}", e))
-        })?;
-        self.token_cache.save(&token).await.map_err(|e| {
-            ProviderError::ExecutionError(format!("Failed to save token: {}", e))
-        })?;
+        let token = self
+            .device_flow_login()
+            .await
+            .map_err(|e| ProviderError::Authentication(format!("OAuth flow failed: {}", e)))?;
+        self.token_cache
+            .save(&token)
+            .await
+            .map_err(|e| ProviderError::ExecutionError(format!("Failed to save token: {}", e)))?;
         *self.cached_token.lock().await = Some(token);
         Ok(())
     }
@@ -533,10 +535,7 @@ mod tests {
         let decoded: KimiToken = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(decoded.access_token, token.access_token);
         assert_eq!(decoded.refresh_token, token.refresh_token);
-        assert_eq!(
-            decoded.expires_at.timestamp(),
-            token.expires_at.timestamp()
-        );
+        assert_eq!(decoded.expires_at.timestamp(), token.expires_at.timestamp());
     }
 
     #[test]
