@@ -7,6 +7,7 @@
   "base_url": "https://ollama.com/v1/chat/completions",
   "models": [],
   "dynamic_models": true,
+  "skip_canonical_filtering": true,
   "headers": null,
   "timeout_seconds": null,
   "supports_streaming": true
