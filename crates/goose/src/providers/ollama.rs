@@ -361,18 +361,25 @@ const OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS: u64 = 120;
 
 /// Resolve the per-chunk stream timeout from config.
 /// Priority: OLLAMA_STREAM_TIMEOUT > GOOSE_STREAM_TIMEOUT > OLLAMA_TIMEOUT > default (120s).
+/// Zero values are treated as invalid and skipped, since a zero timeout would
+/// cause every chunk after the first to be treated as a stall.
 fn resolve_ollama_chunk_timeout() -> u64 {
     let config = crate::config::Config::global();
 
     if let Ok(val) = config.get_param::<u64>("OLLAMA_STREAM_TIMEOUT") {
-        return val;
+        if val > 0 {
+            return val;
+        }
     }
     if let Ok(val) = config.get_param::<u64>("GOOSE_STREAM_TIMEOUT") {
-        return val;
+        if val > 0 {
+            return val;
+        }
     }
-    config
-        .get_param::<u64>("OLLAMA_TIMEOUT")
-        .unwrap_or(OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS)
+    match config.get_param::<u64>("OLLAMA_TIMEOUT") {
+        Ok(val) if val > 0 => val,
+        _ => OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS,
+    }
 }
 
 /// Wraps a line stream with a per-item timeout at the raw SSE level.
@@ -616,6 +623,29 @@ mod tests {
             ("OLLAMA_STREAM_TIMEOUT", None::<&str>),
             ("GOOSE_STREAM_TIMEOUT", None::<&str>),
             ("OLLAMA_TIMEOUT", None::<&str>),
+        ]);
+        assert_eq!(
+            resolve_ollama_chunk_timeout(),
+            OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS
+        );
+    }
+
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_skips_zero_values() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", Some("0")),
+            ("GOOSE_STREAM_TIMEOUT", Some("0")),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 300);
+    }
+
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_skips_all_zero_to_default() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", Some("0")),
+            ("GOOSE_STREAM_TIMEOUT", Some("0")),
+            ("OLLAMA_TIMEOUT", Some("0")),
         ]);
         assert_eq!(
             resolve_ollama_chunk_timeout(),
