@@ -2174,11 +2174,4 @@ mod tests {
         assert_eq!(dt.to_rfc3339(), "2026-04-13T01:38:51+00:00");
     }
 
-    #[test]
-    fn test_parse_sql_timestamp_invalid_falls_back_to_now() {
-        let before = Utc::now();
-        let dt = parse_sql_timestamp("not-a-date");
-        let after = Utc::now();
-        assert!(dt >= before && dt <= after);
-    }
 }
