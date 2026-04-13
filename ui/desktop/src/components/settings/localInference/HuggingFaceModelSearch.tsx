@@ -35,6 +35,10 @@ const i18n = defineMessages({
     id: 'huggingFaceModelSearch.downloaded',
     defaultMessage: 'Downloaded',
   },
+  downloading: {
+    id: 'huggingFaceModelSearch.downloading',
+    defaultMessage: 'Downloading…',
+  },
   tooLarge: {
     id: 'huggingFaceModelSearch.tooLarge',
     defaultMessage: 'May not fit in memory ({size} model, {available} available)',
@@ -80,9 +84,13 @@ interface RepoData {
 
 interface Props {
   onDownloadStarted: (modelId: string) => void;
+  /** Model IDs (repo:quant) with an active download in progress */
+  activeDownloadIds?: Set<string>;
+  /** Model IDs (repo:quant) confirmed downloaded on disk */
+  downloadedModelIds?: Set<string>;
 }
 
-export const HuggingFaceModelSearch = ({ onDownloadStarted }: Props) => {
+export const HuggingFaceModelSearch = ({ onDownloadStarted, activeDownloadIds, downloadedModelIds }: Props) => {
   const intl = useIntl();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<HfModelInfo[]>([]);
@@ -292,7 +300,11 @@ export const HuggingFaceModelSearch = ({ onDownloadStarted }: Props) => {
                       const dlKey = `${model.repo_id}:${variant.quantization}`;
                       const isStarting = downloading.has(dlKey);
                       const isRecommended = idx === recommendedIndex;
-                      const isDownloaded = downloadedQuants.has(variant.quantization);
+                      const modelId = `${model.repo_id}:${variant.quantization}`;
+                      const isActiveDownload = activeDownloadIds?.has(modelId) ?? false;
+                      const isDownloaded = downloadedModelIds
+                        ? downloadedModelIds.has(modelId)
+                        : downloadedQuants.has(variant.quantization);
                       const tooLarge = availableMemory > 0 && variant.size_bytes > availableMemory * 0.85;
 
                       return (
@@ -343,6 +355,16 @@ export const HuggingFaceModelSearch = ({ onDownloadStarted }: Props) => {
                             >
                               <Check className="w-3 h-3 mr-1" />
                               {intl.formatMessage(i18n.downloaded)}
+                            </Button>
+                          ) : isActiveDownload ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled
+                              className="opacity-60"
+                            >
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              {intl.formatMessage(i18n.downloading)}
                             </Button>
                           ) : (
                             <Button

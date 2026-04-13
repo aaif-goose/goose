@@ -1442,6 +1442,9 @@
   "huggingFaceModelSearch.downloaded": {
     "defaultMessage": "Downloaded"
   },
+  "huggingFaceModelSearch.downloading": {
+    "defaultMessage": "Downloading\u2026"
+  },
   "huggingFaceModelSearch.loadingVariants": {
     "defaultMessage": "Loading variants..."
   },

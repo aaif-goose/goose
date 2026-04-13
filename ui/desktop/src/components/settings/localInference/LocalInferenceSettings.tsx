@@ -520,7 +520,11 @@ export const LocalInferenceSettings = () => {
 
       {/* HuggingFace Search */}
       <div className="border-t border-border-subtle pt-4">
-        <HuggingFaceModelSearch onDownloadStarted={handleHfDownloadStarted} />
+        <HuggingFaceModelSearch
+          onDownloadStarted={handleHfDownloadStarted}
+          activeDownloadIds={new Set(downloads.keys())}
+          downloadedModelIds={new Set(models.filter(m => m.status.state === 'Downloaded').map(m => m.id))}
+        />
       </div>
 
       {models.length === 0 && (
