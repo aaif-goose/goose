@@ -5,6 +5,11 @@ import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import type { Message } from "@/shared/types/messages";
 
+const mockOpenPath = vi.fn();
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openPath: (path: string) => mockOpenPath(path),
+}));
+
 // ── helpers ───────────────────────────────────────────────────────────
 
 function userMessage(text: string, overrides: Partial<Message> = {}): Message {
@@ -35,6 +40,7 @@ function assistantMessage(
 describe("MessageBubble", () => {
   beforeEach(() => {
     useAgentStore.setState({ personas: [] });
+    mockOpenPath.mockClear();
   });
 
   it("renders user message with correct alignment", () => {
@@ -98,6 +104,39 @@ describe("MessageBubble", () => {
     ]);
     render(<MessageBubble message={msg} />);
     expect(screen.getByText("readFile")).toBeInTheDocument();
+  });
+
+  it("renders metadata attachments and opens them on click", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MessageBubble
+        message={userMessage("See attached", {
+          metadata: {
+            attachments: [
+              {
+                type: "file",
+                name: "report.pdf",
+                path: "/Users/test/report.pdf",
+              },
+              {
+                type: "directory",
+                name: "screenshots",
+                path: "/Users/test/screenshots",
+              },
+            ],
+          },
+        })}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /open attachment report\.pdf/i }),
+    );
+    expect(mockOpenPath).toHaveBeenCalledWith("/Users/test/report.pdf");
+    expect(
+      screen.getByRole("button", { name: /open attachment screenshots/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders standalone tool responses without dropping surrounding text", () => {

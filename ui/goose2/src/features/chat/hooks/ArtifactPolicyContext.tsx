@@ -12,6 +12,7 @@ import { pathExists } from "@/shared/api/system";
 import {
   buildArtifactsIndexForMessages,
   inferHomeDirFromRoots,
+  isWriteOrientedTool,
   resolveMarkdownLocalHref,
   type ArtifactPathCandidate,
 } from "@/features/chat/lib/artifactPathPolicy";
@@ -150,6 +151,12 @@ export function ArtifactPolicyProvider({
 
     for (const ranking of artifactsIndex.byMessageId.values()) {
       if (!ranking.primaryToolCallId || !ranking.primaryCandidate) continue;
+      if (
+        !ranking.primaryCandidate.toolName ||
+        !isWriteOrientedTool(ranking.primaryCandidate.toolName)
+      ) {
+        continue;
+      }
       displayByToolCallId.set(ranking.primaryToolCallId, {
         role: "primary_host",
         primaryCandidate: ranking.primaryCandidate,
@@ -232,6 +239,9 @@ export function ArtifactPolicyProvider({
       for (const candidates of ranking.candidatesByToolCallId.values()) {
         for (const candidate of candidates) {
           if (!candidate.allowed) continue;
+          if (!candidate.toolName || !isWriteOrientedTool(candidate.toolName)) {
+            continue;
+          }
           const key = candidate.resolvedPath.trim().toLowerCase();
           const existing = artifactMap.get(key);
 

@@ -3,6 +3,7 @@ import {
   DEFAULT_CHAT_TITLE,
   getDisplaySessionTitle,
   getEditableSessionTitle,
+  getSessionTitleFromDraft,
   isSessionTitleUnchanged,
 } from "./sessionTitle";
 
@@ -23,5 +24,35 @@ describe("sessionTitle", () => {
     expect(
       isSessionTitleUnchanged("Renamed chat", DEFAULT_CHAT_TITLE, "Nuevo chat"),
     ).toBe(false);
+  });
+
+  it("falls back to attachment-based titles for attachment-only sends", () => {
+    expect(
+      getSessionTitleFromDraft("", [
+        {
+          id: "file-1",
+          kind: "file",
+          name: "report.pdf",
+          path: "/tmp/report.pdf",
+        },
+      ]),
+    ).toBe("Attached file");
+
+    expect(
+      getSessionTitleFromDraft("   ", [
+        {
+          id: "dir-1",
+          kind: "directory",
+          name: "screenshots",
+          path: "/tmp/screenshots",
+        },
+        {
+          id: "dir-2",
+          kind: "directory",
+          name: "receipts",
+          path: "/tmp/receipts",
+        },
+      ]),
+    ).toBe("Attached folders");
   });
 });

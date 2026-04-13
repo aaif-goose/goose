@@ -5,7 +5,7 @@ import { AgentsView } from "@/features/agents/ui/AgentsView";
 import { ProjectsView } from "@/features/projects/ui/ProjectsView";
 import { SessionHistoryView } from "@/features/sessions/ui/SessionHistoryView";
 import type { ChatSession } from "@/features/chat/stores/chatSessionStore";
-import type { PastedImage } from "@/shared/types/messages";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import type { AppView } from "../AppShell";
 
@@ -16,7 +16,7 @@ interface AppShellContentProps {
   homeSelectedProvider?: string;
   homeSelectedPersonaId?: string;
   pendingInitialMessage?: string;
-  pendingInitialImages?: PastedImage[];
+  pendingInitialAttachments?: ChatAttachmentDraft[];
   onArchiveChat: (sessionId: string) => Promise<void>;
   onCreateProject: (options?: {
     initialWorkingDir?: string | null;
@@ -27,7 +27,7 @@ interface AppShellContentProps {
     providerId?: string,
     personaId?: string,
     projectId?: string | null,
-    images?: PastedImage[],
+    attachments?: ChatAttachmentDraft[],
   ) => void;
   onInitialMessageConsumed: () => void;
   onRenameChat: (sessionId: string, nextTitle: string) => void;
@@ -47,7 +47,7 @@ export function AppShellContent({
   homeSelectedProvider,
   homeSelectedPersonaId,
   pendingInitialMessage,
-  pendingInitialImages,
+  pendingInitialAttachments,
   onArchiveChat,
   onCreateProject,
   onHomeStartChat,
@@ -82,7 +82,7 @@ export function AppShellContent({
           initialProvider={homeSelectedProvider}
           initialPersonaId={activeSessionPersonaId ?? homeSelectedPersonaId}
           initialMessage={pendingInitialMessage}
-          initialImages={pendingInitialImages}
+          initialAttachments={pendingInitialAttachments}
           onCreateProject={onCreateProject}
           onInitialMessageConsumed={onInitialMessageConsumed}
         />

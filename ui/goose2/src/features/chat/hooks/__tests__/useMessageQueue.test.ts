@@ -100,10 +100,19 @@ describe("useMessageQueue", () => {
 
   it("includes images when auto-sending", () => {
     const sendMessage = vi.fn();
-    const images = [{ base64: "abc", mimeType: "image/png" }];
+    const attachments = [
+      {
+        id: "image-1",
+        kind: "image" as const,
+        name: "image.png",
+        base64: "abc",
+        mimeType: "image/png",
+        previewUrl: "blob:image",
+      },
+    ];
     useChatStore.getState().enqueueMessage("s1", {
       text: "with image",
-      images,
+      attachments,
     });
 
     renderHook(
@@ -112,7 +121,11 @@ describe("useMessageQueue", () => {
       { initialProps: { chatState: "idle" as ChatState } },
     );
 
-    expect(sendMessage).toHaveBeenCalledWith("with image", undefined, images);
+    expect(sendMessage).toHaveBeenCalledWith(
+      "with image",
+      undefined,
+      attachments,
+    );
   });
 
   it("preserves personaId when auto-sending", () => {

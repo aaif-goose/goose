@@ -7,7 +7,7 @@ import {
 import { useProviderSelection } from "@/features/agents/hooks/useProviderSelection";
 import { ChatInput } from "@/features/chat/ui/ChatInput";
 import { useChatStore } from "@/features/chat/stores/chatStore";
-import type { PastedImage } from "@/shared/types/messages";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { useLocaleFormatting } from "@/shared/i18n";
 
@@ -53,7 +53,7 @@ interface HomeScreenProps {
     providerId?: string,
     personaId?: string,
     projectId?: string | null,
-    images?: PastedImage[],
+    attachments?: ChatAttachmentDraft[],
   ) => void;
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
@@ -106,7 +106,11 @@ export function HomeScreen({ onStartChat, onCreateProject }: HomeScreenProps) {
   }, []);
 
   const handleSend = useCallback(
-    (message: string, personaId?: string, images?: PastedImage[]) => {
+    (
+      message: string,
+      personaId?: string,
+      attachments?: ChatAttachmentDraft[],
+    ) => {
       const effectivePersonaId = personaId ?? selectedPersonaId ?? undefined;
 
       useChatStore.getState().clearDraft(HOME_DRAFT_KEY);
@@ -115,7 +119,7 @@ export function HomeScreen({ onStartChat, onCreateProject }: HomeScreenProps) {
         selectedProvider,
         effectivePersonaId,
         selectedProjectId,
-        images,
+        attachments,
       );
     },
     [onStartChat, selectedPersonaId, selectedProjectId, selectedProvider],

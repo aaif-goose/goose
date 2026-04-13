@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from "react";
 import type { ChatState } from "@/shared/types/chat";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useChatStore } from "../stores/chatStore";
 
 /**
@@ -16,7 +17,7 @@ export function useMessageQueue(
   sendMessage: (
     text: string,
     overridePersona?: { id: string; name?: string },
-    images?: { base64: string; mimeType: string }[],
+    attachments?: ChatAttachmentDraft[],
   ) => void,
 ) {
   const queuedMessage = useChatStore(
@@ -25,22 +26,18 @@ export function useMessageQueue(
 
   useEffect(() => {
     if (chatState === "idle" && queuedMessage) {
-      const { text, personaId, images } = queuedMessage;
+      const { text, personaId, attachments } = queuedMessage;
       useChatStore.getState().dismissQueuedMessage(sessionId);
-      sendMessage(text, personaId ? { id: personaId } : undefined, images);
+      sendMessage(text, personaId ? { id: personaId } : undefined, attachments);
     }
   }, [chatState, queuedMessage, sendMessage, sessionId]);
 
   const enqueue = useCallback(
-    (
-      text: string,
-      personaId?: string,
-      images?: { base64: string; mimeType: string }[],
-    ) => {
+    (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {
       useChatStore.getState().enqueueMessage(sessionId, {
         text,
         personaId,
-        images,
+        attachments,
       });
     },
     [sessionId],

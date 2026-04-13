@@ -1,7 +1,16 @@
 import { useState, memo } from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, Check, RotateCcw, Pencil, User } from "lucide-react";
+import {
+  Copy,
+  Check,
+  RotateCcw,
+  Pencil,
+  User,
+  FileText,
+  FolderClosed,
+} from "lucide-react";
 import { IconRobot } from "@tabler/icons-react";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { cn } from "@/shared/lib/cn";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
@@ -26,6 +35,7 @@ import { ClickableImage } from "./ClickableImage";
 import { useArtifactLinkHandler } from "@/features/chat/hooks/useArtifactLinkHandler";
 import type {
   Message,
+  MessageAttachment,
   MessageContent,
   TextContent,
   ImageContent,
@@ -34,6 +44,44 @@ import type {
   ReasoningContent as ReasoningContentType,
   SystemNotificationContent,
 } from "@/shared/types/messages";
+
+function MessageAttachmentRow({
+  attachment,
+}: {
+  attachment: MessageAttachment;
+}) {
+  const { t } = useTranslation("chat");
+  const Icon = attachment.type === "directory" ? FolderClosed : FileText;
+  const canOpen = Boolean(attachment.path);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (!attachment.path) {
+          return;
+        }
+        void openPath(attachment.path);
+      }}
+      disabled={!canOpen}
+      className={cn(
+        "flex max-w-full items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs text-foreground",
+        canOpen
+          ? "cursor-pointer hover:bg-muted/70"
+          : "cursor-default opacity-80",
+      )}
+      aria-label={
+        canOpen
+          ? t("attachments.open", { name: attachment.name })
+          : attachment.name
+      }
+      title={attachment.path ?? attachment.name}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="truncate">{attachment.name}</span>
+    </button>
+  );
+}
 
 interface MessageBubbleProps {
   message: Message;
@@ -307,6 +355,7 @@ export const MessageBubble = memo(function MessageBubble({
     !isUser &&
       (assistantDisplayName || personaAvatarUrl || assistantProviderIcon),
   );
+  const messageAttachments = message.metadata?.attachments ?? [];
 
   return (
     <div
@@ -360,6 +409,16 @@ export const MessageBubble = memo(function MessageBubble({
           className="w-full min-w-0 text-[13px] leading-relaxed"
           onClick={handleContentClick}
         >
+          {messageAttachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {messageAttachments.map((attachment) => (
+                <MessageAttachmentRow
+                  key={`${attachment.type}-${attachment.path ?? attachment.name}`}
+                  attachment={attachment}
+                />
+              ))}
+            </div>
+          )}
           {groupContentSections(content).map((section, sectionIdx) => {
             if (section.type === "toolChain") {
               const toolItems = section.items as ToolChainItem[];

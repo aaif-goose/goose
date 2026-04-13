@@ -1,8 +1,11 @@
 {
   "attachments": {
     "alt": "Adjunto {{index}}",
-    "dropToAttach": "Suelta imágenes para adjuntarlas",
-    "remove": "Eliminar imagen",
+    "chooseFilesDialogTitle": "Elegir archivos para adjuntar",
+    "chooseFoldersDialogTitle": "Elegir carpetas para adjuntar",
+    "dropToAttach": "Suelta archivos o carpetas para adjuntarlos",
+    "open": "Abrir adjunto {{name}}",
+    "remove": "Eliminar adjunto",
     "view": "Ver adjunto {{index}}"
   },
   "context": {
@@ -141,6 +144,9 @@
   },
   "toolbar": {
     "agent": "Agente",
+    "attach": "Adjuntar",
+    "attachFile": "Archivo",
+    "attachFolder": "Carpeta",
     "chooseAgentModel": "Elegir agente y modelo",
     "chooseProject": "Elegir un proyecto",
     "chooseProvider": "Elegir un proveedor",

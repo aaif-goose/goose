@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { useChatStore } from "../stores/chatStore";
 import { useChatSessionStore } from "../stores/chatSessionStore";
 import {
+  type ChatAttachmentDraft,
   createSystemNotificationMessage,
   createUserMessage,
 } from "@/shared/types/messages";
@@ -13,8 +14,16 @@ import {
   acpSetModel,
 } from "@/shared/api/acp";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
-import { isDefaultChatTitle } from "../lib/sessionTitle";
+import {
+  getSessionTitleFromDraft,
+  isDefaultChatTitle,
+} from "../lib/sessionTitle";
 import { findLastIndex } from "@/shared/lib/arrays";
+import {
+  buildAcpImages,
+  buildAttachmentPromptPreamble,
+  buildMessageAttachments,
+} from "../lib/attachments";
 
 function getErrorMessage(error: unknown): string {
   // Tauri command rejections typically arrive as plain strings, so handle
@@ -118,10 +127,12 @@ export function useChat(
     async (
       text: string,
       overridePersona?: { id: string; name?: string },
-      images?: { base64: string; mimeType: string }[],
+      attachments?: ChatAttachmentDraft[],
     ) => {
+      const images = buildAcpImages(attachments);
+      const hasAttachments = (attachments?.length ?? 0) > 0;
       if (
-        (!text.trim() && (!images || images.length === 0)) ||
+        (!text.trim() && !hasAttachments) ||
         chatState === "streaming" ||
         chatState === "thinking"
       )
@@ -141,7 +152,10 @@ export function useChat(
       store.setPendingAssistantProvider(sessionId, providerId);
 
       // Create and add user message
-      const userMessage = createUserMessage(text);
+      const userMessage = createUserMessage(
+        text,
+        buildMessageAttachments(attachments),
+      );
       if (effectivePersonaInfo) {
         userMessage.metadata = {
           ...userMessage.metadata,
@@ -185,7 +199,7 @@ export function useChat(
         sessionStore.updateSession(
           sessionId,
           {
-            title: text.trim().slice(0, 100),
+            title: getSessionTitleFromDraft(text, attachments),
             updatedAt: new Date().toISOString(),
           },
           { localOnly: wasDraft },
@@ -218,7 +232,10 @@ export function useChat(
         store.setChatState(sessionId, "streaming");
         // When images are present with no text, pass a single space so the ACP
         // driver doesn't send an empty text content block that goose rejects.
-        const acpPrompt = text.trim() || (images?.length ? " " : text);
+        const attachmentPromptPreamble =
+          buildAttachmentPromptPreamble(attachments);
+        const promptBody = text.trim() || (images?.length ? " " : text);
+        const acpPrompt = `${attachmentPromptPreamble}${promptBody}`;
         await acpSendMessage(sessionId, providerId, acpPrompt, {
           systemPrompt,
           workingDir: workingDirOverride,

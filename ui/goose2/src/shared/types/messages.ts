@@ -1,8 +1,34 @@
-export interface PastedImage {
-  base64: string;
+export type ChatAttachmentKind = "image" | "file" | "directory";
+
+export interface ChatImageAttachmentDraft {
+  id: string;
+  kind: "image";
+  name: string;
+  path?: string;
   mimeType: string;
-  objectUrl: string;
+  base64: string;
+  previewUrl: string;
 }
+
+export interface ChatFileAttachmentDraft {
+  id: string;
+  kind: "file";
+  name: string;
+  path?: string;
+  mimeType?: string;
+}
+
+export interface ChatDirectoryAttachmentDraft {
+  id: string;
+  kind: "directory";
+  name: string;
+  path: string;
+}
+
+export type ChatAttachmentDraft =
+  | ChatImageAttachmentDraft
+  | ChatFileAttachmentDraft
+  | ChatDirectoryAttachmentDraft;
 
 // Message roles
 export type MessageRole = "user" | "assistant" | "system";
@@ -97,6 +123,7 @@ export interface MessageAttachment {
   name: string;
   path?: string;
   url?: string;
+  mimeType?: string;
 }
 
 export interface MessageChip {

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AcpProvider } from "@/shared/api/acp";
@@ -13,11 +14,14 @@ import { ChatInputToolbar } from "./ChatInputToolbar";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 import { PersonaAvatar } from "./PersonaPicker";
-import { ImageLightbox } from "@/shared/ui/ImageLightbox";
-import type { PastedImage } from "@/shared/types/messages";
-import { resizeImage } from "../lib/resizeImage";
-import { useImageDropTarget } from "../hooks/useImageDropTarget";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
+import { useAttachmentDropTarget } from "../hooks/useAttachmentDropTarget";
+import {
+  normalizeDialogSelection,
+  useChatInputAttachments,
+} from "../hooks/useChatInputAttachments";
 import type { ModelOption } from "../types";
+import { ChatInputAttachments } from "./ChatInputAttachments";
 
 export interface ProjectOption {
   id: string;
@@ -27,7 +31,11 @@ export interface ProjectOption {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, personaId?: string, images?: PastedImage[]) => void;
+  onSend: (
+    text: string,
+    personaId?: string,
+    attachments?: ChatAttachmentDraft[],
+  ) => void;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
@@ -36,86 +44,27 @@ interface ChatInputProps {
   initialValue?: string;
   onDraftChange?: (text: string) => void;
   className?: string;
-  // Personas
   personas?: Persona[];
   selectedPersonaId?: string | null;
   onPersonaChange?: (personaId: string | null) => void;
   onCreatePersona?: () => void;
-  // Provider (secondary -- auto-set by persona but overridable)
   providers?: AcpProvider[];
   providersLoading?: boolean;
   selectedProvider?: string;
   onProviderChange?: (providerId: string) => void;
-  // Model
   currentModelId?: string | null;
   currentModel?: string;
   availableModels?: ModelOption[];
   onModelChange?: (modelId: string) => void;
-  // Project
   selectedProjectId?: string | null;
   availableProjects?: ProjectOption[];
   onProjectChange?: (projectId: string | null) => void;
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
   }) => void;
-  // Context
   contextTokens?: number;
   contextLimit?: number;
 }
-
-// ---------------------------------------------------------------------------
-// PastedImageThumb
-// ---------------------------------------------------------------------------
-
-function PastedImageThumb({
-  objectUrl,
-  index,
-  onRemove,
-}: {
-  objectUrl: string;
-  index: number;
-  onRemove: (index: number) => void;
-}) {
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const { t } = useTranslation("chat");
-
-  return (
-    <>
-      <div className="group relative inline-block">
-        <button
-          type="button"
-          onClick={() => setLightboxOpen(true)}
-          className="block cursor-pointer rounded-lg"
-          aria-label={t("attachments.view", { index: index + 1 })}
-        >
-          <img
-            src={objectUrl}
-            alt={t("attachments.alt", { index: index + 1 })}
-            className="h-16 w-16 rounded-lg object-cover border border-border"
-          />
-        </button>
-        <button
-          type="button"
-          onClick={() => onRemove(index)}
-          className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-          aria-label={t("attachments.remove")}
-        >
-          <X className="h-2.5 w-2.5" />
-        </button>
-      </div>
-      <ImageLightbox
-        src={objectUrl}
-        alt={t("attachments.alt", { index: index + 1 })}
-        open={lightboxOpen}
-        onOpenChange={setLightboxOpen}
-      />
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ChatInput
-// ---------------------------------------------------------------------------
 
 export function ChatInput({
   onSend,
@@ -155,10 +104,16 @@ export function ChatInput({
     },
     [onDraftChange],
   );
-  const [images, setImages] = useState<PastedImage[]>([]);
   const [isCompact, setIsCompact] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const {
+    attachments,
+    addBrowserFiles,
+    addPathAttachments,
+    removeAttachment,
+    clearAttachments,
+  } = useChatInputAttachments();
 
   const activePersona = useMemo(
     () => personas.find((persona) => persona.id === selectedPersonaId) ?? null,
@@ -174,7 +129,7 @@ export function ChatInput({
 
   const hasQueuedMessage = queuedMessage !== null;
   const canSend =
-    (text.trim().length > 0 || images.length > 0) &&
+    (text.trim().length > 0 || attachments.length > 0) &&
     !hasQueuedMessage &&
     !disabled;
 
@@ -200,148 +155,156 @@ export function ChatInput({
   });
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    const element = containerRef.current;
+    if (!element || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setIsCompact(entry.contentRect.width < 580);
       }
     });
-    observer.observe(el);
+    observer.observe(element);
     return () => observer.disconnect();
   }, []);
 
-  // Keep a ref to latest images so the unmount cleanup always sees current state
-  // without needing images as a dependency (which would revoke still-active URLs
-  // on every add/remove).
-  const imagesRef = useRef(images);
-  imagesRef.current = images;
-
-  useEffect(() => {
-    return () => {
-      for (const img of imagesRef.current) {
-        URL.revokeObjectURL(img.objectUrl);
-      }
-    };
-  }, []);
-  // Focus the textarea on mount so the user can type immediately
   useEffect(() => textareaRef.current?.focus(), []);
 
   const handleSend = useCallback(() => {
-    if (!canSend) return;
+    if (!canSend) {
+      return;
+    }
+
     onSend(
       text.trim(),
       selectedPersonaId ?? undefined,
-      images.length > 0 ? images : undefined,
+      attachments.length > 0 ? attachments : undefined,
     );
     setText("");
-    setImages((prev) => {
-      for (const img of prev) URL.revokeObjectURL(img.objectUrl);
-      return [];
-    });
+    clearAttachments();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [canSend, text, images, onSend, selectedPersonaId, setText]);
+  }, [
+    attachments,
+    canSend,
+    clearAttachments,
+    onSend,
+    selectedPersonaId,
+    setText,
+    text,
+  ]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (event: React.KeyboardEvent) => {
     if (mentionOpen) {
-      if (e.key === "Escape") {
-        e.preventDefault();
+      if (event.key === "Escape") {
+        event.preventDefault();
         closeMention();
         return;
       }
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        navigateMention(e.key === "ArrowDown" ? "down" : "up");
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        navigateMention(event.key === "ArrowDown" ? "down" : "up");
         return;
       }
-      if (e.key === "Enter" || e.key === "Tab") {
+      if (event.key === "Enter" || event.key === "Tab") {
         const item = confirmMention();
         if (item) {
-          e.preventDefault();
+          event.preventDefault();
           handleMentionConfirm(item);
           return;
         }
       }
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
-      e.preventDefault();
+    if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
       handleSend();
     }
   };
 
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
+  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = event.target.value;
     setText(value);
-    const cursorPos = e.target.selectionStart ?? value.length;
-    detectMention(value, cursorPos);
-    const textarea = e.target;
+    const cursorPosition = event.target.selectionStart ?? value.length;
+    detectMention(value, cursorPosition);
+    const textarea = event.target;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   };
 
-  const addImageFile = useCallback((file: File) => {
-    const objectUrl = URL.createObjectURL(file);
-    resizeImage(file)
-      .then(({ base64, mimeType }) => {
-        setImages((prev) => [...prev, { base64, mimeType, objectUrl }]);
-      })
-      .catch(() => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          const [header, b64] = dataUrl.split(",");
-          const mime = header.replace("data:", "").replace(";base64", "");
-          setImages((prev) => [
-            ...prev,
-            { base64: b64, mimeType: mime, objectUrl },
-          ]);
-        };
-        reader.onerror = () => {
-          URL.revokeObjectURL(objectUrl);
-        };
-        reader.readAsDataURL(file);
-      });
-  }, []);
-
   const handlePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const items = Array.from(e.clipboardData.items);
-      const imageItems = items.filter((item) => item.type.startsWith("image/"));
-      if (imageItems.length === 0) return;
+    (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = Array.from(event.clipboardData.items)
+        .filter(
+          (item) => item.kind === "file" && item.type.startsWith("image/"),
+        )
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => Boolean(file));
 
-      e.preventDefault();
-      for (const item of imageItems) {
-        const file = item.getAsFile();
-        if (!file) continue;
-        addImageFile(file);
+      if (files.length === 0) {
+        return;
       }
+
+      event.preventDefault();
+      void addBrowserFiles(files);
     },
-    [addImageFile],
+    [addBrowserFiles],
   );
 
   const {
-    isImageDragOver,
+    isAttachmentDragOver,
     handleDragEnter,
     handleDragOver,
     handleDragLeave,
     handleDrop,
-  } = useImageDropTarget({
+  } = useAttachmentDropTarget({
     disabled,
     isStreaming,
-    onDropFile: addImageFile,
+    targetRef: containerRef,
+    onDropFiles: (files) => {
+      void addBrowserFiles(files);
+    },
+    onDropPaths: (paths) => {
+      void addPathAttachments(paths);
+    },
   });
 
-  const removeImage = useCallback((index: number) => {
-    setImages((prev) => {
-      URL.revokeObjectURL(prev[index].objectUrl);
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
+  const handleAttachFiles = useCallback(async () => {
+    if (disabled) {
+      return;
+    }
+
+    try {
+      const selected = await open({
+        title: t("attachments.chooseFilesDialogTitle"),
+        multiple: true,
+      });
+      void addPathAttachments(normalizeDialogSelection(selected));
+    } catch {
+      // Dialog plugin may be unavailable in some environments.
+    }
+  }, [addPathAttachments, disabled, t]);
+
+  const handleAttachFolders = useCallback(async () => {
+    if (disabled) {
+      return;
+    }
+
+    try {
+      const selected = await open({
+        directory: true,
+        title: t("attachments.chooseFoldersDialogTitle"),
+        multiple: true,
+      });
+      void addPathAttachments(normalizeDialogSelection(selected));
+    } catch {
+      // Dialog plugin may be unavailable in some environments.
+    }
+  }, [addPathAttachments, disabled, t]);
 
   const providerDisplayName =
-    providers.find((p) => p.id === selectedProvider)?.label ??
+    providers.find((provider) => provider.id === selectedProvider)?.label ??
     formatProviderLabel(selectedProvider);
   const agentDisplayName = activePersona?.displayName ?? providerDisplayName;
   const resolvedCurrentModel =
@@ -356,21 +319,22 @@ export function ChatInput({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className={cn("px-4 pb-6 pt-2", className)} ref={containerRef}>
+      <div className={cn("px-4 pb-6 pt-2", className)}>
         <div className="mx-auto max-w-3xl">
           <Popover open={mentionOpen}>
-            {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for image files */}
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for file attachments */}
             <div
+              ref={containerRef}
               className={cn(
                 "relative rounded-2xl border border-border bg-background px-4 pb-3 pt-4 transition-colors",
-                isImageDragOver && "bg-muted/20",
+                isAttachmentDragOver && "bg-muted/20",
               )}
               onDragEnter={handleDragEnter}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
-              {isImageDragOver && (
+              {isAttachmentDragOver && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border border-dashed border-border bg-background/70">
                   <Badge
                     variant="secondary"
@@ -380,6 +344,7 @@ export function ChatInput({
                   </Badge>
                 </div>
               )}
+
               <MentionAutocomplete
                 filteredPersonas={filteredPersonas}
                 filteredFiles={filteredFiles}
@@ -390,18 +355,10 @@ export function ChatInput({
                 selectedIndex={mentionSelectedIndex}
               />
 
-              {images.length > 0 && (
-                <div className="mb-2 flex flex-wrap gap-2">
-                  {images.map((img, i) => (
-                    <PastedImageThumb
-                      key={img.objectUrl}
-                      objectUrl={img.objectUrl}
-                      index={i}
-                      onRemove={removeImage}
-                    />
-                  ))}
-                </div>
-              )}
+              <ChatInputAttachments
+                attachments={attachments}
+                onRemove={removeAttachment}
+              />
 
               {stickyPersona && (
                 <div className="mb-2 flex items-center gap-1.5">
@@ -475,6 +432,9 @@ export function ChatInput({
                 canSend={canSend}
                 isStreaming={isStreaming}
                 hasQueuedMessage={hasQueuedMessage}
+                onAttachFiles={handleAttachFiles}
+                onAttachFolders={handleAttachFolders}
+                disabled={disabled}
                 onSend={handleSend}
                 onStop={onStop}
                 isCompact={isCompact}

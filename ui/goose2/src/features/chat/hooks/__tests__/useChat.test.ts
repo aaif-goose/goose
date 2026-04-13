@@ -134,6 +134,7 @@ describe("useChat", () => {
         workingDir: undefined,
         personaId: "persona-b",
         personaName: "Persona B",
+        images: undefined,
       },
     );
     expect(mockAcpCancelSession).toHaveBeenCalledWith("session-1", "persona-b");
@@ -322,6 +323,7 @@ describe("useChat", () => {
         workingDir: undefined,
         personaId: undefined,
         personaName: undefined,
+        images: undefined,
       },
     );
     expect(mockAcpSendMessage).toHaveBeenNthCalledWith(
@@ -334,6 +336,7 @@ describe("useChat", () => {
         workingDir: undefined,
         personaId: undefined,
         personaName: undefined,
+        images: undefined,
       },
     );
 
@@ -380,6 +383,7 @@ describe("useChat", () => {
         workingDir: undefined,
         personaId: undefined,
         personaName: undefined,
+        images: undefined,
       },
     );
   });

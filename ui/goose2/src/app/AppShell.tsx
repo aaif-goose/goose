@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { StatusBar } from "@/features/status/ui/StatusBar";
-import type { PastedImage } from "@/shared/types/messages";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
 import type { ProjectInfo } from "@/features/projects/api/projects";
@@ -135,8 +135,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const [pendingInitialMessage, setPendingInitialMessage] = useState<
     string | undefined
   >();
-  const [pendingInitialImages, setPendingInitialImages] = useState<
-    PastedImage[] | undefined
+  const [pendingInitialAttachments, setPendingInitialAttachments] = useState<
+    ChatAttachmentDraft[] | undefined
   >();
   const [homeSelectedPersonaId, setHomeSelectedPersonaId] = useState<
     string | undefined
@@ -363,12 +363,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       providerId?: string,
       personaId?: string,
       projectId?: string | null,
-      images?: PastedImage[],
+      attachments?: ChatAttachmentDraft[],
     ) => {
       setHomeSelectedProvider(providerId);
       setHomeSelectedPersonaId(personaId);
       setPendingInitialMessage(initialMessage);
-      setPendingInitialImages(images);
+      setPendingInitialAttachments(attachments);
       const selectedProject =
         projectId != null
           ? projectStore.projects.find((project) => project.id === projectId)
@@ -501,7 +501,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const activeSessionPersonaId = activeSession?.personaId;
   const handleInitialMessageConsumed = useCallback(() => {
     setPendingInitialMessage(undefined);
-    setPendingInitialImages(undefined);
+    setPendingInitialAttachments(undefined);
     setHomeSelectedProvider(undefined);
     setHomeSelectedPersonaId(undefined);
   }, []);
@@ -580,7 +580,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
               homeSelectedProvider={homeSelectedProvider}
               homeSelectedPersonaId={homeSelectedPersonaId}
               pendingInitialMessage={pendingInitialMessage}
-              pendingInitialImages={pendingInitialImages}
+              pendingInitialAttachments={pendingInitialAttachments}
               onArchiveChat={handleArchiveChat}
               onCreateProject={openCreateProjectDialog}
               onHomeStartChat={handleHomeStartChat}

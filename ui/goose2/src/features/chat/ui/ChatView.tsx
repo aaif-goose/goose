@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence } from "motion/react";
 import { MessageTimeline } from "./MessageTimeline";
 import { ChatInput } from "./ChatInput";
-import type { PastedImage } from "@/shared/types/messages";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { LoadingGoose } from "./LoadingGoose";
 import { ChatLoadingSkeleton } from "./ChatLoadingSkeleton";
 import { useChat } from "../hooks/useChat";
@@ -33,7 +33,7 @@ interface ChatViewProps {
   initialProvider?: string;
   initialPersonaId?: string;
   initialMessage?: string;
-  initialImages?: PastedImage[];
+  initialAttachments?: ChatAttachmentDraft[];
   onInitialMessageConsumed?: () => void;
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
@@ -45,7 +45,7 @@ export function ChatView({
   initialProvider,
   initialPersonaId,
   initialMessage,
-  initialImages,
+  initialAttachments,
   onInitialMessageConsumed,
   onCreateProject,
 }: ChatViewProps) {
@@ -351,13 +351,14 @@ export function ChatView({
       (s.messagesBySession[activeSessionId]?.length ?? 0) === 0,
   );
 
-  const deferredSend = useRef<{ text: string; images?: PastedImage[] } | null>(
-    null,
-  );
+  const deferredSend = useRef<{
+    text: string;
+    attachments?: ChatAttachmentDraft[];
+  } | null>(null);
   const queue = useMessageQueue(activeSessionId, chatState, sendMessage);
   const chatStore = useChatStore();
   const handleSend = useCallback(
-    (text: string, personaId?: string, images?: PastedImage[]) => {
+    (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {
       if (personaId && personaId !== selectedPersonaId) {
         const newPersona = personas.find((p) => p.id === personaId);
         if (newPersona) {
@@ -378,16 +379,16 @@ export function ChatView({
         }
         handlePersonaChange(personaId);
         // Defer the send until after persona state updates
-        deferredSend.current = { text, images };
+        deferredSend.current = { text, attachments };
         return;
       }
       // Queue if agent is busy and no message already queued
       if (chatState !== "idle" && !queue.queuedMessage) {
-        queue.enqueue(text, personaId, images);
+        queue.enqueue(text, personaId, attachments);
         return;
       }
 
-      sendMessage(text, undefined, images);
+      sendMessage(text, undefined, attachments);
     },
     [
       sendMessage,
@@ -403,22 +404,27 @@ export function ChatView({
 
   useEffect(() => {
     if (deferredSend.current && selectedPersona) {
-      const { text, images } = deferredSend.current;
+      const { text, attachments } = deferredSend.current;
       deferredSend.current = null;
-      sendMessage(text, undefined, images);
+      sendMessage(text, undefined, attachments);
     }
   }, [sendMessage, selectedPersona]);
   const initialMessageSent = useRef(false);
   useEffect(() => {
     if (
-      (initialMessage || initialImages?.length) &&
+      (initialMessage || initialAttachments?.length) &&
       !initialMessageSent.current
     ) {
       initialMessageSent.current = true;
-      handleSend(initialMessage ?? "", undefined, initialImages);
+      handleSend(initialMessage ?? "", undefined, initialAttachments);
       onInitialMessageConsumed?.();
     }
-  }, [initialMessage, initialImages, handleSend, onInitialMessageConsumed]);
+  }, [
+    initialAttachments,
+    initialMessage,
+    handleSend,
+    onInitialMessageConsumed,
+  ]);
   const isStreaming = chatState === "streaming";
   const showIndicator =
     chatState === "thinking" ||

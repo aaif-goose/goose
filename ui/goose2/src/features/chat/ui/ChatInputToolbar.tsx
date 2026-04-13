@@ -1,5 +1,12 @@
 import { useMemo } from "react";
-import { Mic, ArrowUp, Square } from "lucide-react";
+import {
+  Mic,
+  ArrowUp,
+  Square,
+  Paperclip,
+  File,
+  FolderOpen,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { IconLibraryPlusFilled } from "@tabler/icons-react";
@@ -11,6 +18,12 @@ import { ContextRing } from "./ContextRing";
 import { PersonaPicker } from "./PersonaPicker";
 import type { ProjectOption } from "./ChatInput";
 import { Button } from "@/shared/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/tooltip";
 import { AgentModelPicker } from "./AgentModelPicker";
 import type { ModelOption } from "../types";
@@ -69,6 +82,9 @@ interface ChatInputToolbarProps {
   hasQueuedMessage: boolean;
   onSend: () => void;
   onStop?: () => void;
+  onAttachFiles?: () => void;
+  onAttachFolders?: () => void;
+  disabled?: boolean;
   // Layout
   isCompact: boolean;
 }
@@ -97,6 +113,9 @@ export function ChatInputToolbar({
   hasQueuedMessage,
   onSend,
   onStop,
+  onAttachFiles,
+  onAttachFolders,
+  disabled = false,
   isCompact,
 }: ChatInputToolbarProps) {
   const { t } = useTranslation("chat");
@@ -242,6 +261,37 @@ export function ChatInputToolbar({
               <ContextRing tokens={contextTokens} limit={contextLimit} />
             </Button>
           )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                disabled={disabled}
+                aria-label={t("toolbar.attach")}
+                title={t("toolbar.attach")}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() => onAttachFiles?.()}
+                disabled={disabled}
+              >
+                <File className="mr-2 h-4 w-4" />
+                {t("toolbar.attachFile")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => onAttachFolders?.()}
+                disabled={disabled}
+              >
+                <FolderOpen className="mr-2 h-4 w-4" />
+                {t("toolbar.attachFolder")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Tooltip>
             <TooltipTrigger asChild>

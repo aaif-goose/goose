@@ -21,6 +21,21 @@ async fn clear_cancel_requested(state: &Arc<Mutex<ManagerState>>, composite_key:
     guard.pending_cancels.remove(composite_key);
 }
 
+pub(super) fn build_content_blocks(
+    prompt: String,
+    images: Vec<(String, String)>,
+) -> Vec<AcpContentBlock> {
+    let mut content_blocks = Vec::with_capacity(images.len() + 1);
+    for (data, mime_type) in images {
+        content_blocks.push(AcpContentBlock::Image(ImageContent::new(
+            data.as_str(),
+            mime_type.as_str(),
+        )));
+    }
+    content_blocks.push(AcpContentBlock::Text(TextContent::new(prompt)));
+    content_blocks
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(in super::super) async fn send_prompt_inner(
     connection: &Arc<ClientSideConnection>,
@@ -77,13 +92,7 @@ pub(in super::super) async fn send_prompt_inner(
         return Ok(());
     }
 
-    let mut content_blocks = vec![AcpContentBlock::Text(TextContent::new(prompt))];
-    for (data, mime_type) in &images {
-        content_blocks.push(AcpContentBlock::Image(ImageContent::new(
-            data.as_str(),
-            mime_type.as_str(),
-        )));
-    }
+    let content_blocks = build_content_blocks(prompt, images);
 
     let result = connection
         .prompt(PromptRequest::new(goose_session_id.clone(), content_blocks))

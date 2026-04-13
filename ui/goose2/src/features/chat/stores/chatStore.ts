@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import type { Message, MessageContent } from "@/shared/types/messages";
+import type {
+  ChatAttachmentDraft,
+  Message,
+  MessageContent,
+} from "@/shared/types/messages";
 import { clearReplayBuffer } from "../hooks/replayBuffer";
 import type {
   ChatState,
@@ -51,7 +55,7 @@ function createInitialSessionRuntime(): SessionChatRuntime {
 export interface QueuedMessage {
   text: string;
   personaId?: string;
-  images?: { base64: string; mimeType: string }[];
+  attachments?: ChatAttachmentDraft[];
 }
 
 export interface ScrollTargetMessage {

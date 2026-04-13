@@ -72,6 +72,22 @@ function TextFollowupProbe({
   );
 }
 
+function ReadOnlyProbe({ readArgs }: { readArgs: Record<string, unknown> }) {
+  const { resolveToolCardDisplay, getAllSessionArtifacts } =
+    useArtifactPolicyContext();
+  const display = resolveToolCardDisplay(readArgs, "read_file");
+  const artifacts = getAllSessionArtifacts();
+
+  return (
+    <div>
+      <span data-testid="read-only-role">{display.role}</span>
+      <span data-testid="read-only-artifacts">
+        {artifacts.map((artifact) => artifact.resolvedPath).join(",")}
+      </span>
+    </div>
+  );
+}
+
 function FallbackProbe({
   path = "/Users/test/.goose/projects/sample-project/artifacts/report.md",
 }: {
@@ -169,6 +185,47 @@ describe("ArtifactPolicyContext", () => {
       Number(screen.getByTestId("write-secondary-count").textContent),
     ).toBeGreaterThan(0);
     expect(screen.getByTestId("cloned-role")).toHaveTextContent("none");
+  });
+
+  it("does not treat read-only tool paths as session artifacts", () => {
+    mockPathExists.mockReset();
+    mockOpenPath.mockReset();
+    const readArgs = { path: "/Users/test/project-a/notes.md" };
+    const messages: Message[] = [
+      {
+        id: "assistant-read-only",
+        role: "assistant",
+        created: Date.now(),
+        content: [
+          {
+            type: "toolRequest",
+            id: "tool-read",
+            name: "read_file",
+            arguments: readArgs,
+            status: "completed",
+          },
+          {
+            type: "toolResponse",
+            id: "tool-read",
+            name: "read_file",
+            result: "Read /Users/test/project-a/notes.md",
+            isError: false,
+          },
+        ],
+      },
+    ];
+
+    render(
+      <ArtifactPolicyProvider
+        messages={messages}
+        allowedRoots={["/Users/test/project-a", "/Users/test/.goose/artifacts"]}
+      >
+        <ReadOnlyProbe readArgs={readArgs} />
+      </ArtifactPolicyProvider>,
+    );
+
+    expect(screen.getByTestId("read-only-role")).toHaveTextContent("none");
+    expect(screen.getByTestId("read-only-artifacts")).toHaveTextContent("");
   });
 
   it("falls back to the home artifacts root when a project artifacts path is missing", async () => {

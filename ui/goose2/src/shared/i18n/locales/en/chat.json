@@ -1,8 +1,11 @@
 {
   "attachments": {
     "alt": "Attachment {{index}}",
-    "dropToAttach": "Drop images to attach",
-    "remove": "Remove image",
+    "chooseFilesDialogTitle": "Choose files to attach",
+    "chooseFoldersDialogTitle": "Choose folders to attach",
+    "dropToAttach": "Drop files or folders to attach",
+    "open": "Open attachment {{name}}",
+    "remove": "Remove attachment",
     "view": "View attachment {{index}}"
   },
   "context": {
@@ -141,6 +144,9 @@
   },
   "toolbar": {
     "agent": "Agent",
+    "attach": "Attach",
+    "attachFile": "File",
+    "attachFolder": "Folder",
     "chooseAgentModel": "Choose agent and model",
     "chooseProject": "Choose a project",
     "chooseProvider": "Choose a provider",

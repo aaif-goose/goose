@@ -101,7 +101,9 @@ pub fn run() {
             commands::system::save_exported_session_file,
             commands::system::path_exists,
             commands::system::list_directory_entries,
+            commands::system::inspect_attachment_paths,
             commands::system::list_files_for_mentions,
+            commands::system::read_image_attachment,
         ])
         .setup(|_app| Ok(()))
         .build(tauri::generate_context!())
