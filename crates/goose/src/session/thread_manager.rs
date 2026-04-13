@@ -1,7 +1,8 @@
-use super::session_manager::{SessionStorage, role_to_string};
+use super::parse_sql_timestamp;
+use super::session_manager::{role_to_string, SessionStorage};
 use crate::conversation::message::Message;
 use anyhow::Result;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -62,13 +63,6 @@ type ThreadRow = (
     i64,
 );
 
-/// Parse a SQLite `CURRENT_TIMESTAMP` value (`YYYY-MM-DD HH:MM:SS`, assumed UTC).
-fn parse_timestamp(s: &str) -> Option<DateTime<Utc>> {
-    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
-        .ok()
-        .map(|naive| naive.and_utc())
-}
-
 fn thread_from_row(
     (
         id,
@@ -84,9 +78,9 @@ fn thread_from_row(
     ): ThreadRow,
 ) -> Result<Thread> {
     let metadata: ThreadMetadata = serde_json::from_str(&metadata_json).unwrap_or_default();
-    let parsed_created_at = parse_timestamp(&created_at).unwrap_or_else(Utc::now);
-    let parsed_updated_at = parse_timestamp(&updated_at).unwrap_or_else(Utc::now);
-    let archived_at = archived_at_str.as_deref().and_then(parse_timestamp);
+    let parsed_created_at = parse_sql_timestamp(&created_at).unwrap_or_else(Utc::now);
+    let parsed_updated_at = parse_sql_timestamp(&updated_at).unwrap_or_else(Utc::now);
+    let archived_at = archived_at_str.as_deref().and_then(parse_sql_timestamp);
 
     Ok(Thread {
         id,
@@ -447,14 +441,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_timestamp_valid() {
-        let dt = parse_timestamp("2026-04-13 01:38:51").unwrap();
+    fn test_parse_sql_timestamp_valid() {
+        let dt = parse_sql_timestamp("2026-04-13 01:38:51").unwrap();
         assert_eq!(dt.to_rfc3339(), "2026-04-13T01:38:51+00:00");
     }
 
     #[test]
-    fn test_parse_timestamp_invalid_returns_none() {
-        assert!(parse_timestamp("not-a-date").is_none());
-        assert!(parse_timestamp("2026-04-13T01:38:51Z").is_none()); // RFC 3339 not accepted
+    fn test_parse_sql_timestamp_invalid_returns_none() {
+        assert!(parse_sql_timestamp("not-a-date").is_none());
+        assert!(parse_sql_timestamp("2026-04-13T01:38:51Z").is_none());
     }
 }

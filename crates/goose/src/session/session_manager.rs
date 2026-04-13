@@ -475,13 +475,6 @@ impl Session {
     }
 }
 
-/// Parse a SQLite `CURRENT_TIMESTAMP` value (`YYYY-MM-DD HH:MM:SS`, assumed UTC).
-fn parse_sql_timestamp(s: &str) -> DateTime<Utc> {
-    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
-        .map(|naive| naive.and_utc())
-        .unwrap_or_else(|_| Utc::now())
-}
-
 impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
     fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
@@ -518,8 +511,10 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             name,
             user_set_name,
             session_type,
-            created_at: parse_sql_timestamp(&row.try_get::<String, _>("created_at")?),
-            updated_at: parse_sql_timestamp(&row.try_get::<String, _>("updated_at")?),
+            created_at: super::parse_sql_timestamp(&row.try_get::<String, _>("created_at")?)
+                .unwrap_or_else(Utc::now),
+            updated_at: super::parse_sql_timestamp(&row.try_get::<String, _>("updated_at")?)
+                .unwrap_or_else(Utc::now),
             extension_data: serde_json::from_str(&row.try_get::<String, _>("extension_data")?)
                 .unwrap_or_default(),
             total_tokens: row.try_get("total_tokens")?,
@@ -2167,11 +2162,4 @@ mod tests {
         let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
         assert_eq!(acp_session.session_type, SessionType::Acp);
     }
-
-    #[test]
-    fn test_parse_sql_timestamp_valid() {
-        let dt = parse_sql_timestamp("2026-04-13 01:38:51");
-        assert_eq!(dt.to_rfc3339(), "2026-04-13T01:38:51+00:00");
-    }
-
 }
