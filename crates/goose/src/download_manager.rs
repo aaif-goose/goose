@@ -16,13 +16,36 @@ fn partial_path_for(destination: &Path) -> PathBuf {
     )
 }
 
-/// Remove any leftover `.part` files in the given directory.
-pub fn cleanup_partial_downloads(dir: &Path) {
+/// Remove orphaned `.part` files in the given directory (and one level of subdirectories).
+/// Preserves `.part` files whose final destination is in `registered_paths` so that
+/// in-progress shard downloads can resume after a restart.
+pub fn cleanup_partial_downloads(
+    dir: &Path,
+    registered_paths: &std::collections::HashSet<PathBuf>,
+) {
+    let should_keep = |part_path: &Path| -> bool {
+        // Derive the final path by stripping the trailing ".part" extension
+        let final_path = part_path.with_extension("");
+        registered_paths.contains(&final_path)
+    };
+
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|e| e == "part") {
+            if path.extension().is_some_and(|e| e == "part") && !should_keep(&path) {
                 let _ = std::fs::remove_file(&path);
+            }
+            if path.is_dir() {
+                if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                    for sub in sub_entries.flatten() {
+                        let sub_path = sub.path();
+                        if sub_path.extension().is_some_and(|e| e == "part")
+                            && !should_keep(&sub_path)
+                        {
+                            let _ = std::fs::remove_file(&sub_path);
+                        }
+                    }
+                }
             }
         }
     }
@@ -104,7 +127,18 @@ impl DownloadManager {
         destination: PathBuf,
         on_complete: Option<Box<dyn FnOnce() + Send + 'static>>,
     ) -> Result<()> {
-        info!(model_id = %model_id, url = %url, destination = ?destination, "Starting model download");
+        self.download_model_sharded(model_id, vec![(url, destination)], 0, on_complete)
+            .await
+    }
+
+    pub async fn download_model_sharded(
+        &self,
+        model_id: String,
+        files: Vec<(String, PathBuf)>,
+        total_size_hint: u64,
+        on_complete: Option<Box<dyn FnOnce() + Send + 'static>>,
+    ) -> Result<()> {
+        info!(model_id = %model_id, file_count = files.len(), "Starting model download");
         {
             let mut downloads = self
                 .downloads
@@ -128,7 +162,7 @@ impl DownloadManager {
                     model_id: model_id.clone(),
                     status: DownloadStatus::Downloading,
                     bytes_downloaded: 0,
-                    total_bytes: 0,
+                    total_bytes: total_size_hint,
                     progress_percent: 0.0,
                     speed_bps: None,
                     eta_seconds: None,
@@ -138,21 +172,24 @@ impl DownloadManager {
             );
         }
 
-        // Create parent directory if it doesn't exist
-        if let Some(parent) = destination.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to create directory: {}", e))?;
+        // Create parent directories for all files
+        for (_, dest) in &files {
+            if let Some(parent) = dest.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to create directory: {}", e))?;
+            }
         }
 
         let downloads = self.downloads.clone();
         let model_id_clone = model_id.clone();
+        let files_for_cleanup: Vec<PathBuf> = files.iter().map(|(_, d)| d.clone()).collect();
 
-        let destination_for_cleanup = destination.clone();
-
-        // Download in background task
         tokio::spawn(async move {
-            match Self::download_file(&url, &destination, &downloads, &model_id_clone).await {
+            let result =
+                Self::download_files_sequentially(&files, &downloads, &model_id_clone).await;
+
+            match result {
                 Ok(_) => {
                     info!(model_id = %model_id_clone, "Download completed successfully");
                     if let Ok(mut downloads) = downloads.lock() {
@@ -168,9 +205,10 @@ impl DownloadManager {
                     }
                 }
                 Err(e) => {
-                    // Clean up partial file on failure
-                    let partial = partial_path_for(&destination_for_cleanup);
-                    let _ = tokio::fs::remove_file(&partial).await;
+                    for dest in &files_for_cleanup {
+                        let partial = partial_path_for(dest);
+                        let _ = tokio::fs::remove_file(&partial).await;
+                    }
 
                     if let Ok(mut downloads) = downloads.lock() {
                         if let Some(progress) = downloads.get_mut(&model_id_clone) {
@@ -192,6 +230,23 @@ impl DownloadManager {
     const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
     const RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
 
+    async fn cancellable_sleep(
+        delay: std::time::Duration,
+        downloads: &DownloadMap,
+        model_id: &str,
+    ) -> Result<(), anyhow::Error> {
+        let check_interval = std::time::Duration::from_millis(500);
+        let start = std::time::Instant::now();
+        while start.elapsed() < delay {
+            if Self::is_cancelled(downloads, model_id) {
+                anyhow::bail!("Download cancelled");
+            }
+            let remaining = delay.saturating_sub(start.elapsed());
+            tokio::time::sleep(std::cmp::min(check_interval, remaining)).await;
+        }
+        Ok(())
+    }
+
     fn is_cancelled(downloads: &DownloadMap, model_id: &str) -> bool {
         if let Ok(downloads) = downloads.lock() {
             if let Some(progress) = downloads.get(model_id) {
@@ -201,9 +256,10 @@ impl DownloadManager {
         false
     }
 
-    async fn download_file(
-        url: &str,
-        destination: &PathBuf,
+    #[allow(clippy::too_many_arguments)]
+    /// Download multiple files sequentially, tracking cumulative progress under one model_id.
+    async fn download_files_sequentially(
+        files: &[(String, PathBuf)],
         downloads: &DownloadMap,
         model_id: &str,
     ) -> Result<(), anyhow::Error> {
@@ -212,47 +268,117 @@ impl DownloadManager {
             .read_timeout(std::time::Duration::from_secs(120))
             .build()?;
 
+        // HEAD each file to get accurate total size. Only replace the hint if
+        // every file returned a size; partial results would underestimate.
+        let mut total: u64 = 0;
+        let mut all_resolved = true;
+        for (url, _) in files {
+            let size = client
+                .head(url)
+                .send()
+                .await
+                .ok()
+                .and_then(|r| r.content_length())
+                .unwrap_or(0);
+            if size == 0 {
+                all_resolved = false;
+            }
+            total += size;
+        }
+        if all_resolved && total > 0 {
+            if let Ok(mut dl) = downloads.lock() {
+                if let Some(progress) = dl.get_mut(model_id) {
+                    progress.total_bytes = total;
+                }
+            }
+        }
+
+        let start_time = std::time::Instant::now();
+        let mut cumulative_bytes: u64 = 0;
+        // Account for already-downloaded shards
+        for (_, dest) in files {
+            let partial = partial_path_for(dest);
+            if dest.exists() {
+                if let Ok(meta) = tokio::fs::metadata(dest).await {
+                    cumulative_bytes += meta.len();
+                }
+            } else if partial.exists() {
+                if let Ok(meta) = tokio::fs::metadata(&partial).await {
+                    cumulative_bytes += meta.len();
+                }
+            }
+        }
+        let bytes_at_start = cumulative_bytes;
+
+        for (url, destination) in files {
+            if Self::is_cancelled(downloads, model_id) {
+                anyhow::bail!("Download cancelled");
+            }
+
+            // Skip already-completed shards
+            if destination.exists() {
+                continue;
+            }
+
+            Self::download_one_file(
+                &client,
+                url,
+                destination,
+                downloads,
+                model_id,
+                &mut cumulative_bytes,
+                start_time,
+                bytes_at_start,
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn download_one_file(
+        client: &reqwest::Client,
+        url: &str,
+        destination: &Path,
+        downloads: &DownloadMap,
+        model_id: &str,
+        cumulative_bytes: &mut u64,
+        start_time: std::time::Instant,
+        bytes_at_start: u64,
+    ) -> Result<(), anyhow::Error> {
         let partial_path = partial_path_for(destination);
         let mut retries = 0u32;
 
-        // Check for existing partial file to resume
-        let mut bytes_downloaded: u64 = if partial_path.exists() {
+        let mut file_bytes: u64 = if partial_path.exists() {
             tokio::fs::metadata(&partial_path).await?.len()
         } else {
             0
         };
 
-        // Get total size with a HEAD request first (so we know even before first chunk)
-        let total_bytes = {
-            let head_resp = client
-                .head(url)
-                .send()
-                .await
-                .ok()
-                .and_then(|r| r.content_length());
-            head_resp.unwrap_or(0)
-        };
+        // Get this file's total size
+        let mut file_total: u64 = client
+            .head(url)
+            .send()
+            .await
+            .ok()
+            .and_then(|r| r.content_length())
+            .unwrap_or(0);
 
-        if let Ok(mut dl) = downloads.lock() {
-            if let Some(progress) = dl.get_mut(model_id) {
-                progress.total_bytes = total_bytes;
-                progress.bytes_downloaded = bytes_downloaded;
-                if total_bytes > 0 {
-                    progress.progress_percent =
-                        (bytes_downloaded as f64 / total_bytes as f64 * 100.0) as f32;
-                }
-            }
-        }
-
-        // If already fully downloaded from a previous partial, just rename
-        if total_bytes > 0 && bytes_downloaded >= total_bytes {
+        // If partial matches expected size exactly, promote it
+        if file_total > 0 && file_bytes == file_total {
             tokio::fs::rename(&partial_path, destination).await?;
+            // cumulative_bytes already accounts for this file from the pre-scan
             return Ok(());
         }
 
-        let start_time = std::time::Instant::now();
-        // bytes_at_start tracks how many bytes we had when timing began (for speed calc)
-        let bytes_at_start = bytes_downloaded;
+        // If partial is oversized or remote changed, discard and re-download
+        if file_total > 0 && file_bytes > file_total {
+            info!(model_id = %model_id, file_bytes, file_total, "Partial file oversized, re-downloading");
+            *cumulative_bytes = cumulative_bytes.saturating_sub(file_bytes);
+            file_bytes = 0;
+            let _ = tokio::fs::remove_file(&partial_path).await;
+        }
 
         loop {
             if Self::is_cancelled(downloads, model_id) {
@@ -260,10 +386,9 @@ impl DownloadManager {
                 anyhow::bail!("Download cancelled");
             }
 
-            // Build request with Range header for resume
             let mut request = client.get(url);
-            if bytes_downloaded > 0 {
-                request = request.header("Range", format!("bytes={}-", bytes_downloaded));
+            if file_bytes > 0 {
+                request = request.header("Range", format!("bytes={}-", file_bytes));
             }
 
             let response = match request.send().await {
@@ -278,20 +403,18 @@ impl DownloadManager {
                         Self::RETRY_MAX_DELAY,
                     );
                     info!(model_id = %model_id, retry = retries, delay_secs = ?delay.as_secs(), error = %e, "Retrying download after connection error");
-                    tokio::time::sleep(delay).await;
+                    Self::cancellable_sleep(delay, downloads, model_id).await?;
                     continue;
                 }
             };
 
             let status = response.status();
             if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
-                // Server can't satisfy range — file may be complete or something is off.
-                // If partial file is at least total_bytes, treat as done.
-                if total_bytes > 0 && bytes_downloaded >= total_bytes {
+                if file_total > 0 && file_bytes == file_total {
                     break;
                 }
-                // Otherwise restart from scratch
-                bytes_downloaded = 0;
+                *cumulative_bytes = cumulative_bytes.saturating_sub(file_bytes);
+                file_bytes = 0;
                 let _ = tokio::fs::remove_file(&partial_path).await;
                 continue;
             }
@@ -310,23 +433,25 @@ impl DownloadManager {
                     Self::RETRY_MAX_DELAY,
                 );
                 info!(model_id = %model_id, retry = retries, http_status = %status, "Retrying download after transient HTTP error");
-                tokio::time::sleep(delay).await;
+                Self::cancellable_sleep(delay, downloads, model_id).await?;
                 continue;
             }
 
-            // We sent a Range request but the server ignored it and returned
-            // the full body (200 OK instead of 206). Truncate and restart so
-            // we don't append a full copy onto the existing partial data.
-            if bytes_downloaded > 0 && status == reqwest::StatusCode::OK {
-                info!(model_id = %model_id, "Server ignored Range header, restarting download from scratch");
-                bytes_downloaded = 0;
+            if file_bytes > 0 && status == reqwest::StatusCode::OK {
+                info!(model_id = %model_id, "Server ignored Range header, restarting file from scratch");
+                // Subtract already-counted partial bytes from cumulative
+                *cumulative_bytes = cumulative_bytes.saturating_sub(file_bytes);
+                file_bytes = 0;
                 let _ = tokio::fs::remove_file(&partial_path).await;
             }
 
-            // Update total_bytes from Content-Range or Content-Length if not yet known
-            if total_bytes == 0 {
-                let new_total = if bytes_downloaded > 0 {
-                    // Parse Content-Range: bytes 1234-5678/9999
+            // If HEAD didn't return this file's size, learn it from the GET response.
+            // This block only fires once per file (file_total stays non-zero after),
+            // so retries don't double-count. Since download_files_sequentially's HEAD
+            // pass contributed 0 for this file, we add the discovered size to the
+            // shared total so progress/ETA are accurate.
+            if file_total == 0 {
+                let new_file_total = if file_bytes > 0 {
                     response
                         .headers()
                         .get("content-range")
@@ -336,26 +461,25 @@ impl DownloadManager {
                 } else {
                     response.content_length()
                 };
-                if let Some(t) = new_total {
+                if let Some(t) = new_file_total {
+                    file_total = t;
                     if let Ok(mut dl) = downloads.lock() {
                         if let Some(progress) = dl.get_mut(model_id) {
-                            progress.total_bytes = t;
+                            progress.total_bytes = progress.total_bytes.saturating_add(t);
                         }
                     }
                 }
             }
 
-            // Open file for appending (or create)
             let mut file = tokio::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&partial_path)
                 .await?;
 
-            // Truncate to bytes_downloaded in case file grew beyond our tracking
             let file_len = tokio::fs::metadata(&partial_path).await?.len();
-            if file_len != bytes_downloaded {
-                file.set_len(bytes_downloaded).await?;
+            if file_len != file_bytes {
+                file.set_len(file_bytes).await?;
             }
 
             let mut stream_error = false;
@@ -371,10 +495,12 @@ impl DownloadManager {
                         }
 
                         file.write_all(&chunk).await?;
-                        bytes_downloaded += chunk.len() as u64;
+                        let chunk_len = chunk.len() as u64;
+                        file_bytes += chunk_len;
+                        *cumulative_bytes += chunk_len;
 
                         let elapsed = start_time.elapsed().as_secs_f64();
-                        let bytes_this_session = bytes_downloaded.saturating_sub(bytes_at_start);
+                        let bytes_this_session = cumulative_bytes.saturating_sub(bytes_at_start);
                         let speed_bps = if elapsed > 0.0 {
                             Some((bytes_this_session as f64 / elapsed) as u64)
                         } else {
@@ -382,16 +508,14 @@ impl DownloadManager {
                         };
 
                         let current_total = if let Ok(dl) = downloads.lock() {
-                            dl.get(model_id)
-                                .map(|p| p.total_bytes)
-                                .unwrap_or(total_bytes)
+                            dl.get(model_id).map(|p| p.total_bytes).unwrap_or(0)
                         } else {
-                            total_bytes
+                            0
                         };
 
                         let eta_seconds = if let Some(speed) = speed_bps {
                             if speed > 0 && current_total > 0 {
-                                Some(current_total.saturating_sub(bytes_downloaded) / speed)
+                                Some(current_total.saturating_sub(*cumulative_bytes) / speed)
                             } else {
                                 None
                             }
@@ -401,9 +525,9 @@ impl DownloadManager {
 
                         if let Ok(mut dl) = downloads.lock() {
                             if let Some(progress) = dl.get_mut(model_id) {
-                                progress.bytes_downloaded = bytes_downloaded;
+                                progress.bytes_downloaded = *cumulative_bytes;
                                 progress.progress_percent = if current_total > 0 {
-                                    (bytes_downloaded as f64 / current_total as f64 * 100.0) as f32
+                                    (*cumulative_bytes as f64 / current_total as f64 * 100.0) as f32
                                 } else {
                                     0.0
                                 };
@@ -412,9 +536,9 @@ impl DownloadManager {
                             }
                         }
                     }
-                    Ok(None) => break, // Stream finished
+                    Ok(None) => break,
                     Err(e) => {
-                        info!(model_id = %model_id, bytes = bytes_downloaded, error = %e, "Download stream interrupted, will retry");
+                        info!(model_id = %model_id, bytes = *cumulative_bytes, error = %e, "Download stream interrupted, will retry");
                         stream_error = true;
                         break;
                     }
@@ -437,7 +561,7 @@ impl DownloadManager {
                     Self::RETRY_MAX_DELAY,
                 );
                 info!(model_id = %model_id, retry = retries, delay_secs = ?delay.as_secs(), "Retrying download with resume");
-                tokio::time::sleep(delay).await;
+                Self::cancellable_sleep(delay, downloads, model_id).await?;
                 continue;
             }
 

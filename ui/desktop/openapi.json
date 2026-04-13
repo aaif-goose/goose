@@ -5522,6 +5522,9 @@
           "quantization": {
             "type": "string"
           },
+          "sharded": {
+            "type": "boolean"
+          },
           "size_bytes": {
             "type": "integer",
             "format": "int64",

@@ -541,6 +541,7 @@ export type HfQuantVariant = {
     filename: string;
     quality_rank: number;
     quantization: string;
+    sharded?: boolean;
     size_bytes: number;
 };
 
