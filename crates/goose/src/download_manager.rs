@@ -297,7 +297,11 @@ impl DownloadManager {
             }
 
             if !status.is_success() && status != reqwest::StatusCode::PARTIAL_CONTENT {
-                if retries >= Self::MAX_RETRIES {
+                let is_transient = status.is_server_error()
+                    || status == reqwest::StatusCode::REQUEST_TIMEOUT
+                    || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+
+                if !is_transient || retries >= Self::MAX_RETRIES {
                     anyhow::bail!("Failed to download: HTTP {}", status);
                 }
                 retries += 1;
@@ -305,7 +309,7 @@ impl DownloadManager {
                     Self::RETRY_BASE_DELAY * 2u32.saturating_pow(retries - 1),
                     Self::RETRY_MAX_DELAY,
                 );
-                info!(model_id = %model_id, retry = retries, http_status = %status, "Retrying download after HTTP error");
+                info!(model_id = %model_id, retry = retries, http_status = %status, "Retrying download after transient HTTP error");
                 tokio::time::sleep(delay).await;
                 continue;
             }
