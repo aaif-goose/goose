@@ -339,21 +339,29 @@ export default function BaseChat({
     name: session?.name || intl.formatMessage(i18n.noSession),
   };
 
-  const lastSetNameRef = useRef<string>('');
+  const lastSetContextRef = useRef<string>('');
 
   useEffect(() => {
+    // Multiple BaseChat instances can be mounted concurrently (background sessions).
+    // Only the currently visible/active session should update global ChatContext.
+    if (!isActiveSession) return;
+
     const currentSessionName = session?.name;
-    if (currentSessionName && currentSessionName !== lastSetNameRef.current) {
-      lastSetNameRef.current = currentSessionName;
-      setChat({
-        messages,
-        recipe,
-        sessionId,
-        name: currentSessionName,
-      });
-    }
+    if (!currentSessionName) return;
+
+    const contextKey = `${sessionId}:${currentSessionName}`;
+    if (contextKey === lastSetContextRef.current) return;
+
+    lastSetContextRef.current = contextKey;
+    setChat({
+      messages,
+      recipe,
+      sessionId,
+      name: currentSessionName,
+    });
+    // Intentionally scoped to identity changes to avoid high-frequency global writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.name, setChat]);
+  }, [isActiveSession, sessionId, session?.name, setChat]);
 
   // If we have a recipe prompt and user recipe values, substitute parameters
   let recipePrompt = '';

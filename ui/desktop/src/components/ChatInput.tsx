@@ -26,10 +26,11 @@ import { Recipe } from '../recipe';
 import { MessageQueue, QueuedMessage } from './MessageQueue';
 import { detectInterruption } from '../utils/interruptionDetector';
 import { DiagnosticsModal } from './ui/Diagnostics';
-import { getSession, Message } from '../api';
+import { Message } from '../api';
 import CreateRecipeFromSessionModal from './recipes/CreateRecipeFromSessionModal';
 import CreateEditRecipeModal from './recipes/CreateEditRecipeModal';
 import { getInitialWorkingDir } from '../utils/workingDir';
+import { useSessionWorkingDir } from '../hooks/useSessionWorkingDir';
 import { getPredefinedModelsFromEnv } from './settings/models/predefinedModelsUtils';
 import {
   trackFileAttached,
@@ -251,26 +252,7 @@ export default function ChatInput({
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [showCreateRecipeModal, setShowCreateRecipeModal] = useState(false);
   const [showEditRecipeModal, setShowEditRecipeModal] = useState(false);
-  const [sessionWorkingDir, setSessionWorkingDir] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-
-    const fetchSessionWorkingDir = async () => {
-      try {
-        const response = await getSession({ path: { session_id: sessionId } });
-        if (response.data?.working_dir) {
-          setSessionWorkingDir(response.data.working_dir);
-        }
-      } catch (error) {
-        console.error('[ChatInput] Failed to fetch session working dir:', error);
-      }
-    };
-
-    fetchSessionWorkingDir();
-  }, [sessionId]);
+  const { sessionWorkingDir, setSessionWorkingDir } = useSessionWorkingDir(sessionId);
 
   // Save queue state (paused/interrupted) to storage
   useEffect(() => {
