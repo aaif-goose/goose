@@ -1,7 +1,7 @@
-use super::session_manager::{role_to_string, SessionStorage};
+use super::session_manager::{SessionStorage, role_to_string};
 use crate::conversation::message::Message;
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -63,6 +63,24 @@ type ThreadRow = (
     i64,
 );
 
+/// Parse a timestamp string trying RFC 3339 first, then SQLite's CURRENT_TIMESTAMP
+/// format (`YYYY-MM-DD HH:MM:SS`). Returns `None` if neither format matches.
+fn parse_timestamp(s: &str, field: &str, thread_id: &str) -> Option<DateTime<Utc>> {
+    if let Ok(dt) = s.parse::<DateTime<Utc>>() {
+        tracing::info!(thread_id = %thread_id, field, parsed = %dt, format = "rfc3339", "timestamp parsed");
+        return Some(dt);
+    }
+
+    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        let dt = naive.and_utc();
+        tracing::info!(thread_id = %thread_id, field, parsed = %dt, format = "sqlite", "timestamp parsed");
+        return Some(dt);
+    }
+
+    tracing::warn!(thread_id = %thread_id, field, raw = %s, "timestamp parse failed for all formats, falling back to Utc::now()");
+    None
+}
+
 fn thread_from_row(
     (
         id,
@@ -78,7 +96,6 @@ fn thread_from_row(
     ): ThreadRow,
 ) -> Result<Thread> {
     let metadata: ThreadMetadata = serde_json::from_str(&metadata_json).unwrap_or_default();
-    let archived_at = archived_at_str.as_deref().and_then(|s| s.parse().ok());
 
     tracing::info!(
         thread_id = %id,
@@ -87,39 +104,13 @@ fn thread_from_row(
         "parsing thread timestamps from database"
     );
 
-    let parsed_created_at = match created_at.parse::<DateTime<Utc>>() {
-        Ok(dt) => {
-            tracing::info!(thread_id = %id, parsed = %dt, "created_at parsed successfully");
-            dt
-        }
-        Err(e) => {
-            let fallback = Utc::now();
-            tracing::info!(
-                thread_id = %id,
-                error = %e,
-                fallback = %fallback,
-                "created_at parse failed, falling back to Utc::now()"
-            );
-            fallback
-        }
-    };
-
-    let parsed_updated_at = match updated_at.parse::<DateTime<Utc>>() {
-        Ok(dt) => {
-            tracing::info!(thread_id = %id, parsed = %dt, "updated_at parsed successfully");
-            dt
-        }
-        Err(e) => {
-            let fallback = Utc::now();
-            tracing::info!(
-                thread_id = %id,
-                error = %e,
-                fallback = %fallback,
-                "updated_at parse failed, falling back to Utc::now()"
-            );
-            fallback
-        }
-    };
+    let parsed_created_at =
+        parse_timestamp(&created_at, "created_at", &id).unwrap_or_else(Utc::now);
+    let parsed_updated_at =
+        parse_timestamp(&updated_at, "updated_at", &id).unwrap_or_else(Utc::now);
+    let archived_at = archived_at_str
+        .as_deref()
+        .and_then(|s| parse_timestamp(s, "archived_at", &id));
 
     Ok(Thread {
         id,
