@@ -35,7 +35,7 @@ export const Header = React.memo(function Header({
         <Box width={leftSideWidth}>
           <Text color={TEXT_PRIMARY} bold>goose</Text>
           <Text color={RULE_COLOR}> · </Text>
-          <Box width={Math.max(leftSideWidth - 10, 5)}>
+          <Box flexShrink={1}>
             <Text color={statusColor} wrap="truncate-end">{status}</Text>
           </Box>
           {loading && !hasPendingPermission && (
@@ -48,7 +48,7 @@ export const Header = React.memo(function Header({
               {turnInfo.current}/{turnInfo.total}{"  "}
             </Text>
           )}
-          <Text color={TEXT_DIM}>^C exit</Text>
+          <Text color={TEXT_DIM}>^G configure · ^C exit</Text>
         </Box>
       </Box>
       <Rule width={constrainedWidth} />

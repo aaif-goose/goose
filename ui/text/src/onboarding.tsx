@@ -29,13 +29,16 @@ interface OnboardingProps {
   onComplete: () => void;
 }
 
-interface ProviderSelectorProps {
+export interface ProviderSelectorProps {
   providers: ProviderDetailEntry[];
   height: number;
   onSelect: (provider: ProviderDetailEntry) => void;
+  title?: string;
+  subtitle?: string;
+  onBack?: () => void;
 }
 
-const ProviderSelector = React.memo(function ProviderSelector({ providers, height, onSelect }: ProviderSelectorProps) {
+export const ProviderSelector = React.memo(function ProviderSelector({ providers, height, onSelect, title, subtitle, onBack }: ProviderSelectorProps) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const { stdout } = useStdout();
@@ -87,6 +90,10 @@ const ProviderSelector = React.memo(function ProviderSelector({ providers, heigh
         setSearchQuery("");
         setSelectedIdx(0);
         setScrollRow(0);
+        return;
+      }
+      if (onBack) {
+        onBack();
         return;
       }
     }
@@ -231,12 +238,12 @@ const ProviderSelector = React.memo(function ProviderSelector({ providers, heigh
       <Box marginTop={1} />
       <Box justifyContent="center" marginBottom={1}>
         <Text color={TEXT_PRIMARY} bold>
-          ◆ Welcome to goose ◆
+          {title ?? "◆ Welcome to goose ◆"}
         </Text>
       </Box>
       <Box justifyContent="center" marginBottom={2}>
         <Text color={TEXT_DIM}>
-          Connect an AI model provider to get started
+          {subtitle ?? "Connect an AI model provider to get started"}
         </Text>
       </Box>
       
@@ -291,21 +298,21 @@ const ProviderSelector = React.memo(function ProviderSelector({ providers, heigh
       {/* Footer */}
       <Box justifyContent="center" marginTop={2}>
         <Text color={TEXT_DIM}>
-          ↑↓←→ navigate · enter select · type to search · esc clear
+          ↑↓←→ navigate · enter select · type to search{onBack ? " · esc back" : " · esc clear"}
         </Text>
       </Box>
     </Box>
   );
 });
 
-interface ProviderConfiguratorProps {
+export interface ProviderConfiguratorProps {
   provider: ProviderDetailEntry;
   height: number;
   onComplete: (values: Record<string, string>) => void;
   onBack: () => void;
 }
 
-const ProviderConfigurator = React.memo(function ProviderConfigurator({ provider, height, onComplete, onBack }: ProviderConfiguratorProps) {
+export const ProviderConfigurator = React.memo(function ProviderConfigurator({ provider, height, onComplete, onBack }: ProviderConfiguratorProps) {
   const [keyValues, setKeyValues] = useState<Record<string, string>>({});
   const [activeKeyIdx, setActiveKeyIdx] = useState(0);
   const [showMasked, setShowMasked] = useState<Record<string, boolean>>({});

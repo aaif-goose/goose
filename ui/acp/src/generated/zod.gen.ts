@@ -143,6 +143,11 @@ export const zProviderConfigKey = z.object({
     primary: z.boolean().optional().default(false)
 });
 
+export const zModelEntry = z.object({
+    name: z.string(),
+    contextLimit: z.number().int().gte(0)
+});
+
 export const zProviderDetailEntry = z.object({
     name: z.string(),
     displayName: z.string(),
@@ -151,7 +156,8 @@ export const zProviderDetailEntry = z.object({
     isConfigured: z.boolean(),
     providerType: z.string(),
     configKeys: z.array(zProviderConfigKey),
-    setupSteps: z.array(z.string()).optional().default([])
+    setupSteps: z.array(z.string()).optional().default([]),
+    knownModels: z.array(zModelEntry).optional().default([])
 });
 
 /**
@@ -159,6 +165,20 @@ export const zProviderDetailEntry = z.object({
  */
 export const zGetProviderDetailsResponse = z.object({
     providers: z.array(zProviderDetailEntry)
+});
+
+/**
+ * Fetch the full list of models available for a specific provider.
+ */
+export const zGetProviderModelsRequest = z.object({
+    providerName: z.string()
+});
+
+/**
+ * Provider models response.
+ */
+export const zGetProviderModelsResponse = z.object({
+    models: z.array(z.string())
 });
 
 /**
@@ -285,6 +305,7 @@ export const zExtRequest = z.object({
             zUpdateProviderRequest,
             zListProvidersRequest,
             zGetProviderDetailsRequest,
+            zGetProviderModelsRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
             zRemoveConfigRequest,
@@ -315,6 +336,7 @@ export const zExtResponse = z.union([
                 zUpdateProviderResponse,
                 zListProvidersResponse,
                 zGetProviderDetailsResponse,
+                zGetProviderModelsResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,

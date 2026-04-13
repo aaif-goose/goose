@@ -2369,10 +2369,72 @@ impl GooseAcpAgent {
                         })
                         .collect(),
                     setup_steps: metadata.setup_steps.clone(),
+                    known_models: metadata
+                        .known_models
+                        .iter()
+                        .map(|m| ModelEntry {
+                            name: m.name.clone(),
+                            context_limit: m.context_limit,
+                        })
+                        .collect(),
                 }
             })
             .collect();
         Ok(GetProviderDetailsResponse { providers: entries })
+    }
+
+    #[custom_method(GetProviderModelsRequest)]
+    async fn on_get_provider_models(
+        &self,
+        req: GetProviderModelsRequest,
+    ) -> Result<GetProviderModelsResponse, sacp::Error> {
+        let config = self.load_config().ok();
+        let all = goose::providers::providers().await;
+
+        let Some((metadata, _provider_type)) =
+            all.into_iter().find(|(m, _)| m.name == req.provider_name)
+        else {
+            return Err(sacp::Error::invalid_params()
+                .data(format!("Unknown provider: {}", req.provider_name)));
+        };
+
+        let is_configured = config
+            .as_ref()
+            .map(|c| {
+                metadata.config_keys.iter().all(|k| {
+                    if !k.required {
+                        return true;
+                    }
+                    if k.secret {
+                        c.get_secret::<String>(&k.name).is_ok()
+                    } else {
+                        c.get_param::<String>(&k.name).is_ok()
+                    }
+                })
+            })
+            .unwrap_or(false);
+
+        if !is_configured {
+            return Err(sacp::Error::invalid_params().data(format!(
+                "Provider '{}' is not configured",
+                req.provider_name
+            )));
+        }
+
+        let model_config = goose::model::ModelConfig::new(&metadata.default_model)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?
+            .with_canonical_limits(&req.provider_name);
+
+        let provider = (self.provider_factory)(req.provider_name.clone(), model_config, Vec::new())
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        let models = provider
+            .fetch_recommended_models()
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        Ok(GetProviderModelsResponse { models })
     }
 
     #[custom_method(ReadConfigRequest)]

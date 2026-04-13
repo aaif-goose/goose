@@ -20,6 +20,7 @@ import type {
 import { ndJsonStream } from "@agentclientprotocol/sdk";
 import { GooseClient } from "@aaif/goose-acp";
 import Onboarding from "./onboarding.js";
+import ConfigureScreen from "./configure.js";
 import type { PendingPermission, ResponseItem, Turn } from "./types.js";
 import {
   emptyLine,
@@ -482,6 +483,7 @@ function App({
   const [scrollOffset, setScrollOffset] = useState(0);
   const [pastedFull, setPastedFull] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [configuring, setConfiguring] = useState(false);
 
   const clientRef = useRef<GooseClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -803,6 +805,11 @@ function App({
       exit();
     }
 
+    if (ch === "g" && key.ctrl && !loading && !pendingPermission && sessionIdRef.current) {
+      setConfiguring(true);
+      return;
+    }
+
     if (pendingPermission) {
       const opts = pendingPermission.options;
       if (key.upArrow) { setPermissionIdx((i) => (i - 1 + opts.length) % opts.length); return; }
@@ -868,7 +875,7 @@ function App({
       });
       return;
     }
-  }, { isActive: !needsOnboarding });
+  }, { isActive: !needsOnboarding && !configuring });
 
   const PAD_X = 2;
   const PAD_Y = 1;
@@ -923,6 +930,28 @@ function App({
           width={safeTermWidth}
           height={safeTermHeight}
           onComplete={handleOnboardingComplete}
+        />
+      </Box>
+    );
+  }
+
+  if (configuring && clientRef.current && sessionIdRef.current) {
+    return (
+      <Box
+        flexDirection="column"
+        width={safeTermWidth}
+        height={safeTermHeight}
+      >
+        <ConfigureScreen
+          client={clientRef.current}
+          sessionId={sessionIdRef.current}
+          width={safeTermWidth}
+          height={safeTermHeight}
+          onComplete={() => {
+            setConfiguring(false);
+            setStatus("ready");
+          }}
+          onCancel={() => setConfiguring(false)}
         />
       </Box>
     );

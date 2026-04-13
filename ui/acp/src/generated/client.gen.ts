@@ -19,6 +19,8 @@ import type {
   GetExtensionsResponse,
   GetProviderDetailsRequest,
   GetProviderDetailsResponse,
+  GetProviderModelsRequest,
+  GetProviderModelsResponse,
   GetToolsRequest,
   GetToolsResponse,
   ImportSessionRequest,
@@ -44,6 +46,7 @@ import {
   zExportSessionResponse,
   zGetExtensionsResponse,
   zGetProviderDetailsResponse,
+  zGetProviderModelsResponse,
   zGetToolsResponse,
   zImportSessionResponse,
   zListProvidersResponse,
@@ -112,6 +115,13 @@ export class GooseExtClient {
   ): Promise<GetProviderDetailsResponse> {
     const raw = await this.conn.extMethod("_goose/providers/details", params);
     return zGetProviderDetailsResponse.parse(raw) as GetProviderDetailsResponse;
+  }
+
+  async GooseProvidersModels(
+    params: GetProviderModelsRequest,
+  ): Promise<GetProviderModelsResponse> {
+    const raw = await this.conn.extMethod("_goose/providers/models", params);
+    return zGetProviderModelsResponse.parse(raw) as GetProviderModelsResponse;
   }
 
   async GooseConfigRead(

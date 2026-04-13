@@ -265,6 +265,20 @@ pub struct GetProviderDetailsResponse {
     pub providers: Vec<ProviderDetailEntry>,
 }
 
+/// Fetch the full list of models available for a specific provider.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/providers/models", response = GetProviderModelsResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetProviderModelsRequest {
+    pub provider_name: String,
+}
+
+/// Provider models response.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetProviderModelsResponse {
+    pub models: Vec<String>,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderDetailEntry {
@@ -277,6 +291,15 @@ pub struct ProviderDetailEntry {
     pub config_keys: Vec<ProviderConfigKey>,
     #[serde(default)]
     pub setup_steps: Vec<String>,
+    #[serde(default)]
+    pub known_models: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelEntry {
+    pub name: String,
+    pub context_limit: usize,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]

@@ -317,6 +317,13 @@
             "type": "string"
           },
           "default": []
+        },
+        "knownModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelEntry"
+          },
+          "default": []
         }
       },
       "required": [
@@ -366,6 +373,53 @@
         "required",
         "secret"
       ]
+    },
+    "ModelEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "contextLimit": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "contextLimit"
+      ]
+    },
+    "GetProviderModelsRequest": {
+      "type": "object",
+      "properties": {
+        "providerName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerName"
+      ],
+      "description": "Fetch the full list of models available for a specific provider.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/models"
+    },
+    "GetProviderModelsResponse": {
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "description": "Provider models response.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/models"
     },
     "ReadConfigRequest": {
       "type": "object",
@@ -686,6 +740,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/GetProviderModelsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/models",
+                  "title": "GetProviderModelsRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ReadConfigRequest"
                     }
                   ],
@@ -858,6 +921,14 @@
                         }
                       ],
                       "title": "GetProviderDetailsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetProviderModelsResponse"
+                        }
+                      ],
+                      "title": "GetProviderModelsResponse"
                     },
                     {
                       "allOf": [
