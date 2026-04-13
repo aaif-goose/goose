@@ -5,7 +5,6 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thread {
@@ -63,22 +62,11 @@ type ThreadRow = (
     i64,
 );
 
-/// Parse a timestamp string trying RFC 3339 first, then SQLite's CURRENT_TIMESTAMP
-/// format (`YYYY-MM-DD HH:MM:SS`). Returns `None` if neither format matches.
-fn parse_timestamp(s: &str, field: &str, thread_id: &str) -> Option<DateTime<Utc>> {
-    if let Ok(dt) = s.parse::<DateTime<Utc>>() {
-        tracing::info!(thread_id = %thread_id, field, parsed = %dt, format = "rfc3339", "timestamp parsed");
-        return Some(dt);
-    }
-
-    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-        let dt = naive.and_utc();
-        tracing::info!(thread_id = %thread_id, field, parsed = %dt, format = "sqlite", "timestamp parsed");
-        return Some(dt);
-    }
-
-    tracing::warn!(thread_id = %thread_id, field, raw = %s, "timestamp parse failed for all formats, falling back to Utc::now()");
-    None
+/// Parse a SQLite `CURRENT_TIMESTAMP` value (`YYYY-MM-DD HH:MM:SS`, assumed UTC).
+fn parse_timestamp(s: &str) -> Option<DateTime<Utc>> {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .map(|naive| naive.and_utc())
 }
 
 fn thread_from_row(
@@ -96,21 +84,9 @@ fn thread_from_row(
     ): ThreadRow,
 ) -> Result<Thread> {
     let metadata: ThreadMetadata = serde_json::from_str(&metadata_json).unwrap_or_default();
-
-    tracing::info!(
-        thread_id = %id,
-        raw_created_at = %created_at,
-        raw_updated_at = %updated_at,
-        "parsing thread timestamps from database"
-    );
-
-    let parsed_created_at =
-        parse_timestamp(&created_at, "created_at", &id).unwrap_or_else(Utc::now);
-    let parsed_updated_at =
-        parse_timestamp(&updated_at, "updated_at", &id).unwrap_or_else(Utc::now);
-    let archived_at = archived_at_str
-        .as_deref()
-        .and_then(|s| parse_timestamp(s, "archived_at", &id));
+    let parsed_created_at = parse_timestamp(&created_at).unwrap_or_else(Utc::now);
+    let parsed_updated_at = parse_timestamp(&updated_at).unwrap_or_else(Utc::now);
+    let archived_at = archived_at_str.as_deref().and_then(parse_timestamp);
 
     Ok(Thread {
         id,

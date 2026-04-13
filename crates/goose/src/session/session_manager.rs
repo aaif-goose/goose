@@ -475,6 +475,13 @@ impl Session {
     }
 }
 
+/// Parse a SQLite `CURRENT_TIMESTAMP` value (`YYYY-MM-DD HH:MM:SS`, assumed UTC).
+fn parse_sql_timestamp(s: &str) -> DateTime<Utc> {
+    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+        .map(|naive| naive.and_utc())
+        .unwrap_or_else(|_| Utc::now())
+}
+
 impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
     fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
@@ -511,8 +518,8 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             name,
             user_set_name,
             session_type,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
+            created_at: parse_sql_timestamp(&row.try_get::<String, _>("created_at")?),
+            updated_at: parse_sql_timestamp(&row.try_get::<String, _>("updated_at")?),
             extension_data: serde_json::from_str(&row.try_get::<String, _>("extension_data")?)
                 .unwrap_or_default(),
             total_tokens: row.try_get("total_tokens")?,
