@@ -28,6 +28,10 @@ function pathToPreviewUrl(path: string) {
     : path;
 }
 
+function attachmentPathKey(path?: string) {
+  return path ?? null;
+}
+
 async function createImageAttachmentFromFile(
   file: File,
 ): Promise<ChatImageAttachmentDraft> {
@@ -95,13 +99,13 @@ export function useChatInputAttachments() {
     setAttachments((previous) => {
       const seenPaths = new Set(
         previous
-          .map((attachment) => attachment.path?.toLowerCase())
+          .map((attachment) => attachmentPathKey(attachment.path))
           .filter((value): value is string => Boolean(value)),
       );
       const next = [...previous];
 
       for (const attachment of incoming) {
-        const pathKey = attachment.path?.toLowerCase();
+        const pathKey = attachmentPathKey(attachment.path);
         if (pathKey && seenPaths.has(pathKey)) {
           revokeAttachmentPreview(attachment);
           continue;

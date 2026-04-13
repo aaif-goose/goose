@@ -280,7 +280,7 @@ export function ChatInput({
         title: t("attachments.chooseFilesDialogTitle"),
         multiple: true,
       });
-      void addPathAttachments(normalizeDialogSelection(selected));
+      await addPathAttachments(normalizeDialogSelection(selected));
     } catch {
       // Dialog plugin may be unavailable in some environments.
     }
@@ -297,7 +297,7 @@ export function ChatInput({
         title: t("attachments.chooseFoldersDialogTitle"),
         multiple: true,
       });
-      void addPathAttachments(normalizeDialogSelection(selected));
+      await addPathAttachments(normalizeDialogSelection(selected));
     } catch {
       // Dialog plugin may be unavailable in some environments.
     }

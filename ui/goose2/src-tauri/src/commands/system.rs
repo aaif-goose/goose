@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 const DEFAULT_FILE_MENTION_LIMIT: usize = 1500;
 const MAX_FILE_MENTION_LIMIT: usize = 5000;
 const MAX_SCAN_DEPTH: usize = 8;
+const MAX_IMAGE_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -178,10 +179,13 @@ fn inspect_attachment_path(path: &Path) -> Result<AttachmentPathInfo, String> {
     })
 }
 
-#[tauri::command]
-pub fn inspect_attachment_paths(paths: Vec<String>) -> Result<Vec<AttachmentPathInfo>, String> {
+fn normalized_path_key(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn normalize_attachment_paths(paths: Vec<String>) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
-    let mut attachments = Vec::new();
+    let mut normalized = Vec::new();
 
     for raw_path in paths {
         let trimmed = raw_path.trim();
@@ -190,11 +194,20 @@ pub fn inspect_attachment_paths(paths: Vec<String>) -> Result<Vec<AttachmentPath
         }
 
         let path = PathBuf::from(trimmed);
-        let key = path.to_string_lossy().to_lowercase();
-        if !seen.insert(key) {
-            continue;
+        let key = normalized_path_key(&path);
+        if seen.insert(key) {
+            normalized.push(path);
         }
+    }
 
+    normalized
+}
+
+#[tauri::command]
+pub fn inspect_attachment_paths(paths: Vec<String>) -> Result<Vec<AttachmentPathInfo>, String> {
+    let mut attachments = Vec::new();
+
+    for path in normalize_attachment_paths(paths) {
         attachments.push(inspect_attachment_path(&path)?);
     }
 
@@ -210,6 +223,16 @@ pub fn read_image_attachment(path: String) -> Result<ImageAttachmentPayload, Str
 
     if !mime_type.starts_with("image/") {
         return Err(format!("Attachment is not an image: {}", attachment.path));
+    }
+
+    let metadata = fs::metadata(&attachment.path)
+        .map_err(|error| format!("Failed to inspect image '{}': {}", attachment.path, error))?;
+    if metadata.len() > MAX_IMAGE_ATTACHMENT_BYTES {
+        return Err(format!(
+            "Image attachment '{}' exceeds the {} MB limit",
+            attachment.path,
+            MAX_IMAGE_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
     }
 
     let bytes = fs::read(&attachment.path)
@@ -230,7 +253,7 @@ fn normalize_roots(roots: Vec<String>) -> Vec<PathBuf> {
             continue;
         }
         let path = PathBuf::from(trimmed);
-        let key = path.to_string_lossy().to_lowercase();
+        let key = normalized_path_key(&path);
         if dedup.insert(key) {
             normalized.push(path);
         }
@@ -291,7 +314,7 @@ fn scan_files_for_mentions(roots: Vec<String>, max_results: Option<usize>) -> Ve
             continue;
         }
         let path_str = entry.path().to_string_lossy().to_string();
-        let dedup_key = path_str.to_lowercase();
+        let dedup_key = path_str.clone();
         if seen.insert(dedup_key) {
             files.push(path_str);
         }
@@ -314,13 +337,15 @@ pub async fn list_files_for_mentions(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_file_tree_entry, inspect_attachment_path, read_directory_entries,
-        read_image_attachment, scan_files_for_mentions,
+        build_file_tree_entry, inspect_attachment_path, normalize_attachment_paths,
+        read_directory_entries, read_image_attachment, scan_files_for_mentions,
+        MAX_IMAGE_ATTACHMENT_BYTES,
     };
     use base64::Engine;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
     use std::process::Command;
     use tempfile::tempdir;
 
@@ -507,5 +532,38 @@ mod tests {
 
         assert_eq!(payload.mime_type, "image/png");
         assert!(!payload.base64.is_empty());
+    }
+
+    #[test]
+    fn preserves_case_distinctions_when_deduping_attachment_paths() {
+        let normalized = normalize_attachment_paths(vec![
+            "/tmp/Readme.md".into(),
+            "/tmp/README.md".into(),
+            "/tmp/Readme.md".into(),
+        ]);
+
+        assert_eq!(
+            normalized,
+            vec![
+                PathBuf::from("/tmp/Readme.md"),
+                PathBuf::from("/tmp/README.md")
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_oversized_image_attachment_payloads() {
+        let dir = tempdir().expect("tempdir");
+        let image = dir.path().join("huge.png");
+        fs::write(
+            &image,
+            vec![0_u8; (MAX_IMAGE_ATTACHMENT_BYTES as usize) + 1],
+        )
+        .expect("oversized image file");
+
+        let error =
+            read_image_attachment(image.to_string_lossy().into_owned()).expect_err("size limit");
+
+        assert!(error.contains("exceeds the 20 MB limit"));
     }
 }
