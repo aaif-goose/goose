@@ -441,3 +441,20 @@ fn append_text_json(content_json: &str, new_text: &str) -> anyhow::Result<String
     }
     Ok(serde_json::to_string(&items)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_timestamp_valid() {
+        let dt = parse_timestamp("2026-04-13 01:38:51").unwrap();
+        assert_eq!(dt.to_rfc3339(), "2026-04-13T01:38:51+00:00");
+    }
+
+    #[test]
+    fn test_parse_timestamp_invalid_returns_none() {
+        assert!(parse_timestamp("not-a-date").is_none());
+        assert!(parse_timestamp("2026-04-13T01:38:51Z").is_none()); // RFC 3339 not accepted
+    }
+}

@@ -2167,4 +2167,18 @@ mod tests {
         let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
         assert_eq!(acp_session.session_type, SessionType::Acp);
     }
+
+    #[test]
+    fn test_parse_sql_timestamp_valid() {
+        let dt = parse_sql_timestamp("2026-04-13 01:38:51");
+        assert_eq!(dt.to_rfc3339(), "2026-04-13T01:38:51+00:00");
+    }
+
+    #[test]
+    fn test_parse_sql_timestamp_invalid_falls_back_to_now() {
+        let before = Utc::now();
+        let dt = parse_sql_timestamp("not-a-date");
+        let after = Utc::now();
+        assert!(dt >= before && dt <= after);
+    }
 }
