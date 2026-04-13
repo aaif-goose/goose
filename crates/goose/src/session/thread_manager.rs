@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thread {
@@ -78,13 +79,55 @@ fn thread_from_row(
 ) -> Result<Thread> {
     let metadata: ThreadMetadata = serde_json::from_str(&metadata_json).unwrap_or_default();
     let archived_at = archived_at_str.as_deref().and_then(|s| s.parse().ok());
+
+    tracing::info!(
+        thread_id = %id,
+        raw_created_at = %created_at,
+        raw_updated_at = %updated_at,
+        "parsing thread timestamps from database"
+    );
+
+    let parsed_created_at = match created_at.parse::<DateTime<Utc>>() {
+        Ok(dt) => {
+            tracing::info!(thread_id = %id, parsed = %dt, "created_at parsed successfully");
+            dt
+        }
+        Err(e) => {
+            let fallback = Utc::now();
+            tracing::info!(
+                thread_id = %id,
+                error = %e,
+                fallback = %fallback,
+                "created_at parse failed, falling back to Utc::now()"
+            );
+            fallback
+        }
+    };
+
+    let parsed_updated_at = match updated_at.parse::<DateTime<Utc>>() {
+        Ok(dt) => {
+            tracing::info!(thread_id = %id, parsed = %dt, "updated_at parsed successfully");
+            dt
+        }
+        Err(e) => {
+            let fallback = Utc::now();
+            tracing::info!(
+                thread_id = %id,
+                error = %e,
+                fallback = %fallback,
+                "updated_at parse failed, falling back to Utc::now()"
+            );
+            fallback
+        }
+    };
+
     Ok(Thread {
         id,
         name,
         user_set_name,
         working_dir,
-        created_at: created_at.parse().unwrap_or_else(|_| Utc::now()),
-        updated_at: updated_at.parse().unwrap_or_else(|_| Utc::now()),
+        created_at: parsed_created_at,
+        updated_at: parsed_updated_at,
         archived_at,
         metadata,
         current_session_id,
