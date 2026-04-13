@@ -11,6 +11,10 @@ vi.mock("@/features/providers/hooks/useAgentProviderStatus", () => ({
   }),
 }));
 
+vi.mock("@/shared/lib/platform", () => ({
+  getPlatform: () => "mac",
+}));
+
 const mockListFilesForMentions = vi.fn<
   (roots: string[], maxResults?: number) => Promise<string[]>
 >(async () => []);
@@ -175,5 +179,38 @@ describe("ChatInput attachments", () => {
     await waitFor(() => {
       expect(screen.getByAltText("Attachment 2")).toBeInTheDocument();
     });
+  });
+
+  it("dedupes path attachments that differ only by case on case-insensitive platforms", async () => {
+    const user = userEvent.setup();
+    mockOpenDialog.mockResolvedValue("/Users/test/report.pdf");
+    mockInspectAttachmentPaths
+      .mockResolvedValueOnce([
+        {
+          name: "report.pdf",
+          path: "/Users/test/report.pdf",
+          kind: "file",
+          mimeType: "application/pdf",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          name: "report.pdf",
+          path: "/users/test/REPORT.pdf",
+          kind: "file",
+          mimeType: "application/pdf",
+        },
+      ]);
+
+    render(<ChatInput onSend={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /^attach$/i }));
+    await user.click(screen.getByRole("menuitem", { name: /^file$/i }));
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^attach$/i }));
+    await user.click(screen.getByRole("menuitem", { name: /^file$/i }));
+
+    expect(screen.getAllByText("report.pdf")).toHaveLength(1);
   });
 });

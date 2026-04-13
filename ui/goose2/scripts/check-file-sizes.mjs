@@ -66,9 +66,9 @@ const EXCEPTIONS = {
       "Session prepare/load/list logic, working-dir updates, wait_for_replay_drain helper with iteration cap, and composite prepared-session reuse remain colocated while ACP session ownership stabilizes.",
   },
   "src-tauri/src/commands/system.rs": {
-    limit: 580,
+    limit: 620,
     justification:
-      "Desktop system commands still centralize file mentions, attachment inspection, guarded image loading, and export helpers in one Tauri command surface.",
+      "Desktop system commands still centralize file mentions, attachment inspection, platform-aware path dedupe, guarded image loading, and export helpers in one Tauri command surface.",
   },
 };
 

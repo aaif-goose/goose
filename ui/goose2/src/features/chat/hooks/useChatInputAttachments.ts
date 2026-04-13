@@ -10,6 +10,7 @@ import type {
   ChatFileAttachmentDraft,
   ChatImageAttachmentDraft,
 } from "@/shared/types/messages";
+import { getPlatform } from "@/shared/lib/platform";
 import { resizeImage } from "../lib/resizeImage";
 
 function isBlobPreview(url: string) {
@@ -29,7 +30,11 @@ function pathToPreviewUrl(path: string) {
 }
 
 function attachmentPathKey(path?: string) {
-  return path ?? null;
+  if (!path) {
+    return null;
+  }
+
+  return getPlatform() === "linux" ? path : path.toLowerCase();
 }
 
 async function createImageAttachmentFromFile(

@@ -180,7 +180,19 @@ fn inspect_attachment_path(path: &Path) -> Result<AttachmentPathInfo, String> {
 }
 
 fn normalized_path_key(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical.to_string_lossy().into_owned();
+    }
+
+    let raw = path.to_string_lossy().into_owned();
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        raw.to_lowercase()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        raw
+    }
 }
 
 fn normalize_attachment_paths(paths: Vec<String>) -> Vec<PathBuf> {
@@ -314,7 +326,7 @@ fn scan_files_for_mentions(roots: Vec<String>, max_results: Option<usize>) -> Ve
             continue;
         }
         let path_str = entry.path().to_string_lossy().to_string();
-        let dedup_key = path_str.clone();
+        let dedup_key = normalized_path_key(entry.path());
         if seen.insert(dedup_key) {
             files.push(path_str);
         }
@@ -338,7 +350,7 @@ pub async fn list_files_for_mentions(
 mod tests {
     use super::{
         build_file_tree_entry, inspect_attachment_path, normalize_attachment_paths,
-        read_directory_entries, read_image_attachment, scan_files_for_mentions,
+        normalize_roots, read_directory_entries, read_image_attachment, scan_files_for_mentions,
         MAX_IMAGE_ATTACHMENT_BYTES,
     };
     use base64::Engine;
@@ -535,20 +547,45 @@ mod tests {
     }
 
     #[test]
-    fn preserves_case_distinctions_when_deduping_attachment_paths() {
+    fn dedupes_attachment_paths_using_platform_path_rules() {
         let normalized = normalize_attachment_paths(vec![
             "/tmp/Readme.md".into(),
             "/tmp/README.md".into(),
             "/tmp/Readme.md".into(),
         ]);
 
-        assert_eq!(
-            normalized,
-            vec![
-                PathBuf::from("/tmp/Readme.md"),
-                PathBuf::from("/tmp/README.md")
-            ]
-        );
+        if cfg!(any(target_os = "macos", target_os = "windows")) {
+            assert_eq!(normalized, vec![PathBuf::from("/tmp/Readme.md")]);
+        } else {
+            assert_eq!(
+                normalized,
+                vec![
+                    PathBuf::from("/tmp/Readme.md"),
+                    PathBuf::from("/tmp/README.md")
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn dedupes_mention_roots_using_platform_path_rules() {
+        let normalized = normalize_roots(vec![
+            "/tmp/Workspace".into(),
+            "/tmp/workspace".into(),
+            "/tmp/Workspace".into(),
+        ]);
+
+        if cfg!(any(target_os = "macos", target_os = "windows")) {
+            assert_eq!(normalized, vec![PathBuf::from("/tmp/Workspace")]);
+        } else {
+            assert_eq!(
+                normalized,
+                vec![
+                    PathBuf::from("/tmp/Workspace"),
+                    PathBuf::from("/tmp/workspace")
+                ]
+            );
+        }
     }
 
     #[test]
