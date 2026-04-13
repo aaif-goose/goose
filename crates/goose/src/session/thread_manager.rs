@@ -1,4 +1,3 @@
-use super::parse_sql_timestamp;
 use super::session_manager::{role_to_string, SessionStorage};
 use crate::conversation::message::Message;
 use anyhow::Result;
@@ -55,9 +54,9 @@ type ThreadRow = (
     String,
     bool,
     Option<String>,
-    String,
-    String,
-    Option<String>,
+    DateTime<Utc>,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
     String,
     Option<String>,
     i64,
@@ -71,24 +70,21 @@ fn thread_from_row(
         working_dir,
         created_at,
         updated_at,
-        archived_at_str,
+        archived_at,
         metadata_json,
         current_session_id,
         message_count,
     ): ThreadRow,
 ) -> Result<Thread> {
     let metadata: ThreadMetadata = serde_json::from_str(&metadata_json).unwrap_or_default();
-    let parsed_created_at = parse_sql_timestamp(&created_at).unwrap_or_else(Utc::now);
-    let parsed_updated_at = parse_sql_timestamp(&updated_at).unwrap_or_else(Utc::now);
-    let archived_at = archived_at_str.as_deref().and_then(parse_sql_timestamp);
 
     Ok(Thread {
         id,
         name,
         user_set_name,
         working_dir,
-        created_at: parsed_created_at,
-        updated_at: parsed_updated_at,
+        created_at,
+        updated_at,
         archived_at,
         metadata,
         current_session_id,
@@ -436,19 +432,3 @@ fn append_text_json(content_json: &str, new_text: &str) -> anyhow::Result<String
     Ok(serde_json::to_string(&items)?)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_sql_timestamp_valid() {
-        let dt = parse_sql_timestamp("2026-04-13 01:38:51").unwrap();
-        assert_eq!(dt.to_rfc3339(), "2026-04-13T01:38:51+00:00");
-    }
-
-    #[test]
-    fn test_parse_sql_timestamp_invalid_returns_none() {
-        assert!(parse_sql_timestamp("not-a-date").is_none());
-        assert!(parse_sql_timestamp("2026-04-13T01:38:51Z").is_none());
-    }
-}

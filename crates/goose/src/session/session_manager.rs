@@ -511,10 +511,8 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             name,
             user_set_name,
             session_type,
-            created_at: super::parse_sql_timestamp(&row.try_get::<String, _>("created_at")?)
-                .unwrap_or_else(Utc::now),
-            updated_at: super::parse_sql_timestamp(&row.try_get::<String, _>("updated_at")?)
-                .unwrap_or_else(Utc::now),
+            created_at: row.try_get("created_at")?,
+            updated_at: row.try_get("updated_at")?,
             extension_data: serde_json::from_str(&row.try_get::<String, _>("extension_data")?)
                 .unwrap_or_default(),
             total_tokens: row.try_get("total_tokens")?,
@@ -800,8 +798,8 @@ impl SessionStorage {
         .bind(session.user_set_name)
         .bind(session.session_type.to_string())
         .bind(&*session.working_dir.to_string_lossy())
-        .bind(session.created_at.format("%Y-%m-%d %H:%M:%S").to_string())
-        .bind(session.updated_at.format("%Y-%m-%d %H:%M:%S").to_string())
+        .bind(session.created_at)
+        .bind(session.updated_at)
         .bind(serde_json::to_string(&session.extension_data)?)
         .bind(session.total_tokens)
         .bind(session.input_tokens)
