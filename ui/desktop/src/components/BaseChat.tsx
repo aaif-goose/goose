@@ -346,8 +346,9 @@ export default function BaseChat({
     // Only the currently visible/active session should update global ChatContext.
     if (!isActiveSession) return;
 
-    const currentSessionName = session?.name;
-    if (!currentSessionName) return;
+    // Write active session ID immediately on switch, even before session details load.
+    // This prevents transient stale global context pointing at the previous session.
+    const currentSessionName = session?.name || intl.formatMessage(i18n.noSession);
 
     const contextKey = `${sessionId}:${currentSessionName}`;
     if (contextKey === lastSetContextRef.current) return;
@@ -361,7 +362,7 @@ export default function BaseChat({
     });
     // Intentionally scoped to identity changes to avoid high-frequency global writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActiveSession, sessionId, session?.name, setChat]);
+  }, [isActiveSession, sessionId, session?.name, setChat, intl]);
 
   // If we have a recipe prompt and user recipe values, substitute parameters
   let recipePrompt = '';

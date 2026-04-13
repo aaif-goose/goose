@@ -72,4 +72,53 @@ describe('chat context isolation for background sessions', () => {
     expect(latestRef.current.sessionId).toBe('active-session');
     expect(latestRef.current.name).toBe('Active Session');
   });
+
+  it('switches context immediately when the active session changes', async () => {
+    const initialChat: ChatType = {
+      sessionId: 'session-a',
+      name: 'Session A',
+      messages: [],
+    };
+
+    const latestRef: { current: ChatType | null } = { current: null };
+
+    const ActiveWriterA = setChatFromEffect({
+      isActiveSession: true,
+      sessionId: 'session-a',
+      name: 'Session A',
+    });
+
+    const ActiveWriterB = setChatFromEffect({
+      isActiveSession: true,
+      sessionId: 'session-b',
+      name: 'No Session',
+    });
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <ChatProvider chat={initialChat} setChat={() => {}}>
+          <ActiveWriterA />
+          <ContextReader onRead={(chat) => (latestRef.current = chat)} />
+        </ChatProvider>
+      </MemoryRouter>
+    );
+
+    expect(latestRef.current).not.toBeNull();
+    if (!latestRef.current) throw new Error('Expected latest chat context to be populated');
+    expect(latestRef.current.sessionId).toBe('session-a');
+
+    rerender(
+      <MemoryRouter>
+        <ChatProvider chat={initialChat} setChat={() => {}}>
+          <ActiveWriterB />
+          <ContextReader onRead={(chat) => (latestRef.current = chat)} />
+        </ChatProvider>
+      </MemoryRouter>
+    );
+
+    expect(latestRef.current).not.toBeNull();
+    if (!latestRef.current) throw new Error('Expected latest chat context to be populated');
+    expect(latestRef.current.sessionId).toBe('session-b');
+    expect(latestRef.current.name).toBe('No Session');
+  });
 });

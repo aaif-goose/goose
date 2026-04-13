@@ -31,6 +31,7 @@ import CreateRecipeFromSessionModal from './recipes/CreateRecipeFromSessionModal
 import CreateEditRecipeModal from './recipes/CreateEditRecipeModal';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { useSessionWorkingDir } from '../hooks/useSessionWorkingDir';
+import { resolveModelProvider } from '../utils/sessionModelProvider';
 import { getPredefinedModelsFromEnv } from './settings/models/predefinedModelsUtils';
 import {
   trackFileAttached,
@@ -230,8 +231,18 @@ export default function ChatInput({
   const [modelOverride, setModelOverride] = useState<{ model: string; provider: string } | null>(
     null
   );
-  const effectiveModel = modelOverride?.model ?? sessionModel ?? configModel;
-  const effectiveProvider = modelOverride?.provider ?? sessionProvider ?? configProvider;
+  const {
+    model: effectiveModel,
+    provider: effectiveProvider,
+    isSessionScoped,
+  } = resolveModelProvider({
+    sessionId,
+    sessionModel,
+    sessionProvider,
+    configModel,
+    configProvider,
+    override: modelOverride,
+  });
 
   // Clear override when the underlying data catches up (session props for
   // active chats, config defaults for Hub / no-session contexts).
@@ -457,11 +468,11 @@ export default function ChatInput({
       // Reset token limit loaded state
       setIsTokenLimitLoaded(false);
 
-      // Use effective model/provider (includes overrides from in-session model changes),
-      // fall back to config defaults
+      // Use effective model/provider (includes session-scoped values and overrides).
+      // If a session is active and values are not loaded yet, do not fall back to global config.
       let model = effectiveModel;
       let provider = effectiveProvider;
-      if (!model || !provider) {
+      if ((!model || !provider) && !isSessionScoped) {
         const configModelAndProvider = await getCurrentModelAndProvider();
         model = configModelAndProvider.model;
         provider = configModelAndProvider.provider;
@@ -516,7 +527,7 @@ export default function ChatInput({
   useEffect(() => {
     loadProviderDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveModel, effectiveProvider, configModel, configProvider]);
+  }, [effectiveModel, effectiveProvider, configModel, configProvider, isSessionScoped]);
 
   // Handle tool count alerts and token usage
   useEffect(() => {
