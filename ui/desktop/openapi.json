@@ -5724,7 +5724,8 @@
           "size_bytes",
           "status",
           "recommended",
-          "settings"
+          "settings",
+          "vision_capable"
         ],
         "properties": {
           "filename": {
@@ -5732,6 +5733,14 @@
           },
           "id": {
             "type": "string"
+          },
+          "mmproj_status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelDownloadStatus"
+              }
+            ],
+            "nullable": true
           },
           "quantization": {
             "type": "string"
@@ -5752,6 +5761,9 @@
           },
           "status": {
             "$ref": "#/components/schemas/ModelDownloadStatus"
+          },
+          "vision_capable": {
+            "type": "boolean"
           }
         }
       },
@@ -6497,9 +6509,20 @@
             "type": "number",
             "format": "float"
           },
+          "image_token_estimate": {
+            "type": "integer",
+            "description": "Estimated tokens per image for budget planning before mtmd tokenization.\nThe actual count is determined after tokenization via `chunks.total_tokens()`.",
+            "minimum": 0
+          },
           "max_output_tokens": {
             "type": "integer",
             "nullable": true,
+            "minimum": 0
+          },
+          "mmproj_size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size of the mmproj file in bytes, used for memory accounting.",
             "minimum": 0
           },
           "n_batch": {
@@ -6542,6 +6565,10 @@
           },
           "use_mlock": {
             "type": "boolean"
+          },
+          "vision_capable": {
+            "type": "boolean",
+            "description": "Whether this model architecture supports vision input.\nDerived from the featured model table, not user-configurable."
           }
         }
       },

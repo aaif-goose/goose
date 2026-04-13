@@ -1838,6 +1838,15 @@
   "localInferenceSettings.title": {
     "defaultMessage": "Local Inference Models"
   },
+  "localInferenceSettings.vision": {
+    "defaultMessage": "Vision"
+  },
+  "localInferenceSettings.visionEncoderDownloading": {
+    "defaultMessage": "Vision encoder downloading\u2026"
+  },
+  "localInferenceSettings.visionEncoderNotDownloaded": {
+    "defaultMessage": "Vision encoder not downloaded"
+  },
   "localModelManager.active": {
     "defaultMessage": "Active"
   },

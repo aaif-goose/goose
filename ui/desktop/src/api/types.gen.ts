@@ -612,12 +612,14 @@ export type LoadedProvider = {
 export type LocalModelResponse = {
     filename: string;
     id: string;
+    mmproj_status?: ModelDownloadStatus | null;
     quantization: string;
     recommended: boolean;
     repo_id: string;
     settings: ModelSettings;
     size_bytes: number;
     status: ModelDownloadStatus;
+    vision_capable: boolean;
 };
 
 /**
@@ -821,7 +823,16 @@ export type ModelSettings = {
     enable_thinking?: boolean;
     flash_attention?: boolean | null;
     frequency_penalty?: number;
+    /**
+     * Estimated tokens per image for budget planning before mtmd tokenization.
+     * The actual count is determined after tokenization via `chunks.total_tokens()`.
+     */
+    image_token_estimate?: number;
     max_output_tokens?: number | null;
+    /**
+     * Size of the mmproj file in bytes, used for memory accounting.
+     */
+    mmproj_size_bytes?: number;
     n_batch?: number | null;
     n_gpu_layers?: number | null;
     n_threads?: number | null;
@@ -832,6 +843,11 @@ export type ModelSettings = {
     sampling?: SamplingConfig;
     use_jinja?: boolean;
     use_mlock?: boolean;
+    /**
+     * Whether this model architecture supports vision input.
+     * Derived from the featured model table, not user-configurable.
+     */
+    vision_capable?: boolean;
 };
 
 export type ModelTemplate = {
