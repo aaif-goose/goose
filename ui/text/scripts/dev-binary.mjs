@@ -43,12 +43,18 @@ function needsRebuild() {
     return true;
   }
 
-  // Check goose-cli crate (the main binary)
-  const cliSrc = join(projectRoot, "crates", "goose-cli", "src");
-  if (existsSync(cliSrc)) {
-    const cliCargoToml = join(projectRoot, "crates", "goose-cli", "Cargo.toml");
-    if (existsSync(cliCargoToml) && statSync(cliCargoToml).mtimeMs > binaryMtime) {
-      console.log("goose-cli Cargo.toml changed, needs rebuild");
+  // Check if goose-acp crate sources are newer than the binary
+  const acpDir = join(projectRoot, "crates", "goose-acp");
+  if (existsSync(acpDir)) {
+    const result = spawnSync(
+      "find",
+      [acpDir, "-type", "f", "(", "-name", "*.rs", "-o", "-name", "Cargo.toml", ")", "-newer", binaryPath],
+      { encoding: "utf-8" },
+    );
+    const changed = (result.stdout ?? "").trim();
+    if (changed) {
+      const first = changed.split("\n")[0];
+      console.log(`goose-acp changed (e.g. ${first}), needs rebuild`);
       return true;
     }
   }

@@ -90,6 +90,21 @@ const ProviderSelector = React.memo(function ProviderSelector({ providers, heigh
         return;
       }
     }
+    if (filtered.length === 0) {
+      // Only allow typing/backspace when no results match; skip navigation
+      if (key.backspace || key.delete) {
+        setSearchQuery((q) => q.slice(0, -1));
+        setSelectedIdx(0);
+        setScrollRow(0);
+        return;
+      }
+      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+        setSearchQuery((q) => q + ch);
+        setSelectedIdx(0);
+        setScrollRow(0);
+      }
+      return;
+    }
     if (key.upArrow) {
       const newIdx = Math.max(selectedIdx - cardsPerRow, 0);
       setSelectedIdx(newIdx);
@@ -320,8 +335,10 @@ const ProviderConfigurator = React.memo(function ProviderConfigurator({ provider
   });
 
   const handleSubmit = (value: string) => {
-    if (!currentKey || !value.trim()) return;
-    const newValues = { ...keyValues, [currentKey.name]: value };
+    if (!currentKey) return;
+    const effective = value.trim() || currentVal.trim();
+    if (!effective) return;
+    const newValues = { ...keyValues, [currentKey.name]: effective };
     setKeyValues(newValues);
     if (activeKeyIdx < keys.length - 1) {
       setActiveKeyIdx(activeKeyIdx + 1);
@@ -447,10 +464,9 @@ const ProviderConfigurator = React.memo(function ProviderConfigurator({ provider
 interface SuccessScreenProps {
   provider: ProviderDetailEntry | null;
   height: number;
-  onComplete: () => void;
 }
 
-const SuccessScreen = React.memo(function SuccessScreen({ provider, height, onComplete }: SuccessScreenProps) {
+const SuccessScreen = React.memo(function SuccessScreen({ provider, height }: SuccessScreenProps) {
   const { stdout } = useStdout();
   const columns = stdout?.columns ?? 80;
 
@@ -495,6 +511,7 @@ export default function Onboarding({
     useState<ProviderDetailEntry | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [spinIdx, setSpinIdx] = useState(0);
+  const [fetchKey, setFetchKey] = useState(0);
 
   useEffect(() => {
     const t = setInterval(
@@ -521,7 +538,7 @@ export default function Onboarding({
         setPhase("error");
       }
     })();
-  }, [client]);
+  }, [client, fetchKey]);
 
   const saveProvider = useCallback(
     async (provider: ProviderDetailEntry, values: Record<string, string>) => {
@@ -570,7 +587,8 @@ export default function Onboarding({
 
   const handleRetry = useCallback(() => {
     setErrorMsg("");
-    setPhase("select_provider");
+    setFetchKey((k) => k + 1);
+    setPhase("loading");
   }, []);
 
   if (phase === "loading") {
@@ -629,7 +647,7 @@ export default function Onboarding({
 
   if (phase === "success") {
     return (
-      <SuccessScreen provider={selectedProvider} height={height} onComplete={onComplete} />
+      <SuccessScreen provider={selectedProvider} height={height} />
     );
   }
 

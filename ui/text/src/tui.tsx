@@ -198,6 +198,7 @@ const InputBar = React.memo(function InputBar({
 
 function buildContentLines({
   turn,
+  turnIndex,
   width,
   loading,
   status,
@@ -208,6 +209,7 @@ function buildContentLines({
   queuedMessages,
 }: {
   turn: Turn | undefined;
+  turnIndex: number;
   width: number;
   loading: boolean;
   status: string;
@@ -222,8 +224,7 @@ function buildContentLines({
 
   const safeWidth = Math.max(width, 20);
 
-  // Render user prompt  
-  const turnId = turn.userText.slice(0, 20).replace(/[^a-zA-Z0-9]/g, '') || 'turn';
+  const turnId = String(turnIndex);
   lines.push(...renderUserPrompt(turn.userText, safeWidth, turnId, (text: string, availableWidth: number) => {
     const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
     const safeWidth = Math.max(availableWidth, 10);
@@ -899,6 +900,7 @@ function App({
 
   const contentLines = buildContentLines({
     turn: currentTurn,
+    turnIndex: effectiveTurnIdx,
     width: contentWidth,
     loading: isLatest && loading,
     status,

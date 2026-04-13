@@ -71,7 +71,7 @@ export function renderErrorItem(
     lines.push(
       <Box key={`err-${index}-${j}`} width={width} height={1}>
         <Box width={width}>
-          <Text color={CRANBERRY} wrap="wrap">{line}</Text>
+          <Text color={CRANBERRY} wrap="truncate">{line}</Text>
         </Box>
       </Box>
     );
@@ -97,7 +97,7 @@ export function renderContentItem(
     lines.push(
       <Box key={`md-${index}-${j}`} width={width} height={1}>
         <Box width={constrainedWidth}>
-          <Text wrap="wrap">{mdLine}</Text>
+          <Text wrap="truncate">{mdLine}</Text>
         </Box>
       </Box>
     );
