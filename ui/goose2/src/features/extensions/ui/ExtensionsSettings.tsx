@@ -99,18 +99,19 @@ export function ExtensionsSettings() {
   ) => {
     try {
       const newKey = nameToKey(name);
-      const isRename = editingExtension && editingExtension.name !== name;
+      const isEdit = !!editingExtension;
       const isAdd = !editingExtension;
+      const keyChanged = isEdit && editingExtension.config_key !== newKey;
 
       if (
-        (isAdd || isRename) &&
+        (isAdd || keyChanged) &&
         extensions.some((e) => e.config_key === newKey)
       ) {
         toast.error(t("extensions.errors.nameConflict", { name }));
         return;
       }
 
-      if (isRename) {
+      if (isEdit) {
         await removeExtension(editingExtension.config_key);
       }
       await addExtension(name, config, extensionEnabled);

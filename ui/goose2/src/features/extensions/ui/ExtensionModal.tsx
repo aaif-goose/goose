@@ -25,8 +25,12 @@ type ExtensionType = "stdio" | "streamable_http";
 
 interface ExtensionModalProps {
   extension?: ExtensionEntry;
-  onSubmit: (name: string, config: ExtensionConfig, enabled: boolean) => void;
-  onDelete?: (configKey: string) => void;
+  onSubmit: (
+    name: string,
+    config: ExtensionConfig,
+    enabled: boolean,
+  ) => Promise<void>;
+  onDelete?: (configKey: string) => Promise<void>;
   onClose: () => void;
 }
 
@@ -106,42 +110,46 @@ export function ExtensionModal({
     name.trim().length > 0 &&
     (type === "stdio" ? cmd.trim().length > 0 : uri.trim().length > 0);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit || isSaving) return;
     setIsSaving(true);
 
-    const trimmedName = name.trim();
-    const envs = buildEnvVars(envVars);
-    const timeoutNum = Number.parseInt(timeout, 10) || 300;
+    try {
+      const trimmedName = name.trim();
+      const envs = buildEnvVars(envVars);
+      const timeoutNum = Number.parseInt(timeout, 10) || 300;
 
-    let config: ExtensionConfig;
+      let config: ExtensionConfig;
 
-    if (type === "stdio") {
-      config = {
-        type: "stdio",
-        name: trimmedName,
-        description,
-        cmd: cmd.trim(),
-        args: args
-          .split("\n")
-          .map((a) => a.trim())
-          .filter(Boolean),
-        envs,
-        timeout: timeoutNum,
-      };
-    } else {
-      if (!uri.trim()) return;
-      config = {
-        type: "streamable_http",
-        name: trimmedName,
-        description,
-        uri: uri.trim(),
-        envs,
-        timeout: timeoutNum,
-      };
+      if (type === "stdio") {
+        config = {
+          type: "stdio",
+          name: trimmedName,
+          description,
+          cmd: cmd.trim(),
+          args: args
+            .split("\n")
+            .map((a) => a.trim())
+            .filter(Boolean),
+          envs,
+          timeout: timeoutNum,
+        };
+      } else {
+        if (!uri.trim()) return;
+        config = {
+          type: "streamable_http",
+          name: trimmedName,
+          description,
+          uri: uri.trim(),
+          envs,
+          timeout: timeoutNum,
+        };
+      }
+
+      await onSubmit(trimmedName, config, extension?.enabled ?? true);
+    } finally {
+      setIsSaving(false);
     }
-
-    onSubmit(trimmedName, config, extension?.enabled ?? true);
   };
 
   const updateEnvVar = (index: number, field: "key" | "value", val: string) => {
@@ -316,9 +324,13 @@ export function ExtensionModal({
             <Button
               type="button"
               variant="ghost"
-              onClick={() => {
+              onClick={async () => {
                 setIsSaving(true);
-                onDelete(extension.config_key);
+                try {
+                  await onDelete(extension.config_key);
+                } finally {
+                  setIsSaving(false);
+                }
               }}
               disabled={isSaving}
               className="mr-auto text-destructive hover:text-destructive hover:bg-destructive/10"
