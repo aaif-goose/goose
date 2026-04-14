@@ -1,0 +1,13 @@
+{
+  "skills": [
+    {
+      "id": "mmx-cli",
+      "name": "mmx-cli",
+      "description": "Generate text, images, video, speech, and music via MiniMax AI platform",
+      "author": "MiniMax-AI",
+      "version": "latest",
+      "tags": ["text", "image", "video", "speech", "music", "web-search"],
+      "sourceUrl": "https://github.com/MiniMax-AI/cli"
+    }
+  ]
+}
