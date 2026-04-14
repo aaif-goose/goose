@@ -220,7 +220,9 @@ pub fn inspect_attachment_paths(paths: Vec<String>) -> Result<Vec<AttachmentPath
     let mut attachments = Vec::new();
 
     for path in normalize_attachment_paths(paths) {
-        attachments.push(inspect_attachment_path(&path)?);
+        if let Ok(attachment) = inspect_attachment_path(&path) {
+            attachments.push(attachment);
+        }
     }
 
     Ok(attachments)
@@ -349,9 +351,9 @@ pub async fn list_files_for_mentions(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_file_tree_entry, inspect_attachment_path, normalize_attachment_paths,
-        normalize_roots, read_directory_entries, read_image_attachment, scan_files_for_mentions,
-        MAX_IMAGE_ATTACHMENT_BYTES,
+        build_file_tree_entry, inspect_attachment_path, inspect_attachment_paths,
+        normalize_attachment_paths, normalize_roots, read_directory_entries,
+        read_image_attachment, scan_files_for_mentions, MAX_IMAGE_ATTACHMENT_BYTES,
     };
     use base64::Engine;
     use std::fs;
@@ -565,6 +567,24 @@ mod tests {
                 ]
             );
         }
+    }
+
+    #[test]
+    fn skips_invalid_attachment_paths_without_dropping_valid_ones() {
+        let dir = tempdir().expect("tempdir");
+        let valid = dir.path().join("report.txt");
+        let missing = dir.path().join("missing.txt");
+        fs::write(&valid, "hello").expect("file");
+
+        let attachments = inspect_attachment_paths(vec![
+            valid.to_string_lossy().into_owned(),
+            missing.to_string_lossy().into_owned(),
+        ])
+        .expect("attachments");
+
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].name, "report.txt");
+        assert_eq!(attachments[0].kind, "file");
     }
 
     #[test]
