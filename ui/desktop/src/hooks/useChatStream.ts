@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { toastError } from '../toasts';
 import { v7 as uuidv7 } from 'uuid';
 import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
@@ -236,6 +237,9 @@ function createEventProcessor(
   let lastBatchUpdate = Date.now();
   let hasPendingUpdate = false;
 
+  // Track whether this turn produced any user-visible assistant content.
+  let sawAssistantOutput = false;
+
   const flushBatchedUpdates = () => {
     if (reduceMotion && hasPendingUpdate) {
       if (latestTokenState) {
@@ -278,6 +282,21 @@ function createEventProcessor(
         const tokenState = (event as Record<string, unknown>).token_state as TokenState;
         currentMessages = pushMessage(currentMessages, msg);
 
+        if (msg.role === 'assistant') {
+          const hasVisibleOutput = msg.content.some((content) => {
+            if (content.type === 'text') {
+              return content.text.trim().length > 0;
+            }
+            if (content.type === 'toolRequest') {
+              return true;
+            }
+            return false;
+          });
+          if (hasVisibleOutput) {
+            sawAssistantOutput = true;
+          }
+        }
+
         const hasToolConfirmation = msg.content.some(
           (content) =>
             content.type === 'actionRequired' && content.data.actionType === 'toolConfirmation'
@@ -309,13 +328,32 @@ function createEventProcessor(
           onFinish();
           onReloadNeeded();
         } else {
-          onFinish('Stream error: ' + errorMsg);
+          const normalized = errorMsg.toLowerCase();
+          const likelyProviderError =
+            normalized.includes('provider') ||
+            normalized.includes('api') ||
+            normalized.includes('rate limit') ||
+            normalized.includes('context') ||
+            normalized.includes('token');
+
+          const prefix = likelyProviderError
+            ? 'Provider error'
+            : 'Stream interrupted before provider completion';
+
+          onFinish(`${prefix}: ${errorMsg}`);
         }
         return true;
       }
       case 'Finish': {
         flushBatchedUpdates();
-        onFinish();
+
+        if (!sawAssistantOutput) {
+          onFinish(
+            'Turn finished without assistant output. This can indicate interruption, filtering, or a stream transport issue.'
+          );
+        } else {
+          onFinish();
+        }
         return true;
       }
       case 'UpdateConversation': {
@@ -398,6 +436,13 @@ export function useChatStream({
       }
 
       dispatch({ type: 'STREAM_FINISH', payload: error });
+
+      if (error) {
+        toastError({
+          title: 'Response interrupted',
+          msg: error,
+        });
+      }
 
       const timeSinceLastInteraction = Date.now() - lastInteractionTimeRef.current;
       if (!error && timeSinceLastInteraction > 60000) {
@@ -1040,7 +1085,6 @@ export function useChatStream({
         dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.Idle });
         const errorMsg = errorMessage(error);
         console.error('Failed to edit message:', error);
-        const { toastError } = await import('../toasts');
         toastError({
           title: 'Failed to edit message',
           msg: errorMsg,

@@ -1,11 +1,11 @@
 import React from 'react';
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ChatProvider, useChatContext } from '../contexts/ChatContext';
 import type { ChatType } from '../types/chat';
 
-function setChatFromEffect({
+function EffectWriter({
   isActiveSession,
   sessionId,
   name,
@@ -14,22 +14,31 @@ function setChatFromEffect({
   sessionId: string;
   name: string;
 }) {
-  return function EffectWriter() {
-    const ctx = useChatContext();
+  const ctx = useChatContext();
 
-    React.useEffect(() => {
-      if (!ctx) return;
-      // Mirrors BaseChat behavior after fix: hidden sessions don't update global chat context.
-      if (!isActiveSession) return;
-      ctx.setChat({
-        sessionId,
-        name,
-        messages: [],
-      });
-    }, [ctx]);
+  React.useEffect(() => {
+    if (!ctx) return;
+    // Mirrors BaseChat behavior after fix: hidden sessions don't update global chat context.
+    if (!isActiveSession) return;
+    ctx.setChat({
+      sessionId,
+      name,
+      messages: [],
+    });
+  }, [ctx, isActiveSession, sessionId, name]);
 
-    return null;
-  };
+  return null;
+}
+
+function ChatHarness({
+  initialChat,
+  children,
+}: {
+  initialChat: ChatType;
+  children: React.ReactNode;
+}) {
+  const [chat, setChat] = React.useState<ChatType>(initialChat);
+  return <ChatProvider chat={chat} setChat={setChat}>{children}</ChatProvider>;
 }
 
 function ContextReader({ onRead }: { onRead: (chat: ChatType | null) => void }) {
@@ -52,18 +61,16 @@ describe('chat context isolation for background sessions', () => {
 
     const latestRef: { current: ChatType | null } = { current: null };
 
-    const HiddenWriter = setChatFromEffect({
-      isActiveSession: false,
-      sessionId: 'hidden-session',
-      name: 'Hidden Session',
-    });
-
     render(
       <MemoryRouter>
-        <ChatProvider chat={initialChat} setChat={() => {}}>
-          <HiddenWriter />
+        <ChatHarness initialChat={initialChat}>
+          <EffectWriter
+            isActiveSession={false}
+            sessionId="hidden-session"
+            name="Hidden Session"
+          />
           <ContextReader onRead={(chat) => (latestRef.current = chat)} />
-        </ChatProvider>
+        </ChatHarness>
       </MemoryRouter>
     );
 
@@ -82,24 +89,16 @@ describe('chat context isolation for background sessions', () => {
 
     const latestRef: { current: ChatType | null } = { current: null };
 
-    const ActiveWriterA = setChatFromEffect({
-      isActiveSession: true,
-      sessionId: 'session-a',
-      name: 'Session A',
-    });
-
-    const ActiveWriterB = setChatFromEffect({
-      isActiveSession: true,
-      sessionId: 'session-b',
-      name: 'No Session',
-    });
-
     const { rerender } = render(
       <MemoryRouter>
-        <ChatProvider chat={initialChat} setChat={() => {}}>
-          <ActiveWriterA />
+        <ChatHarness initialChat={initialChat}>
+          <EffectWriter
+            isActiveSession={true}
+            sessionId="session-a"
+            name="Session A"
+          />
           <ContextReader onRead={(chat) => (latestRef.current = chat)} />
-        </ChatProvider>
+        </ChatHarness>
       </MemoryRouter>
     );
 
@@ -109,16 +108,22 @@ describe('chat context isolation for background sessions', () => {
 
     rerender(
       <MemoryRouter>
-        <ChatProvider chat={initialChat} setChat={() => {}}>
-          <ActiveWriterB />
+        <ChatHarness initialChat={initialChat}>
+          <EffectWriter
+            isActiveSession={true}
+            sessionId="session-b"
+            name="No Session"
+          />
           <ContextReader onRead={(chat) => (latestRef.current = chat)} />
-        </ChatProvider>
+        </ChatHarness>
       </MemoryRouter>
     );
 
-    expect(latestRef.current).not.toBeNull();
-    if (!latestRef.current) throw new Error('Expected latest chat context to be populated');
-    expect(latestRef.current.sessionId).toBe('session-b');
-    expect(latestRef.current.name).toBe('No Session');
+    await waitFor(() => {
+      expect(latestRef.current).not.toBeNull();
+      if (!latestRef.current) throw new Error('Expected latest chat context to be populated');
+      expect(latestRef.current.sessionId).toBe('session-b');
+      expect(latestRef.current.name).toBe('No Session');
+    });
   });
 });
