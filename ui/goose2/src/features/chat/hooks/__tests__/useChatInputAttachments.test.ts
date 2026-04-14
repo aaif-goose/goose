@@ -30,16 +30,26 @@ describe("useChatInputAttachments", () => {
   it("keeps valid browser file attachments when an image read fails", async () => {
     mockResizeImage.mockRejectedValue(new Error("resize failed"));
 
-    const fileReaderSpy = vi.spyOn(globalThis, "FileReader").mockImplementation(
-      () =>
-        ({
+    const fileReaderSpy = vi
+      .spyOn(globalThis, "FileReader")
+      .mockImplementation(() => {
+        const fileReader: {
+          onload: FileReader["onload"];
+          onerror: FileReader["onerror"];
+          readAsDataURL: FileReader["readAsDataURL"];
+        } = {
           onload: null,
           onerror: null,
-          readAsDataURL() {
-            this.onerror?.(new ProgressEvent("error"));
+          readAsDataURL: () => {
+            fileReader.onerror?.call(
+              fileReader as unknown as FileReader,
+              new ProgressEvent("error") as ProgressEvent<FileReader>,
+            );
           },
-        }) as unknown as FileReader,
-    );
+        };
+
+        return fileReader as unknown as FileReader;
+      });
 
     const { result } = renderHook(() => useChatInputAttachments());
 
