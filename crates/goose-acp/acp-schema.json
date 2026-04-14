@@ -168,6 +168,33 @@
       "x-side": "agent",
       "x-method": "_goose/config/extensions"
     },
+    "GetSessionExtensionsRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/session/extensions"
+    },
+    "GetSessionExtensionsResponse": {
+      "type": "object",
+      "properties": {
+        "extensions": {
+          "type": "array",
+          "items": {}
+        }
+      },
+      "required": [
+        "extensions"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/session/extensions"
+    },
     "UpdateProviderRequest": {
       "type": "object",
       "properties": {
@@ -713,6 +740,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/GetSessionExtensionsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/extensions",
+                  "title": "GetSessionExtensionsRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/UpdateProviderRequest"
                     }
                   ],
@@ -897,6 +933,14 @@
                         }
                       ],
                       "title": "GetExtensionsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetSessionExtensionsResponse"
+                        }
+                      ],
+                      "title": "GetSessionExtensionsResponse"
                     },
                     {
                       "allOf": [

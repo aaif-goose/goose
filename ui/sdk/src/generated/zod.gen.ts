@@ -81,6 +81,14 @@ export const zGetExtensionsResponse = z.object({
     warnings: z.array(z.string())
 });
 
+export const zGetSessionExtensionsRequest = z.object({
+    sessionId: z.string()
+});
+
+export const zGetSessionExtensionsResponse = z.object({
+    extensions: z.array(z.unknown())
+});
+
 /**
  * Atomically update the provider for a live session.
  */
@@ -302,6 +310,7 @@ export const zExtRequest = z.object({
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
             zGetExtensionsRequest,
+            zGetSessionExtensionsRequest,
             zUpdateProviderRequest,
             zListProvidersRequest,
             zGetProviderDetailsRequest,
@@ -333,6 +342,7 @@ export const zExtResponse = z.union([
                 zGetToolsResponse,
                 zReadResourceResponse,
                 zGetExtensionsResponse,
+                zGetSessionExtensionsResponse,
                 zUpdateProviderResponse,
                 zListProvidersResponse,
                 zGetProviderDetailsResponse,

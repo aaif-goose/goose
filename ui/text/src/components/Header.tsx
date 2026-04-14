@@ -48,7 +48,7 @@ export const Header = React.memo(function Header({
               {turnInfo.current}/{turnInfo.total}{"  "}
             </Text>
           )}
-          <Text color={TEXT_DIM}>^G configure · ^C exit</Text>
+          <Text color={TEXT_DIM}>^E exts · ^M models · ^P providers</Text>
         </Box>
       </Box>
       <Rule width={constrainedWidth} />

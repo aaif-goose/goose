@@ -2291,6 +2291,34 @@ impl GooseAcpAgent {
         })
     }
 
+    #[custom_method(GetSessionExtensionsRequest)]
+    async fn on_get_session_extensions(
+        &self,
+        req: GetSessionExtensionsRequest,
+    ) -> Result<GetSessionExtensionsResponse, sacp::Error> {
+        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session = self
+            .session_manager
+            .get_session(&internal_id, false)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        let extensions = EnabledExtensionsState::extensions_or_default(
+            Some(&session.extension_data),
+            goose::config::Config::global(),
+        );
+
+        let extensions_json = extensions
+            .into_iter()
+            .map(|e| serde_json::to_value(&e))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        Ok(GetSessionExtensionsResponse {
+            extensions: extensions_json,
+        })
+    }
+
     #[custom_method(UpdateProviderRequest)]
     async fn on_update_provider(
         &self,

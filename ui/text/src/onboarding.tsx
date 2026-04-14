@@ -381,12 +381,16 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({ p
       {topPad > 0 && <Box height={topPad} />}
       <Box flexDirection="column" width={maxWidth} paddingX={2}>
         {/* Header */}
-        <Text color={TEXT_PRIMARY} bold>
-          Configure {provider.displayName}
-        </Text>
+        <Box justifyContent="center" marginBottom={1}>
+          <Text color={TEXT_PRIMARY} bold>
+            ◆ Configure {provider.displayName} ◆
+          </Text>
+        </Box>
         {provider.description && (
-          <Box marginTop={1} width={maxWidth - 4}>
-            <Text color={TEXT_DIM} wrap="wrap">{provider.description}</Text>
+          <Box justifyContent="center" marginBottom={1}>
+            <Box width={maxWidth - 4}>
+              <Text color={TEXT_DIM} wrap="wrap">{provider.description}</Text>
+            </Box>
           </Box>
         )}
         <Box marginTop={1} />
@@ -436,10 +440,10 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({ p
             <Box marginTop={1}>
               <Box width={maxWidth - 4}>
                 <Text color={TEXT_DIM} wrap="wrap">
-                  enter to confirm · esc to go back
+                  enter confirm · esc back
                   {currentKey.secret && (
                     <>
-                      {" · tab to "}
+                      {" · tab "}
                       {masked ? "reveal" : "hide"}
                     </>
                   )}

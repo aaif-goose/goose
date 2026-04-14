@@ -104,6 +104,18 @@ pub struct GetExtensionsResponse {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/session/extensions", response = GetSessionExtensionsResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSessionExtensionsRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetSessionExtensionsResponse {
+    pub extensions: Vec<serde_json::Value>,
+}
+
 /// Atomically update the provider for a live session.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/session/provider/update", response = UpdateProviderResponse)]

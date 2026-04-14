@@ -20,7 +20,8 @@ import type {
 import { ndJsonStream } from "@agentclientprotocol/sdk";
 import { GooseClient } from "@aaif/goose-sdk";
 import Onboarding from "./onboarding.js";
-import ConfigureScreen from "./configure.js";
+import ConfigureScreen, { ConfigureIntent } from "./configure.js";
+import ExtensionsManager from "./extensions.js";
 import type { PendingPermission, ResponseItem, Turn } from "./types.js";
 import {
   emptyLine,
@@ -483,7 +484,8 @@ function App({
   const [scrollOffset, setScrollOffset] = useState(0);
   const [pastedFull, setPastedFull] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [configuring, setConfiguring] = useState(false);
+  type Overlay = { screen: "configure"; intent: ConfigureIntent } | { screen: "extensions" };
+  const [overlay, setOverlay] = useState<Overlay | null>(null);
 
   const clientRef = useRef<GooseClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -805,9 +807,11 @@ function App({
       exit();
     }
 
-    if (ch === "g" && key.ctrl && !loading && !pendingPermission && sessionIdRef.current) {
-      setConfiguring(true);
-      return;
+    if (!loading && !pendingPermission && sessionIdRef.current) {
+      if (key.ctrl && (ch === "p" || ch === "P")) { setOverlay({ screen: "configure", intent: "provider" }); return; }
+      if (key.ctrl && (ch === "m" || ch === "M")) { setOverlay({ screen: "configure", intent: "model" }); return; }
+      if (key.ctrl && (ch === "e" || ch === "E")) { setOverlay({ screen: "extensions" }); return; }
+      if (ch === "g" && key.ctrl) { setOverlay({ screen: "configure", intent: "provider" }); return; }
     }
 
     if (pendingPermission) {
@@ -875,7 +879,7 @@ function App({
       });
       return;
     }
-  }, { isActive: !needsOnboarding && !configuring });
+  }, { isActive: !needsOnboarding && !overlay });
 
   const PAD_X = 2;
   const PAD_Y = 1;
@@ -935,26 +939,34 @@ function App({
     );
   }
 
-  if (configuring && clientRef.current && sessionIdRef.current) {
-    return (
-      <Box
-        flexDirection="column"
-        width={safeTermWidth}
-        height={safeTermHeight}
-      >
-        <ConfigureScreen
-          client={clientRef.current}
-          sessionId={sessionIdRef.current}
-          width={safeTermWidth}
-          height={safeTermHeight}
-          onComplete={() => {
-            setConfiguring(false);
-            setStatus("ready");
-          }}
-          onCancel={() => setConfiguring(false)}
-        />
-      </Box>
-    );
+  if (overlay && clientRef.current && sessionIdRef.current) {
+    if (overlay.screen === "configure") {
+      const intent = overlay.intent;
+      return (
+        <Box flexDirection="column" width={safeTermWidth} height={safeTermHeight}>
+          <ConfigureScreen
+            client={clientRef.current}
+            sessionId={sessionIdRef.current}
+            width={safeTermWidth}
+            height={safeTermHeight}
+            onComplete={() => { setOverlay(null); setStatus("ready"); }}
+            onCancel={() => setOverlay(null)}
+            initialIntent={intent}
+          />
+        </Box>
+      );
+    } else if (overlay.screen === "extensions") {
+      return (
+        <Box flexDirection="column" width={safeTermWidth} height={safeTermHeight}>
+          <ExtensionsManager
+            client={clientRef.current}
+            sessionId={sessionIdRef.current}
+            height={safeTermHeight}
+            onClose={() => setOverlay(null)}
+          />
+        </Box>
+      );
+    }
   }
 
   return (

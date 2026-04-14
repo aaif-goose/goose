@@ -96,6 +96,14 @@ export type GetExtensionsResponse = {
     warnings: Array<string>;
 };
 
+export type GetSessionExtensionsRequest = {
+    sessionId: string;
+};
+
+export type GetSessionExtensionsResponse = {
+    extensions: Array<unknown>;
+};
+
 /**
  * Atomically update the provider for a live session.
  */
@@ -299,14 +307,14 @@ export type UnarchiveSessionRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | UpdateProviderRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderModelsRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | UpdateProviderRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderModelsRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | UpdateProviderResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderModelsResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | UpdateProviderResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderModelsResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | unknown;
 } | {
     error: {
         code: number;
