@@ -321,6 +321,26 @@ impl GooseConfig {
             .collect())
     }
 
+    pub fn get_extensions_raw(&self) -> serde_yaml::Mapping {
+        let config = self.read_config_map();
+        let key = serde_yaml::Value::String("extensions".to_string());
+        config
+            .get(&key)
+            .and_then(|v| v.as_mapping())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn set_extensions_raw(&self, extensions: serde_yaml::Mapping) -> Result<(), String> {
+        let _guard = self.guard.lock().unwrap();
+        let mut config = self.read_config_map();
+        config.insert(
+            serde_yaml::Value::String("extensions".to_string()),
+            serde_yaml::Value::Mapping(extensions),
+        );
+        self.write_config_map(&config)
+    }
+
     pub fn delete_all_provider_fields(&self, provider_id: &str) -> Result<(), String> {
         let def = find_provider_def(provider_id)
             .ok_or_else(|| format!("Unknown provider '{provider_id}'"))?;

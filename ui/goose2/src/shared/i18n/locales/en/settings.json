@@ -55,6 +55,47 @@
     "description": "Are you sure you want to permanently delete \"{{name}}\"? This cannot be undone.",
     "title": "Delete project permanently?"
   },
+  "extensions": {
+    "title": "Extensions",
+    "description": "Manage MCP extensions that add tools and capabilities to Goose.",
+    "search": "Search extensions...",
+    "enabled": "Enabled",
+    "enabledCount": "Enabled ({{count}})",
+    "available": "Available",
+    "availableCount": "Available ({{count}})",
+    "empty": "No extensions configured.",
+    "addExtension": "Add Extension",
+    "editExtension": "Edit Extension",
+    "deleteExtension": "Delete Extension",
+    "deleteConfirm": "Are you sure you want to delete \"{{name}}\"?",
+    "toggle": "Toggle {{name}}",
+    "configure": "Configure {{name}}",
+    "save": "Save",
+    "cancel": "Cancel",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "my-extension",
+      "type": "Type",
+      "command": "Command",
+      "commandPlaceholder": "npx",
+      "arguments": "Arguments",
+      "argumentsPlaceholder": "One argument per line",
+      "url": "URL",
+      "urlPlaceholder": "http://localhost:3000/mcp",
+      "description": "Description",
+      "descriptionPlaceholder": "What does this extension do?",
+      "timeout": "Timeout (seconds)",
+      "envVars": "Environment Variables",
+      "envKeyPlaceholder": "KEY",
+      "envValuePlaceholder": "value",
+      "addEnvVar": "Add variable"
+    },
+    "types": {
+      "stdio": "Stdio",
+      "streamable_http": "HTTP",
+      "builtin": "Built-in"
+    }
+  },
   "doctor": {
     "agents": "Agents",
     "copied": "Copied",
@@ -85,6 +126,7 @@
     "doctor": "Doctor",
     "general": "General",
     "projects": "Projects",
+    "extensions": "Extensions",
     "providers": "Providers"
   },
   "projects": {
