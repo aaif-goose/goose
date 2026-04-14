@@ -5522,6 +5522,9 @@
           "quantization": {
             "type": "string"
           },
+          "sharded": {
+            "type": "boolean"
+          },
           "size_bytes": {
             "type": "integer",
             "format": "int64",
@@ -7261,9 +7264,22 @@
       "RepoVariantsResponse": {
         "type": "object",
         "required": [
-          "variants"
+          "variants",
+          "available_memory_bytes",
+          "downloaded_quants"
         ],
         "properties": {
+          "available_memory_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "downloaded_quants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "recommended_index": {
             "type": "integer",
             "nullable": true,

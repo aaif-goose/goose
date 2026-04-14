@@ -126,6 +126,42 @@ export const zListProvidersResponse = z.object({
 });
 
 /**
+ * List providers with full metadata (config keys, setup steps, etc.).
+ */
+export const zGetProviderDetailsRequest = z.record(z.unknown());
+
+export const zProviderConfigKey = z.object({
+    name: z.string(),
+    required: z.boolean(),
+    secret: z.boolean(),
+    default: z.union([
+        z.string(),
+        z.null()
+    ]).optional().default(null),
+    oauthFlow: z.boolean().optional().default(false),
+    deviceCodeFlow: z.boolean().optional().default(false),
+    primary: z.boolean().optional().default(false)
+});
+
+export const zProviderDetailEntry = z.object({
+    name: z.string(),
+    displayName: z.string(),
+    description: z.string(),
+    defaultModel: z.string(),
+    isConfigured: z.boolean(),
+    providerType: z.string(),
+    configKeys: z.array(zProviderConfigKey),
+    setupSteps: z.array(z.string()).optional().default([])
+});
+
+/**
+ * Provider details response.
+ */
+export const zGetProviderDetailsResponse = z.object({
+    providers: z.array(zProviderDetailEntry)
+});
+
+/**
  * Read a single non-secret config value.
  */
 export const zReadConfigRequest = z.object({
@@ -248,6 +284,7 @@ export const zExtRequest = z.object({
             zGetExtensionsRequest,
             zUpdateProviderRequest,
             zListProvidersRequest,
+            zGetProviderDetailsRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
             zRemoveConfigRequest,
@@ -277,6 +314,7 @@ export const zExtResponse = z.union([
                 zGetExtensionsResponse,
                 zUpdateProviderResponse,
                 zListProvidersResponse,
+                zGetProviderDetailsResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,

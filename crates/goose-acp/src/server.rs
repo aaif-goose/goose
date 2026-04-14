@@ -2323,6 +2323,58 @@ impl GooseAcpAgent {
         })
     }
 
+    #[custom_method(GetProviderDetailsRequest)]
+    async fn on_get_provider_details(
+        &self,
+        _req: GetProviderDetailsRequest,
+    ) -> Result<GetProviderDetailsResponse, sacp::Error> {
+        let config = self.load_config().ok();
+        let all = goose::providers::providers().await;
+        let entries = all
+            .into_iter()
+            .map(|(metadata, provider_type)| {
+                let is_configured = config
+                    .as_ref()
+                    .map(|c| {
+                        metadata.config_keys.iter().all(|k| {
+                            if !k.required {
+                                return true;
+                            }
+                            if k.secret {
+                                c.get_secret::<String>(&k.name).is_ok()
+                            } else {
+                                c.get_param::<String>(&k.name).is_ok()
+                            }
+                        })
+                    })
+                    .unwrap_or(false);
+                ProviderDetailEntry {
+                    name: metadata.name.clone(),
+                    display_name: metadata.display_name.clone(),
+                    description: metadata.description.clone(),
+                    default_model: metadata.default_model.clone(),
+                    is_configured,
+                    provider_type: format!("{:?}", provider_type),
+                    config_keys: metadata
+                        .config_keys
+                        .iter()
+                        .map(|k| ProviderConfigKey {
+                            name: k.name.clone(),
+                            required: k.required,
+                            secret: k.secret,
+                            default: k.default.clone(),
+                            oauth_flow: k.oauth_flow,
+                            device_code_flow: k.device_code_flow,
+                            primary: k.primary,
+                        })
+                        .collect(),
+                    setup_steps: metadata.setup_steps.clone(),
+                }
+            })
+            .collect();
+        Ok(GetProviderDetailsResponse { providers: entries })
+    }
+
     #[custom_method(ReadConfigRequest)]
     async fn on_read_config(
         &self,

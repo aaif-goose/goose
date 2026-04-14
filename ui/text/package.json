@@ -25,13 +25,15 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "tsx src/tui.tsx",
+    "dev:binary": "node scripts/dev-binary.mjs",
+    "start": "npm run dev:binary && tsx src/tui.tsx",
     "postinstall": "node scripts/postinstall.mjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@aaif/goose-acp": "workspace:*",
     "@agentclientprotocol/sdk": "^0.14.1",
+    "@inkjs/ui": "^2.0.0",
     "ink": "^6.8.0",
     "ink-multiline-input": "^0.1.0",
     "marked": "^15.0.12",

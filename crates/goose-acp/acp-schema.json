@@ -261,6 +261,112 @@
         "label"
       ]
     },
+    "GetProviderDetailsRequest": {
+      "type": "object",
+      "description": "List providers with full metadata (config keys, setup steps, etc.).",
+      "x-side": "agent",
+      "x-method": "_goose/providers/details"
+    },
+    "GetProviderDetailsResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderDetailEntry"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "description": "Provider details response.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/details"
+    },
+    "ProviderDetailEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "defaultModel": {
+          "type": "string"
+        },
+        "isConfigured": {
+          "type": "boolean"
+        },
+        "providerType": {
+          "type": "string"
+        },
+        "configKeys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigKey"
+          }
+        },
+        "setupSteps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "name",
+        "displayName",
+        "description",
+        "defaultModel",
+        "isConfigured",
+        "providerType",
+        "configKeys"
+      ]
+    },
+    "ProviderConfigKey": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "oauthFlow": {
+          "type": "boolean",
+          "default": false
+        },
+        "deviceCodeFlow": {
+          "type": "boolean",
+          "default": false
+        },
+        "primary": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "name",
+        "required",
+        "secret"
+      ]
+    },
     "ReadConfigRequest": {
       "type": "object",
       "properties": {
@@ -571,6 +677,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/GetProviderDetailsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/details",
+                  "title": "GetProviderDetailsRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ReadConfigRequest"
                     }
                   ],
@@ -735,6 +850,14 @@
                         }
                       ],
                       "title": "ListProvidersResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetProviderDetailsResponse"
+                        }
+                      ],
+                      "title": "GetProviderDetailsResponse"
                     },
                     {
                       "allOf": [

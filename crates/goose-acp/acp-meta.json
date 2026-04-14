@@ -46,6 +46,11 @@
       "responseType": "ListProvidersResponse"
     },
     {
+      "method": "_goose/providers/details",
+      "requestType": "GetProviderDetailsRequest",
+      "responseType": "GetProviderDetailsResponse"
+    },
+    {
       "method": "_goose/config/read",
       "requestType": "ReadConfigRequest",
       "responseType": "ReadConfigResponse"

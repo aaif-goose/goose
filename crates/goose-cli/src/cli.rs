@@ -1607,6 +1607,7 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
                 mmproj_path: None,
                 mmproj_source_url: None,
                 mmproj_size_bytes: 0,
+                shard_files: vec![],
             };
 
             {

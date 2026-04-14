@@ -541,6 +541,7 @@ export type HfQuantVariant = {
     filename: string;
     quality_rank: number;
     quantization: string;
+    sharded?: boolean;
     size_bytes: number;
 };
 
@@ -1095,6 +1096,8 @@ export type RemoveExtensionRequest = {
 };
 
 export type RepoVariantsResponse = {
+    available_memory_bytes: number;
+    downloaded_quants: Array<string>;
     recommended_index?: number | null;
     variants: Array<HfQuantVariant>;
 };
