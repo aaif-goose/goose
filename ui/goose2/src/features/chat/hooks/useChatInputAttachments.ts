@@ -128,19 +128,23 @@ export function useChatInputAttachments() {
 
   const addBrowserFiles = useCallback(
     async (files: File[]) => {
-      const nextAttachments = await Promise.all(
-        files.map(async (file) => {
-          if (file.type.startsWith("image/")) {
-            return createImageAttachmentFromFile(file);
-          }
+      const nextAttachments = (
+        await Promise.allSettled(
+          files.map(async (file) => {
+            if (file.type.startsWith("image/")) {
+              return createImageAttachmentFromFile(file);
+            }
 
-          return {
-            id: crypto.randomUUID(),
-            kind: "file",
-            name: file.name,
-            ...(file.type ? { mimeType: file.type } : {}),
-          } satisfies ChatFileAttachmentDraft;
-        }),
+            return {
+              id: crypto.randomUUID(),
+              kind: "file",
+              name: file.name,
+              ...(file.type ? { mimeType: file.type } : {}),
+            } satisfies ChatFileAttachmentDraft;
+          }),
+        )
+      ).flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
       );
 
       appendAttachments(nextAttachments);

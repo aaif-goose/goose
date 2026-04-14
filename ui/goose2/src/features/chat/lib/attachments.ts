@@ -42,14 +42,10 @@ export function buildMessageAttachments(
       continue;
     }
 
-    if (!attachment.path) {
-      continue;
-    }
-
     messageAttachments.push({
       type: "file",
       name: attachment.name,
-      path: attachment.path,
+      ...(attachment.path ? { path: attachment.path } : {}),
       ...(attachment.kind === "image" || attachment.mimeType
         ? { mimeType: attachment.mimeType }
         : {}),

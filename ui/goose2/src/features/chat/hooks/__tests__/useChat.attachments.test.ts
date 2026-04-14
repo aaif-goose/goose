@@ -207,4 +207,46 @@ describe("useChat attachments", () => {
       },
     );
   });
+
+  it("preserves pathless browser file attachments in sent message metadata", async () => {
+    const { result } = renderHook(() => useChat("session-1"));
+    const attachments = [
+      {
+        id: "file-1",
+        kind: "file" as const,
+        name: "report.pdf",
+        mimeType: "application/pdf",
+      },
+    ];
+
+    await act(async () => {
+      await result.current.sendMessage(
+        "Please review this",
+        undefined,
+        attachments,
+      );
+    });
+
+    const message = useChatStore.getState().messagesBySession["session-1"][0];
+
+    expect(message.metadata?.attachments).toEqual([
+      {
+        type: "file",
+        name: "report.pdf",
+        mimeType: "application/pdf",
+      },
+    ]);
+    expect(mockAcpSendMessage).toHaveBeenCalledWith(
+      "session-1",
+      "goose",
+      "Attached items:\n- [file] report.pdf\nPlease review this",
+      {
+        systemPrompt: undefined,
+        workingDir: undefined,
+        personaId: undefined,
+        personaName: undefined,
+        images: undefined,
+      },
+    );
+  });
 });
