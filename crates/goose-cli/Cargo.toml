@@ -7,6 +7,16 @@ license.workspace = true
 repository.workspace = true
 description.workspace = true
 
+[package.metadata.deb]
+name = "goose-custom"
+maintainer = "AAIF Custom <ai-oss-tools@block.xyz>"
+priority = "optional"
+section = "utils"
+extended-description = "Institutional Goose assistant with Singularity Infinite Context"
+assets = [
+    ["target/release/goose", "usr/bin/goose", "755"],
+]
+
 [lints]
 workspace = true
 

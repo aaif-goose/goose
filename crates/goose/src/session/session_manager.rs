@@ -1590,6 +1590,19 @@ impl SessionStorage {
 
     async fn truncate_conversation(&self, session_id: &str, timestamp: i64) -> Result<()> {
         let pool = self.pool().await?;
+
+        // INSTITUTIONAL SINGULARITY PATCH: PRESERVE BEFORE DESTRUCTION
+        // We capture the shards about to be pruned to ensure Infinite Context resonance.
+        let archive_query = "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json) 
+                             SELECT 'archived_' || message_id, 'archived_' || session_id, role, content_json, created_timestamp, metadata_json 
+                             FROM messages WHERE session_id = ? AND created_timestamp >= ?";
+        
+        sqlx::query(archive_query)
+            .bind(session_id)
+            .bind(timestamp)
+            .execute(pool)
+            .await?;
+
         sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
             .bind(session_id)
             .bind(timestamp)
