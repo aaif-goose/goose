@@ -68,7 +68,6 @@
     "addExtension": "Agregar extensión",
     "editExtension": "Editar extensión",
     "deleteExtension": "Eliminar extensión",
-    "deleteConfirm": "¿Seguro que quieres eliminar \"{{name}}\"?",
     "toggle": "Activar/desactivar {{name}}",
     "configure": "Configurar {{name}}",
     "save": "Guardar",
@@ -89,7 +88,8 @@
       "envVars": "Variables de entorno",
       "envKeyPlaceholder": "CLAVE",
       "envValuePlaceholder": "valor",
-      "addEnvVar": "Agregar variable"
+      "addEnvVar": "Agregar variable",
+      "removeEnvVar": "Eliminar variable"
     },
     "types": {
       "stdio": "Stdio",

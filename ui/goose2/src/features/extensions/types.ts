@@ -39,6 +39,7 @@ export interface SseExtensionConfig {
   name: string;
   description: string;
   uri?: string;
+  bundled?: boolean;
 }
 
 export type ExtensionConfig =
@@ -47,7 +48,14 @@ export type ExtensionConfig =
   | StreamableHttpExtensionConfig
   | SseExtensionConfig;
 
-export interface ExtensionEntry extends ExtensionConfig {
+export type ExtensionEntry = ExtensionConfig & {
   config_key: string;
   enabled: boolean;
+};
+
+export function getDisplayName(ext: ExtensionEntry): string {
+  if (ext.type === "builtin" && ext.display_name) {
+    return ext.display_name;
+  }
+  return ext.name;
 }

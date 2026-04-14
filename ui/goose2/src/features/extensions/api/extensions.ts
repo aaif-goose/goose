@@ -3,7 +3,8 @@ import type { ExtensionConfig, ExtensionEntry } from "../types";
 
 export function nameToKey(name: string): string {
   return name
-    .replace(/[^\w-]/g, "")
+    .replace(/\s/g, "")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
     .toLowerCase();
 }
 

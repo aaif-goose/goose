@@ -68,7 +68,6 @@
     "addExtension": "Add Extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
-    "deleteConfirm": "Are you sure you want to delete \"{{name}}\"?",
     "toggle": "Toggle {{name}}",
     "configure": "Configure {{name}}",
     "save": "Save",
@@ -89,7 +88,8 @@
       "envVars": "Environment Variables",
       "envKeyPlaceholder": "KEY",
       "envValuePlaceholder": "value",
-      "addEnvVar": "Add variable"
+      "addEnvVar": "Add variable",
+      "removeEnvVar": "Remove variable"
     },
     "types": {
       "stdio": "Stdio",

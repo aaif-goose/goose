@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconPuzzle, IconSearch } from "@tabler/icons-react";
+import { Input } from "@/shared/ui/input";
 import { Widget } from "./Widget";
 import { listExtensions } from "@/features/extensions/api/extensions";
-import type { ExtensionEntry } from "@/features/extensions/types";
-
-function getDisplayName(ext: ExtensionEntry): string {
-  if (ext.type === "builtin" && ext.display_name) {
-    return ext.display_name;
-  }
-  return ext.name;
-}
+import {
+  getDisplayName,
+  type ExtensionEntry,
+} from "@/features/extensions/types";
 
 export function ExtensionsWidget() {
   const { t } = useTranslation("chat");
@@ -41,7 +38,9 @@ export function ExtensionsWidget() {
     const q = searchTerm.toLowerCase();
     return extensions.filter((ext) => {
       const name = getDisplayName(ext).toLowerCase();
-      return name.includes(q) || (ext.description ?? "").toLowerCase().includes(q);
+      return (
+        name.includes(q) || (ext.description ?? "").toLowerCase().includes(q)
+      );
     });
   }, [extensions, searchTerm]);
 
@@ -60,12 +59,12 @@ export function ExtensionsWidget() {
           <div className="border-b border-border px-3 py-1.5">
             <div className="flex items-center gap-1.5 text-foreground-subtle">
               <IconSearch className="size-3" />
-              <input
-                type="text"
+              <Input
+                variant="ghost"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={t("contextPanel.widgets.searchExtensions")}
-                className="w-full border-none bg-transparent text-xs text-foreground shadow-none outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0"
+                className="text-xs"
               />
             </div>
           </div>
@@ -77,10 +76,7 @@ export function ExtensionsWidget() {
             ) : (
               <div className="space-y-2">
                 {filtered.map((ext) => (
-                  <div
-                    key={ext.config_key}
-                    className="flex items-center gap-2"
-                  >
+                  <div key={ext.config_key} className="flex items-center gap-2">
                     <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
                     <span className="truncate text-xs">
                       {getDisplayName(ext)}

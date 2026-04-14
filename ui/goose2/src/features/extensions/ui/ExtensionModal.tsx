@@ -39,8 +39,13 @@ interface EnvVar {
 let nextEnvId = 0;
 
 function parseEnvVars(envs?: Record<string, string>): EnvVar[] {
-  if (!envs || Object.keys(envs).length === 0) return [{ id: nextEnvId++, key: "", value: "" }];
-  return Object.entries(envs).map(([key, value]) => ({ id: nextEnvId++, key, value }));
+  if (!envs || Object.keys(envs).length === 0)
+    return [{ id: nextEnvId++, key: "", value: "" }];
+  return Object.entries(envs).map(([key, value]) => ({
+    id: nextEnvId++,
+    key,
+    value,
+  }));
 }
 
 function buildEnvVars(vars: EnvVar[]): Record<string, string> {
@@ -84,13 +89,16 @@ export function ExtensionModal({
         : "",
   );
   const [timeout, setTimeout] = useState(
-    String(extension?.type === "stdio" || extension?.type === "streamable_http"
-      ? (extension.timeout ?? 300)
-      : 300),
+    String(
+      extension?.type === "stdio" || extension?.type === "streamable_http"
+        ? (extension.timeout ?? 300)
+        : 300,
+    ),
   );
   const [envVars, setEnvVars] = useState<EnvVar[]>(() => {
     if (extension?.type === "stdio") return parseEnvVars(extension.envs);
-    if (extension?.type === "streamable_http") return parseEnvVars(extension.envs);
+    if (extension?.type === "streamable_http")
+      return parseEnvVars(extension.envs);
     return [{ id: nextEnvId++, key: "", value: "" }];
   });
 
@@ -279,14 +287,15 @@ export function ExtensionModal({
                     placeholder={t("extensions.fields.envValuePlaceholder")}
                     className="flex-1"
                   />
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => removeEnvVar(env.id)}
-                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-destructive"
-                    aria-label="Remove"
+                    className="shrink-0 hover:text-destructive"
+                    aria-label={t("extensions.fields.removeEnvVar")}
                   >
                     <IconTrash className="size-3.5" />
-                  </button>
+                  </Button>
                 </div>
               ))}
               <Button
@@ -318,10 +327,19 @@ export function ExtensionModal({
               {t("extensions.deleteExtension")}
             </Button>
           )}
-          <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={isSaving}
+          >
             {t("extensions.cancel")}
           </Button>
-          <Button type="button" onClick={handleSubmit} disabled={!canSubmit || isSaving}>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!canSubmit || isSaving}
+          >
             {t("extensions.save")}
           </Button>
         </DialogFooter>

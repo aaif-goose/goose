@@ -11,7 +11,11 @@ import {
   toggleExtension,
   nameToKey,
 } from "../api/extensions";
-import type { ExtensionConfig, ExtensionEntry } from "../types";
+import {
+  getDisplayName,
+  type ExtensionConfig,
+  type ExtensionEntry,
+} from "../types";
 import { ExtensionItem } from "./ExtensionItem";
 import { ExtensionModal } from "./ExtensionModal";
 
@@ -43,12 +47,8 @@ export function ExtensionsSettings() {
     (ext: ExtensionEntry) => {
       if (!searchTerm) return true;
       const q = searchTerm.toLowerCase();
-      const displayName =
-        ext.type === "builtin" && ext.display_name
-          ? ext.display_name
-          : ext.name;
       return (
-        displayName.toLowerCase().includes(q) ||
+        getDisplayName(ext).toLowerCase().includes(q) ||
         ext.name.toLowerCase().includes(q) ||
         (ext.description ?? "").toLowerCase().includes(q) ||
         ext.type.toLowerCase().includes(q)
@@ -102,7 +102,10 @@ export function ExtensionsSettings() {
       const isRename = editingExtension && editingExtension.name !== name;
       const isAdd = !editingExtension;
 
-      if ((isAdd || isRename) && extensions.some((e) => e.config_key === newKey)) {
+      if (
+        (isAdd || isRename) &&
+        extensions.some((e) => e.config_key === newKey)
+      ) {
         toast.error(t("extensions.errors.nameConflict", { name }));
         return;
       }
@@ -163,9 +166,7 @@ export function ExtensionsSettings() {
           ))}
         </div>
       ) : extensions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {t("extensions.empty")}
-        </p>
+        <p className="text-sm text-muted-foreground">{t("extensions.empty")}</p>
       ) : enabled.length === 0 && available.length === 0 && searchTerm ? (
         <p className="text-sm text-muted-foreground">
           {t("extensions.noResults")}

@@ -1,20 +1,14 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconSettings } from "@tabler/icons-react";
+import { Button } from "@/shared/ui/button";
 import { Switch } from "@/shared/ui/switch";
-import type { ExtensionEntry } from "../types";
+import { getDisplayName, type ExtensionEntry } from "../types";
 
 interface ExtensionItemProps {
   extension: ExtensionEntry;
   onToggle: (extension: ExtensionEntry) => Promise<void>;
   onConfigure?: (extension: ExtensionEntry) => void;
-}
-
-function getDisplayName(ext: ExtensionEntry): string {
-  if (ext.type === "builtin" && ext.display_name) {
-    return ext.display_name;
-  }
-  return ext.name;
 }
 
 function getSubtitle(ext: ExtensionEntry): string {
@@ -60,7 +54,9 @@ export function ExtensionItem({
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{displayName}</span>
           <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {t(`extensions.types.${extension.type}`, { defaultValue: extension.type })}
+            {t(`extensions.types.${extension.type}`, {
+              defaultValue: extension.type,
+            })}
           </span>
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -69,16 +65,16 @@ export function ExtensionItem({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {editable && onConfigure && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-xs"
             onClick={() => onConfigure(extension)}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
             aria-label={t("extensions.configure", {
               name: displayName,
             })}
           >
             <IconSettings className="size-4" />
-          </button>
+          </Button>
         )}
         <Switch
           checked={checked}
