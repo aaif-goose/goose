@@ -43,7 +43,8 @@
       "folderNotSet": "Folder not set",
       "noChanges": "No uncommitted changes",
       "noProjectAssigned": "No project assigned.",
-      "noExtensions": "No extensions enabled"
+      "noExtensions": "No extensions enabled",
+      "noMatchingExtensions": "No matching extensions"
     },
     "errors": {
       "gitRead": "Unable to read git status."
@@ -87,6 +88,7 @@
       "changes": "Changes",
       "changesOnBranch": "on",
       "extensions": "Extensions",
+      "searchExtensions": "Search extensions...",
       "workspace": "Workspace"
     }
   },

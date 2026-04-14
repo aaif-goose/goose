@@ -1,13 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { IconPuzzle } from "@tabler/icons-react";
+import { IconPuzzle, IconSearch } from "@tabler/icons-react";
 import { Widget } from "./Widget";
 import { listExtensions } from "@/features/extensions/api/extensions";
 import type { ExtensionEntry } from "@/features/extensions/types";
 
+function getDisplayName(ext: ExtensionEntry): string {
+  if (ext.type === "builtin" && ext.display_name) {
+    return ext.display_name;
+  }
+  return ext.name;
+}
+
 export function ExtensionsWidget() {
   const { t } = useTranslation("chat");
   const [extensions, setExtensions] = useState<ExtensionEntry[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     listExtensions()
@@ -15,27 +23,60 @@ export function ExtensionsWidget() {
       .catch(() => setExtensions([]));
   }, []);
 
+  const filtered = useMemo(() => {
+    if (!searchTerm) return extensions;
+    const q = searchTerm.toLowerCase();
+    return extensions.filter((ext) => {
+      const name = getDisplayName(ext).toLowerCase();
+      return name.includes(q) || ext.description.toLowerCase().includes(q);
+    });
+  }, [extensions, searchTerm]);
+
   return (
     <Widget
       title={t("contextPanel.widgets.extensions")}
       icon={<IconPuzzle className="size-3.5" />}
+      flush
     >
       {extensions.length === 0 ? (
-        <p className="text-foreground-subtle">
+        <p className="px-3 py-2.5 text-xs text-foreground-subtle">
           {t("contextPanel.empty.noExtensions")}
         </p>
       ) : (
-        <div className="space-y-1">
-          {extensions.map((ext) => (
-            <div key={ext.name} className="flex items-center gap-2">
-              <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
-              <span className="truncate text-xs">
-                {ext.type === "builtin" && ext.display_name
-                  ? ext.display_name
-                  : ext.name}
-              </span>
+        <div>
+          <div className="border-b border-border px-3 py-1.5">
+            <div className="flex items-center gap-1.5 text-foreground-subtle">
+              <IconSearch className="size-3" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={t("contextPanel.widgets.searchExtensions")}
+                className="w-full border-none bg-transparent text-xs text-foreground shadow-none outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0"
+              />
             </div>
-          ))}
+          </div>
+          <div className="max-h-40 overflow-y-auto px-3 py-2">
+            {filtered.length === 0 ? (
+              <p className="py-1 text-xs text-foreground-subtle">
+                {t("contextPanel.empty.noMatchingExtensions")}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {filtered.map((ext) => (
+                  <div
+                    key={ext.config_key}
+                    className="flex items-center gap-2"
+                  >
+                    <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
+                    <span className="truncate text-xs">
+                      {getDisplayName(ext)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </Widget>
