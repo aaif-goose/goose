@@ -31,13 +31,16 @@ interface ExtensionModalProps {
 }
 
 interface EnvVar {
+  id: number;
   key: string;
   value: string;
 }
 
+let nextEnvId = 0;
+
 function parseEnvVars(envs?: Record<string, string>): EnvVar[] {
-  if (!envs || Object.keys(envs).length === 0) return [{ key: "", value: "" }];
-  return Object.entries(envs).map(([key, value]) => ({ key, value }));
+  if (!envs || Object.keys(envs).length === 0) return [{ id: nextEnvId++, key: "", value: "" }];
+  return Object.entries(envs).map(([key, value]) => ({ id: nextEnvId++, key, value }));
 }
 
 function buildEnvVars(vars: EnvVar[]): Record<string, string> {
@@ -58,10 +61,13 @@ export function ExtensionModal({
 }: ExtensionModalProps) {
   const { t } = useTranslation("settings");
   const isEdit = !!extension;
+  const [isSaving, setIsSaving] = useState(false);
 
   const [name, setName] = useState(extension?.name ?? "");
   const [type, setType] = useState<ExtensionType>(
-    extension?.type === "streamable_http" ? "streamable_http" : "stdio",
+    extension?.type === "streamable_http" || extension?.type === "sse"
+      ? "streamable_http"
+      : "stdio",
   );
   const [description, setDescription] = useState(extension?.description ?? "");
   const [cmd, setCmd] = useState(
@@ -71,7 +77,11 @@ export function ExtensionModal({
     extension?.type === "stdio" ? extension.args.join("\n") : "",
   );
   const [uri, setUri] = useState(
-    extension?.type === "streamable_http" ? extension.uri : "",
+    extension?.type === "streamable_http"
+      ? extension.uri
+      : extension?.type === "sse"
+        ? (extension.uri ?? "")
+        : "",
   );
   const [timeout, setTimeout] = useState(
     String(extension?.type === "stdio" || extension?.type === "streamable_http"
@@ -81,20 +91,24 @@ export function ExtensionModal({
   const [envVars, setEnvVars] = useState<EnvVar[]>(() => {
     if (extension?.type === "stdio") return parseEnvVars(extension.envs);
     if (extension?.type === "streamable_http") return parseEnvVars(extension.envs);
-    return [{ key: "", value: "" }];
+    return [{ id: nextEnvId++, key: "", value: "" }];
   });
 
-  const handleSubmit = () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
+  const canSubmit =
+    name.trim().length > 0 &&
+    (type === "stdio" ? cmd.trim().length > 0 : uri.trim().length > 0);
 
+  const handleSubmit = () => {
+    if (!canSubmit || isSaving) return;
+    setIsSaving(true);
+
+    const trimmedName = name.trim();
     const envs = buildEnvVars(envVars);
     const timeoutNum = Number.parseInt(timeout, 10) || 300;
 
     let config: ExtensionConfig;
 
     if (type === "stdio") {
-      if (!cmd.trim()) return;
       config = {
         type: "stdio",
         name: trimmedName,
@@ -131,13 +145,13 @@ export function ExtensionModal({
   };
 
   const addEnvVar = () => {
-    setEnvVars((prev) => [...prev, { key: "", value: "" }]);
+    setEnvVars((prev) => [...prev, { id: nextEnvId++, key: "", value: "" }]);
   };
 
-  const removeEnvVar = (index: number) => {
+  const removeEnvVar = (id: number) => {
     setEnvVars((prev) => {
-      if (prev.length <= 1) return [{ key: "", value: "" }];
-      return prev.filter((_, i) => i !== index);
+      if (prev.length <= 1) return [{ id: nextEnvId++, key: "", value: "" }];
+      return prev.filter((v) => v.id !== id);
     });
   };
 
@@ -252,7 +266,7 @@ export function ExtensionModal({
             <Label>{t("extensions.fields.envVars")}</Label>
             <div className="space-y-2">
               {envVars.map((env, i) => (
-                <div key={`env-${i.toString()}`} className="flex items-center gap-2">
+                <div key={env.id} className="flex items-center gap-2">
                   <Input
                     value={env.key}
                     onChange={(e) => updateEnvVar(i, "key", e.target.value)}
@@ -267,7 +281,7 @@ export function ExtensionModal({
                   />
                   <button
                     type="button"
-                    onClick={() => removeEnvVar(i)}
+                    onClick={() => removeEnvVar(env.id)}
                     className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-destructive"
                     aria-label="Remove"
                   >
@@ -293,17 +307,21 @@ export function ExtensionModal({
             <Button
               type="button"
               variant="ghost"
-              onClick={() => onDelete(extension.config_key)}
+              onClick={() => {
+                setIsSaving(true);
+                onDelete(extension.config_key);
+              }}
+              disabled={isSaving}
               className="mr-auto text-destructive hover:text-destructive hover:bg-destructive/10"
             >
               <IconTrash className="size-4" />
               {t("extensions.deleteExtension")}
             </Button>
           )}
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
             {t("extensions.cancel")}
           </Button>
-          <Button type="button" onClick={handleSubmit}>
+          <Button type="button" onClick={handleSubmit} disabled={!canSubmit || isSaving}>
             {t("extensions.save")}
           </Button>
         </DialogFooter>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconPuzzle, IconSearch } from "@tabler/icons-react";
 import { Widget } from "./Widget";
@@ -17,18 +17,31 @@ export function ExtensionsWidget() {
   const [extensions, setExtensions] = useState<ExtensionEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
-  useEffect(() => {
+  const fetchEnabled = useCallback(() => {
     listExtensions()
       .then((all) => setExtensions(all.filter((e) => e.enabled)))
       .catch(() => setExtensions([]));
   }, []);
+
+  useEffect(() => {
+    fetchEnabled();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") fetchEnabled();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", fetchEnabled);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", fetchEnabled);
+    };
+  }, [fetchEnabled]);
 
   const filtered = useMemo(() => {
     if (!searchTerm) return extensions;
     const q = searchTerm.toLowerCase();
     return extensions.filter((ext) => {
       const name = getDisplayName(ext).toLowerCase();
-      return name.includes(q) || ext.description.toLowerCase().includes(q);
+      return name.includes(q) || (ext.description ?? "").toLowerCase().includes(q);
     });
   }, [extensions, searchTerm]);
 

@@ -64,6 +64,7 @@
     "available": "Disponibles",
     "availableCount": "Disponibles ({{count}})",
     "empty": "No hay extensiones configuradas.",
+    "noResults": "Ninguna extensión coincide con tu búsqueda.",
     "addExtension": "Agregar extensión",
     "editExtension": "Editar extensión",
     "deleteExtension": "Eliminar extensión",
@@ -94,6 +95,12 @@
       "stdio": "Stdio",
       "streamable_http": "HTTP",
       "builtin": "Integrada"
+    },
+    "errors": {
+      "toggleFailed": "Error al cambiar la extensión. Inténtalo de nuevo.",
+      "saveFailed": "Error al guardar la extensión. Inténtalo de nuevo.",
+      "deleteFailed": "Error al eliminar la extensión. Inténtalo de nuevo.",
+      "nameConflict": "Ya existe una extensión llamada \"{{name}}\"."
     }
   },
   "doctor": {

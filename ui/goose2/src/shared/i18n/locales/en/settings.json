@@ -64,6 +64,7 @@
     "available": "Available",
     "availableCount": "Available ({{count}})",
     "empty": "No extensions configured.",
+    "noResults": "No extensions match your search.",
     "addExtension": "Add Extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
@@ -94,6 +95,12 @@
       "stdio": "Stdio",
       "streamable_http": "HTTP",
       "builtin": "Built-in"
+    },
+    "errors": {
+      "toggleFailed": "Failed to toggle extension. Please try again.",
+      "saveFailed": "Failed to save extension. Please try again.",
+      "deleteFailed": "Failed to delete extension. Please try again.",
+      "nameConflict": "An extension named \"{{name}}\" already exists."
     }
   },
   "doctor": {

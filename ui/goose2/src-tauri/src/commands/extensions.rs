@@ -134,7 +134,10 @@ pub fn add_extension(
 #[tauri::command]
 pub fn remove_extension(config_key: String, config: State<'_, GooseConfig>) -> Result<(), String> {
     let mut raw = config.get_extensions_raw();
-    raw.remove(&serde_yaml::Value::String(config_key));
+    let yaml_key = serde_yaml::Value::String(config_key.clone());
+    if raw.remove(&yaml_key).is_none() {
+        return Err(format!("Extension '{}' not found", config_key));
+    }
     config.set_extensions_raw(raw)
 }
 

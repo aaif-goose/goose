@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { IconPlus, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -8,6 +9,7 @@ import {
   addExtension,
   removeExtension,
   toggleExtension,
+  nameToKey,
 } from "../api/extensions";
 import type { ExtensionConfig, ExtensionEntry } from "../types";
 import { ExtensionItem } from "./ExtensionItem";
@@ -48,7 +50,7 @@ export function ExtensionsSettings() {
       return (
         displayName.toLowerCase().includes(q) ||
         ext.name.toLowerCase().includes(q) ||
-        ext.description.toLowerCase().includes(q) ||
+        (ext.description ?? "").toLowerCase().includes(q) ||
         ext.type.toLowerCase().includes(q)
       );
     },
@@ -77,8 +79,12 @@ export function ExtensionsSettings() {
   );
 
   const handleToggle = async (ext: ExtensionEntry) => {
-    await toggleExtension(ext.config_key, !ext.enabled);
-    await fetchExtensions();
+    try {
+      await toggleExtension(ext.config_key, !ext.enabled);
+      await fetchExtensions();
+    } catch {
+      toast.error(t("extensions.errors.toggleFailed"));
+    }
   };
 
   const handleConfigure = (ext: ExtensionEntry) => {
@@ -91,20 +97,37 @@ export function ExtensionsSettings() {
     config: ExtensionConfig,
     extensionEnabled: boolean,
   ) => {
-    if (editingExtension && editingExtension.name !== name) {
-      await removeExtension(editingExtension.config_key);
+    try {
+      const newKey = nameToKey(name);
+      const isRename = editingExtension && editingExtension.name !== name;
+      const isAdd = !editingExtension;
+
+      if ((isAdd || isRename) && extensions.some((e) => e.config_key === newKey)) {
+        toast.error(t("extensions.errors.nameConflict", { name }));
+        return;
+      }
+
+      if (isRename) {
+        await removeExtension(editingExtension.config_key);
+      }
+      await addExtension(name, config, extensionEnabled);
+      setModalMode(null);
+      setEditingExtension(null);
+      await fetchExtensions();
+    } catch {
+      toast.error(t("extensions.errors.saveFailed"));
     }
-    await addExtension(name, config, extensionEnabled);
-    setModalMode(null);
-    setEditingExtension(null);
-    await fetchExtensions();
   };
 
   const handleDelete = async (configKey: string) => {
-    await removeExtension(configKey);
-    setModalMode(null);
-    setEditingExtension(null);
-    await fetchExtensions();
+    try {
+      await removeExtension(configKey);
+      setModalMode(null);
+      setEditingExtension(null);
+      await fetchExtensions();
+    } catch {
+      toast.error(t("extensions.errors.deleteFailed"));
+    }
   };
 
   const handleModalClose = () => {
@@ -143,6 +166,10 @@ export function ExtensionsSettings() {
         <p className="text-sm text-muted-foreground">
           {t("extensions.empty")}
         </p>
+      ) : enabled.length === 0 && available.length === 0 && searchTerm ? (
+        <p className="text-sm text-muted-foreground">
+          {t("extensions.noResults")}
+        </p>
       ) : (
         <div className="space-y-4">
           {enabled.length > 0 && (
@@ -153,7 +180,7 @@ export function ExtensionsSettings() {
               <div className="divide-y divide-border">
                 {enabled.map((ext) => (
                   <ExtensionItem
-                    key={ext.name}
+                    key={ext.config_key}
                     extension={ext}
                     onToggle={handleToggle}
                     onConfigure={handleConfigure}
@@ -171,7 +198,7 @@ export function ExtensionsSettings() {
               <div className="divide-y divide-border">
                 {available.map((ext) => (
                   <ExtensionItem
-                    key={ext.name}
+                    key={ext.config_key}
                     extension={ext}
                     onToggle={handleToggle}
                     onConfigure={handleConfigure}

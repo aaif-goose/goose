@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ExtensionConfig, ExtensionEntry } from "../types";
 
+export function nameToKey(name: string): string {
+  return name
+    .replace(/[^\w-]/g, "")
+    .toLowerCase();
+}
+
 export async function listExtensions(): Promise<ExtensionEntry[]> {
   return invoke("list_extensions");
 }
