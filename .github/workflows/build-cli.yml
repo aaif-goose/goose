@@ -25,6 +25,8 @@ jobs:
   build-cli:
     name: Build CLI
     runs-on: ${{ matrix.build-on }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +83,7 @@ jobs:
         if: matrix.use-cross
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
         with:
-          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}
+          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-macos-deployment-target-12
 
       - name: Cache Cargo artifacts (Windows)
         if: matrix.os == 'windows'
