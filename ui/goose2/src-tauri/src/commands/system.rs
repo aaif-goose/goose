@@ -352,8 +352,8 @@ pub async fn list_files_for_mentions(
 mod tests {
     use super::{
         build_file_tree_entry, inspect_attachment_path, inspect_attachment_paths,
-        normalize_attachment_paths, normalize_roots, read_directory_entries,
-        read_image_attachment, scan_files_for_mentions, MAX_IMAGE_ATTACHMENT_BYTES,
+        normalize_attachment_paths, normalize_roots, read_directory_entries, read_image_attachment,
+        scan_files_for_mentions, MAX_IMAGE_ATTACHMENT_BYTES,
     };
     use base64::Engine;
     use std::fs;
