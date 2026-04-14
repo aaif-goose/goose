@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatInput } from "../ChatInput";
 
@@ -147,6 +153,29 @@ describe("ChatInput attachments", () => {
     expect(
       screen.getByText("Drop files or folders to attach"),
     ).toBeInTheDocument();
+  });
+
+  it("does not cancel non-file drops into the composer", () => {
+    render(<ChatInput onSend={vi.fn()} />);
+
+    const textbox = screen.getByRole("textbox");
+    const composer = textbox.closest("div.rounded-2xl");
+    if (!composer) {
+      throw new Error("Expected composer container");
+    }
+
+    const dropEvent = createEvent.drop(composer, {
+      dataTransfer: {
+        files: [],
+        items: [{ kind: "string" }],
+        types: ["text/plain"],
+      },
+    });
+    dropEvent.preventDefault = vi.fn();
+
+    fireEvent(composer, dropEvent);
+
+    expect(dropEvent.preventDefault).not.toHaveBeenCalled();
   });
 
   it("renders mixed attachments from a single file picker pass", async () => {

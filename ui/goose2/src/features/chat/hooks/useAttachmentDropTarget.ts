@@ -142,13 +142,14 @@ export function useAttachmentDropTarget({
 
   const handleDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
+      const draggedFiles = hasDraggedFiles(event.dataTransfer);
+      if (disabled || isStreaming || !draggedFiles) {
+        return;
+      }
+
       event.preventDefault();
       dragDepthRef.current = 0;
       setIsAttachmentDragOver(false);
-
-      if (disabled || isStreaming) {
-        return;
-      }
 
       const files = Array.from(event.dataTransfer.files);
       if (files.length === 0) {
