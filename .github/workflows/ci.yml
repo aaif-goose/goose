@@ -144,7 +144,7 @@ jobs:
         run: |
           source ./bin/activate-hermit
           cd ui/desktop && pnpm install --frozen-lockfile
-          cd ../acp && pnpm install --frozen-lockfile
+          cd ../sdk && pnpm install --frozen-lockfile
 
       - name: Check OpenAPI Schema is Up-to-Date
         run: |

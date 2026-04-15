@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose-binary-darwin-arm64",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Goose binary for macOS ARM64",
   "license": "Apache-2.0",
   "repository": {
