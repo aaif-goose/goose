@@ -20,7 +20,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-app-test-driver = { path = "plugins/app-test-driver" }
 tauri-plugin-opener = "2"
-tauri-plugin-dialog = ">=2,<2.7"
+tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
