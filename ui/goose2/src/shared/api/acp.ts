@@ -162,6 +162,7 @@ export async function acpLoadSession(
 ): Promise<void> {
   if (USE_DIRECT_ACP) {
     await directAcp.loadSession(gooseSessionId, workingDir ?? "~/.goose/artifacts");
+    useChatStore.getState().setSessionLoading(sessionId, false);
     return;
   }
   return invoke("acp_load_session", {
