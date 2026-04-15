@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { USE_DIRECT_ACP } from "./acpFeatureFlag";
 import * as directAcp from "./acpApi";
+import * as sessionTracker from "./acpSessionTracker";
 
 export interface AcpProvider {
   id: string;
@@ -36,7 +37,31 @@ export async function acpSendMessage(
   prompt: string,
   options: AcpSendMessageOptions = {},
 ): Promise<void> {
-  // TODO: wire up streaming path via acpApi.prompt()
+  if (USE_DIRECT_ACP) {
+    const { systemPrompt, personaId, images } = options;
+
+    const gooseSessionId = sessionTracker.getGooseSessionId(sessionId, personaId);
+    if (!gooseSessionId) {
+      throw new Error("Session not prepared. Call acpPrepareSession first.");
+    }
+
+    const hasSystem = systemPrompt && systemPrompt.trim().length > 0;
+    const effectivePrompt = hasSystem
+      ? `<persona-instructions>\n${systemPrompt}\n</persona-instructions>\n\n<user-message>\n${prompt}\n</user-message>`
+      : prompt;
+
+    const content: import("@agentclientprotocol/sdk").ContentBlock[] = [
+      { type: "text", text: effectivePrompt },
+    ];
+    if (images) {
+      for (const [data, mimeType] of images) {
+        content.push({ type: "image", data, mimeType } as any);
+      }
+    }
+
+    await directAcp.prompt(gooseSessionId, content);
+    return;
+  }
   const { systemPrompt, workingDir, personaId, personaName, images } = options;
   return invoke("acp_send_message", {
     sessionId,
@@ -56,7 +81,11 @@ export async function acpPrepareSession(
   providerId: string,
   options: AcpPrepareSessionOptions = {},
 ): Promise<void> {
-  // TODO: wire up session preparation via acpApi.newSession()
+  if (USE_DIRECT_ACP) {
+    const workingDir = options.workingDir ?? "~/.goose/artifacts";
+    await sessionTracker.prepareSession(sessionId, providerId, workingDir, options.personaId);
+    return;
+  }
   const { workingDir, personaId } = options;
   return invoke("acp_prepare_session", {
     sessionId,
@@ -122,7 +151,10 @@ export async function acpLoadSession(
   gooseSessionId: string,
   workingDir?: string,
 ): Promise<void> {
-  // TODO: wire up session loading via acpApi.loadSession()
+  if (USE_DIRECT_ACP) {
+    await directAcp.loadSession(gooseSessionId, workingDir ?? "~/.goose/artifacts");
+    return;
+  }
   return invoke("acp_load_session", {
     sessionId,
     gooseSessionId,
