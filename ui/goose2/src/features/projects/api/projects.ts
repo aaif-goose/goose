@@ -88,6 +88,12 @@ export async function archiveProject(id: string): Promise<void> {
   return invoke("archive_project", { id });
 }
 
+export async function reorderProjects(
+  order: [string, number][],
+): Promise<void> {
+  return invoke("reorder_projects", { order });
+}
+
 export async function restoreProject(id: string): Promise<void> {
   return invoke("restore_project", { id });
 }

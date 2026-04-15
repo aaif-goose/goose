@@ -73,6 +73,7 @@ pub fn run() {
             commands::projects::update_project,
             commands::projects::delete_project,
             commands::projects::get_project,
+            commands::projects::reorder_projects,
             commands::projects::list_archived_projects,
             commands::projects::archive_project,
             commands::projects::restore_project,

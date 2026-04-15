@@ -4,6 +4,7 @@ import {
   createProject,
   updateProject,
   deleteProject,
+  reorderProjects as apiReorderProjects,
   type ProjectInfo,
 } from "../api/projects";
 
@@ -166,7 +167,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       projects.splice(insertAt, 0, moved);
       return { projects };
     });
-    persistProjects(get().projects);
+    const projects = get().projects;
+    persistProjects(projects);
+    void apiReorderProjects(projects.map((p, i) => [p.id, i]));
   },
 
   setActiveProject: (id) => set({ activeProjectId: id }),

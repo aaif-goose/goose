@@ -385,6 +385,20 @@ pub fn delete_project(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn reorder_projects(order: Vec<(String, i32)>) -> Result<(), String> {
+    for (id, new_order) in order {
+        let (dir, mut stored) = find_project_by_id(&id)?;
+        stored.order = new_order;
+        let project_path = dir.join("project.json");
+        let json = serde_json::to_string_pretty(&stored)
+            .map_err(|e| format!("Failed to serialize project: {}", e))?;
+        fs::write(&project_path, json)
+            .map_err(|e| format!("Failed to write project.json: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_project(id: String) -> Result<ProjectInfo, String> {
     let (dir, info) = find_project_by_id(&id)?;
     Ok(project_info_from_stored(&dir, info))
