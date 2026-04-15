@@ -12,10 +12,6 @@ This tutorial covers how to add the [Rendex MCP Server](https://github.com/coppe
 
 ## Configuration
 
-<Tabs groupId="remote-or-local">
-<!-- REMOTE SETUP (default — zero install) -->
-<TabItem value="remote" label="Rendex Remote MCP" default>
-
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
@@ -71,93 +67,6 @@ This tutorial covers how to add the [Rendex MCP Server](https://github.com/coppe
     />
   </TabItem>
 </Tabs>
-
-</TabItem>
-
-<!-- LOCAL SETUP -->
-<TabItem value="local" label="Rendex Local MCP">
-
-:::tip Quick Install
-<Tabs groupId="interface">
-  <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=@copperline/rendex-mcp&id=rendex_local&name=Rendex%20Local%20MCP&description=Capture%20screenshots%2C%20generate%20PDFs%2C%20and%20render%20HTML%20to%20images%20via%20AI%20agents&env=RENDEX_API_KEY%3DRendex%20API%20Key)
-  </TabItem>
-  <TabItem value="cli" label="goose CLI">
-  **Command**
-  ```sh
-  npx -y @copperline/rendex-mcp
-  ```
-  </TabItem>
-</Tabs>
-
-  **Environment Variable**
-  ```
-  RENDEX_API_KEY: <YOUR_RENDEX_API_KEY>
-  ```
-:::
-
-:::info
-Note that you'll need [Node.js](https://nodejs.org/) installed on your system to run this command, as it uses `npx`.
-:::
-
-<Tabs groupId="interface">
-  <TabItem value="ui" label="goose Desktop" default>
-    <GooseDesktopInstaller
-      extensionId="rendex_local"
-      extensionName="Rendex Local MCP"
-      description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
-      type="stdio"
-      command="npx"
-      args={["-y", "@copperline/rendex-mcp"]}
-      envVars={[
-        { name: "RENDEX_API_KEY", label: "Rendex API Key" }
-      ]}
-      apiKeyLink="https://rendex.dev/dashboard/keys"
-      apiKeyLinkText="Rendex API key"
-    />
-  </TabItem>
-
-  <TabItem value="cli" label="goose CLI">
-    <CLIExtensionInstructions
-      name="Rendex Local MCP"
-      description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
-      type="stdio"
-      command="npx -y @copperline/rendex-mcp"
-      timeout={300}
-      envVars={[
-        { key: "RENDEX_API_KEY", value: "rdx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
-      ]}
-      infoNote={
-        <>
-          Obtain your <a href="https://rendex.dev/dashboard/keys" target="_blank" rel="noopener noreferrer">Rendex API key</a> and paste it in.
-        </>
-      }
-    />
-  </TabItem>
-</Tabs>
-
-</TabItem>
-</Tabs>
-
-## Available Tool
-
-Rendex exposes a single outcome-focused tool, `rendex_screenshot`, that handles screenshots, PDF generation, and HTML-to-image rendering with typed parameters for every option.
-
-| Capability | Notes |
-|---|---|
-| **Output formats** | PNG, JPEG, WebP, PDF |
-| **Full-page capture** | Scroll-and-stitch, with `bestAttempt` fallback on heavy sites |
-| **Dark mode** | Emulates `prefers-color-scheme: dark` |
-| **Element selector** | Capture a specific element (`#hero`, `.pricing-card`) instead of the whole viewport |
-| **CSS/JS injection** | Inject up to 50KB of custom CSS/JS before capture — hide cookie banners, add watermarks, override styles |
-| **Cookie/header injection** | Set up to 50 cookies and arbitrary headers for authenticated pages |
-| **PDF options** | Page size (A4/Letter/Legal/Tabloid/A3), landscape, margins, scale, print background |
-| **Geo-targeting** | ISO country code + city/state for country-specific rendering (Pro/Enterprise) |
-| **Async pipeline** | Set `async=true` to get a job ID + HMAC-signed webhook callback when the render completes |
-| **Caching** | `cacheTtl` returns a signed R2 URL for cached results |
-| **Raw HTML input** | Pass `html` instead of `url` to render arbitrary markup (invoices, social cards, email templates, OG images) |
-
-Rendex runs on Cloudflare Workers with Browser Rendering on the back end, so Node/Chromium doesn't have to spin up locally.
 
 ## Example Usage
 
