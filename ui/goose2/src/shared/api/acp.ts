@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { USE_DIRECT_ACP } from "./acpFeatureFlag";
 import * as directAcp from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
+import { useChatStore } from "@/features/chat/stores/chatStore";
+import { setActiveMessageId, clearActiveMessageId } from "./acpNotificationHandler";
 
 export interface AcpProvider {
   id: string;
@@ -59,7 +61,14 @@ export async function acpSendMessage(
       }
     }
 
+    const messageId = crypto.randomUUID();
+    setActiveMessageId(gooseSessionId, messageId);
+
     await directAcp.prompt(gooseSessionId, content);
+
+    clearActiveMessageId(gooseSessionId);
+    useChatStore.getState().setChatState(sessionId, "idle");
+    useChatStore.getState().setStreamingMessageId(sessionId, null);
     return;
   }
   const { systemPrompt, workingDir, personaId, personaName, images } = options;

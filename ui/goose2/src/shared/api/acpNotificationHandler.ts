@@ -8,20 +8,31 @@ import {
 } from "@/features/chat/hooks/replayBuffer";
 import type { ToolRequestContent, ToolResponseContent } from "@/shared/types/messages";
 import type { AcpNotificationHandler } from "./acpConnection";
+import { getLocalSessionId } from "./acpSessionTracker";
 
-// Track which messageIds we've already created, to avoid duplicates
-const knownMessageIds = new Set<string>();
+// Pre-set message ID for the next live stream per goose session
+const presetMessageIds = new Map<string, string>();
+
+export function setActiveMessageId(gooseSessionId: string, messageId: string): void {
+  presetMessageIds.set(gooseSessionId, messageId);
+}
+
+export function clearActiveMessageId(gooseSessionId: string): void {
+  presetMessageIds.delete(gooseSessionId);
+}
 
 export async function handleSessionNotification(
   notification: SessionNotification,
 ): Promise<void> {
-  const { sessionId, update } = notification;
+  const gooseSessionId = notification.sessionId;
+  const sessionId = getLocalSessionId(gooseSessionId) ?? gooseSessionId;
+  const { update } = notification;
   const isReplay = useChatStore.getState().loadingSessionIds.has(sessionId);
 
   if (isReplay) {
     handleReplay(sessionId, update);
   } else {
-    handleLive(sessionId, update);
+    handleLive(sessionId, gooseSessionId, update);
   }
 }
 
@@ -138,31 +149,26 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
   }
 }
 
-function handleLive(sessionId: string, update: SessionUpdate): void {
+function handleLive(sessionId: string, gooseSessionId: string, update: SessionUpdate): void {
   const store = useChatStore.getState();
 
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
-      const messageId = update.messageId ?? crypto.randomUUID();
+      const messageId = update.messageId ?? presetMessageIds.get(gooseSessionId) ?? crypto.randomUUID();
+      const existing = store.messagesBySession[sessionId]?.find(m => m.id === messageId);
 
-      if (!knownMessageIds.has(messageId)) {
-        knownMessageIds.add(messageId);
-        const existing = store.messagesBySession[sessionId]?.find(
-          (m) => m.id === messageId,
-        );
-        if (!existing) {
-          store.addMessage(sessionId, {
-            id: messageId,
-            role: "assistant",
-            created: Date.now(),
-            content: [],
-            metadata: {
-              userVisible: true,
-              agentVisible: true,
-              completionStatus: "inProgress",
-            },
-          });
-        }
+      if (!existing) {
+        store.addMessage(sessionId, {
+          id: messageId,
+          role: "assistant",
+          created: Date.now(),
+          content: [],
+          metadata: {
+            userVisible: true,
+            agentVisible: true,
+            completionStatus: "inProgress",
+          },
+        });
         store.setPendingAssistantProvider(sessionId, null);
         store.setStreamingMessageId(sessionId, messageId);
       }
@@ -356,7 +362,7 @@ function extractToolResultText(update: { content?: Array<any> | null; rawOutput?
 }
 
 export function clearMessageTracking(): void {
-  knownMessageIds.clear();
+  presetMessageIds.clear();
 }
 
 const handler: AcpNotificationHandler = {

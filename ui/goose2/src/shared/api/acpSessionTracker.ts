@@ -7,6 +7,7 @@ interface PreparedSession {
 }
 
 const prepared = new Map<string, PreparedSession>();
+const gooseToLocal = new Map<string, string>();
 
 function makeKey(sessionId: string, personaId?: string): string {
   if (personaId && personaId.length > 0) {
@@ -34,7 +35,6 @@ export async function prepareSession(
     await acpApi.loadSession(sessionId, workingDir);
     gooseSessionId = sessionId;
   } catch {
-    // session doesn't exist — create new
   }
 
   if (!gooseSessionId) {
@@ -44,6 +44,7 @@ export async function prepareSession(
 
   prepared.set(key, { gooseSessionId, providerId, workingDir });
   prepared.set(sessionId, { gooseSessionId, providerId, workingDir });
+  gooseToLocal.set(gooseSessionId, sessionId);
 
   return gooseSessionId;
 }
@@ -51,5 +52,9 @@ export async function prepareSession(
 export function getGooseSessionId(sessionId: string, personaId?: string): string | null {
   const key = makeKey(sessionId, personaId);
   return prepared.get(key)?.gooseSessionId ?? prepared.get(sessionId)?.gooseSessionId ?? null;
+}
+
+export function getLocalSessionId(gooseSessionId: string): string | null {
+  return gooseToLocal.get(gooseSessionId) ?? null;
 }
 
