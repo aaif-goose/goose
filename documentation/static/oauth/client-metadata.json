@@ -1,6 +1,6 @@
 {
   "client_id": "https://goose-docs.ai/oauth/client-metadata.json",
-  "client_name": "Goose",
+  "client_name": "goose",
   "redirect_uris": ["http://localhost/oauth_callback"],
   "grant_types": ["authorization_code"],
   "response_types": ["code"],
