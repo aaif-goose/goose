@@ -50,6 +50,7 @@ interface SidebarProjectsSectionProps {
   onArchiveChat?: (sessionId: string) => void;
   onRenameChat?: (sessionId: string, nextTitle: string) => void;
   onMoveToProject?: (sessionId: string, projectId: string | null) => void;
+  onReorderProject?: (fromId: string, toId: string) => void;
   onItemMouseEnter?: (e: React.MouseEvent<HTMLElement>) => void;
   activeSessionRefCallback?: (el: HTMLElement | null) => void;
   activeProjectRefCallback?: (el: HTMLElement | null) => void;
@@ -117,9 +118,10 @@ function ProjectSection({
       const sessionId = e.dataTransfer.getData("text/x-session-id");
       if (sessionId) {
         onMoveToProject?.(sessionId, project.id);
+        if (!isExpanded) toggleProject(project.id);
       }
     },
-    [onMoveToProject, project.id],
+    [onMoveToProject, project.id, isExpanded, toggleProject],
   );
   const visibleChats = projectChats.slice(
     0,
@@ -277,15 +279,21 @@ export function SidebarProjectsSection({
   onArchiveChat,
   onRenameChat,
   onMoveToProject,
+  onReorderProject,
   onItemMouseEnter,
   activeSessionRefCallback,
   activeProjectRefCallback,
 }: SidebarProjectsSectionProps) {
   const { t } = useTranslation(["sidebar", "common"]);
   const [recentsDragOver, setRecentsDragOver] = useState(false);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(
+    null,
+  );
 
   const handleRecentsDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes("text/x-session-id")) {
+    const hasSession = e.dataTransfer.types.includes("text/x-session-id");
+    if (hasSession) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       setRecentsDragOver(true);
@@ -325,7 +333,7 @@ export function SidebarProjectsSection({
       <div
         className={cn(
           "group flex items-center transition-all duration-300",
-          collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-2 pb-1",
+          collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-4 pb-1",
         )}
       >
         <span
@@ -378,26 +386,77 @@ export function SidebarProjectsSection({
       ) : (
         <div className="space-y-0.5">
           {projects.map((project) => (
-            <ProjectSection
+            // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop reorder target
+            <div
               key={project.id}
-              project={project}
-              projectChats={projectSessions.byProject[project.id] ?? []}
-              isExpanded={expandedProjects[project.id] ?? false}
-              toggleProject={toggleProject}
-              activeSessionId={activeSessionId}
-              activeProjectId={activeProjectId}
-              onSelectSession={onSelectSession}
-              onNewChatInProject={onNewChatInProject}
-              onNavigate={onNavigate}
-              onEditProject={onEditProject}
-              onArchiveProject={onArchiveProject}
-              onArchiveChat={onArchiveChat}
-              onRenameChat={onRenameChat}
-              onMoveToProject={onMoveToProject}
-              onItemMouseEnter={onItemMouseEnter}
-              activeSessionRefCallback={activeSessionRefCallback}
-              activeProjectRefCallback={activeProjectRefCallback}
-            />
+              draggable
+              onDragStart={(e) => {
+                // Only handle drags that originate from this wrapper (project reorder),
+                // not from child chat rows (session move). Chat rows set their own data.
+                if (e.target !== e.currentTarget) return;
+                e.dataTransfer.setData("text/x-project-id", project.id);
+                e.dataTransfer.effectAllowed = "move";
+                setDraggedProjectId(project.id);
+              }}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("text/x-project-id")) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (project.id !== draggedProjectId) {
+                    setDropTargetProjectId(project.id);
+                  }
+                }
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDropTargetProjectId((prev) =>
+                    prev === project.id ? null : prev,
+                  );
+                }
+              }}
+              onDrop={(e) => {
+                const fromId = e.dataTransfer.getData("text/x-project-id");
+                if (fromId && fromId !== project.id) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onReorderProject?.(fromId, project.id);
+                }
+                setDraggedProjectId(null);
+                setDropTargetProjectId(null);
+              }}
+              onDragEnd={() => {
+                setDraggedProjectId(null);
+                setDropTargetProjectId(null);
+              }}
+              className={cn(
+                "relative",
+                draggedProjectId === project.id && "opacity-40",
+              )}
+            >
+              {dropTargetProjectId === project.id &&
+                draggedProjectId !== project.id && (
+                  <div className="absolute top-0 left-3 right-3 h-0.5 rounded-full bg-foreground" />
+                )}
+              <ProjectSection
+                project={project}
+                projectChats={projectSessions.byProject[project.id] ?? []}
+                isExpanded={expandedProjects[project.id] ?? false}
+                toggleProject={toggleProject}
+                activeSessionId={activeSessionId}
+                activeProjectId={activeProjectId}
+                onSelectSession={onSelectSession}
+                onNewChatInProject={onNewChatInProject}
+                onNavigate={onNavigate}
+                onEditProject={onEditProject}
+                onArchiveProject={onArchiveProject}
+                onArchiveChat={onArchiveChat}
+                onRenameChat={onRenameChat}
+                onMoveToProject={onMoveToProject}
+                onItemMouseEnter={onItemMouseEnter}
+                activeSessionRefCallback={activeSessionRefCallback}
+                activeProjectRefCallback={activeProjectRefCallback}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -411,14 +470,8 @@ export function SidebarProjectsSection({
       >
         <div
           className={cn(
-            "my-2 -mx-1.5 bg-border transition-all duration-300",
-            collapsed ? "w-5 mx-auto h-px" : "h-px",
-          )}
-        />
-        <div
-          className={cn(
             "relative group flex items-center transition-all duration-300",
-            collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-2 pb-1",
+            collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-4 pb-1",
           )}
         >
           <span

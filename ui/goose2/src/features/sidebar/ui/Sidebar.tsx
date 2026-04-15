@@ -34,6 +34,7 @@ interface SidebarProps {
   onArchiveChat?: (sessionId: string) => void;
   onRenameChat?: (sessionId: string, nextTitle: string) => void;
   onMoveToProject?: (sessionId: string, projectId: string | null) => void;
+  onReorderProject?: (fromId: string, toId: string) => void;
   onNavigate?: (view: AppView) => void;
   onSelectSession?: (sessionId: string) => void;
   onSelectSearchResult?: (
@@ -62,6 +63,7 @@ export function Sidebar({
   onArchiveChat,
   onRenameChat,
   onMoveToProject,
+  onReorderProject,
   onNavigate,
   onSelectSession,
   onSelectSearchResult,
@@ -491,8 +493,6 @@ export function Sidebar({
 
           {!collapsed && (
             <>
-              <div className="relative z-10 my-2 -mx-1.5 bg-border h-px" />
-
               {sidebarSearch.submittedQuery ? (
                 <div className="relative z-10 space-y-2">
                   {sidebarSearch.error && (
@@ -550,6 +550,7 @@ export function Sidebar({
                   onArchiveChat={onArchiveChat}
                   onRenameChat={onRenameChat}
                   onMoveToProject={onMoveToProject}
+                  onReorderProject={onReorderProject}
                   onItemMouseEnter={onItemMouseEnter}
                   activeSessionRefCallback={activeSessionRefCallback}
                   activeProjectRefCallback={activeProjectRefCallback}

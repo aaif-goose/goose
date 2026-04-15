@@ -18,7 +18,7 @@
   },
   "search": {
     "error": "La búsqueda de mensajes falló. Mostrando solo coincidencias de metadatos.",
-    "placeholder": "Busca chats por título, persona, proyecto o mensaje...",
+    "placeholder": "Buscar conversaciones",
     "searching": "Buscando chats..."
   },
   "sections": {

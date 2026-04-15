@@ -19,7 +19,7 @@
     "emptyTitle": "No sessions yet",
     "searchArchivedPlaceholder": "Search archived sessions...",
     "searchError": "Message search failed. Showing title, persona, and project matches only.",
-    "searchPlaceholder": "Search sessions by title, persona, project, or message content...",
+    "searchPlaceholder": "Search conversations",
     "searching": "Searching sessions...",
     "subtitle": "Browse and search past sessions",
     "toggleArchived": "Archived",

@@ -64,6 +64,7 @@ interface ProjectState {
     useWorktrees: boolean,
   ) => Promise<ProjectInfo>;
   removeProject: (id: string) => Promise<void>;
+  reorderProjects: (fromId: string, toId: string) => void;
   setActiveProject: (id: string | null) => void;
   getActiveProject: () => ProjectInfo | null;
 }
@@ -149,6 +150,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       activeProjectId:
         state.activeProjectId === id ? null : state.activeProjectId,
     }));
+    persistProjects(get().projects);
+  },
+
+  reorderProjects: (fromId, toId) => {
+    set((state) => {
+      const projects = [...state.projects];
+      const fromIndex = projects.findIndex((p) => p.id === fromId);
+      const toIndex = projects.findIndex((p) => p.id === toId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex)
+        return state;
+      const [moved] = projects.splice(fromIndex, 1);
+      projects.splice(toIndex, 0, moved);
+      return { projects };
+    });
     persistProjects(get().projects);
   },
 

@@ -18,7 +18,7 @@
   },
   "search": {
     "error": "Message search failed. Showing metadata matches only.",
-    "placeholder": "Search chats by title, persona, project, or message...",
+    "placeholder": "Search conversations",
     "searching": "Searching chats..."
   },
   "sections": {

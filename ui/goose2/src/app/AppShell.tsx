@@ -553,6 +553,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onArchiveChat={handleArchiveChat}
             onRenameChat={handleRenameChat}
             onMoveToProject={handleMoveToProject}
+            onReorderProject={projectStore.reorderProjects}
             onSelectSession={handleSelectSession}
             onSelectSearchResult={handleSelectSearchResult}
             activeView={activeView}
