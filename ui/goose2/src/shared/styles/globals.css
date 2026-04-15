@@ -760,6 +760,18 @@ body,
   border: none;
 }
 
+/* Place code-block language label and actions on the same row */
+[data-streamdown="code-block"] {
+  position: relative;
+}
+
+[data-streamdown="code-block"] > [data-streamdown="code-block-header"] + div {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  margin-top: 0;
+}
+
 /* ═══════════════════════════════════════════════════════════
    goose2 custom utilities
    ═══════════════════════════════════════════════════════════ */
