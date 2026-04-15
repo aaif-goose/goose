@@ -753,8 +753,10 @@ body,
   }
 }
 
-/* Remove outer border on streamdown table wrappers (inner table already has one) */
-[data-streamdown="table-wrapper"] {
+/* Remove outer border on streamdown wrappers (inner content already has one) */
+[data-streamdown="table-wrapper"],
+[data-streamdown="code-block"],
+[data-streamdown="mermaid-block"] {
   border: none;
 }
 
