@@ -96,9 +96,14 @@ pub fn list_extensions(config: State<'_, GooseConfig>) -> Result<Vec<Value>, Str
         let mut json = yaml_to_json(v);
 
         if let Value::Object(ref mut obj) = json {
+            if !obj.contains_key("type") {
+                continue;
+            }
             obj.insert("config_key".to_string(), Value::String(key.clone()));
             obj.entry("name".to_string())
                 .or_insert_with(|| Value::String(key));
+            obj.entry("enabled".to_string())
+                .or_insert(Value::Bool(false));
             entries.push(json);
         }
     }
