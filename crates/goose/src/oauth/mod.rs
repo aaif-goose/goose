@@ -80,7 +80,7 @@ pub async fn oauth_flow(
 
     let mut oauth_state = OAuthState::new(mcp_server_url, None).await?;
 
-    let redirect_uri = format!("http://localhost:{}/oauth_callback", used_addr.port());
+    let redirect_uri = format!("http://127.0.0.1:{}/oauth_callback", used_addr.port());
     oauth_state
         .start_authorization_with_metadata_url(
             &[],
