@@ -43,7 +43,7 @@ importers:
 
   desktop:
     dependencies:
-      '@aaif/goose-acp':
+      '@aaif/goose-sdk':
         specifier: workspace:*
         version: link:../acp
       '@mcp-ui/client':
@@ -664,7 +664,7 @@ importers:
 
   text:
     dependencies:
-      '@aaif/goose-acp':
+      '@aaif/goose-sdk':
         specifier: workspace:*
         version: link:../acp
       '@agentclientprotocol/sdk':

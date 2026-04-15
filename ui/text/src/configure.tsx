@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
-import type { GooseClient, ProviderDetailEntry } from "@aaif/goose-acp";
+import type { GooseClient, ProviderDetailEntry } from "@aaif/goose-sdk";
 import {
   TEAL,
   GOLD,

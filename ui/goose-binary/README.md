@@ -43,7 +43,7 @@ For manual publishing:
 ./ui/scripts/publish.sh --real
 ```
 
-This will publish all native packages along with `@aaif/goose-acp` and `@aaif/goose`.
+This will publish all native packages along with `@aaif/goose-sdk` and `@aaif/goose`.
 
 ## Usage
 

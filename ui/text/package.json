@@ -31,7 +31,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@aaif/goose-acp": "workspace:*",
+    "@aaif/goose-sdk": "workspace:*",
     "@agentclientprotocol/sdk": "^0.14.1",
     "@inkjs/ui": "^2.0.0",
     "ink": "^6.8.0",

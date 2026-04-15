@@ -18,7 +18,7 @@ import type {
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
 import { ndJsonStream } from "@agentclientprotocol/sdk";
-import { GooseClient } from "@aaif/goose-acp";
+import { GooseClient } from "@aaif/goose-sdk";
 import Onboarding from "./onboarding.js";
 import ConfigureScreen from "./configure.js";
 import type { PendingPermission, ResponseItem, Turn } from "./types.js";

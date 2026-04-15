@@ -44,7 +44,7 @@
     "i18n:compile": "node scripts/i18n-compile.js"
   },
   "dependencies": {
-    "@aaif/goose-acp": "workspace:*",
+    "@aaif/goose-sdk": "workspace:*",
     "@mcp-ui/client": "6.1.0",
     "@modelcontextprotocol/ext-apps": "^1.1.1",
     "@radix-ui/react-accordion": "^1.2.12",

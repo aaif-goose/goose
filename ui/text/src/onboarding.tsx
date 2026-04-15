@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
 import { TextInput, PasswordInput } from '@inkjs/ui';
-import type { GooseClient, ProviderDetailEntry } from "@aaif/goose-acp";
+import type { GooseClient, ProviderDetailEntry } from "@aaif/goose-sdk";
 import {
   CRANBERRY,
   TEAL,
