@@ -5119,6 +5119,11 @@
                 "type": "string",
                 "description": "The name used to identify this extension"
               },
+              "socket": {
+                "type": "string",
+                "description": "Optional Unix domain socket path for HTTP-over-UDS transport.\nWhen set, the HTTP connection is routed through this socket while\n`uri` is used for the Host header and path.\nUse `@name` for Linux abstract sockets.",
+                "nullable": true
+              },
               "timeout": {
                 "type": "integer",
                 "format": "int64",

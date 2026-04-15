@@ -405,6 +405,13 @@ export type ExtensionConfig = {
      * The name used to identify this extension
      */
     name: string;
+    /**
+     * Optional Unix domain socket path for HTTP-over-UDS transport.
+     * When set, the HTTP connection is routed through this socket while
+     * `uri` is used for the Host header and path.
+     * Use `@name` for Linux abstract sockets.
+     */
+    socket?: string | null;
     timeout?: number | null;
     type: 'streamable_http';
     uri: string;

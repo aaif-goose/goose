@@ -369,6 +369,7 @@ impl CliSession {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(timeout),
+            socket: None,
             bundled: None,
             available_tools: Vec::new(),
         }
@@ -2160,6 +2161,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -2175,6 +2177,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -2190,6 +2193,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
