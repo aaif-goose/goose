@@ -1,5 +1,7 @@
 # Justfile
 
+mod goose2 'ui/goose2'
+
 # list all tasks
 default:
   @just --list
