@@ -117,12 +117,16 @@ async function configureProxy() {
 
 if (started) app.quit();
 
-// Accept self-signed certificates from the local goosed server.
+// Certificate trust for goosed servers (local and external).
 // Both certificate-error (renderer) and setCertificateVerifyProc (main-process
-// net.fetch) pin to the exact cert fingerprint emitted by goosed at startup.
-// Before the fingerprint is available (during the health-check bootstrap
-// window) any localhost cert is accepted so the server can come up.
+// net.fetch) pin to the exact cert fingerprint. For locally-spawned goosed the
+// fingerprint comes from its stdout; for external backends we use Trust-On-First-Use
+// (TOFU) — the first TLS handshake pins the cert for the lifetime of the process.
 let pinnedCertFingerprint: string | null = null;
+
+// Cached hostname of the configured external goosed server, updated when a
+// chat is created so we don't hit the filesystem on every TLS handshake.
+let trustedExternalHostname: string | null = null;
 
 function isLocalhost(hostname: string): boolean {
   return hostname === '127.0.0.1' || hostname === 'localhost';
@@ -130,16 +134,7 @@ function isLocalhost(hostname: string): boolean {
 
 function isTrustedHost(hostname: string): boolean {
   if (isLocalhost(hostname)) return true;
-  const settings = getSettings();
-  if (settings.externalGoosed?.enabled && settings.externalGoosed.url) {
-    try {
-      const parsed = new URL(settings.externalGoosed.url);
-      return parsed.hostname === hostname;
-    } catch {
-      return false;
-    }
-  }
-  return false;
+  return trustedExternalHostname !== null && hostname === trustedExternalHostname;
 }
 
 function normalizeFingerprint(fp: string): string {
@@ -169,6 +164,8 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
     event.preventDefault();
     callback(match);
   } else {
+    // TOFU: pin the certificate from the first successful handshake.
+    pinnedCertFingerprint = normalizeFingerprint(certificate.fingerprint);
     event.preventDefault();
     callback(true);
   }
@@ -182,6 +179,8 @@ app.whenReady().then(() => {
       return;
     }
     if (!pinnedCertFingerprint) {
+      // TOFU: pin the certificate from the first successful handshake.
+      pinnedCertFingerprint = normalizeFingerprint(request.certificate.fingerprint);
       callback(0);
       return;
     }
@@ -588,6 +587,21 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   const settings = getSettings();
   const serverSecret = getServerSecret(settings);
 
+  // Update the cached trusted-external-hostname so the TLS handlers allow
+  // connections to the configured remote backend.
+  if (settings.externalGoosed?.enabled && settings.externalGoosed.url) {
+    try {
+      trustedExternalHostname = new URL(settings.externalGoosed.url).hostname;
+    } catch {
+      trustedExternalHostname = null;
+    }
+  } else {
+    trustedExternalHostname = null;
+  }
+
+  // Reset pinned fingerprint so a new backend gets its own TOFU handshake.
+  pinnedCertFingerprint = null;
+
   const goosedResult = await startGoosed({
     serverSecret,
     dir: dir || os.homedir(),
@@ -600,8 +614,9 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     logger: log,
   });
 
-  // Pin the certificate fingerprint so the cert handlers above only accept
-  // the exact cert that *this* goosed instance generated.
+  // For locally-spawned goosed, pin using the fingerprint from stdout.
+  // For external backends the TOFU path in the cert handlers will pin
+  // the fingerprint on the first successful TLS handshake.
   if (goosedResult.certFingerprint) {
     pinnedCertFingerprint = goosedResult.certFingerprint;
   }
