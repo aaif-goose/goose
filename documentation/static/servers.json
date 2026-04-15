@@ -634,6 +634,23 @@
     ]
   },
   {
+    "id": "rendex-mcp",
+    "name": "Rendex",
+    "description": "Capture screenshots, generate PDFs, and render HTML to images via AI agents",
+    "command": "npx -y @copperline/rendex-mcp",
+    "link": "https://github.com/copperline-labs/rendex-mcp",
+    "installation_notes": "Install using npx package manager.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "RENDEX_API_KEY",
+        "description": "Required API key from https://rendex.dev",
+        "required": true
+      }
+    ]
+  },
+  {
     "id": "repomix-mcp",
     "name": "Repomix",
     "description": "Repository analysis and code organization",
