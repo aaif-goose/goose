@@ -186,7 +186,7 @@ app.whenReady().then(() => {
     }
     const match =
       normalizeFingerprint(request.certificate.fingerprint) === pinnedCertFingerprint.toUpperCase();
-    callback(match ? 0 : -3);
+    callback(match ? 0 : -2);
   });
 });
 
