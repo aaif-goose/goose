@@ -8,13 +8,79 @@ import TabItem from '@theme/TabItem';
 import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
 import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructions';
 
-This tutorial covers how to add the [Rendex MCP Server](https://github.com/copperline-labs/rendex-mcp) as a goose extension to capture screenshots, generate PDFs, and render HTML to images from any webpage or raw HTML — useful for archiving UIs, generating invoices and reports, producing OG images, and giving goose a reliable "see the web" capability that doesn't require spinning up a full browser automation stack.
+This tutorial covers how to add the [Rendex MCP Server](https://github.com/copperline-labs/rendex-mcp) as a goose extension to capture screenshots, generate PDFs, and render HTML to images from any webpage or raw HTML — useful for archiving UIs, generating invoices and reports, producing OG images, and giving goose a reliable "see the web" capability without spinning up a full browser automation stack.
+
+## Configuration
+
+<Tabs groupId="remote-or-local">
+<!-- REMOTE SETUP (default — zero install) -->
+<TabItem value="remote" label="Rendex Remote MCP" default>
 
 :::tip Quick Install
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fmcp.rendex.dev%2Fmcp&id=rendex&name=Rendex&description=Capture%20screenshots%2C%20generate%20PDFs%2C%20and%20render%20HTML%20to%20images%20via%20AI%20agents&header=Authorization%3DBearer%20YOUR_RENDEX_API_KEY)
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+  Add a `Remote Extension (Streaming HTTP)` extension type with:
+
+  **Endpoint URL**
+  ```
+  https://mcp.rendex.dev/mcp
+  ```
+  </TabItem>
+</Tabs>
+
+  **Custom Request Header**
+  ```
+  Authorization: Bearer <YOUR_RENDEX_API_KEY>
+  ```
+:::
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=@copperline/rendex-mcp&id=rendex&name=Rendex&description=Capture%20screenshots%2C%20generate%20PDFs%2C%20and%20render%20HTML%20to%20images%20via%20AI%20agents&env=RENDEX_API_KEY%3DRendex%20API%20Key)
+    <GooseDesktopInstaller
+      extensionId="rendex"
+      extensionName="Rendex"
+      description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
+      type="http"
+      url="https://mcp.rendex.dev/mcp"
+      envVars={[
+        { name: "Authorization", label: "Bearer YOUR_RENDEX_API_KEY" }
+      ]}
+      apiKeyLink="https://rendex.dev/dashboard/keys"
+      apiKeyLinkText="Rendex API key"
+    />
+  </TabItem>
+
+  <TabItem value="cli" label="goose CLI">
+    <CLIExtensionInstructions
+      name="Rendex"
+      description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
+      type="http"
+      url="https://mcp.rendex.dev/mcp"
+      timeout={300}
+      envVars={[
+        { key: "Authorization", value: "Bearer rdx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+      ]}
+      infoNote={
+        <>
+          Obtain your <a href="https://rendex.dev/dashboard/keys" target="_blank" rel="noopener noreferrer">Rendex API key</a> and paste it in as the <code>Bearer</code> token. Free tier includes 500 calls/month, no credit card required.
+        </>
+      }
+    />
+  </TabItem>
+</Tabs>
+
+</TabItem>
+
+<!-- LOCAL SETUP -->
+<TabItem value="local" label="Rendex Local MCP">
+
+:::tip Quick Install
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=@copperline/rendex-mcp&id=rendex_local&name=Rendex%20Local%20MCP&description=Capture%20screenshots%2C%20generate%20PDFs%2C%20and%20render%20HTML%20to%20images%20via%20AI%20agents&env=RENDEX_API_KEY%3DRendex%20API%20Key)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
   **Command**
@@ -23,13 +89,12 @@ This tutorial covers how to add the [Rendex MCP Server](https://github.com/coppe
   ```
   </TabItem>
 </Tabs>
+
   **Environment Variable**
   ```
-  RENDEX_API_KEY: <YOUR_API_KEY>
+  RENDEX_API_KEY: <YOUR_RENDEX_API_KEY>
   ```
 :::
-
-## Configuration
 
 :::info
 Note that you'll need [Node.js](https://nodejs.org/) installed on your system to run this command, as it uses `npx`.
@@ -37,37 +102,41 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  <GooseDesktopInstaller
-    extensionId="rendex"
-    extensionName="Rendex"
-    description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
-    command="npx"
-    args={["-y", "@copperline/rendex-mcp"]}
-    envVars={[
-      { name: "RENDEX_API_KEY", label: "Rendex API Key" }
-    ]}
-    apiKeyLink="https://rendex.dev/dashboard/keys"
-    apiKeyLinkText="Rendex API key"
-  />
+    <GooseDesktopInstaller
+      extensionId="rendex_local"
+      extensionName="Rendex Local MCP"
+      description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
+      type="stdio"
+      command="npx"
+      args={["-y", "@copperline/rendex-mcp"]}
+      envVars={[
+        { name: "RENDEX_API_KEY", label: "Rendex API Key" }
+      ]}
+      apiKeyLink="https://rendex.dev/dashboard/keys"
+      apiKeyLinkText="Rendex API key"
+    />
   </TabItem>
+
   <TabItem value="cli" label="goose CLI">
     <CLIExtensionInstructions
-      name="Rendex"
+      name="Rendex Local MCP"
       description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
+      type="stdio"
       command="npx -y @copperline/rendex-mcp"
+      timeout={300}
       envVars={[
-        { key: "RENDEX_API_KEY", value: "▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪" }
+        { key: "RENDEX_API_KEY", value: "rdx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
       ]}
       infoNote={
         <>
-          Get your API key from{" "}
-          <a href="https://rendex.dev/dashboard/keys" target="_blank" rel="noopener noreferrer">
-            rendex.dev
-          </a> and paste it in. Free tier includes 500 calls/month.
+          Obtain your <a href="https://rendex.dev/dashboard/keys" target="_blank" rel="noopener noreferrer">Rendex API key</a> and paste it in.
         </>
       }
     />
   </TabItem>
+</Tabs>
+
+</TabItem>
 </Tabs>
 
 ## Available Tool
@@ -136,7 +205,7 @@ Both renders completed. You have:
 
 ## Pricing
 
-Rendex is free to try — you don't need a credit card for the free tier.
+Rendex is free to try — no credit card required for the free tier.
 
 | Plan | Calls/Month | Rate limit |
 |---|---|---|
@@ -146,21 +215,6 @@ Rendex is free to try — you don't need a credit card for the free tier.
 | Enterprise | Custom | 1,000/min |
 
 Get an API key at [rendex.dev](https://rendex.dev).
-
-## Remote (Zero-Install) Option
-
-Rendex also exposes a remote Streamable HTTP endpoint at `https://mcp.rendex.dev/mcp`. If your goose client supports the `type: http` transport, you can skip the `npx` step entirely:
-
-```yaml
-extensions:
-  rendex:
-    type: http
-    url: https://mcp.rendex.dev/mcp
-    envVars:
-      RENDEX_API_KEY: your-api-key  # sent as Authorization: Bearer <key>
-```
-
-The remote endpoint uses Bearer auth — goose will pass `RENDEX_API_KEY` as `Authorization: Bearer <key>` to every request.
 
 ## Links
 
