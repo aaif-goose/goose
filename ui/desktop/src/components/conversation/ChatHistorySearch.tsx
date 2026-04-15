@@ -28,9 +28,13 @@ const i18n = defineMessages({
     id: 'chatHistorySearch.messageCount',
     defaultMessage: '{count, plural, one {# message} other {# messages}}',
   },
-  keyboardHint: {
-    id: 'chatHistorySearch.keyboardHint',
+  keyboardHintMac: {
+    id: 'chatHistorySearch.keyboardHintMac',
     defaultMessage: '⌘K',
+  },
+  keyboardHintOther: {
+    id: 'chatHistorySearch.keyboardHintOther',
+    defaultMessage: 'Ctrl+K',
   },
 });
 
@@ -184,8 +188,9 @@ export const ChatHistorySearch: React.FC<ChatHistorySearchProps> = ({
   }, []);
 
   useEffect(() => {
+    const isMac = window.electron?.platform === 'darwin';
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if ((isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'k') {
         e.preventDefault();
         inputRef.current?.focus();
         setIsFocused(true);
@@ -262,7 +267,9 @@ export const ChatHistorySearch: React.FC<ChatHistorySearchProps> = ({
           </button>
         ) : (
           <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-text-secondary font-mono bg-background-primary px-1.5 py-0.5 rounded border border-border-primary">
-            {intl.formatMessage(i18n.keyboardHint)}
+            {intl.formatMessage(
+              window.electron?.platform === 'darwin' ? i18n.keyboardHintMac : i18n.keyboardHintOther
+            )}
           </kbd>
         )}
       </div>

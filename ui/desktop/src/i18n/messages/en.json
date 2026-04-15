@@ -113,6 +113,7 @@
   "cardButtons.launch": {
     "defaultMessage": "Launch"
   },
+<<<<<<< HEAD
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Click here to bring Goose back into focus."
   },
@@ -120,7 +121,13 @@
     "defaultMessage": "Goose finished the task."
   },
   "chatHistorySearch.keyboardHint": {
+=======
+  "chatHistorySearch.keyboardHintMac": {
+>>>>>>> 310bc157f1d (fix(ui): use platform-specific modifier for chat search shortcut)
     "defaultMessage": "⌘K"
+  },
+  "chatHistorySearch.keyboardHintOther": {
+    "defaultMessage": "Ctrl+K"
   },
   "chatHistorySearch.messageCount": {
     "defaultMessage": "{count,plural,one{# message} other{# messages}}"
