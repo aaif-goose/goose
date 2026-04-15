@@ -219,7 +219,7 @@ export default function BottomMenuAlertPopover({ alerts, children }: AlertPopove
                 clearTimeout(hideTimerRef.current);
               }
             }
-          }}}
+          }}
           onMouseLeave={() => {
             // Start a short timer to allow moving to content
             hideTimerRef.current = setTimeout(() => {
