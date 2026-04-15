@@ -753,19 +753,14 @@ body,
   }
 }
 
-/* Remove outer border on streamdown wrappers (inner content already has one) */
 [data-streamdown="table-wrapper"],
 [data-streamdown="code-block"],
 [data-streamdown="mermaid-block"] {
   border: none;
 }
 
-/* Place code-block language label and actions on the same row.
-   Streamdown renders header and actions as siblings with -mt-10 to overlap.
-   Use grid to place them in one row instead, and cancel the negative margin.
-   The :has() guard prevents matching code-block-body when controls are off.
-   Doubled attribute selector bumps specificity above Tailwind's `flex` class
-   (0,2,0 vs 0,1,0) so this isn't dependent on source order. */
+/* Doubled attribute selector bumps specificity above Tailwind's `flex` class
+   (0,2,0 vs 0,1,0) so grid wins regardless of source order. */
 [data-streamdown="code-block"][data-streamdown] {
   display: grid;
   grid-template-columns: 1fr auto;
