@@ -1,7 +1,7 @@
 {
   "client_id": "https://goose-docs.ai/oauth/client-metadata.json",
   "client_name": "Goose",
-  "redirect_uris": ["http://localhost"],
+  "redirect_uris": ["http://localhost/oauth_callback"],
   "grant_types": ["authorization_code"],
   "response_types": ["code"],
   "token_endpoint_auth_method": "none",
