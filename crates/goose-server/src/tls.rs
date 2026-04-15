@@ -11,8 +11,9 @@
 //!   / SChannel respectively, but `axum-server` does not offer those backends so
 //!   the server listener always uses OpenSSL when this feature is active.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use rcgen::{CertificateParams, DnType, KeyPair, SanType};
+use std::path::Path;
 
 #[cfg(feature = "rustls-tls")]
 pub type TlsConfig = axum_server::tls_rustls::RustlsConfig;
@@ -62,6 +63,45 @@ fn sha256_fingerprint(der: &[u8]) -> String {
             .map(|b| format!("{b:02X}"))
             .collect::<Vec<_>>()
             .join(":")
+    }
+}
+
+/// Load TLS configuration from user-provided PEM certificate and key files.
+///
+/// The SHA-256 fingerprint of the leaf certificate is computed and printed to
+/// stdout so the parent process (e.g. Electron) can pin it, just like the
+/// self-signed path.
+pub async fn from_pem_files(cert_path: &Path, key_path: &Path) -> Result<TlsSetup> {
+    let cert_pem = std::fs::read(cert_path)?;
+    let key_pem = std::fs::read(key_path)?;
+
+    // Parse the first PEM block to extract the DER-encoded certificate for fingerprinting.
+    let der = pem::parse(&cert_pem)?.into_contents();
+    let fingerprint = sha256_fingerprint(&der);
+    println!("GOOSED_CERT_FINGERPRINT={fingerprint}");
+
+    #[cfg(feature = "rustls-tls")]
+    let config = {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem.clone()).await?
+    };
+
+    #[cfg(feature = "native-tls")]
+    let config = axum_server::tls_openssl::OpenSSLConfig::from_pem(&cert_pem, &key_pem)?;
+
+    Ok(TlsSetup {
+        config,
+        fingerprint,
+    })
+}
+
+/// Set up TLS, using user-provided PEM files if both paths are given,
+/// otherwise generating a self-signed certificate.
+pub async fn setup_tls(cert_path: Option<&str>, key_path: Option<&str>) -> Result<TlsSetup> {
+    match (cert_path, key_path) {
+        (Some(cert), Some(key)) => from_pem_files(Path::new(cert), Path::new(key)).await,
+        (None, None) => self_signed_config().await,
+        _ => bail!("Both GOOSE_TLS_CERT_PATH and GOOSE_TLS_KEY_PATH must be set, or neither"),
     }
 }
 

@@ -5,7 +5,7 @@ use axum::middleware;
 use axum_server::Handle;
 use goose_server::auth::check_token;
 #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
-use goose_server::tls::self_signed_config;
+use goose_server::tls::setup_tls;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
@@ -78,7 +78,11 @@ pub async fn run() -> Result<()> {
     if settings.tls {
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
         {
-            let tls_setup = self_signed_config().await?;
+            let tls_setup = setup_tls(
+                settings.tls_cert_path.as_deref(),
+                settings.tls_key_path.as_deref(),
+            )
+            .await?;
 
             let handle = Handle::new();
             let shutdown_handle = handle.clone();

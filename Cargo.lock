@@ -4604,6 +4604,7 @@ dependencies = [
  "hex",
  "http 1.4.0",
  "openssl",
+ "pem",
  "rand 0.8.5",
  "rcgen",
  "reqwest 0.13.2",

@@ -76,6 +76,7 @@ rcgen = "0.13"
 axum-server = { version = "0.8.0" }
 aws-lc-rs = { version = "1.16.0", optional = true }
 openssl = { version = "0.10", optional = true }
+pem = "3.0.6"
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.55.0" }
