@@ -5,7 +5,7 @@ use tauri::{AppHandle, State};
 
 use crate::services::acp::{
     make_composite_key, search_sessions_via_exports, AcpRunningSession, AcpService, AcpSessionInfo,
-    AcpSessionRegistry, GooseAcpManager, SessionSearchResult,
+    AcpSessionRegistry, GooseAcpManager, GooseServeProcess, SessionSearchResult,
 };
 
 const DEPRECATED_PROVIDER_IDS: &[&str] = &["claude-code", "codex", "gemini-cli"];
@@ -78,6 +78,13 @@ fn resolve_working_dir(
             working_dir.display()
         )
     })
+}
+
+#[tauri::command]
+pub async fn get_goose_serve_url() -> Result<String, String> {
+    GooseServeProcess::start().await?;
+    let process = GooseServeProcess::get()?;
+    Ok(process.ws_url())
 }
 
 /// Return the list of providers available through goose serve.

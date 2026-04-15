@@ -6,6 +6,7 @@ mod search;
 mod writer;
 
 pub(crate) use goose_serve::resolve_goose_binary;
+pub(crate) use goose_serve::GooseServeProcess;
 pub use manager::{AcpSessionInfo, GooseAcpManager};
 pub use registry::{AcpRunningSession, AcpSessionRegistry};
 pub use search::{search_sessions_via_exports, SessionSearchResult};

@@ -49,6 +49,7 @@ pub fn run() {
             commands::agents::save_persona_avatar,
             commands::agents::save_persona_avatar_bytes,
             commands::agents::get_avatars_dir,
+            commands::acp::get_goose_serve_url,
             commands::acp::discover_acp_providers,
             commands::acp::acp_prepare_session,
             commands::acp::acp_set_model,

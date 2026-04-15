@@ -49,6 +49,7 @@ export function useAppStartup() {
         loadProviders(),
         loadSessionState(),
       ]);
+
     })();
   }, []);
 }

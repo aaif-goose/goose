@@ -2,54 +2,43 @@
 
 ## Objective
 
-Replace all `invoke()` calls in `src/shared/api/acp.ts` with calls to the TypeScript ACP session manager (Step 05) and search module (Step 06). Keep the same public API signatures so consumers don't need to change.
+Replace all `invoke()` calls in `src/shared/api/acp.ts` with calls to the TypeScript ACP session manager (Step 05) and search module (Step 06). Keep the same public API signatures so consumers don't need to change. Use the feature flag from Step 03 to route between old and new paths.
 
 ## Why
 
 `src/shared/api/acp.ts` is the single import point for all ACP operations in the frontend. Currently every function calls `invoke("acp_*")`, which goes through Tauri IPC → Rust → WebSocket → goose serve. After this step, they call the TypeScript session manager, which goes directly through WebSocket → goose serve.
 
+The feature flag (`useDirectAcp`) allows both paths to coexist. This means:
+- The swap is gradual and reversible
+- We can test the new path per-user without affecting everyone
+- Instant rollback by flipping the flag
+
 ## Changes
 
 ### `src/shared/api/acp.ts`
 
-Replace the entire file contents. The public API (function names, parameter types, return types) stays the same. Only the implementation changes.
+Keep the existing `invoke()` implementations. Add the new direct-ACP implementations alongside them. Route via the feature flag.
 
-**Before (current):**
+**Pattern:**
 ```typescript
 import { invoke } from "@tauri-apps/api/core";
+import { useDirectAcp } from "./acpFeatureFlag";
+
+// Lazy imports to avoid loading the new modules when flag is off
+async function getSessionManager() {
+  return import("./acpSessionManager");
+}
 
 export async function discoverAcpProviders(): Promise<AcpProvider[]> {
+  if (useDirectAcp()) {
+    const { listProviders } = await getSessionManager();
+    return listProviders();
+  }
   return invoke("discover_acp_providers");
 }
-
-export async function acpSendMessage(sessionId, providerId, prompt, options): Promise<void> {
-  return invoke("acp_send_message", { ... });
-}
-// ... etc
 ```
 
-**After:**
-```typescript
-import {
-  listProviders,
-  sendPrompt,
-  prepareSession,
-  setModel,
-  cancelSession,
-  listSessions,
-  loadSession,
-  exportSession,
-  importSession,
-  forkSession,
-  listRunning,
-  cancelAll,
-} from "./acpSessionManager";
-import { searchSessionsViaExports } from "@/features/sessions/lib/sessionContentSearch";
-
-// Re-export types (unchanged)
-export type { AcpProvider, AcpSessionInfo, AcpRunningSession } from "./acpSessionManager";
-export type { SessionSearchResult as AcpSessionSearchResult } from "@/features/sessions/lib/sessionContentSearch";
-```
+Once validated, a follow-up removes the `invoke()` branches and the feature flag (Step 09).
 
 ### Function-by-function rewiring
 
@@ -57,7 +46,11 @@ export type { SessionSearchResult as AcpSessionSearchResult } from "@/features/s
 
 ```typescript
 export async function discoverAcpProviders(): Promise<AcpProvider[]> {
-  return listProviders();
+  if (useDirectAcp()) {
+    const { listProviders } = await getSessionManager();
+    return listProviders();
+  }
+  return invoke("discover_acp_providers");
 }
 ```
 

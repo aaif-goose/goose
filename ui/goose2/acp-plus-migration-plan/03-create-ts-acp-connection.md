@@ -266,19 +266,120 @@ export function getClientSync(): GooseClient | null {
 }
 ```
 
+### 3. Reconnection Logic in `acpConnection.ts`
+
+The WebSocket can drop (laptop sleep, network blip, goose serve restart). The connection manager must detect this and recover.
+
+**Strategy: reset singleton on close, reconnect on next `getClient()` call.**
+
+Add to `acpConnection.ts`:
+
+```typescript
+/**
+ * Monitor the WebSocket connection and reset the singleton when it closes.
+ * Called once after successful initialization.
+ */
+function monitorConnection(client: GooseClient): void {
+  // GooseClient exposes a `closed` promise that resolves when the
+  // underlying connection terminates.
+  client.closed
+    .then(() => {
+      console.warn("[acp] Connection closed. Will reconnect on next getClient().");
+      resolvedClient = null;
+      clientPromise = null;
+    })
+    .catch(() => {
+      console.warn("[acp] Connection error. Will reconnect on next getClient().");
+      resolvedClient = null;
+      clientPromise = null;
+    });
+}
+```
+
+Call `monitorConnection(client)` at the end of `initializeConnection()`, after the handshake succeeds.
+
+**In-flight cleanup:** When the connection drops mid-stream, any running prompt will reject (the `client.prompt()` promise rejects when the connection closes). The session manager (Step 05) catches this in `sendPrompt()` and calls `clearWriter()` + sets chat state to idle. The notification handler does NOT need special reconnect awareness — it simply stops receiving events because the connection is gone.
+
+**What this does NOT do:**
+- Auto-reconnect in the background (no polling/retry loop)
+- Resume an in-flight prompt after reconnect
+- Retry failed operations automatically
+
+It simply ensures the next `getClient()` call creates a fresh connection. The caller (UI layer) decides whether to retry the operation.
+
+### 4. Feature Flag: `useDirectAcp`
+
+To enable safe rollback, add a feature flag that controls whether the frontend uses the new direct WebSocket path or the old Tauri IPC path.
+
+**File:** `src/shared/api/acpFeatureFlag.ts`
+
+```typescript
+/**
+ * Feature flag for direct ACP WebSocket connection.
+ *
+ * When true:  frontend talks to goose serve directly via WebSocket
+ * When false: frontend uses the old Tauri invoke() → Rust → WebSocket path
+ *
+ * This flag is used in Step 07 (rewire-shared-api-acp) to route calls.
+ * Remove this file after the migration is validated and Step 09 (cleanup) is done.
+ */
+
+const STORAGE_KEY = "goose2_use_direct_acp";
+
+export function useDirectAcp(): boolean {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored !== null) return stored === "true";
+  } catch {
+    // localStorage not available
+  }
+  // Default: off during migration, flip to true when ready
+  return false;
+}
+
+export function setUseDirectAcp(enabled: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(enabled));
+  } catch {
+    // localStorage not available
+  }
+}
+```
+
+This lets us:
+- Ship Steps 01–06 without affecting any users
+- Flip the flag per-user or per-session to test the new path
+- Instantly roll back if something breaks (flip flag, refresh)
+- Remove the flag in Step 09 when the old Rust code is deleted
+
+Step 07 will use this flag to route each function:
+
+```typescript
+// Example pattern in src/shared/api/acp.ts (Step 07)
+export async function acpSendMessage(...) {
+  if (useDirectAcp()) {
+    return sendPrompt(...);         // new: TS → WebSocket → goose serve
+  }
+  return invoke("acp_send_message", ...);  // old: TS → Rust → WebSocket → goose serve
+}
+```
+
 ## Verification
 
 1. `pnpm typecheck` passes.
 2. `pnpm check` passes (Biome lint).
 3. The modules can be imported without side effects — initialization only happens when `getClient()` is called.
 4. Unit test for `createWebSocketStream`: mock `WebSocket`, verify messages flow bidirectionally.
+5. Reconnection test: close the WebSocket, verify `resolvedClient` resets to null, verify next `getClient()` creates a fresh connection.
+6. Feature flag test: verify `useDirectAcp()` reads from localStorage, defaults to false.
 
 ## Files Created
 
 | File | Purpose |
 |------|---------|
 | `src/shared/api/createWebSocketStream.ts` | WebSocket → ACP Stream adapter |
-| `src/shared/api/acpConnection.ts` | Singleton ACP connection manager |
+| `src/shared/api/acpConnection.ts` | Singleton ACP connection manager with reconnection |
+| `src/shared/api/acpFeatureFlag.ts` | Feature flag for old/new path routing |
 
 ## Dependencies
 
@@ -292,4 +393,5 @@ export function getClientSync(): GooseClient | null {
 - The `Client` interface from `@agentclientprotocol/sdk` uses `sessionUpdate` as the callback method name. The Rust `Client` trait calls it `session_notification` — same callback, different naming convention.
 - The `protocolVersion` `"2025-03-26"` matches `ProtocolVersion::LATEST` from the Rust `agent-client-protocol` crate. Use `LATEST_PROTOCOL_VERSION` from `@agentclientprotocol/sdk` if exported; otherwise hardcode the string.
 - If `invoke("get_goose_serve_url")` fails, the error propagates to the caller. The app startup code (Step 08) handles this by showing an error state rather than crashing.
-- The initial implementation does not handle WebSocket reconnection. If the connection drops, `getClient()` returns the stale client. A future step can monitor `client.closed` / `client.signal` and reset the singleton to trigger reconnection.
+- Reconnection is passive (reset-on-close), not active (no polling/retry loop). This keeps the implementation simple while ensuring the app recovers from transient disconnections. The connection is local (same machine), so reconnection typically succeeds immediately.
+- The feature flag defaults to `false` (old path). During development, enable it via browser console: `localStorage.setItem("goose2_use_direct_acp", "true")`. In production, flip the default to `true` after validation, then remove the flag entirely in Step 09.

@@ -57,7 +57,7 @@ Tauri Rust shell (~200 lines):
 |------|------|---------|
 | 01 | `01-expose-goose-serve-url.md` | Add Tauri command to expose the `goose serve` WebSocket URL to the frontend |
 | 02 | `02-add-acp-npm-dependencies.md` | Add `@aaif/goose-acp` and `@agentclientprotocol/sdk` to goose2 |
-| 03 | `03-create-ts-acp-connection.md` | Create the singleton TypeScript ACP connection manager (WebSocket transport) |
+| 03 | `03-create-ts-acp-connection.md` | Create the singleton TypeScript ACP connection manager (WebSocket transport), reconnection logic, and feature flag |
 | 04 | `04-create-ts-notification-handler.md` | Port the Rust `SessionEventDispatcher` to TypeScript |
 | 05 | `05-create-ts-session-manager.md` | Port session state management and ACP operations to TypeScript |
 | 06 | `06-port-session-search.md` | Port session content search from Rust to TypeScript |
@@ -100,4 +100,4 @@ Tauri Rust shell (~200 lines):
 | `goose serve` not ready when frontend initializes | Rust still does a readiness check; the URL command only resolves after the server is confirmed ready |
 | WebSocket disconnection / reconnection | Implement reconnection logic in the connection manager; `GooseClient.closed` signals when the connection drops |
 | Replay timing (notifications arriving after `loadSession` resolves) | Port the drain/stabilization logic from Rust, or rely on the `replay_complete` signal from the backend |
-| Session state consistency during migration | Keep the old Rust path behind a flag initially; remove after validation |
+| Session state consistency during migration | Feature flag (`useDirectAcp` in `acpFeatureFlag.ts`) routes between old Tauri IPC and new WebSocket path. Default off, flip per-user to test, flip default to on after validation, remove in Step 09 |
