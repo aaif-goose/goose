@@ -80,6 +80,26 @@ export async function setModel(
   });
 }
 
+export async function setProvider(
+  sessionId: string,
+  providerId: string,
+): Promise<void> {
+  const client = await getClient();
+  await client.setSessionConfigOption({
+    sessionId,
+    configId: "provider",
+    value: providerId,
+  });
+}
+
+export async function updateWorkingDir(
+  sessionId: string,
+  workingDir: string,
+): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("goose/working_dir/update", { sessionId, workingDir });
+}
+
 export async function cancelSession(sessionId: string): Promise<void> {
   const client = await getClient();
   await client.cancel({ sessionId });

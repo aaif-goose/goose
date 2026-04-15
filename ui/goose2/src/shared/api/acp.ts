@@ -107,7 +107,8 @@ export async function acpSetModel(
   modelId: string,
 ): Promise<void> {
   if (USE_DIRECT_ACP) {
-    return directAcp.setModel(sessionId, modelId);
+    const gooseSessionId = sessionTracker.getGooseSessionId(sessionId);
+    return directAcp.setModel(gooseSessionId ?? sessionId, modelId);
   }
   return invoke("acp_set_model", {
     sessionId,
@@ -205,7 +206,8 @@ export async function acpCancelSession(
   personaId?: string,
 ): Promise<boolean> {
   if (USE_DIRECT_ACP) {
-    await directAcp.cancelSession(sessionId);
+    const gooseSessionId = sessionTracker.getGooseSessionId(sessionId, personaId);
+    await directAcp.cancelSession(gooseSessionId ?? sessionId);
     return true;
   }
   return invoke("acp_cancel_session", {

@@ -26,6 +26,14 @@ export async function prepareSession(
 
   const existing = prepared.get(key) ?? prepared.get(sessionId);
   if (existing) {
+    if (existing.workingDir !== workingDir) {
+      await acpApi.updateWorkingDir(existing.gooseSessionId, workingDir);
+      existing.workingDir = workingDir;
+    }
+    if (existing.providerId !== providerId) {
+      await acpApi.setProvider(existing.gooseSessionId, providerId);
+      existing.providerId = providerId;
+    }
     return existing.gooseSessionId;
   }
 
