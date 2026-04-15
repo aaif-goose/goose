@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { USE_DIRECT_ACP } from "./acpFeatureFlag";
+import * as directAcp from "./acpApi";
 
 export interface AcpProvider {
   id: string;
@@ -21,6 +23,9 @@ export interface AcpPrepareSessionOptions {
 
 /** Discover ACP providers installed on the system. */
 export async function discoverAcpProviders(): Promise<AcpProvider[]> {
+  if (USE_DIRECT_ACP) {
+    return directAcp.listProviders();
+  }
   return invoke("discover_acp_providers");
 }
 
@@ -31,6 +36,7 @@ export async function acpSendMessage(
   prompt: string,
   options: AcpSendMessageOptions = {},
 ): Promise<void> {
+  // TODO: wire up streaming path via acpApi.prompt()
   const { systemPrompt, workingDir, personaId, personaName, images } = options;
   return invoke("acp_send_message", {
     sessionId,
@@ -50,6 +56,7 @@ export async function acpPrepareSession(
   providerId: string,
   options: AcpPrepareSessionOptions = {},
 ): Promise<void> {
+  // TODO: wire up session preparation via acpApi.newSession()
   const { workingDir, personaId } = options;
   return invoke("acp_prepare_session", {
     sessionId,
@@ -63,6 +70,9 @@ export async function acpSetModel(
   sessionId: string,
   modelId: string,
 ): Promise<void> {
+  if (USE_DIRECT_ACP) {
+    return directAcp.setModel(sessionId, modelId);
+  }
   return invoke("acp_set_model", {
     sessionId,
     modelId,
@@ -87,6 +97,9 @@ export interface AcpSessionSearchResult {
 
 /** List all sessions known to the goose binary. */
 export async function acpListSessions(): Promise<AcpSessionInfo[]> {
+  if (USE_DIRECT_ACP) {
+    return directAcp.listSessions();
+  }
   return invoke("acp_list_sessions");
 }
 
@@ -94,6 +107,7 @@ export async function acpSearchSessions(
   query: string,
   sessionIds: string[],
 ): Promise<AcpSessionSearchResult[]> {
+  // TODO: port search to direct ACP (Step 06)
   return invoke("acp_search_sessions", { query, sessionIds });
 }
 
@@ -108,6 +122,7 @@ export async function acpLoadSession(
   gooseSessionId: string,
   workingDir?: string,
 ): Promise<void> {
+  // TODO: wire up session loading via acpApi.loadSession()
   return invoke("acp_load_session", {
     sessionId,
     gooseSessionId,
@@ -117,11 +132,17 @@ export async function acpLoadSession(
 
 /** Export a session as JSON via the goose binary. */
 export async function acpExportSession(sessionId: string): Promise<string> {
+  if (USE_DIRECT_ACP) {
+    return directAcp.exportSession(sessionId);
+  }
   return invoke("acp_export_session", { sessionId });
 }
 
 /** Import a session from JSON via the goose binary. Returns new session metadata. */
 export async function acpImportSession(json: string): Promise<AcpSessionInfo> {
+  if (USE_DIRECT_ACP) {
+    return directAcp.importSession(json);
+  }
   return invoke("acp_import_session", { json });
 }
 
@@ -129,6 +150,9 @@ export async function acpImportSession(json: string): Promise<AcpSessionInfo> {
 export async function acpDuplicateSession(
   sessionId: string,
 ): Promise<AcpSessionInfo> {
+  if (USE_DIRECT_ACP) {
+    return directAcp.forkSession(sessionId);
+  }
   return invoke("acp_duplicate_session", { sessionId });
 }
 
@@ -137,6 +161,10 @@ export async function acpCancelSession(
   sessionId: string,
   personaId?: string,
 ): Promise<boolean> {
+  if (USE_DIRECT_ACP) {
+    await directAcp.cancelSession(sessionId);
+    return true;
+  }
   return invoke("acp_cancel_session", {
     sessionId,
     personaId: personaId ?? null,
