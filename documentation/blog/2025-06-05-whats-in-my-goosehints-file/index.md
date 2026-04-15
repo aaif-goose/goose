@@ -124,13 +124,13 @@ Share your own `.goosehints` optimization stories in the [Goose community on Dis
 <head>
   <meta property="og:title" content="What's in my .goosehints file (and why it probably shouldn't be)" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/06/05/whats-in-my-goosehints-file" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/06/05/whats-in-my-goosehints-file" />
   <meta property="og:description" content="Learn how to optimize your Goose configuration by understanding when to use .goosehints vs Memory Extension for better performance and maintainability." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/blog-banner-7f0e5ed1cf875e64e3ebb3250932baaf.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blog-banner-7f0e5ed1cf875e64e3ebb3250932baaf.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="What's in my .goosehints file (and why it probably shouldn't be)" />
   <meta name="twitter:description" content="Learn how to optimize your Goose configuration by understanding when to use .goosehints vs Memory Extension for better performance and maintainability." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/blog-banner-7f0e5ed1cf875e64e3ebb3250932baaf.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blog-banner-7f0e5ed1cf875e64e3ebb3250932baaf.png" />
   <meta name="keywords" content="Goose; .goosehints; Memory Extension MCP; AI configuration; performance optimization; developer productivity; context management; AI assistant; token costs; LLM efficiency" />
 </head>

@@ -23,15 +23,43 @@ pub struct ProviderEntry {
 }
 
 impl ProviderEntry {
+    pub fn metadata(&self) -> &ProviderMetadata {
+        &self.metadata
+    }
+
+    fn normalize_model_config(&self, mut model: ModelConfig) -> ModelConfig {
+        model = model.with_canonical_limits(&self.metadata.name);
+
+        if model.context_limit.is_none() {
+            if let Some(info) = self
+                .metadata
+                .known_models
+                .iter()
+                .find(|m| m.name == model.model_name && m.context_limit > 0)
+            {
+                model.context_limit = Some(info.context_limit);
+            }
+        }
+
+        model
+    }
+
     pub async fn create_with_default_model(
         &self,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
         let default_model = &self.metadata.default_model;
-        let provider_name = &self.metadata.name;
-        let model_config =
-            ModelConfig::new(default_model.as_str())?.with_canonical_limits(provider_name);
+        let model_config = self.normalize_model_config(ModelConfig::new(default_model.as_str())?);
         (self.constructor)(model_config, extensions).await
+    }
+
+    pub async fn create(
+        &self,
+        model: ModelConfig,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<Arc<dyn Provider>> {
+        let model = self.normalize_model_config(model);
+        (self.constructor)(model, extensions).await
     }
 }
 
@@ -190,7 +218,7 @@ impl ProviderRegistry {
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", name))?;
 
-        (entry.constructor)(model, extensions).await
+        entry.create(model, extensions).await
     }
 
     pub fn all_metadata_with_types(&self) -> Vec<(ProviderMetadata, ProviderType)> {

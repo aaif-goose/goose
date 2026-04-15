@@ -1,6 +1,6 @@
 # goose
 
-goose is an extensible, open source AI agent that enhances software development by automating coding tasks. 
+goose is an extensible, open source AI agent that enhances software development by automating coding tasks.
 It runs locally on your machine and connects to various tools and services through the Model Context Protocol (MCP).
 goose is available as both a desktop application and a command-line interface (CLI).
 
@@ -36,7 +36,7 @@ goose is available as both a desktop application and a command-line interface (C
 ### macOS/Linux/Windows (CLI)
 
 ```sh
-curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash
+curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
 ```
 
 ### macOS (Homebrew)
@@ -76,12 +76,12 @@ Project-specific hints can be added via `.goosehints` and/or `AGENT.md` files.
 
 ## Links
 
-- Website: https://block.github.io/goose/
-- GitHub: https://github.com/block/goose
+- Website: https://goose-docs.ai/
+- GitHub: https://github.com/aaif-goose/goose
 - Discord: https://discord.gg/goose-oss
-- Extensions Registry: https://block.github.io/goose/extensions/
-- Blog: https://block.github.io/goose/blog/
+- Extensions Registry: https://goose-docs.ai/extensions/
+- Blog: https://goose-docs.ai/blog/
 
 ## About
 
-goose is developed by Block, Inc. (parent company of Square, Cash App, and Tidal) as an open source project under the MIT license.
+goose is developed by AAIF (Agentic AI Foundation) as an open source project under the Apache 2.0 license.

@@ -12,7 +12,7 @@ This guide covers two Docker-related scenarios:
 
 You can build goose from the source file within a Docker container. This approach not only provides security benefits by creating an isolated environment but also enhances consistency and portability. For example, if you need to troubleshoot an error on a platform you don't usually work with (such as Ubuntu), you can easily debug it using Docker.
 
-To begin, you will need to modify the [`Dockerfile` and `docker-compose.yml` files](https://github.com/block/goose/tree/main/documentation/docs/docker) to suit your requirements. Some changes you might consider include:
+To begin, you will need to modify the [`Dockerfile` and `docker-compose.yml` files](https://github.com/aaif-goose/goose/tree/main/documentation/docs/docker) to suit your requirements. Some changes you might consider include:
 
 - **Required:** Setting your API key, provider, and model in the `docker-compose.yml` file as environment variables because the keyring settings do not work on Ubuntu in Docker. This example uses Google Gemini.
 

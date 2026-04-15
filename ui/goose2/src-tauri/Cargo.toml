@@ -1,0 +1,59 @@
+[package]
+name = "goose2"
+version = "0.1.0"
+description = "Goose desktop app"
+authors = ["you"]
+edition = "2021"
+
+[[bin]]
+name = "Goose"
+path = "src/main.rs"
+
+[lib]
+name = "goose2_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-app-test-driver = { path = "plugins/app-test-driver" }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = ">=2,<2.7"
+tauri-plugin-window-state = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6.0.0"
+log = "0.4.29"
+tokio = { version = "1.50.0", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde_yaml = "0.9"
+etcetera = "0.8"
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["compat", "rt"] }
+async-trait = "0.1"
+agent-client-protocol = { version = "0.10.4", features = ["unstable_session_fork"] }
+tokio-tungstenite = "0.21.0"
+acp-client = { git = "https://github.com/block/builderbot", rev = "db184d20cb48e0c90bbd3fea4a4a871fc9d8a6ad" }
+doctor = { git = "https://github.com/block/builderbot", rev = "8e1c3ec145edc0df5f04b4427cfd758378036862" }
+ignore = "0.4.25"
+base64 = "0.22"
+mime_guess = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
+
+[features]
+app-test-driver = []
+
+[dev-dependencies]
+tempfile = "3"

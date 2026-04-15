@@ -11,7 +11,7 @@ import ImageCarousel from '@site/src/components/ImageCarousel';
 
 <YouTubeShortEmbed videoUrl="https://www.youtube.com/embed/txh6DlzPwNo" />
 
-The Auto Visualiser extension enables goose to automatically generate interactive data visualizations directly in your conversation. This built-in extension leverages MCP-UI to create charts, graphs, maps, and other visual representations of your data without requiring manual requests.
+The Auto Visualiser extension enables goose to automatically generate interactive data visualizations directly in your conversation. This built-in extension uses MCP Apps to render charts, graphs, maps, and diagrams inline in goose Desktop.
 
 This guide will cover enabling and using the Auto Visualiser MCP Server.
 
@@ -49,9 +49,13 @@ This guide will cover enabling and using the Auto Visualiser MCP Server.
 </Tabs>
 
 
+:::info
+Auto Visualiser now uses [MCP Apps](/docs/tutorials/building-mcp-apps), which means visualizations can render inline in chat and expand into fullscreen or picture-in-picture modes in goose Desktop.
+:::
+
 ## Visualization Types
 
-The Auto Visualiser is a powerful extension that integrates with goose's MCP-UI system to automatically detect when data would benefit from visualization and render interactive visual components. It analyzes data patterns in your conversations and suggests the most appropriate visualization type.
+The Auto Visualiser automatically detects when data would benefit from visualization and chooses the most appropriate chart or diagram type. It renders those visualizations as interactive MCP Apps inside goose Desktop.
 
 | Chart Type | Description | Detected When Prompt Implies |
 |------------|-------------|------------------------------|
@@ -80,10 +84,21 @@ The Auto Visualiser is a powerful extension that integrates with goose's MCP-UI 
 
 - **Automatic Detection**: goose intelligently chooses the best visualization type for your data
 - **Interactive Components**: All visualizations are interactive with hover effects, zooming, and drilling capabilities
-- **MCP-UI Integration**: Leverages the emerging MCP-UI standard for seamless rendering
+- **MCP Apps Rendering**: Visualizations render as MCP Apps directly in goose Desktop
+- **Multiple Display Modes**: Visualizations can appear inline and expand into fullscreen or picture-in-picture modes
 - **Multiple Chart Support**: Can render multiple visualizations in a single response
 - **Customizable Styling**: Supports custom colors, labels, and formatting options
 - **Export Capability**: Visualizations can be saved as HTML files for sharing
+
+## How It Works
+
+When goose decides that your data should be visualized, the Auto Visualiser extension returns an MCP App for the selected chart type. goose Desktop then renders that app directly in the conversation.
+
+Depending on the visualization, you can:
+
+- View it inline in the chat
+- Expand it to fullscreen for a larger workspace
+- Move it into picture-in-picture mode while continuing your conversation
 
 
 ## Example Usage
@@ -157,7 +172,8 @@ Would you like me to create additional visualizations or dive deeper into any sp
 
 - **Visualization not appearing**: Ensure the Auto Visualiser extension is enabled and your data follows the expected format.
 
+- **Visualization opens but does not fit well inline**: Try fullscreen mode in goose Desktop for more space.
+
 - **Data format errors**: Check that your data structure matches the required schema for the visualization type. The extension provides detailed error messages to guide you.
 
 - **Performance with large datasets**: For very large datasets, consider aggregating or sampling your data before visualization.
-

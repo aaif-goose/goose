@@ -3,9 +3,10 @@ title: "WebMCP for Beginners"
 description: "WebMCP lets websites expose structured actions that AI agents can call directly. This guide explains how it works, how it differs from MCP and browser automation, and how to build your own WebMCP-enabled site."
 authors: 
     - rizel
+image: /img/blog/webmcp-for-beginners.png
 ---
 
-![blog cover](webmcp-for-beginners.png)
+![blog cover](/img/blog/webmcp-for-beginners.png)
 
 Raise your hand if you thought WebMCP was just an MCP server. Guilty as charged. I did too. It turns out it's a W3C standard that uses similar concepts to MCP. Here's what it actually is.
 
@@ -177,12 +178,12 @@ Right now, WebMCP only works on sites that choose to implement it, which limits 
 <head>
   <meta property="og:title" content="WebMCP for Beginners" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/03/17/webmcp-for-beginners" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/03/17/webmcp-for-beginners" />
   <meta property="og:description" content="WebMCP lets websites expose structured actions that AI agents can call directly. This guide explains how it works, how it differs from MCP and browser automation, and how to build your own WebMCP-enabled site." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/webmcp-for-beginners-f12da638fe0f49acf924c720a7d1243a.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/webmcp-for-beginners-f12da638fe0f49acf924c720a7d1243a.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="WebMCP for Beginners" />
   <meta name="twitter:description" content="WebMCP lets websites expose structured actions that AI agents can call directly. This guide explains how it works, how it differs from MCP and browser automation, and how to build your own WebMCP-enabled site." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/webmcp-for-beginners-f12da638fe0f49acf924c720a7d1243a.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/webmcp-for-beginners-f12da638fe0f49acf924c720a7d1243a.png" />
 </head>

@@ -1,11 +1,24 @@
 import React from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  alpha: {
+    id: 'environmentBadge.alpha',
+    defaultMessage: 'Alpha',
+  },
+  dev: {
+    id: 'environmentBadge.dev',
+    defaultMessage: 'Dev',
+  },
+});
 
 interface EnvironmentBadgeProps {
   className?: string;
 }
 
 const EnvironmentBadge: React.FC<EnvironmentBadgeProps> = ({ className = '' }) => {
+  const intl = useIntl();
   const isAlpha = process.env.ALPHA;
   const isDevelopment = import.meta.env.DEV;
 
@@ -14,7 +27,9 @@ const EnvironmentBadge: React.FC<EnvironmentBadgeProps> = ({ className = '' }) =
     return null;
   }
 
-  const tooltipText = isAlpha ? 'Alpha' : 'Dev';
+  const tooltipText = isAlpha
+    ? intl.formatMessage(i18n.alpha)
+    : intl.formatMessage(i18n.dev);
   const bgColor = isAlpha ? 'bg-purple-600' : 'bg-orange-400';
 
   return (

@@ -84,12 +84,12 @@ Voice interactions with AI agents like Goose with the power and tools to act on 
 <head>
   <meta property="og:title" content="Vibe Coding with Goose and the Speech MCP" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/28/vibe-coding-with-goose" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/28/vibe-coding-with-goose" />
   <meta property="og:description" content="Explore the new Speech MCP server that enables voice-controlled coding and natural conversation with your AI agent." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/vibe-coding-b2efeed37ea43f4773da5f1ff96f4184.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/vibe-coding-b2efeed37ea43f4773da5f1ff96f4184.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Vibe Coding with Goose and the Speech MCP" />
   <meta name="twitter:description" content="Explore the new Speech MCP server that enables voice-controlled coding and natural conversation with your AI agent." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/vibe-coding-b2efeed37ea43f4773da5f1ff96f4184.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/vibe-coding-b2efeed37ea43f4773da5f1ff96f4184.png" />
 </head>

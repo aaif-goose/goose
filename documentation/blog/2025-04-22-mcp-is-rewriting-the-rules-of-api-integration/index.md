@@ -153,12 +153,12 @@ A: Your approach on this may vary depending on whether you're building your own 
 <head>
   <meta property="og:title" content="MCP Is Rewriting the Rules of API Integration" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/04/22/mcp-is-rewriting-the-rules-of-api-integration" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/04/22/mcp-is-rewriting-the-rules-of-api-integration" />
   <meta property="og:description" content="A developer's guide to modernizing API infrastructure with AI agents and Model Context Protocol. Learn about the benefits, integration strategies, and how to address security considerations." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/cover-1e2153c66f3f0c92da7bbaafd240a9b4.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/cover-1e2153c66f3f0c92da7bbaafd240a9b4.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="MCP Is Rewriting the Rules of API Integration" />
   <meta name="twitter:description" content="A developer's guide to modernizing API infrastructure with AI agents and Model Context Protocol. Learn about the benefits, integration strategies, and how to address security considerations." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/cover-1e2153c66f3f0c92da7bbaafd240a9b4.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/cover-1e2153c66f3f0c92da7bbaafd240a9b4.png" />
 </head>

@@ -16,7 +16,7 @@ My mom was doing her usual Sunday ritual she had her pen, paper, calculator, and
 Last month, halfway through crunching numbers, she sighed and said,  
 > “I just wish I could see where my money’s going.”  
 
-So I opened [**goose**](http://block.github.io/goose/docs/quickstart), added her notes, and turned on [**Auto Visualiser**](https://block.github.io/goose/docs/mcp/autovisualiser-mcp). In seconds, her budget became this colorful, interactive chart. She hovered over each slice, analyzing where her money was going.  
+So I opened [**goose**](http://goose-docs.ai/docs/quickstart), added her notes, and turned on [**Auto Visualiser**](https://goose-docs.ai/docs/mcp/autovisualiser-mcp). In seconds, her budget became this colorful, interactive chart. She hovered over each slice, analyzing where her money was going.  
 
 Now, I'm not saying this is some groundbreaking use case. There are plenty of apps that do this. What stood out to me was how simple it felt. My mom didn’t need to learn anything new or adapt to someone else’s design. The visualization just appeared, and she got it immediately.  
 
@@ -49,7 +49,7 @@ Both point to the same future: one where AI doesn’t just reply with text, but 
 
 That’s what Agentic UX is really about: building AI that responds to what the user intends to do.  
 
-If you’re building your own MCP server, start by thinking about the experience you want your users to have. Then experiment with MCP-UI and design the flow you’d expect if you were the one using it. For a full walkthrough, see [How To Make An MCP Server MCP-UI Compatible](https://block.github.io/goose/blog/2025/09/08/turn-any-mcp-server-mcp-ui-compatible).
+If you’re building your own MCP server, start by thinking about the experience you want your users to have. Then experiment with MCP-UI and design the flow you’d expect if you were the one using it. For a full walkthrough, see [How To Make An MCP Server MCP-UI Compatible](https://goose-docs.ai/blog/2025/09/08/turn-any-mcp-server-mcp-ui-compatible).
 
 ---
 
@@ -59,12 +59,12 @@ I have a feeling that next month, when my mom sits down to balance her bills, sh
 <head>
   <meta property="og:title" content="Designing AI for Users, Not Just LLMs" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/10/14/designing-ai-for-humans" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/10/14/designing-ai-for-humans" />
   <meta property="og:description" content="Building intent-based AI experiences with MCP-UI." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/design-ai-de5d0af69d8d21111dd271624ac7cab3.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/design-ai-de5d0af69d8d21111dd271624ac7cab3.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Designing AI for Users, Not Just LLMs" />
   <meta name="twitter:description" content="Building intent-based AI experiences with MCP-UI." />
-  <meta property="twitter:domain" content="block.github.io/goose" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/design-ai-de5d0af69d8d21111dd271624ac7cab3.png" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/design-ai-de5d0af69d8d21111dd271624ac7cab3.png" />
 </head>

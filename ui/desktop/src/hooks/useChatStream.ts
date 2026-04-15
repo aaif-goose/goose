@@ -643,7 +643,12 @@ export function useChatStream({
           activeRequestSessionIdRef.current = null;
           activeAbortRef.current = null;
         }
-        onFinish('Submit error: ' + errorMessage(error));
+        const msg = errorMessage(error);
+        if (msg.includes('already has an active request')) {
+          dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.Idle });
+        } else {
+          onFinish('Submit error: ' + msg);
+        }
       }
     },
     [addListener, onFinish, reloadConversation]
@@ -783,7 +788,13 @@ export function useChatStream({
       const { msg: userMessage, images } = input;
       const currentState = stateRef.current;
 
-      if (!currentState.session || currentState.chatState === ChatState.LoadingConversation) {
+      if (
+        !currentState.session ||
+        currentState.chatState === ChatState.LoadingConversation ||
+        currentState.chatState === ChatState.Streaming ||
+        currentState.chatState === ChatState.Thinking ||
+        currentState.chatState === ChatState.Compacting
+      ) {
         return;
       }
 

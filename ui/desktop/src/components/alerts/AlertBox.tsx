@@ -6,6 +6,7 @@ import { errorMessage } from '../../utils/conversionUtils';
 import { Alert, AlertType } from './types';
 import { upsertConfig } from '../../api';
 import { useConfig } from '../ConfigContext';
+import { defineMessages, useIntl } from '../../i18n';
 
 const alertIcons: Record<AlertType, React.ReactNode> = {
   [AlertType.Error]: <IoIosCloseCircle className="h-5 w-5" />,
@@ -19,6 +20,21 @@ interface AlertBoxProps {
   compactButtonEnabled?: boolean;
 }
 
+const i18n = defineMessages({
+  autoCompactAt: {
+    id: 'alertBox.autoCompactAt',
+    defaultMessage: 'Auto compact at',
+  },
+  compactNow: {
+    id: 'alertBox.compactNow',
+    defaultMessage: 'Compact now',
+  },
+  failedToSaveThreshold: {
+    id: 'alertBox.failedToSaveThreshold',
+    defaultMessage: 'Failed to save threshold: {error}',
+  },
+});
+
 const alertStyles: Record<AlertType, string> = {
   [AlertType.Error]: 'bg-[#d7040e] text-white',
   [AlertType.Warning]: 'bg-[#cc4b03] text-white',
@@ -26,6 +42,7 @@ const alertStyles: Record<AlertType, string> = {
 };
 
 export const AlertBox = ({ alert, className }: AlertBoxProps) => {
+  const intl = useIntl();
   const { read } = useConfig();
   const [isEditingThreshold, setIsEditingThreshold] = useState(false);
   const [loadedThreshold, setLoadedThreshold] = useState<number>(0.8);
@@ -79,7 +96,7 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
       }
     } catch (error) {
       console.error('Error saving threshold:', error);
-      window.alert(`Failed to save threshold: ${errorMessage(error, 'Unknown error')}`);
+      window.alert(intl.formatMessage(i18n.failedToSaveThreshold, { error: errorMessage(error, 'Unknown error') }));
     } finally {
       setIsSaving(false);
     }
@@ -101,7 +118,7 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
           <div className="flex items-center justify-center gap-1 min-h-[20px]">
             {isEditingThreshold ? (
               <>
-                <span className="text-[10px] opacity-70">Auto compact at</span>
+                <span className="text-[10px] opacity-70">{intl.formatMessage(i18n.autoCompactAt)}</span>
                 <input
                   type="number"
                   min="1"
@@ -161,7 +178,7 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
             ) : (
               <>
                 <span className="text-[10px] opacity-70">
-                  Auto compact at {Math.round(currentThreshold * 100)}%
+                  {intl.formatMessage(i18n.autoCompactAt)} {Math.round(currentThreshold * 100)}%
                 </span>
                 <button
                   type="button"
@@ -194,7 +211,7 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
               )}
             >
               {alert.compactIcon}
-              <span>Compact now</span>
+              <span>{intl.formatMessage(i18n.compactNow)}</span>
             </button>
           )}
         </div>

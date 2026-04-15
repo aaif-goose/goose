@@ -9,7 +9,7 @@ This guide explains how to write and structure blog posts for the goose document
 
 1. Clone the goose repository:
 ```bash
-git clone https://github.com/block/goose.git
+git clone https://github.com/aaif-goose/goose.git
 cd goose
 ```
 
@@ -106,14 +106,14 @@ At the end of your post, include the following meta tags for social media sharin
 <head>
   <meta property="og:title" content="Your Blog Post Title" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/YYYY/MM/DD/post-slug" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/YYYY/MM/DD/post-slug" />
   <meta property="og:description" content="Your blog post description" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/your-image.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/your-image.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Your Blog Post Title" />
   <meta name="twitter:description" content="Your blog post description" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/your-image.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/your-image.png" />
 </head>
 ```
 
@@ -181,7 +181,7 @@ npm start
 
 3. Open your browser and visit:
 ```
-http://localhost:3000/goose/blog
+http://localhost:3000/blog
 ```
 
 The development server features:

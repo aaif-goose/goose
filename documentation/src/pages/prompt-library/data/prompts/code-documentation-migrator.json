@@ -11,7 +11,7 @@
       "name": "GitHub",
       "command": "npx -y @modelcontextprotocol/server-github",
       "is_builtin": false,
-      "link": "https://block.github.io/goose/docs/mcp/github-mcp",
+      "link": "https://goose-docs.ai/docs/mcp/github-mcp",
       "environmentVariables": [
         {
           "name": "GITHUB_PERSONAL_ACCESS_TOKEN",

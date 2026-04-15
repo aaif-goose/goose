@@ -1,0 +1,97 @@
+{
+  "actions": {
+    "archive": "Archivar",
+    "cancel": "Cancelar",
+    "clear": "Limpiar",
+    "close": "Cerrar",
+    "copy": "Copiar",
+    "create": "Crear",
+    "delete": "Eliminar",
+    "duplicate": "Duplicar",
+    "edit": "Editar",
+    "export": "Exportar",
+    "fix": "Corregir",
+    "import": "Importar",
+    "new": "Nuevo",
+    "next": "Siguiente",
+    "open": "Abrir",
+    "previous": "Anterior",
+    "refresh": "Actualizar",
+    "remove": "Quitar",
+    "rename": "Renombrar",
+    "restore": "Restaurar",
+    "retry": "Reintentar",
+    "run": "Ejecutar",
+    "running": "Ejecutando",
+    "save": "Guardar",
+    "saveChanges": "Guardar cambios",
+    "search": "Buscar",
+    "select": "Seleccionar",
+    "send": "Enviar",
+    "stop": "Detener",
+    "toggle": "Alternar",
+    "update": "Actualizar",
+    "view": "Ver"
+  },
+  "buttons": {
+    "openFixUrl": "Abrir URL de solución"
+  },
+  "components": {
+    "codeBlock": {
+      "copyLabel": "Copiar código"
+    },
+    "environmentVariables": {
+      "copyLabel": "Copiar variable de entorno",
+      "title": "Variables de entorno",
+      "toggleVisibility": "Alternar visibilidad del valor"
+    },
+    "messageBranch": {
+      "next": "Siguiente rama",
+      "page": "{{current}} de {{total}}",
+      "previous": "Rama anterior"
+    },
+    "plan": {
+      "toggle": "Alternar plan"
+    },
+    "snippet": {
+      "copyLabel": "Copiar"
+    },
+    "stackTrace": {
+      "copyLabel": "Copiar traza",
+      "empty": "No hay frames de la traza"
+    },
+    "terminal": {
+      "clearLabel": "Limpiar salida de terminal",
+      "copyLabel": "Copiar salida de terminal",
+      "title": "Terminal"
+    }
+  },
+  "errors": {
+    "clipboardUnavailable": "La API del portapapeles no está disponible"
+  },
+  "labels": {
+    "assistant": "Asistente",
+    "copyPath": "Copiar ruta",
+    "revealInFileManager_mac": "Mostrar en Finder",
+    "revealInFileManager_windows": "Mostrar en Explorador",
+    "revealInFileManager_linux": "Mostrar en gestor de archivos",
+    "builtIn": "Integrada",
+    "characterCount": "{{count}} caracteres",
+    "custom": "Personalizada",
+    "goose": "Goose",
+    "loading": "Cargando...",
+    "none": "Ninguno",
+    "required": "Obligatorio"
+  },
+  "session": {
+    "defaultTitle": "Nuevo chat"
+  },
+  "usage": {
+    "cache": "Caché",
+    "input": "Entrada",
+    "modelContext": "Uso del contexto del modelo",
+    "output": "Salida",
+    "reasoning": "Razonamiento",
+    "totalCost": "Costo total"
+  }
+}

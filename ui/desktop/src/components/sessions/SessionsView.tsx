@@ -1,11 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { defineMessages, useIntl } from '../../i18n';
 import SessionListView from './SessionListView';
 import SessionHistoryView from './SessionHistoryView';
 import { useLocation } from 'react-router-dom';
 import { getSession, Session } from '../../api';
 import { useNavigation } from '../../hooks/useNavigation';
 
+const i18n = defineMessages({
+  loading: {
+    id: 'sessionsView.loading',
+    defaultMessage: 'Loading...',
+  },
+  failedToLoad: {
+    id: 'sessionsView.error.failedToLoad',
+    defaultMessage: 'Failed to load session details. Please try again later.',
+  },
+});
+
 const SessionsView: React.FC = () => {
+  const intl = useIntl();
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
@@ -26,7 +39,7 @@ const SessionsView: React.FC = () => {
       setSelectedSession(response.data);
     } catch (err) {
       console.error(`Failed to load session details for ${sessionId}:`, err);
-      setError('Failed to load session details. Please try again later.');
+      setError(intl.formatMessage(i18n.failedToLoad));
       // Keep the selected session null if there's an error
       setSelectedSession(null);
       setShowSessionHistory(false);
@@ -78,7 +91,7 @@ const SessionsView: React.FC = () => {
         selectedSession || {
           id: initialSessionId || '',
           conversation: [],
-          name: 'Loading...',
+          name: intl.formatMessage(i18n.loading),
           working_dir: '',
           message_count: 0,
           total_tokens: 0,

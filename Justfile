@@ -205,6 +205,38 @@ generate-openapi:
     @echo "Generating frontend API..."
     cd ui/desktop && npx @hey-api/openapi-ts
 
+# Check if generated ACP schema and TypeScript types are up-to-date
+check-acp-schema: generate-acp-types
+    #!/usr/bin/env bash
+    set -e
+    echo "🔍 Checking ACP schema and generated types are up-to-date..."
+    if ! git diff --exit-code crates/goose-acp/acp-schema.json crates/goose-acp/acp-meta.json ui/acp/src/generated/; then
+      echo ""
+      echo "❌ ACP generated files are out of date!"
+      echo ""
+      echo "Run 'just generate-acp-types' locally, then commit the changes."
+      exit 1
+    fi
+    echo "✅ ACP schema and generated types are up-to-date"
+
+# Generate ACP JSON schema from Rust types
+generate-acp-schema:
+    @echo "Generating ACP schema..."
+    cd crates/goose-acp && cargo run --bin generate-acp-schema
+    @echo "ACP schema generated: crates/goose-acp/acp-schema.json, crates/goose-acp/acp-meta.json"
+
+# Generate ACP TypeScript types from JSON schema (requires generate-acp-schema first)
+generate-acp-types: generate-acp-schema
+    @echo "Generating ACP TypeScript types..."
+    cd ui/acp && npx tsx generate-schema.ts
+    @echo "ACP TypeScript types generated in ui/acp/src/generated/"
+
+# Build ACP TypeScript package (schema + types + compile)
+build-acp: generate-acp-types
+    @echo "Compiling ACP TypeScript..."
+    cd ui/acp && pnpm run build:ts
+    @echo "ACP package built."
+
 # Generate manpages for the CLI
 generate-manpages:
     @echo "Generating manpages..."

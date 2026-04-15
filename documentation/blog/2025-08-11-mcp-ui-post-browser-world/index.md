@@ -92,12 +92,12 @@ MCP-UI will continue to evolve, and may pick up more declarative ways for MCP-UI
 <head>
   <meta property="og:title" content="MCP UI: Bringing the Browser into the Agent" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/11/mcp-ui-post-browser-world" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/11/mcp-ui-post-browser-world" />
   <meta property="og:description" content="A first look at a UI for agents built on the proposed MCP-UI extension" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/mcp-ui-shot-1b80ebfab25d885a8ead1ca24bb6cf13.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/mcp-ui-shot-1b80ebfab25d885a8ead1ca24bb6cf13.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="MCP UI: Bringing the Browser into the Agent" />
   <meta name="twitter:description" content="A first look at a UI for agents built on the proposed MCP-UI extension" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/mcp-ui-shot-1b80ebfab25d885a8ead1ca24bb6cf13.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/mcp-ui-shot-1b80ebfab25d885a8ead1ca24bb6cf13.png" />
 </head>

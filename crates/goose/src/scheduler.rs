@@ -839,6 +839,7 @@ async fn execute_job(
     }
     drop(jobs_guard);
 
+    #[cfg(feature = "telemetry")]
     let start_time = std::time::Instant::now();
     #[cfg(feature = "telemetry")]
     tokio::spawn(async move {

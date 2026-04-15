@@ -8,6 +8,82 @@ import {
   type LocalModelResponse,
 } from '../../api';
 import { trackOnboardingSetupFailed } from '../../utils/analytics';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  checkingModels: {
+    id: 'localModelPicker.checkingModels',
+    defaultMessage: 'Checking available models...',
+  },
+  tryAgain: {
+    id: 'localModelPicker.tryAgain',
+    defaultMessage: 'Try Again',
+  },
+  bestForMachine: {
+    id: 'localModelPicker.bestForMachine',
+    defaultMessage: 'Best for your machine',
+  },
+  ready: {
+    id: 'localModelPicker.ready',
+    defaultMessage: 'Ready',
+  },
+  showOtherSizes: {
+    id: 'localModelPicker.showOtherSizes',
+    defaultMessage: 'Show {count} other sizes',
+  },
+  hideOtherSizes: {
+    id: 'localModelPicker.hideOtherSizes',
+    defaultMessage: 'Hide other sizes',
+  },
+  selectModel: {
+    id: 'localModelPicker.selectModel',
+    defaultMessage: 'Select a model',
+  },
+  useModel: {
+    id: 'localModelPicker.useModel',
+    defaultMessage: 'Use {modelId}',
+  },
+  downloadModel: {
+    id: 'localModelPicker.downloadModel',
+    defaultMessage: 'Download {modelId} ({size})',
+  },
+  back: {
+    id: 'localModelPicker.back',
+    defaultMessage: 'Back',
+  },
+  downloading: {
+    id: 'localModelPicker.downloading',
+    defaultMessage: 'Downloading {modelId}',
+  },
+  startingDownload: {
+    id: 'localModelPicker.startingDownload',
+    defaultMessage: 'Starting download...',
+  },
+  cancelDownload: {
+    id: 'localModelPicker.cancelDownload',
+    defaultMessage: 'Cancel Download',
+  },
+  localModelsNote: {
+    id: 'localModelPicker.localModelsNote',
+    defaultMessage: 'Local models keep everything on your machine for full privacy. Performance and context window size may vary compared to cloud providers depending on your hardware and model size.',
+  },
+  failedToLoad: {
+    id: 'localModelPicker.failedToLoad',
+    defaultMessage: 'Failed to load available models. Please try again.',
+  },
+  modelNotFound: {
+    id: 'localModelPicker.modelNotFound',
+    defaultMessage: 'Model not found',
+  },
+  failedToStartDownload: {
+    id: 'localModelPicker.failedToStartDownload',
+    defaultMessage: 'Failed to start download. Please try again.',
+  },
+  lostConnection: {
+    id: 'localModelPicker.lostConnection',
+    defaultMessage: 'Lost connection to download. Please try again.',
+  },
+});
 
 interface LocalModelPickerProps {
   onConfigured: (providerName: string, modelId: string) => void;
@@ -31,6 +107,7 @@ const LOCAL_PROVIDER = 'local';
 type Phase = 'loading' | 'select' | 'downloading' | 'error';
 
 export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPickerProps) {
+  const intl = useIntl();
   const [phase, setPhase] = useState<Phase>('loading');
   const [models, setModels] = useState<LocalModelResponse[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -65,14 +142,14 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
         }
       } catch (error) {
         console.error('Failed to load local models:', error);
-        setErrorMessage('Failed to load available models. Please try again.');
+        setErrorMessage(intl.formatMessage(i18n.failedToLoad));
         setPhase('error');
         return;
       }
       setPhase('select');
     };
     load();
-  }, []);
+  }, [intl]);
 
   const finishSetup = (modelId: string) => {
     onConfigured(LOCAL_PROVIDER, modelId);
@@ -85,7 +162,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
 
     const model = models.find((m) => m.id === modelId);
     if (!model) {
-      setErrorMessage('Model not found');
+      setErrorMessage(intl.formatMessage(i18n.modelNotFound));
       setPhase('error');
       return;
     }
@@ -94,7 +171,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
       await downloadHfModel({ body: { spec: model.id }, throwOnError: true });
     } catch (error) {
       console.error('Failed to start download:', error);
-      setErrorMessage('Failed to start download. Please try again.');
+      setErrorMessage(intl.formatMessage(i18n.failedToStartDownload));
       trackOnboardingSetupFailed(LOCAL_PROVIDER, 'download_start_failed');
       setPhase('error');
       return;
@@ -123,7 +200,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
         }
       } catch {
         cleanup();
-        setErrorMessage('Lost connection to download. Please try again.');
+        setErrorMessage(intl.formatMessage(i18n.lostConnection));
         trackOnboardingSetupFailed(LOCAL_PROVIDER, 'progress_poll_failed');
         setPhase('error');
       }
@@ -162,7 +239,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
     return (
       <div className="flex flex-col items-center justify-center py-16">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-text-muted mb-4"></div>
-        <p className="text-text-muted text-sm">Checking available models...</p>
+        <p className="text-text-muted text-sm">{intl.formatMessage(i18n.checkingModels)}</p>
       </div>
     );
   }
@@ -182,7 +259,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
               }}
               className="w-full px-4 py-2 bg-transparent border rounded-lg text-text-default text-sm font-medium hover:bg-background-muted/80 transition-colors"
             >
-              Try Again
+              {intl.formatMessage(i18n.tryAgain)}
             </button>
           </div>
         )}
@@ -200,7 +277,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
               >
                 <div className="absolute -top-2 -right-2 z-10">
                   <span className="inline-block px-2 py-0.5 text-xs font-medium bg-blue-600 text-white rounded-full">
-                    Best for your machine
+                    {intl.formatMessage(i18n.bestForMachine)}
                   </span>
                 </div>
                 <div className="flex items-start gap-3">
@@ -217,7 +294,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
                       </span>
                       {recommended.status.state === 'Downloaded' && (
                         <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">
-                          Ready
+                          {intl.formatMessage(i18n.ready)}
                         </span>
                       )}
                     </div>
@@ -235,7 +312,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
                   onClick={() => setShowAllModels(!showAllModels)}
                   className="text-sm text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1"
                 >
-                  {showAllModels ? 'Hide other sizes' : `Show ${otherModels.length} other sizes`}
+                  {showAllModels ? intl.formatMessage(i18n.hideOtherSizes) : intl.formatMessage(i18n.showOtherSizes, { count: otherModels.length })}
                   <svg
                     className={`w-3.5 h-3.5 transition-transform ${showAllModels ? 'rotate-180' : ''}`}
                     fill="none"
@@ -299,10 +376,10 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
               className="w-full px-4 py-2.5 bg-blue-600 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700 cursor-pointer"
             >
               {selectedModel?.status.state === 'Downloaded'
-                ? `Use ${selectedModel.id}`
+                ? intl.formatMessage(i18n.useModel, { modelId: selectedModel.id })
                 : selectedModel
-                  ? `Download ${selectedModel.id} (${formatSize(selectedModel.size_bytes)})`
-                  : 'Select a model'}
+                  ? intl.formatMessage(i18n.downloadModel, { modelId: selectedModel.id, size: formatSize(selectedModel.size_bytes) })
+                  : intl.formatMessage(i18n.selectModel)}
             </button>
 
             {onBack && (
@@ -310,7 +387,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
                 onClick={onBack}
                 className="w-full px-4 py-2.5 text-blue-600 dark:text-blue-400 text-sm font-medium border border-blue-300 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer"
               >
-                Back
+                {intl.formatMessage(i18n.back)}
               </button>
             )}
           </div>
@@ -320,7 +397,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
           <div className="space-y-3">
             <div className="border border-border-subtle rounded-lg p-4 bg-background-default">
               <p className="font-medium text-text-default text-sm mb-3">
-                Downloading {selectedModel.id}
+                {intl.formatMessage(i18n.downloading, { modelId: selectedModel.id })}
               </p>
 
               {downloadProgress ? (
@@ -360,7 +437,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
               ) : (
                 <div className="flex items-center gap-3">
                   <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-text-muted"></div>
-                  <span className="text-sm text-text-muted">Starting download...</span>
+                  <span className="text-sm text-text-muted">{intl.formatMessage(i18n.startingDownload)}</span>
                 </div>
               )}
             </div>
@@ -369,16 +446,14 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
               onClick={handleCancelDownload}
               className="w-full px-4 py-2.5 bg-transparent text-text-muted border rounded-lg text-sm hover:bg-background-default/80 transition-colors"
             >
-              Cancel Download
+              {intl.formatMessage(i18n.cancelDownload)}
             </button>
           </div>
         )}
       </div>
       <div className="rounded-lg bg-yellow-50/50 dark:bg-yellow-900/10 p-3 mt-3">
         <p className="text-sm text-yellow-700 dark:text-yellow-300 leading-relaxed">
-          Local models keep everything on your machine for full privacy. Performance and context
-          window size may vary compared to cloud providers depending on your hardware and model
-          size.
+          {intl.formatMessage(i18n.localModelsNote)}
         </p>
       </div>
     </div>

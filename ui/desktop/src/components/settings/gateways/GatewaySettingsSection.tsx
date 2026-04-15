@@ -3,8 +3,93 @@ import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Input } from '../../ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../ui/dialog';
-import { Loader2, Copy, Check, Square, Trash2, ExternalLink, User } from 'lucide-react';
+import { Loader2, Copy, Check, Square, Trash2, User } from 'lucide-react';
 import { getApiUrl } from '../../../config';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  loading: {
+    id: 'gatewaySettings.loading',
+    defaultMessage: 'Loading...',
+  },
+  pairedUsers: {
+    id: 'gatewaySettings.pairedUsers',
+    defaultMessage: 'Paired Users',
+  },
+  telegram: {
+    id: 'gatewaySettings.telegram',
+    defaultMessage: 'Telegram',
+  },
+  running: {
+    id: 'gatewaySettings.running',
+    defaultMessage: 'Running',
+  },
+  stopped: {
+    id: 'gatewaySettings.stopped',
+    defaultMessage: 'Stopped',
+  },
+  pairDevice: {
+    id: 'gatewaySettings.pairDevice',
+    defaultMessage: 'Pair Device',
+  },
+  stop: {
+    id: 'gatewaySettings.stop',
+    defaultMessage: 'Stop',
+  },
+  start: {
+    id: 'gatewaySettings.start',
+    defaultMessage: 'Start',
+  },
+  remove: {
+    id: 'gatewaySettings.remove',
+    defaultMessage: 'Remove',
+  },
+  pasteBotToken: {
+    id: 'gatewaySettings.pasteBotToken',
+    defaultMessage: 'Paste bot token here',
+  },
+  botFatherInstructions: {
+    id: 'gatewaySettings.botFatherInstructions',
+    defaultMessage:
+      'Open @BotFather on your phone, send /newbot, and follow the prompts to name your bot. BotFather will reply with an API token — paste it below.',
+  },
+  pairingCode: {
+    id: 'gatewaySettings.pairingCode',
+    defaultMessage: 'Pairing Code',
+  },
+  sendCodeToPair: {
+    id: 'gatewaySettings.sendCodeToPair',
+    defaultMessage: 'Send this code to your {gatewayType} bot to pair.',
+  },
+  expiresIn: {
+    id: 'gatewaySettings.expiresIn',
+    defaultMessage: 'Expires in {time}',
+  },
+  close: {
+    id: 'gatewaySettings.close',
+    defaultMessage: 'Close',
+  },
+  failedToStart: {
+    id: 'gatewaySettings.failedToStart',
+    defaultMessage: 'Failed to start',
+  },
+  failedToStop: {
+    id: 'gatewaySettings.failedToStop',
+    defaultMessage: 'Failed to stop',
+  },
+  failedToRemove: {
+    id: 'gatewaySettings.failedToRemove',
+    defaultMessage: 'Failed to remove',
+  },
+  failedToUnpairUser: {
+    id: 'gatewaySettings.failedToUnpairUser',
+    defaultMessage: 'Failed to unpair user',
+  },
+  failedToGeneratePairingCode: {
+    id: 'gatewaySettings.failedToGeneratePairingCode',
+    defaultMessage: 'Failed to generate pairing code',
+  },
+});
 
 interface PairedUserInfo {
   platform: string;
@@ -41,6 +126,7 @@ async function gatewayFetch(endpoint: string, options: globalThis.RequestInit = 
 }
 
 export default function GatewaySettingsSection() {
+  const intl = useIntl();
   const [gateways, setGateways] = useState<GatewayStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,11 +178,11 @@ export default function GatewaySettingsSection() {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || 'Failed to unpair user');
+        throw new Error(data.message || intl.formatMessage(i18n.failedToUnpairUser));
       }
       await fetchStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to unpair user');
+      setError(err instanceof Error ? err.message : intl.formatMessage(i18n.failedToUnpairUser));
     }
   };
 
@@ -114,7 +200,7 @@ export default function GatewaySettingsSection() {
     return (
       <div className="flex items-center gap-2 text-sm text-text-muted py-4">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading...
+        {intl.formatMessage(i18n.loading)}
       </div>
     );
   }
@@ -135,14 +221,14 @@ export default function GatewaySettingsSection() {
           doPost(
             '/gateway/start',
             { gateway_type: 'telegram', platform_config: config, max_sessions: 0 },
-            'Failed to start'
+            intl.formatMessage(i18n.failedToStart)
           )
         }
         onRestart={() =>
-          doPost('/gateway/restart', { gateway_type: 'telegram' }, 'Failed to start')
+          doPost('/gateway/restart', { gateway_type: 'telegram' }, intl.formatMessage(i18n.failedToStart))
         }
-        onStop={() => doPost('/gateway/stop', { gateway_type: 'telegram' }, 'Failed to stop')}
-        onRemove={() => doPost('/gateway/remove', { gateway_type: 'telegram' }, 'Failed to remove')}
+        onStop={() => doPost('/gateway/stop', { gateway_type: 'telegram' }, intl.formatMessage(i18n.failedToStop))}
+        onRemove={() => doPost('/gateway/remove', { gateway_type: 'telegram' }, intl.formatMessage(i18n.failedToRemove))}
         onGenerateCode={async () => {
           setError(null);
           try {
@@ -152,13 +238,13 @@ export default function GatewaySettingsSection() {
             });
             if (!response.ok) {
               const data = await response.json().catch(() => ({}));
-              throw new Error(data.message || 'Failed to generate pairing code');
+              throw new Error(data.message || intl.formatMessage(i18n.failedToGeneratePairingCode));
             }
             const data: PairingCodeResponse = await response.json();
             setPairingCode(data);
             setPairingGatewayType('telegram');
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to generate pairing code');
+            setError(err instanceof Error ? err.message : intl.formatMessage(i18n.failedToGeneratePairingCode));
           }
         }}
         onUnpairUser={handleUnpairUser}
@@ -186,11 +272,12 @@ function PairedUsersList({
   users: PairedUserInfo[];
   onUnpairUser: (platform: string, userId: string) => void;
 }) {
+  const intl = useIntl();
   if (users.length === 0) return null;
 
   return (
     <div className="space-y-1 mt-2">
-      <h4 className="text-xs text-text-muted font-medium">Paired Users</h4>
+      <h4 className="text-xs text-text-muted font-medium">{intl.formatMessage(i18n.pairedUsers)}</h4>
       {users.map((user) => (
         <div
           key={`${user.platform}-${user.user_id}`}
@@ -231,6 +318,7 @@ function TelegramGatewayCard({
   onGenerateCode: () => void;
   onUnpairUser: (platform: string, userId: string) => void;
 }) {
+  const intl = useIntl();
   const [botToken, setBotToken] = useState('');
   const [busy, setBusy] = useState(false);
   const running = status?.running ?? false;
@@ -256,15 +344,15 @@ function TelegramGatewayCard({
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            Telegram
+            {intl.formatMessage(i18n.telegram)}
             {running && (
               <span className="inline-flex items-center text-xs text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
-                Running
+                {intl.formatMessage(i18n.running)}
               </span>
             )}
             {!running && configured && (
               <span className="inline-flex items-center text-xs text-yellow-700 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded-full">
-                Stopped
+                {intl.formatMessage(i18n.stopped)}
               </span>
             )}
           </CardTitle>
@@ -272,18 +360,18 @@ function TelegramGatewayCard({
             {running && (
               <>
                 <Button variant="outline" size="sm" onClick={onGenerateCode}>
-                  Pair Device
+                  {intl.formatMessage(i18n.pairDevice)}
                 </Button>
                 <Button variant="destructive" size="sm" disabled={busy} onClick={wrap(onStop)}>
                   <Square className="h-3 w-3 mr-1" />
-                  Stop
+                  {intl.formatMessage(i18n.stop)}
                 </Button>
               </>
             )}
             {!running && configured && (
               <>
                 <Button size="sm" disabled={busy} onClick={wrap(onRestart)}>
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Start'}
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : intl.formatMessage(i18n.start)}
                 </Button>
                 <Button
                   variant="outline"
@@ -293,7 +381,7 @@ function TelegramGatewayCard({
                   className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
                 >
                   <Trash2 className="h-3 w-3 mr-1" />
-                  Remove
+                  {intl.formatMessage(i18n.remove)}
                 </Button>
               </>
             )}
@@ -305,33 +393,20 @@ function TelegramGatewayCard({
           <>
             <div className="text-xs text-text-muted space-y-1.5 mb-2">
               <p>
-                Open{' '}
-                <a
-                  href="https://t.me/BotFather"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  @BotFather
-                  <ExternalLink className="h-3 w-3" />
-                </a>{' '}
-                on your phone, send{' '}
-                <code className="bg-background-muted px-1 py-0.5 rounded">/newbot</code>, and follow
-                the prompts to name your bot. BotFather will reply with an API token — paste it
-                below.
+                {intl.formatMessage(i18n.botFatherInstructions)}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <Input
                 type="password"
-                placeholder="Paste bot token here"
+                placeholder={intl.formatMessage(i18n.pasteBotToken)}
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleFirstStart()}
                 className="text-sm"
               />
               <Button size="sm" onClick={handleFirstStart} disabled={busy || !botToken.trim()}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Start'}
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : intl.formatMessage(i18n.start)}
               </Button>
             </div>
           </>
@@ -357,6 +432,7 @@ function PairingCodeModal({
   onCopy: (text: string) => void;
   copied: boolean;
 }) {
+  const intl = useIntl();
   const [timeRemaining, setTimeRemaining] = useState(0);
 
   useEffect(() => {
@@ -384,7 +460,7 @@ function PairingCodeModal({
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Pairing Code</DialogTitle>
+          <DialogTitle>{intl.formatMessage(i18n.pairingCode)}</DialogTitle>
         </DialogHeader>
 
         <div className="py-6 space-y-4">
@@ -405,18 +481,19 @@ function PairingCodeModal({
           </div>
 
           <p className="text-center text-sm text-text-muted">
-            Send this code to your <span className="capitalize font-medium">{gatewayType}</span> bot
-            to pair.
+            {intl.formatMessage(i18n.sendCodeToPair, { gatewayType })}
           </p>
 
           <div className="text-center text-xs text-text-muted">
-            Expires in {minutes}:{seconds.toString().padStart(2, '0')}
+            {intl.formatMessage(i18n.expiresIn, {
+              time: `${minutes}:${seconds.toString().padStart(2, '0')}`,
+            })}
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Close
+            {intl.formatMessage(i18n.close)}
           </Button>
         </DialogFooter>
       </DialogContent>

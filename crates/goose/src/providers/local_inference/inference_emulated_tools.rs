@@ -29,8 +29,8 @@ use std::borrow::Cow;
 use uuid::Uuid;
 
 use super::inference_engine::{
-    create_and_prefill_context, generation_loop, validate_and_compute_context, GenerationContext,
-    TokenAction,
+    create_and_prefill_context, create_and_prefill_multimodal, generation_loop,
+    validate_and_compute_context, GenerationContext, TokenAction,
 };
 use super::{finalize_usage, StreamSender, CODE_EXECUTION_TOOL, SHELL_TOOL};
 
@@ -370,26 +370,32 @@ pub(super) fn generate_with_emulated_tools(
             ProviderError::ExecutionError(format!("Failed to apply chat template: {}", e))
         })?;
 
-    let tokens = ctx
-        .loaded
-        .model
-        .str_to_token(&prompt, AddBos::Never)
-        .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-
-    let (prompt_token_count, effective_ctx) = validate_and_compute_context(
-        ctx.loaded,
-        ctx.runtime,
-        tokens.len(),
-        ctx.context_limit,
-        ctx.settings,
-    )?;
-    let mut llama_ctx = create_and_prefill_context(
-        ctx.loaded,
-        ctx.runtime,
-        &tokens,
-        effective_ctx,
-        ctx.settings,
-    )?;
+    let (mut llama_ctx, prompt_token_count, effective_ctx) = if !ctx.images.is_empty() {
+        create_and_prefill_multimodal(
+            ctx.loaded,
+            ctx.runtime,
+            &prompt,
+            ctx.images,
+            ctx.context_limit,
+            ctx.settings,
+        )?
+    } else {
+        let tokens = ctx
+            .loaded
+            .model
+            .str_to_token(&prompt, AddBos::Never)
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+        let (ptc, ectx) = validate_and_compute_context(
+            ctx.loaded,
+            ctx.runtime,
+            tokens.len(),
+            ctx.context_limit,
+            ctx.settings,
+        )?;
+        let lctx =
+            create_and_prefill_context(ctx.loaded, ctx.runtime, &tokens, ectx, ctx.settings)?;
+        (lctx, ptc, ectx)
+    };
 
     let message_id = ctx.message_id;
     let tx = ctx.tx;

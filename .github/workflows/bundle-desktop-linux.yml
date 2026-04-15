@@ -21,7 +21,7 @@ name: "Bundle Desktop (Linux)"
 jobs:
   build-desktop-linux:
     name: Build Desktop (Linux)
-    runs-on: ubuntu-x86-16core-64gb
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository

@@ -1,8 +1,32 @@
 import React, { useEffect, useState, useRef, KeyboardEvent } from 'react';
+import { defineMessages, useIntl } from '../../i18n';
 import { Search as SearchIcon } from 'lucide-react';
 import { ArrowDown, ArrowUp, Close } from '../icons';
 import debounce from 'lodash/debounce';
 import { Button } from '../ui/button';
+
+const i18nMessages = defineMessages({
+  defaultPlaceholder: {
+    id: 'searchBar.placeholder',
+    defaultMessage: 'Search conversation...',
+  },
+  caseSensitive: {
+    id: 'searchBar.caseSensitive',
+    defaultMessage: 'Case Sensitive',
+  },
+  previous: {
+    id: 'searchBar.previous',
+    defaultMessage: 'Previous ({shortcut})',
+  },
+  next: {
+    id: 'searchBar.next',
+    defaultMessage: 'Next ({shortcut})',
+  },
+  close: {
+    id: 'searchBar.close',
+    defaultMessage: 'Close ({shortcut})',
+  },
+});
 
 /**
  * Props for the SearchBar component
@@ -37,8 +61,10 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   searchResults,
   inputRef: externalInputRef,
   initialSearchTerm = '',
-  placeholder = 'Search conversation...',
+  placeholder,
 }: SearchBarProps) => {
+  const intl = useIntl();
+  const resolvedPlaceholder = placeholder ?? intl.formatMessage(i18nMessages.defaultPlaceholder);
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -161,7 +187,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               value={searchTerm}
               onChange={handleSearch}
               onKeyDown={handleKeyDown}
-              placeholder={placeholder}
+              placeholder={resolvedPlaceholder}
               className="no-drag w-full text-sm pl-9 pr-24 py-3 bg-background-inverse text-text-inverse
                       placeholder:text-text-inverse/50 focus:outline-none 
                        active:border-border-secondary"
@@ -190,7 +216,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                 ? 'bg-white/20 shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] text-text-inverse hover:bg-white/25'
                 : 'text-text-inverse/70 hover:text-text-inverse hover:bg-white/10'
             }`}
-            title="Case Sensitive"
+            title={intl.formatMessage(i18nMessages.caseSensitive)}
           >
             <span className="text-md font-normal">Aa</span>
           </Button>
@@ -200,7 +226,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               onClick={(e) => handleNavigate('prev', e)}
               variant="ghost"
               className="no-drag flex items-center justify-center min-w-[32px] h-[28px] rounded transition-all duration-150 text-text-inverse/70 hover:text-text-inverse hover:bg-white/10"
-              title="Previous (↑)"
+              title={intl.formatMessage(i18nMessages.previous, { shortcut: '↑' })}
             >
               <ArrowUp
                 className={`h-5 w-5 transition-opacity ${!hasResults ? 'opacity-30' : ''}`}
@@ -210,7 +236,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               onClick={(e) => handleNavigate('next', e)}
               variant="ghost"
               className="no-drag flex items-center justify-center min-w-[32px] h-[28px] rounded transition-all duration-150 text-text-inverse/70 hover:text-text-inverse hover:bg-white/10"
-              title="Next (↓ or Enter)"
+              title={intl.formatMessage(i18nMessages.next, { shortcut: '↓ or Enter' })}
             >
               <ArrowDown
                 className={`h-5 w-5 transition-opacity ${!hasResults ? 'opacity-30' : ''}`}
@@ -222,7 +248,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             onClick={handleClose}
             variant="ghost"
             className="no-drag flex items-center justify-center min-w-[32px] h-[28px] rounded transition-all duration-150 text-text-inverse/70 hover:text-text-inverse hover:bg-white/10"
-            title="Close (Esc)"
+            title={intl.formatMessage(i18nMessages.close, { shortcut: 'Esc' })}
           >
             <Close className="h-5 w-5" />
           </Button>

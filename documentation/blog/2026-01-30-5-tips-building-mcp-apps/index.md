@@ -1,12 +1,13 @@
 ---
 title: "5 Tips for Building MCP Apps That Work"
 description: "5 expert tips on building better MCP Apps for your AI agents"
+image: /img/blog/mcp-apps-tips-blogbanner.png
 authors: 
     - rizel
     - matt
 ---
 
-![Level Up Your MCP Apps - goose and MCP Jam](blogbanner.png)
+![Level Up Your MCP Apps - goose and MCP Jam](/img/blog/mcp-apps-tips-blogbanner.png)
 
 [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps) allow you to render interactive UI directly inside any agent supporting the Model Context Protocol. Instead of a wall of text, your agent can now provide a functional chart, a checkout form, or a video player. This bridges the gap in agentic workflows: clicking a button is often clearer than describing the action you hope an agent executes.
 
@@ -336,7 +337,7 @@ registerAppTool(server, "delete-email", {
 MCP Apps open up a new dimension for agent interactions. Now it's time to build your own.
 
 - **Test with [MCPJam](https://mcpjam.com/)** — the open source local inspector for MCP Apps, ChatGPT apps SDK, and MCP servers. Perfect for debugging and iterating on your app before shipping.
-- **Run in [goose](https://github.com/block/goose)** — an open source AI agent that renders MCP Apps directly in the chat interface. See your app come to life in a real agent environment.
+- **Run in [goose](https://github.com/aaif-goose/goose)** — an open source AI agent that renders MCP Apps directly in the chat interface. See your app come to life in a real agent environment.
 
 Ready to dive deeper? Check out the [MCP Apps tutorial](/docs/tutorials/building-mcp-apps) or [build your first MCP App with MCPJam](https://docs.mcpjam.com/guides/first-mcp-app).
 
@@ -344,12 +345,12 @@ Ready to dive deeper? Check out the [MCP Apps tutorial](/docs/tutorials/building
   <link rel="canonical" href="https://www.mcpjam.com/blog/mcp-apps-tips" />
   <meta property="og:title" content="5 Tips for Building MCP Apps That Work" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/01/30/5-tips-building-mcp-apps" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/01/30/5-tips-building-mcp-apps" />
   <meta property="og:description" content="5 expert tips on building better MCP Apps for your AI agents" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/blogbanner-2663f4e7979c47f3f4921df4ce960920.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/blogbanner-2663f4e7979c47f3f4921df4ce960920.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="5 Tips for Building MCP Apps That Work" />
   <meta name="twitter:description" content="5 expert tips on building better MCP Apps for your AI agents" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/blogbanner-2663f4e7979c47f3f4921df4ce960920.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/blogbanner-2663f4e7979c47f3f4921df4ce960920.png" />
 </head>

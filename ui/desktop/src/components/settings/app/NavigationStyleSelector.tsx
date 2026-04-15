@@ -1,34 +1,55 @@
 import React from 'react';
 import { LayoutGrid, List } from 'lucide-react';
+import { defineMessages, useIntl } from '../../../i18n';
 import { useNavigationContext, NavigationStyle } from '../../Layout/NavigationContext';
 import { cn } from '../../../utils';
+
+const i18n = defineMessages({
+  tileLabel: {
+    id: 'navigationStyleSelector.tileLabel',
+    defaultMessage: 'Tile',
+  },
+  tileDescription: {
+    id: 'navigationStyleSelector.tileDescription',
+    defaultMessage: 'Enlarged tile view',
+  },
+  listLabel: {
+    id: 'navigationStyleSelector.listLabel',
+    defaultMessage: 'List',
+  },
+  listDescription: {
+    id: 'navigationStyleSelector.listDescription',
+    defaultMessage: 'Classic condensed view',
+  },
+});
 
 interface NavigationStyleSelectorProps {
   className?: string;
 }
 
-const styles: {
-  value: NavigationStyle;
-  label: string;
-  icon: React.ReactNode;
-  description: string;
-}[] = [
-  {
-    value: 'expanded',
-    label: 'Tile',
-    icon: <LayoutGrid className="w-5 h-5" />,
-    description: 'Enlarged tile view',
-  },
-  {
-    value: 'condensed',
-    label: 'List',
-    icon: <List className="w-5 h-5" />,
-    description: 'Classic condensed view',
-  },
-];
-
 export const NavigationStyleSelector: React.FC<NavigationStyleSelectorProps> = ({ className }) => {
   const { navigationStyle, setNavigationStyle } = useNavigationContext();
+  const intl = useIntl();
+
+  const styles: {
+    value: NavigationStyle;
+    label: string;
+    icon: React.ReactNode;
+    description: string;
+  }[] = [
+    {
+      value: 'expanded',
+      label: intl.formatMessage(i18n.tileLabel),
+      icon: <LayoutGrid className="w-5 h-5" />,
+      description: intl.formatMessage(i18n.tileDescription),
+    },
+    {
+      value: 'condensed',
+      label: intl.formatMessage(i18n.listLabel),
+      icon: <List className="w-5 h-5" />,
+      description: intl.formatMessage(i18n.listDescription),
+    },
+  ];
 
   return (
     <div className={className}>

@@ -9,7 +9,7 @@ export type AddExtensionRequest = {
     /**
      * Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform).
      */
-    config: unknown;
+    config?: unknown;
 };
 
 /**
@@ -34,6 +34,9 @@ export type GetToolsRequest = {
     sessionId: string;
 };
 
+/**
+ * Tools response.
+ */
 export type GetToolsResponse = {
     /**
      * Array of tool info objects with `name`, `description`, `parameters`, and optional `permission`.
@@ -50,11 +53,14 @@ export type ReadResourceRequest = {
     extensionName: string;
 };
 
+/**
+ * Resource read response.
+ */
 export type ReadResourceResponse = {
     /**
      * The resource result from the extension (MCP ReadResourceResult).
      */
-    result: unknown;
+    result?: unknown;
 };
 
 /**
@@ -66,24 +72,6 @@ export type UpdateWorkingDirRequest = {
 };
 
 /**
- * Get a session by ID.
- */
-export type GetSessionRequest = {
-    sessionId: string;
-    includeMessages?: boolean;
-};
-
-/**
- * Get a session response.
- */
-export type GetSessionResponse = {
-    /**
-     * The session object with id, name, working_dir, timestamps, tokens, etc.
-     */
-    session: unknown;
-};
-
-/**
  * Delete a session.
  */
 export type DeleteSessionRequest = {
@@ -91,28 +79,10 @@ export type DeleteSessionRequest = {
 };
 
 /**
- * Export a session as a JSON string.
+ * List configured extensions and any warnings.
  */
-export type ExportSessionRequest = {
-    sessionId: string;
-};
-
-export type ExportSessionResponse = {
-    data: string;
-};
-
-/**
- * Import a session from a JSON string.
- */
-export type ImportSessionRequest = {
-    data: string;
-};
-
-export type ImportSessionResponse = {
-    /**
-     * The imported session object.
-     */
-    session: unknown;
+export type GetExtensionsRequest = {
+    [key: string]: unknown;
 };
 
 /**
@@ -126,17 +96,217 @@ export type GetExtensionsResponse = {
     warnings: Array<string>;
 };
 
+/**
+ * Atomically update the provider for a live session.
+ */
+export type UpdateProviderRequest = {
+    sessionId: string;
+    provider: string;
+    model?: string | null;
+    contextLimit?: number | null;
+    requestParams?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * Provider update response.
+ */
+export type UpdateProviderResponse = {
+    /**
+     * Refreshed session config options after the provider/model change.
+     */
+    configOptions: Array<unknown>;
+};
+
+/**
+ * List providers available through goose, including the config-default sentinel.
+ */
+export type ListProvidersRequest = {
+    [key: string]: unknown;
+};
+
+/**
+ * Provider list response.
+ */
+export type ListProvidersResponse = {
+    providers: Array<ProviderListEntry>;
+};
+
+export type ProviderListEntry = {
+    id: string;
+    label: string;
+};
+
+/**
+ * List providers with full metadata (config keys, setup steps, etc.).
+ */
+export type GetProviderDetailsRequest = {
+    [key: string]: unknown;
+};
+
+/**
+ * Provider details response.
+ */
+export type GetProviderDetailsResponse = {
+    providers: Array<ProviderDetailEntry>;
+};
+
+export type ProviderDetailEntry = {
+    name: string;
+    displayName: string;
+    description: string;
+    defaultModel: string;
+    isConfigured: boolean;
+    providerType: string;
+    configKeys: Array<ProviderConfigKey>;
+    setupSteps?: Array<string>;
+    knownModels?: Array<ModelEntry>;
+};
+
+export type ProviderConfigKey = {
+    name: string;
+    required: boolean;
+    secret: boolean;
+    default?: string | null;
+    oauthFlow?: boolean;
+    deviceCodeFlow?: boolean;
+    primary?: boolean;
+};
+
+export type ModelEntry = {
+    name: string;
+    contextLimit: number;
+};
+
+/**
+ * Fetch the full list of models available for a specific provider.
+ */
+export type GetProviderModelsRequest = {
+    providerName: string;
+};
+
+/**
+ * Provider models response.
+ */
+export type GetProviderModelsResponse = {
+    models: Array<string>;
+};
+
+/**
+ * Read a single non-secret config value.
+ */
+export type ReadConfigRequest = {
+    key: string;
+};
+
+/**
+ * Config read response.
+ */
+export type ReadConfigResponse = {
+    value?: unknown;
+};
+
+/**
+ * Upsert a single non-secret config value.
+ */
+export type UpsertConfigRequest = {
+    key: string;
+    value: unknown;
+};
+
+/**
+ * Remove a single non-secret config value.
+ */
+export type RemoveConfigRequest = {
+    key: string;
+};
+
+/**
+ * Check whether a secret exists. Never returns the actual value.
+ */
+export type CheckSecretRequest = {
+    key: string;
+};
+
+/**
+ * Secret check response.
+ */
+export type CheckSecretResponse = {
+    exists: boolean;
+};
+
+/**
+ * Set a secret value (write-only).
+ */
+export type UpsertSecretRequest = {
+    key: string;
+    value: unknown;
+};
+
+/**
+ * Remove a secret.
+ */
+export type RemoveSecretRequest = {
+    key: string;
+};
+
+/**
+ * Export a session as a JSON string.
+ */
+export type ExportSessionRequest = {
+    sessionId: string;
+};
+
+/**
+ * Export session response — raw JSON of the goose session with `conversation`.
+ */
+export type ExportSessionResponse = {
+    data: string;
+};
+
+/**
+ * Import a session from a JSON string.
+ */
+export type ImportSessionRequest = {
+    data: string;
+};
+
+/**
+ * Import session response — metadata about the newly created session.
+ */
+export type ImportSessionResponse = {
+    sessionId: string;
+    title?: string | null;
+    updatedAt?: string | null;
+    messageCount: number;
+};
+
+/**
+ * Archive a session (soft delete).
+ */
+export type ArchiveSessionRequest = {
+    sessionId: string;
+};
+
+/**
+ * Unarchive a previously archived session.
+ */
+export type UnarchiveSessionRequest = {
+    sessionId: string;
+};
+
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | GetSessionRequest | DeleteSessionRequest | ExportSessionRequest | ImportSessionRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | UpdateProviderRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderModelsRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetSessionResponse | ExportSessionResponse | ImportSessionResponse | GetExtensionsResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | UpdateProviderResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderModelsResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | unknown;
 } | {
     error: {
         code: number;

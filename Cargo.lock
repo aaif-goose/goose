@@ -1724,9 +1724,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.57"
+version = "1.2.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a0dd1ca384932ff3641c8718a02769f1698e7563dc6974ffd03346116310423"
+checksum = "b7a4d3ec6524d28a329fc53654bbadc9bdd7b0431f5d65f1a56ffb28a1ee5283"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -4326,7 +4326,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "agent-client-protocol-schema",
  "ahash",
@@ -4369,6 +4369,7 @@ dependencies = [
  "jsonwebtoken",
  "keyring",
  "lazy_static",
+ "libc",
  "llama-cpp-2",
  "lru",
  "minijinja",
@@ -4446,19 +4447,19 @@ dependencies = [
 
 [[package]]
 name = "goose-acp"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
  "async-stream",
  "async-trait",
  "axum",
- "clap",
  "fs-err",
  "futures",
  "goose",
  "goose-acp-macros",
  "goose-mcp",
+ "goose-sdk",
  "goose-test-support",
  "http-body-util",
  "regex",
@@ -4475,7 +4476,6 @@ dependencies = [
  "tokio-util",
  "tower-http",
  "tracing",
- "tracing-subscriber",
  "url",
  "uuid",
  "wiremock",
@@ -4483,7 +4483,7 @@ dependencies = [
 
 [[package]]
 name = "goose-acp-macros"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -4491,11 +4491,12 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "anstream 0.6.21",
  "anyhow",
  "async-trait",
+ "axum",
  "base64 0.22.1",
  "bat",
  "bzip2",
@@ -4543,7 +4544,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4571,8 +4572,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "goose-sdk"
+version = "1.31.0"
+dependencies = [
+ "agent-client-protocol-schema",
+ "sacp",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "goose-server"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -4619,7 +4633,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -4627,7 +4641,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.29.0"
+version = "1.31.0"
 dependencies = [
  "axum",
  "env-lock",
@@ -5747,9 +5761,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.184"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
 
 [[package]]
 name = "libdbus-sys"
@@ -5846,9 +5860,9 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
 name = "llama-cpp-2"
-version = "0.1.140"
+version = "0.1.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5604c13b9c847157470479a64d1d7c94f3089709309f82f2fdcbcd43510f2f2"
+checksum = "d564eb5d7ae88f596e7636ffd549e0f27f4c938a7c7841bb91e2a92c248c9ccb"
 dependencies = [
  "encoding_rs",
  "enumflags2",
@@ -5860,9 +5874,9 @@ dependencies = [
 
 [[package]]
 name = "llama-cpp-sys-2"
-version = "0.1.140"
+version = "0.1.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbdd3e2c06f3a9a47466a631735946e9ad47fef565b88bc8766a3794474a66f3"
+checksum = "2f2cf3435dbadb87817e0a95325c818cd89d43026e8ba1ddd32f1d980d96f33d"
 dependencies = [
  "bindgen",
  "cc",
@@ -11300,9 +11314,9 @@ checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da36089a805484bcccfffe0739803392c8298778a2d2f09febf76fac5ad9025b"
+checksum = "9629274872b2bfaf8d66f5f15725007f635594914870f65218920345aa11aa8c"
 
 [[package]]
 name = "unicode-width"

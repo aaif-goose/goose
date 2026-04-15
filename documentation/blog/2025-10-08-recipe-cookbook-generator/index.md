@@ -92,7 +92,7 @@ The tool should automatically identify good candidates for parameters. I had ide
 ### 4. Template Generation
 
 :::tip
-I wanted goose to write all the recipes for me, but to be as up-to-date as possible. I cloned the [goose repository](https://github.com/block/goose) and told goose to examine its own source code to learn how to successfully create recipes, and be sure to use proper YAML syntax.
+I wanted goose to write all the recipes for me, but to be as up-to-date as possible. I cloned the [goose repository](https://github.com/aaif-goose/goose) and told goose to examine its own source code to learn how to successfully create recipes, and be sure to use proper YAML syntax.
 :::
 
 From that, I had goose think about the following ideas as it considered how to make my recipes:
@@ -169,7 +169,7 @@ Start building your own cookbook generator, and stop doing the same work twice. 
 
 ## Contribute to Our Community Cookbook
 
-Want to contribute your own recipes or improvements to the cookbook generator? Join our [Discord community](https://discord.gg/goose-oss) or check out our [GitHub repository](https://github.com/block/goose) for more automation ideas. Join our [Hacktoberfest](https://github.com/block/goose/issues/4705) event going on to contribute recipes and prompt ideas to get on our leaderboard to win some great prizes!
+Want to contribute your own recipes or improvements to the cookbook generator? Join our [Discord community](https://discord.gg/goose-oss) or check out our [GitHub repository](https://github.com/aaif-goose/goose) for more automation ideas. Join our [Hacktoberfest](https://github.com/aaif-goose/goose/issues/4705) event going on to contribute recipes and prompt ideas to get on our leaderboard to win some great prizes!
 
 
 ## My Own Cookbook Generator Recipe
@@ -358,12 +358,12 @@ activities:
 <head>
   <meta property="og:title" content="Build Your Own Recipe Cookbook Generator for goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/10/08/recipe-cookbook-generator" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/10/08/recipe-cookbook-generator" />
   <meta property="og:description" content="Discover how goose can study your past sessions and turn your favorite workflows into reusable automation templates." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Build Your Own Recipe Cookbook Generator for goose" />
   <meta name="twitter:description" content="Discover how goose can study your past sessions and turn your favorite workflows into reusable automation templates." />
-  <meta property="twitter:domain" content="block.github.io/goose" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/recipe-cookbook-generator-ba6ce396585e1fc591e339720ee80a30.png" />
 </head>

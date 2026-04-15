@@ -1,0 +1,7 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+Default permissions for the app test driver plugin.
+"""
+permissions = ["allow-driver-result"]

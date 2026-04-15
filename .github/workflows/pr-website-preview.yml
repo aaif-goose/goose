@@ -17,6 +17,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout the branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
@@ -34,14 +37,14 @@ jobs:
           INKEEP_API_KEY: ${{ secrets.INKEEP_API_KEY }}
           INKEEP_INTEGRATION_ID: ${{ secrets.INKEEP_INTEGRATION_ID }}
           INKEEP_ORG_ID: ${{ secrets.INKEEP_ORG_ID }}
-          TARGET_PATH: "/goose/pr-preview/pr-${{ github.event.number }}/"
+          TARGET_PATH: "/pr-preview/pr-${{ github.event.number }}/"
         run: |
           npm install
           npm run build
 
       - name: Deploy preview
         uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9  # v1.8.1
-        if: ${{ github.event.pull_request.head.repo.full_name == 'block/goose' }}
+        if: ${{ github.event.pull_request.head.repo.full_name == 'aaif-goose/goose' }}
         with:
           source-dir: documentation/build
 

@@ -3,7 +3,6 @@ import { Recipe } from '../api';
 import { UserInput } from '../types/message';
 
 export type View =
-  | 'welcome'
   | 'chat'
   | 'pair'
   | 'settings'
@@ -18,6 +17,7 @@ export type View =
   | 'sharedSession'
   | 'loading'
   | 'recipes'
+  | 'skills'
   | 'permission';
 
 export type ViewOptions = {
@@ -67,6 +67,9 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
       case 'recipes':
         navigate('/recipes', { state: options });
         break;
+      case 'skills':
+        navigate('/skills', { state: options });
+        break;
       case 'permission':
         navigate('/permission', { state: options });
         break;
@@ -77,9 +80,6 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
         navigate('/shared-session', { state: options });
         break;
 
-      case 'welcome':
-        navigate('/welcome', { state: options });
-        break;
       case 'extensions':
         navigate('/extensions', { state: options });
         break;

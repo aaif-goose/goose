@@ -16,7 +16,7 @@ on:
 jobs:
   machete:
     runs-on: ubuntu-latest
-    if: github.repository == 'block/goose'
+    if: github.repository == 'aaif-goose/goose'
     permissions:
       contents: read
     steps:

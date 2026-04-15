@@ -151,12 +151,12 @@ The early results suggest this approach resonates with developers who want to gr
 <head>
   <meta property="og:title" content="Transforming AI Assistance from Automation to Education: The Story Behind Goose Mentor Mode" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/14/transforming-ai-assistance-gooe-mentor-mode" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/14/transforming-ai-assistance-gooe-mentor-mode" />
   <meta property="og:description" content="How a Junior developer's AI Agent confusion, led to creating an educational MCP extension that transforms Goose from an automation tool into a learning mentor." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-mentor-mode-header-77058a250a163440d791e057ef3196ea.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-mentor-mode-header-77058a250a163440d791e057ef3196ea.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Transforming AI Assistance from Automation to Education: The Story Behind Goose Mentor Mode" />
   <meta name="twitter:description" content="How a Junior developer's AI Agent confusion, led to creating an educational MCP extension that transforms Goose from an automation tool into a learning mentor." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-mentor-mode-header-77058a250a163440d791e057ef3196ea.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-mentor-mode-header-77058a250a163440d791e057ef3196ea.png" />
 </head>

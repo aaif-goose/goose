@@ -1,0 +1,6 @@
+{
+  "noModel": "No model",
+  "sessionTitle": "Session: {{id}}",
+  "tokens_one": "{{displayCount}} token",
+  "tokens_other": "{{displayCount}} tokens"
+}

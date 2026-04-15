@@ -1,0 +1,72 @@
+{
+  "avatar": {
+    "chooseDialogTitle": "Elegir imagen de avatar",
+    "dialogFilterName": "Imagen",
+    "loadFailed": "No se pudo cargar la imagen",
+    "previewAlt": "Vista previa del avatar",
+    "removeAria": "Quitar avatar",
+    "saveFailed": "No se pudo guardar el avatar",
+    "unsupportedType": "Tipo de imagen no compatible",
+    "uploadAria": "Suelta una imagen o haz clic para subir un avatar"
+  },
+  "card": {
+    "ariaLabel": "Persona: {{name}}",
+    "options": "Opciones de la persona"
+  },
+  "config": {
+    "ariaLabel": "Configuración del agente",
+    "createAgent": "Crear agente",
+    "fromPersona": "(desde la persona: {{value}})",
+    "model": "Modelo",
+    "modelPlaceholder": "p. ej. claude-sonnet-4-20250514",
+    "name": "Nombre",
+    "namePlaceholder": "Mi agente",
+    "persona": "Persona",
+    "provider": "Proveedor",
+    "systemPromptOverrideCollapsed": "Sobrescribir prompt del sistema [+]",
+    "systemPromptOverrideExpanded": "Sobrescribir prompt del sistema [-]",
+    "systemPromptPlaceholder": "Sobrescribe el prompt del sistema de la persona...",
+    "updateAgent": "Actualizar agente"
+  },
+  "editor": {
+    "create": "Crear",
+    "displayName": "Nombre para mostrar",
+    "displayNamePlaceholder": "p. ej. Revisor de código",
+    "duplicate": "Duplicar",
+    "editTitle": "Editar persona",
+    "model": "Modelo",
+    "modelPlaceholder": "p. ej. claude-sonnet-4-20250514",
+    "newTitle": "Nueva persona",
+    "provider": "Proveedor",
+    "saving": "Guardando...",
+    "systemPrompt": "Prompt del sistema",
+    "systemPromptPlaceholder": "Eres un asistente útil que..."
+  },
+  "gallery": {
+    "createAria": "Crear nueva persona",
+    "dropFile": "o suelta un archivo",
+    "loading": "Cargando personas",
+    "new": "Nueva persona"
+  },
+  "statuses": {
+    "error": "Error",
+    "offline": "Desconectado",
+    "online": "En línea",
+    "starting": "Iniciando"
+  },
+  "view": {
+    "activeAgents": "Agentes activos",
+    "activeAgentsAria": "Agentes activos",
+    "copyName": "{{name}} (Copia)",
+    "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
+    "deleteTitle": "¿Eliminar persona?",
+    "description": "Configuraciones de persona personalizadas para flujos de trabajo específicos",
+    "emptyAgentsDescription": "Crea un agente desde una persona para empezar.",
+    "emptyAgentsTitle": "No hay agentes activos",
+    "exportedTo": "Exportado a {{filename}}",
+    "newPersona": "Nueva persona",
+    "optionsAria": "Opciones de {{name}}",
+    "searchPlaceholder": "Buscar personas...",
+    "title": "Personas"
+  }
+}

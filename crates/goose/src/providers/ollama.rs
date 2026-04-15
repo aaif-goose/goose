@@ -51,6 +51,7 @@ pub struct OllamaProvider {
     model: ModelConfig,
     supports_streaming: bool,
     name: String,
+    skip_canonical_filtering: bool,
 }
 fn resolve_ollama_num_ctx(model_config: &ModelConfig) -> Option<usize> {
     let config = crate::config::Config::global();
@@ -131,6 +132,7 @@ impl OllamaProvider {
             model,
             supports_streaming: true,
             name: OLLAMA_PROVIDER_NAME.to_string(),
+            skip_canonical_filtering: false,
         })
     }
 
@@ -182,11 +184,18 @@ impl OllamaProvider {
             ));
         }
 
+        let model = if let Some(ref fast_model_name) = config.fast_model {
+            model.with_fast(fast_model_name, &config.name)?
+        } else {
+            model
+        };
+
         Ok(Self {
             api_client,
             model,
             supports_streaming,
             name: config.name.clone(),
+            skip_canonical_filtering: config.skip_canonical_filtering,
         })
     }
 }
@@ -227,6 +236,10 @@ impl ProviderDef for OllamaProvider {
 impl Provider for OllamaProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    fn skip_canonical_filtering(&self) -> bool {
+        self.skip_canonical_filtering
     }
 
     fn get_model_config(&self) -> ModelConfig {

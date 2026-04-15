@@ -37,7 +37,7 @@ CLI providers are useful if you:
 #### Workflow Integration  
 - **Recipe compatibility**: Use CLI providers in automated goose recipes
 - **Scheduling support**: Include in scheduled tasks and workflows
-- **Hybrid configurations**: Combine with LLM providers using lead/worker patterns
+- **Hybrid configurations**: Combine with planning mode and model-specific workflows
 
 #### Interface Consistency
 - **Unified commands**: Use the same `goose session` interface across all providers
@@ -260,16 +260,16 @@ Once configured, you can start a goose session using these providers just like a
 goose session
 ```
 
-### Combining with Other Models
+### Combining with Planner Models
 
-CLI providers work well in combination with other models using goose's [lead/worker pattern](/docs/tutorials/lead-worker):
+CLI providers also work well with planning mode when you want one model for strategy and another for execution:
 
 ```bash
-# Use Claude Code as lead model, GPT-4o as worker
-export GOOSE_LEAD_PROVIDER=claude-code
-export GOOSE_PROVIDER=openai
-export GOOSE_MODEL=gpt-4o
-export GOOSE_LEAD_MODEL=default
+# Use Claude Code for execution, OpenAI for planning
+export GOOSE_PROVIDER=claude-code
+export GOOSE_MODEL=default
+export GOOSE_PLANNER_PROVIDER=openai
+export GOOSE_PLANNER_MODEL=gpt-4o
 
 goose session
 ```

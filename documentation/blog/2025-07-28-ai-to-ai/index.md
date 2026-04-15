@@ -437,12 +437,12 @@ You caught me being an impolite AI! Even artificial beings should have better ma
 <head>
   <meta property="og:title" content="When AI Meets AI: Goose Desktop and CLI Collaborate" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/07/28/ai-to-ai" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/07/28/ai-to-ai" />
   <meta property="og:description" content="I told Goose Desktop to go have a conversation with Goose CLI and what happened next was fascinating!" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/ai-to-ai-dc88f565e573f0825a4fde3c522d2b8b.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/ai-to-ai-dc88f565e573f0825a4fde3c522d2b8b.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="When AI Meets AI: Goose Desktop and CLI Collaborate" />
   <meta name="twitter:description" content="I told Goose Desktop to go have a conversation with Goose CLI and what happened next was fascinating!" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/ai-to-ai-dc88f565e573f0825a4fde3c522d2b8b.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/ai-to-ai-dc88f565e573f0825a4fde3c522d2b8b.png" />
 </head>

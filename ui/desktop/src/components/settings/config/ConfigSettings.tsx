@@ -18,8 +18,77 @@ import {
   DialogTrigger,
 } from '../../ui/dialog';
 import { errorMessage } from '../../../utils/conversionUtils';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'configSettings.title',
+    defaultMessage: 'Configuration',
+  },
+  description: {
+    id: 'configSettings.description',
+    defaultMessage: 'Edit your goose configuration settings',
+  },
+  descriptionWithProvider: {
+    id: 'configSettings.descriptionWithProvider',
+    defaultMessage: 'Edit your goose configuration settings (current settings for {provider})',
+  },
+  editConfiguration: {
+    id: 'configSettings.editConfiguration',
+    defaultMessage: 'Edit Configuration',
+  },
+  configurationEditor: {
+    id: 'configSettings.configurationEditor',
+    defaultMessage: 'Configuration Editor',
+  },
+  noSettings: {
+    id: 'configSettings.noSettings',
+    defaultMessage: 'No configuration settings found.',
+  },
+  enterValue: {
+    id: 'configSettings.enterValue',
+    defaultMessage: 'Enter {name}',
+  },
+  saving: {
+    id: 'configSettings.saving',
+    defaultMessage: 'Saving...',
+  },
+  resetChanges: {
+    id: 'configSettings.resetChanges',
+    defaultMessage: 'Reset Changes',
+  },
+  done: {
+    id: 'configSettings.done',
+    defaultMessage: 'Done',
+  },
+  configUpdated: {
+    id: 'configSettings.configUpdated',
+    defaultMessage: 'Configuration Updated',
+  },
+  configUpdatedMsg: {
+    id: 'configSettings.configUpdatedMsg',
+    defaultMessage: 'Successfully saved "{name}"',
+  },
+  saveFailed: {
+    id: 'configSettings.saveFailed',
+    defaultMessage: 'Save Failed',
+  },
+  saveFailedMsg: {
+    id: 'configSettings.saveFailedMsg',
+    defaultMessage: 'Failed to save "{name}"',
+  },
+  configReset: {
+    id: 'configSettings.configReset',
+    defaultMessage: 'Configuration Reset',
+  },
+  configResetMsg: {
+    id: 'configSettings.configResetMsg',
+    defaultMessage: 'All changes have been reverted',
+  },
+});
 
 export default function ConfigSettings() {
+  const intl = useIntl();
   const { config, upsert } = useConfig();
   const typedConfig = config as ConfigData;
   const [configValues, setConfigValues] = useState<ConfigData>({});
@@ -70,8 +139,8 @@ export default function ConfigSettings() {
     try {
       await upsert(key, configValues[key], false);
       toastSuccess({
-        title: 'Configuration Updated',
-        msg: `Successfully saved "${getUiNames(key)}"`,
+        title: intl.formatMessage(i18n.configUpdated),
+        msg: intl.formatMessage(i18n.configUpdatedMsg, { name: getUiNames(key) }),
       });
 
       // Remove this key from modified keys since it's now saved
@@ -83,8 +152,8 @@ export default function ConfigSettings() {
     } catch (error) {
       console.error('Failed to save config:', error);
       toastError({
-        title: 'Save Failed',
-        msg: `Failed to save "${getUiNames(key)}"`,
+        title: intl.formatMessage(i18n.saveFailed),
+        msg: intl.formatMessage(i18n.saveFailedMsg, { name: getUiNames(key) }),
         traceback: errorMessage(error),
       });
     } finally {
@@ -96,8 +165,8 @@ export default function ConfigSettings() {
     setConfigValues(typedConfig);
     setModifiedKeys(new Set());
     toastSuccess({
-      title: 'Configuration Reset',
-      msg: 'All changes have been reverted',
+      title: intl.formatMessage(i18n.configReset),
+      msg: intl.formatMessage(i18n.configResetMsg),
     });
   };
 
@@ -141,11 +210,12 @@ export default function ConfigSettings() {
       <CardHeader className="pb-0">
         <CardTitle className="flex items-center gap-2">
           <FileText className="text-iconStandard" size={20} />
-          Configuration
+          {intl.formatMessage(i18n.title)}
         </CardTitle>
         <CardDescription>
-          Edit your goose configuration settings
-          {currentProvider && ` (current settings for ${currentProvider})`}
+          {currentProvider
+            ? intl.formatMessage(i18n.descriptionWithProvider, { provider: currentProvider })
+            : intl.formatMessage(i18n.description)}
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-4 px-4">
@@ -153,25 +223,26 @@ export default function ConfigSettings() {
           <DialogTrigger asChild>
             <Button className="flex items-center gap-2" variant="secondary" size="sm">
               <Settings className="h-4 w-4" />
-              Edit Configuration
+              {intl.formatMessage(i18n.editConfiguration)}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-4xl max-h-[80vh]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="text-iconStandard" size={20} />
-                Configuration Editor
+                {intl.formatMessage(i18n.configurationEditor)}
               </DialogTitle>
               <DialogDescription>
-                Edit your goose configuration settings
-                {currentProvider && ` (current settings for ${currentProvider})`}
+                {currentProvider
+                  ? intl.formatMessage(i18n.descriptionWithProvider, { provider: currentProvider })
+                  : intl.formatMessage(i18n.description)}
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex-1 max-h-[60vh] overflow-auto pr-4">
               <div className="space-y-4">
                 {configEntries.length === 0 ? (
-                  <p className="text-text-secondary">No configuration settings found.</p>
+                  <p className="text-text-secondary">{intl.formatMessage(i18n.noSettings)}</p>
                 ) : (
                   configEntries.map(([key, _value]) => (
                     <div key={key} className="grid grid-cols-[200px_1fr_auto] gap-3 items-center">
@@ -185,7 +256,7 @@ export default function ConfigSettings() {
                           'text-text-primary border-border-primary hover:border-border-primary transition-colors',
                           modifiedKeys.has(key) && 'border-blue-500 focus:ring-blue-500/20'
                         )}
-                        placeholder={`Enter ${getUiNames(key)}`}
+                        placeholder={intl.formatMessage(i18n.enterValue, { name: getUiNames(key) })}
                       />
                       <Button
                         onClick={() => handleSave(key)}
@@ -195,7 +266,7 @@ export default function ConfigSettings() {
                         className="min-w-[60px]"
                       >
                         {saving === key ? (
-                          <span className="text-xs">Saving...</span>
+                          <span className="text-xs">{intl.formatMessage(i18n.saving)}</span>
                         ) : (
                           <Save className="h-4 w-4" />
                         )}
@@ -210,11 +281,11 @@ export default function ConfigSettings() {
               {modifiedKeys.size > 0 && (
                 <Button onClick={handleReset} variant="outline">
                   <RotateCcw className="h-4 w-4 mr-2" />
-                  Reset Changes
+                  {intl.formatMessage(i18n.resetChanges)}
                 </Button>
               )}
               <Button onClick={() => setIsModalOpen(false)} variant="default">
-                Done
+                {intl.formatMessage(i18n.done)}
               </Button>
             </DialogFooter>
           </DialogContent>

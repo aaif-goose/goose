@@ -2,21 +2,43 @@ import GooseLogo from './GooseLogo';
 import AnimatedIcons from './AnimatedIcons';
 import FlyingBird from './FlyingBird';
 import { ChatState } from '../types/chatState';
+import { defineMessages, useIntl } from '../i18n';
 
 interface LoadingGooseProps {
   message?: string;
   chatState?: ChatState;
 }
 
-const STATE_MESSAGES: Record<ChatState, string> = {
-  [ChatState.LoadingConversation]: 'loading conversation...',
-  [ChatState.Thinking]: 'goose is thinking…',
-  [ChatState.Streaming]: 'goose is working on it…',
-  [ChatState.WaitingForUserInput]: 'goose is waiting…',
-  [ChatState.Compacting]: 'goose is compacting the conversation...',
-  [ChatState.Idle]: 'goose is working on it…',
-  [ChatState.RestartingAgent]: 'restarting session...',
-};
+const i18n = defineMessages({
+  loadingConversation: {
+    id: 'loadingGoose.loadingConversation',
+    defaultMessage: 'loading conversation...',
+  },
+  thinking: {
+    id: 'loadingGoose.thinking',
+    defaultMessage: 'goose is thinking…',
+  },
+  streaming: {
+    id: 'loadingGoose.streaming',
+    defaultMessage: 'goose is working on it…',
+  },
+  waiting: {
+    id: 'loadingGoose.waiting',
+    defaultMessage: 'goose is waiting…',
+  },
+  compacting: {
+    id: 'loadingGoose.compacting',
+    defaultMessage: 'goose is compacting the conversation...',
+  },
+  idle: {
+    id: 'loadingGoose.idle',
+    defaultMessage: 'goose is working on it…',
+  },
+  restartingAgent: {
+    id: 'loadingGoose.restartingAgent',
+    defaultMessage: 'restarting session...',
+  },
+});
 
 const STATE_ICONS: Record<ChatState, React.ReactNode> = {
   [ChatState.LoadingConversation]: <AnimatedIcons className="flex-shrink-0" cycleInterval={600} />,
@@ -30,8 +52,19 @@ const STATE_ICONS: Record<ChatState, React.ReactNode> = {
   [ChatState.RestartingAgent]: <AnimatedIcons className="flex-shrink-0" cycleInterval={600} />,
 };
 
+const STATE_MESSAGE_KEYS: Record<ChatState, keyof typeof i18n> = {
+  [ChatState.LoadingConversation]: 'loadingConversation',
+  [ChatState.Thinking]: 'thinking',
+  [ChatState.Streaming]: 'streaming',
+  [ChatState.WaitingForUserInput]: 'waiting',
+  [ChatState.Compacting]: 'compacting',
+  [ChatState.Idle]: 'idle',
+  [ChatState.RestartingAgent]: 'restartingAgent',
+};
+
 const LoadingGoose = ({ message, chatState = ChatState.Idle }: LoadingGooseProps) => {
-  const displayMessage = message || STATE_MESSAGES[chatState];
+  const intl = useIntl();
+  const displayMessage = message || intl.formatMessage(i18n[STATE_MESSAGE_KEYS[chatState]]);
   const icon = STATE_ICONS[chatState];
 
   return (

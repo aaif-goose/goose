@@ -10,6 +10,56 @@ import {
   DropdownMenuItem,
 } from '../../ui/dropdown-menu';
 import { useChatContext } from '../../../contexts/ChatContext';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  alwaysAllow: {
+    id: 'permissionModal.alwaysAllow',
+    defaultMessage: 'Always allow',
+  },
+  askBefore: {
+    id: 'permissionModal.askBefore',
+    defaultMessage: 'Ask before',
+  },
+  neverAllow: {
+    id: 'permissionModal.neverAllow',
+    defaultMessage: 'Never allow',
+  },
+  noActiveSession: {
+    id: 'permissionModal.noActiveSession',
+    defaultMessage: 'No active session',
+  },
+  noActiveSessionDescription: {
+    id: 'permissionModal.noActiveSessionDescription',
+    defaultMessage:
+      'Start a chat session first to configure tool permissions for this extension. Tool permissions are loaded from the active session\'s extensions.',
+  },
+  failedToLoadTools: {
+    id: 'permissionModal.failedToLoadTools',
+    defaultMessage: 'Failed to load tools',
+  },
+  failedToLoadToolsDescription: {
+    id: 'permissionModal.failedToLoadToolsDescription',
+    defaultMessage:
+      'Could not load tools for this extension. The extension may not be loaded in the current session.',
+  },
+  noToolsAvailable: {
+    id: 'permissionModal.noToolsAvailable',
+    defaultMessage: 'No tools available for this extension.',
+  },
+  close: {
+    id: 'permissionModal.close',
+    defaultMessage: 'Close',
+  },
+  cancel: {
+    id: 'permissionModal.cancel',
+    defaultMessage: 'Cancel',
+  },
+  saveChanges: {
+    id: 'permissionModal.saveChanges',
+    defaultMessage: 'Save Changes',
+  },
+});
 
 function getFirstSentence(text: string): string {
   const match = text.match(/^([^.?!]+[.?!])/);
@@ -22,10 +72,12 @@ interface PermissionModalProps {
 }
 
 export default function PermissionModal({ extensionName, onClose }: PermissionModalProps) {
+  const intl = useIntl();
+
   const permissionOptions = [
-    { value: 'always_allow', label: 'Always allow' },
-    { value: 'ask_before', label: 'Ask before' },
-    { value: 'never_allow', label: 'Never allow' },
+    { value: 'always_allow', label: intl.formatMessage(i18n.alwaysAllow) },
+    { value: 'ask_before', label: intl.formatMessage(i18n.askBefore) },
+    { value: 'never_allow', label: intl.formatMessage(i18n.neverAllow) },
   ] as { value: PermissionLevel; label: string }[];
 
   const chatContext = useChatContext();
@@ -110,7 +162,6 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
       if (response.error) {
         console.error('Failed to save permissions:', response.error);
       } else {
-        console.log('Permissions updated successfully');
         onClose();
       }
     } catch (err) {
@@ -158,24 +209,22 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
           ) : loadError === 'no_session' ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <AlertCircle className="h-12 w-12 text-text-secondary mb-4" />
-              <p className="text-text-primary font-medium mb-2">No active session</p>
+              <p className="text-text-primary font-medium mb-2">{intl.formatMessage(i18n.noActiveSession)}</p>
               <p className="text-sm text-text-secondary max-w-sm">
-                Start a chat session first to configure tool permissions for this extension. Tool
-                permissions are loaded from the active session's extensions.
+                {intl.formatMessage(i18n.noActiveSessionDescription)}
               </p>
             </div>
           ) : loadError === 'fetch_failed' ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <AlertCircle className="h-12 w-12 text-text-secondary mb-4" />
-              <p className="text-text-primary font-medium mb-2">Failed to load tools</p>
+              <p className="text-text-primary font-medium mb-2">{intl.formatMessage(i18n.failedToLoadTools)}</p>
               <p className="text-sm text-text-secondary max-w-sm">
-                Could not load tools for this extension. The extension may not be loaded in the
-                current session.
+                {intl.formatMessage(i18n.failedToLoadToolsDescription)}
               </p>
             </div>
           ) : tools.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
-              <p className="text-text-secondary">No tools available for this extension.</p>
+              <p className="text-text-secondary">{intl.formatMessage(i18n.noToolsAvailable)}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -198,7 +247,7 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
                         {permissionOptions.find(
                           (option) =>
                             option.value === (updatedPermissions[tool.name] || tool.permission)
-                        )?.label || 'Ask Before'}
+                        )?.label || intl.formatMessage(i18n.askBefore)}
                         <ChevronDownIcon className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -223,11 +272,11 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>
-            {loadError ? 'Close' : 'Cancel'}
+            {loadError ? intl.formatMessage(i18n.close) : intl.formatMessage(i18n.cancel)}
           </Button>
           {!loadError && (
             <Button disabled={!hasChanges} onClick={handleSave}>
-              Save Changes
+              {intl.formatMessage(i18n.saveChanges)}
             </Button>
           )}
         </DialogFooter>

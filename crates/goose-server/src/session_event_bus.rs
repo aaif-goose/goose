@@ -130,6 +130,7 @@ impl SessionEventBus {
         request_id: String,
     ) -> Result<CancellationToken, String> {
         let mut requests = self.active_requests.lock().await;
+        requests.retain(|_id, token| !token.is_cancelled());
         if !requests.is_empty() {
             return Err("Session already has an active request".into());
         }

@@ -1,0 +1,72 @@
+{
+  "avatar": {
+    "chooseDialogTitle": "Choose avatar image",
+    "dialogFilterName": "Image",
+    "loadFailed": "Failed to load image",
+    "previewAlt": "Avatar preview",
+    "removeAria": "Remove avatar",
+    "saveFailed": "Failed to save avatar",
+    "unsupportedType": "Unsupported image type",
+    "uploadAria": "Drop an image or click to upload avatar"
+  },
+  "card": {
+    "ariaLabel": "Persona: {{name}}",
+    "options": "Persona options"
+  },
+  "config": {
+    "ariaLabel": "Agent configuration",
+    "createAgent": "Create Agent",
+    "fromPersona": "(from persona: {{value}})",
+    "model": "Model",
+    "modelPlaceholder": "e.g. claude-sonnet-4-20250514",
+    "name": "Name",
+    "namePlaceholder": "My Agent",
+    "persona": "Persona",
+    "provider": "Provider",
+    "systemPromptOverrideCollapsed": "System Prompt Override [+]",
+    "systemPromptOverrideExpanded": "System Prompt Override [-]",
+    "systemPromptPlaceholder": "Override the persona system prompt...",
+    "updateAgent": "Update Agent"
+  },
+  "editor": {
+    "create": "Create",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "e.g. Code Reviewer",
+    "duplicate": "Duplicate",
+    "editTitle": "Edit Persona",
+    "model": "Model",
+    "modelPlaceholder": "e.g. claude-sonnet-4-20250514",
+    "newTitle": "New Persona",
+    "provider": "Provider",
+    "saving": "Saving...",
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "You are a helpful assistant that..."
+  },
+  "gallery": {
+    "createAria": "Create new persona",
+    "dropFile": "or drop a file",
+    "loading": "Loading personas",
+    "new": "New Persona"
+  },
+  "statuses": {
+    "error": "Error",
+    "offline": "Offline",
+    "online": "Online",
+    "starting": "Starting"
+  },
+  "view": {
+    "activeAgents": "Active Agents",
+    "activeAgentsAria": "Active agents",
+    "copyName": "{{name}} (Copy)",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+    "deleteTitle": "Delete persona?",
+    "description": "Custom persona configurations for specific workflows",
+    "emptyAgentsDescription": "Create an agent from a persona to get started.",
+    "emptyAgentsTitle": "No active agents",
+    "exportedTo": "Exported to {{filename}}",
+    "newPersona": "New Persona",
+    "optionsAria": "Options for {{name}}",
+    "searchPlaceholder": "Search personas...",
+    "title": "Personas"
+  }
+}

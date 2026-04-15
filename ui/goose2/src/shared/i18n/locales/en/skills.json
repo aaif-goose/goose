@@ -1,0 +1,31 @@
+{
+  "dialog": {
+    "createSkill": "Create Skill",
+    "creating": "Creating...",
+    "description": "Description",
+    "descriptionPlaceholder": "What it does and when to use it...",
+    "editTitle": "Edit Skill",
+    "instructions": "Instructions",
+    "instructionsPlaceholder": "Markdown instructions the agent will follow...",
+    "name": "Name",
+    "namePlaceholder": "my-skill-name",
+    "nameValidation": "Must be kebab-case (e.g. code-review)",
+    "newTitle": "New Skill",
+    "saving": "Saving..."
+  },
+  "view": {
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+    "deleteTitle": "Delete skill?",
+    "description": "Reusable instructions for your AI personas",
+    "dropFile": "or drop a file",
+    "emptyDescription": "Create a skill or drop a .skill.json file here.",
+    "emptyTitle": "No skills yet",
+    "exportedTo": "Exported to {{filename}}",
+    "newSkill": "New Skill",
+    "noMatchesDescription": "Try a different search term.",
+    "noMatchesTitle": "No matching skills",
+    "optionsAria": "Options for {{name}}",
+    "searchPlaceholder": "Search skills by name or description...",
+    "title": "Skills"
+  }
+}

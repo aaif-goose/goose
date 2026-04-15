@@ -11,6 +11,51 @@ import {
   type WhisperModelResponse,
   type DownloadProgress,
 } from '../../../api';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  gpuAcceleration: {
+    id: 'localModelManager.gpuAcceleration',
+    defaultMessage:
+      'Supports GPU acceleration (CUDA for NVIDIA, Metal for Apple Silicon). GPU features must be enabled at build time for hardware acceleration.',
+  },
+  recommended: {
+    id: 'localModelManager.recommended',
+    defaultMessage: 'Recommended',
+  },
+  active: {
+    id: 'localModelManager.active',
+    defaultMessage: 'Active',
+  },
+  recommendedForHardware: {
+    id: 'localModelManager.recommendedForHardware',
+    defaultMessage: 'Recommended for your hardware',
+  },
+  downloaded: {
+    id: 'localModelManager.downloaded',
+    defaultMessage: 'Downloaded',
+  },
+  download: {
+    id: 'localModelManager.download',
+    defaultMessage: 'Download',
+  },
+  deleteConfirm: {
+    id: 'localModelManager.deleteConfirm',
+    defaultMessage: 'Delete this model? You can re-download it later.',
+  },
+  showRecommendedOnly: {
+    id: 'localModelManager.showRecommendedOnly',
+    defaultMessage: 'Show recommended only',
+  },
+  showAllModels: {
+    id: 'localModelManager.showAllModels',
+    defaultMessage: 'Show all models ({count} more)',
+  },
+  noModels: {
+    id: 'localModelManager.noModels',
+    defaultMessage: 'No models available',
+  },
+});
 
 const LOCAL_WHISPER_MODEL_CONFIG_KEY = 'LOCAL_WHISPER_MODEL';
 
@@ -26,6 +71,7 @@ const capitalize = (str: string): string => {
 };
 
 export const LocalModelManager = () => {
+  const intl = useIntl();
   const [models, setModels] = useState<WhisperModelResponse[]>([]);
   const [downloads, setDownloads] = useState<Map<string, DownloadProgress>>(new Map());
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -118,7 +164,7 @@ export const LocalModelManager = () => {
   };
 
   const deleteModel = async (modelId: string) => {
-    if (!window.confirm('Delete this model? You can re-download it later.')) return;
+    if (!window.confirm(intl.formatMessage(i18n.deleteConfirm))) return;
 
     try {
       await deleteModelApi({ path: { model_id: modelId } });
@@ -144,8 +190,7 @@ export const LocalModelManager = () => {
     <div className="space-y-3">
       <div className="text-xs text-text-secondary mb-2">
         <p>
-          Supports GPU acceleration (CUDA for NVIDIA, Metal for Apple Silicon). GPU features must be
-          enabled at build time for hardware acceleration.
+          {intl.formatMessage(i18n.gpuAcceleration)}
         </p>
       </div>
 
@@ -182,12 +227,12 @@ export const LocalModelManager = () => {
                     <span className="text-xs text-text-secondary">{model.size_mb}MB</span>
                     {model.recommended && (
                       <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">
-                        Recommended
+                        {intl.formatMessage(i18n.recommended)}
                       </span>
                     )}
                     {isSelected && (
                       <span className="text-xs bg-background-inverse text-white px-2 py-0.5 rounded">
-                        Active
+                        {intl.formatMessage(i18n.active)}
                       </span>
                     )}
                   </div>
@@ -195,7 +240,7 @@ export const LocalModelManager = () => {
                   <p className="text-xs text-text-secondary mt-1">{model.description}</p>
                   {model.recommended && (
                     <p className="text-xs text-blue-600 mt-1 font-medium">
-                      Recommended for your hardware
+                      {intl.formatMessage(i18n.recommendedForHardware)}
                     </p>
                   )}
                 </div>
@@ -205,7 +250,7 @@ export const LocalModelManager = () => {
                     <>
                       <div className="flex items-center gap-1 text-xs text-green-600">
                         <Check className="w-4 h-4" />
-                        <span>Downloaded</span>
+                        <span>{intl.formatMessage(i18n.downloaded)}</span>
                       </div>
                       <Button
                         variant="ghost"
@@ -228,7 +273,7 @@ export const LocalModelManager = () => {
                   ) : (
                     <Button variant="outline" size="sm" onClick={() => startDownload(model.id)}>
                       <Download className="w-4 h-4 mr-1" />
-                      Download
+                      {intl.formatMessage(i18n.download)}
                     </Button>
                   )}
                 </div>
@@ -269,19 +314,19 @@ export const LocalModelManager = () => {
           {showAllModels ? (
             <>
               <ChevronUp className="w-4 h-4 mr-1" />
-              Show recommended only
+              {intl.formatMessage(i18n.showRecommendedOnly)}
             </>
           ) : (
             <>
               <ChevronDown className="w-4 h-4 mr-1" />
-              Show all models ({models.length - displayedModels.length} more)
+              {intl.formatMessage(i18n.showAllModels, { count: models.length - displayedModels.length })}
             </>
           )}
         </Button>
       )}
 
       {models.length === 0 && (
-        <div className="text-center py-6 text-text-secondary text-sm">No models available</div>
+        <div className="text-center py-6 text-text-secondary text-sm">{intl.formatMessage(i18n.noModels)}</div>
       )}
     </div>
   );

@@ -1,6 +1,26 @@
 import React, { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../ui/button';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  addValue: {
+    id: 'keyValueEditor.addValue',
+    defaultMessage: 'Add pre-configured value',
+  },
+  removeValue: {
+    id: 'keyValueEditor.removeValue',
+    defaultMessage: 'Remove pre-configured value {key}',
+  },
+  defaultKeyPlaceholder: {
+    id: 'keyValueEditor.defaultKeyPlaceholder',
+    defaultMessage: 'Parameter name...',
+  },
+  defaultValuePlaceholder: {
+    id: 'keyValueEditor.defaultValuePlaceholder',
+    defaultMessage: 'Parameter value...',
+  },
+});
 
 interface KeyValueEditorProps {
   values: Record<string, string>;
@@ -12,9 +32,10 @@ interface KeyValueEditorProps {
 export default function KeyValueEditor({
   values,
   onChange,
-  keyPlaceholder = 'Parameter name...',
-  valuePlaceholder = 'Parameter value...',
+  keyPlaceholder,
+  valuePlaceholder,
 }: KeyValueEditorProps) {
+  const intl = useIntl();
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
 
@@ -47,7 +68,7 @@ export default function KeyValueEditor({
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={keyPlaceholder}
+          placeholder={keyPlaceholder || intl.formatMessage(i18n.defaultKeyPlaceholder)}
           className="flex-1 px-3 py-2 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring text-sm"
         />
         <input
@@ -55,7 +76,7 @@ export default function KeyValueEditor({
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={valuePlaceholder}
+          placeholder={valuePlaceholder || intl.formatMessage(i18n.defaultValuePlaceholder)}
           className="flex-1 px-3 py-2 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring text-sm"
         />
         <Button
@@ -65,7 +86,7 @@ export default function KeyValueEditor({
           variant="outline"
           size="sm"
           className="px-3"
-          aria-label="Add pre-configured value"
+          aria-label={intl.formatMessage(i18n.addValue)}
         >
           <Plus className="w-4 h-4" />
         </Button>
@@ -89,8 +110,8 @@ export default function KeyValueEditor({
                 variant="ghost"
                 size="sm"
                 className="p-1 hover:bg-background-danger/10 hover:text-text-danger"
-                aria-label={`Remove pre-configured value ${key}`}
-                title={`Remove pre-configured value ${key}`}
+                aria-label={intl.formatMessage(i18n.removeValue, { key })}
+                title={intl.formatMessage(i18n.removeValue, { key })}
               >
                 <Trash2 className="w-4 h-4" />
               </Button>

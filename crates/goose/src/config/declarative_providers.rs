@@ -7,7 +7,16 @@ use crate::providers::openai::OpenAiProvider;
 use anyhow::Result;
 use include_dir::{include_dir, Dir};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Deserialize an optional string, treating empty/whitespace-only values as None.
+fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.trim().is_empty()))
+}
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -66,6 +75,8 @@ pub struct DeclarativeProviderConfig {
     pub dynamic_models: Option<bool>,
     #[serde(default)]
     pub skip_canonical_filtering: bool,
+    #[serde(default, deserialize_with = "deserialize_non_empty_string")]
+    pub fast_model: Option<String>,
 }
 
 fn default_requires_auth() -> bool {
@@ -221,6 +232,7 @@ pub fn create_custom_provider(
         env_vars: None,
         dynamic_models: None,
         skip_canonical_filtering: false,
+        fast_model: None,
     };
 
     let custom_providers_dir = custom_providers_dir();
@@ -287,6 +299,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             env_vars: existing_config.env_vars,
             dynamic_models: existing_config.dynamic_models,
             skip_canonical_filtering: existing_config.skip_canonical_filtering,
+            fast_model: existing_config.fast_model.clone(),
         };
 
         let file_path = custom_providers_dir().join(format!("{}.json", updated_config.name));
@@ -515,6 +528,34 @@ mod tests {
 
         assert_eq!(config.models.len(), 1);
         assert_eq!(config.models[0].name, "openai/gpt-oss-120b");
+    }
+
+    #[test]
+    fn test_llama_swap_json_deserializes() {
+        let json = include_str!("../providers/declarative/llama_swap.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("llama_swap.json should parse");
+        assert_eq!(config.name, "llama_swap");
+        assert_eq!(config.display_name, "Llama Swap");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "");
+        assert!(!config.requires_auth);
+        assert!(config.skip_canonical_filtering);
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.supports_streaming, Some(true));
+        assert_eq!(config.base_url, "${LLAMA_SWAP_HOST}/v1/chat/completions");
+        assert!(config.models.is_empty());
+
+        let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
+        assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars[0].name, "LLAMA_SWAP_HOST");
+        assert!(!env_vars[0].required);
+        assert!(!env_vars[0].secret);
+        assert_eq!(env_vars[0].primary, Some(true));
+        assert_eq!(
+            env_vars[0].default,
+            Some("http://localhost:8080".to_string())
+        );
     }
 
     #[test]

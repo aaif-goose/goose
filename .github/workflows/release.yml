@@ -8,11 +8,11 @@ on:
 
 name: Release
 
-# Permissions needed for AWS OIDC authentication in called workflows
 permissions:
-  id-token: write   # Required for AWS OIDC authentication in called workflow
+  id-token: write   # Required for Sigstore OIDC signing, AWS OIDC (Windows signing), and npm trusted publishing
   contents: write   # Required for creating releases and by actions/checkout
   actions: read     # May be needed for some workflows
+  pull-requests: write  # Required for npm publish workflow
   attestations: write  # Required for SLSA build provenance attestations
 
 concurrency:
@@ -50,8 +50,8 @@ jobs:
       contents: read
     with:
       signing: true
-    secrets:
-      OSX_CODESIGN_ROLE: ${{ secrets.OSX_CODESIGN_ROLE }}
+      environment: signing
+    secrets: inherit
 
   # ------------------------------------------------------------
   # 4) Bundle Desktop App (macOS)
@@ -63,8 +63,8 @@ jobs:
       contents: read
     with:
       signing: true
-    secrets:
-      OSX_CODESIGN_ROLE: ${{ secrets.OSX_CODESIGN_ROLE }}
+      environment: signing
+    secrets: inherit
 
   # ------------------------------------------------------------
   # 5) Bundle Desktop App (Linux)
@@ -77,12 +77,13 @@ jobs:
 #  # ------------------------------------------------------------
   bundle-desktop-windows:
     uses: ./.github/workflows/bundle-desktop-windows.yml
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
     with:
       signing: true
-    secrets:
-      WINDOWS_CODESIGN_CERTIFICATE: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE }}
-      WINDOW_SIGNING_ROLE: ${{ secrets.WINDOW_SIGNING_ROLE }}
-      WINDOW_SIGNING_ROLE_TAG: ${{ secrets.WINDOW_SIGNING_ROLE_TAG }}
+    secrets: inherit
 
   # ------------------------------------
   # 7) Create/Update GitHub Release
@@ -151,3 +152,16 @@ jobs:
           allowUpdates: true
           omitBody: true
           omitPrereleaseDuringUpdate: true
+
+  # ------------------------------------
+  # 8) Publish npm packages
+  # ------------------------------------
+  publish-npm:
+    needs: [release]
+    uses: ./.github/workflows/publish-npm.yml
+    with:
+      release-tag: ${{ github.ref_name }}
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write

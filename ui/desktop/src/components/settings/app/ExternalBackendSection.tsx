@@ -5,8 +5,59 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { AlertCircle } from 'lucide-react';
 import { ExternalGoosedConfig, defaultSettings } from '../../../utils/settings';
 import { WEB_PROTOCOLS } from '../../../utils/urlSecurity';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'externalBackendSection.title',
+    defaultMessage: 'Goose Server',
+  },
+  description: {
+    id: 'externalBackendSection.description',
+    defaultMessage:
+      'By default goose launches a server for you, use this to connect to an external goose server',
+  },
+  useExternalServer: {
+    id: 'externalBackendSection.useExternalServer',
+    defaultMessage: 'Use external server',
+  },
+  useExternalServerDescription: {
+    id: 'externalBackendSection.useExternalServerDescription',
+    defaultMessage: 'Connect to a goose server running elsewhere (requires app restart)',
+  },
+  serverUrl: {
+    id: 'externalBackendSection.serverUrl',
+    defaultMessage: 'Server URL',
+  },
+  secretKey: {
+    id: 'externalBackendSection.secretKey',
+    defaultMessage: 'Secret Key',
+  },
+  secretKeyPlaceholder: {
+    id: 'externalBackendSection.secretKeyPlaceholder',
+    defaultMessage: "Enter the server's secret key",
+  },
+  secretKeyHelp: {
+    id: 'externalBackendSection.secretKeyHelp',
+    defaultMessage: 'The secret key configured on the goosed server (GOOSE_SERVER__SECRET_KEY)',
+  },
+  restartNote: {
+    id: 'externalBackendSection.restartNote',
+    defaultMessage:
+      'Changes require restarting Goose to take effect. New chat windows will connect to the external server.',
+  },
+  urlProtocolError: {
+    id: 'externalBackendSection.urlProtocolError',
+    defaultMessage: 'URL must use http or https protocol',
+  },
+  urlFormatError: {
+    id: 'externalBackendSection.urlFormatError',
+    defaultMessage: 'Invalid URL format',
+  },
+});
 
 export default function ExternalBackendSection() {
+  const intl = useIntl();
   const [config, setConfig] = useState<ExternalGoosedConfig>(defaultSettings.externalGoosed);
   const [isSaving, setIsSaving] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
@@ -27,13 +78,13 @@ export default function ExternalBackendSection() {
     try {
       const parsed = new URL(value);
       if (!WEB_PROTOCOLS.includes(parsed.protocol)) {
-        setUrlError('URL must use http or https protocol');
+        setUrlError(intl.formatMessage(i18n.urlProtocolError));
         return false;
       }
       setUrlError(null);
       return true;
     } catch {
-      setUrlError('Invalid URL format');
+      setUrlError(intl.formatMessage(i18n.urlFormatError));
       return false;
     }
   };
@@ -73,18 +124,17 @@ export default function ExternalBackendSection() {
     <section id="external-backend" className="space-y-4 pr-4 mt-1">
       <Card className="pb-2">
         <CardHeader className="pb-0">
-          <CardTitle>Goose Server</CardTitle>
+          <CardTitle>{intl.formatMessage(i18n.title)}</CardTitle>
           <CardDescription>
-            By default goose launches a server for you, use this to connect to an external goose
-            server
+            {intl.formatMessage(i18n.description)}
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-4 space-y-4 px-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-text-primary text-xs">Use external server</h3>
+              <h3 className="text-text-primary text-xs">{intl.formatMessage(i18n.useExternalServer)}</h3>
               <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-                Connect to a goose server running elsewhere (requires app restart)
+                {intl.formatMessage(i18n.useExternalServerDescription)}
               </p>
             </div>
             <div className="flex items-center">
@@ -101,7 +151,7 @@ export default function ExternalBackendSection() {
             <>
               <div className="space-y-2">
                 <label htmlFor="external-url" className="text-text-primary text-xs">
-                  Server URL
+                  {intl.formatMessage(i18n.serverUrl)}
                 </label>
                 <Input
                   id="external-url"
@@ -123,26 +173,25 @@ export default function ExternalBackendSection() {
 
               <div className="space-y-2">
                 <label htmlFor="external-secret" className="text-text-primary text-xs">
-                  Secret Key
+                  {intl.formatMessage(i18n.secretKey)}
                 </label>
                 <Input
                   id="external-secret"
                   type="password"
-                  placeholder="Enter the server's secret key"
+                  placeholder={intl.formatMessage(i18n.secretKeyPlaceholder)}
                   value={config.secret}
                   onChange={(e) => updateField('secret', e.target.value)}
                   onBlur={() => saveConfig(config)}
                   disabled={isSaving}
                 />
                 <p className="text-xs text-text-secondary">
-                  The secret key configured on the goosed server (GOOSE_SERVER__SECRET_KEY)
+                  {intl.formatMessage(i18n.secretKeyHelp)}
                 </p>
               </div>
 
               <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
                 <p className="text-xs text-amber-800 dark:text-amber-200">
-                  <strong>Note:</strong> Changes require restarting Goose to take effect. New chat
-                  windows will connect to the external server.
+                  <strong>Note:</strong> {intl.formatMessage(i18n.restartNote)}
                 </p>
               </div>
             </>

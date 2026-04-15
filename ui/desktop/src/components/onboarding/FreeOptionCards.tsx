@@ -5,6 +5,50 @@ import { Tetrate } from '../icons';
 import LocalModelPicker from './LocalModelPicker';
 import { HardDrive } from 'lucide-react';
 import { useFeatures } from '../../contexts/FeaturesContext';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  chooseOption: {
+    id: 'freeOptionCards.chooseOption',
+    defaultMessage: 'Choose an option to get started.',
+  },
+  tetrateTitle: {
+    id: 'freeOptionCards.tetrateTitle',
+    defaultMessage: 'Agent Router by Tetrate',
+  },
+  tetrateDescription: {
+    id: 'freeOptionCards.tetrateDescription',
+    defaultMessage: 'Access multiple AI models with automatic setup. Sign up to receive $10 credit.',
+  },
+  nanogptTitle: {
+    id: 'freeOptionCards.nanogptTitle',
+    defaultMessage: 'NanoGPT',
+  },
+  nanogptDescription: {
+    id: 'freeOptionCards.nanogptDescription',
+    defaultMessage: 'Sign up to receive 60M free tokens for 7 days.',
+  },
+  localModelTitle: {
+    id: 'freeOptionCards.localModelTitle',
+    defaultMessage: 'Use a Local Model',
+  },
+  freeAndPrivate: {
+    id: 'freeOptionCards.freeAndPrivate',
+    defaultMessage: 'Free & Private',
+  },
+  localModelDescription: {
+    id: 'freeOptionCards.localModelDescription',
+    defaultMessage: 'Download a model and run entirely on your machine. No API keys, no accounts.',
+  },
+  unexpectedError: {
+    id: 'freeOptionCards.unexpectedError',
+    defaultMessage: 'An unexpected error occurred during setup.',
+  },
+  retry: {
+    id: 'freeOptionCards.retry',
+    defaultMessage: 'Retry',
+  },
+});
 
 const TETRATE = 'tetrate' as const;
 const NANOGPT = 'nano-gpt' as const;
@@ -27,6 +71,7 @@ const cardClass = (isSelected: boolean) =>
   }`;
 
 export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) {
+  const intl = useIntl();
   const { localInference } = useFeatures();
   const [error, setError] = useState<{
     message: string;
@@ -45,7 +90,7 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
         setError({ message: result.message, type });
       }
     } catch {
-      setError({ message: 'An unexpected error occurred during setup.', type });
+      setError({ message: intl.formatMessage(i18n.unexpectedError), type });
     }
   };
 
@@ -74,7 +119,7 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
   return (
     <div>
       <div className="p-4 border rounded-xl bg-background-muted">
-        <p className="text-sm text-text-muted mb-4">Choose an option to get started.</p>
+        <p className="text-sm text-text-muted mb-4">{intl.formatMessage(i18n.chooseOption)}</p>
 
         <div className="flex flex-col gap-3">
           <div onClick={handleTetrateSetup} className={cardClass(selectedProvider === TETRATE)}>
@@ -82,7 +127,7 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
               <div className="flex items-center gap-2">
                 <Tetrate className="w-5 h-5 text-text-default" />
                 <span className="font-medium text-text-default text-base">
-                  Agent Router by Tetrate
+                  {intl.formatMessage(i18n.tetrateTitle)}
                 </span>
               </div>
               <div className="text-text-muted group-hover:text-text-default transition-colors">
@@ -90,7 +135,7 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
               </div>
             </div>
             <p className="text-text-muted text-sm">
-              Access multiple AI models with automatic setup. Sign up to receive $10 credit.
+              {intl.formatMessage(i18n.tetrateDescription)}
             </p>
           </div>
 
@@ -100,14 +145,14 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
                 <span className="w-5 h-5 flex items-center justify-center text-text-default text-xs font-bold">
                   N
                 </span>
-                <span className="font-medium text-text-default text-base">NanoGPT</span>
+                <span className="font-medium text-text-default text-base">{intl.formatMessage(i18n.nanogptTitle)}</span>
               </div>
               <div className="text-text-muted group-hover:text-text-default transition-colors">
                 <ChevronRight />
               </div>
             </div>
             <p className="text-text-muted text-sm">
-              Sign up to receive 60M free tokens for 7 days.
+              {intl.formatMessage(i18n.nanogptDescription)}
             </p>
           </div>
 
@@ -116,9 +161,9 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <HardDrive className="w-5 h-5 text-text-default" />
-                  <span className="font-medium text-text-default text-base">Use a Local Model</span>
+                  <span className="font-medium text-text-default text-base">{intl.formatMessage(i18n.localModelTitle)}</span>
                   <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-green-600 text-white rounded-full">
-                    Free &amp; Private
+                    {intl.formatMessage(i18n.freeAndPrivate)}
                   </span>
                 </div>
                 <div className="text-text-muted group-hover:text-text-default transition-colors">
@@ -126,7 +171,7 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
                 </div>
               </div>
               <p className="text-text-muted text-sm">
-                Download a model and run entirely on your machine. No API keys, no accounts.
+                {intl.formatMessage(i18n.localModelDescription)}
               </p>
             </div>
           )}
@@ -139,7 +184,7 @@ export default function FreeOptionCards({ onConfigured }: FreeOptionCardsProps) 
               onClick={handleRetry}
               className="px-3 py-1 text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 shrink-0"
             >
-              Retry
+              {intl.formatMessage(i18n.retry)}
             </button>
           </div>
         )}

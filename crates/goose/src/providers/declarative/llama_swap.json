@@ -1,0 +1,23 @@
+{
+  "name": "llama_swap",
+  "engine": "openai",
+  "display_name": "Llama Swap",
+  "description": "Local proxy that hot-swaps llama.cpp (and other) inference backends on demand via an OpenAI-compatible API.",
+  "api_key_env": "",
+  "base_url": "${LLAMA_SWAP_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "LLAMA_SWAP_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:8080",
+      "description": "Base URL of the llama-swap proxy (default: http://localhost:8080)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [],
+  "supports_streaming": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true
+}

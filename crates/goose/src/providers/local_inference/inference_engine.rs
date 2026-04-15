@@ -1,9 +1,11 @@
 use crate::providers::errors::ProviderError;
 use crate::providers::local_inference::local_model_registry::ModelSettings;
+use crate::providers::local_inference::multimodal::ExtractedImage;
 use crate::providers::utils::RequestLog;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::{LlamaChatMessage, LlamaChatTemplate, LlamaModel};
+use llama_cpp_2::mtmd::{MtmdBitmap, MtmdContext, MtmdInputText};
 use llama_cpp_2::sampling::LlamaSampler;
 use std::num::NonZeroU32;
 
@@ -19,11 +21,14 @@ pub(super) struct GenerationContext<'a> {
     pub message_id: &'a str,
     pub tx: &'a StreamSender,
     pub log: &'a mut RequestLog,
+    pub images: &'a [ExtractedImage],
 }
 
 pub(super) struct LoadedModel {
     pub model: LlamaModel,
     pub template: LlamaChatTemplate,
+    /// Multimodal context for vision models. None for text-only models.
+    pub mtmd_ctx: Option<MtmdContext>,
 }
 
 /// Estimate the maximum context length that can fit in available accelerator/CPU
@@ -33,11 +38,13 @@ pub(super) struct LoadedModel {
 pub(super) fn estimate_max_context_for_memory(
     model: &LlamaModel,
     runtime: &InferenceRuntime,
+    mmproj_overhead_bytes: u64,
 ) -> Option<usize> {
-    let available = super::available_inference_memory_bytes(runtime);
-    if available == 0 {
+    let raw_available = super::available_inference_memory_bytes(runtime);
+    if raw_available == 0 {
         return None;
     }
+    let available = raw_available.saturating_sub(mmproj_overhead_bytes);
 
     // Reserve memory for computation scratch buffers (attention, etc.) and other overhead.
     // The compute buffer can be 40-50% of the KV cache size for large models, so we
@@ -118,15 +125,15 @@ pub(super) fn effective_context_size(
 ) -> usize {
     let limit = context_cap(settings, context_limit, n_ctx_train, memory_max_ctx);
     let min_generation_headroom = 512;
-    let needed = prompt_token_count + min_generation_headroom;
-    if needed > limit {
+    if prompt_token_count + min_generation_headroom > limit {
         tracing::warn!(
-            "Prompt ({} tokens) + headroom exceeds context limit ({}), capping to limit",
+            "Prompt ({} tokens) + minimum headroom ({}) exceeds context limit ({})",
             prompt_token_count,
+            min_generation_headroom,
             limit,
         );
     }
-    needed.min(limit)
+    limit
 }
 
 pub(super) fn build_context_params(
@@ -209,7 +216,12 @@ pub(super) fn validate_and_compute_context(
     settings: &crate::providers::local_inference::local_model_registry::ModelSettings,
 ) -> Result<(usize, usize), ProviderError> {
     let n_ctx_train = loaded.model.n_ctx_train() as usize;
-    let memory_max_ctx = estimate_max_context_for_memory(&loaded.model, runtime);
+    let mmproj_overhead = if loaded.mtmd_ctx.is_some() {
+        settings.mmproj_size_bytes
+    } else {
+        0
+    };
+    let memory_max_ctx = estimate_max_context_for_memory(&loaded.model, runtime, mmproj_overhead);
     let effective_ctx = effective_context_size(
         prompt_token_count,
         settings,
@@ -261,6 +273,80 @@ pub(super) fn create_and_prefill_context<'model>(
     Ok(ctx)
 }
 
+/// Tokenize text + images via mtmd and prefill the context.
+///
+/// Returns the llama context, the number of prompt tokens consumed,
+/// and the effective context size.
+pub(super) fn create_and_prefill_multimodal<'model>(
+    loaded: &'model LoadedModel,
+    runtime: &InferenceRuntime,
+    prompt_text: &str,
+    images: &[ExtractedImage],
+    context_limit: usize,
+    settings: &ModelSettings,
+) -> Result<(llama_cpp_2::context::LlamaContext<'model>, usize, usize), ProviderError> {
+    let mtmd_ctx = loaded.mtmd_ctx.as_ref().ok_or_else(|| {
+        ProviderError::ExecutionError(
+            "This model does not have vision support. Download the vision encoder from \
+             Settings > Local Inference, or use a text-only message."
+                .to_string(),
+        )
+    })?;
+
+    let bitmaps: Vec<MtmdBitmap> = images
+        .iter()
+        .map(|img| {
+            MtmdBitmap::from_buffer(mtmd_ctx, &img.bytes)
+                .map_err(|e| ProviderError::ExecutionError(format!("Failed to decode image: {e}")))
+        })
+        .collect::<Result<_, _>>()?;
+
+    let bitmap_refs: Vec<&MtmdBitmap> = bitmaps.iter().collect();
+
+    let input_text = MtmdInputText {
+        text: prompt_text.to_string(),
+        add_special: true,
+        parse_special: true,
+    };
+    let chunks = mtmd_ctx.tokenize(input_text, &bitmap_refs).map_err(|e| {
+        ProviderError::ExecutionError(format!("Multimodal tokenization failed: {e}"))
+    })?;
+
+    let prompt_token_count = chunks.total_tokens();
+
+    let n_ctx_train = loaded.model.n_ctx_train() as usize;
+    let mmproj_overhead = settings.mmproj_size_bytes;
+    let memory_max_ctx = estimate_max_context_for_memory(&loaded.model, runtime, mmproj_overhead);
+    let effective_ctx = effective_context_size(
+        prompt_token_count,
+        settings,
+        context_limit,
+        n_ctx_train,
+        memory_max_ctx,
+    );
+
+    let min_generation_headroom = 512;
+    if prompt_token_count + min_generation_headroom > effective_ctx {
+        return Err(ProviderError::ContextLengthExceeded(format!(
+            "Multimodal prompt ({prompt_token_count} tokens including images) exceeds \
+             context limit ({effective_ctx} tokens)",
+        )));
+    }
+
+    let ctx_params = build_context_params(effective_ctx as u32, settings);
+    let llama_ctx = loaded
+        .model
+        .new_context(runtime.backend(), ctx_params)
+        .map_err(|e| ProviderError::ExecutionError(format!("Failed to create context: {e}")))?;
+
+    let n_batch = llama_ctx.n_batch() as i32;
+    let _n_past = chunks
+        .eval_chunks(mtmd_ctx, &llama_ctx, 0, 0, n_batch, true)
+        .map_err(|e| ProviderError::ExecutionError(format!("Multimodal eval failed: {e}")))?;
+
+    Ok((llama_ctx, prompt_token_count, effective_ctx))
+}
+
 /// Action to take after processing a generated token piece.
 pub(super) enum TokenAction {
     Continue,
@@ -269,7 +355,8 @@ pub(super) enum TokenAction {
 
 /// Run the autoregressive generation loop. Calls `on_piece` for each non-empty
 /// token piece. The callback returns `TokenAction::Stop` to break early.
-/// Returns the total number of generated tokens.
+/// Returns the total number of generated tokens, or `ContextLengthExceeded`
+/// if the model exhausted the available context window.
 pub(super) fn generation_loop(
     model: &LlamaModel,
     ctx: &mut llama_cpp_2::context::LlamaContext<'_>,
@@ -279,19 +366,25 @@ pub(super) fn generation_loop(
     mut on_piece: impl FnMut(&str) -> Result<TokenAction, ProviderError>,
 ) -> Result<i32, ProviderError> {
     let mut sampler = build_sampler(settings);
+    let context_headroom = effective_ctx.saturating_sub(prompt_token_count);
     let max_output = if let Some(max) = settings.max_output_tokens {
-        effective_ctx.saturating_sub(prompt_token_count).min(max)
+        context_headroom.min(max)
     } else {
-        effective_ctx.saturating_sub(prompt_token_count)
+        context_headroom
     };
+    let hit_context_limit = settings
+        .max_output_tokens
+        .is_none_or(|max| context_headroom <= max);
     let mut decoder = encoding_rs::UTF_8.new_decoder();
     let mut output_token_count: i32 = 0;
+    let mut exhausted_loop = true;
 
     for _ in 0..max_output {
         let token = sampler.sample(ctx, -1);
         sampler.accept(token);
 
         if model.is_eog_token(token) {
+            exhausted_loop = false;
             break;
         }
 
@@ -302,6 +395,7 @@ pub(super) fn generation_loop(
             .map_err(|e| ProviderError::ExecutionError(format!("Failed to decode token: {}", e)))?;
 
         if !piece.is_empty() && matches!(on_piece(&piece)?, TokenAction::Stop) {
+            exhausted_loop = false;
             break;
         }
 
@@ -310,6 +404,16 @@ pub(super) fn generation_loop(
             .map_err(|e| ProviderError::ExecutionError(format!("Failed to create batch: {}", e)))?;
         ctx.decode(&mut next_batch)
             .map_err(|e| ProviderError::ExecutionError(format!("Decode failed: {}", e)))?;
+    }
+
+    if exhausted_loop && hit_context_limit {
+        return Err(ProviderError::ContextLengthExceeded(format!(
+            "Generation exhausted context window ({} prompt + {} generated = {} of {} limit)",
+            prompt_token_count,
+            output_token_count,
+            prompt_token_count as i32 + output_token_count,
+            effective_ctx,
+        )));
     }
 
     Ok(output_token_count)
@@ -325,10 +429,10 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_context_size_basic() {
+    fn test_effective_context_size_uses_full_limit() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 4096, 4096, None),
-            612
+            4096
         );
     }
 
@@ -336,7 +440,7 @@ mod tests {
     fn test_effective_context_size_capped_by_limit() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 1024, 8192, None),
-            612
+            1024
         );
     }
 
@@ -344,12 +448,12 @@ mod tests {
     fn test_effective_context_size_capped_by_memory() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 4096, 4096, Some(800)),
-            612
+            800
         );
     }
 
     #[test]
-    fn test_effective_context_size_memory_smaller_than_needed() {
+    fn test_effective_context_size_memory_smaller_than_prompt() {
         assert_eq!(
             effective_context_size(600, &default_settings(), 4096, 4096, Some(700)),
             700
@@ -360,7 +464,7 @@ mod tests {
     fn test_effective_context_size_zero_limit_uses_train() {
         assert_eq!(
             effective_context_size(100, &default_settings(), 0, 2048, None),
-            612
+            2048
         );
     }
 

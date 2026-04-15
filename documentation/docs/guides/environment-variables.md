@@ -130,40 +130,6 @@ export GOOSE_PREDEFINED_MODELS='[
 
 Custom context limits and request parameters are applied when the model is used. Custom context limits are displayed in goose CLI's [token usage indicator](/docs/guides/sessions/smart-context-management#token-usage).
 
-### Lead/Worker Model Configuration
-
-These variables configure a [lead/worker model pattern](/docs/tutorials/lead-worker) where a powerful lead model handles initial planning and complex reasoning, then switches to a faster/cheaper worker model for execution. The switch happens automatically based on your settings.
-
-| Variable | Purpose | Values | Default |
-|----------|---------|---------|---------|
-| `GOOSE_LEAD_MODEL` | **Required to enable lead mode.** Name of the lead model | Model name (e.g., "gpt-4o", "claude-sonnet-4-20250514") | None |
-| `GOOSE_LEAD_PROVIDER` | Provider for the lead model | [See available providers](/docs/getting-started/providers#available-providers) | Falls back to `GOOSE_PROVIDER` |
-| `GOOSE_LEAD_TURNS` | Number of initial turns using the lead model before switching to the worker model | Integer | 3 |
-| `GOOSE_LEAD_FAILURE_THRESHOLD` | Consecutive failures before falling back to the lead model | Integer | 2 |
-| `GOOSE_LEAD_FALLBACK_TURNS` | Number of turns to use the lead model in fallback mode | Integer | 2 |
-
-A _turn_ is one complete prompt-response interaction. Here's how it works with the default settings:
-- Use the lead model for the first 3 turns
-- Use the worker model starting on the 4th turn
-- Fallback to the lead model if the worker model struggles for 2 consecutive turns
-- Use the lead model for 2 turns and then switch back to the worker model
-
-The lead model and worker model names are displayed at the start of the goose CLI session. If you don't export a `GOOSE_MODEL` for your session, the worker model defaults to the `GOOSE_MODEL` in your [configuration file](/docs/guides/config-files).
-
-**Examples**
-
-```bash
-# Basic lead/worker setup
-export GOOSE_LEAD_MODEL="o4"
-
-# Advanced lead/worker configuration
-export GOOSE_LEAD_MODEL="claude4-opus"
-export GOOSE_LEAD_PROVIDER="anthropic"
-export GOOSE_LEAD_TURNS=5
-export GOOSE_LEAD_FAILURE_THRESHOLD=3
-export GOOSE_LEAD_FALLBACK_TURNS=2
-```
-
 ### Claude Thinking Configuration
 
 These variables control Claude's reasoning behavior. Supported on Anthropic and Databricks providers.
@@ -263,6 +229,7 @@ These variables control how goose manages conversation sessions and context.
 | `GOOSE_CONTEXT_STRATEGY` | Controls how goose handles context limit exceeded situations | "summarize", "truncate", "clear", "prompt" | "prompt" (interactive), "summarize" (headless) |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 |
 | `GOOSE_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/subagents) to complete before timeout. Can be overridden by [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) in recipes or subagent tool calls. | Integer (e.g., 25) | 25 |
+| `GOOSE_MAX_BACKGROUND_TASKS` | Sets the maximum number of concurrent background [subagent](/docs/guides/subagents) tasks goose can run at once | Integer (e.g., 1, 5, 10) | 5 |
 | `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goosehints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goosehints"]`) | `[".goosehints"]` |
 | `GOOSE_DISABLE_SESSION_NAMING` | Disables automatic AI-generated session naming; avoids the background model call and keeps the default "CLI Session" (goose CLI) or "New Chat" (goose Desktop) | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_PROMPT_EDITOR` | [External editor](/docs/guides/goose-cli-commands#external-editor-mode) to use for composing prompts instead of CLI input | Editor command (e.g., "vim", "code --wait") | Unset (uses CLI input) |
@@ -349,8 +316,6 @@ These variables allow you to override the default context window size (token lim
 |----------|---------|---------|---------|
 | `GOOSE_CONTEXT_LIMIT` | Override context limit for the main model | Integer (number of tokens) | Model-specific default or 128,000 |
 | `GOOSE_INPUT_LIMIT` | Override input prompt limit for ollama requests (maps to `num_ctx`) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
-| `GOOSE_LEAD_CONTEXT_LIMIT` | Override context limit for the lead model in [lead/worker mode](/docs/tutorials/lead-worker) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
-| `GOOSE_WORKER_CONTEXT_LIMIT` | Override context limit for the worker model in lead/worker mode | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
 | `GOOSE_PLANNER_CONTEXT_LIMIT` | Override context limit for the [planner model](/docs/guides/creating-plans) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
 
 **Examples**
@@ -360,10 +325,6 @@ These variables allow you to override the default context window size (token lim
 export GOOSE_CONTEXT_LIMIT=200000
 # Override ollama input prompt limit
 export GOOSE_INPUT_LIMIT=32000
-
-# Set different context limits for lead/worker models
-export GOOSE_LEAD_CONTEXT_LIMIT=500000   # Large context for planning
-export GOOSE_WORKER_CONTEXT_LIMIT=128000 # Smaller context for execution
 
 # Set context limit for planner
 export GOOSE_PLANNER_CONTEXT_LIMIT=1000000
@@ -383,7 +344,8 @@ These variables control how goose handles [tool execution](/docs/guides/goose-pe
 | `GOOSE_CLI_MIN_PRIORITY` | Controls verbosity of [tool output](/docs/guides/managing-tools/adjust-tool-output) | Float between 0.0 and 1.0 | 0.0 |
 | `GOOSE_CLI_TOOL_PARAMS_TRUNCATION_MAX_LENGTH` | Maximum length for tool parameter values before truncation in CLI output (not in debug mode) | Integer | 40 |
 | `GOOSE_DEBUG` | Enables debug mode to show full tool parameters without truncation. Can also be toggled during a session using the `/r` [slash command](/docs/guides/goose-cli-commands#slash-commands) | "1", "true" (case-insensitive) to enable | false |
-| `GOOSE_SEARCH_PATHS` | Additional directories to search for executables when running extensions | JSON array of paths (e.g., `["/usr/local/bin", "~/custom/bin"]`) | System PATH only | No |
+| `GOOSE_SEARCH_PATHS` | Prepends additional directories to PATH for extension commands | JSON array of paths (for example, `["/usr/local/bin", "~/custom/bin"]`) | System PATH only |
+| `GOOSE_SHELL` | Overrides the shell used for Developer extension shell commands | Shell executable path or name (for example, `/bin/zsh`, `pwsh`, `C:\cygwin64\bin\bash.exe`) | Unix: `/bin/bash` if present, otherwise `$SHELL`, otherwise `sh`. Windows: `cmd` |
 
 **Examples**
 
@@ -397,9 +359,15 @@ export GOOSE_CLI_TOOL_PARAMS_MAX_LENGTH=100  # Show up to 100 characters for too
 
 # Add custom tool directories for extensions
 export GOOSE_SEARCH_PATHS='["/usr/local/bin", "~/custom/tools", "/opt/homebrew/bin"]'
+
+# Use zsh for Developer extension shell commands
+export GOOSE_SHELL=/bin/zsh
 ```
 
-These paths are prepended to the system PATH when extensions execute commands, ensuring your custom tools are found without modifying your global PATH.
+```bat
+REM Windows: use a POSIX-like shell instead of cmd.exe
+set GOOSE_SHELL=C:\cygwin64\bin\bash.exe
+```
 
 ### Enhanced Code Editing
 
@@ -578,7 +546,7 @@ These variables control recipe discovery and management.
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
 | `GOOSE_RECIPE_PATH` | Additional directories to search for recipes | Colon-separated paths on Unix, semicolon-separated on Windows | None |
-| `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository to search for recipes | Format: "owner/repo" (e.g., "block/goose-recipes") | None |
+| `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository to search for recipes | Format: "owner/repo" (e.g., "aaif-goose/goose-recipes") | None |
 | `GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS` | Global timeout for recipe success check commands | Integer (seconds) | Recipe-specific default |
 | `GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS` | Global timeout for recipe on_failure commands | Integer (seconds) | Recipe-specific default |
 

@@ -8,10 +8,6 @@ repository.workspace = true
 description.workspace = true
 
 [[bin]]
-name = "goose-acp-server"
-path = "src/bin/server.rs"
-
-[[bin]]
 name = "generate-acp-schema"
 path = "src/bin/generate_acp_schema.rs"
 
@@ -44,15 +40,14 @@ url = { workspace = true }
 
 # HTTP server dependencies
 axum = { workspace = true, features = ["ws"] }
-clap = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tower-http = { workspace = true, features = ["cors"] }
-tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 async-stream = { workspace = true }
 http-body-util = "0.1.3"
 uuid = { workspace = true, features = ["v7"] }
 schemars = { workspace = true, features = ["derive"] }
 goose-acp-macros = { path = "../goose-acp-macros" }
+goose-sdk = { path = "../goose-sdk" }
 
 [dev-dependencies]
 async-trait = { workspace = true }

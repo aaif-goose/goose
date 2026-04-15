@@ -5,6 +5,50 @@ import { SubRecipeFormData } from './recipeFormSchema';
 import SubRecipeModal from './SubRecipeModal';
 import CreateSubRecipeInline from './CreateSubRecipeInline';
 import { toastError } from '../../../toasts';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  label: {
+    id: 'subRecipeEditor.label',
+    defaultMessage: 'Subrecipes',
+  },
+  createNew: {
+    id: 'subRecipeEditor.createNew',
+    defaultMessage: 'Create New Subrecipe',
+  },
+  addExisting: {
+    id: 'subRecipeEditor.addExisting',
+    defaultMessage: 'Add Existing',
+  },
+  description: {
+    id: 'subRecipeEditor.description',
+    defaultMessage: 'Subrecipes are recipes that can be called as tools during execution. They enable multi-step workflows and reusable components.',
+  },
+  sequential: {
+    id: 'subRecipeEditor.sequential',
+    defaultMessage: 'Sequential',
+  },
+  preconfiguredValues: {
+    id: 'subRecipeEditor.preconfiguredValues',
+    defaultMessage: 'Pre-configured values:',
+  },
+  editSubrecipe: {
+    id: 'subRecipeEditor.editSubrecipe',
+    defaultMessage: 'Edit subrecipe {name}',
+  },
+  deleteSubrecipe: {
+    id: 'subRecipeEditor.deleteSubrecipe',
+    defaultMessage: 'Delete subrecipe {name}',
+  },
+  duplicateName: {
+    id: 'subRecipeEditor.duplicateName',
+    defaultMessage: 'Duplicate Name',
+  },
+  duplicateNameMsg: {
+    id: 'subRecipeEditor.duplicateNameMsg',
+    defaultMessage: 'A subrecipe named "{name}" already exists. Please use a unique name.',
+  },
+});
 
 interface SubRecipeEditorProps {
   subRecipes: SubRecipeFormData[];
@@ -12,6 +56,7 @@ interface SubRecipeEditorProps {
 }
 
 export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEditorProps) {
+  const intl = useIntl();
   const [showModal, setShowModal] = useState(false);
   const [editingSubRecipe, setEditingSubRecipe] = useState<SubRecipeFormData | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -44,8 +89,8 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
     );
     if (isDuplicate) {
       toastError({
-        title: 'Duplicate Name',
-        msg: `A subrecipe named "${subRecipe.name}" already exists. Please use a unique name.`,
+        title: intl.formatMessage(i18n.duplicateName),
+        msg: intl.formatMessage(i18n.duplicateNameMsg, { name: subRecipe.name }),
       });
       return false;
     }
@@ -62,8 +107,8 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
   const handleSubRecipeSaved = (subRecipe: SubRecipeFormData) => {
     if (subRecipes.some((sr) => sr.name === subRecipe.name)) {
       toastError({
-        title: 'Duplicate Name',
-        msg: `A subrecipe named "${subRecipe.name}" already exists. Please use a unique name.`,
+        title: intl.formatMessage(i18n.duplicateName),
+        msg: intl.formatMessage(i18n.duplicateNameMsg, { name: subRecipe.name }),
       });
       return;
     }
@@ -73,7 +118,7 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <label className="block text-md text-textProminent font-bold">Subrecipes</label>
+        <label className="block text-md text-textProminent font-bold">{intl.formatMessage(i18n.label)}</label>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -83,7 +128,7 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
             className="flex items-center gap-2"
           >
             <FilePlus className="w-4 h-4" />
-            Create New Subrecipe
+            {intl.formatMessage(i18n.createNew)}
           </Button>
           <Button
             type="button"
@@ -93,14 +138,13 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
             className="flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
-            Add Existing
+            {intl.formatMessage(i18n.addExisting)}
           </Button>
         </div>
       </div>
 
       <p className="text-textSubtle text-sm mb-4">
-        Subrecipes are recipes that can be called as tools during execution. They enable multi-step
-        workflows and reusable components.
+        {intl.formatMessage(i18n.description)}
       </p>
 
       {subRecipes.length > 0 && (
@@ -116,7 +160,7 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
                     <h4 className="text-sm font-semibold text-textProminent">{subRecipe.name}</h4>
                     {subRecipe.sequential_when_repeated && (
                       <span className="text-xs px-2 py-0.5 bg-background-info/10 text-text-info rounded">
-                        Sequential
+                        {intl.formatMessage(i18n.sequential)}
                       </span>
                     )}
                   </div>
@@ -126,7 +170,7 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
                   )}
                   {subRecipe.values && Object.keys(subRecipe.values).length > 0 && (
                     <div className="mt-2">
-                      <p className="text-xs text-text-muted mb-1">Pre-configured values:</p>
+                      <p className="text-xs text-text-muted mb-1">{intl.formatMessage(i18n.preconfiguredValues)}</p>
                       <div className="flex flex-wrap gap-1">
                         {Object.entries(subRecipe.values).map(([key, value]) => (
                           <span
@@ -149,8 +193,8 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
                     variant="ghost"
                     size="sm"
                     className="p-2 hover:bg-background-secondary hover:text-text-primary"
-                    aria-label={`Edit subrecipe ${subRecipe.name}`}
-                    title={`Edit subrecipe ${subRecipe.name}`}
+                    aria-label={intl.formatMessage(i18n.editSubrecipe, { name: subRecipe.name })}
+                    title={intl.formatMessage(i18n.editSubrecipe, { name: subRecipe.name })}
                   >
                     <Edit2 className="w-4 h-4" />
                   </Button>
@@ -160,8 +204,8 @@ export default function SubRecipeEditor({ subRecipes, onChange }: SubRecipeEdito
                     variant="ghost"
                     size="sm"
                     className="p-2 hover:bg-background-danger/10 hover:text-text-danger"
-                    aria-label={`Delete subrecipe ${subRecipe.name}`}
-                    title={`Delete subrecipe ${subRecipe.name}`}
+                    aria-label={intl.formatMessage(i18n.deleteSubrecipe, { name: subRecipe.name })}
+                    title={intl.formatMessage(i18n.deleteSubrecipe, { name: subRecipe.name })}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>

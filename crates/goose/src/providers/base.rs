@@ -715,9 +715,15 @@ pub trait Provider: Send + Sync {
         )
         .map_err(|e| ProviderError::ContextLengthExceeded(e.to_string()))?;
 
+        use super::cli_common::{
+            SESSION_NAME_BEGIN_MARKER, SESSION_NAME_END_MARKER, SESSION_NAME_SUFFIX,
+        };
         let user_text = format!(
-            "---BEGIN USER MESSAGES---\n{}\n---END USER MESSAGES---\n\nGenerate a short title for the above messages.",
-            context.join("\n")
+            "{}\n{}\n{}\n\n{}",
+            SESSION_NAME_BEGIN_MARKER,
+            context.join("\n"),
+            SESSION_NAME_END_MARKER,
+            SESSION_NAME_SUFFIX,
         );
         let message = Message::user().with_text(&user_text);
         let result = self

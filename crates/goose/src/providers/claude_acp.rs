@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, PermissionMapping,
-    ACP_CURRENT_MODEL,
+    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
@@ -51,13 +50,6 @@ impl ProviderDef for ClaudeAcpProvider {
                 .resolve(CLAUDE_ACP_BINARY)?;
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
 
-            // claude-agent-acp permission option_ids
-            let permission_mapping = PermissionMapping {
-                allow_option_id: Some("allow".to_string()),
-                reject_option_id: Some("reject".to_string()),
-                rejected_tool_status: sacp::schema::ToolCallStatus::Failed,
-            };
-
             let mode_mapping = HashMap::from([
                 // Closest to "autonomous": bypassPermissions skips confirmations.
                 (GooseMode::Auto, "bypassPermissions".to_string()),
@@ -79,7 +71,6 @@ impl ProviderDef for ClaudeAcpProvider {
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
                 session_mode_id: Some(mode_mapping[&goose_mode].clone()),
                 mode_mapping,
-                permission_mapping,
                 notification_callback: None,
             };
 

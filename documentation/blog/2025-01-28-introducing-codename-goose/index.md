@@ -16,7 +16,7 @@ Powered by your choice of [large language models (LLMs)](/docs/getting-started/p
 
 You can think of goose as an assistant that is ready to take your instructions, and do the work for you.
 
-While goose's first use cases are engineering focused, the community has been exploring other non-engineering use cases for goose as well. And it goes without saying, goose is [open source](https://github.com/block/goose) 🎉.
+While goose's first use cases are engineering focused, the community has been exploring other non-engineering use cases for goose as well. And it goes without saying, goose is [open source](https://github.com/aaif-goose/goose) 🎉.
 
 
 ## How goose Works
@@ -52,7 +52,7 @@ You can get started using goose right away! Check out our [Quickstart](/docs/qui
 
 Excited for upcoming features and events? Be sure to connect with us!
 
-- [GitHub](https://github.com/block/goose)
+- [GitHub](https://github.com/aaif-goose/goose)
 - [Discord](https://discord.gg/goose-oss)
 - [YouTube](https://www.youtube.com/@goose-oss)
 - [LinkedIn](https://www.linkedin.com/company/goose-oss)
@@ -60,18 +60,18 @@ Excited for upcoming features and events? Be sure to connect with us!
 - [BlueSky](https://bsky.app/profile/opensource.block.xyz)
 
 
-[extensions-directory]: https://block.github.io/goose/v1/extensions
+[extensions-directory]: https://goose-docs.ai/v1/extensions
 
 
 <head>
   <meta property="og:title" content="Introducing codename goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2024/12/11/resolving-ci-issues-with-goose-a-practical-walkthrough" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2024/12/11/resolving-ci-issues-with-goose-a-practical-walkthrough" />
   <meta property="og:description" content="codename goose is your open source AI agent, automating engineering tasks and improving productivity." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Introducing codename goose" />
   <meta name="twitter:description" content="codename goose is your open source AI agent, automating engineering tasks and improving productivity." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/introducing-codename-goose-89cac25816e0ea215dd47d4b9768c8ab.png" />
 </head>

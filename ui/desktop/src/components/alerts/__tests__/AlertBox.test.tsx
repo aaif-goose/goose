@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, type RenderOptions, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AlertBox } from '../AlertBox';
 import { Alert, AlertType } from '../types';
+import { IntlTestWrapper } from '../../../i18n/test-utils';
+
+const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
+  render(ui, { wrapper: IntlTestWrapper, ...options });
 
 // Mock the ConfigContext
 vi.mock('../../ConfigContext', () => ({
@@ -25,7 +29,7 @@ describe('AlertBox', () => {
         message: 'Test info message',
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       expect(screen.getByText('Test info message')).toBeInTheDocument();
     });
@@ -36,7 +40,7 @@ describe('AlertBox', () => {
         message: 'Test warning message',
       };
 
-      const { container } = render(<AlertBox alert={alert} />);
+      const { container } = renderWithIntl(<AlertBox alert={alert} />);
       const alertElement = container.querySelector('.bg-\\[\\#cc4b03\\]');
 
       expect(alertElement).toBeInTheDocument();
@@ -49,7 +53,7 @@ describe('AlertBox', () => {
         message: 'Test error message',
       };
 
-      const { container } = render(<AlertBox alert={alert} />);
+      const { container } = renderWithIntl(<AlertBox alert={alert} />);
       const alertElement = container.querySelector('.bg-\\[\\#d7040e\\]');
 
       expect(alertElement).toBeInTheDocument();
@@ -62,7 +66,7 @@ describe('AlertBox', () => {
         message: 'Test message',
       };
 
-      const { container } = render(<AlertBox alert={alert} className="custom-class" />);
+      const { container } = renderWithIntl(<AlertBox alert={alert} className="custom-class" />);
       const alertElement = container.firstChild as HTMLElement;
 
       expect(alertElement).toHaveClass('custom-class');
@@ -80,7 +84,7 @@ describe('AlertBox', () => {
         },
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       // Should show auto-compact threshold (default 80%)
       expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();
@@ -96,7 +100,7 @@ describe('AlertBox', () => {
         },
       };
 
-      const { container } = render(<AlertBox alert={alert} />);
+      const { container } = renderWithIntl(<AlertBox alert={alert} />);
 
       // Progress dots and token counts are no longer rendered
       expect(screen.queryByText('1.5k')).not.toBeInTheDocument();
@@ -117,7 +121,7 @@ describe('AlertBox', () => {
         onCompact: mockOnCompact,
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       expect(screen.getByText('Compact now')).toBeInTheDocument();
     });
@@ -134,7 +138,7 @@ describe('AlertBox', () => {
         compactIcon: <CompactIcon />,
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       expect(screen.getByTestId('compact-icon')).toBeInTheDocument();
       expect(screen.getByText('Compact now')).toBeInTheDocument();
@@ -151,7 +155,7 @@ describe('AlertBox', () => {
         onCompact: mockOnCompact,
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       const compactButton = screen.getByText('Compact now');
       await user.click(compactButton);
@@ -170,7 +174,7 @@ describe('AlertBox', () => {
         onCompact: mockOnCompact,
       };
 
-      render(
+      renderWithIntl(
         <div onClick={mockParentClick}>
           <AlertBox alert={alert} />
         </div>
@@ -192,7 +196,7 @@ describe('AlertBox', () => {
         onCompact: mockOnCompact,
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       expect(screen.queryByText('Compact now')).not.toBeInTheDocument();
     });
@@ -205,7 +209,7 @@ describe('AlertBox', () => {
         showCompactButton: true,
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       expect(screen.queryByText('Compact now')).not.toBeInTheDocument();
     });
@@ -224,7 +228,7 @@ describe('AlertBox', () => {
         onCompact: mockOnCompact,
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();
       expect(screen.getByText('Compact now')).toBeInTheDocument();
@@ -236,7 +240,7 @@ describe('AlertBox', () => {
         message: 'Line 1\nLine 2\nLine 3',
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       expect(
         screen.getByText(
@@ -254,7 +258,7 @@ describe('AlertBox', () => {
         message: '',
       };
 
-      const { container } = render(<AlertBox alert={alert} />);
+      const { container } = renderWithIntl(<AlertBox alert={alert} />);
 
       const alertElement = container.querySelector('.flex.flex-col.gap-2');
       expect(alertElement).toBeInTheDocument();
@@ -270,7 +274,7 @@ describe('AlertBox', () => {
         },
       };
 
-      render(<AlertBox alert={alert} />);
+      renderWithIntl(<AlertBox alert={alert} />);
 
       // Should still render threshold settings
       expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();

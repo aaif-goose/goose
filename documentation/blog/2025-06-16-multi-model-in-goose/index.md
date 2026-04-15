@@ -1,10 +1,15 @@
 ---
 title: "Treating LLMs Like Tools in a Toolbox: A Multi-Model Approach to Smarter AI Agents"
 description: How Goose uses multiple LLMs within a single task, optimizing for speed, cost, and reliability in AI agent workflows
+unlisted: true
 authors:
     - mic
     - angie
 ---
+
+:::danger Outdated
+Lead/Worker mode has been removed from goose. It has been replaced by [Planning Mode](/docs/guides/creating-plans), which uses a dedicated planner model with the `/plan` command. See the [multi-model guide](/docs/guides/multi-model/) for current workflows.
+:::
 
 ![blog cover](multi-model-ai-agent.png)
 
@@ -79,7 +84,7 @@ export GOOSE_MODEL="claude-4-sonnet"
 
 From there, Goose takes care of the hand off, the fallback, and the recovery. You just... keep vibing.
 
-If you're curious how it all works under the hood, we've got a [full tutorial](/docs/tutorials/lead-worker).
+If you're curious how it all works under the hood, see the [planning guide](/docs/guides/creating-plans).
 
 ---
 
@@ -89,12 +94,12 @@ If you're experimenting with multi-model setups, [share what's working and what 
 <head>
   <meta property="og:title" content="Treating LLMs Like Tools in a Toolbox: A Multi-Model Approach to Smarter AI Agents" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/06/16/multi-model-in-goose" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/06/16/multi-model-in-goose" />
   <meta property="og:description" content="How Goose uses multiple LLMs within a single task, optimizing for speed, cost, and reliability in AI agent workflows" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/multi-model-ai-agent-d408feaeba3e13cafdbfe9377980bc3d.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/multi-model-ai-agent-d408feaeba3e13cafdbfe9377980bc3d.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Treating LLMs Like Tools in a Toolbox: A Multi-Model Approach to Smarter AI Agents" />
   <meta name="twitter:description" content="How Goose uses multiple LLMs within a single task, optimizing for speed, cost, and reliability in AI agent workflows" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/multi-model-ai-agent-d408feaeba3e13cafdbfe9377980bc3d.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/multi-model-ai-agent-d408feaeba3e13cafdbfe9377980bc3d.png" />
 </head>

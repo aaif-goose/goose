@@ -7,6 +7,58 @@ import { useNavigation } from '../hooks/useNavigation';
 import { formatExtensionErrorMessage } from '../utils/extensionErrorUtils';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { formatExtensionName } from './settings/extensions/subcomponents/ExtensionList';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  loadingExtensions: {
+    id: 'groupedExtensionLoadingToast.loadingExtensions',
+    defaultMessage: 'Loading {count, plural, one {# extension} other {# extensions}}...',
+  },
+  successfullyLoaded: {
+    id: 'groupedExtensionLoadingToast.successfullyLoaded',
+    defaultMessage: 'Successfully loaded {count, plural, one {# extension} other {# extensions}}',
+  },
+  partiallyLoaded: {
+    id: 'groupedExtensionLoadingToast.partiallyLoaded',
+    defaultMessage: 'Loaded {successCount}/{totalCount, plural, one {# extension} other {# extensions}}',
+  },
+  failedToLoad: {
+    id: 'groupedExtensionLoadingToast.failedToLoad',
+    defaultMessage: '{count, plural, one {# extension} other {# extensions}} failed to load',
+  },
+  failedToAddExtension: {
+    id: 'groupedExtensionLoadingToast.failedToAddExtension',
+    defaultMessage: 'Failed to add extension',
+  },
+  askGoose: {
+    id: 'groupedExtensionLoadingToast.askGoose',
+    defaultMessage: 'Ask goose',
+  },
+  copied: {
+    id: 'groupedExtensionLoadingToast.copied',
+    defaultMessage: 'Copied!',
+  },
+  copyError: {
+    id: 'groupedExtensionLoadingToast.copyError',
+    defaultMessage: 'Copy error',
+  },
+  showLess: {
+    id: 'groupedExtensionLoadingToast.showLess',
+    defaultMessage: 'Show less',
+  },
+  showDetails: {
+    id: 'groupedExtensionLoadingToast.showDetails',
+    defaultMessage: 'Show details',
+  },
+  collapseDetails: {
+    id: 'groupedExtensionLoadingToast.collapseDetails',
+    defaultMessage: 'Collapse details',
+  },
+  expandDetails: {
+    id: 'groupedExtensionLoadingToast.expandDetails',
+    defaultMessage: 'Expand details',
+  },
+});
 
 export interface ExtensionLoadingStatus {
   name: string;
@@ -29,6 +81,7 @@ export function GroupedExtensionLoadingToast({
   const [isOpen, setIsOpen] = useState(false);
   const [copiedExtension, setCopiedExtension] = useState<string | null>(null);
   const setView = useNavigation();
+  const intl = useIntl();
 
   const successCount = extensions.filter((ext) => ext.status === 'success').length;
   const errorCount = extensions.filter((ext) => ext.status === 'error').length;
@@ -46,14 +99,14 @@ export function GroupedExtensionLoadingToast({
 
   const getSummaryText = () => {
     if (!isComplete) {
-      return `Loading ${totalCount} extension${totalCount !== 1 ? 's' : ''}...`;
+      return intl.formatMessage(i18n.loadingExtensions, { count: totalCount });
     }
 
     if (errorCount === 0) {
-      return `Successfully loaded ${successCount} extension${successCount !== 1 ? 's' : ''}`;
+      return intl.formatMessage(i18n.successfullyLoaded, { count: successCount });
     }
 
-    return `Loaded ${successCount}/${totalCount} extension${totalCount !== 1 ? 's' : ''}`;
+    return intl.formatMessage(i18n.partiallyLoaded, { successCount, totalCount });
   };
 
   const getSummaryIcon = () => {
@@ -81,7 +134,7 @@ export function GroupedExtensionLoadingToast({
                   <div className="font-medium text-base">{getSummaryText()}</div>
                   {errorCount > 0 && (
                     <div className="text-sm opacity-90">
-                      {errorCount} extension{errorCount !== 1 ? 's' : ''} failed to load
+                      {intl.formatMessage(i18n.failedToLoad, { count: errorCount })}
                     </div>
                   )}
                 </div>
@@ -105,7 +158,7 @@ export function GroupedExtensionLoadingToast({
                       {ext.status === 'error' && ext.error && (
                         <div className="ml-7 flex flex-col gap-2">
                           <div className="text-xs opacity-75 break-words">
-                            {formatExtensionErrorMessage(ext.error, 'Failed to add extension')}
+                            {formatExtensionErrorMessage(ext.error, intl.formatMessage(i18n.failedToAddExtension))}
                           </div>
                           <div className="flex gap-2">
                             {ext.recoverHints && setView && (
@@ -120,7 +173,7 @@ export function GroupedExtensionLoadingToast({
                                   );
                                 }}
                               >
-                                Ask goose
+                                {intl.formatMessage(i18n.askGoose)}
                               </Button>
                             )}
                             <Button
@@ -132,7 +185,7 @@ export function GroupedExtensionLoadingToast({
                                 setTimeout(() => setCopiedExtension(null), 2000);
                               }}
                             >
-                              {copiedExtension === ext.name ? 'Copied!' : 'Copy error'}
+                              {copiedExtension === ext.name ? intl.formatMessage(i18n.copied) : intl.formatMessage(i18n.copyError)}
                             </Button>
                           </div>
                         </div>
@@ -149,16 +202,16 @@ export function GroupedExtensionLoadingToast({
             <CollapsibleTrigger asChild>
               <button
                 className="flex items-center justify-center gap-1 text-xs opacity-60 hover:opacity-100 transition-opacity mt-2 py-1.5 w-full"
-                aria-label={isOpen ? 'Collapse details' : 'Expand details'}
+                aria-label={isOpen ? intl.formatMessage(i18n.collapseDetails) : intl.formatMessage(i18n.expandDetails)}
               >
                 {isOpen ? (
                   <>
-                    <span>Show less</span>
+                    <span>{intl.formatMessage(i18n.showLess)}</span>
                     <ChevronUp className="w-3 h-3" />
                   </>
                 ) : (
                   <>
-                    <span>Show details</span>
+                    <span>{intl.formatMessage(i18n.showDetails)}</span>
                     <ChevronDown className="w-3 h-3" />
                   </>
                 )}

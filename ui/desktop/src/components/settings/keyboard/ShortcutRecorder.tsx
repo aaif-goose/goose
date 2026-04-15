@@ -2,6 +2,31 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '../../ui/button';
 import { KeyboardShortcuts } from '../../../utils/settings';
 import { getShortcutLabel, formatShortcut } from './KeyboardShortcutsSection';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  pressShortcut: {
+    id: 'shortcutRecorder.pressShortcut',
+    defaultMessage: 'Press shortcut...',
+  },
+  clickToRecord: {
+    id: 'shortcutRecorder.clickToRecord',
+    defaultMessage: 'Click to record...',
+  },
+  save: {
+    id: 'shortcutRecorder.save',
+    defaultMessage: 'Save',
+  },
+  cancel: {
+    id: 'shortcutRecorder.cancel',
+    defaultMessage: 'Cancel',
+  },
+  conflictWarning: {
+    id: 'shortcutRecorder.conflictWarning',
+    defaultMessage:
+      'This shortcut is already used by {label}. Saving will reassign it to this action.',
+  },
+});
 
 interface ShortcutRecorderProps {
   value: string;
@@ -18,6 +43,7 @@ export function ShortcutRecorder({
   allShortcuts,
   currentKey,
 }: ShortcutRecorderProps) {
+  const intl = useIntl();
   const [recording, setRecording] = useState(true);
   const [capturedShortcut, setCapturedShortcut] = useState(value);
   const [displayShortcut, setDisplayShortcut] = useState('');
@@ -151,7 +177,9 @@ export function ShortcutRecorder({
           `}
         >
           {recording ? (
-            <span className="text-text-secondary animate-pulse">Press shortcut...</span>
+            <span className="text-text-secondary animate-pulse">
+              {intl.formatMessage(i18n.pressShortcut)}
+            </span>
           ) : displayShortcut ? (
             <span className={conflict ? 'text-yellow-600' : 'text-text-primary'}>
               {displayShortcut}
@@ -161,7 +189,9 @@ export function ShortcutRecorder({
               {formatShortcut(capturedShortcut)}
             </span>
           ) : (
-            <span className="text-text-secondary">Click to record...</span>
+            <span className="text-text-secondary">
+              {intl.formatMessage(i18n.clickToRecord)}
+            </span>
           )}
         </div>
         <Button
@@ -171,18 +201,19 @@ export function ShortcutRecorder({
           disabled={!capturedShortcut}
           className="text-xs"
         >
-          Save
+          {intl.formatMessage(i18n.save)}
         </Button>
         <Button variant="secondary" size="sm" onClick={handleCancel} className="text-xs">
-          Cancel
+          {intl.formatMessage(i18n.cancel)}
         </Button>
       </div>
       {conflict && (
         <div className="text-xs text-yellow-600 flex items-center gap-1">
           <span>⚠️</span>
           <span>
-            This shortcut is already used by <strong>{getShortcutLabel(conflict)}</strong>. Saving
-            will reassign it to this action.
+            {intl.formatMessage(i18n.conflictWarning, {
+              label: getShortcutLabel(conflict, intl.formatMessage),
+            })}
           </span>
         </div>
       )}

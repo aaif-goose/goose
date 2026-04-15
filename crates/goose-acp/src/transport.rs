@@ -26,7 +26,7 @@ pub(crate) const JSON_MIME_TYPE: &str = "application/json";
 
 pub(crate) struct TransportSession {
     pub to_agent_tx: mpsc::Sender<String>,
-    pub from_agent_rx: Arc<Mutex<mpsc::Receiver<String>>>,
+    pub from_agent_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
     pub handle: tokio::task::JoinHandle<()>,
 }
 

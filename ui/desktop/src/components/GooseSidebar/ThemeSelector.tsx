@@ -2,6 +2,26 @@ import React from 'react';
 import { Moon, Sliders, Sun } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useTheme } from '../../contexts/ThemeContext';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  theme: {
+    id: 'themeSelector.theme',
+    defaultMessage: 'Theme',
+  },
+  light: {
+    id: 'themeSelector.light',
+    defaultMessage: 'Light',
+  },
+  dark: {
+    id: 'themeSelector.dark',
+    defaultMessage: 'Dark',
+  },
+  system: {
+    id: 'themeSelector.system',
+    defaultMessage: 'System',
+  },
+});
 
 interface ThemeSelectorProps {
   className?: string;
@@ -14,11 +34,12 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
   hideTitle = false,
   horizontal = false,
 }) => {
+  const intl = useIntl();
   const { userThemePreference, setUserThemePreference } = useTheme();
 
   return (
     <div className={`${!horizontal ? 'px-1 py-2 space-y-2' : ''} ${className}`}>
-      {!hideTitle && <div className="text-xs text-text-primary px-3">Theme</div>}
+      {!hideTitle && <div className="text-xs text-text-primary px-3">{intl.formatMessage(i18n.theme)}</div>}
       <div
         className={`${horizontal ? 'flex' : 'grid grid-cols-3'} gap-1 ${!horizontal ? 'px-3' : ''}`}
       >
@@ -34,7 +55,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           size="sm"
         >
           <Sun className="h-3 w-3" />
-          <span>Light</span>
+          <span>{intl.formatMessage(i18n.light)}</span>
         </Button>
 
         <Button
@@ -49,7 +70,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           size="sm"
         >
           <Moon className="h-3 w-3" />
-          <span>Dark</span>
+          <span>{intl.formatMessage(i18n.dark)}</span>
         </Button>
 
         <Button
@@ -64,7 +85,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           size="sm"
         >
           <Sliders className="h-3 w-3" />
-          <span>System</span>
+          <span>{intl.formatMessage(i18n.system)}</span>
         </Button>
       </div>
     </div>

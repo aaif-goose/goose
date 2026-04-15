@@ -1,23 +1,46 @@
+import { defineMessages, useIntl } from '../../../../../i18n';
+import type { IntlShape } from 'react-intl';
+
+const i18n = defineMessages({
+  ollamaNotConfiguredPrefix: {
+    id: 'stringUtils.ollamaNotConfiguredPrefix',
+    defaultMessage: 'To use, either the',
+  },
+  ollamaApp: {
+    id: 'stringUtils.ollamaApp',
+    defaultMessage: 'Ollama app',
+  },
+  ollamaNotConfiguredSuffix: {
+    id: 'stringUtils.ollamaNotConfiguredSuffix',
+    defaultMessage: 'must be installed on your machine and open, or you must enter a value for OLLAMA_HOST.',
+  },
+  configuredProvider: {
+    id: 'stringUtils.configuredProvider',
+    defaultMessage: '{name} provider is configured',
+  },
+});
+
 // Functions for string / string-based element creation (e.g. tooltips for each provider, descriptions, etc)
 export function OllamaNotConfiguredTooltipMessage() {
+  const intl = useIntl();
   return (
     <p>
-      To use, either the{' '}
+      {intl.formatMessage(i18n.ollamaNotConfiguredPrefix)}{' '}
       <a
         href="https://ollama.com/download"
         target="_blank"
         rel="noopener noreferrer"
         className="text-blue-600 underline hover:text-blue-800"
       >
-        Ollama app
+        {intl.formatMessage(i18n.ollamaApp)}
       </a>{' '}
-      must be installed on your machine and open, or you must enter a value for OLLAMA_HOST.
+      {intl.formatMessage(i18n.ollamaNotConfiguredSuffix)}
     </p>
   );
 }
 
-export function ConfiguredProviderTooltipMessage(name: string) {
-  return `${name} provider is configured`;
+export function ConfiguredProviderTooltipMessage(intl: IntlShape, name: string) {
+  return intl.formatMessage(i18n.configuredProvider, { name });
 }
 
 interface ProviderDescriptionProps {

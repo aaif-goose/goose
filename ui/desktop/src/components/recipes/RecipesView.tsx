@@ -59,8 +59,245 @@ import {
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 import { errorMessage } from '../../utils/conversionUtils';
 import { AppEvents } from '../../constants/events';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  deleteRecipeTitle: {
+    id: 'recipesView.deleteRecipeTitle',
+    defaultMessage: 'Delete Recipe',
+  },
+  deleteRecipeConfirm: {
+    id: 'recipesView.deleteRecipeConfirm',
+    defaultMessage: 'Are you sure you want to delete "{title}"?',
+  },
+  deleteRecipeDetail: {
+    id: 'recipesView.deleteRecipeDetail',
+    defaultMessage: 'Recipe file will be deleted.',
+  },
+  recipeDeletedSuccess: {
+    id: 'recipesView.recipeDeletedSuccess',
+    defaultMessage: 'Recipe deleted successfully',
+  },
+  deeplinkCopiedTitle: {
+    id: 'recipesView.deeplinkCopiedTitle',
+    defaultMessage: 'Deeplink copied',
+  },
+  deeplinkCopiedMsg: {
+    id: 'recipesView.deeplinkCopiedMsg',
+    defaultMessage: 'Recipe deeplink has been copied to clipboard',
+  },
+  copyFailedTitle: {
+    id: 'recipesView.copyFailedTitle',
+    defaultMessage: 'Copy failed',
+  },
+  copyDeeplinkFailedMsg: {
+    id: 'recipesView.copyDeeplinkFailedMsg',
+    defaultMessage: 'Failed to copy deeplink to clipboard',
+  },
+  yamlCopiedTitle: {
+    id: 'recipesView.yamlCopiedTitle',
+    defaultMessage: 'YAML copied',
+  },
+  yamlCopiedMsg: {
+    id: 'recipesView.yamlCopiedMsg',
+    defaultMessage: 'Recipe YAML has been copied to clipboard',
+  },
+  copyYamlFailedMsg: {
+    id: 'recipesView.copyYamlFailedMsg',
+    defaultMessage: 'Failed to copy recipe YAML to clipboard',
+  },
+  exportRecipeDialogTitle: {
+    id: 'recipesView.exportRecipeDialogTitle',
+    defaultMessage: 'Export Recipe',
+  },
+  yamlFiles: {
+    id: 'recipesView.yamlFiles',
+    defaultMessage: 'YAML Files',
+  },
+  allFiles: {
+    id: 'recipesView.allFiles',
+    defaultMessage: 'All Files',
+  },
+  recipeExportedTitle: {
+    id: 'recipesView.recipeExportedTitle',
+    defaultMessage: 'Recipe exported',
+  },
+  recipeExportedMsg: {
+    id: 'recipesView.recipeExportedMsg',
+    defaultMessage: 'Recipe saved to {filePath}',
+  },
+  exportFailedTitle: {
+    id: 'recipesView.exportFailedTitle',
+    defaultMessage: 'Export failed',
+  },
+  exportFailedMsg: {
+    id: 'recipesView.exportFailedMsg',
+    defaultMessage: 'Failed to export recipe to file',
+  },
+  scheduleSavedTitle: {
+    id: 'recipesView.scheduleSavedTitle',
+    defaultMessage: 'Schedule saved',
+  },
+  scheduleSavedMsg: {
+    id: 'recipesView.scheduleSavedMsg',
+    defaultMessage: 'Recipe will run {schedule}',
+  },
+  scheduleRemovedTitle: {
+    id: 'recipesView.scheduleRemovedTitle',
+    defaultMessage: 'Schedule removed',
+  },
+  scheduleRemovedMsg: {
+    id: 'recipesView.scheduleRemovedMsg',
+    defaultMessage: 'Recipe will no longer run automatically',
+  },
+  slashCommandSavedTitle: {
+    id: 'recipesView.slashCommandSavedTitle',
+    defaultMessage: 'Slash command saved',
+  },
+  slashCommandSavedMsg: {
+    id: 'recipesView.slashCommandSavedMsg',
+    defaultMessage: 'Use /{command} to run this recipe',
+  },
+  slashCommandRemovedTitle: {
+    id: 'recipesView.slashCommandRemovedTitle',
+    defaultMessage: 'Slash command removed',
+  },
+  slashCommandRemovedMsg: {
+    id: 'recipesView.slashCommandRemovedMsg',
+    defaultMessage: 'Recipe slash command has been removed',
+  },
+  runs: {
+    id: 'recipesView.runs',
+    defaultMessage: 'Runs {schedule}',
+  },
+  editSlashCommand: {
+    id: 'recipesView.editSlashCommand',
+    defaultMessage: 'Edit slash command',
+  },
+  addSlashCommand: {
+    id: 'recipesView.addSlashCommand',
+    defaultMessage: 'Add slash command',
+  },
+  useRecipe: {
+    id: 'recipesView.useRecipe',
+    defaultMessage: 'Use recipe',
+  },
+  openInNewWindow: {
+    id: 'recipesView.openInNewWindow',
+    defaultMessage: 'Open in new window',
+  },
+  editRecipe: {
+    id: 'recipesView.editRecipe',
+    defaultMessage: 'Edit recipe',
+  },
+  shareRecipe: {
+    id: 'recipesView.shareRecipe',
+    defaultMessage: 'Share recipe',
+  },
+  copyDeeplink: {
+    id: 'recipesView.copyDeeplink',
+    defaultMessage: 'Copy Deeplink',
+  },
+  copyYaml: {
+    id: 'recipesView.copyYaml',
+    defaultMessage: 'Copy YAML',
+  },
+  exportToFile: {
+    id: 'recipesView.exportToFile',
+    defaultMessage: 'Export to File',
+  },
+  editSchedule: {
+    id: 'recipesView.editSchedule',
+    defaultMessage: 'Edit schedule',
+  },
+  addSchedule: {
+    id: 'recipesView.addSchedule',
+    defaultMessage: 'Add schedule',
+  },
+  deleteRecipe: {
+    id: 'recipesView.deleteRecipe',
+    defaultMessage: 'Delete recipe',
+  },
+  errorLoadingRecipes: {
+    id: 'recipesView.errorLoadingRecipes',
+    defaultMessage: 'Error Loading Recipes',
+  },
+  tryAgain: {
+    id: 'recipesView.tryAgain',
+    defaultMessage: 'Try Again',
+  },
+  noSavedRecipes: {
+    id: 'recipesView.noSavedRecipes',
+    defaultMessage: 'No saved recipes',
+  },
+  noSavedRecipesDescription: {
+    id: 'recipesView.noSavedRecipesDescription',
+    defaultMessage: 'Recipe saved from chats will show up here.',
+  },
+  noMatchingRecipes: {
+    id: 'recipesView.noMatchingRecipes',
+    defaultMessage: 'No matching recipes found',
+  },
+  adjustSearchTerms: {
+    id: 'recipesView.adjustSearchTerms',
+    defaultMessage: 'Try adjusting your search terms',
+  },
+  recipesTitle: {
+    id: 'recipesView.recipesTitle',
+    defaultMessage: 'Recipes',
+  },
+  createRecipe: {
+    id: 'recipesView.createRecipe',
+    defaultMessage: 'Create Recipe',
+  },
+  recipesDescription: {
+    id: 'recipesView.recipesDescription',
+    defaultMessage: 'View and manage your saved recipes to quickly start new sessions with predefined configurations. {shortcut} to search.',
+  },
+  searchRecipesPlaceholder: {
+    id: 'recipesView.searchRecipesPlaceholder',
+    defaultMessage: 'Search recipes...',
+  },
+  scheduleDialogTitle: {
+    id: 'recipesView.scheduleDialogTitle',
+    defaultMessage: '{action} Schedule',
+  },
+  removeSchedule: {
+    id: 'recipesView.removeSchedule',
+    defaultMessage: 'Remove Schedule',
+  },
+  cancel: {
+    id: 'recipesView.cancel',
+    defaultMessage: 'Cancel',
+  },
+  save: {
+    id: 'recipesView.save',
+    defaultMessage: 'Save',
+  },
+  slashCommandTitle: {
+    id: 'recipesView.slashCommandTitle',
+    defaultMessage: 'Slash Command',
+  },
+  slashCommandDescription: {
+    id: 'recipesView.slashCommandDescription',
+    defaultMessage: 'Set a slash command to quickly run this recipe from any chat',
+  },
+  slashCommandPlaceholder: {
+    id: 'recipesView.slashCommandPlaceholder',
+    defaultMessage: 'command-name',
+  },
+  slashCommandUsageHint: {
+    id: 'recipesView.slashCommandUsageHint',
+    defaultMessage: 'Use /{command} in any chat to run this recipe',
+  },
+  remove: {
+    id: 'recipesView.remove',
+    defaultMessage: 'Remove',
+  },
+});
 
 export default function RecipesView() {
+  const intl = useIntl();
   const setView = useNavigation();
   const [savedRecipes, setSavedRecipes] = useState<RecipeManifest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,11 +422,11 @@ export default function RecipesView() {
   const handleDeleteRecipe = async (recipeManifest: RecipeManifest) => {
     const result = await window.electron.showMessageBox({
       type: 'warning',
-      buttons: ['Cancel', 'Delete'],
+      buttons: [intl.formatMessage(i18n.cancel), 'Delete'],
       defaultId: 0,
-      title: 'Delete Recipe',
-      message: `Are you sure you want to delete "${recipeManifest.recipe.title}"?`,
-      detail: 'Recipe file will be deleted.',
+      title: intl.formatMessage(i18n.deleteRecipeTitle),
+      message: intl.formatMessage(i18n.deleteRecipeConfirm, { title: recipeManifest.recipe.title }),
+      detail: intl.formatMessage(i18n.deleteRecipeDetail),
     });
 
     if (result.response !== 1) {
@@ -202,7 +439,7 @@ export default function RecipesView() {
       await loadSavedRecipes();
       toastSuccess({
         title: recipeManifest.recipe.title,
-        msg: 'Recipe deleted successfully',
+        msg: intl.formatMessage(i18n.recipeDeletedSuccess),
       });
     } catch (err) {
       console.error('Failed to delete recipe:', err);
@@ -231,15 +468,15 @@ export default function RecipesView() {
       await navigator.clipboard.writeText(deeplink);
       trackRecipeDeeplinkCopied(true);
       toastSuccess({
-        title: 'Deeplink copied',
-        msg: 'Recipe deeplink has been copied to clipboard',
+        title: intl.formatMessage(i18n.deeplinkCopiedTitle),
+        msg: intl.formatMessage(i18n.deeplinkCopiedMsg),
       });
     } catch (error) {
       console.error('Failed to copy deeplink:', error);
       trackRecipeDeeplinkCopied(false, getErrorType(error));
       toastError({
-        title: 'Copy failed',
-        msg: 'Failed to copy deeplink to clipboard',
+        title: intl.formatMessage(i18n.copyFailedTitle),
+        msg: intl.formatMessage(i18n.copyDeeplinkFailedMsg),
       });
     }
   };
@@ -258,15 +495,15 @@ export default function RecipesView() {
       await navigator.clipboard.writeText(response.data.yaml);
       trackRecipeYamlCopied(true);
       toastSuccess({
-        title: 'YAML copied',
-        msg: 'Recipe YAML has been copied to clipboard',
+        title: intl.formatMessage(i18n.yamlCopiedTitle),
+        msg: intl.formatMessage(i18n.yamlCopiedMsg),
       });
     } catch (error) {
       console.error('Failed to copy YAML:', error);
       trackRecipeYamlCopied(false, getErrorType(error));
       toastError({
-        title: 'Copy failed',
-        msg: 'Failed to copy recipe YAML to clipboard',
+        title: intl.formatMessage(i18n.copyFailedTitle),
+        msg: intl.formatMessage(i18n.copyYamlFailedMsg),
       });
     }
   };
@@ -290,11 +527,11 @@ export default function RecipesView() {
       const filename = `${sanitizedTitle}.yaml`;
 
       const result = await window.electron.showSaveDialog({
-        title: 'Export Recipe',
+        title: intl.formatMessage(i18n.exportRecipeDialogTitle),
         defaultPath: filename,
         filters: [
-          { name: 'YAML Files', extensions: ['yaml', 'yml'] },
-          { name: 'All Files', extensions: ['*'] },
+          { name: intl.formatMessage(i18n.yamlFiles), extensions: ['yaml', 'yml'] },
+          { name: intl.formatMessage(i18n.allFiles), extensions: ['*'] },
         ],
       });
 
@@ -302,16 +539,16 @@ export default function RecipesView() {
         await window.electron.writeFile(result.filePath, response.data.yaml);
         trackRecipeExportedToFile(true);
         toastSuccess({
-          title: 'Recipe exported',
-          msg: `Recipe saved to ${result.filePath}`,
+          title: intl.formatMessage(i18n.recipeExportedTitle),
+          msg: intl.formatMessage(i18n.recipeExportedMsg, { filePath: result.filePath }),
         });
       }
     } catch (error) {
       console.error('Failed to export recipe:', error);
       trackRecipeExportedToFile(false, getErrorType(error));
       toastError({
-        title: 'Export failed',
-        msg: 'Failed to export recipe to file',
+        title: intl.formatMessage(i18n.exportFailedTitle),
+        msg: intl.formatMessage(i18n.exportFailedMsg),
       });
     }
   };
@@ -337,8 +574,8 @@ export default function RecipesView() {
 
       trackRecipeScheduled(true, action);
       toastSuccess({
-        title: 'Schedule saved',
-        msg: `Recipe will run ${getReadableCron(scheduleCron)}`,
+        title: intl.formatMessage(i18n.scheduleSavedTitle),
+        msg: intl.formatMessage(i18n.scheduleSavedMsg, { schedule: getReadableCron(scheduleCron) }),
       });
 
       setShowScheduleDialog(false);
@@ -365,8 +602,8 @@ export default function RecipesView() {
 
       trackRecipeScheduled(true, 'remove');
       toastSuccess({
-        title: 'Schedule removed',
-        msg: 'Recipe will no longer run automatically',
+        title: intl.formatMessage(i18n.scheduleRemovedTitle),
+        msg: intl.formatMessage(i18n.scheduleRemovedMsg),
       });
 
       setShowScheduleDialog(false);
@@ -405,8 +642,8 @@ export default function RecipesView() {
 
       trackRecipeSlashCommandSet(true, action);
       toastSuccess({
-        title: 'Slash command saved',
-        msg: slashCommand ? `Use /${slashCommand} to run this recipe` : 'Slash command removed',
+        title: intl.formatMessage(i18n.slashCommandSavedTitle),
+        msg: slashCommand ? intl.formatMessage(i18n.slashCommandSavedMsg, { command: slashCommand }) : intl.formatMessage(i18n.slashCommandRemovedMsg),
       });
 
       setShowSlashCommandDialog(false);
@@ -433,8 +670,8 @@ export default function RecipesView() {
 
       trackRecipeSlashCommandSet(true, 'remove');
       toastSuccess({
-        title: 'Slash command removed',
-        msg: 'Recipe slash command has been removed',
+        title: intl.formatMessage(i18n.slashCommandRemovedTitle),
+        msg: intl.formatMessage(i18n.slashCommandRemovedMsg),
       });
 
       setShowSlashCommandDialog(false);
@@ -480,7 +717,7 @@ export default function RecipesView() {
                 {schedule_cron && (
                   <div className="flex items-center text-blue-600 dark:text-blue-400">
                     <Clock className="w-3 h-3 mr-1" />
-                    Runs {getReadableCron(schedule_cron)}
+                    {intl.formatMessage(i18n.runs, { schedule: getReadableCron(schedule_cron) })}
                   </div>
                 )}
                 {slash_command && (
@@ -501,7 +738,7 @@ export default function RecipesView() {
           variant={slash_command ? 'default' : 'outline'}
           size="sm"
           className="h-8 w-8 p-0"
-          title={slash_command ? 'Edit slash command' : 'Add slash command'}
+          title={slash_command ? intl.formatMessage(i18n.editSlashCommand) : intl.formatMessage(i18n.addSlashCommand)}
         >
           <Terminal className="w-4 h-4" />
         </Button>
@@ -514,7 +751,7 @@ export default function RecipesView() {
             }}
             size="sm"
             className="h-8 w-8 p-0"
-            title="Use recipe"
+            title={intl.formatMessage(i18n.useRecipe)}
           >
             <Play className="w-4 h-4" />
           </Button>
@@ -526,7 +763,7 @@ export default function RecipesView() {
             variant="outline"
             size="sm"
             className="h-8 w-8 p-0"
-            title="Open in new window"
+            title={intl.formatMessage(i18n.openInNewWindow)}
           >
             <ExternalLink className="w-4 h-4" />
           </Button>
@@ -538,7 +775,7 @@ export default function RecipesView() {
             variant="outline"
             size="sm"
             className="h-8 w-8 p-0"
-            title="Edit recipe"
+            title={intl.formatMessage(i18n.editRecipe)}
           >
             <Edit className="w-4 h-4" />
           </Button>
@@ -549,7 +786,7 @@ export default function RecipesView() {
                 variant="outline"
                 size="sm"
                 className="h-8 w-8 p-0"
-                title="Share recipe"
+                title={intl.formatMessage(i18n.shareRecipe)}
               >
                 <Share2 className="w-4 h-4" />
               </Button>
@@ -557,16 +794,16 @@ export default function RecipesView() {
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onClick={() => handleCopyDeeplink(recipeManifestResponse)}>
                 <Link className="w-4 h-4" />
-                Copy Deeplink
+                {intl.formatMessage(i18n.copyDeeplink)}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleCopyYaml(recipeManifestResponse)}>
                 <Copy className="w-4 h-4" />
-                Copy YAML
+                {intl.formatMessage(i18n.copyYaml)}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleExportFile(recipeManifestResponse)}>
                 <Download className="w-4 h-4" />
-                Export to File
+                {intl.formatMessage(i18n.exportToFile)}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -578,7 +815,7 @@ export default function RecipesView() {
             variant={schedule_cron ? 'default' : 'outline'}
             size="sm"
             className="h-8 w-8 p-0"
-            title={schedule_cron ? 'Edit schedule' : 'Add schedule'}
+            title={schedule_cron ? intl.formatMessage(i18n.editSchedule) : intl.formatMessage(i18n.addSchedule)}
           >
             <Clock className="w-4 h-4" />
           </Button>
@@ -590,7 +827,7 @@ export default function RecipesView() {
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-            title="Delete recipe"
+            title={intl.formatMessage(i18n.deleteRecipe)}
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -638,10 +875,10 @@ export default function RecipesView() {
       return (
         <div className="flex flex-col items-center justify-center h-full text-text-secondary">
           <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
-          <p className="text-lg mb-2">Error Loading Recipes</p>
+          <p className="text-lg mb-2">{intl.formatMessage(i18n.errorLoadingRecipes)}</p>
           <p className="text-sm text-center mb-4">{error}</p>
           <Button onClick={loadSavedRecipes} variant="default">
-            Try Again
+            {intl.formatMessage(i18n.tryAgain)}
           </Button>
         </div>
       );
@@ -650,8 +887,8 @@ export default function RecipesView() {
     if (savedRecipes.length === 0) {
       return (
         <div className="flex flex-col justify-center pt-2 h-full">
-          <p className="text-lg">No saved recipes</p>
-          <p className="text-sm text-text-secondary">Recipe saved from chats will show up here.</p>
+          <p className="text-lg">{intl.formatMessage(i18n.noSavedRecipes)}</p>
+          <p className="text-sm text-text-secondary">{intl.formatMessage(i18n.noSavedRecipesDescription)}</p>
         </div>
       );
     }
@@ -660,8 +897,8 @@ export default function RecipesView() {
       return (
         <div className="flex flex-col items-center justify-center h-full text-text-secondary mt-4">
           <FileText className="h-12 w-12 mb-4" />
-          <p className="text-lg mb-2">No matching recipes found</p>
-          <p className="text-sm">Try adjusting your search terms</p>
+          <p className="text-lg mb-2">{intl.formatMessage(i18n.noMatchingRecipes)}</p>
+          <p className="text-sm">{intl.formatMessage(i18n.adjustSearchTerms)}</p>
         </div>
       );
     }
@@ -685,7 +922,7 @@ export default function RecipesView() {
           <div className="bg-background-primary px-8 pb-8 pt-16">
             <div className="flex flex-col page-transition">
               <div className="flex justify-between items-center mb-1">
-                <h1 className="text-4xl font-light">Recipes</h1>
+                <h1 className="text-4xl font-light">{intl.formatMessage(i18n.recipesTitle)}</h1>
                 <div className="flex gap-2">
                   <Button
                     onClick={() => setShowCreateDialog(true)}
@@ -694,21 +931,20 @@ export default function RecipesView() {
                     className="flex items-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
-                    Create Recipe
+                    {intl.formatMessage(i18n.createRecipe)}
                   </Button>
                   <ImportRecipeButton onClick={() => setShowImportDialog(true)} />
                 </div>
               </div>
               <p className="text-sm text-text-secondary mb-1">
-                View and manage your saved recipes to quickly start new sessions with predefined
-                configurations. {getSearchShortcutText()} to search.
+                {intl.formatMessage(i18n.recipesDescription, { shortcut: getSearchShortcutText() })}
               </p>
             </div>
           </div>
 
           <div className="flex-1 min-h-0 relative px-8">
             <ScrollArea className="h-full">
-              <SearchView onSearch={(term) => setSearchTerm(term)} placeholder="Search recipes...">
+              <SearchView onSearch={(term) => setSearchTerm(term)} placeholder={intl.formatMessage(i18n.searchRecipesPlaceholder)}>
                 <div
                   className={`h-full relative transition-all duration-300 ${
                     showContent ? 'opacity-100 animate-in fade-in ' : 'opacity-0'
@@ -753,7 +989,7 @@ export default function RecipesView() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
-                {scheduleRecipeManifest.schedule_cron ? 'Edit' : 'Add'} Schedule
+                {intl.formatMessage(i18n.scheduleDialogTitle, { action: scheduleRecipeManifest.schedule_cron ? 'Edit' : 'Add' })}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
@@ -776,14 +1012,14 @@ export default function RecipesView() {
               <div className="flex gap-2 justify-end">
                 {scheduleRecipeManifest.schedule_cron && (
                   <Button variant="outline" onClick={handleRemoveSchedule}>
-                    Remove Schedule
+                    {intl.formatMessage(i18n.removeSchedule)}
                   </Button>
                 )}
                 <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>
-                  Cancel
+                  {intl.formatMessage(i18n.cancel)}
                 </Button>
                 <Button onClick={handleSaveSchedule} disabled={!scheduleValid}>
-                  Save
+                  {intl.formatMessage(i18n.save)}
                 </Button>
               </div>
             </div>
@@ -795,12 +1031,12 @@ export default function RecipesView() {
         <Dialog open={showSlashCommandDialog} onOpenChange={setShowSlashCommandDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Slash Command</DialogTitle>
+              <DialogTitle>{intl.formatMessage(i18n.slashCommandTitle)}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Set a slash command to quickly run this recipe from any chat
+                  {intl.formatMessage(i18n.slashCommandDescription)}
                 </p>
                 <div className="flex gap-2 items-center">
                   <span className="text-muted-foreground">/</span>
@@ -808,13 +1044,13 @@ export default function RecipesView() {
                     type="text"
                     value={slashCommand}
                     onChange={(e) => setSlashCommand(e.target.value)}
-                    placeholder="command-name"
+                    placeholder={intl.formatMessage(i18n.slashCommandPlaceholder)}
                     className="flex-1 px-3 py-2 border rounded text-sm"
                   />
                 </div>
                 {slashCommand && (
                   <p className="text-xs text-muted-foreground mt-2">
-                    Use /{slashCommand} in any chat to run this recipe
+                    {intl.formatMessage(i18n.slashCommandUsageHint, { command: slashCommand })}
                   </p>
                 )}
               </div>
@@ -822,13 +1058,13 @@ export default function RecipesView() {
               <div className="flex gap-2 justify-end">
                 {slashCommandRecipeManifest.slash_command && (
                   <Button variant="outline" onClick={handleRemoveSlashCommand}>
-                    Remove
+                    {intl.formatMessage(i18n.remove)}
                   </Button>
                 )}
                 <Button variant="outline" onClick={() => setShowSlashCommandDialog(false)}>
-                  Cancel
+                  {intl.formatMessage(i18n.cancel)}
                 </Button>
-                <Button onClick={handleSaveSlashCommand}>Save</Button>
+                <Button onClick={handleSaveSlashCommand}>{intl.formatMessage(i18n.save)}</Button>
               </div>
             </div>
           </DialogContent>

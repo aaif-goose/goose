@@ -150,12 +150,12 @@ goose is here to make your life easier, so the next time you open up a session, 
 <head>
   <meta property="og:title" content="AI Prompting 101: How to Get the Best Responses from Your AI Agent" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/13/better-ai-prompting" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/13/better-ai-prompting" />
   <meta property="og:description" content="How to prompt and vibe code your way to better responses." />
-  <meta property="og:image" content="http://block.github.io/goose/assets/images/prompt-078b12695f95c4f0eac3861a8a2611ef.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/prompt-078b12695f95c4f0eac3861a8a2611ef.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="AI Prompting 101: How to Get the Best Responses from Your AI Agent" />
   <meta name="twitter:description" content="How to prompt and vibe code your way to better responses." />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/prompt-078b12695f95c4f0eac3861a8a2611ef.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/prompt-078b12695f95c4f0eac3861a8a2611ef.png" />
 </head>

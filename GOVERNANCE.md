@@ -175,7 +175,7 @@ This governance model may evolve as goose grows. Any proposed modification to th
 
 ## Current Membership
 
-Core Maintainers and Maintainers are listed in the main goose repository's [MAINTAINERS.md](https://github.com/block/goose/blob/main/MAINTAINERS.md) file with their areas of expertise where applicable.
+Core Maintainers and Maintainers are listed in the main goose repository's [MAINTAINERS.md](https://github.com/aaif-goose/goose/blob/main/MAINTAINERS.md) file with their areas of expertise where applicable.
 
 ## Summary
 
@@ -190,7 +190,7 @@ We believe this balance enables goose to remain innovative while building a stro
 
 # General Project Policies
 
-Founded by Block, goose has been established as a Series of LF Projects, LLC. Policies applicable to goose and participants in the goose project, including guidelines on the usage of trademarks, are located at [https://lfprojects.org/policies/](https://lfprojects.org/policies/).  Governance changes approved as per the provisions of this governance document must also be approved by LF Projects, LLC.
+Founded by Block and now stewarded by AAIF (Agentic AI Foundation), goose has been established as a Series of LF Projects, LLC. Policies applicable to goose and participants in the goose project, including guidelines on the usage of trademarks, are located at [https://lfprojects.org/policies/](https://lfprojects.org/policies/).  Governance changes approved as per the provisions of this governance document must also be approved by LF Projects, LLC.
 
 goose participants acknowledge that the copyright in all new contributions will be retained by the copyright holder as independent works of authorship and that no contributor or copyright holder will be required to assign copyrights to the project.
 Except as described below, all code and specification contributions to the project must be made using the Apache License, Version 2.0 available at (the “Project License”).

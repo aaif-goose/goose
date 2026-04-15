@@ -25,9 +25,11 @@ on:
         type: string
         required: false
         default: ''
-    secrets:
-      OSX_CODESIGN_ROLE:
+      environment:
+        description: 'GitHub Environment containing signing secrets (e.g. "production"). Leave empty to skip.'
         required: false
+        type: string
+        default: ''
 
 name: Reusable workflow to bundle desktop app for Intel Mac
 
@@ -35,6 +37,7 @@ jobs:
   bundle-desktop-intel:
     runs-on: macos-latest
     name: Bundle Desktop App on Intel macOS
+    environment: ${{ inputs.environment || '' }}
     env:
       MACOSX_DEPLOYMENT_TARGET: "12.0"
     permissions:
@@ -117,11 +120,22 @@ jobs:
           jq '.build.mac.target[0].arch = "x64"' package.json > package.json.tmp && mv package.json.tmp package.json
         working-directory: ui/desktop
 
+      - name: Import Apple signing certificate
+        if: ${{ inputs.signing }}
+        uses: ./.github/actions/apple-codesign
+        with:
+          certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
       # Check disk space before bundling
       - name: Check disk space before bundling
         run: df -h
 
       - name: Build App
+        env:
+          APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
+          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
         run: |
           source ../../bin/activate-hermit
           attempt=0
@@ -138,79 +152,12 @@ jobs:
           fi
         working-directory: ui/desktop
 
-      - name: Configure AWS credentials
-        if: ${{ inputs.signing }}
-        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708  # v5.1.1
-        with:
-          role-to-assume: "${{ secrets.OSX_CODESIGN_ROLE }}"
-          aws-region: us-west-2
-
-      - name: Codesigning and Notarization
-        if: ${{ inputs.signing }}
+      - name: Clean up signing keychain
+        if: always()
         run: |
-          set -e
-
-          echo "⬆️ uploading unsigned app"
-          source_job_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          unsigned_url="s3://block-goose-artifacts-bucket-production/unsigned/goose-${GITHUB_SHA}-${{ github.run_id }}-intel.zip"
-
-          zip -q -u -r out/Goose-darwin-x64/Goose_intel_mac.zip entitlements.plist
-
-          # upload unsigned goose to transfer bucket so it can be passed to lambda
-          aws s3 cp --quiet out/Goose-darwin-x64/Goose_intel_mac.zip "${unsigned_url}"
-
-          # begin signing
-          echo "🚀 launching signing process"
-          aws lambda invoke \
-            --function-name codesign_helper \
-            --cli-binary-format raw-in-base64-out \
-            --payload "{\"source_s3_url\": \"${unsigned_url}\", \"source_job_url\": \"${source_job_url}\"}" \
-            response.json > /dev/null
-
-          if [ "$(jq -r .statusCode response.json)" != "200" ]; then
-            echo "⚠️ lambda function did not return expected status code"
-            exit 1
+          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
           fi
-
-          build_number="$(jq -r .body.build_number response.json)"
-
-          start_time=$(date +%s)
-
-          while sleep 30; do
-            aws lambda invoke \
-              --function-name codesign_helper \
-              --cli-binary-format raw-in-base64-out \
-              --payload "{\"source_s3_url\": \"${unsigned_url}\", \"build_number\": \"${build_number}\"}" \
-              response.json > /dev/null
-
-            if [ "$(jq -r .statusCode response.json)" != "200" ]; then
-              echo "⚠️ signing request returned unexpected response code $(jq -r .statusCode response.json):"
-              jq . response.json
-              exit 1
-            fi
-
-            state="$(jq -r .body.state response.json)"
-
-            if [ "${state}" == "completed" ]; then
-              echo "✅ signing complete ($(($(date +%s) - start_time))s)"
-              break
-            fi
-
-            if [ $(($(date +%s) - start_time)) -ge 3600 ]; then
-              echo "⚠️ timed out ($(($(date +%s) - start_time))s)"
-              exit 1
-            fi
-
-            echo "⏲️ waiting for signing to complete (${state}: $(($(date +%s) - start_time))s)"
-          done
-
-          # parse lambda response
-          signed_url=$(jq -r .body.destination_url response.json)
-
-          # download the signed app from S3
-          echo "⬇️ downloading signed app"
-          aws s3 cp --quiet "${signed_url}" out/Goose-darwin-x64/Goose_intel_mac.zip
-        working-directory: ui/desktop
 
       - name: Final cleanup before artifact upload
         run: |

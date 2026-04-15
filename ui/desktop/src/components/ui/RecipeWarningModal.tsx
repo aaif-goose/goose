@@ -11,6 +11,55 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Button } from './button';
 import MarkdownContent from '../MarkdownContent';
 import { cn } from '../../utils';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  securityWarningTitle: {
+    id: 'recipeWarningModal.securityWarningTitle',
+    defaultMessage: '⚠️ Security Warning',
+  },
+  newRecipeWarningTitle: {
+    id: 'recipeWarningModal.newRecipeWarningTitle',
+    defaultMessage: '⚠️ New Recipe Warning',
+  },
+  firstTimeDescription: {
+    id: 'recipeWarningModal.firstTimeDescription',
+    defaultMessage: "You are about to execute a recipe that you haven't run before. ",
+  },
+  trustSource: {
+    id: 'recipeWarningModal.trustSource',
+    defaultMessage: 'Only proceed if you trust the source of this recipe.',
+  },
+  hiddenCharsWarning: {
+    id: 'recipeWarningModal.hiddenCharsWarning',
+    defaultMessage:
+      'This recipe contains hidden characters that will be ignored for your safety, as they could be used for malicious purposes.',
+  },
+  recipePreview: {
+    id: 'recipeWarningModal.recipePreview',
+    defaultMessage: 'Recipe Preview:',
+  },
+  titleLabel: {
+    id: 'recipeWarningModal.titleLabel',
+    defaultMessage: 'Title:',
+  },
+  descriptionLabel: {
+    id: 'recipeWarningModal.descriptionLabel',
+    defaultMessage: 'Description:',
+  },
+  instructionsLabel: {
+    id: 'recipeWarningModal.instructionsLabel',
+    defaultMessage: 'Instructions:',
+  },
+  cancel: {
+    id: 'recipeWarningModal.cancel',
+    defaultMessage: 'Cancel',
+  },
+  trustAndExecute: {
+    id: 'recipeWarningModal.trustAndExecute',
+    defaultMessage: 'Trust and Execute',
+  },
+});
 
 interface RecipeWarningModalProps {
   isOpen: boolean;
@@ -31,6 +80,8 @@ export function RecipeWarningModal({
   recipeDetails,
   hasSecurityWarnings = false,
 }: RecipeWarningModalProps) {
+  const intl = useIntl();
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogPortal>
@@ -44,12 +95,13 @@ export function RecipeWarningModal({
         >
           <DialogHeader className="flex-shrink-0 p-6 pb-0">
             <DialogTitle>
-              {hasSecurityWarnings ? '⚠️ Security Warning' : '⚠️ New Recipe Warning'}
+              {hasSecurityWarnings
+                ? intl.formatMessage(i18n.securityWarningTitle)
+                : intl.formatMessage(i18n.newRecipeWarningTitle)}
             </DialogTitle>
             <DialogDescription>
-              {!hasSecurityWarnings &&
-                "You are about to execute a recipe that you haven't run before. "}
-              Only proceed if you trust the source of this recipe.
+              {!hasSecurityWarnings && intl.formatMessage(i18n.firstTimeDescription)}
+              {intl.formatMessage(i18n.trustSource)}
             </DialogDescription>
           </DialogHeader>
 
@@ -59,10 +111,7 @@ export function RecipeWarningModal({
                 <div className="flex items-start">
                   <div className="ml-3">
                     <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
-                      <p>
-                        This recipe contains hidden characters that will be ignored for your safety,
-                        as they could be used for malicious purposes.
-                      </p>
+                      <p>{intl.formatMessage(i18n.hiddenCharsWarning)}</p>
                     </div>
                   </div>
                 </div>
@@ -72,21 +121,26 @@ export function RecipeWarningModal({
 
           <div className="flex-1 overflow-y-auto p-6 pt-4">
             <div className="bg-background-secondary p-4 rounded-lg">
-              <h3 className="font-medium mb-3 text-text-primary">Recipe Preview:</h3>
+              <h3 className="font-medium mb-3 text-text-primary">
+                {intl.formatMessage(i18n.recipePreview)}
+              </h3>
               <div className="space-y-4">
                 {recipeDetails.title && (
                   <p className="text-text-primary">
-                    <strong>Title:</strong> {recipeDetails.title}
+                    <strong>{intl.formatMessage(i18n.titleLabel)}</strong> {recipeDetails.title}
                   </p>
                 )}
                 {recipeDetails.description && (
                   <p className="text-text-primary">
-                    <strong>Description:</strong> {recipeDetails.description}
+                    <strong>{intl.formatMessage(i18n.descriptionLabel)}</strong>{' '}
+                    {recipeDetails.description}
                   </p>
                 )}
                 {recipeDetails.instructions && (
                   <div>
-                    <h4 className="font-medium text-text-primary mb-1">Instructions:</h4>
+                    <h4 className="font-medium text-text-primary mb-1">
+                      {intl.formatMessage(i18n.instructionsLabel)}
+                    </h4>
                     <MarkdownContent content={recipeDetails.instructions} className="text-sm" />
                   </div>
                 )}
@@ -96,9 +150,9 @@ export function RecipeWarningModal({
 
           <DialogFooter className="flex-shrink-0 p-6 pt-0">
             <Button variant="outline" onClick={onCancel}>
-              Cancel
+              {intl.formatMessage(i18n.cancel)}
             </Button>
-            <Button onClick={onConfirm}>Trust and Execute</Button>
+            <Button onClick={onConfirm}>{intl.formatMessage(i18n.trustAndExecute)}</Button>
           </DialogFooter>
         </DialogPrimitive.Content>
       </DialogPortal>

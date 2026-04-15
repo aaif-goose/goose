@@ -76,12 +76,12 @@ These setups are just different ways to organize work, whether it's human work o
 <head>
   <meta property="og:title" content="Agents, Subagents, and Multi Agents: What They Are and When to Use Them" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/14/agent-coordination-patterns" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/14/agent-coordination-patterns" />
   <meta property="og:description" content="A straightforward explanation of how agents are organized to work together" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/agent-coordination-52282acab8107e9503b17e471465ffa5.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/agent-coordination-52282acab8107e9503b17e471465ffa5.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Agents, Subagents, and Multi Agents: What They Are and When to Use Them" />
   <meta name="twitter:description" content="A straightforward explanation of how agents are organized to work together" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/agent-coordination-52282acab8107e9503b17e471465ffa5.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/agent-coordination-52282acab8107e9503b17e471465ffa5.png" />
 </head>

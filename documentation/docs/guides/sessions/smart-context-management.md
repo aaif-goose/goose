@@ -293,8 +293,6 @@ Context limits are automatically detected based on your model name, but goose pr
 | Model | Description | Best For | Setting |
 |-------|-------------|----------|---------|
 | **Main** | Set context limit for the main model (also serves as fallback for other models) | LiteLLM proxies, custom models with non-standard names | `GOOSE_CONTEXT_LIMIT` |
-| **Lead** | Set larger context for planning in [lead/worker mode](/docs/tutorials/lead-worker) | Complex planning tasks requiring more context | `GOOSE_LEAD_CONTEXT_LIMIT` |
-| **Worker** | Set smaller context for execution in lead/worker mode | Cost optimization during execution phase | `GOOSE_WORKER_CONTEXT_LIMIT` |
 | **Planner** | Set context for [planner models](/docs/guides/creating-plans) | Large planning tasks requiring extensive context | `GOOSE_PLANNER_CONTEXT_LIMIT` |
 
 :::info
@@ -311,7 +309,7 @@ This feature is particularly useful with:
 goose resolves context limits with the following precedence (highest to lowest):
 
 1. Explicit context_limit in model configuration (if set programmatically)
-2. Specific environment variable (e.g., `GOOSE_LEAD_CONTEXT_LIMIT`)
+2. Specific environment variable (e.g., `GOOSE_PLANNER_CONTEXT_LIMIT`)
 3. Global environment variable (`GOOSE_CONTEXT_LIMIT`)
 4. Model-specific default based on name pattern matching
 5. Global default (128,000 tokens)
@@ -348,13 +346,12 @@ export GOOSE_MODEL="my-custom-gpt4-proxy"
 export GOOSE_CONTEXT_LIMIT=200000  # Override the 32k default
 ```
 
-2. Lead/worker setup with different context limits
+2. Planner setup with a different context limit
 
 ```bash
-# Different context limits for planning vs execution
-export GOOSE_LEAD_MODEL="claude-opus-custom"
-export GOOSE_LEAD_CONTEXT_LIMIT=500000    # Large context for planning
-export GOOSE_WORKER_CONTEXT_LIMIT=128000  # Smaller context for execution
+# Set a larger context window for planning
+export GOOSE_PLANNER_MODEL="claude-opus-custom"
+export GOOSE_PLANNER_CONTEXT_LIMIT=500000
 ```
 
 3. Planner with large context

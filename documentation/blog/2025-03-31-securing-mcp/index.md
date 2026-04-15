@@ -176,12 +176,12 @@ We’re excited to work on making this protocol more secure for users and develo
 <head>
   <meta property="og:title" content="Securing the Model Context Protocol" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/03/31/securing-mcp" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/03/31/securing-mcp" />
   <meta property="og:description" content="Building secure and capable AI integrations with Model Context Protocol (MCP) at Block." />
-  <meta property="og:image" content="http://block.github.io/goose/assets/images/securing-mcp-5e475e91c0e621afa33e30b3d89ef065.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/securing-mcp-5e475e91c0e621afa33e30b3d89ef065.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Securing the Model Context Protocol" />
   <meta name="twitter:description" content="Building secure and capable AI integrations with Model Context Protocol (MCP) at Block." />
-  <meta name="twitter:image" content="http://block.github.io/goose/assets/images/securing-mcp-5e475e91c0e621afa33e30b3d89ef065.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/securing-mcp-5e475e91c0e621afa33e30b3d89ef065.png" />
 </head>

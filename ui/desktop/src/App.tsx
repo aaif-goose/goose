@@ -12,9 +12,9 @@ import { openSharedSessionFromDeepLink } from './sessionLinks';
 import { type SharedSessionDetails } from './sharedSessions';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
-import { ToastContainer } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
 import AnnouncementModal from './components/AnnouncementModal';
-import TelemetryOptOutModal from './components/TelemetryOptOutModal';
+import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
 
@@ -44,6 +44,7 @@ import PermissionSettingsView from './components/settings/permission/PermissionS
 
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
 import RecipesView from './components/recipes/RecipesView';
+import SkillsView from './components/skills/SkillsView';
 import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
@@ -52,7 +53,7 @@ import { useNavigation } from './hooks/useNavigation';
 import { errorMessage } from './utils/conversionUtils';
 import { getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
-import { trackOnboardingCompleted, trackErrorWithContext } from './utils/analytics';
+import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
 import { registerPlatformEventHandlers } from './utils/platform_events';
 
@@ -66,6 +67,16 @@ const HubRouteWrapper = () => {
   const setView = useNavigation();
   return <Hub setView={setView} />;
 };
+
+export function resolveSessionInitialMessage(
+  session: { recipe?: { prompt?: string | null } | null },
+  initialMessage?: UserInput
+): UserInput | undefined {
+  return (
+    initialMessage ??
+    (session.recipe?.prompt ? { msg: session.recipe.prompt, images: [] } : undefined)
+  );
+}
 
 const PairRouteWrapper = ({
   activeSessions,
@@ -104,12 +115,13 @@ const PairRouteWrapper = ({
             recipeId: recipeIdFromConfig,
             allExtensions: extensionsList,
           });
+          const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
 
           window.dispatchEvent(
             new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
               detail: {
                 sessionId: newSession.id,
-                initialMessage,
+                initialMessage: sessionInitialMessage,
               },
             })
           );
@@ -197,6 +209,10 @@ const RecipesRoute = () => {
   return <RecipesView />;
 };
 
+const SkillsRoute = () => {
+  return <SkillsView />;
+};
+
 const PermissionRoute = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -226,6 +242,9 @@ const PermissionRoute = () => {
           case 'recipes':
             navigate('/recipes');
             break;
+          case 'skills':
+            navigate('/skills');
+            break;
           default:
             navigate('/');
         }
@@ -242,25 +261,6 @@ const ConfigureProvidersRoute = () => {
       <ProviderSettings
         onClose={() => navigate('/settings', { state: { section: 'models' } })}
         isOnboarding={false}
-      />
-    </div>
-  );
-};
-
-const WelcomeRoute = () => {
-  const navigate = useNavigate();
-
-  return (
-    <div className="w-screen h-screen bg-background-primary">
-      <ProviderSettings
-        onClose={() => {
-          navigate('/', { replace: true });
-        }}
-        isOnboarding={true}
-        onProviderLaunched={(model?: string) => {
-          trackOnboardingCompleted('other', model);
-          navigate('/', { replace: true });
-        }}
       />
     </div>
   );
@@ -413,7 +413,6 @@ export function AppInner() {
   const { addExtension } = useConfig();
 
   useEffect(() => {
-    console.log('Sending reactReady signal to Electron');
     try {
       window.electron.reactReady();
     } catch (error) {
@@ -458,7 +457,6 @@ export function AppInner() {
   }, [navigate]);
 
   useEffect(() => {
-    console.log('Setting up keyboard shortcuts');
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMac = window.electron.platform === 'darwin';
       if ((isMac ? event.metaKey : event.ctrlKey) && event.key === 'n') {
@@ -474,6 +472,18 @@ export function AppInner() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
+  }, []);
+
+  // Show a toast if mesh is the configured provider but isn't running.
+  useEffect(() => {
+    const handler = () => {
+      toast.warn('Inference Mesh is set as your provider but isn\'t running. Open Settings → Mesh to start it. Keep goose running to stay connected.', {
+        autoClose: false,
+        toastId: 'mesh-not-running',
+      });
+    };
+    window.electron.on('mesh-not-running', handler);
+    return () => { window.electron.off('mesh-not-running', handler); };
   }, []);
 
   // Prevent default drag and drop behavior globally to avoid opening files in new windows
@@ -537,9 +547,6 @@ export function AppInner() {
     const handleSetView = (_event: IpcRendererEvent, ...args: unknown[]) => {
       const newView = args[0] as View;
       const section = args[1] as string | undefined;
-      console.log(
-        `Received view change request to: ${newView}${section ? `, section: ${section}` : ''}`
-      );
 
       if (section && newView === 'settings') {
         navigate(`/settings?section=${section}`);
@@ -554,7 +561,6 @@ export function AppInner() {
 
   useEffect(() => {
     const handleNewChat = (_event: IpcRendererEvent, ..._args: unknown[]) => {
-      console.log('Received new-chat event from keyboard shortcut');
       window.dispatchEvent(new CustomEvent(AppEvents.TRIGGER_NEW_CHAT));
     };
 
@@ -581,16 +587,9 @@ export function AppInner() {
   useEffect(() => {
     const handleSetInitialMessage = async (_event: IpcRendererEvent, ...args: unknown[]) => {
       const initialMessage = args[0] as string;
-      console.log(
-        '[App] Received set-initial-message event:',
-        initialMessage,
-        'isProcessing:',
-        isProcessingRef.current
-      );
 
       if (initialMessage && !isProcessingRef.current) {
         isProcessingRef.current = true;
-        console.log('[App] Processing initial message from launcher:', initialMessage);
         navigate('/pair', {
           state: {
             initialMessage: { msg: initialMessage, images: [] },
@@ -599,8 +598,6 @@ export function AppInner() {
         setTimeout(() => {
           isProcessingRef.current = false;
         }, 1000);
-      } else if (initialMessage) {
-        console.log('[App] Ignoring duplicate initial message (already processing)');
       }
     };
     window.electron.on('set-initial-message', handleSetInitialMessage);
@@ -642,7 +639,6 @@ export function AppInner() {
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <Routes>
             <Route path="launcher" element={<LauncherView />} />
-            <Route path="welcome" element={<WelcomeRoute />} />
             <Route path="configure-providers" element={<ConfigureProvidersRoute />} />
             <Route path="standalone-app" element={<StandaloneAppView />} />
             <Route
@@ -685,6 +681,7 @@ export function AppInner() {
               <Route path="sessions" element={<SessionsRoute />} />
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
+              <Route path="skills" element={<SkillsRoute />} />
               <Route
                 path="shared-session"
                 element={
@@ -713,7 +710,7 @@ export default function App() {
             <AppInner />
           </HashRouter>
           <AnnouncementModal />
-          <TelemetryOptOutModal controlled={false} />
+          <TelemetryConsentPrompt />
         </ModelAndProviderProvider>
       </FeaturesProvider>
     </ThemeProvider>

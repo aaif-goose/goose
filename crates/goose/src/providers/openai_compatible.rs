@@ -299,6 +299,18 @@ mod tests {
         "ServerError"
         ; "500 server error"
     )]
+    #[test_case(
+        StatusCode::NOT_FOUND,
+        None,
+        "RequestFailed"
+        ; "404 not found"
+    )]
+    #[test_case(
+        StatusCode::NOT_FOUND,
+        Some(json!({"error": {"message": "model not available"}})),
+        "RequestFailed"
+        ; "404 with error payload"
+    )]
     fn http_status_maps_to_expected_error(
         status: StatusCode,
         payload: Option<Value>,
@@ -312,6 +324,7 @@ mod tests {
             "Authentication" => "auth",
             "ContextLengthExceeded" => "context_length",
             "ServerError" => "server",
+            "RequestFailed" => "request",
             other => panic!("Unknown variant: {other}"),
         };
         assert_eq!(

@@ -22,6 +22,46 @@ import { CallToolResponse, ContentBlock, EmbeddedResource } from '../api';
 
 import McpAppRenderer from './McpApps/McpAppRenderer';
 import ToolApprovalButtons from './ToolApprovalButtons';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  mcpUiExperimental: {
+    id: 'toolCallWithResponse.mcpUiExperimental',
+    defaultMessage: 'MCP UI is experimental and may change at any time.',
+  },
+  viewSubagentSession: {
+    id: 'toolCallWithResponse.viewSubagentSession',
+    defaultMessage: 'View subagent session',
+  },
+  toolDetails: {
+    id: 'toolCallWithResponse.toolDetails',
+    defaultMessage: 'Tool Details',
+  },
+  code: {
+    id: 'toolCallWithResponse.code',
+    defaultMessage: 'Code',
+  },
+  output: {
+    id: 'toolCallWithResponse.output',
+    defaultMessage: 'Output',
+  },
+  toolResultAlt: {
+    id: 'toolCallWithResponse.toolResultAlt',
+    defaultMessage: 'Tool result',
+  },
+  activityCount: {
+    id: 'toolCallWithResponse.activityCount',
+    defaultMessage: 'Activity ({count})',
+  },
+  logs: {
+    id: 'toolCallWithResponse.logs',
+    defaultMessage: 'Logs',
+  },
+  loadingSpinner: {
+    id: 'toolCallWithResponse.loadingSpinner',
+    defaultMessage: 'Loading spinner',
+  },
+});
 
 interface ToolGraphNode {
   tool: string;
@@ -189,6 +229,7 @@ export default function ToolCallWithResponse({
   confirmationContent,
   isApprovalClicked,
 }: ToolCallWithResponseProps) {
+  const intl = useIntl();
   // Handle both the wrapped ToolResult format and the unwrapped format
   // The server serializes ToolResult<T> as { status: "success", value: T } or { status: "error", error: string }
   const toolCallData = toolRequest.toolCall as Record<string, unknown>;
@@ -263,7 +304,7 @@ export default function ToolCallWithResponse({
                 <div className="mt-3 p-4 py-3 border border-border-primary rounded-lg bg-background-secondary flex items-center">
                   <FlaskConical className="mr-2" size={20} />
                   <div className="text-sm font-sans">
-                    MCP UI is experimental and may change at any time.
+                    {intl.formatMessage(i18n.mcpUiExperimental)}
                   </div>
                 </div>
               </div>
@@ -464,6 +505,7 @@ function ToolCallView({
   notifications,
   isStreamingMessage = false,
 }: ToolCallViewProps) {
+  const intl = useIntl();
   const [responseStyle, setResponseStyle] = useState<string>('concise');
 
   useEffect(() => {
@@ -854,7 +896,7 @@ function ToolCallView({
               className="w-full flex items-center gap-2 px-4 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-background-secondary transition-colors cursor-pointer"
             >
               <ExternalLink className="w-3 h-3 flex-shrink-0" />
-              <span>View subagent session</span>
+              <span>{intl.formatMessage(i18n.viewSubagentSession)}</span>
             </button>
           </div>
         );
@@ -872,9 +914,10 @@ interface ToolDetailsViewProps {
 }
 
 function ToolDetailsView({ toolCall, isStartExpanded }: ToolDetailsViewProps) {
+  const intl = useIntl();
   return (
     <ToolCallExpandable
-      label={<span className="pl-4 font-sans text-sm">Tool Details</span>}
+      label={<span className="pl-4 font-sans text-sm">{intl.formatMessage(i18n.toolDetails)}</span>}
       isStartExpanded={isStartExpanded}
     >
       <div className="pr-4 pl-8">
@@ -892,6 +935,7 @@ interface CodeModeViewProps {
 }
 
 function CodeModeView({ toolGraph, code }: CodeModeViewProps) {
+  const intl = useIntl();
   const renderGraph = () => {
     const graph = toolGraph ?? [];
     if (graph.length === 0) return null;
@@ -915,7 +959,7 @@ function CodeModeView({ toolGraph, code }: CodeModeViewProps) {
       {code && (
         <div className="border-t border-border-primary -mx-4 mt-2">
           <ToolCallExpandable
-            label={<span className="pl-4 font-sans text-sm">Code</span>}
+            label={<span className="pl-4 font-sans text-sm">{intl.formatMessage(i18n.code)}</span>}
             isStartExpanded={false}
           >
             <MarkdownContent
@@ -939,6 +983,7 @@ interface ToolResultViewProps {
 }
 
 function ToolResultView({ result, isStartExpanded }: ToolResultViewProps) {
+  const intl = useIntl();
   const hasText = (c: ContentBlock): c is ContentBlock & { text: string } =>
     'text' in c && typeof (c as Record<string, unknown>).text === 'string';
 
@@ -953,7 +998,7 @@ function ToolResultView({ result, isStartExpanded }: ToolResultViewProps) {
 
   return (
     <ToolCallExpandable
-      label={<span className="pl-4 py-1 font-sans text-sm">Output</span>}
+      label={<span className="pl-4 py-1 font-sans text-sm">{intl.formatMessage(i18n.output)}</span>}
       isStartExpanded={isStartExpanded}
     >
       <div className="pl-4 pr-4 py-4">
@@ -965,7 +1010,7 @@ function ToolResultView({ result, isStartExpanded }: ToolResultViewProps) {
         {hasImage(result) && (
           <img
             src={`data:${result.mimeType};base64,${result.data}`}
-            alt="Tool result"
+            alt={intl.formatMessage(i18n.toolResultAlt)}
             className="max-w-full h-auto rounded-md my-2"
             onError={(e) => {
               console.error('Failed to load image');
@@ -1018,6 +1063,7 @@ function ToolLogsView({
   working: boolean;
   isStartExpanded?: boolean;
 }) {
+  const intl = useIntl();
   const boxRef = useRef<HTMLDivElement>(null);
 
   // Whenever logs update, jump to the newest entry
@@ -1034,7 +1080,9 @@ function ToolLogsView({
   // down on the possibility of unwanted runs
 
   const subagentLogCount = logs.filter((l) => l.startsWith('[subagent:')).length;
-  const labelText = subagentLogCount > 0 ? `Activity (${subagentLogCount})` : 'Logs';
+  const labelText = subagentLogCount > 0
+    ? intl.formatMessage(i18n.activityCount, { count: subagentLogCount })
+    : intl.formatMessage(i18n.logs);
 
   return (
     <ToolCallExpandable
@@ -1047,7 +1095,7 @@ function ToolLogsView({
                 className="inline-block animate-spin rounded-full border-2 border-t-transparent border-current"
                 style={{ width: 8, height: 8 }}
                 role="status"
-                aria-label="Loading spinner"
+                aria-label={intl.formatMessage(i18n.loadingSpinner)}
               />
             </div>
           )}

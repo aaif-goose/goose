@@ -10,6 +10,66 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { getRecipeJsonSchema } from '../../recipe/validation';
 import { saveRecipe } from '../../recipe/recipe_management';
 import { errorMessage } from '../../utils/conversionUtils';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  importRecipeTitle: {
+    id: 'importRecipeForm.importRecipeTitle',
+    defaultMessage: 'Import Recipe',
+  },
+  recipeDeeplinkLabel: {
+    id: 'importRecipeForm.recipeDeeplinkLabel',
+    defaultMessage: 'Recipe Deeplink',
+  },
+  deeplinkPlaceholder: {
+    id: 'importRecipeForm.deeplinkPlaceholder',
+    defaultMessage: 'Paste your goose://recipe?config=... deeplink here',
+  },
+  deeplinkHint: {
+    id: 'importRecipeForm.deeplinkHint',
+    defaultMessage: 'Paste a recipe deeplink starting with "goose://recipe?config="',
+  },
+  or: {
+    id: 'importRecipeForm.or',
+    defaultMessage: 'OR',
+  },
+  recipeFileLabel: {
+    id: 'importRecipeForm.recipeFileLabel',
+    defaultMessage: 'Recipe File',
+  },
+  recipeFileHint: {
+    id: 'importRecipeForm.recipeFileHint',
+    defaultMessage: 'Upload a YAML or JSON file containing the recipe structure',
+  },
+  example: {
+    id: 'importRecipeForm.example',
+    defaultMessage: 'example',
+  },
+  reviewWarning: {
+    id: 'importRecipeForm.reviewWarning',
+    defaultMessage: 'Ensure you review contents of recipe files before adding them to your goose interface.',
+  },
+  cancel: {
+    id: 'importRecipeForm.cancel',
+    defaultMessage: 'Cancel',
+  },
+  importing: {
+    id: 'importRecipeForm.importing',
+    defaultMessage: 'Importing...',
+  },
+  importRecipeButton: {
+    id: 'importRecipeForm.importRecipeButton',
+    defaultMessage: 'Import Recipe',
+  },
+  expectedRecipeStructure: {
+    id: 'importRecipeForm.expectedRecipeStructure',
+    defaultMessage: 'Expected Recipe Structure',
+  },
+  schemaDescription: {
+    id: 'importRecipeForm.schemaDescription',
+    defaultMessage: 'Your YAML or JSON file should follow this structure. Required fields are: title, description, and either instructions or prompt.',
+  },
+});
 
 interface ImportRecipeFormProps {
   isOpen: boolean;
@@ -40,6 +100,7 @@ const importRecipeSchema = z
   });
 
 export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportRecipeFormProps) {
+  const intl = useIntl();
   const [importing, setImporting] = useState(false);
   const [showSchemaModal, setShowSchemaModal] = useState(false);
 
@@ -147,7 +208,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
     <>
       <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
         <div className="bg-background-primary border border-border-primary rounded-lg p-6 w-[500px] max-w-[90vw]">
-          <h3 className="text-lg font-medium text-text-primary mb-4">Import Recipe</h3>
+          <h3 className="text-lg font-medium text-text-primary mb-4">{intl.formatMessage(i18n.importRecipeTitle)}</h3>
 
           <form
             onSubmit={(e) => {
@@ -170,7 +231,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
                               htmlFor="import-deeplink"
                               className="block text-sm font-medium text-text-primary mb-2"
                             >
-                              Recipe Deeplink
+                              {intl.formatMessage(i18n.recipeDeeplinkLabel)}
                             </label>
                             <textarea
                               id="import-deeplink"
@@ -183,14 +244,14 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
                                   ? 'border-red-500'
                                   : 'border-border-primary'
                               } ${isDisabled ? 'cursor-not-allowed bg-gray-40 text-gray-300' : ''}`}
-                              placeholder="Paste your goose://recipe?config=... deeplink here"
+                              placeholder={intl.formatMessage(i18n.deeplinkPlaceholder)}
                               rows={3}
                               autoFocus={!isDisabled}
                             />
                             <p
                               className={`text-xs mt-1 ${isDisabled ? 'text-gray-300' : 'text-text-secondary'}`}
                             >
-                              Paste a recipe deeplink starting with "goose://recipe?config="
+                              {intl.formatMessage(i18n.deeplinkHint)}
                             </p>
                             {field.state.meta.errors.length > 0 && (
                               <p className="text-red-500 text-sm mt-1">
@@ -211,7 +272,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
                       </div>
                       <div className="relative flex justify-center text-sm">
                         <span className="px-3 bg-background-primary text-text-secondary font-medium">
-                          OR
+                          {intl.formatMessage(i18n.or)}
                         </span>
                       </div>
                     </div>
@@ -227,7 +288,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
                               htmlFor="import-recipe-file"
                               className="block text-sm font-medium text-text-primary mb-3"
                             >
-                              Recipe File
+                              {intl.formatMessage(i18n.recipeFileLabel)}
                             </label>
                             <div className="relative">
                               <Input
@@ -248,7 +309,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
                               <p
                                 className={`text-xs mt-1 ${isDisabled ? 'text-gray-300' : 'text-text-secondary'}`}
                               >
-                                Upload a YAML or JSON file containing the recipe structure
+                                {intl.formatMessage(i18n.recipeFileHint)}
                               </p>
                               <button
                                 type="button"
@@ -256,7 +317,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
                                 className="text-xs text-blue-500 hover:text-blue-700 underline"
                                 disabled={isDisabled}
                               >
-                                example
+                                {intl.formatMessage(i18n.example)}
                               </button>
                             </div>
                             {field.state.meta.errors.length > 0 && (
@@ -276,14 +337,13 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
               </importRecipeForm.Subscribe>
 
               <p className="text-xs text-text-secondary">
-                Ensure you review contents of recipe files before adding them to your goose
-                interface.
+                {intl.formatMessage(i18n.reviewWarning)}
               </p>
             </div>
 
             <div className="flex justify-end space-x-3 mt-6">
               <Button type="button" onClick={handleClose} variant="ghost" disabled={importing}>
-                Cancel
+                {intl.formatMessage(i18n.cancel)}
               </Button>
               <importRecipeForm.Subscribe
                 selector={(state) => [state.canSubmit, state.isSubmitting]}
@@ -294,7 +354,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
                     disabled={!canSubmit || importing || isSubmitting}
                     variant="default"
                   >
-                    {importing || isSubmitting ? 'Importing...' : 'Import Recipe'}
+                    {importing || isSubmitting ? intl.formatMessage(i18n.importing) : intl.formatMessage(i18n.importRecipeButton)}
                   </Button>
                 )}
               </importRecipeForm.Subscribe>
@@ -308,7 +368,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
         <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50">
           <div className="bg-background-primary border border-border-primary rounded-lg p-6 w-[800px] max-w-[90vw] max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-text-primary">Expected Recipe Structure</h3>
+              <h3 className="text-lg font-medium text-text-primary">{intl.formatMessage(i18n.expectedRecipeStructure)}</h3>
               <button
                 type="button"
                 onClick={() => setShowSchemaModal(false)}
@@ -318,8 +378,7 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
               </button>
             </div>
             <p className="mt-4 text-blue-700 text-sm">
-              Your YAML or JSON file should follow this structure. Required fields are: title,
-              description, and either instructions or prompt.
+              {intl.formatMessage(i18n.schemaDescription)}
             </p>
             <div className="flex-1 overflow-auto">
               <pre className="text-xs bg-whitedark:bg-gray-800 p-4 rounded overflow-auto whitespace-pre font-mono">
@@ -334,10 +393,11 @@ export default function ImportRecipeForm({ isOpen, onClose, onSuccess }: ImportR
 }
 
 export function ImportRecipeButton({ onClick }: { onClick: () => void }) {
+  const intl = useIntl();
   return (
     <Button onClick={onClick} variant="default" size="sm" className="flex items-center gap-2">
       <Download className="w-4 h-4" />
-      Import Recipe
+      {intl.formatMessage(i18n.importRecipeButton)}
     </Button>
   );
 }

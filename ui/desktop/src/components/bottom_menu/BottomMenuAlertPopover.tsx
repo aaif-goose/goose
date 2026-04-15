@@ -208,16 +208,18 @@ export default function BottomMenuAlertPopover({ alerts, children }: AlertPopove
           ref={triggerRef}
           className="cursor-pointer flex items-center gap-1.5 min-h-5 rounded hover:bg-background-secondary px-1"
           onClick={() => {
-            setIsOpen(true);
+            if (alerts.length > 0) setIsOpen(true);
           }}
           onMouseEnter={() => {
-            setIsOpen(true);
-            setIsHovered(true);
-            setWasAutoShown(false);
-            if (hideTimerRef.current) {
-              clearTimeout(hideTimerRef.current);
+            if (alerts.length > 0) {
+              setIsOpen(true);
+              setIsHovered(true);
+              setWasAutoShown(false);
+              if (hideTimerRef.current) {
+                clearTimeout(hideTimerRef.current);
+              }
             }
-          }}
+          }}}
           onMouseLeave={() => {
             // Start a short timer to allow moving to content
             hideTimerRef.current = setTimeout(() => {

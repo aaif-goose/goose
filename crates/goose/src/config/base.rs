@@ -152,13 +152,16 @@ impl Default for Config {
             }
         });
 
-        let secrets = match env::var("GOOSE_DISABLE_KEYRING") {
-            Ok(_) => SecretStorage::File {
+        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
+            || keyring_disabled_in_config(&config_path)
+        {
+            SecretStorage::File {
                 path: config_dir.join("secrets.yaml"),
-            },
-            Err(_) => SecretStorage::Keyring {
+            }
+        } else {
+            SecretStorage::Keyring {
                 service: KEYRING_SERVICE.to_string(),
-            },
+            }
         };
         Config {
             config_path,
@@ -247,6 +250,22 @@ macro_rules! config_value {
 
 fn parse_yaml_content(content: &str) -> Result<Mapping, ConfigError> {
     serde_yaml::from_str(content).map_err(|e| e.into())
+}
+
+/// Read the GOOSE_DISABLE_KEYRING flag from the config file.
+///
+/// Called before Config is fully initialised, so we do a minimal raw read
+/// rather than going through `get_param`.  All errors are treated as `false`
+/// (keyring stays enabled) so a missing/malformed file is never fatal here.
+fn keyring_disabled_in_config(config_path: &Path) -> bool {
+    std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|s| parse_yaml_content(&s).ok())
+        .and_then(|m| {
+            m.get("GOOSE_DISABLE_KEYRING")
+                .map(|v| v.as_bool().unwrap_or(false) || v.as_str().is_some_and(|s| s == "true"))
+        })
+        .unwrap_or(false)
 }
 
 impl Config {
@@ -1045,6 +1064,7 @@ config_value!(GEMINI3_THINKING_LEVEL, String);
 config_value!(CLAUDE_THINKING_TYPE, String);
 config_value!(CLAUDE_THINKING_EFFORT, String);
 config_value!(CLAUDE_THINKING_BUDGET, i32);
+config_value!(GOOSE_DEFAULT_EXTENSION_TIMEOUT, u64);
 
 fn find_workspace_or_exe_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;

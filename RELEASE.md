@@ -8,7 +8,7 @@ goose uses GitHub actions to automate the release process. The actual releases a
 
 These are typically done once per week. The process has two automated phases:
 
-1. **Version bump PR** — An [action](https://github.com/block/goose/actions/workflows/minor-release.yaml) runs every Tuesday (or can be triggered manually) that creates a PR to bump the version on `main`. Review and merge this PR.
+1. **Version bump PR** — An [action](https://github.com/aaif-goose/goose/actions/workflows/minor-release.yaml) runs every Tuesday (or can be triggered manually) that creates a PR to bump the version on `main`. Review and merge this PR.
 
 2. **Release branch + PR** — When the version bump PR merges, automation creates a `release/<version>` branch from `main` and opens a release PR with a QA checklist.
 
@@ -18,13 +18,13 @@ From there:
 - Download and test the .zip from the release PR
 - When ready, follow the instructions on the release PR to tag and release
 
-To trigger the release, find [the corresponding PR](https://github.com/block/goose/pulls?q=is%3Apr+%22chore%28release%29%22+author%3Aapp%2Fgithub-actions+) and follow the instructions in the PR description.
+To trigger the release, find [the corresponding PR](https://github.com/aaif-goose/goose/pulls?q=is%3Apr+%22chore%28release%29%22+author%3Aapp%2Fgithub-actions+) and follow the instructions in the PR description.
 
 ## Patch version releases
 
 When a minor release is tagged, automation immediately creates the next patch release branch (e.g. `release/1.25.1` from `release/1.25.0`) with the version already bumped and a release PR open. Cherry-pick fixes into this branch, then tag when ready.
 
-To trigger the release, find [the corresponding PR](https://github.com/block/goose/pulls?q=is%3Apr+%22chore%28release%29%22+%22%28patch%29%22+author%3Aapp%2Fgithub-actions+) and follow the instructions in the PR description.
+To trigger the release, find [the corresponding PR](https://github.com/aaif-goose/goose/pulls?q=is%3Apr+%22chore%28release%29%22+%22%28patch%29%22+author%3Aapp%2Fgithub-actions+) and follow the instructions in the PR description.
 
 ## High level release flow:
 

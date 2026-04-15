@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
@@ -40,7 +41,28 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Goose } from './icons';
 import EnvironmentBadge from './GooseSidebar/EnvironmentBadge';
 
-
+const i18n = defineMessages({
+  failedToLoadSession: {
+    id: 'baseChat.failedToLoadSession',
+    defaultMessage: 'Failed to Load Session',
+  },
+  goHome: {
+    id: 'baseChat.goHome',
+    defaultMessage: 'Go home',
+  },
+  noSession: {
+    id: 'baseChat.noSession',
+    defaultMessage: 'No Session',
+  },
+  recipeCreatedTitle: {
+    id: 'baseChat.recipeCreatedTitle',
+    defaultMessage: 'Recipe created successfully!',
+  },
+  recipeCreatedMessage: {
+    id: 'baseChat.recipeCreatedMessage',
+    defaultMessage: '"{title}" has been saved and is ready to use.',
+  },
+});
 
 interface BaseChatProps {
   setChat: (chat: ChatType) => void;
@@ -66,6 +88,7 @@ export default function BaseChat({
   initialMessage,
   isActiveSession,
 }: BaseChatProps) {
+  const intl = useIntl();
   const location = useLocation();
   const navigate = useNavigate();
   const scrollRef = useRef<ScrollAreaHandle>(null);
@@ -114,12 +137,15 @@ export default function BaseChat({
     return initialMessage;
   }, [initialMessage, recipe?.prompt, session?.user_recipe_values]);
 
+  const canAutoSubmit = !recipe || hasNotAcceptedRecipe === false;
+
   useAutoSubmit({
     sessionId,
     session,
     messages,
     chatState,
     initialMessage: resolvedInitialMessage,
+    canAutoSubmit,
     handleSubmit,
   });
 
@@ -183,7 +209,7 @@ export default function BaseChat({
   const sessionLoaded = session !== undefined;
 
   useEffect(() => {
-    if (!recipe) return;
+    if (!recipe || !isActiveSession) return;
 
     (async () => {
       const accepted = await window.electron.hasAcceptedRecipeBefore(recipe);
@@ -194,7 +220,7 @@ export default function BaseChat({
         setHasRecipeSecurityWarnings(scanResult.has_security_warnings);
       }
     })();
-  }, [recipe]);
+  }, [recipe, isActiveSession]);
 
   const handleRecipeAccept = async (accept: boolean) => {
     if (recipe && accept) {
@@ -298,8 +324,8 @@ export default function BaseChat({
 
   const handleRecipeCreated = (recipe: Recipe) => {
     toastSuccess({
-      title: 'Recipe created successfully!',
-      msg: `"${recipe.title}" has been saved and is ready to use.`,
+      title: intl.formatMessage(i18n.recipeCreatedTitle),
+      msg: intl.formatMessage(i18n.recipeCreatedMessage, { title: recipe.title }),
     });
   };
 
@@ -310,7 +336,7 @@ export default function BaseChat({
     messages,
     recipe,
     sessionId,
-    name: session?.name || 'No Session',
+    name: session?.name || intl.formatMessage(i18n.noSession),
   };
 
   const lastSetNameRef = useRef<string>('');
@@ -352,7 +378,7 @@ export default function BaseChat({
             <div className="flex-1 bg-background-primary rounded-b-2xl flex items-center justify-center">
               <div className="flex flex-col items-center justify-center p-8">
                 <div className="text-red-700 dark:text-red-300 bg-red-400/50 p-4 rounded-lg mb-4 max-w-md">
-                  <h3 className="font-semibold mb-2">Failed to Load Session</h3>
+                  <h3 className="font-semibold mb-2">{intl.formatMessage(i18n.failedToLoadSession)}</h3>
                   <p className="text-sm">{sessionLoadError}</p>
                 </div>
                 <button
@@ -361,7 +387,7 @@ export default function BaseChat({
                   }}
                   className="px-4 py-2 text-center cursor-pointer text-text-primary border border-border-primary hover:bg-background-secondary rounded-lg transition-all duration-150"
                 >
-                  Go home
+                  {intl.formatMessage(i18n.goHome)}
                 </button>
               </div>
             </div>
@@ -386,7 +412,7 @@ export default function BaseChat({
           {/* Goose watermark - top right */}
           <div className="absolute top-3 right-4 z-[60] flex flex-row items-center gap-1">
             <a
-              href="https://block.github.io/goose"
+              href="https://goose-docs.ai"
               target="_blank"
               rel="noopener noreferrer"
               className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"
@@ -502,7 +528,7 @@ export default function BaseChat({
         </div>
       </MainPanelLayout>
 
-      {recipe && (
+      {recipe && isActiveSession && (
         <RecipeWarningModal
           isOpen={!!hasNotAcceptedRecipe}
           onConfirm={() => handleRecipeAccept(true)}

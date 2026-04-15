@@ -14,6 +14,43 @@ import { EmbeddedResource } from '../api';
 import { useTheme } from '../contexts/ThemeContext';
 import { errorMessage } from '../utils/conversionUtils';
 import { isProtocolSafe, getProtocol } from '../utils/urlSecurity';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  toastTitle: {
+    id: 'mcpUIResourceRenderer.toastTitle',
+    defaultMessage: 'MCP-UI {messageType} message',
+  },
+  toastMessageReceived: {
+    id: 'mcpUIResourceRenderer.toastMessageReceived',
+    defaultMessage: 'Message received for {message}.',
+  },
+  toastUnsupported: {
+    id: 'mcpUIResourceRenderer.toastUnsupported',
+    defaultMessage:
+      "Message received for {message}. {messageType} messages aren't supported yet, refer to console for more details.",
+  },
+  openExternalLinkTitle: {
+    id: 'mcpUIResourceRenderer.openExternalLinkTitle',
+    defaultMessage: 'Open External Link',
+  },
+  openProtocolLink: {
+    id: 'mcpUIResourceRenderer.openProtocolLink',
+    defaultMessage: 'Open {protocol} link?',
+  },
+  openLinkDetail: {
+    id: 'mcpUIResourceRenderer.openLinkDetail',
+    defaultMessage: 'This will open: {url}',
+  },
+  cancelButton: {
+    id: 'mcpUIResourceRenderer.cancelButton',
+    defaultMessage: 'Cancel',
+  },
+  openButton: {
+    id: 'mcpUIResourceRenderer.openButton',
+    defaultMessage: 'Open',
+  },
+});
 
 interface MCPUIResourceRendererProps {
   content: EmbeddedResource & { type: 'resource' };
@@ -70,21 +107,24 @@ const ToastComponent = ({
   message?: string;
   isImplemented?: boolean;
 }) => {
-  const title = `MCP-UI ${messageType} message`;
+  const intl = useIntl();
+  const title = intl.formatMessage(i18n.toastTitle, { messageType });
 
   return (
     <div className="flex flex-col gap-0 py-2 pr-4">
       <p className="font-bold">{title}</p>
       {isImplemented ? (
         <p>
-          Message received for <span className="font-bold">{message}</span>.
+          {intl.formatMessage(i18n.toastMessageReceived, {
+            message: <span className="font-bold">{message}</span>,
+          })}
         </p>
       ) : (
         <p>
-          Message received for <span className="font-bold">{message}</span>.
-          <br />
-          {messageType.charAt(0).toUpperCase() + messageType.slice(1)} messages aren't supported
-          yet, refer to console for more details.
+          {intl.formatMessage(i18n.toastUnsupported, {
+            message: <span className="font-bold">{message}</span>,
+            messageType: messageType.charAt(0).toUpperCase() + messageType.slice(1),
+          })}
         </p>
       )}
     </div>
@@ -95,6 +135,7 @@ export default function MCPUIResourceRenderer({
   content,
   appendPromptToChat,
 }: MCPUIResourceRendererProps) {
+  const intl = useIntl();
   const { resolvedTheme } = useTheme();
   const [proxyUrl, setProxyUrl] = useState<string | undefined>(undefined);
 
@@ -203,11 +244,14 @@ export default function MCPUIResourceRenderer({
 
         const result = await window.electron.showMessageBox({
           type: 'question',
-          buttons: ['Cancel', 'Open'],
+          buttons: [
+            intl.formatMessage(i18n.cancelButton),
+            intl.formatMessage(i18n.openButton),
+          ],
           defaultId: 0,
-          title: 'Open External Link',
-          message: `Open ${protocol} link?`,
-          detail: `This will open: ${url}`,
+          title: intl.formatMessage(i18n.openExternalLinkTitle),
+          message: intl.formatMessage(i18n.openProtocolLink, { protocol }),
+          detail: intl.formatMessage(i18n.openLinkDetail, { url }),
         });
 
         if (result.response !== 1) {

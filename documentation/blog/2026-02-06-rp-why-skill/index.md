@@ -2,11 +2,12 @@
 title: "Level Up Your AI Game with rp-why"
 description: "A goose skill that measures the cognitive complexity of your AI collaboration using the Gas Town × DOK framework."
 date: 2026-02-06
+image: /img/blog/rp-why-banner.png
 authors:
   - dakota
 ---
 
-![rp-why skill banner](rp-why-banner.png)
+![rp-why skill banner](/img/blog/rp-why-banner.png)
 
 ## What is rp-why?
 
@@ -258,12 +259,12 @@ A: Yes! The output is designed to be shareable. Screenshot or copy the quadrant 
 <head>
   <meta property="og:title" content="Level Up Your AI Game with rp-why" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/02/06/rp-why-skill" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/06/rp-why-skill" />
   <meta property="og:description" content="A goose skill that measures the cognitive complexity of your AI collaboration using the Gas Town × DOK framework." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io" />
+  <meta property="twitter:domain" content="aaif-goose.github.io" />
   <meta name="twitter:title" content="Level Up Your AI Game with rp-why" />
   <meta name="twitter:description" content="A goose skill that measures the cognitive complexity of your AI collaboration using the Gas Town × DOK framework." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/rp-why-banner-d3fdd6f674e8e308169e30efe6379735.png" />
 </head>

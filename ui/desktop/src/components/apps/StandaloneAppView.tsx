@@ -4,8 +4,25 @@ import McpAppRenderer from '../McpApps/McpAppRenderer';
 import { startAgent, resumeAgent, listApps, stopAgent } from '../../api';
 import { formatAppName } from '../../utils/conversionUtils';
 import { errorMessage } from '../../utils/conversionUtils';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  failedToLoad: {
+    id: 'standaloneAppView.failedToLoad',
+    defaultMessage: 'Failed to Load App',
+  },
+  initializing: {
+    id: 'standaloneAppView.initializing',
+    defaultMessage: 'Initializing app...',
+  },
+  missingParams: {
+    id: 'standaloneAppView.missingParams',
+    defaultMessage: 'Missing required parameters',
+  },
+});
 
 export default function StandaloneAppView() {
+  const intl = useIntl();
   const [searchParams] = useSearchParams();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [cachedHtml, setCachedHtml] = useState<string | null>(null);
@@ -25,7 +42,7 @@ export default function StandaloneAppView() {
         resourceUri === 'undefined' ||
         extensionName === 'undefined'
       ) {
-        setError('Missing required parameters');
+        setError(intl.formatMessage(i18n.missingParams));
         setLoading(false);
         return;
       }
@@ -50,7 +67,7 @@ export default function StandaloneAppView() {
     }
 
     loadCachedHtml();
-  }, [resourceUri, extensionName]);
+  }, [resourceUri, extensionName, intl]);
 
   useEffect(() => {
     async function initSession() {
@@ -122,7 +139,7 @@ export default function StandaloneAppView() {
           padding: '24px',
         }}
       >
-        <h2 style={{ color: 'var(--text-error, #ef4444)' }}>Failed to Load App</h2>
+        <h2 style={{ color: 'var(--text-error, #ef4444)' }}>{intl.formatMessage(i18n.failedToLoad)}</h2>
         <p style={{ color: 'var(--color-text-secondary, #6b7280)' }}>{error}</p>
       </div>
     );
@@ -139,7 +156,7 @@ export default function StandaloneAppView() {
           justifyContent: 'center',
         }}
       >
-        <p style={{ color: 'var(--color-text-secondary, #6b7280)' }}>Initializing app...</p>
+        <p style={{ color: 'var(--color-text-secondary, #6b7280)' }}>{intl.formatMessage(i18n.initializing)}</p>
       </div>
     );
   }

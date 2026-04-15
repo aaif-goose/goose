@@ -3,6 +3,30 @@ import { CoinIcon } from '../icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { fetchCanonicalModelInfo } from '../../utils/canonical';
 import type { ModelInfoData } from '../../api';
+import { defineMessages, useIntl } from '../../i18n';
+
+const i18n = defineMessages({
+  pricingUnavailable: {
+    id: 'costTracker.pricingUnavailable',
+    defaultMessage: 'Pricing data unavailable for {model}',
+  },
+  costUnavailable: {
+    id: 'costTracker.costUnavailable',
+    defaultMessage: 'Cost data not available for {model} ({inputTokens} input, {outputTokens} output tokens)',
+  },
+  sessionCostBreakdown: {
+    id: 'costTracker.sessionCostBreakdown',
+    defaultMessage: 'Session cost breakdown:',
+  },
+  totalSessionCost: {
+    id: 'costTracker.totalSessionCost',
+    defaultMessage: 'Total session cost: {cost}',
+  },
+  inputOutputTooltip: {
+    id: 'costTracker.inputOutputTooltip',
+    defaultMessage: 'Input: {inputTokens} tokens ({inputCost}) | Output: {outputTokens} tokens ({outputCost})',
+  },
+});
 
 interface CostTrackerProps {
   inputTokens?: number;
@@ -25,6 +49,7 @@ export function CostTracker({
   model: currentModel,
   provider: currentProvider,
 }: CostTrackerProps) {
+  const intl = useIntl();
   const [costInfo, setCostInfo] = useState<ModelInfoData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showPricing, setShowPricing] = useState(true);
@@ -162,9 +187,13 @@ export function CostTracker({
     // Otherwise show as unavailable
     const getUnavailableTooltip = () => {
       if (pricingFailed) {
-        return `Pricing data unavailable for ${currentModel}`;
+        return intl.formatMessage(i18n.pricingUnavailable, { model: currentModel });
       }
-      return `Cost data not available for ${currentModel} (${inputTokens.toLocaleString()} input, ${outputTokens.toLocaleString()} output tokens)`;
+      return intl.formatMessage(i18n.costUnavailable, {
+        model: currentModel,
+        inputTokens: inputTokens.toLocaleString(),
+        outputTokens: outputTokens.toLocaleString(),
+      });
     };
 
     return (
@@ -189,13 +218,13 @@ export function CostTracker({
   const getTooltipContent = (): string => {
     // Handle error states first
     if (pricingFailed) {
-      return `Pricing data unavailable for ${currentProvider}/${currentModel}`;
+      return intl.formatMessage(i18n.pricingUnavailable, { model: `${currentProvider}/${currentModel}` });
     }
 
     // Handle session costs
     if (sessionCosts && Object.keys(sessionCosts).length > 0) {
       // Show session breakdown
-      let tooltip = 'Session cost breakdown:\n';
+      let tooltip = intl.formatMessage(i18n.sessionCostBreakdown) + '\n';
 
       Object.entries(sessionCosts).forEach(([modelKey, cost]) => {
         const costStr = `${costInfo?.currency || '$'}${cost.totalCost.toFixed(6)}`;
@@ -213,12 +242,20 @@ export function CostTracker({
         }
       }
 
-      tooltip += `\nTotal session cost: ${costInfo?.currency || '$'}${totalCost.toFixed(6)}`;
+      tooltip += '\n' + intl.formatMessage(i18n.totalSessionCost, { cost: `${costInfo?.currency || '$'}${totalCost.toFixed(6)}` });
       return tooltip;
     }
 
     // Default tooltip for single model
-    return `Input: ${inputTokens.toLocaleString()} tokens (${costInfo?.currency || '$'}${((inputTokens * (costInfo?.input_token_cost || 0)) / 1_000_000).toFixed(6)}) | Output: ${outputTokens.toLocaleString()} tokens (${costInfo?.currency || '$'}${((outputTokens * (costInfo?.output_token_cost || 0)) / 1_000_000).toFixed(6)})`;
+    const currency = costInfo?.currency || '$';
+    const inputCostStr = `${currency}${((inputTokens * (costInfo?.input_token_cost || 0)) / 1_000_000).toFixed(6)}`;
+    const outputCostStr = `${currency}${((outputTokens * (costInfo?.output_token_cost || 0)) / 1_000_000).toFixed(6)}`;
+    return intl.formatMessage(i18n.inputOutputTooltip, {
+      inputTokens: inputTokens.toLocaleString(),
+      inputCost: inputCostStr,
+      outputTokens: outputTokens.toLocaleString(),
+      outputCost: outputCostStr,
+    });
   };
 
   return (

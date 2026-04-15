@@ -96,7 +96,7 @@ Go goose, go goose!
 
 If that’s not amazing idk what is …
 
-🚀 to get started visit block.github.io/goose_
+🚀 to get started visit goose-docs.ai_
 
 
 ### goose Output
@@ -124,7 +124,7 @@ The script has been created and read aloud using the specified voices and style.
 Press play and hear it for yourself! 🔊
 
 <audio controls>
-  <source src="/goose/audio/elevenlabs-mcp-demo.mp3" type="audio/mpeg" />
+  <source src="/audio/elevenlabs-mcp-demo.mp3" type="audio/mpeg" />
   Your browser does not support the audio element.
 </audio>
 

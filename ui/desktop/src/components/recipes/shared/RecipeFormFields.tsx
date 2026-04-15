@@ -2,6 +2,90 @@ import React, { useState } from 'react';
 import { Parameter } from '../../../recipe';
 import { ChevronDown } from 'lucide-react';
 import { ExtensionConfig } from '../../../api';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  titleLabel: {
+    id: 'recipeFormFields.titleLabel',
+    defaultMessage: 'Title',
+  },
+  titlePlaceholder: {
+    id: 'recipeFormFields.titlePlaceholder',
+    defaultMessage: 'Recipe title',
+  },
+  descriptionLabel: {
+    id: 'recipeFormFields.descriptionLabel',
+    defaultMessage: 'Description',
+  },
+  descriptionPlaceholder: {
+    id: 'recipeFormFields.descriptionPlaceholder',
+    defaultMessage: 'Brief description of what this recipe does',
+  },
+  instructionsLabel: {
+    id: 'recipeFormFields.instructionsLabel',
+    defaultMessage: 'Instructions',
+  },
+  openEditor: {
+    id: 'recipeFormFields.openEditor',
+    defaultMessage: 'Open Editor',
+  },
+  instructionsPlaceholder: {
+    id: 'recipeFormFields.instructionsPlaceholder',
+    defaultMessage: 'Detailed instructions for the AI, hidden from the user',
+  },
+  templateVarHint: {
+    id: 'recipeFormFields.templateVarHint',
+    defaultMessage: "Use '{{parameter_name}}' to define parameters that can be filled in when running the recipe.",
+  },
+  initialPrompt: {
+    id: 'recipeFormFields.initialPrompt',
+    defaultMessage: 'Initial Prompt',
+  },
+  promptOptionalHint: {
+    id: 'recipeFormFields.promptOptionalHint',
+    defaultMessage: '(Optional - Instructions or Prompt are required)',
+  },
+  promptPlaceholder: {
+    id: 'recipeFormFields.promptPlaceholder',
+    defaultMessage: 'Pre-filled prompt when the recipe starts',
+  },
+  advancedOptions: {
+    id: 'recipeFormFields.advancedOptions',
+    defaultMessage: 'Advanced Options',
+  },
+  advancedOptionsHint: {
+    id: 'recipeFormFields.advancedOptionsHint',
+    defaultMessage: 'Activities, parameters, model, extensions, response schema, subrecipes',
+  },
+  parametersLabel: {
+    id: 'recipeFormFields.parametersLabel',
+    defaultMessage: 'Parameters',
+  },
+  parametersDescription: {
+    id: 'recipeFormFields.parametersDescription',
+    defaultMessage: "Parameters will be automatically detected from '{{parameter_name}}' syntax in instructions/prompt/activities or you can manually add them below.",
+  },
+  parameterNamePlaceholder: {
+    id: 'recipeFormFields.parameterNamePlaceholder',
+    defaultMessage: 'Enter parameter name...',
+  },
+  addParameter: {
+    id: 'recipeFormFields.addParameter',
+    defaultMessage: 'Add parameter',
+  },
+  enterValueFor: {
+    id: 'recipeFormFields.enterValueFor',
+    defaultMessage: 'Enter value for {key}',
+  },
+  responseJsonSchema: {
+    id: 'recipeFormFields.responseJsonSchema',
+    defaultMessage: 'Response JSON Schema',
+  },
+  responseJsonSchemaDescription: {
+    id: 'recipeFormFields.responseJsonSchemaDescription',
+    defaultMessage: "Define the expected structure of the AI's response using JSON Schema format",
+  },
+});
 
 import ParameterInput from '../../parameter/ParameterInput';
 import RecipeActivityEditor from '../RecipeActivityEditor';
@@ -59,6 +143,7 @@ export function RecipeFormFields({
   onPromptChange,
   onJsonSchemaChange,
 }: RecipeFormFieldsProps) {
+  const intl = useIntl();
   const [showJsonSchemaEditor, setShowJsonSchemaEditor] = useState(false);
   const [showInstructionsEditor, setShowInstructionsEditor] = useState(false);
   const [newParameterName, setNewParameterName] = useState('');
@@ -87,12 +172,12 @@ export function RecipeFormFields({
 
       return allVars.map((key: string) => ({
         key,
-        description: `Enter value for ${key}`,
+        description: intl.formatMessage(i18n.enterValueFor, { key }),
         requirement: 'required' as const,
         input_type: 'string' as const,
       }));
     },
-    []
+    [intl]
   );
 
   // Function to update parameters based on current field values
@@ -173,7 +258,7 @@ export function RecipeFormFields({
               htmlFor="recipe-title"
               className="block text-sm font-medium text-text-primary mb-2"
             >
-              Title <span className="text-red-500">*</span>
+              {intl.formatMessage(i18n.titleLabel)} <span className="text-red-500">*</span>
             </label>
             <input
               id="recipe-title"
@@ -187,7 +272,7 @@ export function RecipeFormFields({
               className={`w-full p-3 border rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 field.state.meta.errors.length > 0 ? 'border-red-500' : 'border-border-primary'
               }`}
-              placeholder="Recipe title"
+              placeholder={intl.formatMessage(i18n.titlePlaceholder)}
               data-testid="title-input"
             />
             {field.state.meta.errors.length > 0 && (
@@ -205,7 +290,7 @@ export function RecipeFormFields({
               htmlFor="recipe-description"
               className="block text-sm font-medium text-text-primary mb-2"
             >
-              Description <span className="text-red-500">*</span>
+              {intl.formatMessage(i18n.descriptionLabel)} <span className="text-red-500">*</span>
             </label>
             <input
               id="recipe-description"
@@ -219,7 +304,7 @@ export function RecipeFormFields({
               className={`w-full p-3 border rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 field.state.meta.errors.length > 0 ? 'border-red-500' : 'border-border-primary'
               }`}
-              placeholder="Brief description of what this recipe does"
+              placeholder={intl.formatMessage(i18n.descriptionPlaceholder)}
               data-testid="description-input"
             />
             {field.state.meta.errors.length > 0 && (
@@ -238,7 +323,7 @@ export function RecipeFormFields({
                 htmlFor="recipe-instructions"
                 className="block text-sm font-medium text-text-primary"
               >
-                Instructions <span className="text-red-500">*</span>
+                {intl.formatMessage(i18n.instructionsLabel)} <span className="text-red-500">*</span>
               </label>
               <Button
                 type="button"
@@ -247,7 +332,7 @@ export function RecipeFormFields({
                 size="sm"
                 className="text-xs"
               >
-                Open Editor
+                {intl.formatMessage(i18n.openEditor)}
               </Button>
             </div>
             <textarea
@@ -264,13 +349,12 @@ export function RecipeFormFields({
               className={`w-full p-3 border rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-sm ${
                 field.state.meta.errors.length > 0 ? 'border-red-500' : 'border-border-primary'
               }`}
-              placeholder="Detailed instructions for the AI, hidden from the user"
+              placeholder={intl.formatMessage(i18n.instructionsPlaceholder)}
               rows={8}
               data-testid="instructions-input"
             />
             <p className="text-xs text-text-secondary mt-1">
-              Use {`{{parameter_name}}`} to define parameters that can be filled in when running the
-              recipe.
+              {intl.formatMessage(i18n.templateVarHint)}
             </p>
             {field.state.meta.errors.length > 0 && (
               <p className="text-red-500 text-sm mt-1">{field.state.meta.errors[0]}</p>
@@ -300,10 +384,10 @@ export function RecipeFormFields({
               htmlFor="recipe-prompt"
               className="block text-sm font-medium text-text-primary mb-2"
             >
-              Initial Prompt
+              {intl.formatMessage(i18n.initialPrompt)}
             </label>
             <p className="text-xs text-text-secondary mt-2 mb-2">
-              (Optional - Instructions or Prompt are required)
+              {intl.formatMessage(i18n.promptOptionalHint)}
             </p>
             <textarea
               id="recipe-prompt"
@@ -317,7 +401,7 @@ export function RecipeFormFields({
                 updateParametersFromFields();
               }}
               className="w-full p-3 border border-border-primary rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              placeholder="Pre-filled prompt when the recipe starts"
+              placeholder={intl.formatMessage(i18n.promptPlaceholder)}
               rows={3}
               data-testid="prompt-input"
             />
@@ -333,9 +417,9 @@ export function RecipeFormFields({
               advancedOpen ? 'rotate-0' : '-rotate-90'
             }`}
           />
-          <span className="text-sm font-medium text-textStandard">Advanced Options</span>
+          <span className="text-sm font-medium text-textStandard">{intl.formatMessage(i18n.advancedOptions)}</span>
           <span className="text-xs text-textSubtle">
-            Activities, parameters, model, extensions, response schema, subrecipes
+            {intl.formatMessage(i18n.advancedOptionsHint)}
           </span>
         </CollapsibleTrigger>
 
@@ -360,7 +444,7 @@ export function RecipeFormFields({
                 if (newParameterName.trim()) {
                   const newParam: Parameter = {
                     key: newParameterName.trim(),
-                    description: `Enter value for ${newParameterName.trim()}`,
+                    description: intl.formatMessage(i18n.enterValueFor, { key: newParameterName.trim() }),
                     input_type: 'string',
                     requirement: 'required',
                   };
@@ -410,11 +494,10 @@ export function RecipeFormFields({
               return (
                 <div>
                   <label className="block text-md text-text-primary mb-2 font-bold">
-                    Parameters
+                    {intl.formatMessage(i18n.parametersLabel)}
                   </label>
                   <p className="text-text-secondary text-sm space-y-2 pb-4">
-                    Parameters will be automatically detected from {`{{parameter_name}}`} syntax in
-                    instructions/prompt/activities or you can manually add them below.
+                    {intl.formatMessage(i18n.parametersDescription)}
                   </p>
 
                   {/* Add Parameter Input - Always Visible */}
@@ -424,7 +507,7 @@ export function RecipeFormFields({
                       value={newParameterName}
                       onChange={(e) => setNewParameterName(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder="Enter parameter name..."
+                      placeholder={intl.formatMessage(i18n.parameterNamePlaceholder)}
                       className="flex-1 px-3 py-2 border border-border-primary rounded-lg bg-background-primary text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
                     <button
@@ -433,7 +516,7 @@ export function RecipeFormFields({
                       disabled={!newParameterName.trim()}
                       className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
-                      Add parameter
+                      {intl.formatMessage(i18n.addParameter)}
                     </button>
                   </div>
 
@@ -504,10 +587,10 @@ export function RecipeFormFields({
             {(field: FormFieldApi<string | undefined>) => (
               <div>
                 <label className="block text-md text-text-primary mb-2 font-bold">
-                  Response JSON Schema
+                  {intl.formatMessage(i18n.responseJsonSchema)}
                 </label>
                 <p className="text-text-secondary text-sm space-y-2 pb-4">
-                  Define the expected structure of the AI's response using JSON Schema format
+                  {intl.formatMessage(i18n.responseJsonSchemaDescription)}
                 </p>
                 <div className="flex items-center justify-between mb-2">
                   <Button
@@ -517,7 +600,7 @@ export function RecipeFormFields({
                     size="sm"
                     className="text-xs"
                   >
-                    Open Editor
+                    {intl.formatMessage(i18n.openEditor)}
                   </Button>
                 </div>
 

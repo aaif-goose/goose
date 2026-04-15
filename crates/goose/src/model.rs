@@ -76,16 +76,37 @@ impl ModelConfig {
     }
 
     fn new_base(model_name: String, context_env_var: Option<&str>) -> Result<Self, ConfigError> {
+        // Check a provider-specific env var first (e.g. DATABRICKS_CONTEXT_LIMIT),
+        // then fall back to GOOSE_CONTEXT_LIMIT.  Using Config::global().get_param()
+        // reads from both environment variables and config.yaml, so users can set
+        // `GOOSE_CONTEXT_LIMIT: 1000000` in config.yaml instead of exporting an
+        // env var.  See #7839.
         let context_limit = if let Some(env_var) = context_env_var {
             if let Ok(val) = std::env::var(env_var) {
                 Some(Self::validate_context_limit(&val, env_var)?)
             } else {
                 None
             }
-        } else if let Ok(val) = std::env::var("GOOSE_CONTEXT_LIMIT") {
-            Some(Self::validate_context_limit(&val, "GOOSE_CONTEXT_LIMIT")?)
         } else {
-            None
+            match crate::config::Config::global().get_param::<usize>("GOOSE_CONTEXT_LIMIT") {
+                Ok(limit) => {
+                    if limit == 0 {
+                        return Err(ConfigError::InvalidRange(
+                            "GOOSE_CONTEXT_LIMIT".to_string(),
+                            "must be greater than 0".to_string(),
+                        ));
+                    }
+                    Some(limit)
+                }
+                Err(crate::config::ConfigError::NotFound(_)) => None,
+                Err(e) => {
+                    return Err(ConfigError::InvalidValue(
+                        "GOOSE_CONTEXT_LIMIT".to_string(),
+                        String::new(),
+                        e.to_string(),
+                    ))
+                }
+            }
         };
 
         let max_tokens = Self::parse_max_tokens()?;

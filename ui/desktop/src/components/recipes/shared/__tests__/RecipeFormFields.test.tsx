@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, type RenderOptions, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from '@tanstack/react-form';
 
 import { RecipeFormFields, extractTemplateVariables } from '../RecipeFormFields';
 import { type RecipeFormData } from '../recipeFormSchema';
+import { IntlTestWrapper } from '../../../../i18n/test-utils';
+
+const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
+  render(ui, { wrapper: IntlTestWrapper, ...options });
 
 vi.mock('../../../ConfigContext', () => ({
   useConfig: () => ({
@@ -64,13 +68,13 @@ describe('RecipeFormFields', () => {
 
   describe('Basic Rendering', () => {
     it('renders the component without crashing', () => {
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
       expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
     });
 
     it('renders required form fields', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
@@ -87,7 +91,7 @@ describe('RecipeFormFields', () => {
     });
 
     it('shows form inputs with proper accessibility', () => {
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       expect(screen.getByRole('textbox', { name: /title/i })).toBeInTheDocument();
       expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
@@ -99,7 +103,7 @@ describe('RecipeFormFields', () => {
   describe('Form Interactions', () => {
     it('allows typing in text fields', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const titleInput = screen.getByRole('textbox', { name: /title/i });
       await user.type(titleInput, 'Test Recipe');
@@ -112,7 +116,7 @@ describe('RecipeFormFields', () => {
 
     it('allows typing in textarea fields', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const instructionsInput = screen.getByRole('textbox', { name: /instructions/i });
       await user.type(instructionsInput, 'Do something');
@@ -127,7 +131,7 @@ describe('RecipeFormFields', () => {
   describe('Parameter Management', () => {
     it('shows parameter input section', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -137,7 +141,7 @@ describe('RecipeFormFields', () => {
 
     it('allows adding parameters manually', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -167,7 +171,7 @@ describe('RecipeFormFields', () => {
         prompt: 'Pre-filled Prompt',
       };
 
-      render(<TestWrapper initialValues={initialValues} />);
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
 
       expect(screen.getByDisplayValue('Pre-filled Title')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Pre-filled Description')).toBeInTheDocument();
@@ -178,7 +182,7 @@ describe('RecipeFormFields', () => {
 
   describe('Editor Buttons', () => {
     it('shows editor buttons for instructions and JSON schema', () => {
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const editorButtons = screen.getAllByText('Open Editor');
       expect(editorButtons.length).toBeGreaterThan(0);
@@ -188,7 +192,7 @@ describe('RecipeFormFields', () => {
   describe('Parameter Auto-Detection', () => {
     it('has parameter detection functionality', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       const instructionsInput = screen.getByPlaceholderText(
         'Detailed instructions for the AI, hidden from the user'
@@ -217,7 +221,7 @@ describe('RecipeFormFields', () => {
 
     it('allows manual parameter addition', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -237,7 +241,7 @@ describe('RecipeFormFields', () => {
 
     it('shows parameter management UI', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -252,7 +256,7 @@ describe('RecipeFormFields', () => {
 
     it('handles activities field for parameter detection', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -300,7 +304,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       const instructionsInput = screen.getByPlaceholderText(
         'Detailed instructions for the AI, hidden from the user'
@@ -397,7 +401,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       // Check that parameter names are displayed in code blocks with more specific selectors
       const usernameCode = screen.getByText('username').closest('code');
@@ -456,7 +460,7 @@ describe('RecipeFormFields', () => {
 
     it('renders parameter form fields when manually adding parameters', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -568,7 +572,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       // Check that unused indicators are shown
       const unusedTexts = screen.getAllByText('Unused');
@@ -645,7 +649,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       // Should have 3 parameters total
       const parameterContainers = document.querySelectorAll('.parameter-input');
@@ -675,7 +679,7 @@ describe('RecipeFormFields', () => {
 
     it('shows delete button for parameters', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -708,7 +712,7 @@ describe('RecipeFormFields', () => {
 
     it('supports different parameter input types', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -879,7 +883,7 @@ describe('RecipeFormFields', () => {
   describe('Model and Extension Selection', () => {
     it('renders model and extension selectors in advanced options', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -913,7 +917,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
@@ -945,7 +949,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
@@ -968,7 +972,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
@@ -999,7 +1003,7 @@ describe('RecipeFormFields', () => {
         return <RecipeFormFields form={form} />;
       };
 
-      render(<TestComponent />);
+      renderWithIntl(<TestComponent />);
 
       await expandAdvancedSection(user);
 
@@ -1011,7 +1015,7 @@ describe('RecipeFormFields', () => {
   describe('Subrecipes Field', () => {
     it('renders the subrecipes section in advanced options', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -1033,7 +1037,7 @@ describe('RecipeFormFields', () => {
         ],
       };
 
-      render(<TestWrapper initialValues={initialValues} />);
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
 
       await expandAdvancedSection(user);
 
@@ -1055,7 +1059,7 @@ describe('RecipeFormFields', () => {
         ],
       };
 
-      render(<TestWrapper initialValues={initialValues} />);
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
 
       await expandAdvancedSection(user);
 
@@ -1079,7 +1083,7 @@ describe('RecipeFormFields', () => {
         ],
       };
 
-      render(<TestWrapper initialValues={initialValues} />);
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
 
       await expandAdvancedSection(user);
 
@@ -1089,7 +1093,7 @@ describe('RecipeFormFields', () => {
 
     it('opens the add existing subrecipe modal on button click', async () => {
       const user = userEvent.setup();
-      render(<TestWrapper />);
+      renderWithIntl(<TestWrapper />);
 
       await expandAdvancedSection(user);
 
@@ -1113,7 +1117,7 @@ describe('RecipeFormFields', () => {
         ],
       };
 
-      render(<TestWrapper initialValues={initialValues} />);
+      renderWithIntl(<TestWrapper initialValues={initialValues} />);
 
       await expandAdvancedSection(user);
 

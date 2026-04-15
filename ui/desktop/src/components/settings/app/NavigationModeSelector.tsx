@@ -1,34 +1,55 @@
 import React from 'react';
 import { Columns2, Layers } from 'lucide-react';
+import { defineMessages, useIntl } from '../../../i18n';
 import { useNavigationContext, NavigationMode } from '../../Layout/NavigationContext';
 import { cn } from '../../../utils';
+
+const i18n = defineMessages({
+  pushLabel: {
+    id: 'navigationModeSelector.pushLabel',
+    defaultMessage: 'Push',
+  },
+  pushDescription: {
+    id: 'navigationModeSelector.pushDescription',
+    defaultMessage: 'Navigation pushes content',
+  },
+  overlayLabel: {
+    id: 'navigationModeSelector.overlayLabel',
+    defaultMessage: 'Overlay',
+  },
+  overlayDescription: {
+    id: 'navigationModeSelector.overlayDescription',
+    defaultMessage: 'Full-screen overlay',
+  },
+});
 
 interface NavigationModeSelectorProps {
   className?: string;
 }
 
-const modes: {
-  value: NavigationMode;
-  label: string;
-  icon: React.ReactNode;
-  description: string;
-}[] = [
-  {
-    value: 'push',
-    label: 'Push',
-    icon: <Columns2 className="w-5 h-5" />,
-    description: 'Navigation pushes content',
-  },
-  {
-    value: 'overlay',
-    label: 'Overlay',
-    icon: <Layers className="w-5 h-5" />,
-    description: 'Full-screen overlay',
-  },
-];
-
 export const NavigationModeSelector: React.FC<NavigationModeSelectorProps> = ({ className }) => {
   const { navigationMode, setNavigationMode } = useNavigationContext();
+  const intl = useIntl();
+
+  const modes: {
+    value: NavigationMode;
+    label: string;
+    icon: React.ReactNode;
+    description: string;
+  }[] = [
+    {
+      value: 'push',
+      label: intl.formatMessage(i18n.pushLabel),
+      icon: <Columns2 className="w-5 h-5" />,
+      description: intl.formatMessage(i18n.pushDescription),
+    },
+    {
+      value: 'overlay',
+      label: intl.formatMessage(i18n.overlayLabel),
+      icon: <Layers className="w-5 h-5" />,
+      description: intl.formatMessage(i18n.overlayDescription),
+    },
+  ];
 
   return (
     <div className={className}>

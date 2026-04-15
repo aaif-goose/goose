@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "ghost",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/shared/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/shared/ui",
+    "utils": "@/shared/lib/cn",
+    "ui": "@/shared/ui",
+    "lib": "@/shared/lib"
+  },
+  "registryUrl": "https://block.github.io/ghost/r/registry.json",
+  "iconLibrary": "lucide"
+}

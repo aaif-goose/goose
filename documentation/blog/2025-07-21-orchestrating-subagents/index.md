@@ -102,7 +102,7 @@ This happened because each subagent wasn't aware of the other subagents' plan. T
 
 ## A Better Prompt Strategy
 
-This time, I took a different approach.I told Goose to spin up one subagent to analyze the UI and come up with a shared design plan. Once the plan was ready, Goose could then spawn four more subagents to implement the plan in parallel.
+This time, I took a different approach. I told Goose to spin up one subagent to analyze the UI and come up with a shared design plan. Once the plan was ready, Goose could then spawn four more subagents to implement the plan in parallel.
 
 ```
 Can you take a look at the UI? The color scheme is all over the place. I want it to be unified but also have a playground theme like a real-life playground. Not just the colors but the elements as well.
@@ -176,12 +176,12 @@ What will you build with subagents?
 <head>
   <meta property="og:title" content="Orchestrating 6 Subagents to Build a Collaborative API Playground for Kids" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/07/21/orchestrating-subagents" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/07/21/orchestrating-subagents" />
   <meta property="og:description" content="Delegating backend, frontend, docs, and tests so six subagents could build collaborative API tool for kids." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Orchestrating 6 Subagents to Build a Collaborative API Playground for Kids" />
   <meta name="twitter:description" content="Delegating backend, frontend, docs, and tests so six subagents could build collaborative API tool for kids." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/built-by-subagents-869a01d4b147ebdb54334dcc22dc521e.png" />
 </head>

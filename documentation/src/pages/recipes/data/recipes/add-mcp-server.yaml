@@ -164,7 +164,7 @@ instructions: |
     📝 Add real example prompt and output: Replace placeholders in Example Usage section
     📝 Review for any remaining TODOs or placeholders
   - Provide the testing checklist:
-    📝 Build and run the docs server using [these steps](https://github.com/block/goose/blob/main/documentation/README.md), then verify:
+    📝 Build and run the docs server using [these steps](https://github.com/aaif-goose/goose/blob/main/documentation/README.md), then verify:
     📝 Extensions page (`/goose/extensions`) loads successfully. Verify:
        - Info is correct on the summary and details cards (click extension name to view details card)
        - The `goose://` deeplink opens the installer correctly in Desktop

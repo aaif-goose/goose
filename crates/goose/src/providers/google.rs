@@ -111,7 +111,7 @@ impl ProviderDef for GoogleProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
             GOOGLE_PROVIDER_NAME,
-            "Google Gemini",
+            "Google Gemini (API Key)",
             "Gemini models from Google AI",
             GOOGLE_DEFAULT_MODEL,
             GOOGLE_KNOWN_MODELS.to_vec(),

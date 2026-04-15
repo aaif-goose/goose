@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, type RenderOptions, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ExtensionModal from './ExtensionModal';
 import { ExtensionFormData } from '../utils';
+import { IntlTestWrapper } from '../../../../i18n/test-utils';
+
+const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
+  render(ui, { wrapper: IntlTestWrapper, ...options });
 
 describe('ExtensionModal', () => {
   it('does not show unsaved changes dialog when closing without modifications', async () => {
@@ -25,7 +29,7 @@ describe('ExtensionModal', () => {
       headers: [],
     };
 
-    render(
+    renderWithIntl(
       <ExtensionModal
         title="Edit Extension"
         initialData={initialData}
@@ -61,7 +65,7 @@ describe('ExtensionModal', () => {
       headers: [],
     };
 
-    render(
+    renderWithIntl(
       <ExtensionModal
         title="Edit Extension"
         initialData={initialData}
@@ -100,7 +104,7 @@ describe('ExtensionModal', () => {
       headers: [],
     };
 
-    render(
+    renderWithIntl(
       <ExtensionModal
         title="Edit Extension"
         initialData={initialData}
@@ -139,7 +143,7 @@ describe('ExtensionModal', () => {
       headers: [],
     };
 
-    render(
+    renderWithIntl(
       <ExtensionModal
         title="Edit Extension"
         initialData={initialData}
@@ -178,7 +182,7 @@ describe('ExtensionModal', () => {
       headers: [],
     };
 
-    render(
+    renderWithIntl(
       <ExtensionModal
         title="Add custom extension"
         initialData={initialData}

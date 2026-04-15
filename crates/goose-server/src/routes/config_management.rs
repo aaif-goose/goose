@@ -135,6 +135,7 @@ pub enum ConfigValueResponse {
 pub enum CommandType {
     Builtin,
     Recipe,
+    Skill,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -251,7 +252,10 @@ pub async fn read_config(
     )
 )]
 pub async fn get_extensions() -> Result<Json<ExtensionResponse>, ErrorResponse> {
-    let extensions = goose::config::get_all_extensions();
+    let extensions = goose::config::get_all_extensions()
+        .into_iter()
+        .filter(|ext| !goose::agents::extension_manager::is_hidden_extension(&ext.config.name()))
+        .collect();
     let warnings = goose::config::get_warnings();
     Ok(Json(ExtensionResponse {
         extensions,
@@ -387,14 +391,23 @@ pub async fn get_provider_models(
     }
 }
 
+#[derive(Deserialize, utoipa::IntoParams)]
+pub struct SlashCommandsQuery {
+    /// Optional working directory to discover local skills from
+    pub working_dir: Option<String>,
+}
+
 #[utoipa::path(
     get,
     path = "/config/slash_commands",
+    params(SlashCommandsQuery),
     responses(
         (status = 200, description = "Slash commands retrieved successfully", body = SlashCommandsResponse)
     )
 )]
-pub async fn get_slash_commands() -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
+pub async fn get_slash_commands(
+    axum::extract::Query(query): axum::extract::Query<SlashCommandsQuery>,
+) -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
     let mut commands: Vec<_> = slash_commands::list_commands()
         .iter()
         .map(|command| SlashCommand {
@@ -409,6 +422,17 @@ pub async fn get_slash_commands() -> Result<Json<SlashCommandsResponse>, ErrorRe
             command: cmd_def.name.to_string(),
             help: cmd_def.description.to_string(),
             command_type: CommandType::Builtin,
+        });
+    }
+
+    let working_dir = query.working_dir.map(std::path::PathBuf::from);
+    for source in
+        goose::agents::platform_extensions::skills::list_installed_skills(working_dir.as_deref())
+    {
+        commands.push(SlashCommand {
+            command: source.name,
+            help: source.description,
+            command_type: CommandType::Skill,
         });
     }
 

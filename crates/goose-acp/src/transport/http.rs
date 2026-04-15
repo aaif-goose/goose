@@ -32,7 +32,7 @@ impl HttpState {
 
     async fn create_session(&self) -> Result<String, StatusCode> {
         let (to_agent_tx, to_agent_rx) = mpsc::channel::<String>(256);
-        let (from_agent_tx, from_agent_rx) = mpsc::channel::<String>(256);
+        let (from_agent_tx, from_agent_rx) = mpsc::unbounded_channel::<String>();
 
         let agent = self.server.create_agent().await.map_err(|e| {
             error!("Failed to create agent: {}", e);
@@ -87,7 +87,7 @@ impl HttpState {
     async fn get_receiver(
         &self,
         acp_session_id: &str,
-    ) -> Result<Arc<Mutex<mpsc::Receiver<String>>>, StatusCode> {
+    ) -> Result<Arc<Mutex<mpsc::UnboundedReceiver<String>>>, StatusCode> {
         let sessions = self.sessions.read().await;
         let session = sessions.get(acp_session_id).ok_or(StatusCode::NOT_FOUND)?;
         Ok(session.from_agent_rx.clone())
@@ -95,7 +95,7 @@ impl HttpState {
 }
 
 fn create_sse_stream(
-    receiver: Arc<Mutex<mpsc::Receiver<String>>>,
+    receiver: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
     cleanup: Option<(Arc<HttpState>, String)>,
 ) -> Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
     let stream = async_stream::stream! {

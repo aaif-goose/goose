@@ -8,6 +8,122 @@ import { Recipe } from '../../../recipe';
 import { SubRecipeFormData } from './recipeFormSchema';
 import { useEscapeKey } from '../../../hooks/useEscapeKey';
 import KeyValueEditor from './KeyValueEditor';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'createSubRecipeInline.title',
+    defaultMessage: 'Create New Subrecipe',
+  },
+  subtitle: {
+    id: 'createSubRecipeInline.subtitle',
+    defaultMessage: 'Create a simple recipe to use as a callable tool in your main recipe',
+  },
+  closeModal: {
+    id: 'createSubRecipeInline.closeModal',
+    defaultMessage: 'Close create subrecipe modal',
+  },
+  nameLabel: {
+    id: 'createSubRecipeInline.nameLabel',
+    defaultMessage: 'Name',
+  },
+  namePlaceholder: {
+    id: 'createSubRecipeInline.namePlaceholder',
+    defaultMessage: 'e.g., security_scan',
+  },
+  nameHint: {
+    id: 'createSubRecipeInline.nameHint',
+    defaultMessage: 'Unique identifier used to generate the tool name',
+  },
+  recipeTitleLabel: {
+    id: 'createSubRecipeInline.recipeTitleLabel',
+    defaultMessage: 'Recipe Title',
+  },
+  recipeTitlePlaceholder: {
+    id: 'createSubRecipeInline.recipeTitlePlaceholder',
+    defaultMessage: 'e.g., Security Analysis Tool',
+  },
+  recipeDescriptionLabel: {
+    id: 'createSubRecipeInline.recipeDescriptionLabel',
+    defaultMessage: 'Recipe Description',
+  },
+  recipeDescriptionPlaceholder: {
+    id: 'createSubRecipeInline.recipeDescriptionPlaceholder',
+    defaultMessage: 'What this recipe does when executed',
+  },
+  instructionsLabel: {
+    id: 'createSubRecipeInline.instructionsLabel',
+    defaultMessage: 'Instructions',
+  },
+  instructionsPlaceholder: {
+    id: 'createSubRecipeInline.instructionsPlaceholder',
+    defaultMessage: 'Instructions for the AI when this subrecipe is called...',
+  },
+  toolDescriptionLabel: {
+    id: 'createSubRecipeInline.toolDescriptionLabel',
+    defaultMessage: 'Tool Description',
+  },
+  toolDescriptionPlaceholder: {
+    id: 'createSubRecipeInline.toolDescriptionPlaceholder',
+    defaultMessage: 'Optional description shown when this is called as a tool',
+  },
+  sequentialLabel: {
+    id: 'createSubRecipeInline.sequentialLabel',
+    defaultMessage: 'Sequential when repeated',
+  },
+  sequentialHint: {
+    id: 'createSubRecipeInline.sequentialHint',
+    defaultMessage: '(Forces sequential execution of multiple instances)',
+  },
+  preconfiguredValues: {
+    id: 'createSubRecipeInline.preconfiguredValues',
+    defaultMessage: 'Pre-configured Values',
+  },
+  preconfiguredValuesHint: {
+    id: 'createSubRecipeInline.preconfiguredValuesHint',
+    defaultMessage: 'Optional parameter values that are always passed to the subrecipe',
+  },
+  cancel: {
+    id: 'createSubRecipeInline.cancel',
+    defaultMessage: 'Cancel',
+  },
+  creating: {
+    id: 'createSubRecipeInline.creating',
+    defaultMessage: 'Creating...',
+  },
+  createAndAdd: {
+    id: 'createSubRecipeInline.createAndAdd',
+    defaultMessage: 'Create & Add Subrecipe',
+  },
+  validationFailed: {
+    id: 'createSubRecipeInline.validationFailed',
+    defaultMessage: 'Validation Failed',
+  },
+  validationMsg: {
+    id: 'createSubRecipeInline.validationMsg',
+    defaultMessage: 'Name, title, recipe description, and instructions are required.',
+  },
+  duplicateName: {
+    id: 'createSubRecipeInline.duplicateName',
+    defaultMessage: 'Duplicate Name',
+  },
+  duplicateNameMsg: {
+    id: 'createSubRecipeInline.duplicateNameMsg',
+    defaultMessage: 'A subrecipe named "{name}" already exists. Please use a unique name.',
+  },
+  createdSuccess: {
+    id: 'createSubRecipeInline.createdSuccess',
+    defaultMessage: 'Subrecipe created successfully',
+  },
+  saveFailed: {
+    id: 'createSubRecipeInline.saveFailed',
+    defaultMessage: 'Save Failed',
+  },
+  saveFailedMsg: {
+    id: 'createSubRecipeInline.saveFailedMsg',
+    defaultMessage: 'Failed to save subrecipe: {error}',
+  },
+});
 
 interface CreateSubRecipeInlineProps {
   isOpen: boolean;
@@ -22,6 +138,7 @@ export default function CreateSubRecipeInline({
   onSubRecipeSaved,
   existingSubRecipes = [],
 }: CreateSubRecipeInlineProps) {
+  const intl = useIntl();
   useEscapeKey(isOpen, onClose);
 
   const form = useForm({
@@ -53,8 +170,8 @@ export default function CreateSubRecipeInline({
       !formValues.instructions.trim()
     ) {
       toastError({
-        title: 'Validation Failed',
-        msg: 'Name, title, recipe description, and instructions are required.',
+        title: intl.formatMessage(i18n.validationFailed),
+        msg: intl.formatMessage(i18n.validationMsg),
       });
       return;
     }
@@ -62,8 +179,8 @@ export default function CreateSubRecipeInline({
     const trimmedName = name.trim();
     if (existingSubRecipes.some((sr) => sr.name === trimmedName)) {
       toastError({
-        title: 'Duplicate Name',
-        msg: `A subrecipe named "${trimmedName}" already exists. Please use a unique name.`,
+        title: intl.formatMessage(i18n.duplicateName),
+        msg: intl.formatMessage(i18n.duplicateNameMsg, { name: trimmedName }),
       });
       return;
     }
@@ -89,7 +206,7 @@ export default function CreateSubRecipeInline({
 
       toastSuccess({
         title: formValues.title.trim(),
-        msg: 'Subrecipe created successfully',
+        msg: intl.formatMessage(i18n.createdSuccess),
       });
 
       onSubRecipeSaved(subRecipe);
@@ -103,13 +220,13 @@ export default function CreateSubRecipeInline({
       console.error('Failed to save subrecipe:', error);
 
       toastError({
-        title: 'Save Failed',
-        msg: `Failed to save subrecipe: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        title: intl.formatMessage(i18n.saveFailed),
+        msg: intl.formatMessage(i18n.saveFailedMsg, { error: error instanceof Error ? error.message : 'Unknown error' }),
       });
     } finally {
       setIsSaving(false);
     }
-  }, [form, name, toolDescription, sequentialWhenRepeated, values, existingSubRecipes, onSubRecipeSaved, onClose]);
+  }, [form, name, toolDescription, sequentialWhenRepeated, values, existingSubRecipes, onSubRecipeSaved, onClose, intl]);
 
   if (!isOpen) return null;
 
@@ -119,9 +236,9 @@ export default function CreateSubRecipeInline({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-borderSubtle">
           <div>
-            <h2 className="text-xl font-medium text-textProminent">Create New Subrecipe</h2>
+            <h2 className="text-xl font-medium text-textProminent">{intl.formatMessage(i18n.title)}</h2>
             <p className="text-textSubtle text-sm">
-              Create a simple recipe to use as a callable tool in your main recipe
+              {intl.formatMessage(i18n.subtitle)}
             </p>
           </div>
           <Button
@@ -129,7 +246,7 @@ export default function CreateSubRecipeInline({
             variant="ghost"
             size="sm"
             className="p-2 hover:bg-bgSubtle rounded-lg transition-colors"
-            aria-label="Close create subrecipe modal"
+            aria-label={intl.formatMessage(i18n.closeModal)}
           >
             <X className="w-5 h-5" />
           </Button>
@@ -143,7 +260,7 @@ export default function CreateSubRecipeInline({
               htmlFor="subrecipe-name"
               className="block text-sm font-medium text-text-standard mb-2"
             >
-              Name <span className="text-text-danger">*</span>
+              {intl.formatMessage(i18n.nameLabel)} <span className="text-text-danger">*</span>
             </label>
             <input
               id="subrecipe-name"
@@ -151,10 +268,10 @@ export default function CreateSubRecipeInline({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="e.g., security_scan"
+              placeholder={intl.formatMessage(i18n.namePlaceholder)}
             />
             <p className="text-xs text-text-muted mt-1">
-              Unique identifier used to generate the tool name
+              {intl.formatMessage(i18n.nameHint)}
             </p>
           </div>
 
@@ -166,7 +283,7 @@ export default function CreateSubRecipeInline({
                   htmlFor="subrecipe-title"
                   className="block text-sm font-medium text-text-standard mb-2"
                 >
-                  Recipe Title <span className="text-text-danger">*</span>
+                  {intl.formatMessage(i18n.recipeTitleLabel)} <span className="text-text-danger">*</span>
                 </label>
                 <input
                   id="subrecipe-title"
@@ -175,7 +292,7 @@ export default function CreateSubRecipeInline({
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
                   className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="e.g., Security Analysis Tool"
+                  placeholder={intl.formatMessage(i18n.recipeTitlePlaceholder)}
                 />
               </div>
             )}
@@ -189,7 +306,7 @@ export default function CreateSubRecipeInline({
                   htmlFor="recipe-description"
                   className="block text-sm font-medium text-text-standard mb-2"
                 >
-                  Recipe Description <span className="text-text-danger">*</span>
+                  {intl.formatMessage(i18n.recipeDescriptionLabel)} <span className="text-text-danger">*</span>
                 </label>
                 <input
                   id="recipe-description"
@@ -198,7 +315,7 @@ export default function CreateSubRecipeInline({
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
                   className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="What this recipe does when executed"
+                  placeholder={intl.formatMessage(i18n.recipeDescriptionPlaceholder)}
                 />
               </div>
             )}
@@ -212,7 +329,7 @@ export default function CreateSubRecipeInline({
                   htmlFor="subrecipe-instructions"
                   className="block text-sm font-medium text-text-standard mb-2"
                 >
-                  Instructions <span className="text-text-danger">*</span>
+                  {intl.formatMessage(i18n.instructionsLabel)} <span className="text-text-danger">*</span>
                 </label>
                 <textarea
                   id="subrecipe-instructions"
@@ -220,7 +337,7 @@ export default function CreateSubRecipeInline({
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
                   className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring resize-none font-mono text-sm"
-                  placeholder="Instructions for the AI when this subrecipe is called..."
+                  placeholder={intl.formatMessage(i18n.instructionsPlaceholder)}
                   rows={8}
                 />
               </div>
@@ -233,14 +350,14 @@ export default function CreateSubRecipeInline({
               htmlFor="tool-description"
               className="block text-sm font-medium text-text-standard mb-2"
             >
-              Tool Description
+              {intl.formatMessage(i18n.toolDescriptionLabel)}
             </label>
             <textarea
               id="tool-description"
               value={toolDescription}
               onChange={(e) => setToolDescription(e.target.value)}
               className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              placeholder="Optional description shown when this is called as a tool"
+              placeholder={intl.formatMessage(i18n.toolDescriptionPlaceholder)}
               rows={2}
             />
           </div>
@@ -255,20 +372,20 @@ export default function CreateSubRecipeInline({
               className="w-4 h-4 border-border-subtle rounded focus:ring-2 focus:ring-ring"
             />
             <label htmlFor="subrecipe-sequential" className="text-sm text-text-standard">
-              Sequential when repeated
+              {intl.formatMessage(i18n.sequentialLabel)}
             </label>
             <span className="text-xs text-text-muted">
-              (Forces sequential execution of multiple instances)
+              {intl.formatMessage(i18n.sequentialHint)}
             </span>
           </div>
 
           {/* Pre-configured Values */}
           <div>
             <label className="block text-sm font-medium text-text-standard mb-2">
-              Pre-configured Values
+              {intl.formatMessage(i18n.preconfiguredValues)}
             </label>
             <p className="text-xs text-text-muted mb-3">
-              Optional parameter values that are always passed to the subrecipe
+              {intl.formatMessage(i18n.preconfiguredValuesHint)}
             </p>
             <KeyValueEditor values={values} onChange={setValues} />
           </div>
@@ -277,7 +394,7 @@ export default function CreateSubRecipeInline({
         {/* Footer */}
         <div className="flex gap-3 p-6 border-t border-borderSubtle justify-end">
           <Button onClick={onClose} variant="outline">
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
           <Button
             onClick={handleSave}
@@ -293,12 +410,12 @@ export default function CreateSubRecipeInline({
             {isSaving ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Creating...
+                {intl.formatMessage(i18n.creating)}
               </>
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                Create & Add Subrecipe
+                {intl.formatMessage(i18n.createAndAdd)}
               </>
             )}
           </Button>

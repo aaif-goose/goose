@@ -1,6 +1,38 @@
 import React, { useState } from 'react';
 import { Button } from '../../ui/button';
 import { useEscapeKey } from '../../../hooks/useEscapeKey';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'jsonSchemaEditor.title',
+    defaultMessage: 'JSON Schema Editor',
+  },
+  label: {
+    id: 'jsonSchemaEditor.label',
+    defaultMessage: 'Response JSON Schema',
+  },
+  insertExample: {
+    id: 'jsonSchemaEditor.insertExample',
+    defaultMessage: 'Insert Example',
+  },
+  description: {
+    id: 'jsonSchemaEditor.description',
+    defaultMessage: "Define the expected structure of the AI's response using JSON Schema format",
+  },
+  invalidJson: {
+    id: 'jsonSchemaEditor.invalidJson',
+    defaultMessage: 'Invalid JSON format',
+  },
+  cancel: {
+    id: 'jsonSchemaEditor.cancel',
+    defaultMessage: 'Cancel',
+  },
+  save: {
+    id: 'jsonSchemaEditor.save',
+    defaultMessage: 'Save Schema',
+  },
+});
 
 interface JsonSchemaEditorProps {
   isOpen: boolean;
@@ -17,6 +49,7 @@ export default function JsonSchemaEditor({
   onChange,
   error,
 }: JsonSchemaEditorProps) {
+  const intl = useIntl();
   const [localValue, setLocalValue] = useState(value);
   const [localError, setLocalError] = useState('');
 
@@ -35,7 +68,7 @@ export default function JsonSchemaEditor({
         JSON.parse(localValue.trim());
         setLocalError('');
       } catch {
-        setLocalError('Invalid JSON format');
+        setLocalError(intl.formatMessage(i18n.invalidJson));
         return;
       }
     }
@@ -94,7 +127,7 @@ export default function JsonSchemaEditor({
     >
       <div className="bg-background-primary border border-border-primary rounded-lg p-6 w-[800px] max-w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-text-primary">JSON Schema Editor</h3>
+          <h3 className="text-lg font-medium text-text-primary">{intl.formatMessage(i18n.title)}</h3>
           <button
             type="button"
             onClick={handleCancel}
@@ -108,7 +141,7 @@ export default function JsonSchemaEditor({
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-text-primary">
-                Response JSON Schema
+                {intl.formatMessage(i18n.label)}
               </label>
               <Button
                 type="button"
@@ -117,11 +150,11 @@ export default function JsonSchemaEditor({
                 size="sm"
                 className="text-xs"
               >
-                Insert Example
+                {intl.formatMessage(i18n.insertExample)}
               </Button>
             </div>
             <p className="text-xs text-text-secondary mb-3">
-              Define the expected structure of the AI's response using JSON Schema format
+              {intl.formatMessage(i18n.description)}
             </p>
           </div>
 
@@ -154,10 +187,10 @@ export default function JsonSchemaEditor({
 
         <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-border-primary">
           <Button type="button" onClick={handleCancel} variant="ghost">
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
           <Button type="button" onClick={handleSave} variant="default">
-            Save Schema
+            {intl.formatMessage(i18n.save)}
           </Button>
         </div>
       </div>

@@ -359,6 +359,7 @@ function CopyPageButton(): ReactNode {
 
 // New wrapper component that adds dropdown menu to copy button
 function PageActionsMenu(): ReactNode {
+  const {metadata} = useDoc();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
@@ -391,11 +392,8 @@ function PageActionsMenu(): ReactNode {
   }, [dropdownOpen]);
   
   const handleViewMarkdown = () => {
-    const currentPath = window.location.pathname;
-    const mdPath = currentPath.endsWith('/') 
-      ? `${currentPath.slice(0, -1)}.md` 
-      : `${currentPath}.md`;
-    window.open(mdPath, '_blank');
+    const source = metadata?.source?.replace('@site/', '') || '';
+    window.open(`https://raw.githubusercontent.com/aaif-goose/goose/refs/heads/main/documentation/${source}`, '_blank');
     setDropdownOpen(false);
   };
   
@@ -437,7 +435,7 @@ function PageActionsMenu(): ReactNode {
             <ExternalLink size={16} className="flex-shrink-0" />
           </button>
           <a
-            href="/goose/docs/mcp/goose-docs-mcp"
+            href="/docs/mcp/goose-docs-mcp"
             className="w-full flex items-center justify-between gap-1.5 px-3 py-1.5 text-sm text-white dark:text-black hover:opacity-90 hover:-translate-y-px active:translate-y-px transition-all duration-200 ease-in-out bg-transparent rounded-b-md no-underline"
             onClick={() => setDropdownOpen(false)}
           >

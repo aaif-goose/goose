@@ -80,7 +80,7 @@ export type CheckProviderRequest = {
     provider: string;
 };
 
-export type CommandType = 'Builtin' | 'Recipe';
+export type CommandType = 'Builtin' | 'Recipe' | 'Skill';
 
 /**
  * Configuration key metadata for provider setup
@@ -216,6 +216,7 @@ export type DeclarativeProviderConfig = {
     dynamic_models?: boolean | null;
     engine: ProviderEngine;
     env_vars?: Array<EnvVarConfig> | null;
+    fast_model?: string | null;
     headers?: {
         [key: string]: string;
     } | null;
@@ -540,6 +541,7 @@ export type HfQuantVariant = {
     filename: string;
     quality_rank: number;
     quantization: string;
+    sharded?: boolean;
     size_bytes: number;
 };
 
@@ -611,12 +613,14 @@ export type LoadedProvider = {
 export type LocalModelResponse = {
     filename: string;
     id: string;
+    mmproj_status?: ModelDownloadStatus | null;
     quantization: string;
     recommended: boolean;
     repo_id: string;
     settings: ModelSettings;
     size_bytes: number;
     status: ModelDownloadStatus;
+    vision_capable: boolean;
 };
 
 /**
@@ -817,9 +821,19 @@ export type ModelInfoResponse = {
 
 export type ModelSettings = {
     context_size?: number | null;
+    enable_thinking?: boolean;
     flash_attention?: boolean | null;
     frequency_penalty?: number;
+    /**
+     * Estimated tokens per image for budget planning before mtmd tokenization.
+     * The actual count is determined after tokenization via `chunks.total_tokens()`.
+     */
+    image_token_estimate?: number;
     max_output_tokens?: number | null;
+    /**
+     * Size of the mmproj file in bytes, used for memory accounting.
+     */
+    mmproj_size_bytes?: number;
     n_batch?: number | null;
     n_gpu_layers?: number | null;
     n_threads?: number | null;
@@ -830,6 +844,11 @@ export type ModelSettings = {
     sampling?: SamplingConfig;
     use_jinja?: boolean;
     use_mlock?: boolean;
+    /**
+     * Whether this model architecture supports vision input.
+     * Derived from the featured model table, not user-configurable.
+     */
+    vision_capable?: boolean;
 };
 
 export type ModelTemplate = {
@@ -1077,6 +1096,8 @@ export type RemoveExtensionRequest = {
 };
 
 export type RepoVariantsResponse = {
+    available_memory_bytes: number;
+    downloaded_quants: Array<string>;
     recommended_index?: number | null;
     variants: Array<HfQuantVariant>;
 };
@@ -1231,6 +1252,7 @@ export type Session = {
     recipe?: Recipe | null;
     schedule_id?: string | null;
     session_type?: SessionType;
+    thread_id?: string | null;
     total_tokens?: number | null;
     updated_at: string;
     user_recipe_values?: {
@@ -2837,7 +2859,12 @@ export type SetConfigProviderData = {
 export type GetSlashCommandsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Optional working directory to discover local skills from
+         */
+        working_dir?: string | null;
+    };
     url: '/config/slash_commands';
 };
 

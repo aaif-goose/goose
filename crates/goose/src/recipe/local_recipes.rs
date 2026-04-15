@@ -28,6 +28,14 @@ fn local_recipe_dirs() -> Vec<PathBuf> {
     local_dirs.push(get_recipe_library_dir(true));
     local_dirs.push(get_recipe_library_dir(false));
 
+    // Also scan .agents/recipes/ for consistency with the .agents/ convention
+    if let Ok(cwd) = env::current_dir() {
+        local_dirs.push(cwd.join(".agents/recipes"));
+    }
+    if let Some(home) = dirs::home_dir() {
+        local_dirs.push(home.join(".agents/recipes"));
+    }
+
     let mut dirs: Vec<PathBuf> = local_dirs
         .into_iter()
         .map(|dir| dir.canonicalize().unwrap_or(dir))

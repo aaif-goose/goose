@@ -3,6 +3,51 @@ import { Input } from '../../../../../ui/input';
 import { useConfig } from '../../../../../ConfigContext';
 import { ProviderDetails, ConfigKey } from '../../../../../../api';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../../../../ui/collapsible';
+import { configLabels, configPlaceholders } from '../../../../../../utils/configUtils';
+import { defineMessages, useIntl } from '../../../../../../i18n';
+
+const i18n = defineMessages({
+  loadingConfig: {
+    id: 'defaultProviderSetupForm.loadingConfig',
+    defaultMessage: 'Loading configuration values...',
+  },
+  noConfigParameters: {
+    id: 'defaultProviderSetupForm.noConfigParameters',
+    defaultMessage: 'No configuration parameters for this provider.',
+  },
+  apiKeyPlaceholder: {
+    id: 'defaultProviderSetupForm.apiKeyPlaceholder',
+    defaultMessage: 'Your API key',
+  },
+  apiHostPlaceholder: {
+    id: 'defaultProviderSetupForm.apiHostPlaceholder',
+    defaultMessage: 'https://api.example.com',
+  },
+  modelsPlaceholder: {
+    id: 'defaultProviderSetupForm.modelsPlaceholder',
+    defaultMessage: 'model-a, model-b',
+  },
+  apiKeyLabel: {
+    id: 'defaultProviderSetupForm.apiKeyLabel',
+    defaultMessage: 'API Key',
+  },
+  apiHostLabel: {
+    id: 'defaultProviderSetupForm.apiHostLabel',
+    defaultMessage: 'API Host',
+  },
+  modelsLabel: {
+    id: 'defaultProviderSetupForm.modelsLabel',
+    defaultMessage: 'Models',
+  },
+  showOptions: {
+    id: 'defaultProviderSetupForm.showOptions',
+    defaultMessage: 'Show {count} options',
+  },
+  hideOptions: {
+    id: 'defaultProviderSetupForm.hideOptions',
+    defaultMessage: 'Hide {count} options',
+  },
+});
 
 type ValidationErrors = Record<string, string>;
 
@@ -47,6 +92,7 @@ export default function DefaultProviderSetupForm({
     () => provider.metadata.config_keys || [],
     [provider.metadata.config_keys]
   );
+  const intl = useIntl();
   const [isLoading, setIsLoading] = useState(true);
   const [optionalExpanded, setOptionalExpanded] = useState(false);
   const { read } = useConfig();
@@ -93,10 +139,12 @@ export default function DefaultProviderSetupForm({
       return parameter.default;
     }
 
+    if (configPlaceholders[parameter.name]) return configPlaceholders[parameter.name];
     const name = parameter.name.toLowerCase();
-    if (name.includes('api_key')) return 'Your API key';
-    if (name.includes('api_url') || name.includes('host')) return 'https://api.example.com';
-    if (name.includes('models')) return 'model-a, model-b';
+    if (name.includes('api_key')) return intl.formatMessage(i18n.apiKeyPlaceholder);
+    if (name.includes('api_url') || name.includes('host'))
+      return intl.formatMessage(i18n.apiHostPlaceholder);
+    if (name.includes('models')) return intl.formatMessage(i18n.modelsPlaceholder);
 
     return parameter.name
       .replace(/_/g, ' ')
@@ -105,10 +153,12 @@ export default function DefaultProviderSetupForm({
   };
 
   const getFieldLabel = (parameter: ConfigKey) => {
+    if (configLabels[parameter.name]) return configLabels[parameter.name];
     const name = parameter.name.toLowerCase();
-    if (name.includes('api_key')) return 'API Key';
-    if (name.includes('api_url') || name.includes('host')) return 'API Host';
-    if (name.includes('models')) return 'Models';
+    if (name.includes('api_key')) return intl.formatMessage(i18n.apiKeyLabel);
+    if (name.includes('api_url') || name.includes('host'))
+      return intl.formatMessage(i18n.apiHostLabel);
+    if (name.includes('models')) return intl.formatMessage(i18n.modelsLabel);
 
     let parameter_name = parameter.name.toUpperCase();
     if (parameter_name.startsWith(provider.name.toUpperCase().replace('-', '_'))) {
@@ -124,7 +174,7 @@ export default function DefaultProviderSetupForm({
   };
 
   if (isLoading) {
-    return <div className="text-center py-4">Loading configuration values...</div>;
+    return <div className="text-center py-4">{intl.formatMessage(i18n.loadingConfig)}</div>;
   }
 
   function getRenderValue(parameter: ConfigKey): string {
@@ -244,13 +294,15 @@ export default function DefaultProviderSetupForm({
     belowFoldParameters = [];
   }
 
-  const expandCtaText = `${optionalExpanded ? 'Hide' : 'Show'} ${belowFoldParameters.length} options `;
+  const expandCtaText = optionalExpanded
+    ? intl.formatMessage(i18n.hideOptions, { count: belowFoldParameters.length })
+    : intl.formatMessage(i18n.showOptions, { count: belowFoldParameters.length });
 
   return (
     <div className="mt-4 space-y-4">
       {aboveFoldParameters.length === 0 && belowFoldParameters.length === 0 ? (
         <div className="text-center text-gray-500">
-          No configuration parameters for this provider.
+          {intl.formatMessage(i18n.noConfigParameters)}
         </div>
       ) : (
         <div>

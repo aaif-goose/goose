@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Rust/Tauri build artifacts
+/target/
+src-tauri/target/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.*.sw?
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Scratch / working files
+.scratch/
+
+# Playwright artifacts
+playwright-report/
+test-results/
+
+# App E2E screenshots
+tests/app-e2e/screenshots/
+
+# Testing coverage
+coverage/
+
+# Logs
+*.log
+
+# Hermit (toolchain manager cache)
+.hermit/
+
+# Claude
+.claude

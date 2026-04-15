@@ -1,0 +1,23 @@
+[package]
+name = "goose-sdk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust SDK for talking to Goose over the Agent Client Protocol (ACP)"
+
+[dependencies]
+sacp = { workspace = true, features = ["unstable"] }
+agent-client-protocol-schema = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+schemars = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["compat", "rt"] }
+
+[package.metadata.cargo-machete]
+# Used to provide extras imports for sacp
+ignored = ["agent-client-protocol-schema"]

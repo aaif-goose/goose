@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, type RenderOptions, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CreateRecipeFromSessionModal from '../CreateRecipeFromSessionModal';
 import { createRecipe } from '../../../api/sdk.gen';
 import type { CreateRecipeResponse } from '../../../api/types.gen';
+import { IntlTestWrapper } from '../../../i18n/test-utils';
+
+const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
+  render(ui, { wrapper: IntlTestWrapper, ...options });
 
 vi.mock('../../../api/sdk.gen', () => ({
   createRecipe: vi.fn(),
@@ -69,19 +73,19 @@ describe('CreateRecipeFromSessionModal', () => {
 
   describe('Modal Rendering', () => {
     it('renders modal when open', () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       expect(screen.getByTestId('create-recipe-modal')).toBeInTheDocument();
     });
 
     it('does not render when closed', () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} isOpen={false} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} isOpen={false} />);
 
       expect(screen.queryByTestId('create-recipe-modal')).not.toBeInTheDocument();
     });
 
     it('renders modal header with close button', () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       expect(screen.getByTestId('modal-header')).toBeInTheDocument();
       expect(screen.getByTestId('close-button')).toBeInTheDocument();
@@ -89,7 +93,7 @@ describe('CreateRecipeFromSessionModal', () => {
 
     it('calls onClose when close button is clicked', async () => {
       const user = userEvent.setup();
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await user.click(screen.getByTestId('close-button'));
       expect(defaultProps.onClose).toHaveBeenCalled();
@@ -98,14 +102,14 @@ describe('CreateRecipeFromSessionModal', () => {
 
   describe('Analysis Workflow', () => {
     it('shows analyzing state initially', () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       expect(screen.getByTestId('analyzing-state')).toBeInTheDocument();
       expect(screen.getByTestId('analyzing-title')).toBeInTheDocument();
     });
 
     it('displays analysis progress indicator', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       expect(screen.getByTestId('analysis-stage')).toBeInTheDocument();
 
@@ -119,13 +123,13 @@ describe('CreateRecipeFromSessionModal', () => {
     });
 
     it('shows loading indicator during analysis', () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       expect(screen.getByTestId('analysis-spinner')).toBeInTheDocument();
     });
 
     it('transitions to form state after analysis completes', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await waitFor(
         () => {
@@ -140,7 +144,7 @@ describe('CreateRecipeFromSessionModal', () => {
 
   describe('Form Pre-filling', () => {
     it('pre-fills form with analyzed data', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       // Wait for analysis to complete and form to be pre-filled
       await waitFor(
@@ -157,7 +161,7 @@ describe('CreateRecipeFromSessionModal', () => {
     });
 
     it('shows recipe form fields after analysis', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await waitFor(
         () => {
@@ -176,7 +180,7 @@ describe('CreateRecipeFromSessionModal', () => {
   describe('Form Interactions', () => {
     it('allows editing form fields', async () => {
       const user = userEvent.setup();
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await waitFor(
         () => {
@@ -194,7 +198,7 @@ describe('CreateRecipeFromSessionModal', () => {
 
     it('validates required fields', async () => {
       const user = userEvent.setup();
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await waitFor(
         () => {
@@ -213,7 +217,7 @@ describe('CreateRecipeFromSessionModal', () => {
 
   describe('Recipe Creation', () => {
     it('enables create button when form is valid', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await waitFor(
         () => {
@@ -226,7 +230,7 @@ describe('CreateRecipeFromSessionModal', () => {
 
     it('creates recipe and closes modal when form is submitted', async () => {
       const user = userEvent.setup();
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await waitFor(
         () => {
@@ -246,7 +250,7 @@ describe('CreateRecipeFromSessionModal', () => {
 
   describe('Modal Footer', () => {
     it('shows cancel button in all states', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       expect(screen.getByTestId('cancel-button')).toBeInTheDocument();
 
@@ -262,14 +266,14 @@ describe('CreateRecipeFromSessionModal', () => {
 
     it('calls onClose when cancel button is clicked', async () => {
       const user = userEvent.setup();
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await user.click(screen.getByTestId('cancel-button'));
       expect(defaultProps.onClose).toHaveBeenCalled();
     });
 
     it('shows different button states based on workflow stage', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       expect(screen.getByTestId('cancel-button')).toBeInTheDocument();
       expect(screen.queryByTestId('create-recipe-button')).not.toBeInTheDocument();
@@ -287,14 +291,14 @@ describe('CreateRecipeFromSessionModal', () => {
 
   describe('Error Handling', () => {
     it('handles analysis errors gracefully', async () => {
-      render(<CreateRecipeFromSessionModal {...defaultProps} sessionId="" />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} sessionId="" />);
 
       expect(screen.getByTestId('create-recipe-modal')).toBeInTheDocument();
     });
 
     it('handles form validation errors', async () => {
       const user = userEvent.setup();
-      render(<CreateRecipeFromSessionModal {...defaultProps} />);
+      renderWithIntl(<CreateRecipeFromSessionModal {...defaultProps} />);
 
       await waitFor(
         () => {

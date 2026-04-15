@@ -114,23 +114,6 @@ For detailed steps on updating your LLM provider, refer to the [Installation][in
 
 If you encounter errors when configuring GitHub Copilot as your provider, try these workarounds for common scenarios.
 
-#### OAuth Error with Lead/Worker Models
-
-If the [lead/worker model](/docs/tutorials/lead-worker) feature is configured in your environment, you might see the following error during GitHub Copilot setup. This feature conflicts with the OAuth flow to connect to the provider.
-```
-Failed to authenticate: Execution error: OAuth configuration not supported by this provider
-``` 
-
-To resolve:
-1. Temporarily comment out or remove lead/worker model variables from the main config file (`~/.config/goose/config.yaml`):
-   ```yaml
-   # GOOSE_LEAD_MODEL: your-model
-   # GOOSE_WORKER_MODEL: your-model
-   ```
-2. Run `goose configure` again to set up GitHub Copilot
-3. Complete the OAuth authentication flow
-4. Re-enable your lead/worker model settings as needed
-
 #### Container and Keyring Issues
 
 goose tries to use the system keyring (typically via Secret Service over DBus) to securely store your GitHub Copilot token. In containerized or headless environments, DBus and/or a desktop keyring service may not be available (and some setups fail with X11-based DBus autolaunch errors), so keyring access can fail.
@@ -365,7 +348,7 @@ Blocked malicious package: package-name@1.0.0 (npm). OSV MAL advisories: MAL-202
 Steps to resolve:
 1. **Find an alternative**: Look for similar extensions in the [extensions directory][extensions-directory] or [PulseMCP](https://www.pulsemcp.com/servers)
 2. **Optional verification**: Verify the source of the blocked extension or the package name/publisher
-3. **Report false positives**: If you believe this is an error, please [open an issue](https://github.com/block/goose/issues)
+3. **Report false positives**: If you believe this is an error, please [open an issue](https://github.com/aaif-goose/goose/issues)
 
 This security check only applies to locally-executed external extensions that use PyPI (`uvx`) or NPM (`npx`). The check uses real-time data from the OSV database; if the security service is unavailable, extensions will still install normally.
 

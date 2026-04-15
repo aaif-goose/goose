@@ -1,0 +1,97 @@
+{
+  "actions": {
+    "archive": "Archive",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "close": "Close",
+    "copy": "Copy",
+    "create": "Create",
+    "delete": "Delete",
+    "duplicate": "Duplicate",
+    "edit": "Edit",
+    "export": "Export",
+    "fix": "Fix",
+    "import": "Import",
+    "new": "New",
+    "next": "Next",
+    "open": "Open",
+    "previous": "Previous",
+    "refresh": "Refresh",
+    "remove": "Remove",
+    "rename": "Rename",
+    "restore": "Restore",
+    "retry": "Retry",
+    "run": "Run",
+    "running": "Running",
+    "save": "Save",
+    "saveChanges": "Save Changes",
+    "search": "Search",
+    "select": "Select",
+    "send": "Send",
+    "stop": "Stop",
+    "toggle": "Toggle",
+    "update": "Update",
+    "view": "View"
+  },
+  "buttons": {
+    "openFixUrl": "Open fix URL"
+  },
+  "components": {
+    "codeBlock": {
+      "copyLabel": "Copy code"
+    },
+    "environmentVariables": {
+      "copyLabel": "Copy environment variable",
+      "title": "Environment Variables",
+      "toggleVisibility": "Toggle value visibility"
+    },
+    "messageBranch": {
+      "next": "Next branch",
+      "page": "{{current}} of {{total}}",
+      "previous": "Previous branch"
+    },
+    "plan": {
+      "toggle": "Toggle plan"
+    },
+    "snippet": {
+      "copyLabel": "Copy"
+    },
+    "stackTrace": {
+      "copyLabel": "Copy stack trace",
+      "empty": "No stack frames"
+    },
+    "terminal": {
+      "clearLabel": "Clear terminal output",
+      "copyLabel": "Copy terminal output",
+      "title": "Terminal"
+    }
+  },
+  "errors": {
+    "clipboardUnavailable": "Clipboard API not available"
+  },
+  "labels": {
+    "assistant": "Assistant",
+    "copyPath": "Copy Path",
+    "revealInFileManager_mac": "Reveal in Finder",
+    "revealInFileManager_windows": "Reveal in Explorer",
+    "revealInFileManager_linux": "Reveal in File Manager",
+    "builtIn": "Built-in",
+    "characterCount": "{{count}} chars",
+    "custom": "Custom",
+    "goose": "Goose",
+    "loading": "Loading...",
+    "none": "None",
+    "required": "Required"
+  },
+  "session": {
+    "defaultTitle": "New Chat"
+  },
+  "usage": {
+    "cache": "Cache",
+    "input": "Input",
+    "modelContext": "Model context usage",
+    "output": "Output",
+    "reasoning": "Reasoning",
+    "totalCost": "Total cost"
+  }
+}

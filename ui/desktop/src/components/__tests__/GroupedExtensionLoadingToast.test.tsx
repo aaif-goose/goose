@@ -2,9 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { GroupedExtensionLoadingToast } from '../GroupedExtensionLoadingToast';
+import { IntlTestWrapper } from '../../i18n/test-utils';
 
 const renderWithRouter = (component: React.ReactElement) => {
-  return render(<MemoryRouter>{component}</MemoryRouter>);
+  return render(
+    <IntlTestWrapper>
+      <MemoryRouter>{component}</MemoryRouter>
+    </IntlTestWrapper>
+  );
 };
 
 describe('GroupedExtensionLoadingToast', () => {

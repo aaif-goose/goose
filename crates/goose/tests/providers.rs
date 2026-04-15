@@ -121,6 +121,7 @@ struct ProviderTestConfig {
     test_permissions: bool,
     test_smart_approve: bool,
     test_mode_update: bool,
+    test_mcp_tools: bool,
     test_context_length_exceeded: bool,
     expect_context_length_exceeded: bool,
     context_length_exceeded: usize,
@@ -144,6 +145,7 @@ impl ProviderTestConfig {
             test_permissions: true,
             test_smart_approve: true,
             test_mode_update: true,
+            test_mcp_tools: true,
             test_context_length_exceeded: true,
             expect_context_length_exceeded: true,
             context_length_exceeded: 600_000,
@@ -172,6 +174,11 @@ impl ProviderTestConfig {
 
     fn test_smart_approve(mut self, v: bool) -> Self {
         self.test_smart_approve = v;
+        self
+    }
+
+    fn test_mcp_tools(mut self, v: bool) -> Self {
+        self.test_mcp_tools = v;
         self
     }
 
@@ -327,6 +334,11 @@ impl ProviderFixture {
             Some(req) => req,
             None => return Ok(response1),
         };
+
+        // Provider already executed an externally-dispatched tool — don't redispatch.
+        if tool_req.is_externally_dispatched() {
+            return Ok(response1);
+        }
 
         let params = tool_req.tool_call.as_ref().unwrap().clone();
         let ctx = goose::agents::ToolCallContext::new(
@@ -657,11 +669,13 @@ async fn test_provider(config: ProviderTestConfig) -> Result<()> {
             .await?
             .test_basic_response()
             .await?;
-        run_test(GooseMode::Auto).await?.test_tool_usage().await?;
-        run_test(GooseMode::Auto)
-            .await?
-            .test_image_content_support()
-            .await?;
+        if config.test_mcp_tools {
+            run_test(GooseMode::Auto).await?.test_tool_usage().await?;
+            run_test(GooseMode::Auto)
+                .await?
+                .test_image_content_support()
+                .await?;
+        }
         if config.model_switch_name.is_some() {
             run_test(GooseMode::Auto).await?.test_model_switch().await?;
         }
@@ -892,14 +906,14 @@ async fn test_codex_acp_provider() -> Result<()> {
         .await
 }
 
-// Requires: npm install -g @google/gemini-cli
+// Requires: npm install -g @github/copilot
 #[tokio::test]
-async fn test_gemini_acp_provider() -> Result<()> {
-    // Don't run tests with ACP_CURRENT_MODEL, as gemini sets "auto-gemini-3" even when the user
-    // has no access to the Preview Release Channel, resulting in "Requested entity was not found."
-    // See https://github.com/google-gemini/gemini-cli/issues/22803
-    ProviderTestConfig::with_agentic_provider("gemini-acp", "auto-gemini-2.5", "gemini")
-        .model_switch_name("gemini-2.5-flash")
+async fn test_copilot_acp_provider() -> Result<()> {
+    ProviderTestConfig::with_agentic_provider("copilot-acp", ACP_CURRENT_MODEL, "copilot")
+        .model_switch_name("gpt-4.1")
+        // Copilot ignores mcpServers passed via session/new
+        // https://github.com/github/copilot-cli/issues/1040
+        .test_mcp_tools(false)
         .run()
         .await
 }

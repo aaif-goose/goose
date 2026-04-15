@@ -69,7 +69,7 @@ const GITHUB_ACTIONS_ISSUER: &str = "https://token.actions.githubusercontent.com
 
 async fn fetch_attestations(digest: &str, token: Option<&str>) -> Result<Vec<serde_json::Value>> {
     let url = format!(
-        "https://api.github.com/repos/block/goose/attestations/sha256:{digest}\
+        "https://api.github.com/repos/aaif-goose/goose/attestations/sha256:{digest}\
          ?per_page=30&predicate_type=https://slsa.dev/provenance/v1"
     );
 
@@ -209,7 +209,7 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
     {
         let tag = if canary { "canary" } else { "stable" };
         let asset = asset_name();
-        let url = format!("https://github.com/block/goose/releases/download/{tag}/{asset}");
+        let url = format!("https://github.com/aaif-goose/goose/releases/download/{tag}/{asset}");
 
         println!("Downloading {asset} from {tag} release...");
 
@@ -462,9 +462,25 @@ fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        // On Unix, copy the new binary over the existing one
-        fs::copy(new_binary, current_exe)
-            .with_context(|| format!("Failed to copy new binary to {}", current_exe.display()))?;
+        let old_exe = current_exe.with_extension("old");
+
+        // Rename current binary to avoid ETXTBSY on Linux
+        if current_exe.exists() {
+            fs::rename(current_exe, &old_exe).with_context(|| {
+                format!("Failed to rename {} before update", current_exe.display())
+            })?;
+        }
+
+        if let Err(e) = fs::copy(new_binary, current_exe) {
+            // Restore old binary if copy fails
+            let _ = fs::rename(&old_exe, current_exe);
+            return Err(e).with_context(|| {
+                format!("Failed to copy new binary to {}", current_exe.display())
+            });
+        }
+
+        // Delete the old backup binary
+        let _ = fs::remove_file(&old_exe);
 
         // Ensure the binary is executable
         #[cfg(unix)]

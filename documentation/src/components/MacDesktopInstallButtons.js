@@ -8,13 +8,13 @@ const DesktopInstallButtons = () => {
       <div className="pill-button" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <Link
           className="button button--primary button--lg"
-          to="https://github.com/block/goose/releases/download/stable/Goose.zip"
+          to="https://github.com/aaif-goose/goose/releases/download/stable/Goose.zip"
         >
           <IconDownload /> macOS Silicon
         </Link>
         <Link
           className="button button--primary button--lg"
-          to="https://github.com/block/goose/releases/download/stable/Goose_intel_mac.zip"
+          to="https://github.com/aaif-goose/goose/releases/download/stable/Goose_intel_mac.zip"
         >
           <IconDownload /> macOS Intel
         </Link>

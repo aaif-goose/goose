@@ -106,12 +106,7 @@ opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-appender-tracing = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 opentelemetry-stdout = { workspace = true, optional = true }
-keyring = { version = "3.6.2", features = [
-    "apple-native",
-    "windows-native",
-    "sync-secret-service",
-    "vendored",
-] }
+keyring = { version = "3.6.2", features = ["vendored"] }
 serde_yaml = { workspace = true }
 strum = { workspace = true }
 once_cell = { workspace = true }
@@ -184,7 +179,7 @@ tree-sitter-typescript = { workspace = true }
 which = { workspace = true }
 pctx_code_mode = { version = "^0.3.0", optional = true }
 pulldown-cmark = "0.13.0"
-llama-cpp-2 = { version = "0.1.137", features = ["sampler"], optional = true }
+llama-cpp-2 = { version = "0.1.143", features = ["sampler", "mtmd"], optional = true }
 encoding_rs = "0.8.35"
 pastey = "0.2.1"
 shell-words = { workspace = true }
@@ -193,14 +188,21 @@ pkcs1 = { version = "0.7", default-features = false, features = ["pkcs8"], optio
 pkcs8 = { version = "0.10", default-features = false, features = ["alloc"], optional = true }
 sec1 = { version = "0.7", default-features = false, features = ["der", "pkcs8"], optional = true }
 
+
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }
+keyring = { version = "3.6.2", features = ["windows-native"] }
 
 # Platform-specific GPU acceleration for Whisper and local inference
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.9", default-features = false, features = ["metal"], optional = true }
 candle-nn = { version = "0.9", default-features = false, features = ["metal"], optional = true }
-llama-cpp-2 = { version = "0.1.137", features = ["sampler", "metal"], optional = true }
+llama-cpp-2 = { version = "0.1.143", features = ["sampler", "metal", "mtmd"], optional = true }
+keyring = { version = "3.6.2", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.2", features = ["sync-secret-service"] }
+libc = "0.2.184"
 
 [dev-dependencies]
 serial_test = { workspace = true }

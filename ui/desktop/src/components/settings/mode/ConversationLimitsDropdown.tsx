@@ -1,6 +1,22 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Input } from '../../ui/input';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  conversationLimits: {
+    id: 'conversationLimitsDropdown.conversationLimits',
+    defaultMessage: 'Conversation Limits',
+  },
+  maxTurns: {
+    id: 'conversationLimitsDropdown.maxTurns',
+    defaultMessage: 'Max Turns',
+  },
+  maxTurnsDescription: {
+    id: 'conversationLimitsDropdown.maxTurnsDescription',
+    defaultMessage: 'Maximum agent turns before Goose asks for user input',
+  },
+});
 
 interface ConversationLimitsDropdownProps {
   maxTurns: number;
@@ -11,6 +27,7 @@ export const ConversationLimitsDropdown = ({
   maxTurns,
   onMaxTurnsChange,
 }: ConversationLimitsDropdownProps) => {
+  const intl = useIntl();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const toggleExpanded = () => {
@@ -23,7 +40,7 @@ export const ConversationLimitsDropdown = ({
         onClick={toggleExpanded}
         className="w-full flex items-center justify-between py-2 px-2 hover:bg-background-secondary rounded-lg transition-all group"
       >
-        <h3 className="text-text-primary">Conversation Limits</h3>
+        <h3 className="text-text-primary">{intl.formatMessage(i18n.conversationLimits)}</h3>
 
         <ChevronDown
           className={`w-4 h-4 text-text-secondary transition-transform duration-200 ease-in-out ${
@@ -40,9 +57,9 @@ export const ConversationLimitsDropdown = ({
         <div className="space-y-3 pb-2">
           <div className="flex items-center justify-between py-2 px-2 bg-background-secondary rounded-lg transform transition-all duration-200 ease-in-out">
             <div>
-              <h4 className="text-text-primary text-sm">Max Turns</h4>
+              <h4 className="text-text-primary text-sm">{intl.formatMessage(i18n.maxTurns)}</h4>
               <p className="text-xs text-text-secondary mt-[2px]">
-                Maximum agent turns before Goose asks for user input
+                {intl.formatMessage(i18n.maxTurnsDescription)}
               </p>
             </div>
             <Input

@@ -15,7 +15,7 @@ body:
         - Paste it into the field and submit the issue — we'll review and add it to the cookbook!
 
         🪄 **What Happens After?**
-        - If accepted, we'll publish your recipe to the [goose recipes cookbook](https://block.github.io/goose/recipes)
+        - If accepted, we'll publish your recipe to the [goose recipes cookbook](https://goose-docs.ai/recipes)
         - Your GitHub handle will be displayed and linked on the recipe card
         - If the YAML has any issues, goose will comment with validation errors so you can fix and resubmit.
 

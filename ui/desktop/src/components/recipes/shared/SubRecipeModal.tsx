@@ -5,6 +5,94 @@ import { SubRecipeFormData } from './recipeFormSchema';
 import { useEscapeKey } from '../../../hooks/useEscapeKey';
 import KeyValueEditor from './KeyValueEditor';
 import { toastError } from '../../../toasts';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  configureTitle: {
+    id: 'subRecipeModal.configureTitle',
+    defaultMessage: 'Configure Subrecipe',
+  },
+  addTitle: {
+    id: 'subRecipeModal.addTitle',
+    defaultMessage: 'Add Subrecipe',
+  },
+  subtitle: {
+    id: 'subRecipeModal.subtitle',
+    defaultMessage: 'Configure a subrecipe that can be called as a tool during recipe execution',
+  },
+  closeModal: {
+    id: 'subRecipeModal.closeModal',
+    defaultMessage: 'Close subrecipe modal',
+  },
+  nameLabel: {
+    id: 'subRecipeModal.nameLabel',
+    defaultMessage: 'Name',
+  },
+  namePlaceholder: {
+    id: 'subRecipeModal.namePlaceholder',
+    defaultMessage: 'e.g., security_scan',
+  },
+  nameHint: {
+    id: 'subRecipeModal.nameHint',
+    defaultMessage: 'Unique identifier used to generate the tool name',
+  },
+  pathLabel: {
+    id: 'subRecipeModal.pathLabel',
+    defaultMessage: 'Path',
+  },
+  pathPlaceholder: {
+    id: 'subRecipeModal.pathPlaceholder',
+    defaultMessage: 'e.g., ./subrecipes/security-analysis.yaml',
+  },
+  browse: {
+    id: 'subRecipeModal.browse',
+    defaultMessage: 'Browse',
+  },
+  pathHint: {
+    id: 'subRecipeModal.pathHint',
+    defaultMessage: 'Browse for an existing recipe file or enter a path manually',
+  },
+  descriptionLabel: {
+    id: 'subRecipeModal.descriptionLabel',
+    defaultMessage: 'Description',
+  },
+  descriptionPlaceholder: {
+    id: 'subRecipeModal.descriptionPlaceholder',
+    defaultMessage: 'Optional description of what this subrecipe does...',
+  },
+  sequentialLabel: {
+    id: 'subRecipeModal.sequentialLabel',
+    defaultMessage: 'Sequential when repeated',
+  },
+  sequentialHint: {
+    id: 'subRecipeModal.sequentialHint',
+    defaultMessage: '(Forces sequential execution of multiple subrecipe instances)',
+  },
+  preconfiguredValues: {
+    id: 'subRecipeModal.preconfiguredValues',
+    defaultMessage: 'Pre-configured Values',
+  },
+  preconfiguredValuesHint: {
+    id: 'subRecipeModal.preconfiguredValuesHint',
+    defaultMessage: 'Optional parameter values that are always passed to the subrecipe',
+  },
+  cancel: {
+    id: 'subRecipeModal.cancel',
+    defaultMessage: 'Cancel',
+  },
+  apply: {
+    id: 'subRecipeModal.apply',
+    defaultMessage: 'Apply',
+  },
+  invalidFile: {
+    id: 'subRecipeModal.invalidFile',
+    defaultMessage: 'Invalid File',
+  },
+  invalidFileMsg: {
+    id: 'subRecipeModal.invalidFileMsg',
+    defaultMessage: 'Please select a YAML file (.yaml or .yml).',
+  },
+});
 
 interface SubRecipeModalProps {
   isOpen: boolean;
@@ -19,6 +107,7 @@ export default function SubRecipeModal({
   onSave,
   subRecipe,
 }: SubRecipeModalProps) {
+  const intl = useIntl();
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
   const [description, setDescription] = useState('');
@@ -69,8 +158,8 @@ export default function SubRecipeModal({
       if (selectedPath) {
         if (!selectedPath.endsWith('.yaml') && !selectedPath.endsWith('.yml')) {
           toastError({
-            title: 'Invalid File',
-            msg: 'Please select a YAML file (.yaml or .yml).',
+            title: intl.formatMessage(i18n.invalidFile),
+            msg: intl.formatMessage(i18n.invalidFileMsg),
           });
           return;
         }
@@ -90,10 +179,10 @@ export default function SubRecipeModal({
         <div className="flex items-center justify-between p-6 border-b border-borderSubtle">
           <div>
             <h2 className="text-xl font-medium text-textProminent">
-              {subRecipe ? 'Configure Subrecipe' : 'Add Subrecipe'}
+              {subRecipe ? intl.formatMessage(i18n.configureTitle) : intl.formatMessage(i18n.addTitle)}
             </h2>
             <p className="text-textSubtle text-sm">
-              Configure a subrecipe that can be called as a tool during recipe execution
+              {intl.formatMessage(i18n.subtitle)}
             </p>
           </div>
           <Button
@@ -101,7 +190,7 @@ export default function SubRecipeModal({
             variant="ghost"
             size="sm"
             className="p-2 hover:bg-bgSubtle rounded-lg transition-colors"
-            aria-label="Close subrecipe modal"
+            aria-label={intl.formatMessage(i18n.closeModal)}
           >
             <X className="w-5 h-5" />
           </Button>
@@ -115,7 +204,7 @@ export default function SubRecipeModal({
               htmlFor="subrecipe-name"
               className="block text-sm font-medium text-text-standard mb-2"
             >
-              Name <span className="text-text-danger">*</span>
+              {intl.formatMessage(i18n.nameLabel)} <span className="text-text-danger">*</span>
             </label>
             <input
               id="subrecipe-name"
@@ -123,10 +212,10 @@ export default function SubRecipeModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="e.g., security_scan"
+              placeholder={intl.formatMessage(i18n.namePlaceholder)}
             />
             <p className="text-xs text-text-muted mt-1">
-              Unique identifier used to generate the tool name
+              {intl.formatMessage(i18n.nameHint)}
             </p>
           </div>
 
@@ -136,7 +225,7 @@ export default function SubRecipeModal({
               htmlFor="subrecipe-path"
               className="block text-sm font-medium text-text-standard mb-2"
             >
-              Path <span className="text-text-danger">*</span>
+              {intl.formatMessage(i18n.pathLabel)} <span className="text-text-danger">*</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -145,7 +234,7 @@ export default function SubRecipeModal({
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 className="flex-1 p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="e.g., ./subrecipes/security-analysis.yaml"
+                placeholder={intl.formatMessage(i18n.pathPlaceholder)}
               />
               <Button
                 type="button"
@@ -154,11 +243,11 @@ export default function SubRecipeModal({
                 className="px-4 py-2 flex items-center gap-2"
               >
                 <FolderOpen className="w-4 h-4" />
-                Browse
+                {intl.formatMessage(i18n.browse)}
               </Button>
             </div>
             <p className="text-xs text-text-muted mt-1">
-              Browse for an existing recipe file or enter a path manually
+              {intl.formatMessage(i18n.pathHint)}
             </p>
           </div>
 
@@ -168,14 +257,14 @@ export default function SubRecipeModal({
               htmlFor="subrecipe-description"
               className="block text-sm font-medium text-text-standard mb-2"
             >
-              Description
+              {intl.formatMessage(i18n.descriptionLabel)}
             </label>
             <textarea
               id="subrecipe-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full p-3 border border-border-subtle rounded-lg bg-background-primary text-text-standard focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              placeholder="Optional description of what this subrecipe does..."
+              placeholder={intl.formatMessage(i18n.descriptionPlaceholder)}
               rows={3}
             />
           </div>
@@ -190,20 +279,20 @@ export default function SubRecipeModal({
               className="w-4 h-4 border-border-subtle rounded focus:ring-2 focus:ring-ring"
             />
             <label htmlFor="subrecipe-sequential" className="text-sm text-text-standard">
-              Sequential when repeated
+              {intl.formatMessage(i18n.sequentialLabel)}
             </label>
             <span className="text-xs text-text-muted">
-              (Forces sequential execution of multiple subrecipe instances)
+              {intl.formatMessage(i18n.sequentialHint)}
             </span>
           </div>
 
           {/* Values Section */}
           <div>
             <label className="block text-sm font-medium text-text-standard mb-2">
-              Pre-configured Values
+              {intl.formatMessage(i18n.preconfiguredValues)}
             </label>
             <p className="text-xs text-text-muted mb-3">
-              Optional parameter values that are always passed to the subrecipe
+              {intl.formatMessage(i18n.preconfiguredValuesHint)}
             </p>
             <KeyValueEditor values={values} onChange={setValues} />
           </div>
@@ -212,10 +301,10 @@ export default function SubRecipeModal({
         {/* Footer */}
         <div className="flex gap-2 p-6 border-t border-borderSubtle">
           <Button onClick={onClose} variant="outline" className="flex-1">
-            Cancel
+            {intl.formatMessage(i18n.cancel)}
           </Button>
           <Button onClick={handleSave} disabled={!name.trim() || !path.trim()} className="flex-1">
-            {subRecipe ? 'Apply' : 'Add Subrecipe'}
+            {subRecipe ? intl.formatMessage(i18n.apply) : intl.formatMessage(i18n.addTitle)}
           </Button>
         </div>
       </div>

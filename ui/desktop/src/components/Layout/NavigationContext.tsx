@@ -21,6 +21,7 @@ export const DEFAULT_ITEM_ORDER = [
   'home',
   'chat',
   'recipes',
+  'skills',
   'apps',
   'scheduler',
   'extensions',
@@ -98,7 +99,17 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     const stored = localStorage.getItem('navigation_preferences');
     if (stored) {
       try {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        // Only backfill truly new default IDs (not previously known to the user).
+        // Using itemOrder as the source of truth ensures items the user
+        // intentionally disabled stay disabled.
+        const newIds = DEFAULT_ITEM_ORDER.filter(
+          (id) => !parsed.itemOrder?.includes(id)
+        );
+        return {
+          itemOrder: [...(parsed.itemOrder ?? []), ...newIds],
+          enabledItems: [...(parsed.enabledItems ?? []), ...newIds],
+        };
       } catch {
         console.error('Failed to parse navigation preferences');
       }

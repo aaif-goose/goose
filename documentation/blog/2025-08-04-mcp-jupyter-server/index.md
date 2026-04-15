@@ -143,18 +143,18 @@ The demo walks through a typical data science workflow:
 
 The MCP Jupyter Server integrates seamlessly with existing workflows and can also be used with the notebook viewer in VS Code based IDEs.
 
-For detailed setup and configuration, check out the [complete documentation](https://block.github.io/mcp-jupyter/).
+For detailed setup and configuration, check out the [complete documentation](https://aaif-goose.github.io/mcp-jupyter/).
 
 
 <head>
   <meta property="og:title" content="MCP Jupyter Server: Bringing Notebook Intelligence to AI Agents" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/06/24/mcp-jupyter-server" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/06/24/mcp-jupyter-server" />
   <meta property="og:description" content="A powerful MCP server that enables AI agents to interact with Jupyter notebooks while preserving kernel state and variable context" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="MCP Jupyter Server: Bringing Notebook Intelligence to AI Agents" />
   <meta name="twitter:description" content="A powerful MCP server that enables AI agents to interact with Jupyter notebooks while preserving kernel state and variable context" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/data-goose-7fc60ab0a13a9e9b6c22172d6ac166ab.png" />
 </head>

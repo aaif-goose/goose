@@ -3,20 +3,53 @@ import { Switch } from '../../ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { useConfig } from '../../ConfigContext';
 import { TELEMETRY_UI_ENABLED } from '../../../updates';
-import TelemetryOptOutModal from '../../TelemetryOptOutModal';
+import PrivacyInfoModal from '../../onboarding/PrivacyInfoModal';
 import { toastService } from '../../../toasts';
 import {
   setTelemetryEnabled as setAnalyticsTelemetryEnabled,
   trackTelemetryPreference,
 } from '../../../utils/analytics';
+import { defineMessages, useIntl } from '../../../i18n';
+
+const i18n = defineMessages({
+  title: {
+    id: 'telemetrySettings.title',
+    defaultMessage: 'Privacy',
+  },
+  description: {
+    id: 'telemetrySettings.description',
+    defaultMessage: 'Control how your data is used',
+  },
+  toggleLabel: {
+    id: 'telemetrySettings.toggleLabel',
+    defaultMessage: 'Anonymous usage data',
+  },
+  toggleDescription: {
+    id: 'telemetrySettings.toggleDescription',
+    defaultMessage: 'Help improve goose by sharing anonymous usage statistics.',
+  },
+  learnMore: {
+    id: 'telemetrySettings.learnMore',
+    defaultMessage: 'Learn more',
+  },
+  configErrorTitle: {
+    id: 'telemetrySettings.configErrorTitle',
+    defaultMessage: 'Configuration Error',
+  },
+  loadError: {
+    id: 'telemetrySettings.loadError',
+    defaultMessage: 'Failed to load telemetry settings.',
+  },
+  updateError: {
+    id: 'telemetrySettings.updateError',
+    defaultMessage: 'Failed to update telemetry settings.',
+  },
+});
 
 const TELEMETRY_CONFIG_KEY = 'GOOSE_TELEMETRY_ENABLED';
 
-interface TelemetrySettingsProps {
-  isWelcome: boolean;
-}
-
-export default function TelemetrySettings({ isWelcome = false }: TelemetrySettingsProps) {
+export default function TelemetrySettings() {
+  const intl = useIntl();
   const { read, upsert } = useConfig();
   const [telemetryEnabled, setTelemetryEnabled] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,14 +62,14 @@ export default function TelemetrySettings({ isWelcome = false }: TelemetrySettin
     } catch (error) {
       console.error('Failed to load telemetry status:', error);
       toastService.error({
-        title: 'Configuration Error',
-        msg: 'Failed to load telemetry settings.',
+        title: intl.formatMessage(i18n.configErrorTitle),
+        msg: intl.formatMessage(i18n.loadError),
         traceback: error instanceof Error ? error.stack || '' : '',
       });
     } finally {
       setIsLoading(false);
     }
-  }, [read]);
+  }, [read, intl]);
 
   useEffect(() => {
     loadTelemetryStatus();
@@ -47,12 +80,12 @@ export default function TelemetrySettings({ isWelcome = false }: TelemetrySettin
       await upsert(TELEMETRY_CONFIG_KEY, checked, false);
       setTelemetryEnabled(checked);
       setAnalyticsTelemetryEnabled(checked);
-      trackTelemetryPreference(checked, isWelcome ? 'onboarding' : 'settings');
+      trackTelemetryPreference(checked, 'settings');
     } catch (error) {
       console.error('Failed to update telemetry status:', error);
       toastService.error({
-        title: 'Configuration Error',
-        msg: 'Failed to update telemetry settings.',
+        title: intl.formatMessage(i18n.configErrorTitle),
+        msg: intl.formatMessage(i18n.updateError),
         traceback: error instanceof Error ? error.stack || '' : '',
       });
     }
@@ -67,17 +100,17 @@ export default function TelemetrySettings({ isWelcome = false }: TelemetrySettin
     return null;
   }
 
-  const title = 'Privacy';
-  const description = 'Control how your data is used';
-  const toggleLabel = 'Anonymous usage data';
-  const toggleDescription = 'Help improve goose by sharing anonymous usage statistics.';
+  const title = intl.formatMessage(i18n.title);
+  const description = intl.formatMessage(i18n.description);
+  const toggleLabel = intl.formatMessage(i18n.toggleLabel);
+  const toggleDescription = intl.formatMessage(i18n.toggleDescription);
 
   const learnMoreLink = (
     <button
       onClick={() => setShowModal(true)}
       className="text-blue-600 dark:text-blue-400 hover:underline"
     >
-      Learn more
+      {intl.formatMessage(i18n.learnMore)}
     </button>
   );
 
@@ -90,34 +123,19 @@ export default function TelemetrySettings({ isWelcome = false }: TelemetrySettin
     />
   );
 
-  const modal = <TelemetryOptOutModal controlled isOpen={showModal} onClose={handleModalClose} />;
+  const modal = <PrivacyInfoModal isOpen={showModal} onClose={handleModalClose} />;
 
   const toggleRow = (
     <div className="flex items-center justify-between">
       <div>
-        <h4 className={isWelcome ? 'text-text-primary text-sm' : 'text-text-primary text-xs'}>
-          {toggleLabel}
-        </h4>
-        <p className={`${isWelcome ? 'text-sm' : 'text-xs'} text-text-secondary max-w-md mt-[2px]`}>
+        <h4 className="text-text-primary text-xs">{toggleLabel}</h4>
+        <p className="text-xs text-text-secondary max-w-md mt-[2px]">
           {toggleDescription} {learnMoreLink}
         </p>
       </div>
       <div className="flex items-center">{toggle}</div>
     </div>
   );
-
-  if (isWelcome) {
-    return (
-      <>
-        <div className="w-full p-4 sm:p-6 bg-transparent border rounded-xl">
-          <h3 className="font-medium text-text-primary text-sm sm:text-base mb-1">{title}</h3>
-          <p className="text-text-secondary text-sm sm:text-base mb-4">{description}</p>
-          {toggleRow}
-        </div>
-        {modal}
-      </>
-    );
-  }
 
   return (
     <>

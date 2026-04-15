@@ -7,6 +7,70 @@ import MessageCopyLink from './MessageCopyLink';
 import { formatMessageTimestamp } from '../utils/timeUtils';
 import Edit from './icons/Edit';
 import { Button } from './ui/button';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  editPlaceholder: {
+    id: 'userMessage.editPlaceholder',
+    defaultMessage: 'Edit your message...',
+  },
+  editAriaLabel: {
+    id: 'userMessage.editAriaLabel',
+    defaultMessage: 'Edit message content',
+  },
+  emptyError: {
+    id: 'userMessage.emptyError',
+    defaultMessage: 'Message cannot be empty',
+  },
+  editInPlaceDescription: {
+    id: 'userMessage.editInPlaceDescription',
+    defaultMessage: '<b>Edit in Place</b> updates this session • <b>Fork Session</b> creates a new session',
+  },
+  cancel: {
+    id: 'userMessage.cancel',
+    defaultMessage: 'Cancel',
+  },
+  cancelAriaLabel: {
+    id: 'userMessage.cancelAriaLabel',
+    defaultMessage: 'Cancel editing',
+  },
+  editInPlace: {
+    id: 'userMessage.editInPlace',
+    defaultMessage: 'Edit in Place',
+  },
+  editInPlaceAriaLabel: {
+    id: 'userMessage.editInPlaceAriaLabel',
+    defaultMessage: 'Edit message in place',
+  },
+  editInPlaceTitle: {
+    id: 'userMessage.editInPlaceTitle',
+    defaultMessage: 'Update the message in this session',
+  },
+  forkSession: {
+    id: 'userMessage.forkSession',
+    defaultMessage: 'Fork Session',
+  },
+  forkSessionAriaLabel: {
+    id: 'userMessage.forkSessionAriaLabel',
+    defaultMessage: 'Fork session with edited message',
+  },
+  forkSessionTitle: {
+    id: 'userMessage.forkSessionTitle',
+    defaultMessage: 'Create a new session with the edited message',
+  },
+  editButton: {
+    id: 'userMessage.editButton',
+    defaultMessage: 'Edit',
+  },
+  editMessageAriaLabel: {
+    id: 'userMessage.editMessageAriaLabel',
+    defaultMessage: 'Edit message: {preview}',
+  },
+  editMessageTitle: {
+    id: 'userMessage.editMessageTitle',
+    defaultMessage: 'Edit message',
+  },
+});
 
 interface UserMessageProps {
   message: Message;
@@ -14,6 +78,7 @@ interface UserMessageProps {
 }
 
 export default function UserMessage({ message, onMessageUpdate }: UserMessageProps) {
+  const intl = useIntl();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -74,7 +139,7 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
   const handleSave = useCallback(
     (editType: 'fork' | 'edit' = 'fork') => {
       if (editContent.trim().length === 0) {
-        setError('Message cannot be empty');
+        setError(intl.formatMessage(i18n.emptyError));
         return;
       }
 
@@ -88,7 +153,7 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
         onMessageUpdate(message.id, editContent, editType);
       }
     },
-    [editContent, textContent, onMessageUpdate, message.id]
+    [editContent, textContent, onMessageUpdate, message.id, intl]
   );
 
   // Handle cancel action
@@ -147,8 +212,8 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
                 wordBreak: 'break-word',
                 overflowWrap: 'break-word',
               }}
-              placeholder="Edit your message..."
-              aria-label="Edit message content"
+              placeholder={intl.formatMessage(i18n.editPlaceholder)}
+              aria-label={intl.formatMessage(i18n.editAriaLabel)}
               aria-describedby={error ? `error-${message.id}` : undefined}
             />
             {/* Error message */}
@@ -164,27 +229,28 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
             )}
             <div className="flex justify-between items-center mt-4">
               <div className="text-xs text-text-secondary">
-                <span className="font-semibold">Edit in Place</span> updates this session •{' '}
-                <span className="font-semibold">Fork Session</span> creates a new session
+                {intl.formatMessage(i18n.editInPlaceDescription, {
+                  b: (chunks: React.ReactNode) => <span className="font-semibold">{chunks}</span>,
+                })}
               </div>
               <div className="flex gap-3">
-                <Button onClick={handleCancel} variant="ghost" aria-label="Cancel editing">
-                  Cancel
+                <Button onClick={handleCancel} variant="ghost" aria-label={intl.formatMessage(i18n.cancelAriaLabel)}>
+                  {intl.formatMessage(i18n.cancel)}
                 </Button>
                 <Button
                   onClick={() => handleSave('edit')}
                   variant="secondary"
-                  aria-label="Edit message in place"
-                  title="Update the message in this session"
+                  aria-label={intl.formatMessage(i18n.editInPlaceAriaLabel)}
+                  title={intl.formatMessage(i18n.editInPlaceTitle)}
                 >
-                  Edit in Place
+                  {intl.formatMessage(i18n.editInPlace)}
                 </Button>
                 <Button
                   onClick={() => handleSave('fork')}
-                  aria-label="Fork session with edited message"
-                  title="Create a new session with the edited message"
+                  aria-label={intl.formatMessage(i18n.forkSessionAriaLabel)}
+                  title={intl.formatMessage(i18n.forkSessionTitle)}
                 >
-                  Fork Session
+                  {intl.formatMessage(i18n.forkSession)}
                 </Button>
               </div>
             </div>
@@ -227,12 +293,12 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
                         }
                       }}
                       className="flex items-center gap-1 text-xs text-text-secondary hover:cursor-pointer hover:text-text-primary transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50 rounded"
-                      aria-label={`Edit message: ${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}`}
+                      aria-label={intl.formatMessage(i18n.editMessageAriaLabel, { preview: `${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}` })}
                       aria-expanded={isEditing}
-                      title="Edit message"
+                      title={intl.formatMessage(i18n.editMessageTitle)}
                     >
                       <Edit className="h-3 w-3" />
-                      <span>Edit</span>
+                      <span>{intl.formatMessage(i18n.editButton)}</span>
                     </button>
                     <MessageCopyLink text={textContent} contentRef={contentRef} />
                   </div>

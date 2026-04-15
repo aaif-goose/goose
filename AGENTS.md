@@ -94,6 +94,28 @@ Errors: Don't add error context that doesn't add useful information (e.g., `.con
 Simplicity: Avoid overly defensive code - trust Rust's type system
 Logging: Clean up existing logs, don't add more unless for errors or security events
 
+## Ink / Terminal UI (ui/text)
+
+Ink renders React to a fixed character grid — not a browser. Content that exceeds a Box's
+dimensions is NOT clipped; it visually overflows into neighboring cells and breaks the layout.
+
+Ink-Text: Never use `wrap="wrap"` inside a fixed-height Box — wrapped text can exceed the
+  Box height and bleed into adjacent components. Use `wrap="truncate"` and pre-truncate the
+  string to fit the available character budget (lines × width).
+Ink-Layout: When changing card/cell dimensions, always recalculate how much content fits.
+  Account for borders (2 chars), padding, margins, and sibling elements when computing the
+  remaining space for dynamic text.
+Ink-Overflow: Ink has no `overflow: hidden`. The only way to prevent overflow is to ensure
+  content never exceeds the container size — truncate text, limit list items, or cap height.
+Ink-FlexGrow: Avoid `flexGrow={1}` on text containers inside fixed-height cards — the text
+  will try to fill available space but Ink won't clip it if it exceeds the boundary.
+Ink-HeightBudget: When computing how many rows/items fit vertically, count EVERY line used
+  by headers, footers, margins, borders, and scroll indicators. Under-reserving vertical
+  space (e.g., `height - 8` when chrome actually uses 16 lines) causes Ink to squeeze out
+  margins between items, making borders collapse. Always audit the actual line count.
+Ink-TrailingMargin: Don't apply `marginBottom` to the last item in a list — it wastes a
+  line and can push content out of the container. Use conditional margins or container `gap`.
+
 ## Never
 
 Never: Edit ui/desktop/openapi.json manually
