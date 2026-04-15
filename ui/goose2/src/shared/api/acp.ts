@@ -4,6 +4,7 @@ import * as directAcp from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import { setActiveMessageId, clearActiveMessageId } from "./acpNotificationHandler";
+import { searchSessionsViaExports } from "./sessionSearch";
 
 export interface AcpProvider {
   id: string;
@@ -145,7 +146,9 @@ export async function acpSearchSessions(
   query: string,
   sessionIds: string[],
 ): Promise<AcpSessionSearchResult[]> {
-  // TODO: port search to direct ACP (Step 06)
+  if (USE_DIRECT_ACP) {
+    return searchSessionsViaExports(query, sessionIds);
+  }
   return invoke("acp_search_sessions", { query, sessionIds });
 }
 
