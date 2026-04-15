@@ -6,9 +6,9 @@ const DEFAULT_LIMIT = 500;
 // Add narrowly scoped exceptions here with justification
 const EXCEPTIONS = {
   "src/features/sidebar/ui/SidebarProjectsSection.tsx": {
-    limit: 560,
+    limit: 570,
     justification:
-      "Drag-and-drop handlers plus activeProjectId highlight for draft-in-project sessions.",
+      "Drag-and-drop handlers for session-to-project moves and project reorder, plus activeProjectId highlight.",
   },
   "src/features/chat/ui/ChatView.tsx": {
     limit: 535,
