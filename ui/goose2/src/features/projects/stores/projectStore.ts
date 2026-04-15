@@ -165,6 +165,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // When dragging down, removing the source shifts the target index
       const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex;
       projects.splice(insertAt, 0, moved);
+      // Update order fields so views sorting by .order stay consistent
+      for (let i = 0; i < projects.length; i++) {
+        projects[i] = { ...projects[i], order: i };
+      }
       return { projects };
     });
     const projects = get().projects;
