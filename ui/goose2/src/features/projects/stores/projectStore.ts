@@ -161,7 +161,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex)
         return state;
       const [moved] = projects.splice(fromIndex, 1);
-      projects.splice(toIndex, 0, moved);
+      // When dragging down, removing the source shifts the target index
+      const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex;
+      projects.splice(insertAt, 0, moved);
       return { projects };
     });
     persistProjects(get().projects);
