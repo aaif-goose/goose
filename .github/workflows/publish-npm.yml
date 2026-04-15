@@ -130,19 +130,10 @@ jobs:
                 echo "- $name@$version"
               fi
             done
-            echo ""
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-              echo "### ⚠️ Dry run — packages were built but will NOT be published"
-              echo "Publishing only happens via release.yml (workflow_call)."
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Publish to npm (only via workflow_call from release.yml)
-  # workflow_dispatch is build-only because npm trusted publishing OIDC claims
-  # are bound to the caller workflow filename (release.yml), not this file.
   publish:
     name: Publish to npm
-    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: [build]
     environment: npm-production-publishing
