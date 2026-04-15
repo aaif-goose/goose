@@ -753,6 +753,11 @@ body,
   }
 }
 
+/* Remove outer border on streamdown table wrappers (inner table already has one) */
+[data-streamdown="table-wrapper"] {
+  border: none;
+}
+
 /* ═══════════════════════════════════════════════════════════
    goose2 custom utilities
    ═══════════════════════════════════════════════════════════ */
