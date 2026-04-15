@@ -50,6 +50,11 @@ const EXCEPTIONS = {
     justification:
       "ACP-backed session overlay persistence, draft migration, and sidebar-facing session merge logic live together for now.",
   },
+  "src-tauri/src/commands/projects.rs": {
+    limit: 520,
+    justification:
+      "Project CRUD plus reorder_projects command for sidebar drag-and-drop ordering.",
+  },
   "src-tauri/src/services/acp/manager/dispatcher.rs": {
     limit: 540,
     justification:
