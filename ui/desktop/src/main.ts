@@ -599,8 +599,13 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     trustedExternalHostname = null;
   }
 
-  // Reset pinned fingerprint so a new backend gets its own TOFU handshake.
-  pinnedCertFingerprint = null;
+  // If the user provided a cert fingerprint for the external backend, pin it
+  // directly (skips TOFU). Otherwise reset so the first handshake pins via TOFU.
+  if (settings.externalGoosed?.enabled && settings.externalGoosed.certFingerprint) {
+    pinnedCertFingerprint = normalizeFingerprint(settings.externalGoosed.certFingerprint);
+  } else {
+    pinnedCertFingerprint = null;
+  }
 
   const goosedResult = await startGoosed({
     serverSecret,
