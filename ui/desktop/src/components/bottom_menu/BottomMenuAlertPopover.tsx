@@ -205,6 +205,7 @@ export default function BottomMenuAlertPopover({ alerts, children }: AlertPopove
     <>
       <div className="relative">
         <button
+          type="button"
           ref={triggerRef}
           className="cursor-pointer flex items-center gap-1.5 min-h-5 rounded hover:bg-background-secondary px-1"
           onClick={() => {
