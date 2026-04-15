@@ -17,6 +17,7 @@ use tracing::warn;
 use crate::oauth::persist::GooseCredentialStore;
 
 const CALLBACK_TEMPLATE: &str = include_str!("oauth_callback.html");
+const CLIENT_METADATA_URL: &str = "https://goose-docs.ai/oauth/client-metadata.json";
 
 #[derive(Clone)]
 struct AppState {
@@ -81,7 +82,12 @@ pub async fn oauth_flow(
 
     let redirect_uri = format!("http://localhost:{}/oauth_callback", used_addr.port());
     oauth_state
-        .start_authorization(&[], redirect_uri.as_str(), Some("goose"))
+        .start_authorization_with_metadata_url(
+            &[],
+            redirect_uri.as_str(),
+            Some("goose"),
+            Some(CLIENT_METADATA_URL),
+        )
         .await?;
 
     let authorization_url = oauth_state.get_authorization_url().await?;

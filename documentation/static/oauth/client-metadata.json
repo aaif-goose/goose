@@ -1,0 +1,10 @@
+{
+  "client_id": "https://goose-docs.ai/oauth/client-metadata.json",
+  "client_name": "Goose",
+  "redirect_uris": ["http://localhost"],
+  "grant_types": ["authorization_code"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none",
+  "scope": "openid profile email",
+  "code_challenge_methods_supported": ["S256"]
+}
