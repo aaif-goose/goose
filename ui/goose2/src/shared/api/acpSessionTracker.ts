@@ -50,6 +50,8 @@ export async function prepareSession(
     gooseSessionId = response.sessionId;
   }
 
+  await acpApi.setProvider(gooseSessionId, providerId);
+
   prepared.set(key, { gooseSessionId, providerId, workingDir });
   prepared.set(sessionId, { gooseSessionId, providerId, workingDir });
   gooseToLocal.set(gooseSessionId, sessionId);
