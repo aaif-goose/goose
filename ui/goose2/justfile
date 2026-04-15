@@ -136,6 +136,28 @@ dev-debug:
 dev-frontend:
     pnpm dev
 
+# Kill the dev process (if running)
+kill:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    VITE_PORT=$(python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)")
+    PID=$(lsof -ti :"$VITE_PORT" 2>/dev/null | head -1) || true
+
+    if [[ -z "$PID" ]]; then
+        echo "No process found on port $VITE_PORT"
+        exit 0
+    fi
+
+    PROC_NAME=$(ps -p "$PID" -o comm= 2>/dev/null) || true
+    if [[ "$PROC_NAME" != "node" ]]; then
+        echo "Process on port $VITE_PORT is '$PROC_NAME', not 'node' — refusing to kill"
+        exit 1
+    fi
+
+    echo "Killing node (PID $PID) on port $VITE_PORT"
+    kill -9 "$PID"
+
 # ── Utilities ────────────────────────────────────────────────
 
 # Clean build artifacts
