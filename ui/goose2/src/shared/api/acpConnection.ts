@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { GooseClient } from "@aaif/goose-acp";
-import type {
-  Client,
-  SessionNotification,
-  RequestPermissionRequest,
-  RequestPermissionResponse,
+import {
+  PROTOCOL_VERSION,
+  type Client,
+  type SessionNotification,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import { createWebSocketStream } from "./createWebSocketStream";
 
@@ -67,7 +68,7 @@ async function initializeConnection(): Promise<GooseClient> {
   const client = new GooseClient(createClientCallbacks(), stream);
 
   await client.initialize({
-    protocolVersion: 20250326,
+    protocolVersion: PROTOCOL_VERSION,
     clientCapabilities: {},
     clientInfo: {
       name: "goose2",
