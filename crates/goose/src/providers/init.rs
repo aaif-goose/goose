@@ -100,6 +100,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         "kimi_code",
         Arc::new(|| Box::pin(KimiCodeProvider::cleanup())),
     );
+    registry.set_cleanup(
+        "chatgpt_codex",
+        Arc::new(|| Box::pin(ChatGptCodexProvider::cleanup())),
+    );
 
     if let Err(e) = load_custom_providers_into_registry(&mut registry) {
         tracing::warn!("Failed to load custom providers: {}", e);
