@@ -130,6 +130,13 @@ export const ChatHistorySearch: React.FC<ChatHistorySearchProps> = ({
     setHighlightedIndex(-1);
 
     if (query.trim()) {
+      // Drop previous results and flip to the searching state immediately
+      // so (a) an item from the previous query cannot be clicked during the
+      // 250ms debounce window and (b) the empty-state does not flicker
+      // before the new request actually runs.
+      setResults([]);
+      setHasError(false);
+      setIsSearching(true);
       searchTimeoutRef.current = setTimeout(() => {
         performSearch(query);
       }, 250);
