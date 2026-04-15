@@ -1,3 +1,7 @@
+# Derive a stable port from the working directory so the same worktree
+# always gets the same port.
+vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
+
 # Default recipe
 default:
     @just --list
@@ -74,11 +78,7 @@ dev:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Derive a stable port from the working directory so the same worktree
-    # always gets the same port. This avoids changing TAURI_CONFIG between
-    # runs, which would invalidate Cargo's build cache and trigger a full
-    # Rust rebuild every time.
-    VITE_PORT=$(python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)")
+    VITE_PORT={{ vite_port }}
     export VITE_PORT
     PROJECT_DIR=$(pwd)
     TAURI_CONFIG="{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"cd ${PROJECT_DIR} && exec pnpm exec vite --port ${VITE_PORT} --strictPort\",\"cwd\":\".\",\"wait\":false}}}"
@@ -108,7 +108,7 @@ dev-debug:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT=$(python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)")
+    VITE_PORT={{ vite_port }}
     export VITE_PORT
     EXTRA_CONFIG="--config {\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./node_modules/.bin/vite --port ${VITE_PORT} --strictPort\",\"cwd\":\"..\",\"wait\":false}}}"
 
@@ -141,7 +141,7 @@ kill:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT=$(python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)")
+    VITE_PORT={{ vite_port }}
     PID=$(lsof -ti :"$VITE_PORT" 2>/dev/null | head -1) || true
 
     if [[ -z "$PID" ]]; then
