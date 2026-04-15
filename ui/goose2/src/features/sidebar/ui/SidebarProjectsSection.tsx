@@ -391,9 +391,8 @@ export function SidebarProjectsSection({
               key={project.id}
               draggable
               onDragStart={(e) => {
-                // Only handle drags that originate from this wrapper (project reorder),
-                // not from child chat rows (session move). Chat rows set their own data.
-                if (e.target !== e.currentTarget) return;
+                // Skip if a child chat row already initiated a session drag
+                if (e.dataTransfer.types.includes("text/x-session-id")) return;
                 e.dataTransfer.setData("text/x-project-id", project.id);
                 e.dataTransfer.effectAllowed = "move";
                 setDraggedProjectId(project.id);
