@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { USE_DIRECT_ACP } from "./acpFeatureFlag";
 import * as directAcp from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
-import { useChatStore } from "@/features/chat/stores/chatStore";
 import { setActiveMessageId, clearActiveMessageId } from "./acpNotificationHandler";
 import { searchSessionsViaExports } from "./sessionSearch";
 
@@ -68,8 +67,6 @@ export async function acpSendMessage(
     await directAcp.prompt(gooseSessionId, content);
 
     clearActiveMessageId(gooseSessionId);
-    useChatStore.getState().setChatState(sessionId, "idle");
-    useChatStore.getState().setStreamingMessageId(sessionId, null);
     return;
   }
   const { systemPrompt, workingDir, personaId, personaName, images } = options;
@@ -164,8 +161,9 @@ export async function acpLoadSession(
   workingDir?: string,
 ): Promise<void> {
   if (USE_DIRECT_ACP) {
-    await directAcp.loadSession(gooseSessionId, workingDir ?? "~/.goose/artifacts");
-    useChatStore.getState().setSessionLoading(sessionId, false);
+    const effectiveWorkingDir = workingDir ?? "~/.goose/artifacts";
+    await directAcp.loadSession(gooseSessionId, effectiveWorkingDir);
+    sessionTracker.registerSession(sessionId, gooseSessionId, "goose", effectiveWorkingDir);
     return;
   }
   return invoke("acp_load_session", {

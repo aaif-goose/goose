@@ -58,3 +58,14 @@ export function getLocalSessionId(gooseSessionId: string): string | null {
   return gooseToLocal.get(gooseSessionId) ?? null;
 }
 
+export function registerSession(
+  sessionId: string,
+  gooseSessionId: string,
+  providerId: string,
+  workingDir: string,
+): void {
+  const entry = { gooseSessionId, providerId, workingDir };
+  prepared.set(sessionId, entry);
+  gooseToLocal.set(gooseSessionId, sessionId);
+}
+

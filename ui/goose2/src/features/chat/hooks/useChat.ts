@@ -229,6 +229,9 @@ export function useChat(
           ),
         });
 
+        store.setChatState(sessionId, "idle");
+        store.setStreamingMessageId(sessionId, null);
+
         if (wasDraft) {
           const promoted = sessionStore.getSession(sessionId);
           if (promoted) {
