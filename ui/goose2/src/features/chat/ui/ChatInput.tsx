@@ -22,6 +22,7 @@ import {
 } from "../hooks/useChatInputAttachments";
 import type { ModelOption } from "../types";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { useVoiceDictation } from "../hooks/useVoiceDictation";
 
 export interface ProjectOption {
   id: string;
@@ -121,6 +122,22 @@ export function ChatInput({
     clearAttachments,
   } = useChatInputAttachments();
 
+  const resetTextarea = useCallback(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, []);
+
+  const dictation = useVoiceDictation({
+    text,
+    setText,
+    attachments,
+    clearAttachments,
+    selectedPersonaId,
+    onSend,
+    resetTextarea,
+  });
+
   const activePersona = useMemo(
     () => personas.find((persona) => persona.id === selectedPersonaId) ?? null,
     [personas, selectedPersonaId],
@@ -178,6 +195,14 @@ export function ChatInput({
   useEffect(() => textareaRef.current?.focus(), []);
 
   const handleSend = useCallback(() => {
+    // If recording, stop and flush — the transcription callback will
+    // append text and may auto-submit. Don't send the current text yet
+    // because the final transcription hasn't arrived.
+    if (dictation.isRecording || dictation.isTranscribing) {
+      dictation.stopRecording();
+      return;
+    }
+
     if (!canSend) {
       return;
     }
@@ -196,6 +221,7 @@ export function ChatInput({
     attachments,
     canSend,
     clearAttachments,
+    dictation,
     onSend,
     selectedPersonaId,
     setText,
@@ -408,7 +434,13 @@ export function ChatInput({
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  placeholder={effectivePlaceholder}
+                  placeholder={
+                    dictation.isRecording
+                      ? t("toolbar.voiceInputRecording")
+                      : dictation.isTranscribing
+                        ? t("toolbar.voiceInputTranscribing")
+                        : effectivePlaceholder
+                  }
                   disabled={disabled}
                   rows={1}
                   className="mb-3 min-h-[36px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-foreground placeholder:font-light placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
@@ -447,6 +479,10 @@ export function ChatInput({
                 onSend={handleSend}
                 onStop={onStop}
                 isCompact={isCompact}
+                voiceEnabled={dictation.isEnabled}
+                voiceRecording={dictation.isRecording}
+                voiceTranscribing={dictation.isTranscribing}
+                onVoiceToggle={dictation.toggleRecording}
               />
             </div>
           </Popover>

@@ -169,7 +169,11 @@
     "selectProject": "Seleccionar proyecto",
     "sendMessage": "Enviar mensaje",
     "stopGeneration": "Detener generación",
-    "voiceInputSoon": "Entrada de voz (pronto)"
+    "voiceInput": "Dictado por voz",
+    "voiceInputDisabled": "Configura un proveedor de voz en Ajustes para activar el dictado",
+    "voiceInputRecording": "Escuchando...",
+    "voiceInputTranscribing": "Transcribiendo...",
+    "voiceInputAutoSubmitHint": "Di \"enviar\" para enviar"
   },
   "tools": {
     "fileNotFound": "Archivo no encontrado: {{path}}",

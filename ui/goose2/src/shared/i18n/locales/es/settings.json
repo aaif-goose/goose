@@ -124,7 +124,48 @@
       "spanish": "Español",
       "system": "Predeterminado del sistema ({{language}})"
     },
-    "title": "General"
+    "title": "General",
+    "voiceInput": {
+      "label": "Entrada de voz",
+      "description": "Configura el dictado por voz para entrada manos libres.",
+      "providerLabel": "Proveedor de transcripción",
+      "disabled": "Desactivado",
+      "active": "Activo",
+      "notConfiguredSuffix": "(no configurado)",
+      "placeholder": "Selecciona un proveedor",
+      "modelLabel": "Modelo",
+      "apiKeyLabel": "Clave API",
+      "apiKeyDescription": "Ingresa tu clave API para este proveedor.",
+      "apiKeyPlaceholder": "sk-...",
+      "apiKeyConfigured": "Clave API configurada",
+      "addApiKey": "Agregar clave API",
+      "updateApiKey": "Actualizar clave API",
+      "removeApiKey": "Eliminar clave API",
+      "localModelLabel": "Modelo Whisper local",
+      "localModelUnavailable": "La descarga de modelos locales aún no está disponible. Usa la CLI de Goose para descargar un modelo Whisper primero.",
+      "download": "Descargar",
+      "recommended": "Recomendado",
+      "microphoneLabel": "Micrófono",
+      "microphoneDescription": "Elige qué micrófono usar para la entrada de voz.",
+      "microphoneUnavailable": "El acceso al micrófono no está disponible en este entorno.",
+      "microphoneAccessPrompt": "Haz clic en \"Permitir acceso\" para usar el micrófono.",
+      "grantMicrophone": "Permitir acceso",
+      "systemMicrophone": "Predeterminado del sistema",
+      "unknownMicrophone": "Micrófono desconocido",
+      "autoSubmitLabel": "Frases de envío automático",
+      "autoSubmitDescription": "Palabras separadas por coma que activan el envío automático (ej. \"enviar\").",
+      "providers": {
+        "openai": "OpenAI Whisper",
+        "groq": "Groq",
+        "elevenlabs": "ElevenLabs",
+        "local": "Whisper local"
+      },
+      "providerSetupHint": "Este proveedor usa tu configuración principal. Revisa {{settingsPath}} para configurarlo.",
+      "downloadProgress": "Descargando... {{percent}}%",
+      "loadError": "Error al cargar ajustes de voz.",
+      "saveError": "Error al guardar.",
+      "deleteError": "Error al eliminar."
+    }
   },
   "nav": {
     "about": "Acerca de",
@@ -134,7 +175,8 @@
     "general": "General",
     "projects": "Proyectos",
     "extensions": "Extensiones",
-    "providers": "Proveedores"
+    "providers": "Proveedores",
+    "voice": "Voz"
   },
   "projects": {
     "description": "Administra tus proyectos.",

@@ -309,6 +309,66 @@ pub struct ProviderConfigKey {
     pub primary: bool,
 }
 
+/// Transcribe audio via a dictation provider.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/dictation/transcribe", response = DictationTranscribeResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationTranscribeRequest {
+    /// Base64-encoded audio data
+    pub audio: String,
+    /// MIME type (e.g. "audio/wav", "audio/webm")
+    pub mime_type: String,
+    /// Provider to use: "openai", "groq", "elevenlabs", or "local"
+    pub provider: String,
+}
+
+/// Transcription result.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct DictationTranscribeResponse {
+    pub text: String,
+}
+
+/// Get the configuration status of all dictation providers.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/dictation/config", response = DictationConfigResponse)]
+pub struct DictationConfigRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DictationModelOption {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+}
+
+/// Per-provider configuration status.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationProviderStatusEntry {
+    pub configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    pub description: String,
+    pub uses_provider_config: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_config_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_model: Option<String>,
+    #[serde(default)]
+    pub available_models: Vec<DictationModelOption>,
+}
+
+/// Dictation config response — map of provider name to status.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct DictationConfigResponse {
+    pub providers: HashMap<String, DictationProviderStatusEntry>,
+}
+
 /// Empty success response for operations that return no data.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct EmptyResponse {}

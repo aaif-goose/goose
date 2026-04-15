@@ -14,6 +14,7 @@ path = "src/bin/generate_acp_schema.rs"
 [features]
 default = ["code-mode", "rustls-tls"]
 code-mode = ["goose/code-mode"]
+local-inference = ["goose/local-inference"]
 rustls-tls = ["goose/rustls-tls", "goose-mcp/rustls-tls"]
 native-tls = ["goose/native-tls", "goose-mcp/native-tls"]
 
@@ -48,6 +49,7 @@ uuid = { workspace = true, features = ["v7"] }
 schemars = { workspace = true, features = ["derive"] }
 goose-acp-macros = { path = "../goose-acp-macros" }
 goose-sdk = { path = "../goose-sdk" }
+base64 = { workspace = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }
