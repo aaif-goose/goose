@@ -5,9 +5,8 @@
     "http://127.0.0.1/oauth_callback",
     "http://[::1]/oauth_callback"
   ],
-  "grant_types": ["authorization_code"],
+  "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
   "token_endpoint_auth_method": "none",
-  "scope": "openid profile email",
   "code_challenge_methods_supported": ["S256"]
 }
