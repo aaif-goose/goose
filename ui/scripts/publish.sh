@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Builds and publishes all @aaif npm packages:
-#   @aaif/goose-acp            — ACP TypeScript SDK
+#   @aaif/goose-sdk            — ACP TypeScript SDK
 #   @aaif/goose-binary-*       — platform-specific goose CLI binaries
 #   @aaif/goose                — TUI that depends on the above
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 NATIVE_DIR="${REPO_ROOT}/ui/goose-binary"
-ACP_DIR="${REPO_ROOT}/ui/acp"
+SDK_DIR="${REPO_ROOT}/ui/sdk"
 TEXT_DIR="${REPO_ROOT}/ui/text"
 REGISTRY="https://registry.npmjs.org"
 DOCKER_IMAGE="rust:1.92-bookworm"
@@ -172,8 +172,8 @@ done
 # Step 4: Build TypeScript packages
 # ---------------------------------------------------------------------------
 echo ""
-echo "==> Building @aaif/goose-acp"
-(cd "${ACP_DIR}" && pnpm run build:ts)
+echo "==> Building @aaif/goose-sdk"
+(cd "${SDK_DIR}" && pnpm run build:ts)
 
 echo "==> Building @aaif/goose"
 (cd "${TEXT_DIR}" && pnpm run build)
@@ -211,7 +211,7 @@ cleanup_npmrc() {
 trap cleanup_npmrc EXIT
 
 # Publish order matters: dependencies first
-echo "==> Publishing @aaif/goose-acp"
+echo "==> Publishing @aaif/goose-sdk"
 (cd "${REPO_ROOT}/ui" && pnpm publish "${PUBLISH_ARGS[@]}" acp)
 
 echo "==> Publishing native binary packages"

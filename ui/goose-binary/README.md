@@ -19,7 +19,7 @@ From the repository root:
 
 ```bash
 # Build for current platform only
-cd ui/acp
+cd ui/sdk
 npm run build:native
 
 # Build for all platforms (requires cross-compilation toolchains)

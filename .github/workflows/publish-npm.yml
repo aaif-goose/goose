@@ -92,7 +92,7 @@ jobs:
 
       - name: Build packages
         run: |
-          cd ui/acp
+          cd ui/sdk
           pnpm run build:ts
 
           cd ../text

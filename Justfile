@@ -210,7 +210,7 @@ check-acp-schema: generate-acp-types
     #!/usr/bin/env bash
     set -e
     echo "🔍 Checking ACP schema and generated types are up-to-date..."
-    if ! git diff --exit-code crates/goose-acp/acp-schema.json crates/goose-acp/acp-meta.json ui/acp/src/generated/; then
+    if ! git diff --exit-code crates/goose-acp/acp-schema.json crates/goose-acp/acp-meta.json ui/sdk/src/generated/; then
       echo ""
       echo "❌ ACP generated files are out of date!"
       echo ""
@@ -228,13 +228,13 @@ generate-acp-schema:
 # Generate ACP TypeScript types from JSON schema (requires generate-acp-schema first)
 generate-acp-types: generate-acp-schema
     @echo "Generating ACP TypeScript types..."
-    cd ui/acp && npx tsx generate-schema.ts
-    @echo "ACP TypeScript types generated in ui/acp/src/generated/"
+    cd ui/sdk && npx tsx generate-schema.ts
+    @echo "ACP TypeScript types generated in ui/sdk/src/generated/"
 
-# Build ACP TypeScript package (schema + types + compile)
-build-acp: generate-acp-types
+# Build SDK TypeScript package (schema + types + compile)
+build-sdk: generate-acp-types
     @echo "Compiling ACP TypeScript..."
-    cd ui/acp && pnpm run build:ts
+    cd ui/sdk && pnpm run build:ts
     @echo "ACP package built."
 
 # Generate manpages for the CLI

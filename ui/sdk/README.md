@@ -47,7 +47,7 @@ npm run build:native:all
 To use this package locally in another project (e.g., `@aaif/goose`):
 
 ```bash
-# In ui/acp
+# In ui/sdk
 npm run build
 npm link
 
