@@ -99,9 +99,8 @@ pub fn list_extensions(config: State<'_, GooseConfig>) -> Result<Vec<Value>, Str
             obj.insert("config_key".to_string(), Value::String(key.clone()));
             obj.entry("name".to_string())
                 .or_insert_with(|| Value::String(key));
+            entries.push(json);
         }
-
-        entries.push(json);
     }
 
     Ok(entries)

@@ -123,6 +123,7 @@ export function ExtensionModal({
 
       if (type === "stdio") {
         config = {
+          ...(extension?.type === "stdio" ? extension : {}),
           type: "stdio",
           name: trimmedName,
           description,
@@ -137,6 +138,7 @@ export function ExtensionModal({
       } else {
         if (!uri.trim()) return;
         config = {
+          ...(extension?.type === "streamable_http" ? extension : {}),
           type: "streamable_http",
           name: trimmedName,
           description,

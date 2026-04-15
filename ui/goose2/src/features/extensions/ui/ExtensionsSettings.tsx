@@ -111,10 +111,10 @@ export function ExtensionsSettings() {
         return;
       }
 
-      if (isEdit) {
+      await addExtension(name, config, extensionEnabled);
+      if (keyChanged) {
         await removeExtension(editingExtension.config_key);
       }
-      await addExtension(name, config, extensionEnabled);
       setModalMode(null);
       setEditingExtension(null);
       await fetchExtensions();
