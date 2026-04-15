@@ -18,8 +18,10 @@ function getSubtitle(ext: ExtensionEntry): string {
   return ext.type;
 }
 
+const EDITABLE_TYPES = new Set(["stdio", "streamable_http"]);
+
 function isEditable(ext: ExtensionEntry): boolean {
-  return ext.type !== "builtin" && !ext.bundled;
+  return EDITABLE_TYPES.has(ext.type) && !ext.bundled;
 }
 
 export function ExtensionItem({
