@@ -932,9 +932,6 @@
   "envVarsSection.variableName": {
     "defaultMessage": "Variable name"
   },
-  "environmentBadge.alpha": {
-    "defaultMessage": "Alpha"
-  },
   "environmentBadge.dev": {
     "defaultMessage": "Dev"
   },

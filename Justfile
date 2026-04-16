@@ -140,14 +140,13 @@ run-ui-only:
     @echo "Running UI..."
     cd ui/desktop && pnpm install && pnpm run start-gui
 
-debug-ui *alpha:
-    @echo "🚀 Starting goose frontend in external backend mode{{ if alpha == "alpha" { " with alpha features enabled" } else { "" } }}"
+debug-ui:
+    @echo "🚀 Starting goose frontend in external backend mode"
     cd ui/desktop && \
     export GOOSE_EXTERNAL_BACKEND=true && \
     export GOOSE_SERVER__SECRET_KEY="${GOOSE_SERVER__SECRET_KEY:-test}" && \
-    {{ if alpha == "alpha" { "export ALPHA=true &&" } else { "" } }} \
     pnpm install && \
-    pnpm run {{ if alpha == "alpha" { "start-alpha-gui" } else { "start-gui" } }}
+    pnpm run start-gui
 
 # Run UI with main process debugging enabled
 # To debug main process:
@@ -172,12 +171,6 @@ package-ui:
     @echo "Signing with entitlements..."
     codesign --force --deep --sign - --entitlements ui/desktop/entitlements.plist ui/desktop/out/Goose-darwin-arm64/Goose.app
     @echo "Done! Launch with: open ui/desktop/out/Goose-darwin-arm64/Goose.app"
-
-# Run UI with alpha changes
-run-ui-alpha:
-    @just release-binary
-    @echo "Running UI with alpha features..."
-    cd ui/desktop && pnpm install && ALPHA=true pnpm run start-alpha-gui
 
 # Run UI with latest (Windows version)
 run-ui-windows:
@@ -253,11 +246,6 @@ lint-ui:
 make-ui:
     @just release-binary
     cd ui/desktop && pnpm run bundle:default
-
-# make GUI with latest binary and alpha features enabled
-make-ui-alpha:
-    @just release-binary
-    cd ui/desktop && pnpm run bundle:alpha
 
 # make GUI with latest Windows binary
 make-ui-windows:
