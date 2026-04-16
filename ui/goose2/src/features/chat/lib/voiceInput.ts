@@ -16,6 +16,10 @@ export const DEFAULT_AUTO_SUBMIT_PHRASES_RAW = "submit";
 
 const TRAILING_PUNCTUATION_REGEX = /[\s"'`.,!?;:)\]}]+$/u;
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function normalizePhrase(value: string): string {
   return value
     .toLowerCase()
@@ -156,8 +160,26 @@ export function getAutoSubmitMatch(
       continue;
     }
 
+    // Map the phrase back to the *raw* transcribed text. `phrase.length` is
+    // the length in normalized form (whitespace collapsed to single spaces,
+    // lowercased, trailing punctuation stripped). Applying -phrase.length
+    // directly to trimmedText undercounts whenever the raw text has repeated
+    // whitespace or mixed case, chopping off legitimate content. Instead,
+    // match the phrase at the end of the raw text using a regex that allows
+    // flexible whitespace between words, so the slice index reflects the
+    // actual start of the phrase in the raw string.
     const trimmedText = transcribedText.replace(TRAILING_PUNCTUATION_REGEX, "");
-    const textWithoutPhrase = trimmedText.slice(0, -phrase.length).trimEnd();
+    const phraseWords = phrase.split(" ").filter(Boolean).map(escapeRegExp);
+    const phrasePattern = new RegExp(
+      `(^|\\s)(${phraseWords.join("\\s+")})\\s*$`,
+      "iu",
+    );
+    const rawMatch = trimmedText.match(phrasePattern);
+    const phraseStartOffset =
+      rawMatch && rawMatch.index !== undefined
+        ? rawMatch.index + (rawMatch[1]?.length ?? 0)
+        : trimmedText.length - phrase.length;
+    const textWithoutPhrase = trimmedText.slice(0, phraseStartOffset).trimEnd();
 
     return {
       matchedPhrase: phrase,

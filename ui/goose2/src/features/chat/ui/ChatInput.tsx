@@ -199,7 +199,17 @@ export function ChatInput({
     // already transcribed into the textarea. This makes Send a single click
     // even while the mic is hot; any in-flight audio after the user clicked
     // Send is intentionally dropped.
-    if (dictation.isRecording || dictation.isTranscribing) {
+    //
+    // Also handles the edge case where the user clicks Send while a
+    // getUserMedia startup is still pending (isRecording is still false but
+    // a stream is about to be acquired) — stopRecording sets the internal
+    // cancel flag so the pending startup tears itself down instead of
+    // leaving the OS mic indicator on.
+    if (
+      dictation.isRecording ||
+      dictation.isTranscribing ||
+      dictation.isStarting()
+    ) {
       dictation.stopRecording({ flushPending: false });
     }
 

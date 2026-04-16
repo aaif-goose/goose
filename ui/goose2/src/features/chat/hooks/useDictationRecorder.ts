@@ -84,6 +84,14 @@ export function useDictationRecorder({
   const vadStateRef = useRef(createInitialVadState());
   const pendingTranscriptionsRef = useRef(0);
   const generationRef = useRef(0);
+  // Guards against overlapping startRecording calls while getUserMedia is
+  // pending (user double-clicks the mic before the first startup resolves).
+  const startingRef = useRef(false);
+  // Signals to an in-flight startRecording that the user has asked to stop.
+  // When true, the startup path tears down any just-acquired stream instead
+  // of flipping isRecording to true — otherwise the OS mic indicator would
+  // stay on after the user tried to stop/send.
+  const cancelStartRef = useRef(false);
   const providerRef = useRef(provider);
   providerRef.current = provider;
   const onErrorRef = useRef(onError);
@@ -169,6 +177,12 @@ export function useDictationRecorder({
     (options?: { flushPending?: boolean }) => {
       const flushPending = options?.flushPending ?? true;
 
+      // Signal any in-flight startRecording to abort. If getUserMedia is
+      // still pending or the audio graph hasn't been wired up yet, the
+      // startup path will see this flag and clean up the just-acquired
+      // stream instead of flipping isRecording to true.
+      cancelStartRef.current = true;
+
       if (flushPending && samplesRef.current.length > 0) {
         flushPendingSamples();
       } else if (!flushPending) {
@@ -215,6 +229,17 @@ export function useDictationRecorder({
       return;
     }
 
+    // Bail if a startup is already in-flight or we're already recording.
+    // Without this guard, a rapid second click (before getUserMedia resolves)
+    // would kick off a parallel recorder setup and leak a MediaStream — the
+    // OS mic indicator would stay on after the user thought they'd stopped.
+    if (startingRef.current || isRecording) {
+      return;
+    }
+
+    startingRef.current = true;
+    cancelStartRef.current = false;
+
     try {
       const audioConstraints: MediaTrackConstraints = {
         autoGainControl: true,
@@ -247,6 +272,17 @@ export function useDictationRecorder({
         }
       }
 
+      // If stopRecording was called while getUserMedia was pending (e.g.,
+      // user clicked Send before the mic finished setting up), tear down
+      // the freshly-acquired stream immediately and bail. Otherwise the
+      // MediaStream tracks stay hot and the OS mic indicator lingers.
+      if (cancelStartRef.current) {
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        });
+        return;
+      }
+
       streamRef.current = stream;
       samplesRef.current = [];
       vadStateRef.current = createInitialVadState();
@@ -254,6 +290,13 @@ export function useDictationRecorder({
       const context = new AudioContext({ sampleRate: SAMPLE_RATE });
       audioContextRef.current = context;
       await context.resume();
+
+      // Check again after the async context.resume() — stopRecording may
+      // have fired while we were awaiting.
+      if (cancelStartRef.current) {
+        cleanupAudioGraph();
+        return;
+      }
 
       const source = context.createMediaStreamSource(stream);
       const processor = context.createScriptProcessor(1024, 1, 1);
@@ -275,10 +318,14 @@ export function useDictationRecorder({
     } catch (error) {
       stopRecording({ flushPending: false });
       onError(toErrorMessage(error));
+    } finally {
+      startingRef.current = false;
     }
   }, [
+    cleanupAudioGraph,
     handleFrame,
     isEnabled,
+    isRecording,
     onError,
     preferredMicrophoneId,
     provider,
@@ -286,6 +333,13 @@ export function useDictationRecorder({
   ]);
 
   const toggleRecording = useCallback(() => {
+    // If a startup is already in-flight, swallow the click. The pending
+    // startRecording will either resolve into isRecording=true (and a
+    // subsequent click will correctly stop) or be cancelled via
+    // cancelStartRef if something else calls stopRecording in the meantime.
+    if (startingRef.current) {
+      return;
+    }
     if (isRecording) {
       stopRecording();
     } else {
@@ -306,10 +360,17 @@ export function useDictationRecorder({
     }
   }, [isRecording, provider, stopRecording]);
 
+  // Imperative check for consumers (e.g. handleSend) who need to know at
+  // click time whether a startup is pending. Uses a function rather than a
+  // state value because startingRef is a ref (no render on change) and we
+  // only need the answer when the consumer is deciding what to do *now*.
+  const isStarting = useCallback(() => startingRef.current, []);
+
   return {
     isEnabled,
     isRecording,
     isTranscribing,
+    isStarting,
     startRecording,
     stopRecording,
     toggleRecording,
