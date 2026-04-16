@@ -110,14 +110,12 @@ describe("useArtifactLinkHandler", () => {
     );
   });
 
-  it("ignores external URLs (does not call resolveMarkdownHref)", async () => {
+  it("does not intercept external URLs (defers to Streamdown linkSafety modal)", async () => {
     const user = userEvent.setup();
-    mockResolveMarkdownHref.mockReturnValue(null);
 
     render(<Harness href="https://example.com" label="External" />);
     await user.click(screen.getByText("External"));
 
-    // isExternalHref returns true, so resolveMarkdownHref is never called
     expect(mockResolveMarkdownHref).not.toHaveBeenCalled();
     expect(mockOpenResolvedPath).not.toHaveBeenCalled();
   });

@@ -6,6 +6,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
+import { isExternalHref } from "@/features/chat/lib/artifactPathPolicy";
+import { LinkSafetyModal } from "@/shared/ui/ai-elements/link-safety-modal";
 import { cn } from "@/shared/lib/cn";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
@@ -325,6 +327,64 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+/**
+ * Custom link component that splits behavior by link type:
+ * - External links → button + LinkSafetyModal (confirmation before opening)
+ * - Internal links → plain <a> so useArtifactLinkHandler can intercept via closest("a")
+ *
+ * This replaces Streamdown's built-in linkSafety which renders <button> for ALL
+ * links, breaking artifact navigation since useArtifactLinkHandler matches on <a>.
+ */
+const MarkdownLink = memo(
+  ({
+    children,
+    href,
+    node: _node,
+    ...rest
+  }: ComponentProps<"a"> & { node?: unknown }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    if (isExternalHref(href)) {
+      return (
+        <>
+          <button
+            className="wrap-anywhere appearance-none text-left font-medium text-primary underline"
+            data-streamdown="link"
+            onClick={() => setIsOpen(true)}
+            type="button"
+          >
+            {children}
+          </button>
+          <LinkSafetyModal
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+            url={href ?? ""}
+          />
+        </>
+      );
+    }
+
+    return (
+      <a
+        className="wrap-anywhere font-medium text-primary underline"
+        data-streamdown="link"
+        href={href}
+        rel="noreferrer"
+        {...rest}
+      >
+        {children}
+      </a>
+    );
+  },
+);
+MarkdownLink.displayName = "MarkdownLink";
+
+const streamdownComponents = { a: MarkdownLink };
+
+const linkSafetyConfig: ComponentProps<typeof Streamdown>["linkSafety"] = {
+  enabled: false,
+};
+
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
@@ -332,6 +392,8 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className,
       )}
+      components={streamdownComponents}
+      linkSafety={linkSafetyConfig}
       plugins={streamdownPlugins}
       {...props}
     />
