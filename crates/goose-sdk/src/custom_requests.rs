@@ -372,3 +372,91 @@ pub struct DictationConfigResponse {
 /// Empty success response for operations that return no data.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct EmptyResponse {}
+
+/// List available local Whisper models with their download status.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/dictation/models/list",
+    response = DictationModelsListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelsListRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelsListResponse {
+    pub models: Vec<DictationLocalModelStatus>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationLocalModelStatus {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub size_mb: u32,
+    pub downloaded: bool,
+    pub download_in_progress: bool,
+}
+
+/// Kick off a background download of a local Whisper model.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/dictation/models/download", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelDownloadRequest {
+    pub model_id: String,
+}
+
+/// Poll the progress of an in-flight download.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/dictation/models/download/progress",
+    response = DictationModelDownloadProgressResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelDownloadProgressRequest {
+    pub model_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelDownloadProgressResponse {
+    /// None when no download is active for this model id.
+    pub progress: Option<DictationDownloadProgress>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationDownloadProgress {
+    pub bytes_downloaded: u64,
+    pub total_bytes: u64,
+    pub progress_percent: f32,
+    /// serde lowercase of DownloadStatus: "downloading" | "completed" | "failed" | "cancelled"
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// Cancel an in-flight download.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/dictation/models/cancel", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelCancelRequest {
+    pub model_id: String,
+}
+
+/// Delete a downloaded local Whisper model from disk.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/dictation/models/delete", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelDeleteRequest {
+    pub model_id: String,
+}
+
+/// Persist the user's model selection for a given provider.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/dictation/model/select", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationModelSelectRequest {
+    pub provider: String,
+    pub model_id: String,
+}
