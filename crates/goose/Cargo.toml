@@ -67,6 +67,7 @@ rmcp = { workspace = true, features = [
     "transport-child-process",
     "transport-streamable-http-client",
     "transport-streamable-http-client-reqwest",
+    "transport-streamable-http-client-unix-socket",
 ] }
 oauth2 = { version = "5.0", default-features = false }
 arboard = { workspace = true }
