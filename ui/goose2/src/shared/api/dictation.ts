@@ -7,11 +7,14 @@ import type {
   MicrophonePermissionStatus,
   WhisperModelStatus,
 } from "@/shared/types/dictation";
+import { getClient } from "./acpConnection";
 
 export async function getDictationConfig(): Promise<
   Record<DictationProvider, DictationProviderStatus>
 > {
-  return invoke("get_dictation_config");
+  const client = await getClient();
+  const response = await client.goose.GooseDictationConfig({});
+  return response.providers as Record<DictationProvider, DictationProviderStatus>;
 }
 
 export async function transcribeDictation(request: {
@@ -19,12 +22,11 @@ export async function transcribeDictation(request: {
   mimeType: string;
   provider: DictationProvider;
 }): Promise<DictationTranscribeResponse> {
-  return invoke("transcribe_dictation", {
-    request: {
-      audio: request.audio,
-      mimeType: request.mimeType,
-      provider: request.provider,
-    },
+  const client = await getClient();
+  return client.goose.GooseDictationTranscribe({
+    audio: request.audio,
+    mimeType: request.mimeType,
+    provider: request.provider,
   });
 }
 
