@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
+      "@aaif/goose-acp": resolve(__dirname, "./src/test/mocks/goose-acp.ts"),
     },
   },
   test: {
