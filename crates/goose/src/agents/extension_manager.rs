@@ -581,53 +581,13 @@ async fn create_unix_socket_http_client(
     .await;
 
     if should_attempt_oauth_fallback(&client_res) {
-        match oauth_flow(&uri.to_string(), &name.to_string()).await {
-            Ok(auth_manager) => {
-                let retry_client = UnixSocketHttpClient::new(socket_path, uri);
-                let auth_client = rmcp::transport::AuthClient::new(retry_client, auth_manager);
-
-                let mut retry_headers = std::collections::HashMap::<HeaderName, HeaderValue>::new();
-                retry_headers.insert(
-                    HeaderName::from_static("user-agent"),
-                    GOOSE_USER_AGENT
-                        .to_str()
-                        .unwrap_or("goose")
-                        .parse()
-                        .unwrap_or_else(|_| HeaderValue::from_static("goose")),
-                );
-                // Re-add non-auth headers; AuthClient handles Authorization
-                for (key, value) in headers {
-                    if key.eq_ignore_ascii_case("authorization") {
-                        continue;
-                    }
-                    if let (Ok(hn), Ok(hv)) =
-                        (HeaderName::try_from(key), value.parse::<HeaderValue>())
-                    {
-                        retry_headers.insert(hn, hv);
-                    }
-                }
-
-                let retry_config = StreamableHttpClientTransportConfig::with_uri(uri)
-                    .custom_headers(retry_headers);
-                let transport =
-                    StreamableHttpClientTransport::with_client(auth_client, retry_config);
-                Ok(Box::new(
-                    McpClient::connect(
-                        transport,
-                        timeout_duration,
-                        provider,
-                        client_name,
-                        capabilities,
-                        roots_dir.to_path_buf(),
-                    )
-                    .await?,
-                ))
-            }
-            Err(_) => Ok(Box::new(client_res?)),
-        }
-    } else {
-        Ok(Box::new(client_res?))
+        tracing::warn!(
+            "Extension '{}' returned 401 over Unix domain socket transport; \
+             OAuth is not supported for UDS connections",
+            name,
+        );
     }
+    Ok(Box::new(client_res?))
 }
 
 impl ExtensionManager {
