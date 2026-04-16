@@ -6,8 +6,8 @@ import { useArtifactPolicyContext } from "@/features/chat/hooks/ArtifactPolicyCo
  * Delegated click handler that intercepts local link clicks within a
  * container and routes them through the artifact policy layer.
  *
- * External links are intentionally not handled here — Streamdown's
- * linkSafety modal shows a confirmation dialog before opening them.
+ * External links are intentionally not handled here — MarkdownLink
+ * renders them as buttons that open a LinkSafetyModal for confirmation.
  */
 export function useArtifactLinkHandler() {
   const { resolveMarkdownHref, openResolvedPath } = useArtifactPolicyContext();

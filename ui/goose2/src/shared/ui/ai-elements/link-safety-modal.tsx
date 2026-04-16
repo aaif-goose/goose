@@ -21,15 +21,12 @@ export function LinkSafetyModal({
   onClose,
   url,
 }: LinkSafetyModalProps) {
-  const handleOpen = useCallback(() => {
-    openUrl(url).catch((e: unknown) =>
-      console.error("[linkSafety] openUrl failed:", e),
-    );
-    onClose();
-  }, [url, onClose]);
-
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (isOpen) setIsCopied(false);
+  }, [isOpen]);
 
   useEffect(
     () => () => {
@@ -37,6 +34,15 @@ export function LinkSafetyModal({
     },
     [],
   );
+
+  const handleOpen = useCallback(async () => {
+    try {
+      await openUrl(url);
+    } catch (e: unknown) {
+      console.error("[linkSafety] openUrl failed:", e);
+    }
+    onClose();
+  }, [url, onClose]);
 
   const handleCopy = useCallback(() => {
     if (isCopied) return;

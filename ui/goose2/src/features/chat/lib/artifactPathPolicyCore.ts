@@ -2,6 +2,7 @@ import {
   collectCommandArgPathCandidates,
   extractToolNamePathCandidates,
 } from "@/features/chat/lib/artifactPathCommandExtraction";
+import { isExternalHref } from "@/shared/lib/isExternalHref";
 
 export type ArtifactCandidateSource =
   | "arg_key"
@@ -145,16 +146,7 @@ function hasKnownScheme(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value);
 }
 
-export function isExternalHref(href?: string): boolean {
-  if (!href) return false;
-  const lower = href.trim().toLowerCase();
-  return (
-    lower.startsWith("http://") ||
-    lower.startsWith("https://") ||
-    lower.startsWith("mailto:") ||
-    lower.startsWith("tel:")
-  );
-}
+export { isExternalHref } from "@/shared/lib/isExternalHref";
 
 function isLikelyAbsoluteFilesystemPath(candidate: string): boolean {
   if (/^[a-zA-Z]:[\\/]/.test(candidate)) return true;

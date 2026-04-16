@@ -6,7 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
-import { isExternalHref } from "@/features/chat/lib/artifactPathPolicy";
+import { isExternalHref } from "@/shared/lib/isExternalHref";
 import { LinkSafetyModal } from "@/shared/ui/ai-elements/link-safety-modal";
 import { cn } from "@/shared/lib/cn";
 import { cjk } from "@streamdown/cjk";
@@ -327,9 +327,13 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+type OpenLinkSafetyModal = (url: string) => void;
+
+const LinkSafetyContext = createContext<OpenLinkSafetyModal | null>(null);
+
 /**
  * Custom link component that splits behavior by link type:
- * - External links → button + LinkSafetyModal (confirmation before opening)
+ * - External links → button that opens a shared LinkSafetyModal via context
  * - Internal links → plain <a> so useArtifactLinkHandler can intercept via closest("a")
  *
  * This replaces Streamdown's built-in linkSafety which renders <button> for ALL
@@ -342,25 +346,18 @@ const MarkdownLink = memo(
     node: _node,
     ...rest
   }: ComponentProps<"a"> & { node?: unknown }) => {
-    const [isOpen, setIsOpen] = useState(false);
+    const openModal = useContext(LinkSafetyContext);
 
     if (isExternalHref(href)) {
       return (
-        <>
-          <button
-            className="wrap-anywhere appearance-none text-left font-medium text-primary underline"
-            data-streamdown="link"
-            onClick={() => setIsOpen(true)}
-            type="button"
-          >
-            {children}
-          </button>
-          <LinkSafetyModal
-            isOpen={isOpen}
-            onClose={() => setIsOpen(false)}
-            url={href ?? ""}
-          />
-        </>
+        <button
+          className="wrap-anywhere appearance-none text-left font-medium text-primary underline"
+          data-streamdown="link"
+          onClick={() => openModal?.(href ?? "")}
+          type="button"
+        >
+          {children}
+        </button>
       );
     }
 
@@ -386,18 +383,37 @@ const linkSafetyConfig: ComponentProps<typeof Streamdown>["linkSafety"] = {
 };
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className,
-      )}
-      components={streamdownComponents}
-      linkSafety={linkSafetyConfig}
-      plugins={streamdownPlugins}
-      {...props}
-    />
-  ),
+  ({ className, ...props }: MessageResponseProps) => {
+    const [modalUrl, setModalUrl] = useState<string | null>(null);
+
+    const openModal = useCallback((url: string) => {
+      setModalUrl(url);
+    }, []);
+
+    const closeModal = useCallback(() => {
+      setModalUrl(null);
+    }, []);
+
+    return (
+      <LinkSafetyContext.Provider value={openModal}>
+        <Streamdown
+          className={cn(
+            "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+            className,
+          )}
+          components={streamdownComponents}
+          linkSafety={linkSafetyConfig}
+          plugins={streamdownPlugins}
+          {...props}
+        />
+        <LinkSafetyModal
+          isOpen={modalUrl !== null}
+          onClose={closeModal}
+          url={modalUrl ?? ""}
+        />
+      </LinkSafetyContext.Provider>
+    );
+  },
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
     nextProps.isAnimating === prevProps.isAnimating,
