@@ -17,6 +17,7 @@ import type {
 } from "@/shared/types/dictation";
 import { useAudioDevices } from "@/shared/ui/ai-elements/mic-selector";
 import { Button } from "@/shared/ui/button";
+import { LocalWhisperModels } from "./LocalWhisperModels";
 import { Input } from "@/shared/ui/input";
 import {
   Select,
@@ -338,14 +339,11 @@ export function VoiceInputSettings() {
           ) : null}
 
           {selectedProvider === "local" ? (
-            <div className="rounded-lg border border-border px-3 py-3">
-              <p className="text-xs font-medium text-foreground">
-                {t("general.voiceInput.localModelLabel")}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("general.voiceInput.localModelUnavailable")}
-              </p>
-            </div>
+            <LocalWhisperModels
+              selectedModelId={currentModelValue}
+              onSelectModel={(modelId) => handleModelChange(modelId)}
+              onModelsChanged={() => refreshConfig()}
+            />
           ) : (selectedStatus.availableModels ?? []).length > 0 ? (
             <div className="space-y-2 rounded-lg border border-border px-3 py-3">
               <p className="text-xs font-medium text-foreground">
