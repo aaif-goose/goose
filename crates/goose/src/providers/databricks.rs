@@ -29,6 +29,7 @@ use super::retry::ProviderRetry;
 use super::utils::{ImageFormat, RequestLog};
 use crate::config::ConfigError;
 use crate::conversation::message::Message;
+use crate::instance_id::get_instance_id;
 use crate::model::ModelConfig;
 use crate::providers::retry::{
     RetryConfig, DEFAULT_BACKOFF_MULTIPLIER, DEFAULT_INITIAL_RETRY_INTERVAL_MS,
@@ -132,6 +133,8 @@ pub struct DatabricksProvider {
     name: String,
     #[serde(skip)]
     token_cache: Arc<Mutex<Option<String>>>,
+    #[serde(skip)]
+    instance_id: Option<String>,
 }
 
 impl DatabricksProvider {
@@ -186,6 +189,7 @@ impl DatabricksProvider {
             fast_retry_config,
             name: DATABRICKS_PROVIDER_NAME.to_string(),
             token_cache,
+            instance_id: Self::resolve_instance_id(),
         };
         provider.model =
             model.with_fast(DATABRICKS_DEFAULT_FAST_MODEL, DATABRICKS_PROVIDER_NAME)?;
@@ -249,7 +253,19 @@ impl DatabricksProvider {
             fast_retry_config: RetryConfig::new(0, 0, 1.0, 0),
             name: DATABRICKS_PROVIDER_NAME.to_string(),
             token_cache,
+            instance_id: Self::resolve_instance_id(),
         })
+    }
+
+    fn resolve_instance_id() -> Option<String> {
+        let enabled = crate::config::Config::global()
+            .get_param::<bool>("GOOSE_DATABRICKS_CLIENT_REQUEST_ID")
+            .unwrap_or(false);
+        if enabled {
+            Some(get_instance_id().to_string())
+        } else {
+            None
+        }
     }
 
     fn is_responses_model(model_name: &str) -> bool {
@@ -267,15 +283,30 @@ impl DatabricksProvider {
         }
     }
 
+    fn build_client_request_id(&self, session_id: &str) -> Option<String> {
+        self.instance_id.as_ref().map(|instance_id| {
+            json!({
+                "sessionId": format!("{}_{}", instance_id, session_id),
+            })
+            .to_string()
+        })
+    }
+
     async fn post(
         &self,
         session_id: Option<&str>,
-        payload: Value,
+        mut payload: Value,
         model_name: Option<&str>,
     ) -> Result<Value, ProviderError> {
         let is_embedding = payload.get("input").is_some() && payload.get("messages").is_none();
         let model_to_use = model_name.unwrap_or(&self.model.model_name);
         let path = self.get_endpoint_path(model_to_use, is_embedding);
+
+        if let Some(session_id) = session_id {
+            if let Some(client_request_id) = self.build_client_request_id(session_id) {
+                payload["client_request_id"] = Value::String(client_request_id);
+            }
+        }
 
         let response = self
             .api_client
@@ -341,10 +372,14 @@ impl Provider for DatabricksProvider {
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
         let path = self.get_endpoint_path(&model_config.model_name, false);
+        let client_request_id = self.build_client_request_id(session_id);
 
         if Self::is_responses_model(&model_config.model_name) {
             let mut payload = create_responses_request(model_config, system, messages, tools)?;
             payload["stream"] = Value::Bool(true);
+            if let Some(ref client_request_id) = client_request_id {
+                payload["client_request_id"] = Value::String(client_request_id.clone());
+            }
 
             let mut log = RequestLog::start(model_config, &payload)?;
 
@@ -383,6 +418,9 @@ impl Provider for DatabricksProvider {
                 .as_object_mut()
                 .expect("payload should have model key")
                 .remove("model");
+            if let Some(client_request_id) = client_request_id {
+                payload["client_request_id"] = Value::String(client_request_id);
+            }
 
             payload
                 .as_object_mut()
