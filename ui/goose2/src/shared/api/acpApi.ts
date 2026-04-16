@@ -105,7 +105,9 @@ export async function cancelSession(sessionId: string): Promise<void> {
   await client.cancel({ sessionId });
 }
 
-export async function newSession(workingDir: string): Promise<NewSessionResponse> {
+export async function newSession(
+  workingDir: string,
+): Promise<NewSessionResponse> {
   const client = await getClient();
   return client.newSession({ cwd: workingDir, mcpServers: [] });
 }

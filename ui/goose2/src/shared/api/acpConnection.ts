@@ -36,9 +36,7 @@ function createClientCallbacks(): () => Client {
       };
     },
 
-    sessionUpdate: async (
-      notification: SessionNotification,
-    ): Promise<void> => {
+    sessionUpdate: async (notification: SessionNotification): Promise<void> => {
       if (notificationHandler) {
         await notificationHandler.handleSessionNotification(notification);
       }
@@ -49,12 +47,16 @@ function createClientCallbacks(): () => Client {
 function monitorConnection(client: GooseClient): void {
   client.closed
     .then(() => {
-      console.warn("[acp] Connection closed. Will reconnect on next getClient().");
+      console.warn(
+        "[acp] Connection closed. Will reconnect on next getClient().",
+      );
       resolvedClient = null;
       clientPromise = null;
     })
     .catch(() => {
-      console.warn("[acp] Connection error. Will reconnect on next getClient().");
+      console.warn(
+        "[acp] Connection error. Will reconnect on next getClient().",
+      );
       resolvedClient = null;
       clientPromise = null;
     });

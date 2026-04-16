@@ -8,11 +8,20 @@ type MessageRole = "user" | "assistant" | "system";
 const SEARCHABLE_ROLES = new Set<MessageRole>(["user", "assistant", "system"]);
 
 const SEARCHABLE_BLOCK_TYPES = new Set([
-  "text", "input_text", "output_text", "systemNotification", "system_notification",
+  "text",
+  "input_text",
+  "output_text",
+  "systemNotification",
+  "system_notification",
 ]);
 
 const SKIPPED_BLOCK_TYPES = new Set([
-  "toolRequest", "toolResponse", "thinking", "redactedThinking", "reasoning", "image",
+  "toolRequest",
+  "toolResponse",
+  "thinking",
+  "redactedThinking",
+  "reasoning",
+  "image",
 ]);
 
 export interface SessionSearchResult {
@@ -66,7 +75,11 @@ function searchSession(
   const messages = flattenMessages(conversation);
   if (!messages.length) return null;
 
-  let firstMatch: { messageId: string; role: MessageRole | null; snippet: string } | null = null;
+  let firstMatch: {
+    messageId: string;
+    role: MessageRole | null;
+    snippet: string;
+  } | null = null;
   let matchCount = 0;
 
   for (const msg of messages) {
@@ -74,7 +87,11 @@ function searchSession(
       const count = countMatches(text, query);
       if (!count) continue;
       matchCount += count;
-      firstMatch ??= { messageId: msg.id, role: msg.role, snippet: buildSnippet(text, query) };
+      firstMatch ??= {
+        messageId: msg.id,
+        role: msg.role,
+        snippet: buildSnippet(text, query),
+      };
     }
   }
 
@@ -90,7 +107,11 @@ function searchSession(
 }
 
 function safeParse(json: string): Record<string, any> | null {
-  try { return JSON.parse(json); } catch { return null; }
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 function flattenMessages(value: unknown): ParsedMessage[] {
@@ -108,11 +129,12 @@ function tryParseMessage(obj: Record<string, unknown>): ParsedMessage | null {
   if (!("role" in obj) || !("content" in obj || "text" in obj)) return null;
 
   const role = toRole(obj.role);
-  const texts = obj.content !== undefined
-    ? getSearchableTexts(obj.content, role)
-    : typeof obj.text === "string" && role && obj.text.trim()
-      ? [obj.text.trim()]
-      : [];
+  const texts =
+    obj.content !== undefined
+      ? getSearchableTexts(obj.content, role)
+      : typeof obj.text === "string" && role && obj.text.trim()
+        ? [obj.text.trim()]
+        : [];
 
   if (!texts.length) return null;
 
@@ -123,11 +145,16 @@ function tryParseMessage(obj: Record<string, unknown>): ParsedMessage | null {
   };
 }
 
-function getSearchableTexts(value: unknown, role: MessageRole | null): string[] {
+function getSearchableTexts(
+  value: unknown,
+  role: MessageRole | null,
+): string[] {
   if (typeof value === "string") {
-    return role && SEARCHABLE_ROLES.has(role) && value.trim() ? [value.trim()] : [];
+    return role && SEARCHABLE_ROLES.has(role) && value.trim()
+      ? [value.trim()]
+      : [];
   }
-  if (Array.isArray(value)) return value.flatMap(v => getBlockText(v, role));
+  if (Array.isArray(value)) return value.flatMap((v) => getBlockText(v, role));
   if (isObject(value)) return getBlockText(value, role);
   return [];
 }
@@ -159,10 +186,10 @@ function countMatches(text: string, query: string): number {
   if (!needle) return 0;
 
   let count = 0;
-  let pos = 0;
-  while ((pos = hay.indexOf(needle, pos)) !== -1) {
+  let pos = hay.indexOf(needle);
+  while (pos !== -1) {
     count++;
-    pos += needle.length;
+    pos = hay.indexOf(needle, pos + needle.length);
   }
   return count;
 }

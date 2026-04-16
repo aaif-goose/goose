@@ -1,4 +1,7 @@
-import type { SessionNotification, SessionUpdate } from "@agentclientprotocol/sdk";
+import type {
+  SessionNotification,
+  SessionUpdate,
+} from "@agentclientprotocol/sdk";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import {
@@ -6,14 +9,20 @@ import {
   getBufferedMessage,
   findLatestUnpairedToolRequest,
 } from "@/features/chat/hooks/replayBuffer";
-import type { ToolRequestContent, ToolResponseContent } from "@/shared/types/messages";
+import type {
+  ToolRequestContent,
+  ToolResponseContent,
+} from "@/shared/types/messages";
 import type { AcpNotificationHandler } from "./acpConnection";
 import { getLocalSessionId } from "./acpSessionTracker";
 
 // Pre-set message ID for the next live stream per goose session
 const presetMessageIds = new Map<string, string>();
 
-export function setActiveMessageId(gooseSessionId: string, messageId: string): void {
+export function setActiveMessageId(
+  gooseSessionId: string,
+  messageId: string,
+): void {
   presetMessageIds.set(gooseSessionId, messageId);
 }
 
@@ -70,7 +79,11 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
       const messageId = update.messageId ?? crypto.randomUUID();
       const buffer = ensureReplayBuffer(sessionId);
       const existing = getBufferedMessage(sessionId, messageId);
-      if (!existing && update.content.type === "text" && "text" in update.content) {
+      if (
+        !existing &&
+        update.content.type === "text" &&
+        "text" in update.content
+      ) {
         buffer.push({
           id: messageId,
           role: "user",
@@ -78,7 +91,11 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
           content: [{ type: "text", text: update.content.text }],
           metadata: { userVisible: true, agentVisible: true },
         });
-      } else if (existing && update.content.type === "text" && "text" in update.content) {
+      } else if (
+        existing &&
+        update.content.type === "text" &&
+        "text" in update.content
+      ) {
         const last = existing.content[existing.content.length - 1];
         if (last?.type === "text") {
           (last as { type: "text"; text: string }).text += update.content.text;
@@ -122,7 +139,10 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
           if (tc && tc.type === "toolRequest") {
             const idx = msg.content.indexOf(tc);
             if (idx >= 0) {
-              msg.content[idx] = { ...tc, status: "completed" } as ToolRequestContent;
+              msg.content[idx] = {
+                ...tc,
+                status: "completed",
+              } as ToolRequestContent;
             }
           }
           const resultText = extractToolResultText(update);
@@ -149,13 +169,22 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
   }
 }
 
-function handleLive(sessionId: string, gooseSessionId: string, update: SessionUpdate): void {
+function handleLive(
+  sessionId: string,
+  gooseSessionId: string,
+  update: SessionUpdate,
+): void {
   const store = useChatStore.getState();
 
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
-      const messageId = update.messageId ?? presetMessageIds.get(gooseSessionId) ?? crypto.randomUUID();
-      const existing = store.messagesBySession[sessionId]?.find(m => m.id === messageId);
+      const messageId =
+        update.messageId ??
+        presetMessageIds.get(gooseSessionId) ??
+        crypto.randomUUID();
+      const existing = store.messagesBySession[sessionId]?.find(
+        (m) => m.id === messageId,
+      );
 
       if (!existing) {
         store.addMessage(sessionId, {
@@ -257,22 +286,28 @@ function handleLive(sessionId: string, gooseSessionId: string, update: SessionUp
 function handleShared(sessionId: string, update: SessionUpdate): void {
   switch (update.sessionUpdate) {
     case "session_info_update": {
-      const info = update as SessionUpdate & { sessionUpdate: "session_info_update" };
+      const info = update as SessionUpdate & {
+        sessionUpdate: "session_info_update";
+      };
       if ("title" in info && info.title) {
         const session = useChatSessionStore.getState().getSession(sessionId);
         if (session && !session.userSetName) {
-          useChatSessionStore.getState().updateSession(
-            sessionId,
-            { title: info.title as string },
-            { persistOverlay: false },
-          );
+          useChatSessionStore
+            .getState()
+            .updateSession(
+              sessionId,
+              { title: info.title as string },
+              { persistOverlay: false },
+            );
         }
       }
       break;
     }
 
     case "config_option_update": {
-      const configUpdate = update as SessionUpdate & { sessionUpdate: "config_option_update" };
+      const configUpdate = update as SessionUpdate & {
+        sessionUpdate: "config_option_update";
+      };
       if ("options" in configUpdate && Array.isArray(configUpdate.options)) {
         const modelOption = configUpdate.options.find(
           (opt: any) => opt.category === "model",
@@ -295,7 +330,8 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
           }
 
           const currentModelName =
-            availableModels.find((m) => m.id === currentModelId)?.name ?? currentModelId;
+            availableModels.find((m) => m.id === currentModelId)?.name ??
+            currentModelId;
 
           const sessionStore = useChatSessionStore.getState();
           sessionStore.setSessionModels(sessionId, availableModels);
@@ -326,26 +362,38 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
 // Helpers
 
 function findStreamingMessageId(sessionId: string): string | null {
-  return useChatStore.getState().getSessionRuntime(sessionId).streamingMessageId;
+  return useChatStore.getState().getSessionRuntime(sessionId)
+    .streamingMessageId;
 }
 
-function findMessageInBuffer(sessionId: string, _toolCallId: string): ReturnType<typeof getBufferedMessage> {
+function findMessageInBuffer(
+  sessionId: string,
+  _toolCallId: string,
+): ReturnType<typeof getBufferedMessage> {
   const buffer = ensureReplayBuffer(sessionId);
   return buffer[buffer.length - 1];
 }
 
-function findMessageWithToolCall(sessionId: string, toolCallId: string): ReturnType<typeof getBufferedMessage> {
+function findMessageWithToolCall(
+  sessionId: string,
+  toolCallId: string,
+): ReturnType<typeof getBufferedMessage> {
   const buffer = ensureReplayBuffer(sessionId);
   for (let i = buffer.length - 1; i >= 0; i--) {
     const msg = buffer[i];
-    if (msg.content.some((c) => c.type === "toolRequest" && c.id === toolCallId)) {
+    if (
+      msg.content.some((c) => c.type === "toolRequest" && c.id === toolCallId)
+    ) {
       return msg;
     }
   }
   return buffer[buffer.length - 1];
 }
 
-function extractToolResultText(update: { content?: Array<any> | null; rawOutput?: unknown }): string {
+function extractToolResultText(update: {
+  content?: Array<any> | null;
+  rawOutput?: unknown;
+}): string {
   if (update.content && update.content.length > 0) {
     for (const item of update.content) {
       if (item.type === "content" && item.content?.type === "text") {

@@ -2,7 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { USE_DIRECT_ACP } from "./acpFeatureFlag";
 import * as directAcp from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
-import { setActiveMessageId, clearActiveMessageId } from "./acpNotificationHandler";
+import {
+  setActiveMessageId,
+  clearActiveMessageId,
+} from "./acpNotificationHandler";
 import { searchSessionsViaExports } from "./sessionSearch";
 
 export interface AcpProvider {
@@ -42,7 +45,10 @@ export async function acpSendMessage(
   if (USE_DIRECT_ACP) {
     const { systemPrompt, personaId, images } = options;
 
-    const gooseSessionId = sessionTracker.getGooseSessionId(sessionId, personaId);
+    const gooseSessionId = sessionTracker.getGooseSessionId(
+      sessionId,
+      personaId,
+    );
     if (!gooseSessionId) {
       throw new Error("Session not prepared. Call acpPrepareSession first.");
     }
@@ -90,7 +96,12 @@ export async function acpPrepareSession(
 ): Promise<void> {
   if (USE_DIRECT_ACP) {
     const workingDir = options.workingDir ?? "~/.goose/artifacts";
-    await sessionTracker.prepareSession(sessionId, providerId, workingDir, options.personaId);
+    await sessionTracker.prepareSession(
+      sessionId,
+      providerId,
+      workingDir,
+      options.personaId,
+    );
     return;
   }
   const { workingDir, personaId } = options;
@@ -164,7 +175,12 @@ export async function acpLoadSession(
   if (USE_DIRECT_ACP) {
     const effectiveWorkingDir = workingDir ?? "~/.goose/artifacts";
     await directAcp.loadSession(gooseSessionId, effectiveWorkingDir);
-    sessionTracker.registerSession(sessionId, gooseSessionId, "goose", effectiveWorkingDir);
+    sessionTracker.registerSession(
+      sessionId,
+      gooseSessionId,
+      "goose",
+      effectiveWorkingDir,
+    );
     return;
   }
   return invoke("acp_load_session", {
@@ -208,7 +224,10 @@ export async function acpCancelSession(
   personaId?: string,
 ): Promise<boolean> {
   if (USE_DIRECT_ACP) {
-    const gooseSessionId = sessionTracker.getGooseSessionId(sessionId, personaId);
+    const gooseSessionId = sessionTracker.getGooseSessionId(
+      sessionId,
+      personaId,
+    );
     await directAcp.cancelSession(gooseSessionId ?? sessionId);
     return true;
   }

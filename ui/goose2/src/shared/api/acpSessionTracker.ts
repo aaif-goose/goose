@@ -42,8 +42,7 @@ export async function prepareSession(
   try {
     await acpApi.loadSession(sessionId, workingDir);
     gooseSessionId = sessionId;
-  } catch {
-  }
+  } catch {}
 
   if (!gooseSessionId) {
     const response = await acpApi.newSession(workingDir);
@@ -59,9 +58,16 @@ export async function prepareSession(
   return gooseSessionId;
 }
 
-export function getGooseSessionId(sessionId: string, personaId?: string): string | null {
+export function getGooseSessionId(
+  sessionId: string,
+  personaId?: string,
+): string | null {
   const key = makeKey(sessionId, personaId);
-  return prepared.get(key)?.gooseSessionId ?? prepared.get(sessionId)?.gooseSessionId ?? null;
+  return (
+    prepared.get(key)?.gooseSessionId ??
+    prepared.get(sessionId)?.gooseSessionId ??
+    null
+  );
 }
 
 export function getLocalSessionId(gooseSessionId: string): string | null {
@@ -78,4 +84,3 @@ export function registerSession(
   prepared.set(sessionId, entry);
   gooseToLocal.set(gooseSessionId, sessionId);
 }
-
