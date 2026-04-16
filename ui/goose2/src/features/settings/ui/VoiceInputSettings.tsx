@@ -253,6 +253,69 @@ export function VoiceInputSettings() {
         </Select>
       </div>
 
+      <div className="space-y-2 rounded-lg border border-border px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium text-foreground">
+              {t("general.voiceInput.microphoneLabel")}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {isMicrophoneSupported
+                ? t("general.voiceInput.microphoneDescription")
+                : t("general.voiceInput.microphoneUnavailable")}
+            </p>
+          </div>
+          {isMicrophoneSupported && !hasPermission ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline-flat"
+              disabled={loadingDevices}
+              onClick={() => void requestPermission()}
+            >
+              {t("general.voiceInput.grantMicrophone")}
+            </Button>
+          ) : null}
+        </div>
+
+        {!devicesError &&
+        !hasPermission &&
+        permissionStatus === "not_determined" ? (
+          <p className="text-xs text-muted-foreground">
+            {t("general.voiceInput.microphoneAccessPrompt")}
+          </p>
+        ) : null}
+
+        {devicesError ? (
+          <p className="text-xs text-muted-foreground">{devicesError}</p>
+        ) : null}
+
+        {isMicrophoneSupported && hasPermission ? (
+          <Select
+            value={preferredMicrophoneId ?? DISABLED_PROVIDER}
+            onValueChange={(value) =>
+              setPreferredMicrophoneId(
+                value === DISABLED_PROVIDER ? null : value,
+              )
+            }
+          >
+            <SelectTrigger className="w-full max-w-sm">
+              <SelectValue>{selectedMicrophoneLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DISABLED_PROVIDER}>
+                {t("general.voiceInput.systemMicrophone")}
+              </SelectItem>
+              {devices.map((device) => (
+                <SelectItem key={device.deviceId} value={device.deviceId}>
+                  {device.label || t("general.voiceInput.unknownMicrophone")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
+
       {selectedStatus ? (
         <>
           {!selectedStatus.usesProviderConfig &&
@@ -376,69 +439,6 @@ export function VoiceInputSettings() {
           ) : null}
         </>
       ) : null}
-
-      <div className="space-y-2 rounded-lg border border-border px-3 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-foreground">
-              {t("general.voiceInput.microphoneLabel")}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {isMicrophoneSupported
-                ? t("general.voiceInput.microphoneDescription")
-                : t("general.voiceInput.microphoneUnavailable")}
-            </p>
-          </div>
-          {isMicrophoneSupported && !hasPermission ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline-flat"
-              disabled={loadingDevices}
-              onClick={() => void requestPermission()}
-            >
-              {t("general.voiceInput.grantMicrophone")}
-            </Button>
-          ) : null}
-        </div>
-
-        {!devicesError &&
-        !hasPermission &&
-        permissionStatus === "not_determined" ? (
-          <p className="text-xs text-muted-foreground">
-            {t("general.voiceInput.microphoneAccessPrompt")}
-          </p>
-        ) : null}
-
-        {devicesError ? (
-          <p className="text-xs text-muted-foreground">{devicesError}</p>
-        ) : null}
-
-        {isMicrophoneSupported && hasPermission ? (
-          <Select
-            value={preferredMicrophoneId ?? DISABLED_PROVIDER}
-            onValueChange={(value) =>
-              setPreferredMicrophoneId(
-                value === DISABLED_PROVIDER ? null : value,
-              )
-            }
-          >
-            <SelectTrigger className="w-full max-w-sm">
-              <SelectValue>{selectedMicrophoneLabel}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DISABLED_PROVIDER}>
-                {t("general.voiceInput.systemMicrophone")}
-              </SelectItem>
-              {devices.map((device) => (
-                <SelectItem key={device.deviceId} value={device.deviceId}>
-                  {device.label || t("general.voiceInput.unknownMicrophone")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : null}
-      </div>
 
       <div className="space-y-2 rounded-lg border border-border px-3 py-3">
         <label

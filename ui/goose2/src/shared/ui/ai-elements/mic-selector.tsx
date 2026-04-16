@@ -111,7 +111,36 @@ export const useAudioDevices = () => {
   }, [loading]);
 
   useEffect(() => {
-    loadDevicesWithoutPermission();
+    let cancelled = false;
+    let status: PermissionStatus | null = null;
+    const onChange = () => {
+      if (!cancelled && status) {
+        setHasPermission(status.state === "granted");
+      }
+    };
+
+    const init = async () => {
+      try {
+        status = await navigator.permissions.query({
+          name: "microphone" as PermissionName,
+        });
+        if (cancelled) return;
+        setHasPermission(status.state === "granted");
+        status.addEventListener("change", onChange);
+      } catch {
+        // Permissions API not available for microphone; fall back silently.
+      }
+      if (!cancelled) await loadDevicesWithoutPermission();
+    };
+
+    void init();
+
+    return () => {
+      cancelled = true;
+      if (status) {
+        status.removeEventListener("change", onChange);
+      }
+    };
   }, [loadDevicesWithoutPermission]);
 
   useEffect(() => {
