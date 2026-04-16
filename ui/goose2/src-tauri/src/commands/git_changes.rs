@@ -20,7 +20,10 @@ pub fn get_changed_files(path: String) -> Result<Vec<ChangedFile>, String> {
         return Ok(Vec::new());
     }
 
-    let status_output = run_git_success(&repo_path, &["status", "--porcelain"])?;
+    let status_output = run_git_success(
+        &repo_path,
+        &["status", "--porcelain", "--untracked-files=all"],
+    )?;
     if status_output.trim().is_empty() {
         return Ok(Vec::new());
     }
