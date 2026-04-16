@@ -377,9 +377,11 @@ impl KimiCodeProvider {
                 }
             };
 
-            if let (Some(access_token), Some(refresh_token)) =
-                (resp.access_token, resp.refresh_token)
-            {
+            if let Some(access_token) = resp.access_token {
+                // RFC 6749: refresh_token is optional in token responses.
+                // Kimi currently returns one, but be defensive for servers/
+                // versions that do not.
+                let refresh_token = resp.refresh_token.unwrap_or_default();
                 let expires_in = resp.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS);
                 return Ok(KimiToken {
                     access_token,
@@ -417,7 +419,7 @@ impl KimiCodeProvider {
         #[derive(Deserialize)]
         struct RefreshResp {
             access_token: String,
-            refresh_token: String,
+            refresh_token: Option<String>,
             expires_in: Option<i64>,
         }
 
@@ -439,10 +441,15 @@ impl KimiCodeProvider {
             .await
             .context("failed to parse token refresh response")?;
 
+        // RFC 6749 §6: the server MAY omit `refresh_token` from a refresh
+        // response, in which case the client should keep reusing the prior one.
+        let next_refresh_token = resp
+            .refresh_token
+            .unwrap_or_else(|| refresh_token.to_string());
         let expires_in = resp.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS);
         Ok(KimiToken {
             access_token: resp.access_token,
-            refresh_token: resp.refresh_token,
+            refresh_token: next_refresh_token,
             expires_at: Utc::now() + Duration::seconds(expires_in),
         })
     }
@@ -801,6 +808,52 @@ mod tests {
         let token = provider.poll_for_token("device-abc", 0, 30).await.unwrap();
         assert_eq!(token.access_token, "the_token");
         assert_eq!(token.refresh_token, "the_refresh");
+    }
+
+    #[tokio::test]
+    async fn poll_for_token_accepts_response_without_refresh_token() {
+        // RFC 6749: refresh_token is optional in token responses.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "access_only",
+                "expires_in": 1800,
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        let token = provider.poll_for_token("device-abc", 0, 5).await.unwrap();
+        assert_eq!(token.access_token, "access_only");
+        assert_eq!(token.refresh_token, "");
+    }
+
+    #[tokio::test]
+    async fn use_or_refresh_preserves_refresh_token_when_server_omits_it() {
+        // RFC 6749 §6: if the refresh response omits `refresh_token`, the
+        // client should keep reusing the prior one.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new_access",
+                "expires_in": 3600,
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        let near_stale = KimiToken {
+            access_token: "old".to_string(),
+            refresh_token: "original_refresh".to_string(),
+            expires_at: Utc::now() + Duration::seconds(60),
+        };
+
+        let usable = provider.use_or_refresh(near_stale).await.unwrap();
+        assert_eq!(usable.access_token, "new_access");
+        assert_eq!(usable.refresh_token, "original_refresh");
     }
 
     #[tokio::test]
