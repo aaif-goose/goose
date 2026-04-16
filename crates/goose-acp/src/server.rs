@@ -3225,8 +3225,11 @@ impl GooseAcpAgent {
             DictationProvider::ElevenLabs => ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY,
             #[cfg(feature = "local-inference")]
             DictationProvider::Local => {
-                if whisper::get_model(&req.model_id).is_none() {
-                    return Err(sacp::Error::invalid_params().data("Unknown model id"));
+                let model = whisper::get_model(&req.model_id)
+                    .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
+                if !model.is_downloaded() {
+                    return Err(sacp::Error::invalid_params()
+                        .data("Local Whisper model is not downloaded"));
                 }
                 whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY
             }

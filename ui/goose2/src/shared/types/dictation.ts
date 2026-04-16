@@ -33,19 +33,15 @@ export type MicrophonePermissionStatus =
 export interface WhisperModelStatus {
   id: string;
   sizeMb: number;
-  url: string;
   description: string;
   downloaded: boolean;
-  recommended: boolean;
+  downloadInProgress: boolean;
 }
 
 export interface DictationDownloadProgress {
-  modelId: string;
-  status: string;
   bytesDownloaded: number;
   totalBytes: number;
   progressPercent: number;
-  speedBps?: number | null;
-  etaSeconds?: number | null;
+  status: string;
   error?: string | null;
 }
