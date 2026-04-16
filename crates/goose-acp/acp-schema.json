@@ -607,6 +607,150 @@
       "x-side": "agent",
       "x-method": "_goose/session/unarchive"
     },
+    "DictationTranscribeRequest": {
+      "type": "object",
+      "properties": {
+        "audio": {
+          "type": "string",
+          "description": "Base64-encoded audio data"
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type (e.g. \"audio/wav\", \"audio/webm\")"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Provider to use: \"openai\", \"groq\", \"elevenlabs\", or \"local\""
+        }
+      },
+      "required": [
+        "audio",
+        "mimeType",
+        "provider"
+      ],
+      "description": "Transcribe audio via a dictation provider.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/transcribe"
+    },
+    "DictationTranscribeResponse": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "description": "Transcription result.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/transcribe"
+    },
+    "DictationConfigRequest": {
+      "type": "object",
+      "description": "Get the configuration status of all dictation providers.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/config"
+    },
+    "DictationConfigResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/DictationProviderStatusEntry"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "description": "Dictation config response — map of provider name to status.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/config"
+    },
+    "DictationProviderStatusEntry": {
+      "type": "object",
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "usesProviderConfig": {
+          "type": "boolean"
+        },
+        "settingsPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelConfigKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectedModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "availableModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DictationModelOption"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "configured",
+        "description",
+        "usesProviderConfig"
+      ],
+      "description": "Per-provider configuration status."
+    },
+    "DictationModelOption": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "description"
+      ]
+    },
     "ExtRequest": {
       "properties": {
         "id": {
@@ -807,6 +951,24 @@
                   ],
                   "description": "Params for _goose/session/unarchive",
                   "title": "UnarchiveSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationTranscribeRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/transcribe",
+                  "title": "DictationTranscribeRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/config",
+                  "title": "DictationConfigRequest"
                 }
               ]
             },
@@ -933,6 +1095,22 @@
                         }
                       ],
                       "title": "ImportSessionResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationTranscribeResponse"
+                        }
+                      ],
+                      "title": "DictationTranscribeResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationConfigResponse"
+                        }
+                      ],
+                      "title": "DictationConfigResponse"
                     }
                   ]
                 },
