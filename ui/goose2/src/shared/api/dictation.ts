@@ -34,7 +34,8 @@ export async function saveDictationModelSelection(
   provider: DictationProvider,
   modelId: string,
 ): Promise<void> {
-  return invoke("save_dictation_model_selection", { provider, modelId });
+  const client = await getClient();
+  await client.goose.GooseDictationModelSelect({ provider, modelId });
 }
 
 export async function saveDictationProviderSecret(
@@ -66,31 +67,40 @@ export async function deleteDictationProviderSecret(
 export async function listDictationLocalModels(): Promise<
   WhisperModelStatus[]
 > {
-  return invoke("list_dictation_local_models");
+  const client = await getClient();
+  const response = await client.goose.GooseDictationModelsList({});
+  return response.models as unknown as WhisperModelStatus[];
 }
 
 export async function downloadDictationLocalModel(
   modelId: string,
 ): Promise<void> {
-  return invoke("download_dictation_local_model", { modelId });
+  const client = await getClient();
+  await client.goose.GooseDictationModelsDownload({ modelId });
 }
 
 export async function getDictationLocalModelDownloadProgress(
   modelId: string,
 ): Promise<DictationDownloadProgress | null> {
-  return invoke("get_dictation_local_model_download_progress", { modelId });
+  const client = await getClient();
+  const response = await client.goose.GooseDictationModelsDownloadProgress({
+    modelId,
+  });
+  return (response.progress ?? null) as DictationDownloadProgress | null;
 }
 
 export async function cancelDictationLocalModelDownload(
   modelId: string,
 ): Promise<void> {
-  return invoke("cancel_dictation_local_model_download", { modelId });
+  const client = await getClient();
+  await client.goose.GooseDictationModelsCancel({ modelId });
 }
 
 export async function deleteDictationLocalModel(
   modelId: string,
 ): Promise<void> {
-  return invoke("delete_dictation_local_model", { modelId });
+  const client = await getClient();
+  await client.goose.GooseDictationModelsDelete({ modelId });
 }
 
 export async function getMicrophonePermissionStatus(): Promise<MicrophonePermissionStatus> {
