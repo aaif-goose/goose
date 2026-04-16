@@ -3080,7 +3080,7 @@ impl GooseAcpAgent {
                 })
                 .collect();
 
-            return Ok(DictationModelsListResponse { models });
+            Ok(DictationModelsListResponse { models })
         }
 
         #[cfg(not(feature = "local-inference"))]
@@ -3116,7 +3116,12 @@ impl GooseAcpAgent {
                             .get(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
                             .ok()
                             .and_then(|value| value.as_str().map(str::to_owned))
-                            .filter(|model_id| whisper::get_model(model_id).is_some());
+                            .filter(|model_id| {
+                                // Treat a deleted model file as no active selection
+                                // so a fresh download can auto-select cleanly.
+                                whisper::get_model(model_id)
+                                    .is_some_and(|model| model.is_downloaded())
+                            });
                         if already_selected.is_none() {
                             if let Err(e) = config.set_param(
                                 whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY,
@@ -3130,7 +3135,7 @@ impl GooseAcpAgent {
                 .await
                 .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
 
-            return Ok(EmptyResponse {});
+            Ok(EmptyResponse {})
         }
 
         #[cfg(not(feature = "local-inference"))]
@@ -3161,7 +3166,7 @@ impl GooseAcpAgent {
                         error: progress.error,
                     });
 
-            return Ok(DictationModelDownloadProgressResponse { progress });
+            Ok(DictationModelDownloadProgressResponse { progress })
         }
 
         #[cfg(not(feature = "local-inference"))]
@@ -3182,7 +3187,7 @@ impl GooseAcpAgent {
                 .cancel_download(&_req.model_id)
                 .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
 
-            return Ok(EmptyResponse {});
+            Ok(EmptyResponse {})
         }
 
         #[cfg(not(feature = "local-inference"))]
@@ -3207,7 +3212,7 @@ impl GooseAcpAgent {
             std::fs::remove_file(path)
                 .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
 
-            return Ok(EmptyResponse {});
+            Ok(EmptyResponse {})
         }
 
         #[cfg(not(feature = "local-inference"))]
