@@ -195,7 +195,9 @@ export async function acpDuplicateSession(
   sessionId: string,
 ): Promise<AcpSessionInfo> {
   if (USE_DIRECT_ACP) {
-    return directAcp.forkSession(sessionId);
+    const gooseSessionId =
+      sessionTracker.getGooseSessionId(sessionId) ?? sessionId;
+    return directAcp.forkSession(gooseSessionId);
   }
   return invoke("acp_duplicate_session", { sessionId });
 }
