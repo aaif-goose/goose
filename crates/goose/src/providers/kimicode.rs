@@ -42,6 +42,19 @@ const KIMI_MSH_VERSION: &str = "0.1.0";
 /// Refresh the access token if it expires within this many seconds.
 const REFRESH_THRESHOLD_SECS: i64 = 300;
 
+/// Fallback access-token lifetime when the server omits `expires_in`.
+const DEFAULT_TOKEN_LIFETIME_SECS: i64 = 3600;
+
+/// Fallback device-code window when the server omits `expires_in`
+/// from `device_authorization`.
+const DEFAULT_DEVICE_CODE_LIFETIME_SECS: u64 = 300;
+
+/// Fallback poll interval when the server omits `interval`.
+const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
+
+/// Extra seconds added to the poll interval after an RFC 8628 `slow_down`.
+const SLOW_DOWN_BACKOFF_SECS: u64 = 5;
+
 /// Marker key written to the user config when OAuth completes successfully.
 /// `check_provider_configured` (server) keys off this when an OAuth-flow
 /// provider has no required secret env var.
@@ -69,10 +82,18 @@ impl TokenCache {
     }
 
     async fn load(&self) -> Option<KimiToken> {
-        tokio::fs::read_to_string(&self.path)
-            .await
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
+        let raw = tokio::fs::read_to_string(&self.path).await.ok()?;
+        match serde_json::from_str(&raw) {
+            Ok(token) => Some(token),
+            Err(e) => {
+                tracing::warn!(
+                    "kimicode token cache at {:?} is corrupted ({}); ignoring and re-authenticating",
+                    self.path,
+                    e
+                );
+                None
+            }
+        }
     }
 
     async fn save(&self, token: &KimiToken) -> Result<()> {
@@ -169,7 +190,8 @@ impl KimiCodeProvider {
             HeaderValue::from_static(KIMI_MSH_PLATFORM),
         );
         headers.insert("X-Msh-Version", HeaderValue::from_static(KIMI_MSH_VERSION));
-        // Validated at construction in `get_or_create_device_id`.
+        // Normally validated in `get_or_create_device_id`; skip the header if
+        // that validation was bypassed (e.g. test-constructed provider).
         if let Ok(value) = HeaderValue::from_str(&self.device_id) {
             headers.insert("X-Msh-Device-Id", value);
         }
@@ -201,6 +223,7 @@ impl KimiCodeProvider {
             }
         }
 
+        tracing::info!("kimicode: starting OAuth device-flow login");
         let token = self.device_flow_login().await?;
         self.token_cache.save(&token).await?;
         *guard = Some(token.clone());
@@ -215,14 +238,16 @@ impl KimiCodeProvider {
         }
         match self.do_refresh_token(&token.refresh_token).await {
             Ok(refreshed) => {
+                tracing::debug!("kimicode: token refreshed");
                 if let Err(e) = self.token_cache.save(&refreshed).await {
                     tracing::warn!("failed to persist refreshed kimicode token: {}", e);
                 }
                 Some(refreshed)
             }
             Err(e) => {
-                tracing::debug!("kimicode token refresh failed: {}", e);
+                tracing::debug!("kimicode: token refresh failed: {}", e);
                 if token.expires_at > Utc::now() {
+                    tracing::debug!("kimicode: falling back to still-unexpired token");
                     Some(token)
                 } else {
                     None
@@ -266,7 +291,7 @@ impl KimiCodeProvider {
             .verification_uri_complete
             .as_deref()
             .unwrap_or(&resp.verification_uri);
-        let interval = resp.interval.unwrap_or(5);
+        let interval = resp.interval.unwrap_or(DEFAULT_POLL_INTERVAL_SECS);
 
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             let _ = clipboard.set_text(&resp.user_code);
@@ -275,12 +300,13 @@ impl KimiCodeProvider {
             tracing::warn!("Failed to open browser: {}", e);
         }
 
-        println!(
+        // stderr so CLI workflows parsing stdout aren't interfered with.
+        eprintln!(
             "Please visit {} and enter code {}",
             verify_url, resp.user_code
         );
 
-        let expires_in = resp.expires_in.unwrap_or(300);
+        let expires_in = resp.expires_in.unwrap_or(DEFAULT_DEVICE_CODE_LIFETIME_SECS);
         self.poll_for_token(&resp.device_code, interval, expires_in)
             .await
     }
@@ -354,7 +380,7 @@ impl KimiCodeProvider {
             if let (Some(access_token), Some(refresh_token)) =
                 (resp.access_token, resp.refresh_token)
             {
-                let expires_in = resp.expires_in.unwrap_or(3600);
+                let expires_in = resp.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS);
                 return Ok(KimiToken {
                     access_token,
                     refresh_token,
@@ -369,7 +395,7 @@ impl KimiCodeProvider {
                 // RFC 8628: client MUST increase polling interval by 5 seconds
                 Some("slow_down") => {
                     tracing::debug!("slow_down received, increasing poll interval");
-                    effective_interval += 5;
+                    effective_interval += SLOW_DOWN_BACKOFF_SECS;
                 }
                 Some(err) => {
                     return Err(anyhow!("authorization failed: {}", err));
@@ -413,7 +439,7 @@ impl KimiCodeProvider {
             .await
             .context("failed to parse token refresh response")?;
 
-        let expires_in = resp.expires_in.unwrap_or(3600);
+        let expires_in = resp.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS);
         Ok(KimiToken {
             access_token: resp.access_token,
             refresh_token: resp.refresh_token,
@@ -463,6 +489,9 @@ impl ProviderDef for KimiCodeProvider {
             KIMI_CODE_DEFAULT_MODEL,
             KIMI_CODE_KNOWN_MODELS.to_vec(),
             KIMI_CODE_DOC_URL,
+            // Marker key — the actual token lives in ~/.config/goose/kimicode/token.json.
+            // `oauth_flow=true` routes config through `configure_oauth`;
+            // readiness is tracked via the `kimi_code_configured` param.
             vec![ConfigKey::new_oauth_device_code(
                 "KIMI_CODE_TOKEN",
                 true,
