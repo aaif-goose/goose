@@ -342,7 +342,10 @@ export function VoiceInputSettings() {
             <LocalWhisperModels
               selectedModelId={currentModelValue}
               onSelectModel={(modelId) => handleModelChange(modelId)}
-              onModelsChanged={() => refreshConfig()}
+              onModelsChanged={async () => {
+                await refreshConfig();
+                notifyVoiceDictationConfigChanged();
+              }}
             />
           ) : (selectedStatus.availableModels ?? []).length > 0 ? (
             <div className="space-y-2 rounded-lg border border-border px-3 py-3">
