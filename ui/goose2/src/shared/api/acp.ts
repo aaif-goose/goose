@@ -13,7 +13,6 @@ export interface AcpProvider {
 
 export interface AcpSendMessageOptions {
   systemPrompt?: string;
-  workingDir?: string;
   personaId?: string;
   personaName?: string;
   /** Image attachments as [base64Data, mimeType] pairs. */
@@ -33,7 +32,6 @@ export async function discoverAcpProviders(): Promise<AcpProvider[]> {
 /** Send a message to an ACP agent. Response streams via Tauri events. */
 export async function acpSendMessage(
   sessionId: string,
-  providerId: string,
   prompt: string,
   options: AcpSendMessageOptions = {},
 ): Promise<void> {

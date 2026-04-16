@@ -234,9 +234,8 @@ export function useChat(
           buildAttachmentPromptPreamble(attachments);
         const promptBody = text.trim() || (images?.length ? " " : text);
         const acpPrompt = `${attachmentPromptPreamble}${promptBody}`;
-        await acpSendMessage(sessionId, providerId, acpPrompt, {
+        await acpSendMessage(sessionId, acpPrompt, {
           systemPrompt,
-          workingDir: workingDirOverride,
           personaId: effectivePersonaInfo?.id,
           personaName: effectivePersonaInfo?.name,
           images: images?.map(
