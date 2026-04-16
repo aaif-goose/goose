@@ -315,7 +315,7 @@ export function Sidebar({
               collapsed ? "justify-center" : "justify-between",
             )}
           >
-            <GooseIcon className="text-muted-foreground" />
+            <GooseIcon className="text-foreground" />
             {!collapsed && (
               <Button
                 type="button"
@@ -367,13 +367,13 @@ export function Sidebar({
 
             <div
               className={cn(
-                "flex items-center w-full rounded-md transition-all duration-300 ease-out",
+                "mb-4 flex items-center w-full rounded-md transition-all duration-300 ease-out",
                 collapsed
                   ? "justify-center p-3 text-muted-foreground"
                   : "gap-2 border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent",
               )}
             >
-              <Search className="size-3.5 flex-shrink-0" />
+              <Search className="size-3.5 flex-shrink-0 text-[var(--text-placeholder)]" />
               {!collapsed && (
                 <>
                   <input
@@ -390,7 +390,7 @@ export function Sidebar({
                     }}
                     placeholder={t("search.placeholder")}
                     className={cn(
-                      "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-muted-foreground outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
+                      "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-[var(--text-placeholder)] outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
                       labelTransition,
                       labelVisible
                         ? "opacity-100 w-auto"
@@ -398,17 +398,6 @@ export function Sidebar({
                     )}
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <kbd
-                    className={cn(
-                      "text-[10px] text-muted-foreground px-1 py-0.5 rounded font-mono flex-shrink-0",
-                      labelTransition,
-                      labelVisible
-                        ? "opacity-100 w-auto"
-                        : "opacity-0 w-0 overflow-hidden px-0",
-                    )}
-                  >
-                    ⌘K
-                  </kbd>
                 </>
               )}
             </div>

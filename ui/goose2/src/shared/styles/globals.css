@@ -122,6 +122,7 @@
   --text-success: var(--color-green-300);
   --text-warning: var(--color-yellow-200);
   --text-info: var(--color-blue-200);
+  --text-placeholder: var(--color-gray-400);
 
   --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
 
@@ -304,6 +305,7 @@
   --text-success: var(--color-green-100);
   --text-warning: var(--color-yellow-100);
   --text-info: var(--color-blue-100);
+  --text-placeholder: var(--color-gray-600);
 
   --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
 
@@ -407,6 +409,7 @@
   --color-text-success: var(--text-success);
   --color-text-warning: var(--text-warning);
   --color-text-info: var(--text-info);
+  --color-text-placeholder: var(--text-placeholder);
 
   /* alpha variants */
   --color-dark-10: var(--dark-10);

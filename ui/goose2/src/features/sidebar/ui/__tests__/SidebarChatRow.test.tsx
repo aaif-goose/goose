@@ -108,6 +108,43 @@ describe("SidebarChatRow", () => {
     expect(screen.getByLabelText(/unread messages/i)).toBeInTheDocument();
   });
 
+  it("does not reserve activity space by default when idle", () => {
+    const { container } = render(
+      <SidebarChatRow id="session-1" title="Idle Chat" isActive={false} />,
+    );
+
+    expect(
+      container.querySelector(".h-3.w-3.shrink-0.items-center.justify-center"),
+    ).toBeNull();
+  });
+
+  it("does not reserve activity space for recents until activity exists", () => {
+    const { container, rerender } = render(
+      <SidebarChatRow
+        id="session-1"
+        title="Recent Chat"
+        isActive={false}
+        reserveActivitySpace={false}
+      />,
+    );
+
+    expect(
+      container.querySelector(".h-3.w-3.shrink-0.items-center.justify-center"),
+    ).toBeNull();
+
+    rerender(
+      <SidebarChatRow
+        id="session-1"
+        title="Recent Chat"
+        isActive={false}
+        hasUnread
+        reserveActivitySpace={false}
+      />,
+    );
+
+    expect(screen.getByLabelText(/unread messages/i)).toBeInTheDocument();
+  });
+
   it("keeps the localized default title in rename mode without persisting it", async () => {
     const user = userEvent.setup();
     const onRename = vi.fn();
