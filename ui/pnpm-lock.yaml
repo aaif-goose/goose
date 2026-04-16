@@ -353,9 +353,9 @@ importers:
 
   goose2:
     dependencies:
-      '@aaif/goose-acp':
-        specifier: ^0.16.0
-        version: 0.16.0(@agentclientprotocol/sdk@0.19.0(zod@4.3.6))
+      '@aaif/goose-sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@agentclientprotocol/sdk':
         specifier: ^0.19.0
         version: 0.19.0(zod@4.3.6)
@@ -468,8 +468,8 @@ importers:
         specifier: ^2
         version: 2.10.1
       '@tauri-apps/plugin-dialog':
-        specifier: ^2.6.0
-        version: 2.7.0
+        specifier: ~2.6.0
+        version: 2.6.0
       '@tauri-apps/plugin-opener':
         specifier: ^2.5.3
         version: 2.5.3
@@ -734,11 +734,6 @@ importers:
         version: link:../goose-binary/goose-binary-win32-x64
 
 packages:
-
-  '@aaif/goose-acp@0.16.0':
-    resolution: {integrity: sha512-LJLn01pqobvQAsagScROFOnjKRSQPaDuP7v17oyrK1IDfvZzOM20ZkQcvGDWhYCRUHXWBJgJ9dD6iZkVtNYYwg==}
-    peerDependencies:
-      '@agentclientprotocol/sdk': '*'
 
   '@acemir/cssom@0.9.31':
     resolution: {integrity: sha512-ZnR3GSaH+/vJ0YlHau21FjfLYjMpYVIzTD8M8vIEQvIGxeOXyXdzCI140rrCY862p/C/BbzWsjc1dgnM9mkoTA==}
@@ -3500,8 +3495,8 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
-  '@tauri-apps/plugin-dialog@2.7.0':
-    resolution: {integrity: sha512-4nS/hfGMGCXiAS3LtVjH9AgsSAPJeG/7R+q8agTFqytjnMa4Zq95Bq8WzVDkckpanX+yyRHXnRtrKXkANKDHvw==}
+  '@tauri-apps/plugin-dialog@2.6.0':
+    resolution: {integrity: sha512-q4Uq3eY87TdcYzXACiYSPhmpBA76shgmQswGkSVio4C82Sz2W4iehe9TnKYwbq7weHiL88Yw19XZm7v28+Micg==}
 
   '@tauri-apps/plugin-opener@2.5.3':
     resolution: {integrity: sha512-CCcUltXMOfUEArbf3db3kCE7Ggy1ExBEBl51Ko2ODJ6GDYHRp1nSNlQm5uNCFY5k7/ufaK5Ib3Du/Zir19IYQQ==}
@@ -8854,11 +8849,6 @@ packages:
 
 snapshots:
 
-  '@aaif/goose-acp@0.16.0(@agentclientprotocol/sdk@0.19.0(zod@4.3.6))':
-    dependencies:
-      '@agentclientprotocol/sdk': 0.19.0(zod@4.3.6)
-      zod: 3.25.76
-
   '@acemir/cssom@0.9.31': {}
 
   '@adobe/css-tools@4.4.4': {}
@@ -11804,7 +11794,7 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.10.1
       '@tauri-apps/cli-win32-x64-msvc': 2.10.1
 
-  '@tauri-apps/plugin-dialog@2.7.0':
+  '@tauri-apps/plugin-dialog@2.6.0':
     dependencies:
       '@tauri-apps/api': 2.10.1
 

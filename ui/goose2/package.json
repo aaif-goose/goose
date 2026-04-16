@@ -27,7 +27,7 @@
     "test-driver": "tsx tests/app-e2e/lib/test-driver-cli.ts"
   },
   "dependencies": {
-    "@aaif/goose-acp": "^0.16.0",
+    "@aaif/goose-sdk": "workspace:*",
     "@agentclientprotocol/sdk": "^0.19.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -65,7 +65,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-query": "^5.90.21",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-dialog": "~2.6.0",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@xyflow/react": "^12.10.2",
     "ai": "^6.0.142",
