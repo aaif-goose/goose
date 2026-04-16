@@ -1015,7 +1015,9 @@ impl Provider for ChatGptCodexProvider {
 
         if let Err(e) = result {
             if let Some(previous_token) = previous_token.as_ref() {
-                let _ = self.auth_provider.cache.save(previous_token);
+                if self.auth_provider.cache.load().is_none() {
+                    let _ = self.auth_provider.cache.save(previous_token);
+                }
             }
             return Err(ProviderError::Authentication(format!(
                 "OAuth flow failed: {}",
