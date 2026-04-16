@@ -24,6 +24,7 @@ const COMMON_GOOSE_PATHS: &[&str] = &[
 /// concurrent sessions.
 pub struct GooseServeProcess {
     port: u16,
+    secret_key: String,
     _child: Child,
 }
 
@@ -33,7 +34,7 @@ static GOOSE_SERVE: OnceCell<GooseServeProcess> = OnceCell::const_new();
 impl GooseServeProcess {
     /// Return the WebSocket URL for connecting to this server.
     pub fn ws_url(&self) -> String {
-        format!("ws://{LOCALHOST}:{}/acp", self.port)
+        format!("ws://{LOCALHOST}:{}/acp?secret={}", self.port, self.secret_key)
     }
 
     /// Start the singleton `goose serve` process.
@@ -60,6 +61,7 @@ impl GooseServeProcess {
     async fn spawn() -> Result<GooseServeProcess, String> {
         let binary_path = resolve_goose_binary()?;
         let port = reserve_free_port()?;
+        let secret_key = hex::encode(rand::random::<[u8; 32]>());
 
         // Use a stable working directory for the long-lived server process.
         // Individual sessions will set their own cwd via the ACP protocol.
@@ -78,6 +80,8 @@ impl GooseServeProcess {
             .arg(LOCALHOST)
             .arg("--port")
             .arg(port.to_string())
+            .arg("--secret-key")
+            .arg(&secret_key)
             .current_dir(&working_dir)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -105,6 +109,7 @@ impl GooseServeProcess {
 
         Ok(GooseServeProcess {
             port,
+            secret_key,
             _child: child,
         })
     }

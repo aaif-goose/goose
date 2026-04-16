@@ -745,6 +745,13 @@ enum Command {
         port: u16,
 
         #[arg(
+            long = "secret-key",
+            env = "GOOSE_SECRET_KEY",
+            help = "Secret key for client authentication (X-Goose-Secret-Key)"
+        )]
+        secret_key: Option<String>,
+
+        #[arg(
             long = "with-builtin",
             value_name = "NAME",
             help = "Add builtin extensions by name (e.g., 'developer' or multiple: 'developer,github')",
@@ -1063,7 +1070,12 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
     Ok(())
 }
 
-async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) -> Result<()> {
+async fn handle_serve_command(
+    host: String,
+    port: u16,
+    secret_key: Option<String>,
+    builtins: Vec<String>,
+) -> Result<()> {
     use goose::config::paths::Paths;
     use goose_acp::server_factory::{AcpServer, AcpServerFactoryConfig};
     use std::net::SocketAddr;
@@ -1081,7 +1093,7 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
     }));
-    let router = goose_acp::transport::create_router(server);
+    let router = goose_acp::transport::create_router(server, secret_key);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);
@@ -1770,8 +1782,9 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Serve {
             host,
             port,
+            secret_key,
             builtins,
-        }) => handle_serve_command(host, port, builtins).await,
+        }) => handle_serve_command(host, port, secret_key, builtins).await,
         Some(Command::Session {
             command: Some(cmd), ..
         }) => handle_session_subcommand(cmd).await,

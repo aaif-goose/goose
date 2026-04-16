@@ -21,6 +21,7 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::server_factory::AcpServer;
 
 pub(crate) const HEADER_SESSION_ID: &str = "Acp-Session-Id";
+pub(crate) const HEADER_SECRET_KEY: &str = "X-Goose-Secret-Key";
 pub(crate) const EVENT_STREAM_MIME_TYPE: &str = "text/event-stream";
 pub(crate) const JSON_MIME_TYPE: &str = "application/json";
 
@@ -95,24 +96,40 @@ async fn health() -> &'static str {
     "ok"
 }
 
-pub fn create_router(server: Arc<AcpServer>) -> Router {
+pub fn create_router(server: Arc<AcpServer>, secret_key: Option<String>) -> Router {
     let http_state = Arc::new(http::HttpState::new(server.clone()));
     let ws_state = Arc::new(websocket::WsState::new(server));
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
-        .allow_headers([
-            header::CONTENT_TYPE,
-            header::ACCEPT,
-            HEADER_SESSION_ID.parse().unwrap(),
-            header::SEC_WEBSOCKET_VERSION,
-            header::SEC_WEBSOCKET_KEY,
-            header::CONNECTION,
-            header::UPGRADE,
-        ]);
+    let cors = if let Some(ref key) = secret_key {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+            .allow_headers([
+                header::CONTENT_TYPE,
+                header::ACCEPT,
+                HEADER_SESSION_ID.parse().unwrap(),
+                HEADER_SECRET_KEY.parse().unwrap(),
+                header::SEC_WEBSOCKET_VERSION,
+                header::SEC_WEBSOCKET_KEY,
+                header::CONNECTION,
+                header::UPGRADE,
+            ])
+    } else {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+            .allow_headers([
+                header::CONTENT_TYPE,
+                header::ACCEPT,
+                HEADER_SESSION_ID.parse().unwrap(),
+                header::SEC_WEBSOCKET_VERSION,
+                header::SEC_WEBSOCKET_KEY,
+                header::CONNECTION,
+                header::UPGRADE,
+            ])
+    };
 
-    Router::new()
+    let mut router = Router::new()
         .route("/health", get(health))
         .route("/status", get(health))
         .route(
@@ -123,6 +140,31 @@ pub fn create_router(server: Arc<AcpServer>) -> Router {
             "/acp",
             get(handle_get).with_state((http_state.clone(), ws_state)),
         )
-        .route("/acp", delete(http::handle_delete).with_state(http_state))
-        .layer(cors)
+        .route("/acp", delete(http::handle_delete).with_state(http_state));
+
+    if let Some(key) = secret_key {
+        router = router.layer(axum::middleware::from_fn(move |req: Request<Body>, next: axum::middleware::Next| {
+            let key = key.clone();
+            async move {
+                let auth_header = req
+                    .headers()
+                    .get(HEADER_SECRET_KEY)
+                    .and_then(|v| v.to_str().ok());
+
+                let query_secret = req.uri().query().and_then(|q| {
+                    form_urlencoded::parse(q.as_bytes())
+                        .find(|(k, _)| k == "secret")
+                        .map(|(_, v)| v.into_owned())
+                });
+
+                if auth_header == Some(&key) || query_secret == Some(key) {
+                    Ok(next.run(req).await)
+                } else {
+                    Err(axum::http::StatusCode::UNAUTHORIZED)
+                }
+            }
+        }));
+    }
+
+    router.layer(cors)
 }
