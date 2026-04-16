@@ -110,8 +110,15 @@ export const useAudioDevices = () => {
     let cancelled = false;
     let status: PermissionStatus | null = null;
     const onChange = () => {
-      if (!cancelled && status) {
-        setHasPermission(status.state === "granted");
+      if (cancelled || !status) return;
+      const granted = status.state === "granted";
+      setHasPermission(granted);
+      // When permission flips to granted mid-session (e.g. the user enabled
+      // mic access via OS settings), re-enumerate devices so we pick up the
+      // real deviceIds/labels — the prior enumeration may have returned
+      // empty-string entries that VoiceInputSettings filters out.
+      if (granted) {
+        void loadDevicesWithPermission();
       }
     };
 
@@ -147,7 +154,7 @@ export const useAudioDevices = () => {
         status.removeEventListener("change", onChange);
       }
     };
-  }, [loadDevicesWithoutPermission]);
+  }, [loadDevicesWithPermission, loadDevicesWithoutPermission]);
 
   useEffect(() => {
     const handleDeviceChange = () => {

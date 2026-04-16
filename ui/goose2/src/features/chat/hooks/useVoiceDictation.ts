@@ -69,11 +69,22 @@ export function useVoiceDictation({
     (options?: { flushPending?: boolean }) => void
   >(() => {});
 
+  // Mirror `text` in a ref so `handleTranscription` always sees the latest
+  // value, even when `useDictationRecorder` fires multiple callbacks in the
+  // same tick before React has applied the first setText. Without this, two
+  // concurrent callbacks would both read a stale `text` from closure and the
+  // second would overwrite the first fragment, dropping dictated words.
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
+
   const handleTranscription = useCallback(
     (fragment: string) => {
+      const latest = textRef.current;
       const match = getAutoSubmitMatch(fragment, voicePrefs.autoSubmitPhrases);
       if (match) {
-        const merged = appendTranscribedText(text, match.textWithoutPhrase);
+        const merged = appendTranscribedText(latest, match.textWithoutPhrase);
         if (merged.trim()) {
           stopRecordingRef.current({ flushPending: false });
           onSend(
@@ -82,12 +93,14 @@ export function useVoiceDictation({
             attachments.length > 0 ? attachments : undefined,
           );
           setText("");
+          textRef.current = "";
           clearAttachments();
           resetTextarea();
         }
       } else {
-        const merged = appendTranscribedText(text, fragment);
+        const merged = appendTranscribedText(latest, fragment);
         setText(merged);
+        textRef.current = merged;
       }
     },
     [
@@ -97,7 +110,6 @@ export function useVoiceDictation({
       resetTextarea,
       selectedPersonaId,
       setText,
-      text,
       voicePrefs.autoSubmitPhrases,
     ],
   );

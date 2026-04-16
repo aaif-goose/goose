@@ -3046,7 +3046,7 @@ impl GooseAcpAgent {
                     },
                     model_config_key: dictation_model_config_key(provider),
                     default_model: dictation_default_model(provider),
-                    selected_model: dictation_selected_model(&config, provider),
+                    selected_model: dictation_selected_model(config, provider),
                     available_models: dictation_available_models(provider),
                 },
             );
@@ -3107,11 +3107,26 @@ impl GooseAcpAgent {
                     model.url.to_string(),
                     model.local_path(),
                     Some(Box::new(move || {
-                        if let Err(e) = goose::config::Config::global().set_param(
-                            whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY,
-                            model_id_for_config.clone(),
-                        ) {
-                            error!("Failed to save LOCAL_WHISPER_MODEL after download: {}", e);
+                        let config = goose::config::Config::global();
+                        // Only auto-select this model if the user has no model
+                        // currently selected. This prevents silently switching
+                        // the active model mid-session when a user downloads an
+                        // additional model while one is already in use.
+                        let already_selected = config
+                            .get(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
+                            .ok()
+                            .and_then(|value| value.as_str().map(str::to_owned))
+                            .filter(|model_id| whisper::get_model(model_id).is_some());
+                        if already_selected.is_none() {
+                            if let Err(e) = config.set_param(
+                                whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY,
+                                model_id_for_config.clone(),
+                            ) {
+                                error!(
+                                    "Failed to save LOCAL_WHISPER_MODEL after download: {}",
+                                    e
+                                );
+                            }
                         }
                     })),
                 )
