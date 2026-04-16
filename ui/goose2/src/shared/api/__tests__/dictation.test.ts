@@ -92,26 +92,32 @@ describe("dictation SDK wiring", () => {
   });
 
   it("getDictationLocalModelDownloadProgress returns progress or null", async () => {
-    client.goose.GooseDictationModelsDownloadProgress = vi.fn().mockResolvedValue({
-      progress: {
-        bytesDownloaded: 100,
-        totalBytes: 1000,
-        progressPercent: 10,
-        status: "downloading",
-        error: null,
-      },
-    });
+    client.goose.GooseDictationModelsDownloadProgress = vi
+      .fn()
+      .mockResolvedValue({
+        progress: {
+          bytesDownloaded: 100,
+          totalBytes: 1000,
+          progressPercent: 10,
+          status: "downloading",
+          error: null,
+        },
+      });
     const result = await getDictationLocalModelDownloadProgress("tiny");
     expect(result?.bytesDownloaded).toBe(100);
-    expect(client.goose.GooseDictationModelsDownloadProgress).toHaveBeenCalledWith({
+    expect(
+      client.goose.GooseDictationModelsDownloadProgress,
+    ).toHaveBeenCalledWith({
       modelId: "tiny",
     });
   });
 
   it("getDictationLocalModelDownloadProgress returns null when no download", async () => {
-    client.goose.GooseDictationModelsDownloadProgress = vi.fn().mockResolvedValue({
-      progress: undefined,
-    });
+    client.goose.GooseDictationModelsDownloadProgress = vi
+      .fn()
+      .mockResolvedValue({
+        progress: undefined,
+      });
     const result = await getDictationLocalModelDownloadProgress("tiny");
     expect(result).toBeNull();
   });

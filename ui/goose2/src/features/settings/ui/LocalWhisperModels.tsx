@@ -63,9 +63,7 @@ export function LocalWhisperModels({
       });
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : t("general.voiceInput.loadError"),
+        err instanceof Error ? err.message : t("general.voiceInput.loadError"),
       );
     }
   }, [t]);
@@ -91,10 +89,9 @@ export function LocalWhisperModels({
 
       for (const id of downloadingIds) {
         try {
-          const progress =
-            (await getDictationLocalModelDownloadProgress(
-              id,
-            )) as unknown as DownloadProgress | null;
+          const progress = (await getDictationLocalModelDownloadProgress(
+            id,
+          )) as unknown as DownloadProgress | null;
           if (!progress) {
             finishedIds.push(id);
             continue;
@@ -223,8 +220,7 @@ export function LocalWhisperModels({
             downloadingIds.has(model.id) ||
             progress?.status === "downloading" ||
             model.downloadInProgress;
-          const isSelected =
-            model.downloaded && model.id === selectedModelId;
+          const isSelected = model.downloaded && model.id === selectedModelId;
           return (
             <li
               key={model.id}

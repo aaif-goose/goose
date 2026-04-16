@@ -13,7 +13,10 @@ export async function getDictationConfig(): Promise<
 > {
   const client = await getClient();
   const response = await client.goose.GooseDictationConfig({});
-  return response.providers as Record<DictationProvider, DictationProviderStatus>;
+  return response.providers as Record<
+    DictationProvider,
+    DictationProviderStatus
+  >;
 }
 
 export async function transcribeDictation(request: {

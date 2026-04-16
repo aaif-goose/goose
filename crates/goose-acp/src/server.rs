@@ -3228,8 +3228,9 @@ impl GooseAcpAgent {
                 let model = whisper::get_model(&req.model_id)
                     .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
                 if !model.is_downloaded() {
-                    return Err(sacp::Error::invalid_params()
-                        .data("Local Whisper model is not downloaded"));
+                    return Err(
+                        sacp::Error::invalid_params().data("Local Whisper model is not downloaded")
+                    );
                 }
                 whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY
             }
