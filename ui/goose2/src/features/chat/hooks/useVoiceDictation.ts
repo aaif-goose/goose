@@ -55,11 +55,21 @@ export function useVoiceDictation({
       );
   }, [fetchDictationConfig]);
 
-  const activeVoiceProvider =
-    voicePrefs.selectedProvider ??
-    (voicePrefs.hasStoredProviderPreference
+  // Treat the stored preference as valid only when it actually appears in
+  // `providerStatuses`. If the stored value points at a provider that's been
+  // feature-flagged off or removed, fall through to the default so voice
+  // input isn't silently disabled. The explicit "off" state
+  // (`hasStoredProviderPreference && selectedProvider == null`) is preserved.
+  const storedProviderIsPresent =
+    voicePrefs.selectedProvider != null &&
+    providerStatuses[voicePrefs.selectedProvider] !== undefined;
+
+  const activeVoiceProvider = storedProviderIsPresent
+    ? voicePrefs.selectedProvider
+    : voicePrefs.hasStoredProviderPreference &&
+        voicePrefs.selectedProvider == null
       ? null
-      : getDefaultDictationProvider(providerStatuses));
+      : getDefaultDictationProvider(providerStatuses);
 
   const providerConfigured =
     activeVoiceProvider != null &&
@@ -74,10 +84,15 @@ export function useVoiceDictation({
   // same tick before React has applied the first setText. Without this, two
   // concurrent callbacks would both read a stale `text` from closure and the
   // second would overwrite the first fragment, dropping dictated words.
+  //
+  // Assign during render (not in a post-render `useEffect`) so there is no
+  // commit-window race: if the user types a character in the textarea and a
+  // transcription callback resolves before the effect runs, the callback
+  // would otherwise read the previous `text` and clobber the user's edit.
+  // Writing to `ref.current` during render is explicitly supported by React
+  // (see `providerRef.current = provider;` in `useDictationRecorder.ts`).
   const textRef = useRef(text);
-  useEffect(() => {
-    textRef.current = text;
-  }, [text]);
+  textRef.current = text;
 
   const handleTranscription = useCallback(
     (fragment: string) => {
