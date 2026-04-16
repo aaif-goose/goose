@@ -34,14 +34,19 @@ export function SessionActivityIndicator({
     }
 
     return (
-      <Loader2
+      <span
         role="status"
         aria-label="Chat active"
         className={cn(
-          "h-3 w-3 shrink-0 animate-in fade-in-0 animate-spin text-[var(--color-text-info)] duration-200 ease-out",
+          "inline-flex h-3 w-3 shrink-0 items-center justify-center animate-in fade-in-0 duration-200 ease-out",
           className,
         )}
-      />
+      >
+        <Loader2
+          aria-hidden="true"
+          className="h-3 w-3 animate-spin text-[var(--color-text-info)]"
+        />
+      </span>
     );
   }
 

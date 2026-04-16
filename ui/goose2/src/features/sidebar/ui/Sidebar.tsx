@@ -373,32 +373,30 @@ export function Sidebar({
                   : "gap-2 border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent",
               )}
             >
-              <Search className="size-3.5 flex-shrink-0 text-[var(--text-placeholder)]" />
+              <Search className="size-3.5 flex-shrink-0 text-placeholder" />
               {!collapsed && (
-                <>
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    enterKeyHint="search"
-                    value={sidebarSearch.query}
-                    onChange={(e) => sidebarSearch.setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void sidebarSearch.search();
-                      }
-                    }}
-                    placeholder={t("search.placeholder")}
-                    className={cn(
-                      "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-[var(--text-placeholder)] outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
-                      labelTransition,
-                      labelVisible
-                        ? "opacity-100 w-auto"
-                        : "opacity-0 w-0 overflow-hidden",
-                    )}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  enterKeyHint="search"
+                  value={sidebarSearch.query}
+                  onChange={(e) => sidebarSearch.setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void sidebarSearch.search();
+                    }
+                  }}
+                  placeholder={t("search.placeholder")}
+                  className={cn(
+                    "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-placeholder outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
+                    labelTransition,
+                    labelVisible
+                      ? "opacity-100 w-auto"
+                      : "opacity-0 w-0 overflow-hidden",
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                />
               )}
             </div>
 
