@@ -15,7 +15,8 @@ import type {
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
 import { ndJsonStream } from "@agentclientprotocol/sdk";
-import { GooseClient, resolveGooseBinary } from "@aaif/goose-sdk";
+import { GooseClient } from "@aaif/goose-sdk";
+import { resolveGooseBinary } from "@aaif/goose-sdk/node";
 import Onboarding from "./onboarding.js";
 import ConfigureScreen, { ConfigureIntent } from "./configure.js";
 import ExtensionsManager from "./extensions.js";
