@@ -23,7 +23,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "tsx src/tui.tsx",
+    "start": "if [ -z \"$GOOSE_BINARY\" ]; then cargo build -p goose-cli && export GOOSE_BINARY=../../target/debug/goose; fi && tsx src/tui.tsx",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
