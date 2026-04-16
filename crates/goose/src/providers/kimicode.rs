@@ -28,9 +28,13 @@ use futures::future::BoxFuture;
 use rmcp::model::Tool;
 
 const KIMI_CODE_PROVIDER_NAME: &str = "kimi_code";
-pub const KIMI_CODE_DEFAULT_MODEL: &str = "kimi-k2.5";
-pub const KIMI_CODE_DEFAULT_FAST_MODEL: &str = "kimi-k2.5";
-pub const KIMI_CODE_KNOWN_MODELS: &[&str] = &["kimi-k2.5", "kimi-k2-thinking"];
+pub const KIMI_CODE_DEFAULT_MODEL: &str = "kimi-for-coding";
+pub const KIMI_CODE_DEFAULT_FAST_MODEL: &str = "kimi-for-coding";
+/// Known models for the provider metadata registration. The live catalogue is
+/// fetched from `/v1/models` at request time; this constant is only used for
+/// `ProviderMetadata`. As of 2025-10 Kimi Code exposes a single model,
+/// `kimi-for-coding`, and silently routes any other model name to it.
+pub const KIMI_CODE_KNOWN_MODELS: &[&str] = &["kimi-for-coding"];
 
 const KIMI_CODE_DOC_URL: &str = "https://www.kimi.com/code/docs/en/";
 const KIMI_CODE_CLIENT_ID: &str = "17e5f671-d194-4dfb-9706-5516cb48c098";
@@ -585,10 +589,35 @@ impl Provider for KimiCodeProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        Ok(KIMI_CODE_KNOWN_MODELS
-            .iter()
-            .map(|s| s.to_string())
-            .collect())
+        #[derive(Deserialize)]
+        struct ModelEntry {
+            id: String,
+        }
+        #[derive(Deserialize)]
+        struct ModelsResp {
+            data: Vec<ModelEntry>,
+        }
+
+        let access_token = self.get_access_token().await.map_err(|e| {
+            ProviderError::Authentication(format!("Failed to get Kimi access token: {}", e))
+        })?;
+
+        let resp = self
+            .client
+            .get(format!("{}/v1/models", self.api_base))
+            .bearer_auth(access_token)
+            .headers(self.kimi_headers())
+            .send()
+            .await
+            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        let resp = handle_status_openai_compat(resp).await?;
+
+        let parsed: ModelsResp = resp.json().await.map_err(|e| {
+            ProviderError::RequestFailed(format!("/v1/models body is not valid JSON: {}", e))
+        })?;
+        let mut models: Vec<String> = parsed.data.into_iter().map(|m| m.id).collect();
+        models.sort();
+        Ok(models)
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
@@ -876,6 +905,62 @@ mod tests {
             msg.contains("Bad Gateway"),
             "expected body in error: {}",
             msg
+        );
+    }
+
+    // ── fetch_supported_models ────────────────────────────────────────────────
+
+    async fn seed_fresh_token(provider: &KimiCodeProvider) {
+        *provider.cached_token.lock().await = Some(KimiToken {
+            access_token: "fresh-access".to_string(),
+            refresh_token: "fresh-refresh".to_string(),
+            expires_at: Utc::now() + Duration::seconds(3600),
+        });
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_returns_server_catalogue() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [
+                    {"id": "kimi-for-coding"},
+                    {"id": "future-model"}
+                ],
+                "object": "list",
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        seed_fresh_token(&provider).await;
+
+        let models = provider.fetch_supported_models().await.unwrap();
+        // Results are sorted alphabetically, matching peer providers.
+        assert_eq!(
+            models,
+            vec!["future-model".to_string(), "kimi-for-coding".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_propagates_server_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        seed_fresh_token(&provider).await;
+
+        let err = provider.fetch_supported_models().await.unwrap_err();
+        assert!(
+            matches!(err, ProviderError::ServerError(_)),
+            "expected ServerError, got {:?}",
+            err
         );
     }
 }
