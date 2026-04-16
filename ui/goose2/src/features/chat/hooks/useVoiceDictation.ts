@@ -71,6 +71,20 @@ export function useVoiceDictation({
       ? null
       : getDefaultDictationProvider(providerStatuses);
 
+  // If a stored preference points at a provider that's no longer in
+  // providerStatuses (feature-flagged off, removed), clear it so next boot
+  // falls through to the default cleanly instead of re-detecting the stale
+  // value every session.
+  useEffect(() => {
+    if (
+      voicePrefs.selectedProvider != null &&
+      Object.keys(providerStatuses).length > 0 &&
+      providerStatuses[voicePrefs.selectedProvider] === undefined
+    ) {
+      voicePrefs.clearSelectedProvider();
+    }
+  }, [providerStatuses, voicePrefs]);
+
   const providerConfigured =
     activeVoiceProvider != null &&
     providerStatuses[activeVoiceProvider]?.configured === true;

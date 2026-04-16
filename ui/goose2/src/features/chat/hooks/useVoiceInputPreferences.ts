@@ -123,6 +123,21 @@ export function useVoiceInputPreferences() {
     }
   }, []);
 
+  // Remove the stored preference entirely, so the user falls through to the
+  // default provider on next boot. Distinct from setSelectedProvider(null),
+  // which explicitly pins the user to "voice off" via a sentinel value.
+  const clearSelectedProvider = useCallback(() => {
+    setSelectedProviderState(null);
+    setHasStoredProviderPreferenceState(false);
+
+    try {
+      window.localStorage.removeItem(VOICE_DICTATION_PROVIDER_STORAGE_KEY);
+      window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
+    } catch {
+      // localStorage may be unavailable
+    }
+  }, []);
+
   const setPreferredMicrophoneId = useCallback((value: string | null) => {
     setPreferredMicrophoneIdState(value);
 
@@ -150,6 +165,7 @@ export function useVoiceInputPreferences() {
 
   return {
     autoSubmitPhrases,
+    clearSelectedProvider,
     hasStoredProviderPreference,
     preferredMicrophoneId,
     rawAutoSubmitPhrases,
