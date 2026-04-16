@@ -1553,7 +1553,7 @@ mod tests {
                 ],
             ))
         => Ok(("auto-gemini-3".to_string(), vec!["auto-gemini-3".to_string(), "auto-gemini-2.5".to_string(), "gemini-2.5-pro".to_string()]))
-        ; "gemini-acp falls back to models"
+        ; "gemini falls back to models"
     )]
     #[test_case(
         NewSessionResponse::new("s1")

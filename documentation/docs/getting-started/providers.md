@@ -68,7 +68,6 @@ goose supports [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) a
 |-----------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [Claude ACP](https://github.com/zed-industries/claude-agent-acp) (`claude-acp`) | Uses Claude Code via ACP. Passes goose extensions to the agent as MCP servers. | `npm install -g @zed-industries/claude-agent-acp`, active Claude Code subscription |
 | [Codex ACP](https://github.com/zed-industries/codex-acp) (`codex-acp`) | Uses OpenAI Codex via ACP. Passes goose extensions to the agent as MCP servers. | `npm install -g @zed-industries/codex-acp`, active ChatGPT Plus/Pro subscription |
-| [Gemini ACP](https://github.com/google-gemini/gemini-cli) (`gemini-acp`) | Uses Google's Gemini CLI via ACP (native `--acp` support). Passes goose extensions to the agent as MCP servers. | `npm install -g @google/gemini-cli`, authenticated with Google account |
 
 :::tip ACP Providers
 See the [ACP Providers guide](/docs/guides/acp-providers) for detailed setup instructions.
