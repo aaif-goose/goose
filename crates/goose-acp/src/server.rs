@@ -3122,10 +3122,7 @@ impl GooseAcpAgent {
                                 whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY,
                                 model_id_for_config.clone(),
                             ) {
-                                error!(
-                                    "Failed to save LOCAL_WHISPER_MODEL after download: {}",
-                                    e
-                                );
+                                error!("Failed to save LOCAL_WHISPER_MODEL after download: {}", e);
                             }
                         }
                     })),
