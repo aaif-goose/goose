@@ -195,12 +195,12 @@ export function ChatInput({
   useEffect(() => textareaRef.current?.focus(), []);
 
   const handleSend = useCallback(() => {
-    // If recording, stop and flush — the transcription callback will
-    // append text and may auto-submit. Don't send the current text yet
-    // because the final transcription hasn't arrived.
+    // If recording, stop without waiting for final flush and send what's
+    // already transcribed into the textarea. This makes Send a single click
+    // even while the mic is hot; any in-flight audio after the user clicked
+    // Send is intentionally dropped.
     if (dictation.isRecording || dictation.isTranscribing) {
-      dictation.stopRecording();
-      return;
+      dictation.stopRecording({ flushPending: false });
     }
 
     if (!canSend) {
