@@ -4,7 +4,6 @@ import type {
   DictationProvider,
   DictationProviderStatus,
   DictationTranscribeResponse,
-  MicrophonePermissionStatus,
   WhisperModelStatus,
 } from "@/shared/types/dictation";
 import { getClient } from "./acpConnection";
@@ -101,12 +100,4 @@ export async function deleteDictationLocalModel(
 ): Promise<void> {
   const client = await getClient();
   await client.goose.GooseDictationModelsDelete({ modelId });
-}
-
-export async function getMicrophonePermissionStatus(): Promise<MicrophonePermissionStatus> {
-  return invoke("get_microphone_permission_status");
-}
-
-export async function requestMicrophonePermission(): Promise<MicrophonePermissionStatus> {
-  return invoke("request_microphone_permission");
 }
