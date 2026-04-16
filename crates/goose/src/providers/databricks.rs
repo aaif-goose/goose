@@ -258,13 +258,9 @@ impl DatabricksProvider {
     }
 
     fn resolve_instance_id() -> Option<String> {
-        let enabled = std::env::var("GOOSE_DATABRICKS_CLIENT_REQUEST_ID")
-            .map(|v| v == "true")
-            .unwrap_or_else(|_| {
-                crate::config::Config::global()
-                    .get_param::<bool>("GOOSE_DATABRICKS_CLIENT_REQUEST_ID")
-                    .unwrap_or(false)
-            });
+        let enabled = crate::config::Config::global()
+            .get_param::<bool>("GOOSE_DATABRICKS_CLIENT_REQUEST_ID")
+            .unwrap_or(false);
         if enabled {
             Some(get_instance_id().to_string())
         } else {
