@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: ui/goose2/pnpm-lock.yaml
+          cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm typecheck
@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: ui/goose2/pnpm-lock.yaml
+          cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
@@ -70,7 +70,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: ui/goose2/pnpm-lock.yaml
+          cache-dependency-path: ui/pnpm-lock.yaml
 
       - name: Install system dependencies
         run: |
