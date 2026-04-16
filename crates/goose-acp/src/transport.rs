@@ -4,18 +4,18 @@ pub mod websocket;
 use std::sync::Arc;
 
 use axum::{
+    Router,
     body::Body,
     extract::{
-        ws::{rejection::WebSocketUpgradeRejection, WebSocketUpgrade},
         State,
+        ws::{WebSocketUpgrade, rejection::WebSocketUpgradeRejection},
     },
-    http::{header, Method, Request},
+    http::{Method, Request, header},
     response::Response,
     routing::{delete, get, post},
-    Router,
 };
 use serde_json::Value;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::server_factory::AcpServer;
@@ -86,7 +86,7 @@ async fn handle_get(
     request: Request<Body>,
 ) -> Response {
     match ws_upgrade {
-        Ok(ws) => websocket::handle_get(state.1, ws).await,
+        Ok(ws) => websocket::handle_get(state.1, ws, request).await,
         Err(_) => http::handle_get(state.0, request).await,
     }
 }

@@ -1,18 +1,21 @@
 use anyhow::Result;
 use axum::{
+    body::Body,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    http::StatusCode,
+    http::{Request, StatusCode},
     response::{IntoResponse, Response},
 };
 use futures::{SinkExt, StreamExt};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info, warn};
 
-use super::{TransportSession, HEADER_SESSION_ID};
+use super::{HEADER_SESSION_ID, TransportSession};
 use crate::adapters::{ReceiverToAsyncRead, SenderToAsyncWrite};
 use crate::server_factory::AcpServer;
+
+const ACP_WS_TOKEN_ENV: &str = "GOOSE_ACP_WS_TOKEN";
 
 pub(crate) struct WsState {
     server: Arc<AcpServer>,
@@ -66,7 +69,40 @@ impl WsState {
     }
 }
 
-pub(crate) async fn handle_get(state: Arc<WsState>, ws: WebSocketUpgrade) -> Response {
+fn request_token(request: &Request<Body>) -> Option<String> {
+    request.uri().query().and_then(|query| {
+        url::form_urlencoded::parse(query.as_bytes())
+            .find(|(key, _)| key == "token")
+            .map(|(_, value)| value.into_owned())
+    })
+}
+
+fn bridge_token_authorized_with_expected(
+    request: &Request<Body>,
+    expected_token: Option<&str>,
+) -> bool {
+    match expected_token {
+        Some(expected) => request_token(request).as_deref() == Some(expected),
+        None => true,
+    }
+}
+
+fn configured_bridge_token() -> Option<String> {
+    std::env::var(ACP_WS_TOKEN_ENV)
+        .ok()
+        .filter(|token| !token.is_empty())
+}
+
+pub(crate) async fn handle_get(
+    state: Arc<WsState>,
+    ws: WebSocketUpgrade,
+    request: Request<Body>,
+) -> Response {
+    if !bridge_token_authorized_with_expected(&request, configured_bridge_token().as_deref()) {
+        warn!("Rejected unauthorized ACP WebSocket connection");
+        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+
     let acp_session_id = match state.create_connection().await {
         Ok(id) => id,
         Err(e) => {
@@ -155,4 +191,54 @@ pub(crate) async fn handle_ws(socket: WebSocket, state: Arc<WsState>, acp_sessio
 
     debug!(acp_session_id = %acp_session_id, "Cleaning up connection");
     state.remove_connection(&acp_session_id).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(uri: &str) -> Request<Body> {
+        Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .expect("request")
+    }
+
+    #[test]
+    fn request_token_reads_query_param() {
+        let request = request("/acp?foo=bar&token=test-token");
+        assert_eq!(request_token(&request).as_deref(), Some("test-token"));
+    }
+
+    #[test]
+    fn request_token_returns_none_when_missing() {
+        let request = request("/acp?foo=bar");
+        assert_eq!(request_token(&request), None);
+    }
+
+    #[test]
+    fn bridge_token_auth_is_disabled_without_expected_token() {
+        let request = request("/acp");
+        assert!(bridge_token_authorized_with_expected(&request, None));
+    }
+
+    #[test]
+    fn bridge_token_auth_requires_exact_match() {
+        let missing = request("/acp");
+        let wrong = request("/acp?token=wrong");
+        let correct = request("/acp?token=expected-token");
+
+        assert!(!bridge_token_authorized_with_expected(
+            &missing,
+            Some("expected-token")
+        ));
+        assert!(!bridge_token_authorized_with_expected(
+            &wrong,
+            Some("expected-token")
+        ));
+        assert!(bridge_token_authorized_with_expected(
+            &correct,
+            Some("expected-token")
+        ));
+    }
 }

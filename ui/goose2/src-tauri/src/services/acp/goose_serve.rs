@@ -5,11 +5,13 @@ use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, Command};
 use tokio::sync::OnceCell;
 use tokio_tungstenite::connect_async;
+use uuid::Uuid;
 
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
 pub(crate) const WS_BRIDGE_BUFFER_BYTES: usize = 64 * 1024;
+const ACP_WS_TOKEN_ENV: &str = "GOOSE_ACP_WS_TOKEN";
 
 // ---------------------------------------------------------------------------
 // GooseServeProcess — singleton that owns the long-lived `goose serve` child
@@ -22,6 +24,7 @@ pub(crate) const WS_BRIDGE_BUFFER_BYTES: usize = 64 * 1024;
 /// concurrent sessions.
 pub struct GooseServeProcess {
     port: u16,
+    bridge_token: String,
     _child: Child,
 }
 
@@ -31,7 +34,7 @@ static GOOSE_SERVE: OnceCell<GooseServeProcess> = OnceCell::const_new();
 impl GooseServeProcess {
     /// Return the WebSocket URL for connecting to this server.
     pub fn ws_url(&self) -> String {
-        format!("ws://{LOCALHOST}:{}/acp", self.port)
+        authenticated_ws_url(self.port, &self.bridge_token)
     }
 
     /// Start the singleton `goose serve` process.
@@ -58,6 +61,7 @@ impl GooseServeProcess {
     async fn spawn() -> Result<GooseServeProcess, String> {
         let binary_path = resolve_goose_binary()?;
         let port = reserve_free_port()?;
+        let bridge_token = Uuid::new_v4().to_string();
 
         // Use a stable working directory for the long-lived server process.
         // Individual sessions will set their own cwd via the ACP protocol.
@@ -76,6 +80,7 @@ impl GooseServeProcess {
             .arg(LOCALHOST)
             .arg("--port")
             .arg(port.to_string())
+            .env(ACP_WS_TOKEN_ENV, &bridge_token)
             .current_dir(&working_dir)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -98,13 +103,15 @@ impl GooseServeProcess {
         })?;
 
         // Wait for the server to become ready by polling the WebSocket endpoint.
-        let ws_url = format!("ws://{LOCALHOST}:{port}/acp");
-        wait_for_server_ready(&ws_url, &mut child).await?;
+        let ws_url = authenticated_ws_url(port, &bridge_token);
+        let display_url = base_ws_url(port);
+        wait_for_server_ready(&ws_url, &display_url, &mut child).await?;
 
         log::info!("Goose serve is ready on port {port}");
 
         Ok(GooseServeProcess {
             port,
+            bridge_token,
             _child: child,
         })
     }
@@ -114,7 +121,11 @@ impl GooseServeProcess {
 ///
 /// We do a connect-then-immediately-close loop until the server responds,
 /// the child exits, or we time out.
-async fn wait_for_server_ready(ws_url: &str, child: &mut Child) -> Result<(), String> {
+async fn wait_for_server_ready(
+    ws_url: &str,
+    display_url: &str,
+    child: &mut Child,
+) -> Result<(), String> {
     let deadline = Instant::now() + GOOSE_SERVE_CONNECT_TIMEOUT;
 
     loop {
@@ -137,7 +148,7 @@ async fn wait_for_server_ready(ws_url: &str, child: &mut Child) -> Result<(), St
 
                 if Instant::now() >= deadline {
                     return Err(format!(
-                        "Timed out waiting for goose serve at {ws_url}: {connect_error}"
+                        "Timed out waiting for goose serve at {display_url}: {connect_error}"
                     ));
                 }
 
@@ -145,6 +156,14 @@ async fn wait_for_server_ready(ws_url: &str, child: &mut Child) -> Result<(), St
             }
         }
     }
+}
+
+fn base_ws_url(port: u16) -> String {
+    format!("ws://{LOCALHOST}:{port}/acp")
+}
+
+fn authenticated_ws_url(port: u16, bridge_token: &str) -> String {
+    format!("{}?token={bridge_token}", base_ws_url(port))
 }
 
 fn default_serve_working_dir() -> PathBuf {
@@ -263,4 +282,18 @@ fn reserve_free_port() -> Result<u16, String> {
         .local_addr()
         .map(|address| address.port())
         .map_err(|error| format!("Failed to resolve reserved Goose serve port: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{authenticated_ws_url, base_ws_url};
+
+    #[test]
+    fn ws_url_helpers_include_bridge_token_only_for_authenticated_url() {
+        assert_eq!(base_ws_url(4242), "ws://127.0.0.1:4242/acp");
+        assert_eq!(
+            authenticated_ws_url(4242, "bridge-token"),
+            "ws://127.0.0.1:4242/acp?token=bridge-token"
+        );
+    }
 }
