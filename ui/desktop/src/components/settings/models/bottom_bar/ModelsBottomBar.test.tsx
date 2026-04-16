@@ -68,7 +68,6 @@ describe('ModelsBottomBar', () => {
         sessionId="session-123"
         dropdownRef={createDropdownRef()}
         setView={vi.fn()}
-        alerts={[]}
         onModelChanged={mockOnModelChanged}
         sessionLoaded={false}
       />
@@ -83,7 +82,6 @@ describe('ModelsBottomBar', () => {
         sessionId="session-123"
         dropdownRef={createDropdownRef()}
         setView={vi.fn()}
-        alerts={[]}
         sessionModel="session-model"
         sessionProvider="session-provider"
         onModelChanged={mockOnModelChanged}
@@ -101,7 +99,6 @@ describe('ModelsBottomBar', () => {
         sessionId={null}
         dropdownRef={createDropdownRef()}
         setView={vi.fn()}
-        alerts={[]}
         onModelChanged={mockOnModelChanged}
       />
     );
