@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use tokio::process::{Child, Command};
@@ -7,6 +7,12 @@ use tokio::sync::OnceCell;
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
+const COMMON_GOOSE_PATHS: &[&str] = &[
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/home/linuxbrew/.linuxbrew/bin",
+];
 // ---------------------------------------------------------------------------
 // GooseServeProcess — singleton that owns the long-lived `goose serve` child
 // ---------------------------------------------------------------------------
@@ -161,21 +167,18 @@ pub(crate) fn resolve_goose_binary() -> Result<PathBuf, String> {
         log::info!("Using GOOSE_BIN override: {override_path}");
         path
     } else {
-        let agent = acp_client::find_acp_agent_by_id("goose")
+        let path = find_goose_binary()
             .ok_or_else(|| "Unknown or unavailable agent provider: goose".to_string())?;
 
-        if !goose_binary_supports_serve(&agent.binary_path)? {
+        if !goose_binary_supports_serve(&path)? {
             return Err(format!(
                 "Resolved goose binary does not support `serve`: {}. Set GOOSE_BIN to a newer goose binary.",
-                agent.binary_path.display()
+                path.display()
             ));
         }
 
-        log::info!(
-            "Resolved goose binary via login-shell discovery: {}",
-            agent.binary_path.display()
-        );
-        agent.binary_path
+        log::info!("Resolved goose binary via local discovery: {}", path.display());
+        path
     };
 
     // Log the binary version for debugging.
@@ -201,6 +204,62 @@ pub(crate) fn resolve_goose_binary() -> Result<PathBuf, String> {
     }
 
     Ok(binary_path)
+}
+
+fn find_goose_binary() -> Option<PathBuf> {
+    find_goose_via_login_shell().or_else(find_goose_in_common_paths)
+}
+
+fn find_goose_via_login_shell() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        None
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        for shell in ["/bin/zsh", "/bin/bash"] {
+            let Ok(output) = std::process::Command::new(shell)
+                .args(["-l", "-c", "which goose"])
+                .output()
+            else {
+                continue;
+            };
+
+            if !output.status.success() {
+                continue;
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(path_str) = stdout.lines().rfind(|line| !line.trim().is_empty()) {
+                let path = PathBuf::from(path_str.trim());
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+        }
+
+        None
+    }
+}
+
+fn find_goose_in_common_paths() -> Option<PathBuf> {
+    COMMON_GOOSE_PATHS
+        .iter()
+        .map(|dir| Path::new(dir).join(goose_binary_name()))
+        .find(|path| path.is_file())
+}
+
+fn goose_binary_name() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "goose.exe"
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        "goose"
+    }
 }
 
 fn goose_binary_supports_serve(binary_path: &PathBuf) -> Result<bool, String> {
