@@ -306,11 +306,13 @@ export function VoiceInputSettings() {
               <SelectItem value={DISABLED_PROVIDER}>
                 {t("general.voiceInput.systemMicrophone")}
               </SelectItem>
-              {devices.map((device) => (
-                <SelectItem key={device.deviceId} value={device.deviceId}>
-                  {device.label || t("general.voiceInput.unknownMicrophone")}
-                </SelectItem>
-              ))}
+              {devices
+                .filter((device) => device.deviceId !== "")
+                .map((device) => (
+                  <SelectItem key={device.deviceId} value={device.deviceId}>
+                    {device.label || t("general.voiceInput.unknownMicrophone")}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         ) : null}

@@ -74,10 +74,6 @@ export const useAudioDevices = () => {
   }, []);
 
   const loadDevicesWithPermission = useCallback(async () => {
-    if (loading) {
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
@@ -108,7 +104,7 @@ export const useAudioDevices = () => {
     } finally {
       setLoading(false);
     }
-  }, [loading]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,17 +116,27 @@ export const useAudioDevices = () => {
     };
 
     const init = async () => {
+      let alreadyGranted = false;
       try {
         status = await navigator.permissions.query({
           name: "microphone" as PermissionName,
         });
         if (cancelled) return;
-        setHasPermission(status.state === "granted");
+        alreadyGranted = status.state === "granted";
+        setHasPermission(alreadyGranted);
         status.addEventListener("change", onChange);
       } catch {
         // Permissions API not available for microphone; fall back silently.
       }
-      if (!cancelled) await loadDevicesWithoutPermission();
+      if (cancelled) return;
+      // If OS-level permission is already granted, enumerate through the
+      // permission-ful path — otherwise enumerateDevices() may return
+      // entries with empty deviceId/label, which Radix Select rejects.
+      if (alreadyGranted) {
+        await loadDevicesWithPermission();
+      } else {
+        await loadDevicesWithoutPermission();
+      }
     };
 
     void init();
