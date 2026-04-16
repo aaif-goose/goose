@@ -1,10 +1,12 @@
 use crate::config::paths::Paths;
+use crate::config::Config;
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::{anyhow, Context, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use futures::TryStreamExt;
+use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -39,6 +41,12 @@ const KIMI_MSH_VERSION: &str = "0.1.0";
 
 /// Refresh the access token if it expires within this many seconds.
 const REFRESH_THRESHOLD_SECS: i64 = 300;
+
+/// Marker key written to the user config when OAuth completes successfully.
+/// `check_provider_configured` (server) keys off this when an OAuth-flow
+/// provider has no required secret env var.
+const KIMI_CONFIGURED_MARKER: &str = "kimi_code_configured";
+
 // ── Token persistence ────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -101,6 +109,10 @@ pub struct KimiCodeProvider {
     cached_token: tokio::sync::Mutex<Option<KimiToken>>,
     #[serde(skip)]
     device_id: String,
+    #[serde(skip)]
+    auth_host: String,
+    #[serde(skip)]
+    api_base: String,
     model: ModelConfig,
     #[serde(skip)]
     name: String,
@@ -122,18 +134,25 @@ impl KimiCodeProvider {
             token_cache: TokenCache::new(),
             cached_token: tokio::sync::Mutex::new(None),
             device_id,
+            auth_host: KIMI_AUTH_HOST.to_string(),
+            api_base: KIMI_API_BASE.to_string(),
             model,
             name: KIMI_CODE_PROVIDER_NAME.to_string(),
         })
     }
 
+    fn is_valid_device_id(id: &str) -> bool {
+        !id.is_empty() && HeaderValue::from_str(id).is_ok()
+    }
+
     async fn get_or_create_device_id() -> Result<String> {
         let path = Paths::in_config_dir("kimicode/device_id");
-        if let Ok(id) = tokio::fs::read_to_string(&path).await {
-            let id = id.trim().to_string();
-            if !id.is_empty() {
+        if let Ok(raw) = tokio::fs::read_to_string(&path).await {
+            let id = raw.trim().to_string();
+            if Self::is_valid_device_id(&id) {
                 return Ok(id);
             }
+            tracing::warn!("kimicode device_id at {:?} is invalid; regenerating", path);
         }
         let id = Uuid::new_v4().to_string().replace('-', "");
         if let Some(parent) = path.parent() {
@@ -143,11 +162,17 @@ impl KimiCodeProvider {
         Ok(id)
     }
 
-    fn kimi_headers(&self) -> reqwest::header::HeaderMap {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("X-Msh-Platform", KIMI_MSH_PLATFORM.parse().unwrap());
-        headers.insert("X-Msh-Version", KIMI_MSH_VERSION.parse().unwrap());
-        headers.insert("X-Msh-Device-Id", self.device_id.parse().unwrap());
+    fn kimi_headers(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Msh-Platform",
+            HeaderValue::from_static(KIMI_MSH_PLATFORM),
+        );
+        headers.insert("X-Msh-Version", HeaderValue::from_static(KIMI_MSH_VERSION));
+        // Validated at construction in `get_or_create_device_id`.
+        if let Ok(value) = HeaderValue::from_str(&self.device_id) {
+            headers.insert("X-Msh-Device-Id", value);
+        }
         headers
     }
 
@@ -155,48 +180,55 @@ impl KimiCodeProvider {
 
     /// Returns a valid access token, refreshing or re-authenticating as needed.
     async fn get_access_token(&self) -> Result<String> {
+        Ok(self.ensure_token().await?.access_token)
+    }
+
+    /// Ensures we have a usable token, walking the cache → refresh → device-flow ladder.
+    async fn ensure_token(&self) -> Result<KimiToken> {
         let mut guard = self.cached_token.lock().await;
 
-        // 1. In-memory cache
-        if let Some(token) = guard.as_ref() {
-            if token.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS) {
-                return Ok(token.access_token.clone());
-            }
-            if let Ok(refreshed) = self.do_refresh_token(&token.refresh_token.clone()).await {
-                self.token_cache.save(&refreshed).await?;
-                let access = refreshed.access_token.clone();
-                *guard = Some(refreshed);
-                return Ok(access);
-            }
-            if token.expires_at > Utc::now() {
-                return Ok(token.access_token.clone());
+        if let Some(token) = guard.clone() {
+            if let Some(usable) = self.use_or_refresh(token).await {
+                *guard = Some(usable.clone());
+                return Ok(usable);
             }
         }
 
-        // 2. Disk cache
         if let Some(token) = self.token_cache.load().await {
-            if token.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS) {
-                *guard = Some(token.clone());
-                return Ok(token.access_token);
-            }
-            if let Ok(refreshed) = self.do_refresh_token(&token.refresh_token.clone()).await {
-                self.token_cache.save(&refreshed).await?;
-                let access = refreshed.access_token.clone();
-                *guard = Some(refreshed);
-                return Ok(access);
-            }
-            if token.expires_at > Utc::now() {
-                *guard = Some(token.clone());
-                return Ok(token.access_token);
+            if let Some(usable) = self.use_or_refresh(token).await {
+                *guard = Some(usable.clone());
+                return Ok(usable);
             }
         }
 
-        // 3. Full device flow
         let token = self.device_flow_login().await?;
         self.token_cache.save(&token).await?;
-        let access = token.access_token.clone();
-        *guard = Some(token);
-        Ok(access)
+        *guard = Some(token.clone());
+        Ok(token)
+    }
+
+    /// Returns a usable token derived from `token`, or `None` if it is unusable.
+    /// On a successful refresh, the new token is also persisted to disk.
+    async fn use_or_refresh(&self, token: KimiToken) -> Option<KimiToken> {
+        if token.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS) {
+            return Some(token);
+        }
+        match self.do_refresh_token(&token.refresh_token).await {
+            Ok(refreshed) => {
+                if let Err(e) = self.token_cache.save(&refreshed).await {
+                    tracing::warn!("failed to persist refreshed kimicode token: {}", e);
+                }
+                Some(refreshed)
+            }
+            Err(e) => {
+                tracing::debug!("kimicode token refresh failed: {}", e);
+                if token.expires_at > Utc::now() {
+                    Some(token)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     async fn device_flow_login(&self) -> Result<KimiToken> {
@@ -216,7 +248,7 @@ impl KimiCodeProvider {
 
         let resp: DeviceAuthResp = self
             .client
-            .post(format!("{}/api/oauth/device_authorization", KIMI_AUTH_HOST))
+            .post(format!("{}/api/oauth/device_authorization", self.auth_host))
             .headers(self.kimi_headers())
             .form(&DeviceAuthReq {
                 client_id: KIMI_CODE_CLIENT_ID,
@@ -282,9 +314,9 @@ impl KimiCodeProvider {
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(effective_interval)).await;
 
-            let resp: PollResp = self
+            let response = self
                 .client
-                .post(format!("{}/api/oauth/token", KIMI_AUTH_HOST))
+                .post(format!("{}/api/oauth/token", self.auth_host))
                 .headers(self.kimi_headers())
                 .form(&PollReq {
                     client_id: KIMI_CODE_CLIENT_ID,
@@ -293,10 +325,31 @@ impl KimiCodeProvider {
                 })
                 .send()
                 .await
-                .context("failed to poll for token")?
-                .json()
+                .context("failed to poll for token")?;
+
+            // RFC 8628 returns pending/slow_down as 4xx with a JSON error payload,
+            // so don't `error_for_status()` before parsing — but if the body is
+            // unparseable AND the status is non-2xx, surface the HTTP status.
+            let status = response.status();
+            let bytes = response
+                .bytes()
                 .await
-                .context("failed to parse token poll response")?;
+                .context("failed to read token poll response")?;
+            let resp: PollResp = match serde_json::from_slice(&bytes) {
+                Ok(p) => p,
+                Err(e) => {
+                    if !status.is_success() {
+                        return Err(anyhow!(
+                            "token poll HTTP {}: {}",
+                            status,
+                            String::from_utf8_lossy(&bytes)
+                        ));
+                    }
+                    return Err(
+                        anyhow::Error::new(e).context("failed to parse token poll response")
+                    );
+                }
+            };
 
             if let (Some(access_token), Some(refresh_token)) =
                 (resp.access_token, resp.refresh_token)
@@ -344,7 +397,7 @@ impl KimiCodeProvider {
 
         let resp: RefreshResp = self
             .client
-            .post(format!("{}/api/oauth/token", KIMI_AUTH_HOST))
+            .post(format!("{}/api/oauth/token", self.auth_host))
             .headers(self.kimi_headers())
             .form(&RefreshReq {
                 client_id: KIMI_CODE_CLIENT_ID,
@@ -381,7 +434,7 @@ impl KimiCodeProvider {
 
         let mut builder = self
             .client
-            .post(format!("{}/v1/messages", KIMI_API_BASE))
+            .post(format!("{}/v1/messages", self.api_base))
             .bearer_auth(access_token)
             .headers(self.kimi_headers())
             .json(payload);
@@ -503,30 +556,19 @@ impl Provider for KimiCodeProvider {
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
-        // Try refresh first; fall back to still-valid token; then full device flow.
-        if let Some(token) = self.token_cache.load().await {
-            if let Ok(refreshed) = self.do_refresh_token(&token.refresh_token).await {
-                self.token_cache.save(&refreshed).await.map_err(|e| {
-                    ProviderError::ExecutionError(format!("Failed to save token: {}", e))
-                })?;
-                *self.cached_token.lock().await = Some(refreshed);
-                return Ok(());
-            }
-            if token.expires_at > Utc::now() {
-                *self.cached_token.lock().await = Some(token);
-                return Ok(());
-            }
-        }
-
-        let token = self
-            .device_flow_login()
+        self.ensure_token()
             .await
             .map_err(|e| ProviderError::Authentication(format!("OAuth flow failed: {}", e)))?;
-        self.token_cache
-            .save(&token)
-            .await
-            .map_err(|e| ProviderError::ExecutionError(format!("Failed to save token: {}", e)))?;
-        *self.cached_token.lock().await = Some(token);
+
+        Config::global()
+            .set_param(KIMI_CONFIGURED_MARKER, Value::Bool(true))
+            .map_err(|e| {
+                ProviderError::ExecutionError(format!(
+                    "Failed to record kimi_code configured state: {}",
+                    e
+                ))
+            })?;
+
         Ok(())
     }
 }
@@ -535,6 +577,25 @@ impl Provider for KimiCodeProvider {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use serde_json::json;
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn test_provider(server_uri: &str, device_id: &str) -> KimiCodeProvider {
+        KimiCodeProvider {
+            client: Client::new(),
+            token_cache: TokenCache {
+                path: std::env::temp_dir()
+                    .join(format!("goose-kimicode-test-{}.json", Uuid::new_v4())),
+            },
+            cached_token: tokio::sync::Mutex::new(None),
+            device_id: device_id.to_string(),
+            auth_host: server_uri.to_string(),
+            api_base: server_uri.to_string(),
+            model: ModelConfig::new(KIMI_CODE_DEFAULT_MODEL).unwrap(),
+            name: KIMI_CODE_PROVIDER_NAME.to_string(),
+        }
+    }
 
     // ── KimiToken serde ───────────────────────────────────────────────────────
 
@@ -552,42 +613,11 @@ mod tests {
         assert_eq!(decoded.expires_at.timestamp(), token.expires_at.timestamp());
     }
 
-    #[test]
-    fn kimi_token_fresh_detection() {
-        let fresh = KimiToken {
-            access_token: "acc".to_string(),
-            refresh_token: "ref".to_string(),
-            expires_at: Utc::now() + Duration::seconds(3600),
-        };
-        assert!(
-            fresh.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS),
-            "token should be considered fresh"
-        );
-
-        let stale = KimiToken {
-            access_token: "acc".to_string(),
-            refresh_token: "ref".to_string(),
-            expires_at: Utc::now() + Duration::seconds(60),
-        };
-        assert!(
-            stale.expires_at - Utc::now() <= Duration::seconds(REFRESH_THRESHOLD_SECS),
-            "token should be considered stale"
-        );
-    }
-
     // ── Headers ───────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn kimi_headers_contains_required_fields() {
-        let provider = KimiCodeProvider {
-            client: Client::new(),
-            token_cache: TokenCache::new(),
-            cached_token: tokio::sync::Mutex::new(None),
-            device_id: "testdeviceid".to_string(),
-            model: ModelConfig::new(KIMI_CODE_DEFAULT_MODEL).unwrap(),
-            name: KIMI_CODE_PROVIDER_NAME.to_string(),
-        };
-
+        let provider = test_provider("http://localhost", "testdeviceid");
         let headers = provider.kimi_headers();
         assert_eq!(
             headers.get("X-Msh-Platform").and_then(|v| v.to_str().ok()),
@@ -601,6 +631,23 @@ mod tests {
             headers.get("X-Msh-Device-Id").and_then(|v| v.to_str().ok()),
             Some("testdeviceid")
         );
+    }
+
+    #[tokio::test]
+    async fn kimi_headers_skips_invalid_device_id_without_panic() {
+        // U+0000 is an invalid header byte; must not panic.
+        let provider = test_provider("http://localhost", "bad\u{0000}id");
+        let headers = provider.kimi_headers();
+        assert!(headers.get("X-Msh-Device-Id").is_none());
+        assert!(headers.contains_key("X-Msh-Platform"));
+    }
+
+    #[test]
+    fn validates_device_id_rejects_invalid_bytes() {
+        assert!(KimiCodeProvider::is_valid_device_id("abc123"));
+        assert!(!KimiCodeProvider::is_valid_device_id(""));
+        assert!(!KimiCodeProvider::is_valid_device_id("bad\u{0000}id"));
+        assert!(!KimiCodeProvider::is_valid_device_id("bad\nid"));
     }
 
     // ── Metadata ──────────────────────────────────────────────────────────────
@@ -627,14 +674,126 @@ mod tests {
         );
     }
 
-    #[test]
-    fn fetch_supported_models_returns_known_models() {
-        let known: Vec<String> = KIMI_CODE_KNOWN_MODELS
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        // Verify the set matches what fetch_supported_models will return
-        assert!(known.contains(&"kimi-k2.5".to_string()));
-        assert!(known.contains(&"kimi-k2-thinking".to_string()));
+    // ── Refresh / poll behavior ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn use_or_refresh_returns_fresh_token_without_calling_endpoint() {
+        let server = MockServer::start().await;
+        // Refusing all requests proves no network call was made.
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        let fresh = KimiToken {
+            access_token: "acc".to_string(),
+            refresh_token: "ref".to_string(),
+            expires_at: Utc::now() + Duration::seconds(REFRESH_THRESHOLD_SECS + 600),
+        };
+
+        let usable = provider.use_or_refresh(fresh.clone()).await.unwrap();
+        assert_eq!(usable.access_token, "acc");
+    }
+
+    #[tokio::test]
+    async fn use_or_refresh_falls_back_to_existing_token_when_refresh_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        // Inside refresh threshold but not yet expired.
+        let near_stale = KimiToken {
+            access_token: "still_good".to_string(),
+            refresh_token: "ref".to_string(),
+            expires_at: Utc::now() + Duration::seconds(60),
+        };
+
+        let usable = provider.use_or_refresh(near_stale).await.unwrap();
+        assert_eq!(usable.access_token, "still_good");
+    }
+
+    #[tokio::test]
+    async fn use_or_refresh_returns_new_token_on_successful_refresh() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new_access",
+                "refresh_token": "new_refresh",
+                "expires_in": 3600,
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        let near_stale = KimiToken {
+            access_token: "old".to_string(),
+            refresh_token: "old_refresh".to_string(),
+            expires_at: Utc::now() + Duration::seconds(60),
+        };
+
+        let usable = provider.use_or_refresh(near_stale).await.unwrap();
+        assert_eq!(usable.access_token, "new_access");
+        assert_eq!(usable.refresh_token, "new_refresh");
+    }
+
+    #[tokio::test]
+    async fn poll_for_token_handles_authorization_pending_then_success() {
+        let server = MockServer::start().await;
+
+        // First call: authorization_pending (returned as 400 per RFC 8628).
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "error": "authorization_pending",
+            })))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        // Subsequent call: token issued.
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "the_token",
+                "refresh_token": "the_refresh",
+                "expires_in": 1800,
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        let token = provider.poll_for_token("device-abc", 0, 30).await.unwrap();
+        assert_eq!(token.access_token, "the_token");
+        assert_eq!(token.refresh_token, "the_refresh");
+    }
+
+    #[tokio::test]
+    async fn poll_for_token_surfaces_http_error_on_unparseable_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(&server.uri(), "abc");
+        let err = provider
+            .poll_for_token("device-abc", 0, 5)
+            .await
+            .unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("502"), "expected status in error: {}", msg);
+        assert!(
+            msg.contains("Bad Gateway"),
+            "expected body in error: {}",
+            msg
+        );
     }
 }
