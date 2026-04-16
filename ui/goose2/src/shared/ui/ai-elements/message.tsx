@@ -414,6 +414,9 @@ export const MessageResponse = memo(
       </LinkSafetyContext.Provider>
     );
   },
+  // Internal state (modalUrl) is intentionally outside this comparator —
+  // React always re-renders when local state changes regardless of memo.
+  // If modalUrl is ever lifted to a prop, this comparator must be updated.
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
     nextProps.isAnimating === prevProps.isAnimating,

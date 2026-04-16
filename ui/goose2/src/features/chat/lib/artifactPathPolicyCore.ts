@@ -146,7 +146,7 @@ function hasKnownScheme(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value);
 }
 
-export { isExternalHref } from "@/shared/lib/isExternalHref";
+export { isExternalHref };
 
 function isLikelyAbsoluteFilesystemPath(candidate: string): boolean {
   if (/^[a-zA-Z]:[\\/]/.test(candidate)) return true;

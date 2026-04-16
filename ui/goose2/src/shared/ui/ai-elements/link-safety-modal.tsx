@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/shared/ui/button";
 import {
@@ -21,6 +22,7 @@ export function LinkSafetyModal({
   onClose,
   url,
 }: LinkSafetyModalProps) {
+  const { t } = useTranslation("common");
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
 
@@ -68,9 +70,9 @@ export function LinkSafetyModal({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Open external link?</DialogTitle>
+          <DialogTitle>{t("components.linkSafety.title")}</DialogTitle>
           <DialogDescription>
-            You&apos;re about to visit an external website.
+            {t("components.linkSafety.description")}
           </DialogDescription>
         </DialogHeader>
         <div className="break-all rounded-md bg-muted p-3 font-mono text-sm">
@@ -83,10 +85,12 @@ export function LinkSafetyModal({
             type="button"
             variant="outline"
           >
-            {isCopied ? "Copied!" : "Copy link"}
+            {isCopied
+              ? t("components.linkSafety.copied")
+              : t("components.linkSafety.copyLink")}
           </Button>
           <Button className="flex-1" onClick={handleOpen} type="button">
-            Open link
+            {t("components.linkSafety.openLink")}
           </Button>
         </DialogFooter>
       </DialogContent>

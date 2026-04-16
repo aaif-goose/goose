@@ -110,7 +110,7 @@ describe("useArtifactLinkHandler", () => {
     );
   });
 
-  it("does not intercept external URLs (defers to Streamdown linkSafety modal)", async () => {
+  it("does not intercept external URLs (defers to MarkdownLink's LinkSafetyModal)", async () => {
     const user = userEvent.setup();
 
     render(<Harness href="https://example.com" label="External" />);
