@@ -19,7 +19,7 @@
     "emptyTitle": "Aún no hay sesiones",
     "searchArchivedPlaceholder": "Buscar sesiones archivadas...",
     "searchError": "La búsqueda de mensajes falló. Mostrando solo coincidencias por título, agente y proyecto.",
-    "searchPlaceholder": "Buscar conversaciones",
+    "searchPlaceholder": "Buscar sesiones..."
     "searching": "Buscando sesiones...",
     "subtitle": "Explora y busca sesiones anteriores",
     "toggleArchived": "Archivadas",

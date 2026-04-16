@@ -106,7 +106,11 @@ export function getNativeConnectDescription(
 export function getFieldSetupDescription(
   setupMethod: ProviderSetupMethod,
   t: (key: string) => string,
+  providerId?: string,
 ): string | null {
+  if (providerId === "openai") {
+    return t("providers.models.setup.fieldDescription.singleApiKey");
+  }
   switch (setupMethod) {
     case "single_api_key":
       return t("providers.models.setup.fieldDescription.singleApiKey");

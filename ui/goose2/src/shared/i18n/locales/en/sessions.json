@@ -9,7 +9,7 @@
   },
   "history": {
     "archivedSubtitle": "Sessions you've archived",
-    "archivedTitle": "Archived Sessions",
+    "archivedTitle": "Archived sessions",
     "backToActive": "Back to active",
     "emptyArchived": "No archived sessions",
     "emptyArchivedHint": "Archived sessions will appear here.",
@@ -19,11 +19,11 @@
     "emptyTitle": "No sessions yet",
     "searchArchivedPlaceholder": "Search archived sessions...",
     "searchError": "Message search failed. Showing title, agent, and project matches only.",
-    "searchPlaceholder": "Search conversations",
+    "searchPlaceholder": "Search sessions..."
     "searching": "Searching sessions...",
     "subtitle": "Browse and search past sessions",
     "toggleArchived": "Archived",
-    "title": "Session History"
+    "title": "Session history"
   },
   "search": {
     "messageMatches_one": "{{displayCount}} message match",

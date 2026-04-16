@@ -330,7 +330,9 @@ export function ChatInput({
   const providerDisplayName =
     providers.find((provider) => provider.id === selectedProvider)?.label ??
     formatProviderLabel(selectedProvider);
-  const agentDisplayName = activePersona?.displayName ?? providerDisplayName;
+  const agentDisplayName = (
+    activePersona?.displayName ?? providerDisplayName
+  ).replace(/ \(Default\)$/, "");
   const resolvedCurrentModel = useMemo(() => {
     if (currentModel) {
       return currentModel;

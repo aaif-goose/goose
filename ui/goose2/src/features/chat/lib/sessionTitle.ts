@@ -1,6 +1,6 @@
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 
-export const DEFAULT_CHAT_TITLE = "New Chat";
+export const DEFAULT_CHAT_TITLE = "New chat";
 
 export function isDefaultChatTitle(title: string): boolean {
   return title === DEFAULT_CHAT_TITLE;

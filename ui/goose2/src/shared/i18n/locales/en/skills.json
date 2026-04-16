@@ -1,22 +1,22 @@
 {
   "dialog": {
-    "createSkill": "Create Skill",
+    "createSkill": "Create skill",
     "creating": "Creating...",
     "description": "Description",
     "descriptionPlaceholder": "What it does and when to use it...",
-    "editTitle": "Edit Skill",
+    "editTitle": "Edit skill",
     "instructions": "Instructions",
     "instructionsPlaceholder": "Markdown instructions the agent will follow...",
     "name": "Name",
     "namePlaceholder": "my-skill-name",
     "nameValidation": "Use 1–64 lowercase letters, numbers, or hyphens. Names cannot start or end with a hyphen.",
     "pathOnDisk": "Path on disk",
-    "newTitle": "New Skill",
+    "newTitle": "New skill",
     "saving": "Saving..."
   },
   "view": {
     "backToSkills": "Back to skills",
-    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This can't be undone.",
     "deleteTitle": "Delete skill?",
     "category": "Category",
     "categories": {
@@ -36,7 +36,7 @@
         "writing": "Writing"
       }
     },
-    "description": "Skills are reusable instructions that help an agent handle specific tasks, workflows, or tools.",
+    "description": "Use skills to add specific instructions or behaviors to any agent.",
     "detailEmptyDescription": "Select a skill to inspect its source, location, and instructions.",
     "detailEmptyTitle": "Choose a skill",
     "dropFile": "or drop a file",
@@ -49,8 +49,8 @@
     "instructions": "Instructions",
     "location": "Location",
     "more": "More",
-    "newSkill": "New Skill",
-    "noMatchesDescription": "Try a different search or filter.",
+    "newSkill": "New skill",
+    "noMatchesDescription": "Try a different search term.",
     "noMatchesTitle": "No matching skills",
     "openDetails": "Open {{name}} details",
     "projects": "Projects",

@@ -16,18 +16,18 @@
         "red": "Red"
       },
       "description": "Choose your accent color",
-      "label": "Accent Color"
+      "label": "Accent color"
     },
     "density": {
       "description": "Adjust the spacing of UI elements",
-      "label": "Interface Density",
+      "label": "Interface density",
       "options": {
         "comfortable": "Comfortable",
         "compact": "Compact",
         "spacious": "Spacious"
       }
     },
-    "description": "Customize the look and feel of Goose",
+    "description": "Customize how Goose looks",
     "theme": {
       "description": "Choose your preferred color scheme",
       "label": "Theme",
@@ -44,7 +44,7 @@
     "empty": "No archived chats.",
     "messageCount_one": "{{displayCount}} message",
     "messageCount_other": "{{displayCount}} messages",
-    "sectionTitle": "Archived Chats",
+    "sectionTitle": "Archived chats",
     "title": "Chats",
     "types": {
       "project": "Project chat",
@@ -70,7 +70,7 @@
     "title": "Compaction"
   },
   "deleteProject": {
-    "description": "Are you sure you want to permanently delete \"{{name}}\"? This cannot be undone.",
+    "description": "Are you sure you want to permanently delete \"{{name}}\"? This can't be undone.",
     "title": "Delete project permanently?"
   },
   "extensions": {
@@ -128,7 +128,8 @@
     "description": "Verify required tools and agent availability for Goose.",
     "empty": "No checks are available yet.",
     "rerun": "Re-run",
-    "runFix": "Run fix command?",
+    "runFix": "Run fix?",
+    "runFixDescription": "This will run the following command:",
     "running": "Running checks...",
     "title": "Doctor",
     "tools": "Tools"
@@ -201,12 +202,12 @@
   "projects": {
     "description": "Manage your projects.",
     "empty": "No archived projects.",
-    "sectionTitle": "Archived Projects",
+    "sectionTitle": "Archived projects",
     "title": "Projects"
   },
   "providers": {
     "agents": {
-      "description": "Agents handle your requests using their own tools and models",
+      "description": "Choose which agents you want to use. You can switch between agents at any time.",
       "errors": {
         "installVerificationFailed": "Install finished but the CLI was not found on PATH. You may need to restart your terminal."
       },
@@ -225,10 +226,10 @@
       },
       "title": "Agent harnesses"
     },
-    "description": "Connect agents and AI models to use with Goose",
+    "description": "Configure your agents and model providers.",
     "disconnect": "Disconnect",
     "models": {
-      "description": "AI models that power Goose. Expand a provider to review what it needs. Connect signs in with an existing account, while Set up saves API keys or other provider settings.",
+      "description": "You need at least one model provider to power the Goose agent. Some agents may bring their own model connections.",
       "notSet": "Not set",
       "setup": {
         "connected": {
@@ -238,17 +239,17 @@
           "oauthDeviceCode": "Connected through Goose device-code sign-in."
         },
         "fieldDescription": {
-          "cloudCredentials": "Set up saves any provider details Goose needs here. Your actual authentication still comes from your cloud credentials.",
-          "configFields": "Set up saves the provider details Goose needs, such as an API key, endpoint, or model settings.",
-          "hostWithOauthFallback": "Set up saves the host details Goose needs here. You can add a token now, or leave it blank and sign in afterward from Goose.",
-          "singleApiKey": "Set up saves the API key Goose needs for this provider."
+          "cloudCredentials": "Add the required details to use this provider.",
+          "configFields": "Add the required details to use this provider.",
+          "hostWithOauthFallback": "Add the required details to use this provider.",
+          "singleApiKey": "Add your API key to use this provider."
         },
         "hostWithOauthFallbackTerminal": "Leave Access Token blank, save your host URL, then run `goose configure` in your terminal to sign in.",
         "nativeConnectDescription": "Sign in with your existing account.",
         "pending": {
           "cloudCredentials": "Configure your cloud credentials in your terminal environment before using this provider.",
-          "local": "This provider runs locally and does not need saved settings here.",
-          "oauthGuided": "Goose will guide you through sign-in from here.",
+          "local": "This provider runs locally and doesn't need saved settings.",
+          "oauthGuided": "Goose will guide you through sign-in.",
           "oauthTerminal": "Run `goose configure` in your terminal to finish sign-in."
         }
       },

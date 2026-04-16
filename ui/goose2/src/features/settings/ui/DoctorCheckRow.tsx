@@ -124,9 +124,12 @@ export function DoctorCheckRow({ check, onFixed }: DoctorCheckRowProps) {
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
             <AlertDialogTitle>{t("settings:doctor.runFix")}</AlertDialogTitle>
-            <AlertDialogDescription className="break-all font-mono">
-              {check.fixCommand}
+            <AlertDialogDescription>
+              {t("settings:doctor.runFixDescription")}
             </AlertDialogDescription>
+            <p className="break-all font-mono text-xs text-muted-foreground">
+              {check.fixCommand}
+            </p>
           </AlertDialogHeader>
           {fixError && <p className="text-xs text-destructive">{fixError}</p>}
           <AlertDialogFooter>
@@ -134,8 +137,6 @@ export function DoctorCheckRow({ check, onFixed }: DoctorCheckRowProps) {
               {t("common:actions.cancel")}
             </AlertDialogCancel>
             <Button
-              variant="outline"
-              size="sm"
               disabled={fixing}
               onClick={confirmFix}
             >
