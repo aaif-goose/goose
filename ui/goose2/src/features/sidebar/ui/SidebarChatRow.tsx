@@ -28,7 +28,6 @@ interface SidebarChatRowProps {
   isActive: boolean;
   isRunning?: boolean;
   hasUnread?: boolean;
-  reserveActivitySpace?: boolean;
   className?: string;
   onSelect?: (id: string) => void;
   onRename?: (id: string, nextTitle: string) => void;
@@ -43,7 +42,6 @@ export function SidebarChatRow({
   isActive,
   isRunning = false,
   hasUnread = false,
-  reserveActivitySpace = false,
   className,
   onSelect,
   onRename,
@@ -67,8 +65,6 @@ export function SidebarChatRow({
   );
   const [draftTitle, setDraftTitle] = useState(editableTitle);
   const showActivityIndicator = isRunning || hasUnread;
-  const shouldReserveActivitySpace =
-    reserveActivitySpace || showActivityIndicator;
 
   useEffect(() => {
     setDraftTitle(editableTitle);
@@ -191,7 +187,7 @@ export function SidebarChatRow({
           isActive ? ACTIVE_CHAT_ROW_CLASS : INACTIVE_CHAT_ROW_CLASS,
         )}
       >
-        {shouldReserveActivitySpace && (
+        {showActivityIndicator && (
           <span className="flex h-3 w-3 shrink-0 items-center justify-center">
             <SessionActivityIndicator
               isRunning={isRunning}

@@ -27,7 +27,7 @@ export function SessionActivityIndicator({
         >
           <Loader2
             aria-hidden="true"
-            className="h-2.5 w-2.5 animate-spin text-[var(--color-text-info)]"
+            className="h-2.5 w-2.5 animate-spin text-text-info"
           />
         </span>
       );
@@ -44,7 +44,7 @@ export function SessionActivityIndicator({
       >
         <Loader2
           aria-hidden="true"
-          className="h-3 w-3 animate-spin text-[var(--color-text-info)]"
+          className="h-3 w-3 animate-spin text-text-info"
         />
       </span>
     );
@@ -60,7 +60,7 @@ export function SessionActivityIndicator({
         role="status"
         aria-label="Unread messages"
         className={cn(
-          "absolute -right-0.5 -top-0.5 h-2 w-2 shrink-0 rounded-full border border-background bg-[var(--color-background-info)] transition-opacity duration-200 ease-out animate-in fade-in-0",
+          "absolute -right-0.5 -top-0.5 h-2 w-2 shrink-0 rounded-full border border-background bg-background-info transition-opacity duration-200 ease-out animate-in fade-in-0",
           className,
         )}
       />
@@ -72,7 +72,7 @@ export function SessionActivityIndicator({
       role="status"
       aria-label="Unread messages"
       className={cn(
-        "h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-background-info)] transition-opacity duration-200 ease-out animate-in fade-in-0",
+        "h-1.5 w-1.5 shrink-0 rounded-full bg-background-info transition-opacity duration-200 ease-out animate-in fade-in-0",
         className,
       )}
     />

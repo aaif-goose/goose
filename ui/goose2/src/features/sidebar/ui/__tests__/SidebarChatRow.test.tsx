@@ -118,14 +118,9 @@ describe("SidebarChatRow", () => {
     ).toBeNull();
   });
 
-  it("does not reserve activity space for recents until activity exists", () => {
+  it("reserves activity space only once activity exists", () => {
     const { container, rerender } = render(
-      <SidebarChatRow
-        id="session-1"
-        title="Recent Chat"
-        isActive={false}
-        reserveActivitySpace={false}
-      />,
+      <SidebarChatRow id="session-1" title="Recent Chat" isActive={false} />,
     );
 
     expect(
@@ -138,7 +133,6 @@ describe("SidebarChatRow", () => {
         title="Recent Chat"
         isActive={false}
         hasUnread
-        reserveActivitySpace={false}
       />,
     );
 
