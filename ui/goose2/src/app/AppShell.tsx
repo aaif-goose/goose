@@ -17,7 +17,10 @@ import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
 import { useAppStartup } from "./hooks/useAppStartup";
 import { AppShellContent } from "./ui/AppShellContent";
 import { acpPrepareSession } from "@/shared/api/acp";
-import { getAndDeleteReplayBuffer } from "@/features/chat/hooks/replayBuffer";
+import {
+  clearReplayBuffer,
+  getAndDeleteReplayBuffer,
+} from "@/features/chat/hooks/replayBuffer";
 import { getHomeDir } from "@/shared/api/system";
 import { resolveEffectiveWorkingDir } from "@/features/projects/lib/chatProjectContext";
 
@@ -107,6 +110,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       );
     } catch (err) {
       console.error("Failed to load session messages:", err);
+      clearReplayBuffer(sessionId);
       useChatStore.getState().setSessionLoading(sessionId, false);
     }
   }, []);

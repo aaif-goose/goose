@@ -26,9 +26,9 @@ const EXCEPTIONS = {
       "Search-as-you-type filtering and draft-aware sidebar highlight logic.",
   },
   "src/app/AppShell.tsx": {
-    limit: 640,
+    limit: 650,
     justification:
-      "Shell still coordinates ACP session loading, project reassignment, and app-level chat routing.",
+      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, and app-level chat routing.",
   },
   "src/features/chat/stores/__tests__/chatSessionStore.test.ts": {
     limit: 540,
