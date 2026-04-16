@@ -3,9 +3,10 @@ title: "goose v1.25.0: Sandboxed, Streamlined, and More Secure"
 description: "goose v1.25.0 brings macOS sandboxing, a unified summon extension, rich MCP app UIs, agentic CLI upgrades, and SLSA build provenance."
 authors:
   - debbie
+image: /img/blog/goose-v1-25-0.png
 ---
 
-![Banner image for the goose v1.25.0 release](banner.png)
+![Banner image for the goose v1.25.0 release](/img/blog/goose-v1-25-0.png)
 
 goose v1.25.0 is here, and it's one of our most significant releases yet. This version brings macOS sandboxing for enhanced security, a major architectural simplification with the unified summon extension, rich UI rendering for MCP apps, and a wave of improvements to agentic CLI providers. Whether you're running goose Desktop or the CLI, there's something in this release for you.
 

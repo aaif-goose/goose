@@ -839,8 +839,31 @@ async fn execute_job(
     }
     drop(jobs_guard);
 
-    #[cfg(feature = "telemetry")]
     let start_time = std::time::Instant::now();
+
+    let recipe_display_name = recipe_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&job.id);
+    let recipe_version = recipe.version.clone();
+
+    tracing::info!(
+        monotonic_counter.goose.session_starts = 1,
+        session_type = "schedule",
+        interface = "scheduler",
+        interactive = false,
+        "Scheduled session started"
+    );
+
+    tracing::info!(
+        monotonic_counter.goose.recipe_runs = 1,
+        recipe_name = %recipe_display_name,
+        recipe_version = %recipe_version,
+        session_type = "schedule",
+        interface = "scheduler",
+        "Recipe execution started"
+    );
+
     #[cfg(feature = "telemetry")]
     tokio::spawn(async move {
         let mut props = HashMap::new();
@@ -884,6 +907,7 @@ async fn execute_job(
     use futures::StreamExt;
     let mut stream = std::pin::pin!(stream);
 
+    let mut stream_error = false;
     while let Some(message_result) = stream.next().await {
         tokio::task::yield_now().await;
 
@@ -897,6 +921,7 @@ async fn execute_job(
             Ok(_) => {}
             Err(e) => {
                 tracing::error!("Error in agent stream: {}", e);
+                stream_error = true;
                 break;
             }
         }
@@ -910,6 +935,45 @@ async fn execute_job(
         .recipe(Some(recipe))
         .apply()
         .await?;
+
+    {
+        let session_duration = start_time.elapsed();
+        let exit_type = if stream_error { "error" } else { "normal" };
+        let (total_tokens, message_count) = agent
+            .config
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .map(|s| (s.total_tokens.unwrap_or(0), s.message_count))
+            .unwrap_or((0, 0));
+
+        tracing::info!(
+            monotonic_counter.goose.session_completions = 1,
+            session_type = "schedule",
+            interface = "scheduler",
+            exit_type,
+            duration_ms = session_duration.as_millis() as u64,
+            total_tokens,
+            message_count,
+            "Session completed"
+        );
+
+        tracing::info!(
+            monotonic_counter.goose.session_duration_ms = session_duration.as_millis() as u64,
+            session_type = "schedule",
+            interface = "scheduler",
+            "Session duration"
+        );
+
+        if total_tokens > 0 {
+            tracing::info!(
+                monotonic_counter.goose.session_tokens = total_tokens,
+                session_type = "schedule",
+                interface = "scheduler",
+                "Session tokens"
+            );
+        }
+    }
 
     #[cfg(feature = "telemetry")]
     {

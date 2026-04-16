@@ -1,7 +1,7 @@
 {
   "name": "goose-app",
   "productName": "Goose",
-  "version": "1.30.0",
+  "version": "1.31.0",
   "description": "Goose App",
   "engines": {
     "node": "^24.10.0",
@@ -17,8 +17,7 @@
     "start:test-error": "GOOSE_TEST_ERROR=true electron-forge start",
     "package": "pnpm run i18n:compile && electron-forge package",
     "make": "pnpm run i18n:compile && electron-forge make",
-    "bundle:default": "node scripts/prepare-platform-binaries.js && pnpm run make && BUNDLE_NAME=\"${GOOSE_BUNDLE_NAME:-Goose}\" && APP_DIR=\"out/${BUNDLE_NAME}-darwin-arm64\" && APP_BUNDLE=\"${APP_DIR}/${BUNDLE_NAME}.app\" && (cd \"$APP_DIR\" && ditto -c -k --sequesterRsrc --keepParent \"${BUNDLE_NAME}.app\" \"${BUNDLE_NAME}.zip\") || echo \"${APP_BUNDLE} not found; either the binary is not built or you are not on macOS\"",
-    "bundle:alpha": "ALPHA=true node scripts/prepare-platform-binaries.js && ALPHA=true pnpm run make && BUNDLE_NAME=\"${GOOSE_BUNDLE_NAME:-Goose}\" && APP_DIR=\"out/${BUNDLE_NAME}-darwin-arm64\" && APP_BUNDLE=\"${APP_DIR}/${BUNDLE_NAME}.app\" && (cd \"$APP_DIR\" && ditto -c -k --sequesterRsrc --keepParent \"${BUNDLE_NAME}.app\" \"${BUNDLE_NAME}_alpha.zip\") || echo \"${APP_BUNDLE} not found; either the binary is not built or you are not on macOS\"",
+    "bundle:default": "node scripts/prepare-platform-binaries.js && pnpm run make && BUNDLE_NAME=\"${GOOSE_BUNDLE_NAME:-Goose}\" && APP_DIR=\"out/${BUNDLE_NAME}-darwin-arm64\" && APP_BUNDLE=\"${APP_DIR}/${BUNDLE_NAME}.app\" && (cd \"$APP_DIR\" && ditto -c -k --sequesterRsrc --keepParent \"${BUNDLE_NAME}.app\" \"${BUNDLE_NAME}.zip\")",
     "bundle:intel": "node scripts/prepare-platform-binaries.js && pnpm run make --arch=x64 && BUNDLE_NAME=\"${GOOSE_BUNDLE_NAME:-Goose}\" && APP_DIR=\"out/${BUNDLE_NAME}-darwin-x64\" && APP_BUNDLE=\"${APP_DIR}/${BUNDLE_NAME}.app\" && (cd \"$APP_DIR\" && ditto -c -k --sequesterRsrc --keepParent \"${BUNDLE_NAME}.app\" \"${BUNDLE_NAME}_intel_mac.zip\")",
     "debug": "echo 'run --remote-debugging-port=8315' && BUNDLE_NAME=\"${GOOSE_BUNDLE_NAME:-Goose}\" && lldb \"out/${BUNDLE_NAME}-darwin-arm64/${BUNDLE_NAME}.app\"",
     "test-e2e": "pnpm run generate-api && playwright test",
@@ -38,13 +37,12 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "test:integration:debug": "DEBUG=1 vitest run --config vitest.integration.config.ts",
-    "start-alpha-gui": "ALPHA=true pnpm run start-gui",
     "i18n:extract": "formatjs extract 'src/**/*.{ts,tsx}' --out-file src/i18n/messages/en.json --flatten && pnpm run i18n:compile",
     "i18n:check": "node scripts/i18n-check.js",
     "i18n:compile": "node scripts/i18n-compile.js"
   },
   "dependencies": {
-    "@aaif/goose-acp": "workspace:*",
+    "@aaif/goose-sdk": "workspace:*",
     "@mcp-ui/client": "6.1.0",
     "@modelcontextprotocol/ext-apps": "^1.1.1",
     "@radix-ui/react-accordion": "^1.2.12",

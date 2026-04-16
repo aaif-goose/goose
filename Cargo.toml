@@ -4,11 +4,12 @@ members = [
     # Mainly for cargo-machete to not error out during inspection.
     "vendor/v8"
 ]
+exclude = ["ui/goose2/src-tauri"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.30.0"
+version = "1.31.0"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
 repository = "https://github.com/aaif-goose/goose"

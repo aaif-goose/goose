@@ -1,5 +1,7 @@
 # Justfile
 
+mod goose2 'ui/goose2'
+
 # list all tasks
 default:
   @just --list
@@ -138,14 +140,13 @@ run-ui-only:
     @echo "Running UI..."
     cd ui/desktop && pnpm install && pnpm run start-gui
 
-debug-ui *alpha:
-    @echo "🚀 Starting goose frontend in external backend mode{{ if alpha == "alpha" { " with alpha features enabled" } else { "" } }}"
+debug-ui:
+    @echo "🚀 Starting goose frontend in external backend mode"
     cd ui/desktop && \
     export GOOSE_EXTERNAL_BACKEND=true && \
     export GOOSE_SERVER__SECRET_KEY="${GOOSE_SERVER__SECRET_KEY:-test}" && \
-    {{ if alpha == "alpha" { "export ALPHA=true &&" } else { "" } }} \
     pnpm install && \
-    pnpm run {{ if alpha == "alpha" { "start-alpha-gui" } else { "start-gui" } }}
+    pnpm run start-gui
 
 # Run UI with main process debugging enabled
 # To debug main process:
@@ -170,12 +171,6 @@ package-ui:
     @echo "Signing with entitlements..."
     codesign --force --deep --sign - --entitlements ui/desktop/entitlements.plist ui/desktop/out/Goose-darwin-arm64/Goose.app
     @echo "Done! Launch with: open ui/desktop/out/Goose-darwin-arm64/Goose.app"
-
-# Run UI with alpha changes
-run-ui-alpha:
-    @just release-binary
-    @echo "Running UI with alpha features..."
-    cd ui/desktop && pnpm install && ALPHA=true pnpm run start-alpha-gui
 
 # Run UI with latest (Windows version)
 run-ui-windows:
@@ -205,6 +200,38 @@ generate-openapi:
     @echo "Generating frontend API..."
     cd ui/desktop && npx @hey-api/openapi-ts
 
+# Check if generated ACP schema and TypeScript types are up-to-date
+check-acp-schema: generate-acp-types
+    #!/usr/bin/env bash
+    set -e
+    echo "🔍 Checking ACP schema and generated types are up-to-date..."
+    if ! git diff --exit-code crates/goose-acp/acp-schema.json crates/goose-acp/acp-meta.json ui/sdk/src/generated/; then
+      echo ""
+      echo "❌ ACP generated files are out of date!"
+      echo ""
+      echo "Run 'just generate-acp-types' locally, then commit the changes."
+      exit 1
+    fi
+    echo "✅ ACP schema and generated types are up-to-date"
+
+# Generate ACP JSON schema from Rust types
+generate-acp-schema:
+    @echo "Generating ACP schema..."
+    cd crates/goose-acp && cargo run --bin generate-acp-schema
+    @echo "ACP schema generated: crates/goose-acp/acp-schema.json, crates/goose-acp/acp-meta.json"
+
+# Generate ACP TypeScript types from JSON schema (requires generate-acp-schema first)
+generate-acp-types: generate-acp-schema
+    @echo "Generating ACP TypeScript types..."
+    cd ui/sdk && npx tsx generate-schema.ts
+    @echo "ACP TypeScript types generated in ui/sdk/src/generated/"
+
+# Build SDK TypeScript package (schema + types + compile)
+build-sdk: generate-acp-types
+    @echo "Compiling ACP TypeScript..."
+    cd ui/sdk && pnpm run build:ts
+    @echo "ACP package built."
+
 # Generate manpages for the CLI
 generate-manpages:
     @echo "Generating manpages..."
@@ -219,11 +246,6 @@ lint-ui:
 make-ui:
     @just release-binary
     cd ui/desktop && pnpm run bundle:default
-
-# make GUI with latest binary and alpha features enabled
-make-ui-alpha:
-    @just release-binary
-    cd ui/desktop && pnpm run bundle:alpha
 
 # make GUI with latest Windows binary
 make-ui-windows:

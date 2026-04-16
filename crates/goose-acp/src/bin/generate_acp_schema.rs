@@ -38,8 +38,12 @@ fn main() {
     // Replace `true` with `{}` throughout $defs. Both mean "accept any value" in
     // JSON Schema, but many TS codegen tools (e.g. @hey-api/openapi-ts Zod plugin)
     // silently drop properties whose schema is the bare `true` literal.
+    //
+    // Also strip "format": "uint64" / "int64" from integer types — these cause TS
+    // codegen to emit BigInt validators, but JS/TS uses `number` for all integers.
     for def in defs.values_mut() {
         replace_true_schemas(def);
+        strip_integer_formats(def);
     }
 
     // Annotate $defs entries with x-method/x-side. Only set x-method for types
@@ -187,6 +191,30 @@ fn main() {
     eprintln!("Generated ACP meta at {}", meta_path.display());
 
     println!("{json_str}");
+}
+
+/// Recursively strip `"format"` from integer-typed schemas.
+///
+/// schemars emits `"format": "uint64"` / `"int64"` etc. for Rust integer types.
+/// TS codegen tools interpret these as BigInt, but JS/TS uses `number` everywhere.
+fn strip_integer_formats(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            let is_integer = map.get("type").and_then(|v| v.as_str()) == Some("integer");
+            if is_integer {
+                map.remove("format");
+            }
+            for v in map.values_mut() {
+                strip_integer_formats(v);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                strip_integer_formats(v);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Recursively replace `true` with `{}` in a JSON value.

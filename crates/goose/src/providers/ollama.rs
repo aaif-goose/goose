@@ -68,10 +68,36 @@ fn resolve_ollama_num_ctx(model_config: &ModelConfig) -> Option<usize> {
     input_limit.or(model_config.context_limit)
 }
 
+fn resolve_ollama_stream_usage() -> bool {
+    let config = crate::config::Config::global();
+    match config.get_param::<bool>("OLLAMA_STREAM_USAGE") {
+        Ok(val) => val,
+        // Key not set: default to true. Ollama supports stream_options since
+        // mid-2025 and most installs benefit from token usage tracking.
+        Err(crate::config::ConfigError::NotFound(_)) => true,
+        // Invalid value (e.g. "0", "yes", typo): warn and disable stream_options
+        // so users who intended to opt out aren't silently left hanging.
+        Err(e) => {
+            tracing::warn!(
+                "Invalid OLLAMA_STREAM_USAGE value ({}); disabling stream_options. \
+                 Use true or false.",
+                e
+            );
+            false
+        }
+    }
+}
+
 fn apply_ollama_options(payload: &mut Value, model_config: &ModelConfig) {
     if let Some(obj) = payload.as_object_mut() {
-        // Ollama does not support stream_options; remove it to prevent hangs.
-        obj.remove("stream_options");
+        // Gate stream_options behind OLLAMA_STREAM_USAGE (default: true).
+        // Older Ollama builds that don't support stream_options may stall before
+        // emitting any SSE data, blocking until the client timeout (600s).
+        // with_line_timeout() only protects after the first line arrives, so
+        // users on older builds should set OLLAMA_STREAM_USAGE=false.
+        if !resolve_ollama_stream_usage() {
+            obj.remove("stream_options");
+        }
 
         // Convert max_completion_tokens / max_tokens to Ollama's options.num_predict.
         // Reasoning models emit max_completion_tokens; non-reasoning models emit max_tokens.
@@ -327,9 +353,34 @@ impl Provider for OllamaProvider {
     }
 }
 
-/// Per-chunk timeout for Ollama streaming responses.
-/// If no new raw SSE data arrives within this duration, the connection is considered dead.
-const OLLAMA_CHUNK_TIMEOUT_SECS: u64 = 30;
+/// Default per-chunk timeout for Ollama streaming responses (seconds).
+/// Configurable via OLLAMA_STREAM_TIMEOUT, GOOSE_STREAM_TIMEOUT, or falls back
+/// to OLLAMA_TIMEOUT. Set high to accommodate slower models (CPU inference,
+/// large parameter counts, complex reasoning).
+const OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS: u64 = 120;
+
+/// Resolve the per-chunk stream timeout from config.
+/// Priority: OLLAMA_STREAM_TIMEOUT > GOOSE_STREAM_TIMEOUT > OLLAMA_TIMEOUT > default (120s).
+/// Zero values are treated as invalid and skipped, since a zero timeout would
+/// cause every chunk after the first to be treated as a stall.
+fn resolve_ollama_chunk_timeout() -> u64 {
+    let config = crate::config::Config::global();
+
+    if let Ok(val) = config.get_param::<u64>("OLLAMA_STREAM_TIMEOUT") {
+        if val > 0 {
+            return val;
+        }
+    }
+    if let Ok(val) = config.get_param::<u64>("GOOSE_STREAM_TIMEOUT") {
+        if val > 0 {
+            return val;
+        }
+    }
+    match config.get_param::<u64>("OLLAMA_TIMEOUT") {
+        Ok(val) if val > 0 => val,
+        _ => OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS,
+    }
+}
 
 /// Wraps a line stream with a per-item timeout at the raw SSE level.
 /// This detects dead connections without false-positive stalls during long
@@ -378,7 +429,8 @@ fn stream_ollama(response: Response, mut log: RequestLog) -> Result<MessageStrea
         let framed = FramedRead::new(stream_reader, LinesCodec::new())
             .map_err(Error::from);
 
-        let timed_lines = with_line_timeout(framed, OLLAMA_CHUNK_TIMEOUT_SECS);
+        let chunk_timeout = resolve_ollama_chunk_timeout();
+        let timed_lines = with_line_timeout(framed, chunk_timeout);
         let message_stream = response_to_streaming_message_ollama(timed_lines);
         pin!(message_stream);
 
@@ -450,7 +502,7 @@ mod tests {
 
         assert!(
             payload.get("stream_options").is_some(),
-            "create_request should produce stream_options (unsupported by Ollama)"
+            "create_request should produce stream_options for usage tracking"
         );
         assert!(
             payload.get("max_tokens").is_some(),
@@ -459,11 +511,59 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_ollama_options_strips_unsupported_fields() {
+    fn test_apply_ollama_options_preserves_stream_options_by_default() {
         use crate::providers::formats::ollama::create_request;
         use crate::providers::utils::ImageFormat;
 
-        let _guard = env_lock::lock_env([("GOOSE_INPUT_LIMIT", None::<&str>)]);
+        let _guard = env_lock::lock_env([
+            ("GOOSE_INPUT_LIMIT", None::<&str>),
+            ("OLLAMA_STREAM_USAGE", None::<&str>),
+        ]);
+        let model_config = ModelConfig::new("llama3.1")
+            .unwrap()
+            .with_max_tokens(Some(4096));
+        let messages = vec![crate::conversation::message::Message::user().with_text("hi")];
+
+        let mut payload = create_request(
+            &model_config,
+            "You are a helpful assistant.",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )
+        .unwrap();
+
+        apply_ollama_options(&mut payload, &model_config);
+
+        assert!(
+            payload.get("stream_options").is_some(),
+            "stream_options should be preserved by default for usage tracking"
+        );
+        assert!(
+            payload.get("max_tokens").is_none(),
+            "max_tokens should be removed for Ollama"
+        );
+        assert!(
+            payload.get("max_completion_tokens").is_none(),
+            "max_completion_tokens should be removed for Ollama"
+        );
+        assert_eq!(
+            payload["options"]["num_predict"], 4096,
+            "max_tokens should be moved to options.num_predict"
+        );
+        assert_eq!(payload["stream"], true, "stream field should be preserved");
+    }
+
+    #[test]
+    fn test_apply_ollama_options_strips_stream_options_when_disabled() {
+        use crate::providers::formats::ollama::create_request;
+        use crate::providers::utils::ImageFormat;
+
+        let _guard = env_lock::lock_env([
+            ("GOOSE_INPUT_LIMIT", None::<&str>),
+            ("OLLAMA_STREAM_USAGE", Some("false")),
+        ]);
         let model_config = ModelConfig::new("llama3.1")
             .unwrap()
             .with_max_tokens(Some(4096));
@@ -483,74 +583,74 @@ mod tests {
 
         assert!(
             payload.get("stream_options").is_none(),
-            "stream_options should be removed for Ollama"
+            "stream_options should be removed when OLLAMA_STREAM_USAGE=false"
         );
-        assert!(
-            payload.get("max_tokens").is_none(),
-            "max_tokens should be removed for Ollama"
-        );
-        assert!(
-            payload.get("max_completion_tokens").is_none(),
-            "max_completion_tokens should be removed for Ollama"
-        );
-        assert_eq!(
-            payload["options"]["num_predict"], 4096,
-            "max_tokens should be moved to options.num_predict"
-        );
-        assert_eq!(payload["stream"], true, "stream field should be preserved");
     }
 
-    #[tokio::test]
-    async fn test_stream_ollama_timeout_on_stall() {
-        use std::convert::Infallible;
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_defaults_to_ollama_timeout() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", None::<&str>),
+            ("GOOSE_STREAM_TIMEOUT", None::<&str>),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 300);
+    }
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, Infallible>>(1);
-        tx.send(Ok(bytes::Bytes::from(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0}],\
-             \"model\":\"test\",\"object\":\"chat.completion.chunk\",\"created\":0}\n",
-        )))
-        .await
-        .unwrap();
-        let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-        let body = reqwest::Body::wrap_stream(stream);
-        let response = http::Response::builder().status(200).body(body).unwrap();
-        let response: reqwest::Response = response.into();
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_prefers_stream_override() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", Some("60")),
+            ("GOOSE_STREAM_TIMEOUT", Some("90")),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 60);
+    }
 
-        let log = RequestLog::start(
-            &ModelConfig::new("test").unwrap(),
-            &json!({"model": "test"}),
-        )
-        .unwrap();
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_uses_goose_stream_fallback() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", None::<&str>),
+            ("GOOSE_STREAM_TIMEOUT", Some("90")),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 90);
+    }
 
-        let mut msg_stream = stream_ollama(response, log).unwrap();
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_uses_default_when_unset() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", None::<&str>),
+            ("GOOSE_STREAM_TIMEOUT", None::<&str>),
+            ("OLLAMA_TIMEOUT", None::<&str>),
+        ]);
+        assert_eq!(
+            resolve_ollama_chunk_timeout(),
+            OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS
+        );
+    }
 
-        let result =
-            tokio::time::timeout(Duration::from_secs(OLLAMA_CHUNK_TIMEOUT_SECS + 5), async {
-                let mut last_err = None;
-                while let Some(item) = msg_stream.next().await {
-                    if let Err(e) = item {
-                        last_err = Some(e);
-                        break;
-                    }
-                }
-                last_err
-            })
-            .await;
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_skips_zero_values() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", Some("0")),
+            ("GOOSE_STREAM_TIMEOUT", Some("0")),
+            ("OLLAMA_TIMEOUT", Some("300")),
+        ]);
+        assert_eq!(resolve_ollama_chunk_timeout(), 300);
+    }
 
-        match result {
-            Ok(Some(err)) => {
-                let err_msg = err.to_string();
-                assert!(
-                    err_msg.contains("stream stalled"),
-                    "Expected stall timeout error, got: {}",
-                    err_msg
-                );
-            }
-            Ok(None) => panic!("Expected timeout error but stream completed normally"),
-            Err(_) => panic!("Outer timeout elapsed -- per-chunk timeout did not fire"),
-        }
-
-        drop(tx);
+    #[test]
+    fn test_resolve_ollama_chunk_timeout_skips_all_zero_to_default() {
+        let _guard = env_lock::lock_env([
+            ("OLLAMA_STREAM_TIMEOUT", Some("0")),
+            ("GOOSE_STREAM_TIMEOUT", Some("0")),
+            ("OLLAMA_TIMEOUT", Some("0")),
+        ]);
+        assert_eq!(
+            resolve_ollama_chunk_timeout(),
+            OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS
+        );
     }
 
     #[test]

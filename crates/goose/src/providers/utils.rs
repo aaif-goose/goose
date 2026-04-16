@@ -376,6 +376,7 @@ impl RequestLog {
         Payload: Serialize,
     {
         let logs_dir = Paths::in_state_dir("logs");
+        fs_err::create_dir_all(&logs_dir)?;
 
         let request_id = Uuid::new_v4();
         let temp_name = format!("llm_request.{request_id}.jsonl");
@@ -524,6 +525,27 @@ pub fn json_escape_control_chars_in_string(s: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_request_log_start_creates_logs_dir() {
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", None::<&str>)]);
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
+
+        let logs_dir = Paths::in_state_dir("logs");
+        assert!(!logs_dir.exists(), "logs dir should not exist yet");
+
+        let log = RequestLog::start(
+            &ModelConfig::new("test").unwrap(),
+            &json!({"model": "test"}),
+        )
+        .expect("RequestLog::start should create missing logs dir");
+        drop(log);
+
+        assert!(logs_dir.is_dir(), "logs dir should have been created");
+
+        std::env::remove_var("GOOSE_PATH_ROOT");
+    }
 
     #[test]
     fn test_detect_image_path() {

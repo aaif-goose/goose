@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-driver-result"
+description = "Enables the driver_result command without any pre-configured scope."
+commands.allow = ["driver_result"]
+
+[[permission]]
+identifier = "deny-driver-result"
+description = "Denies the driver_result command without any pre-configured scope."
+commands.deny = ["driver_result"]

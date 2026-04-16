@@ -11,6 +11,8 @@ pub struct Settings {
     pub port: u16,
     #[serde(default = "default_tls")]
     pub tls: bool,
+    pub tls_cert_path: Option<String>,
+    pub tls_key_path: Option<String>,
 }
 
 impl Settings {
@@ -91,6 +93,8 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 3000,
             tls: true,
+            tls_cert_path: None,
+            tls_key_path: None,
         };
         let addr = server_settings.socket_addr();
         assert_eq!(addr.to_string(), "127.0.0.1:3000");

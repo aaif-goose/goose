@@ -1,10 +1,15 @@
 ---
 title: "Treating LLMs Like Tools in a Toolbox: A Multi-Model Approach to Smarter AI Agents"
 description: How Goose uses multiple LLMs within a single task, optimizing for speed, cost, and reliability in AI agent workflows
+unlisted: true
 authors:
     - mic
     - angie
 ---
+
+:::danger Outdated
+Lead/Worker mode has been removed from goose. It has been replaced by [Planning Mode](/docs/guides/creating-plans), which uses a dedicated planner model with the `/plan` command. See the [multi-model guide](/docs/guides/multi-model/) for current workflows.
+:::
 
 ![blog cover](multi-model-ai-agent.png)
 
@@ -79,7 +84,7 @@ export GOOSE_MODEL="claude-4-sonnet"
 
 From there, Goose takes care of the hand off, the fallback, and the recovery. You just... keep vibing.
 
-If you're curious how it all works under the hood, we've got a [full tutorial](/docs/tutorials/lead-worker).
+If you're curious how it all works under the hood, see the [planning guide](/docs/guides/creating-plans).
 
 ---
 

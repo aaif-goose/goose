@@ -488,10 +488,12 @@ impl CliSession {
         &mut self,
         message: Message,
         cancel_token: CancellationToken,
+        interactive: bool,
     ) -> Result<()> {
         let cancel_token = cancel_token.clone();
         self.push_message(message);
-        self.process_agent_response(false, cancel_token).await?;
+        self.process_agent_response(interactive, cancel_token)
+            .await?;
         Ok(())
     }
 
@@ -499,7 +501,7 @@ impl CliSession {
     pub async fn interactive(&mut self, prompt: Option<String>) -> Result<()> {
         if let Some(prompt) = prompt {
             let msg = Message::user().with_text(&prompt);
-            self.process_message(msg, CancellationToken::default())
+            self.process_message(msg, CancellationToken::default(), true)
                 .await?;
         }
 
@@ -955,7 +957,7 @@ impl CliSession {
     /// Process a single message and exit
     pub async fn headless(&mut self, prompt: String) -> Result<()> {
         let message = Message::user().with_text(&prompt);
-        self.process_message(message, CancellationToken::default())
+        self.process_message(message, CancellationToken::default(), false)
             .await?;
         Ok(())
     }
@@ -1009,7 +1011,28 @@ impl CliSession {
                     match result {
                         Some(Ok(AgentEvent::Message(message))) => {
                             if let Some((id, security_prompt)) = find_tool_confirmation(&message) {
-                                let permission = prompt_tool_confirmation(&security_prompt)?;
+                                let permission = if interactive {
+                                    prompt_tool_confirmation(&security_prompt)?
+                                } else {
+                                    // Non-interactive/headless mode: refuse to run in
+                                    // Approve/SmartApprove modes since auto-allowing would
+                                    // bypass the safety contract those modes are meant to enforce.
+                                    let config = Config::global();
+                                    let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
+                                    if goose_mode == GooseMode::Approve || goose_mode == GooseMode::SmartApprove {
+                                        cancel_token_clone.cancel();
+                                        drop(stream);
+                                        return Err(anyhow::anyhow!(
+                                            "Tool approval required in non-interactive mode with GooseMode::{goose_mode}. \
+                                             This is an invalid configuration — Approve/SmartApprove modes require an \
+                                             interactive terminal. Use GooseMode::Auto for headless sessions."
+                                        ));
+                                    }
+                                    tracing::warn!(
+                                        "Tool confirmation required in non-interactive mode, auto-allowing"
+                                    );
+                                    Permission::AllowOnce
+                                };
 
                                 if permission == Permission::Cancel {
                                     output::render_text("Tool call cancelled. Returning to chat...", Some(Color::Yellow), true);
@@ -1036,6 +1059,18 @@ impl CliSession {
                                     permission,
                                 }).await;
                             } else if let Some((elicitation_id, elicitation_message, schema)) = find_elicitation_request(&message) {
+                                if !interactive {
+                                    // Non-interactive/headless mode: cannot collect user input
+                                    tracing::warn!(
+                                        "Elicitation requested in non-interactive mode, cancelling"
+                                    );
+                                    cancel_token_clone.cancel();
+                                    drop(stream);
+                                    return Err(anyhow::anyhow!(
+                                        "Elicitation requested but no interactive terminal is available to collect user input"
+                                    ));
+                                }
+
                                 output::hide_thinking();
                                 let _ = progress_bars.hide();
 

@@ -75,6 +75,7 @@ const config: Config = {
           onInlineAuthors: "warn",
           onUntruncatedBlogPosts: "warn",
           blogSidebarCount: "ALL",
+          postsPerPage: 22,
         },
         theme: {
           customCss: [
@@ -335,6 +336,10 @@ const config: Config = {
           {
             from: "/docs/experimental/subagents",
             to: "/docs/guides/subagents",
+          },
+          {
+            from: "/docs/tutorials/lead-worker",
+            to: "/docs/guides/creating-plans",
           },
         ],
       },

@@ -531,6 +531,34 @@ mod tests {
     }
 
     #[test]
+    fn test_llama_swap_json_deserializes() {
+        let json = include_str!("../providers/declarative/llama_swap.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("llama_swap.json should parse");
+        assert_eq!(config.name, "llama_swap");
+        assert_eq!(config.display_name, "Llama Swap");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "");
+        assert!(!config.requires_auth);
+        assert!(config.skip_canonical_filtering);
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.supports_streaming, Some(true));
+        assert_eq!(config.base_url, "${LLAMA_SWAP_HOST}/v1/chat/completions");
+        assert!(config.models.is_empty());
+
+        let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
+        assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars[0].name, "LLAMA_SWAP_HOST");
+        assert!(!env_vars[0].required);
+        assert!(!env_vars[0].secret);
+        assert_eq!(env_vars[0].primary, Some(true));
+        assert_eq!(
+            env_vars[0].default,
+            Some("http://localhost:8080".to_string())
+        );
+    }
+
+    #[test]
     fn test_existing_json_files_still_deserialize_without_new_fields() {
         let json = include_str!("../providers/declarative/groq.json");
         let config: DeclarativeProviderConfig =

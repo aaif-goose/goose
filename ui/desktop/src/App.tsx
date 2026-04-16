@@ -44,6 +44,7 @@ import PermissionSettingsView from './components/settings/permission/PermissionS
 
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
 import RecipesView from './components/recipes/RecipesView';
+import SkillsView from './components/skills/SkillsView';
 import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
@@ -66,6 +67,16 @@ const HubRouteWrapper = () => {
   const setView = useNavigation();
   return <Hub setView={setView} />;
 };
+
+export function resolveSessionInitialMessage(
+  session: { recipe?: { prompt?: string | null } | null },
+  initialMessage?: UserInput
+): UserInput | undefined {
+  return (
+    initialMessage ??
+    (session.recipe?.prompt ? { msg: session.recipe.prompt, images: [] } : undefined)
+  );
+}
 
 const PairRouteWrapper = ({
   activeSessions,
@@ -104,12 +115,13 @@ const PairRouteWrapper = ({
             recipeId: recipeIdFromConfig,
             allExtensions: extensionsList,
           });
+          const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
 
           window.dispatchEvent(
             new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
               detail: {
                 sessionId: newSession.id,
-                initialMessage,
+                initialMessage: sessionInitialMessage,
               },
             })
           );
@@ -197,6 +209,10 @@ const RecipesRoute = () => {
   return <RecipesView />;
 };
 
+const SkillsRoute = () => {
+  return <SkillsView />;
+};
+
 const PermissionRoute = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -225,6 +241,9 @@ const PermissionRoute = () => {
             break;
           case 'recipes':
             navigate('/recipes');
+            break;
+          case 'skills':
+            navigate('/skills');
             break;
           default:
             navigate('/');
@@ -662,6 +681,7 @@ export function AppInner() {
               <Route path="sessions" element={<SessionsRoute />} />
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
+              <Route path="skills" element={<SkillsRoute />} />
               <Route
                 path="shared-session"
                 element={

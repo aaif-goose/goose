@@ -2,11 +2,12 @@
 title: "Level Up Your AI Game with rp-why"
 description: "A goose skill that measures the cognitive complexity of your AI collaboration using the Gas Town × DOK framework."
 date: 2026-02-06
+image: /img/blog/rp-why-banner.png
 authors:
   - dakota
 ---
 
-![rp-why skill banner](rp-why-banner.png)
+![rp-why skill banner](/img/blog/rp-why-banner.png)
 
 ## What is rp-why?
 

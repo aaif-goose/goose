@@ -1,0 +1,191 @@
+{
+  "about": {
+    "description": "About information will appear here.",
+    "title": "About"
+  },
+  "appearance": {
+    "accent": {
+      "colors": {
+        "blue": "Blue",
+        "cyan": "Cyan",
+        "green": "Green",
+        "indigo": "Indigo",
+        "orange": "Orange",
+        "pink": "Pink",
+        "purple": "Purple",
+        "red": "Red"
+      },
+      "description": "Choose your accent color",
+      "label": "Accent Color"
+    },
+    "density": {
+      "description": "Adjust the spacing of UI elements",
+      "label": "Interface Density",
+      "options": {
+        "comfortable": "Comfortable",
+        "compact": "Compact",
+        "spacious": "Spacious"
+      }
+    },
+    "description": "Customize the look and feel of Goose",
+    "theme": {
+      "description": "Choose your preferred color scheme",
+      "label": "Theme",
+      "options": {
+        "dark": "Dark",
+        "light": "Light",
+        "system": "System"
+      }
+    },
+    "title": "Appearance"
+  },
+  "chats": {
+    "description": "Restore archived chats.",
+    "empty": "No archived chats.",
+    "messageCount_one": "{{displayCount}} message",
+    "messageCount_other": "{{displayCount}} messages",
+    "sectionTitle": "Archived Chats",
+    "title": "Chats",
+    "types": {
+      "project": "Project chat",
+      "standalone": "Standalone chat"
+    }
+  },
+  "deleteProject": {
+    "description": "Are you sure you want to permanently delete \"{{name}}\"? This cannot be undone.",
+    "title": "Delete project permanently?"
+  },
+  "extensions": {
+    "title": "Extensions",
+    "description": "Manage MCP extensions that add tools and capabilities to Goose.",
+    "search": "Search extensions...",
+    "enabled": "Enabled",
+    "enabledCount": "Enabled ({{count}})",
+    "available": "Available",
+    "availableCount": "Available ({{count}})",
+    "empty": "No extensions configured.",
+    "noResults": "No extensions match your search.",
+    "addExtension": "Add Extension",
+    "editExtension": "Edit Extension",
+    "deleteExtension": "Delete Extension",
+    "toggle": "Toggle {{name}}",
+    "configure": "Configure {{name}}",
+    "save": "Save",
+    "cancel": "Cancel",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "my-extension",
+      "type": "Type",
+      "command": "Command",
+      "commandPlaceholder": "npx",
+      "arguments": "Arguments",
+      "argumentsPlaceholder": "One argument per line",
+      "url": "URL",
+      "urlPlaceholder": "http://localhost:3000/mcp",
+      "description": "Description",
+      "descriptionPlaceholder": "What does this extension do?",
+      "timeout": "Timeout (seconds)",
+      "envVars": "Environment Variables",
+      "envKeyPlaceholder": "KEY",
+      "envValuePlaceholder": "value",
+      "addEnvVar": "Add variable",
+      "removeEnvVar": "Remove variable"
+    },
+    "types": {
+      "stdio": "Stdio",
+      "streamable_http": "HTTP",
+      "builtin": "Built-in"
+    },
+    "errors": {
+      "toggleFailed": "Failed to toggle extension. Please try again.",
+      "saveFailed": "Failed to save extension. Please try again.",
+      "deleteFailed": "Failed to delete extension. Please try again.",
+      "nameConflict": "An extension named \"{{name}}\" already exists."
+    }
+  },
+  "doctor": {
+    "agents": "Agents",
+    "copied": "Copied",
+    "copyDetails": "Copy details",
+    "description": "Verify required tools and agent availability for Goose.",
+    "empty": "No checks are available yet.",
+    "rerun": "Re-run",
+    "runFix": "Run fix command?",
+    "running": "Running checks...",
+    "title": "Doctor",
+    "tools": "Tools"
+  },
+  "general": {
+    "description": "Manage language and other app preferences.",
+    "language": {
+      "description": "Choose how Goose formats and displays the interface.",
+      "english": "English",
+      "label": "Language",
+      "spanish": "Spanish",
+      "system": "System default ({{language}})"
+    },
+    "title": "General"
+  },
+  "nav": {
+    "about": "About",
+    "appearance": "Appearance",
+    "chats": "Chats",
+    "doctor": "Doctor",
+    "general": "General",
+    "projects": "Projects",
+    "extensions": "Extensions",
+    "providers": "Providers"
+  },
+  "projects": {
+    "description": "Manage your projects.",
+    "empty": "No archived projects.",
+    "sectionTitle": "Archived Projects",
+    "title": "Projects"
+  },
+  "providers": {
+    "agents": {
+      "description": "Agents handle your requests using their own tools and models",
+      "installLabel": "Install {{name}}",
+      "signIn": "Sign in",
+      "signInLabel": "Sign in to {{name}}",
+      "title": "Agents"
+    },
+    "description": "Connect agents and AI models to use with Goose",
+    "disconnect": "Disconnect",
+    "models": {
+      "description": "AI models that power Goose. Expand a provider to review what it needs. Connect signs in with an existing account, while Set up saves API keys or other provider settings.",
+      "notSet": "Not set",
+      "setup": {
+        "connected": {
+          "cloudCredentials": "Connected through your cloud credentials.",
+          "local": "Running locally.",
+          "oauthBrowser": "Connected through Goose sign-in.",
+          "oauthDeviceCode": "Connected through Goose device-code sign-in."
+        },
+        "fieldDescription": {
+          "cloudCredentials": "Set up saves any provider details Goose needs here. Your actual authentication still comes from your cloud credentials.",
+          "configFields": "Set up saves the provider details Goose needs, such as an API key, endpoint, or model settings.",
+          "hostWithOauthFallback": "Set up saves the host details Goose needs here. You can add a token now, or leave it blank and sign in afterward from Goose.",
+          "singleApiKey": "Set up saves the API key Goose needs for this provider."
+        },
+        "hostWithOauthFallbackTerminal": "Leave Access Token blank, save your host URL, then run `goose configure` in your terminal to sign in.",
+        "nativeConnectDescription": "Sign in with your existing account.",
+        "pending": {
+          "cloudCredentials": "Configure your cloud credentials in your terminal environment before using this provider.",
+          "local": "This provider runs locally and does not need saved settings here.",
+          "oauthGuided": "Goose will guide you through sign-in from here.",
+          "oauthTerminal": "Run `goose configure` in your terminal to finish sign-in."
+        }
+      },
+      "title": "Models"
+    },
+    "restartButton": "Restart now",
+    "restartMessage": "Restart to apply credential changes.",
+    "saved": "Saved",
+    "showFewer": "Show fewer",
+    "showMore": "Show {{count}} more providers",
+    "title": "Providers",
+    "waitingForSignIn": "Waiting for sign-in..."
+  },
+  "title": "Settings"
+}

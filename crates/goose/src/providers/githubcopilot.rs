@@ -82,7 +82,7 @@ impl GithubCopilotUrls {
             let base = format!("https://{}", host);
             let copilot_token_url = copilot_token_url
                 .map(|u| u.trim_end_matches('/').to_string())
-                .unwrap_or_else(|| format!("{}/api/copilot_internal/v2/token", base));
+                .unwrap_or_else(|| format!("https://api.{}/copilot_internal/v2/token", host));
             Self {
                 device_code_url: format!("{}/login/device/code", base),
                 access_token_url: format!("{}/login/oauth/access_token", base),
@@ -777,7 +777,7 @@ mod tests {
         );
         assert_eq!(
             urls.copilot_token_url,
-            "https://my-enterprise.ghe.com/api/copilot_internal/v2/token"
+            "https://api.my-enterprise.ghe.com/copilot_internal/v2/token"
         );
     }
 

@@ -35,8 +35,6 @@ pub struct SessionReplyRequest {
     pub user_message: Message,
     #[serde(default)]
     pub override_conversation: Option<Vec<Message>>,
-    pub recipe_name: Option<String>,
-    pub recipe_version: Option<String>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -287,7 +285,7 @@ pub async fn session_reply(
     }
 
     // Validate session exists before allocating a bus/registering work
-    state
+    let session_data = state
         .session_manager()
         .get_session(&session_id, false)
         .await
@@ -302,17 +300,12 @@ pub async fn session_reply(
         "Session started"
     );
 
-    if let Some(recipe_name) = request.recipe_name.clone() {
+    if let Some(ref recipe) = session_data.recipe {
         if state.mark_recipe_run_if_absent(&session_id).await {
-            let recipe_version = request
-                .recipe_version
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string());
-
             tracing::info!(
                 monotonic_counter.goose.recipe_runs = 1,
-                recipe_name = %recipe_name,
-                recipe_version = %recipe_version,
+                recipe_name = %recipe.title,
+                recipe_version = %recipe.version,
                 session_type = "app",
                 interface = "ui",
                 "Recipe execution started"

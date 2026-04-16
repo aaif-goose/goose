@@ -4,6 +4,7 @@ description: Learn how an AI agent embedded in GitHub Actions helps maintainers 
 authors:
   - rizel
   - tyler
+image: /img/blog/goose-maintains-goose.png
 ---
 
 ![blog cover](goose-maintains-goose.png)

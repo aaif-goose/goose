@@ -1,11 +1,12 @@
 ---
 title: "How I Used RPI to Build an OpenClaw Alternative"
 description: "Learn how I built a minimal, personal AI agent using goose and the RPI method."
+image: /img/blog/rpi-openclaw-blogbanner.png
 authors:
   - rizel
 ---
 
-![How I Used RPI to Build an OpenClaw Alternative](blogbanner.png)
+![How I Used RPI to Build an OpenClaw Alternative](/img/blog/rpi-openclaw-blogbanner.png)
 
 Everyone on Tech Twitter has been buying Mac Minis, so they could run a local agentic tool called [OpenClaw](https://openclaw.ai/). OpenClaw is a messaging-based AI assistant that connects to platforms such as Discord and Telegram allowing you to interact with an AI agent through DMs or @mentions. Under the hood, it uses an agent called Pi to execute tasks, browse the web, write code, and more.
 

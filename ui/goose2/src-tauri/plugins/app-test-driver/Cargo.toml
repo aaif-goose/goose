@@ -1,0 +1,22 @@
+[package]
+name = "tauri-plugin-app-test-driver"
+version = "0.1.0"
+edition = "2021"
+links = "tauri-plugin-app-test-driver"
+build = "build.rs"
+
+[lib]
+name = "tauri_plugin_app_test_driver"
+path = "src/lib.rs"
+
+[dependencies]
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", features = ["NSWindow", "NSResponder"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

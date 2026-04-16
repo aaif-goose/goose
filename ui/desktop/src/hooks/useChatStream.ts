@@ -583,8 +583,6 @@ export function useChatStream({
       userMessage: Message,
       currentMessages: Message[],
       overrideConversation?: Message[],
-      recipeName?: string,
-      recipeVersion?: string,
     ) => {
       const requestId = uuidv7();
       const abortController = new AbortController();
@@ -624,8 +622,6 @@ export function useChatStream({
             request_id: requestId,
             user_message: userMessage,
             override_conversation: overrideConversation,
-            recipe_name: recipeName,
-            recipe_version: recipeVersion,
           },
           signal: abortController.signal,
           throwOnError: true,

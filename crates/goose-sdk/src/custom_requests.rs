@@ -104,6 +104,18 @@ pub struct GetExtensionsResponse {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/session/extensions", response = GetSessionExtensionsResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSessionExtensionsRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetSessionExtensionsResponse {
+    pub extensions: Vec<serde_json::Value>,
+}
+
 /// Atomically update the provider for a live session.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/session/provider/update", response = UpdateProviderResponse)]
@@ -252,6 +264,70 @@ pub struct ImportSessionResponse {
     pub title: Option<String>,
     pub updated_at: Option<String>,
     pub message_count: u64,
+}
+
+/// List providers with full metadata (config keys, setup steps, etc.).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/providers/details", response = GetProviderDetailsResponse)]
+pub struct GetProviderDetailsRequest {}
+
+/// Provider details response.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetProviderDetailsResponse {
+    pub providers: Vec<ProviderDetailEntry>,
+}
+
+/// Fetch the full list of models available for a specific provider.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/providers/models", response = GetProviderModelsResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetProviderModelsRequest {
+    pub provider_name: String,
+}
+
+/// Provider models response.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetProviderModelsResponse {
+    pub models: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderDetailEntry {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub default_model: String,
+    pub is_configured: bool,
+    pub provider_type: String,
+    pub config_keys: Vec<ProviderConfigKey>,
+    #[serde(default)]
+    pub setup_steps: Vec<String>,
+    #[serde(default)]
+    pub known_models: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelEntry {
+    pub name: String,
+    pub context_limit: usize,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigKey {
+    pub name: String,
+    pub required: bool,
+    pub secret: bool,
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub oauth_flow: bool,
+    #[serde(default)]
+    pub device_code_flow: bool,
+    #[serde(default)]
+    pub primary: bool,
 }
 
 /// Empty success response for operations that return no data.

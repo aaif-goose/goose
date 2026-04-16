@@ -1,0 +1,191 @@
+{
+  "about": {
+    "description": "La información de Goose aparecerá aquí.",
+    "title": "Acerca de"
+  },
+  "appearance": {
+    "accent": {
+      "colors": {
+        "blue": "Azul",
+        "cyan": "Cian",
+        "green": "Verde",
+        "indigo": "Índigo",
+        "orange": "Naranja",
+        "pink": "Rosa",
+        "purple": "Morado",
+        "red": "Rojo"
+      },
+      "description": "Elige tu color de acento",
+      "label": "Color de acento"
+    },
+    "density": {
+      "description": "Ajusta el espaciado de los elementos de la interfaz",
+      "label": "Densidad de la interfaz",
+      "options": {
+        "comfortable": "Cómoda",
+        "compact": "Compacta",
+        "spacious": "Espaciosa"
+      }
+    },
+    "description": "Personaliza el aspecto de Goose",
+    "theme": {
+      "description": "Elige tu esquema de color preferido",
+      "label": "Tema",
+      "options": {
+        "dark": "Oscuro",
+        "light": "Claro",
+        "system": "Sistema"
+      }
+    },
+    "title": "Apariencia"
+  },
+  "chats": {
+    "description": "Restaura chats archivados.",
+    "empty": "No hay chats archivados.",
+    "messageCount_one": "{{displayCount}} mensaje",
+    "messageCount_other": "{{displayCount}} mensajes",
+    "sectionTitle": "Chats archivados",
+    "title": "Chats",
+    "types": {
+      "project": "Chat del proyecto",
+      "standalone": "Chat independiente"
+    }
+  },
+  "deleteProject": {
+    "description": "¿Seguro que quieres eliminar permanentemente \"{{name}}\"? Esta acción no se puede deshacer.",
+    "title": "¿Eliminar el proyecto de forma permanente?"
+  },
+  "extensions": {
+    "title": "Extensiones",
+    "description": "Administra las extensiones MCP que agregan herramientas y capacidades a Goose.",
+    "search": "Buscar extensiones...",
+    "enabled": "Habilitadas",
+    "enabledCount": "Habilitadas ({{count}})",
+    "available": "Disponibles",
+    "availableCount": "Disponibles ({{count}})",
+    "empty": "No hay extensiones configuradas.",
+    "noResults": "Ninguna extensión coincide con tu búsqueda.",
+    "addExtension": "Agregar extensión",
+    "editExtension": "Editar extensión",
+    "deleteExtension": "Eliminar extensión",
+    "toggle": "Activar/desactivar {{name}}",
+    "configure": "Configurar {{name}}",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "fields": {
+      "name": "Nombre",
+      "namePlaceholder": "mi-extension",
+      "type": "Tipo",
+      "command": "Comando",
+      "commandPlaceholder": "npx",
+      "arguments": "Argumentos",
+      "argumentsPlaceholder": "Un argumento por línea",
+      "url": "URL",
+      "urlPlaceholder": "http://localhost:3000/mcp",
+      "description": "Descripción",
+      "descriptionPlaceholder": "¿Qué hace esta extensión?",
+      "timeout": "Tiempo de espera (segundos)",
+      "envVars": "Variables de entorno",
+      "envKeyPlaceholder": "CLAVE",
+      "envValuePlaceholder": "valor",
+      "addEnvVar": "Agregar variable",
+      "removeEnvVar": "Eliminar variable"
+    },
+    "types": {
+      "stdio": "Stdio",
+      "streamable_http": "HTTP",
+      "builtin": "Integrada"
+    },
+    "errors": {
+      "toggleFailed": "Error al cambiar la extensión. Inténtalo de nuevo.",
+      "saveFailed": "Error al guardar la extensión. Inténtalo de nuevo.",
+      "deleteFailed": "Error al eliminar la extensión. Inténtalo de nuevo.",
+      "nameConflict": "Ya existe una extensión llamada \"{{name}}\"."
+    }
+  },
+  "doctor": {
+    "agents": "Agentes",
+    "copied": "Copiado",
+    "copyDetails": "Copiar detalles",
+    "description": "Verifica las herramientas necesarias y la disponibilidad de agentes para Goose.",
+    "empty": "Todavía no hay comprobaciones disponibles.",
+    "rerun": "Volver a ejecutar",
+    "runFix": "¿Ejecutar el comando de corrección?",
+    "running": "Ejecutando comprobaciones...",
+    "title": "Diagnóstico",
+    "tools": "Herramientas"
+  },
+  "general": {
+    "description": "Administra el idioma y otras preferencias de la app.",
+    "language": {
+      "description": "Elige cómo Goose formatea y muestra la interfaz.",
+      "english": "Inglés",
+      "label": "Idioma",
+      "spanish": "Español",
+      "system": "Predeterminado del sistema ({{language}})"
+    },
+    "title": "General"
+  },
+  "nav": {
+    "about": "Acerca de",
+    "appearance": "Apariencia",
+    "chats": "Chats",
+    "doctor": "Diagnóstico",
+    "general": "General",
+    "projects": "Proyectos",
+    "extensions": "Extensiones",
+    "providers": "Proveedores"
+  },
+  "projects": {
+    "description": "Administra tus proyectos.",
+    "empty": "No hay proyectos archivados.",
+    "sectionTitle": "Proyectos archivados",
+    "title": "Proyectos"
+  },
+  "providers": {
+    "agents": {
+      "description": "Los agentes manejan tus solicitudes usando sus propias herramientas y modelos",
+      "installLabel": "Instalar {{name}}",
+      "signIn": "Iniciar sesión",
+      "signInLabel": "Iniciar sesión en {{name}}",
+      "title": "Agentes"
+    },
+    "description": "Conecta agentes y modelos de IA para usar con Goose",
+    "disconnect": "Desconectar",
+    "models": {
+      "description": "Modelos de IA que alimentan a Goose. Expande un proveedor para revisar lo que necesita. Conectar inicia sesión con una cuenta existente, mientras que Configurar guarda claves API u otros ajustes del proveedor.",
+      "notSet": "No configurado",
+      "setup": {
+        "connected": {
+          "cloudCredentials": "Conectado mediante tus credenciales de nube.",
+          "local": "Ejecutándose localmente.",
+          "oauthBrowser": "Conectado mediante el inicio de sesión de Goose.",
+          "oauthDeviceCode": "Conectado mediante el inicio de sesión por código de dispositivo de Goose."
+        },
+        "fieldDescription": {
+          "cloudCredentials": "La configuración guarda aquí cualquier detalle del proveedor que Goose necesite. Tu autenticación real sigue viniendo de tus credenciales de nube.",
+          "configFields": "La configuración guarda los detalles del proveedor que Goose necesita, como una clave API, un endpoint o ajustes del modelo.",
+          "hostWithOauthFallback": "La configuración guarda aquí los detalles del host que Goose necesita. Puedes añadir un token ahora o dejarlo en blanco e iniciar sesión después desde Goose.",
+          "singleApiKey": "La configuración guarda la clave API que Goose necesita para este proveedor."
+        },
+        "hostWithOauthFallbackTerminal": "Deja en blanco el token de acceso, guarda la URL del host y luego ejecuta `goose configure` en tu terminal para iniciar sesión.",
+        "nativeConnectDescription": "Inicia sesión con tu cuenta existente.",
+        "pending": {
+          "cloudCredentials": "Configura tus credenciales de nube en el entorno de tu terminal antes de usar este proveedor.",
+          "local": "Este proveedor se ejecuta localmente y no necesita ajustes guardados aquí.",
+          "oauthGuided": "Goose te guiará por el inicio de sesión desde aquí.",
+          "oauthTerminal": "Ejecuta `goose configure` en tu terminal para terminar de iniciar sesión."
+        }
+      },
+      "title": "Modelos"
+    },
+    "restartButton": "Reiniciar ahora",
+    "restartMessage": "Reinicia para aplicar los cambios de credenciales.",
+    "saved": "Guardado",
+    "showFewer": "Mostrar menos",
+    "showMore": "Mostrar {{count}} proveedores más",
+    "title": "Proveedores",
+    "waitingForSignIn": "Esperando inicio de sesión..."
+  },
+  "title": "Configuración"
+}

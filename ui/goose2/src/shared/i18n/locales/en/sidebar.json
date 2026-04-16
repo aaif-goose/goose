@@ -1,0 +1,33 @@
+{
+  "actions": {
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "newChat": "New chat",
+    "newChatInProject": "New chat in project",
+    "newProject": "New project",
+    "renameHint": "Double-click to rename"
+  },
+  "menu": {
+    "optionsFor": "Options for {{label}}"
+  },
+  "navigation": {
+    "agents": "Personas",
+    "home": "Home",
+    "sessionHistory": "Session History",
+    "skills": "Skills"
+  },
+  "search": {
+    "error": "Message search failed. Showing metadata matches only.",
+    "placeholder": "Search conversations",
+    "searching": "Searching chats..."
+  },
+  "sections": {
+    "projects": "Projects",
+    "recents": "Recents"
+  },
+  "showLess": "Show less",
+  "viewAllChats_one": "View all {{displayCount}} chat",
+  "viewAllChats_other": "View all {{displayCount}} chats",
+  "moreChats_one": "{{displayCount}} more",
+  "moreChats_other": "{{displayCount}} more"
+}

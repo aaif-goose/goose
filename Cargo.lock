@@ -4326,7 +4326,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "agent-client-protocol-schema",
  "ahash",
@@ -4447,7 +4447,7 @@ dependencies = [
 
 [[package]]
 name = "goose-acp"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
@@ -4483,7 +4483,7 @@ dependencies = [
 
 [[package]]
 name = "goose-acp-macros"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -4491,7 +4491,7 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "anstream 0.6.21",
  "anyhow",
@@ -4544,7 +4544,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4573,7 +4573,7 @@ dependencies = [
 
 [[package]]
 name = "goose-sdk"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "agent-client-protocol-schema",
  "sacp",
@@ -4586,7 +4586,7 @@ dependencies = [
 
 [[package]]
 name = "goose-server"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -4604,6 +4604,7 @@ dependencies = [
  "hex",
  "http 1.4.0",
  "openssl",
+ "pem",
  "rand 0.8.5",
  "rcgen",
  "reqwest 0.13.2",
@@ -4633,7 +4634,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -4641,7 +4642,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.30.0"
+version = "1.31.0"
 dependencies = [
  "axum",
  "env-lock",
@@ -8292,9 +8293,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
 dependencies = [
  "aws-lc-rs",
  "ring",

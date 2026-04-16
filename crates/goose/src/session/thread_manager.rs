@@ -54,9 +54,9 @@ type ThreadRow = (
     String,
     bool,
     Option<String>,
-    String,
-    String,
-    Option<String>,
+    DateTime<Utc>,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
     String,
     Option<String>,
     i64,
@@ -70,21 +70,21 @@ fn thread_from_row(
         working_dir,
         created_at,
         updated_at,
-        archived_at_str,
+        archived_at,
         metadata_json,
         current_session_id,
         message_count,
     ): ThreadRow,
 ) -> Result<Thread> {
     let metadata: ThreadMetadata = serde_json::from_str(&metadata_json).unwrap_or_default();
-    let archived_at = archived_at_str.as_deref().and_then(|s| s.parse().ok());
+
     Ok(Thread {
         id,
         name,
         user_set_name,
         working_dir,
-        created_at: created_at.parse().unwrap_or_else(|_| Utc::now()),
-        updated_at: updated_at.parse().unwrap_or_else(|_| Utc::now()),
+        created_at,
+        updated_at,
         archived_at,
         metadata,
         current_session_id,

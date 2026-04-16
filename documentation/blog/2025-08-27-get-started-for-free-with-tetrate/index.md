@@ -55,7 +55,7 @@ Browse and select from a wide range of options, including:
 - **Specialized models** optimized for different use cases
 
 :::tip Protip 
- Want the best of both worlds? Use goose’s [Lead/Worker configuration](/docs/tutorials/lead-worker) to combine a powerful frontier model with a faster open-weight model. Let your Lead handle the high-level thinking while Workers take care of the repetitive tasks—saving you both time and credits.
+ Want the best of both worlds? Use a dedicated [planner model](/docs/guides/creating-plans) for complex strategy and a faster default model for execution. Pair this with `/plan` to get strong reasoning only when you need it—saving both time and credits.
 :::
 
 ---

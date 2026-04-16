@@ -163,7 +163,7 @@ jobs:
     needs: build-desktop-windows
     if: inputs.signing
     runs-on: windows-latest
-    environment: ${{ (inputs.signing == true) && 'signing' || null }}
+    environment: ${{ inputs.signing && 'signing' || null }}
 
     steps:
       - name: Download unsigned distribution

@@ -1,0 +1,31 @@
+{
+  "dialog": {
+    "createSkill": "Crear skill",
+    "creating": "Creando...",
+    "description": "Descripción",
+    "descriptionPlaceholder": "Qué hace y cuándo usarla...",
+    "editTitle": "Editar skill",
+    "instructions": "Instrucciones",
+    "instructionsPlaceholder": "Instrucciones en Markdown que seguirá el agente...",
+    "name": "Nombre",
+    "namePlaceholder": "mi-skill",
+    "nameValidation": "Debe estar en kebab-case (p. ej. code-review)",
+    "newTitle": "Nueva skill",
+    "saving": "Guardando..."
+  },
+  "view": {
+    "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
+    "deleteTitle": "¿Eliminar skill?",
+    "description": "Instrucciones reutilizables para tus personas de IA",
+    "dropFile": "o suelta un archivo",
+    "emptyDescription": "Crea una skill o suelta aquí un archivo .skill.json.",
+    "emptyTitle": "Aún no hay skills",
+    "exportedTo": "Exportado a {{filename}}",
+    "newSkill": "Nueva skill",
+    "noMatchesDescription": "Prueba con otro término de búsqueda.",
+    "noMatchesTitle": "No hay skills que coincidan",
+    "optionsAria": "Opciones de {{name}}",
+    "searchPlaceholder": "Buscar skills por nombre o descripción...",
+    "title": "Skills"
+  }
+}

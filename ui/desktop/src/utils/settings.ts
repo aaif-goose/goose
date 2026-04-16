@@ -2,6 +2,7 @@ export interface ExternalGoosedConfig {
   enabled: boolean;
   url: string;
   secret: string;
+  certFingerprint?: string;
 }
 
 export interface KeyboardShortcuts {

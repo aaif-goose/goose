@@ -1,0 +1,420 @@
+import type {
+  SessionNotification,
+  SessionUpdate,
+} from "@agentclientprotocol/sdk";
+import { useChatStore } from "@/features/chat/stores/chatStore";
+import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
+import {
+  ensureReplayBuffer,
+  getBufferedMessage,
+  findLatestUnpairedToolRequest,
+} from "@/features/chat/hooks/replayBuffer";
+import type {
+  ToolRequestContent,
+  ToolResponseContent,
+} from "@/shared/types/messages";
+import type { AcpNotificationHandler } from "./acpConnection";
+import { getLocalSessionId } from "./acpSessionTracker";
+
+// Pre-set message ID for the next live stream per goose session
+const presetMessageIds = new Map<string, string>();
+
+export function setActiveMessageId(
+  gooseSessionId: string,
+  messageId: string,
+): void {
+  presetMessageIds.set(gooseSessionId, messageId);
+}
+
+export function clearActiveMessageId(gooseSessionId: string): void {
+  presetMessageIds.delete(gooseSessionId);
+}
+
+export async function handleSessionNotification(
+  notification: SessionNotification,
+): Promise<void> {
+  const gooseSessionId = notification.sessionId;
+  const sessionId = getLocalSessionId(gooseSessionId) ?? gooseSessionId;
+  const { update } = notification;
+  const isReplay = useChatStore.getState().loadingSessionIds.has(sessionId);
+
+  if (isReplay) {
+    handleReplay(sessionId, update);
+  } else {
+    handleLive(sessionId, gooseSessionId, update);
+  }
+}
+
+function handleReplay(sessionId: string, update: SessionUpdate): void {
+  switch (update.sessionUpdate) {
+    case "agent_message_chunk": {
+      const messageId = update.messageId ?? crypto.randomUUID();
+      const buffer = ensureReplayBuffer(sessionId);
+      if (!getBufferedMessage(sessionId, messageId)) {
+        buffer.push({
+          id: messageId,
+          role: "assistant",
+          created: Date.now(),
+          content: [],
+          metadata: {
+            userVisible: true,
+            agentVisible: true,
+            completionStatus: "inProgress",
+          },
+        });
+      }
+      const msg = getBufferedMessage(sessionId, messageId);
+      if (msg && update.content.type === "text" && "text" in update.content) {
+        const last = msg.content[msg.content.length - 1];
+        if (last?.type === "text") {
+          (last as { type: "text"; text: string }).text += update.content.text;
+        } else {
+          msg.content.push({ type: "text", text: update.content.text });
+        }
+      }
+      break;
+    }
+
+    case "user_message_chunk": {
+      const messageId = update.messageId ?? crypto.randomUUID();
+      const buffer = ensureReplayBuffer(sessionId);
+      const existing = getBufferedMessage(sessionId, messageId);
+      if (
+        !existing &&
+        update.content.type === "text" &&
+        "text" in update.content
+      ) {
+        buffer.push({
+          id: messageId,
+          role: "user",
+          created: Date.now(),
+          content: [{ type: "text", text: update.content.text }],
+          metadata: { userVisible: true, agentVisible: true },
+        });
+      } else if (
+        existing &&
+        update.content.type === "text" &&
+        "text" in update.content
+      ) {
+        const last = existing.content[existing.content.length - 1];
+        if (last?.type === "text") {
+          (last as { type: "text"; text: string }).text += update.content.text;
+        } else {
+          existing.content.push({ type: "text", text: update.content.text });
+        }
+      }
+      break;
+    }
+
+    case "tool_call": {
+      const msg = findMessageInBuffer(sessionId, update.toolCallId);
+      if (msg) {
+        msg.content.push({
+          type: "toolRequest",
+          id: update.toolCallId,
+          name: update.title,
+          arguments: {},
+          status: "executing",
+          startedAt: Date.now(),
+        });
+      }
+      break;
+    }
+
+    case "tool_call_update": {
+      const msg = findMessageWithToolCall(sessionId, update.toolCallId);
+      if (msg) {
+        if (update.title) {
+          const tc = msg.content.find(
+            (c) => c.type === "toolRequest" && c.id === update.toolCallId,
+          );
+          if (tc && tc.type === "toolRequest") {
+            (tc as ToolRequestContent).name = update.title;
+          }
+        }
+        if (update.status === "completed" || update.status === "failed") {
+          const tc = msg.content.find(
+            (c) => c.type === "toolRequest" && c.id === update.toolCallId,
+          );
+          if (tc && tc.type === "toolRequest") {
+            const idx = msg.content.indexOf(tc);
+            if (idx >= 0) {
+              msg.content[idx] = {
+                ...tc,
+                status: "completed",
+              } as ToolRequestContent;
+            }
+          }
+          const resultText = extractToolResultText(update);
+          msg.content.push({
+            type: "toolResponse",
+            id: update.toolCallId,
+            name: (tc as ToolRequestContent)?.name ?? "",
+            result: resultText,
+            isError: update.status === "failed",
+          });
+        }
+      }
+      break;
+    }
+
+    case "session_info_update":
+    case "config_option_update":
+    case "usage_update":
+      handleShared(sessionId, update);
+      break;
+
+    default:
+      break;
+  }
+}
+
+function handleLive(
+  sessionId: string,
+  gooseSessionId: string,
+  update: SessionUpdate,
+): void {
+  const store = useChatStore.getState();
+
+  switch (update.sessionUpdate) {
+    case "agent_message_chunk": {
+      const messageId =
+        update.messageId ??
+        presetMessageIds.get(gooseSessionId) ??
+        crypto.randomUUID();
+      const existing = store.messagesBySession[sessionId]?.find(
+        (m) => m.id === messageId,
+      );
+
+      if (!existing) {
+        store.addMessage(sessionId, {
+          id: messageId,
+          role: "assistant",
+          created: Date.now(),
+          content: [],
+          metadata: {
+            userVisible: true,
+            agentVisible: true,
+            completionStatus: "inProgress",
+          },
+        });
+        store.setPendingAssistantProvider(sessionId, null);
+        store.setStreamingMessageId(sessionId, messageId);
+      }
+
+      if (update.content.type === "text" && "text" in update.content) {
+        store.setStreamingMessageId(sessionId, messageId);
+        store.updateStreamingText(sessionId, update.content.text);
+      }
+      break;
+    }
+
+    case "tool_call": {
+      const messageId = findStreamingMessageId(sessionId);
+      if (!messageId) break;
+
+      const toolRequest: ToolRequestContent = {
+        type: "toolRequest",
+        id: update.toolCallId,
+        name: update.title,
+        arguments: {},
+        status: "executing",
+        startedAt: Date.now(),
+      };
+      store.setStreamingMessageId(sessionId, messageId);
+      store.appendToStreamingMessage(sessionId, toolRequest);
+      break;
+    }
+
+    case "tool_call_update": {
+      const messageId = findStreamingMessageId(sessionId);
+      if (!messageId) break;
+
+      if (update.title) {
+        store.updateMessage(sessionId, messageId, (msg) => ({
+          ...msg,
+          content: msg.content.map((c) =>
+            c.type === "toolRequest" && c.id === update.toolCallId
+              ? { ...c, name: update.title! }
+              : c,
+          ),
+        }));
+      }
+
+      if (update.status === "completed" || update.status === "failed") {
+        const streamingMessage = store.messagesBySession[sessionId]?.find(
+          (m) => m.id === messageId,
+        );
+        const toolRequest = streamingMessage
+          ? findLatestUnpairedToolRequest(streamingMessage.content)
+          : null;
+
+        store.updateMessage(sessionId, messageId, (msg) => ({
+          ...msg,
+          content: msg.content.map((block) =>
+            block.type === "toolRequest" && block.id === update.toolCallId
+              ? { ...block, status: "completed" }
+              : block,
+          ),
+        }));
+
+        const resultText = extractToolResultText(update);
+        const toolResponse: ToolResponseContent = {
+          type: "toolResponse",
+          id: update.toolCallId,
+          name: toolRequest?.name ?? "",
+          result: resultText,
+          isError: update.status === "failed",
+        };
+        store.setStreamingMessageId(sessionId, messageId);
+        store.appendToStreamingMessage(sessionId, toolResponse);
+      }
+      break;
+    }
+
+    case "session_info_update":
+    case "config_option_update":
+    case "usage_update":
+      handleShared(sessionId, update);
+      break;
+
+    default:
+      break;
+  }
+}
+
+function handleShared(sessionId: string, update: SessionUpdate): void {
+  switch (update.sessionUpdate) {
+    case "session_info_update": {
+      const info = update as SessionUpdate & {
+        sessionUpdate: "session_info_update";
+      };
+      if ("title" in info && info.title) {
+        const session = useChatSessionStore.getState().getSession(sessionId);
+        if (session && !session.userSetName) {
+          useChatSessionStore
+            .getState()
+            .updateSession(
+              sessionId,
+              { title: info.title as string },
+              { persistOverlay: false },
+            );
+        }
+      }
+      break;
+    }
+
+    case "config_option_update": {
+      const configUpdate = update as SessionUpdate & {
+        sessionUpdate: "config_option_update";
+      };
+      if ("options" in configUpdate && Array.isArray(configUpdate.options)) {
+        const modelOption = configUpdate.options.find(
+          (opt: any) => opt.category === "model",
+        );
+        if (modelOption?.kind?.type === "select") {
+          const select = modelOption.kind;
+          const currentModelId = select.currentValue;
+          const availableModels: Array<{ id: string; name: string }> = [];
+
+          if (select.options?.type === "ungrouped") {
+            for (const v of select.options.values) {
+              availableModels.push({ id: v.value, name: v.name });
+            }
+          } else if (select.options?.type === "grouped") {
+            for (const group of select.options.groups) {
+              for (const v of group.options) {
+                availableModels.push({ id: v.value, name: v.name });
+              }
+            }
+          }
+
+          const currentModelName =
+            availableModels.find((m) => m.id === currentModelId)?.name ??
+            currentModelId;
+
+          const sessionStore = useChatSessionStore.getState();
+          sessionStore.setSessionModels(sessionId, availableModels);
+          sessionStore.updateSession(
+            sessionId,
+            { modelId: currentModelId, modelName: currentModelName },
+            { persistOverlay: false },
+          );
+        }
+      }
+      break;
+    }
+
+    case "usage_update": {
+      const usage = update as SessionUpdate & { sessionUpdate: "usage_update" };
+      useChatStore.getState().updateTokenState(sessionId, {
+        accumulatedTotal: usage.used,
+        contextLimit: usage.size,
+      });
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+// Helpers
+
+function findStreamingMessageId(sessionId: string): string | null {
+  return useChatStore.getState().getSessionRuntime(sessionId)
+    .streamingMessageId;
+}
+
+function findMessageInBuffer(
+  sessionId: string,
+  _toolCallId: string,
+): ReturnType<typeof getBufferedMessage> {
+  const buffer = ensureReplayBuffer(sessionId);
+  return buffer[buffer.length - 1];
+}
+
+function findMessageWithToolCall(
+  sessionId: string,
+  toolCallId: string,
+): ReturnType<typeof getBufferedMessage> {
+  const buffer = ensureReplayBuffer(sessionId);
+  for (let i = buffer.length - 1; i >= 0; i--) {
+    const msg = buffer[i];
+    if (
+      msg.content.some((c) => c.type === "toolRequest" && c.id === toolCallId)
+    ) {
+      return msg;
+    }
+  }
+  return buffer[buffer.length - 1];
+}
+
+function extractToolResultText(update: {
+  content?: Array<any> | null;
+  rawOutput?: unknown;
+}): string {
+  if (update.content && update.content.length > 0) {
+    for (const item of update.content) {
+      if (item.type === "content" && item.content?.type === "text") {
+        return item.content.text;
+      }
+    }
+  }
+  if (update.rawOutput !== undefined && update.rawOutput !== null) {
+    return typeof update.rawOutput === "string"
+      ? update.rawOutput
+      : JSON.stringify(update.rawOutput);
+  }
+  return "";
+}
+
+export function clearMessageTracking(): void {
+  presetMessageIds.clear();
+}
+
+const handler: AcpNotificationHandler = {
+  handleSessionNotification,
+};
+
+export default handler;

@@ -168,6 +168,33 @@
       "x-side": "agent",
       "x-method": "_goose/config/extensions"
     },
+    "GetSessionExtensionsRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/session/extensions"
+    },
+    "GetSessionExtensionsResponse": {
+      "type": "object",
+      "properties": {
+        "extensions": {
+          "type": "array",
+          "items": {}
+        }
+      },
+      "required": [
+        "extensions"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/session/extensions"
+    },
     "UpdateProviderRequest": {
       "type": "object",
       "properties": {
@@ -260,6 +287,166 @@
         "id",
         "label"
       ]
+    },
+    "GetProviderDetailsRequest": {
+      "type": "object",
+      "description": "List providers with full metadata (config keys, setup steps, etc.).",
+      "x-side": "agent",
+      "x-method": "_goose/providers/details"
+    },
+    "GetProviderDetailsResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderDetailEntry"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "description": "Provider details response.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/details"
+    },
+    "ProviderDetailEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "defaultModel": {
+          "type": "string"
+        },
+        "isConfigured": {
+          "type": "boolean"
+        },
+        "providerType": {
+          "type": "string"
+        },
+        "configKeys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigKey"
+          }
+        },
+        "setupSteps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "knownModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelEntry"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "name",
+        "displayName",
+        "description",
+        "defaultModel",
+        "isConfigured",
+        "providerType",
+        "configKeys"
+      ]
+    },
+    "ProviderConfigKey": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "oauthFlow": {
+          "type": "boolean",
+          "default": false
+        },
+        "deviceCodeFlow": {
+          "type": "boolean",
+          "default": false
+        },
+        "primary": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "name",
+        "required",
+        "secret"
+      ]
+    },
+    "ModelEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "contextLimit": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "contextLimit"
+      ]
+    },
+    "GetProviderModelsRequest": {
+      "type": "object",
+      "properties": {
+        "providerName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerName"
+      ],
+      "description": "Fetch the full list of models available for a specific provider.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/models"
+    },
+    "GetProviderModelsResponse": {
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "description": "Provider models response.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/models"
     },
     "ReadConfigRequest": {
       "type": "object",
@@ -436,7 +623,6 @@
         },
         "messageCount": {
           "type": "integer",
-          "format": "uint64",
           "minimum": 0
         }
       },
@@ -554,6 +740,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/GetSessionExtensionsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/extensions",
+                  "title": "GetSessionExtensionsRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/UpdateProviderRequest"
                     }
                   ],
@@ -568,6 +763,24 @@
                   ],
                   "description": "Params for _goose/providers/list",
                   "title": "ListProvidersRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetProviderDetailsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/details",
+                  "title": "GetProviderDetailsRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetProviderModelsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/models",
+                  "title": "GetProviderModelsRequest"
                 },
                 {
                   "allOf": [
@@ -724,6 +937,14 @@
                     {
                       "allOf": [
                         {
+                          "$ref": "#/$defs/GetSessionExtensionsResponse"
+                        }
+                      ],
+                      "title": "GetSessionExtensionsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
                           "$ref": "#/$defs/UpdateProviderResponse"
                         }
                       ],
@@ -736,6 +957,22 @@
                         }
                       ],
                       "title": "ListProvidersResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetProviderDetailsResponse"
+                        }
+                      ],
+                      "title": "GetProviderDetailsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetProviderModelsResponse"
+                        }
+                      ],
+                      "title": "GetProviderModelsResponse"
                     },
                     {
                       "allOf": [

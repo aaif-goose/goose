@@ -1,11 +1,12 @@
 ---
 title: "One Shot Prompting is Dead"
 description: "Practical steps and mental models for building context engineered workflows instead of clever prompts."
+image: /img/blog/context-engineering-blogbanner.png
 authors:
   - ebony
 ---
 
-![One shot prompting is dead](blogbanner.png)
+![One shot prompting is dead](/img/blog/context-engineering-blogbanner.png)
 
 I attended one shot prompting’s funeral.
 

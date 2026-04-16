@@ -932,9 +932,6 @@
   "envVarsSection.variableName": {
     "defaultMessage": "Variable name"
   },
-  "environmentBadge.alpha": {
-    "defaultMessage": "Alpha"
-  },
   "environmentBadge.dev": {
     "defaultMessage": "Dev"
   },
@@ -1135,6 +1132,15 @@
   },
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "Search extensions..."
+  },
+  "externalBackendSection.certFingerprint": {
+    "defaultMessage": "Certificate Fingerprint (optional)"
+  },
+  "externalBackendSection.certFingerprintHelp": {
+    "defaultMessage": "Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU)."
+  },
+  "externalBackendSection.certFingerprintPlaceholder": {
+    "defaultMessage": "AA:BB:CC:... or sha256/base64"
   },
   "externalBackendSection.description": {
     "defaultMessage": "By default goose launches a server for you, use this to connect to an external goose server"
@@ -1436,20 +1442,14 @@
   "headersSection.value": {
     "defaultMessage": "Value"
   },
-  "huggingFaceModelSearch.directDownload": {
-    "defaultMessage": "Direct Download"
-  },
-  "huggingFaceModelSearch.directDownloadDescription": {
-    "defaultMessage": "Specify a model directly: {format}"
-  },
-  "huggingFaceModelSearch.directDownloadErrorMsg": {
-    "defaultMessage": "Failed to start the download. Check the spec: {error}"
-  },
-  "huggingFaceModelSearch.directDownloadFailed": {
-    "defaultMessage": "Direct download failed"
-  },
   "huggingFaceModelSearch.download": {
     "defaultMessage": "Download"
+  },
+  "huggingFaceModelSearch.downloaded": {
+    "defaultMessage": "Downloaded"
+  },
+  "huggingFaceModelSearch.downloading": {
+    "defaultMessage": "Downloading\u2026"
   },
   "huggingFaceModelSearch.loadingVariants": {
     "defaultMessage": "Loading variants..."
@@ -1474,6 +1474,9 @@
   },
   "huggingFaceModelSearch.searchPlaceholder": {
     "defaultMessage": "Search for GGUF models..."
+  },
+  "huggingFaceModelSearch.tooLarge": {
+    "defaultMessage": "May not fit in memory ({size} model, {available} available)"
   },
   "imagePreview.altText": {
     "defaultMessage": "goose image"
@@ -1837,6 +1840,15 @@
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Local Inference Models"
+  },
+  "localInferenceSettings.vision": {
+    "defaultMessage": "Vision"
+  },
+  "localInferenceSettings.visionEncoderDownloading": {
+    "defaultMessage": "Vision encoder downloading\u2026"
+  },
+  "localInferenceSettings.visionEncoderNotDownloaded": {
+    "defaultMessage": "Vision encoder not downloaded"
   },
   "localModelManager.active": {
     "defaultMessage": "Active"
@@ -4111,6 +4123,39 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Save"
+  },
+  "skillsView.addSkill": {
+    "defaultMessage": "Add Skill"
+  },
+  "skillsView.adjustSearchTerms": {
+    "defaultMessage": "Try adjusting your search terms"
+  },
+  "skillsView.comingSoon": {
+    "defaultMessage": "Coming soon"
+  },
+  "skillsView.errorLoadingSkills": {
+    "defaultMessage": "Error Loading Skills"
+  },
+  "skillsView.noMatchingSkills": {
+    "defaultMessage": "No matching skills found"
+  },
+  "skillsView.noSkillsDescription": {
+    "defaultMessage": "Skills are loaded from SKILL.md files in ~/.config/agents/skills/, .goose/skills/, or other supported directories."
+  },
+  "skillsView.noSkillsInstalled": {
+    "defaultMessage": "No skills installed"
+  },
+  "skillsView.searchSkillsPlaceholder": {
+    "defaultMessage": "Search skills..."
+  },
+  "skillsView.skillsDescription": {
+    "defaultMessage": "View installed skills that extend Goose capabilities. {shortcut} to search."
+  },
+  "skillsView.skillsTitle": {
+    "defaultMessage": "Skills"
+  },
+  "skillsView.tryAgain": {
+    "defaultMessage": "Try Again"
   },
   "spellcheckToggle.description": {
     "defaultMessage": "Check spelling in the chat input. Requires restart to take effect."

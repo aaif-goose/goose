@@ -1,0 +1,46 @@
+{
+  "name": "@aaif/goose-sdk",
+  "version": "0.17.0",
+  "description": "Agent Client Protocol (ACP) SDK for Goose AI agent",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aaif-goose/goose.git"
+  },
+  "keywords": [
+    "goose",
+    "ai",
+    "agent",
+    "acp",
+    "agent-client-protocol"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "npm run generate && npm run build:ts",
+    "build:ts": "tsc",
+    "build:native": "tsx scripts/build-native.ts",
+    "build:native:all": "tsx scripts/build-native.ts --all",
+    "generate": "tsx generate-schema.ts",
+    "lint": "tsc --noEmit",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "peerDependencies": {
+    "@agentclientprotocol/sdk": "*"
+  },
+  "devDependencies": {
+    "@agentclientprotocol/sdk": "^0.14.1",
+    "@hey-api/openapi-ts": "^0.92.3",
+    "@types/node": "^20.0.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3"
+  }
+}

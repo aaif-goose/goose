@@ -317,6 +317,31 @@ prompt: |
   Log results to: {{ workspace_dir }}/phase3_delegation.md
   {% endif %}
 
+  {% if test_phases == "all" or "vision" in test_phases %}
+  ## 📷 PHASE 3B: Local Inference Vision Testing
+
+  **Prerequisites**: A vision-capable local model must be downloaded (e.g., gemma-4-E4B).
+  Skip this phase if no local vision model is available.
+
+  ### Vision Smoke Test
+  1. Create a small test image:
+     ```
+     python3 -c "import struct, zlib; raw=b'\x00\xff\x00\x00'; d=zlib.compress(raw); ihdr=b'\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00'; print('Created test.png')" 
+     ```
+     Or simply create a 1-pixel PNG test image using available tools.
+  2. Verify the test image file exists and is valid.
+  3. Send a message to the local vision model referencing the test image.
+  4. Verify the model responds with text (not an error or crash).
+  5. Verify the response acknowledges the image content.
+
+  ### Vision Error Handling Test
+  1. If a text-only local model is available, send it a message with an image attached.
+  2. Verify it responds gracefully (either with a placeholder message or a clear error),
+     not with a crash or FFI error.
+
+  Log results to: {{ workspace_dir }}/phase3b_vision.md
+  {% endif %}
+
   {% if test_phases == "all" or "advanced" in test_phases %}
   ## 🔬 PHASE 4: Advanced Testing
 

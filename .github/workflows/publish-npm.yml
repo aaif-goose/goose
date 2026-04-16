@@ -1,201 +1,31 @@
 name: Publish to npm
 
-# Security: This workflow uses the 'npm-production-publishing' environment to protect against
-# accidental publishes from feature branches. The environment must be configured in
-# GitHub Settings → Environments with:
-#   - Deployment branches: Selected branches → main
-#   - Environment secret: NPM_PUBLISH_TOKEN (npm publish token with write access)
-#
-# This ensures that even if the workflow file is modified on a feature branch to
-# bypass the ref checks, GitHub will block access to the NPM_PUBLISH_TOKEN secret.
-
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'crates/goose-acp/**'
-      - 'ui/acp/**'
-      - '.github/workflows/publish-npm.yml'
+  workflow_call:
+    inputs:
+      release-tag:
+        description: 'Release tag to fetch binaries from (e.g. v1.0.0)'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
-      dry-run:
-        description: 'Dry run (skip actual npm publish)'
-        required: false
-        type: boolean
-        default: true
-      skip-cache:
-        description: 'Skip cache and rebuild everything'
-        required: false
-        type: boolean
-        default: false
+      release-tag:
+        description: 'Release tag to fetch binaries from (e.g. v1.0.0)'
+        required: true
+        type: string
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
   contents: write
   pull-requests: write
-  id-token: write  # Required for npm provenance
+  id-token: write  # Required for npm trusted publishing (OIDC)
 
 jobs:
-  # Generate ACP TypeScript schema first - this is needed before building npm packages
-  generate-schema:
-    name: Generate ACP Schema
+  # Build npm packages (no environment needed)
+  build:
+    name: Build npm packages
     runs-on: ubuntu-latest
-    outputs:
-      cache-key: ${{ steps.cache-key.outputs.key }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Generate cache key
-        id: cache-key
-        run: |
-          # Create a cache key based on ACP crate files
-          HASH=$(find crates/goose-acp -type f -name "*.rs" -o -name "Cargo.toml" | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
-          echo "key=acp-schema-$HASH" >> "$GITHUB_OUTPUT"
-          echo "Generated cache key: acp-schema-$HASH"
-
-      - name: Check cache
-        id: cache
-        if: inputs.skip-cache != true
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
-        with:
-          path: |
-            crates/goose-acp/acp-schema.json
-            crates/goose-acp/acp-meta.json
-          key: ${{ steps.cache-key.outputs.key }}
-
-      - name: Setup Rust
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-
-      - name: Setup Rust cache
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-
-      - name: Build and run generate-acp-schema
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          cargo build --release --bin generate-acp-schema
-          cargo run --release --bin generate-acp-schema
-        working-directory: crates/goose-acp
-
-      - name: Upload schema artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: acp-schema
-          path: |
-            crates/goose-acp/acp-schema.json
-            crates/goose-acp/acp-meta.json
-          if-no-files-found: error
-          retention-days: 7
-
-  # Build goose CLI binaries for all platforms
-  build-goose-binaries:
-    name: Build goose CLI (${{ matrix.platform }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: darwin-arm64
-            os: macos-latest
-            target: aarch64-apple-darwin
-          - platform: darwin-x64
-            os: macos-latest
-            target: x86_64-apple-darwin
-          - platform: linux-arm64
-            os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - platform: linux-x64
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          # Temporarily disabled - Windows builds are slow (20+ min) without cache
-          # - platform: win32-x64
-          #   os: windows-latest
-          #   target: x86_64-pc-windows-msvc
-    outputs:
-      cache-key-base: ${{ steps.cache-key.outputs.key-base }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Generate cache key
-        id: cache-key
-        run: |
-          # Create a cache key based on Rust source files
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            HASH=$(find crates -type f -name "*.rs" -o -name "Cargo.toml" -o -name "Cargo.lock" | sort | sha256sum | cut -d' ' -f1)
-          else
-            HASH=$(find crates -type f \( -name "*.rs" -o -name "Cargo.toml" -o -name "Cargo.lock" \) | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
-          fi
-          echo "key-base=goose-binary-$HASH" >> "$GITHUB_OUTPUT"
-          echo "key=goose-binary-$HASH-${{ matrix.platform }}" >> "$GITHUB_OUTPUT"
-          echo "Generated cache key: goose-binary-$HASH-${{ matrix.platform }}"
-        shell: bash
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Add Intel target for cross-compilation (macOS ARM64 → x86_64)
-        if: matrix.platform == 'darwin-x64'
-        run: rustup target add x86_64-apple-darwin
-
-      - name: Install cross-compilation tools (Linux ARM64)
-        if: matrix.platform == 'linux-arm64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-        with:
-          key: ${{ matrix.platform }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Check binary cache
-        id: binary-cache
-        if: inputs.skip-cache != true
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
-        with:
-          path: |
-            target/${{ matrix.target }}/release/goose${{ matrix.platform == 'win32-x64' && '.exe' || '' }}
-          key: ${{ steps.cache-key.outputs.key }}
-
-      - name: Build goose CLI binary
-        if: steps.binary-cache.outputs.cache-hit != 'true'
-        run: cargo build --release --target ${{ matrix.target }} --bin goose
-
-      - name: Prepare artifact (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          mkdir -p artifact/bin
-          cp target/${{ matrix.target }}/release/goose artifact/bin/
-          chmod +x artifact/bin/goose
-
-      - name: Prepare artifact (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          mkdir -p artifact/bin
-          cp target/${{ matrix.target }}/release/goose.exe artifact/bin/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: goose-${{ matrix.platform }}
-          path: artifact/
-          if-no-files-found: error
-          retention-days: 7
-
-  # Publish to npm
-  release:
-    name: Release to npm
-    runs-on: ubuntu-latest
-    needs: [generate-schema, build-goose-binaries]
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -212,138 +42,160 @@ jobs:
         with:
           version: 10.30.3
 
-      - name: Download ACP schema
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: acp-schema
-          path: crates/goose-acp
-
-      - name: Download goose binaries
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: goose-*
-          path: goose-binaries
-
-      - name: List downloaded artifacts (debug)
+      - name: Download goose binaries from release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Downloaded ACP schema:"
-          ls -lh crates/goose-acp/acp-*.json
-          echo ""
-          echo "Downloaded goose CLI binaries:"
-          ls -R goose-binaries/
+          TAG="${{ inputs.release-tag }}"
+          echo "Downloading goose CLI binaries from release ${TAG}"
+
+          # Map: npm platform name -> release artifact name (target triple)
+          declare -A PLATFORM_MAP=(
+            [darwin-arm64]=aarch64-apple-darwin
+            [darwin-x64]=x86_64-apple-darwin
+            [linux-arm64]=aarch64-unknown-linux-gnu
+            [linux-x64]=x86_64-unknown-linux-gnu
+            [win32-x64]=x86_64-pc-windows-msvc
+          )
+
+          for platform in "${!PLATFORM_MAP[@]}"; do
+            target="${PLATFORM_MAP[$platform]}"
+            pkg_dir="ui/goose-binary/goose-binary-${platform}/bin"
+            mkdir -p "${pkg_dir}"
+
+            if [[ "${platform}" == "win32-x64" ]]; then
+              artifact="goose-${target}.zip"
+              gh release download "${TAG}" --pattern "${artifact}" --dir /tmp
+              unzip -o "/tmp/${artifact}" -d /tmp/goose-extract
+              cp /tmp/goose-extract/goose-package/goose.exe "${pkg_dir}/goose.exe"
+              rm -rf /tmp/goose-extract "/tmp/${artifact}"
+            else
+              artifact="goose-${target}.tar.bz2"
+              gh release download "${TAG}" --pattern "${artifact}" --dir /tmp
+              mkdir -p /tmp/goose-extract
+              tar -xjf "/tmp/${artifact}" -C /tmp/goose-extract
+              cp /tmp/goose-extract/goose "${pkg_dir}/goose"
+              chmod +x "${pkg_dir}/goose"
+              rm -rf /tmp/goose-extract "/tmp/${artifact}"
+            fi
+
+            echo "  ✅ ${platform} (${target})"
+          done
+
+      - name: List downloaded binaries (debug)
+        run: find ui/goose-binary -name 'goose*' -type f | sort
 
       - name: Install dependencies
         run: |
           cd ui
           pnpm install --frozen-lockfile
 
-      - name: Generate TypeScript types from schema
-        run: |
-          cd ui/acp
-          # The schema JSON files are already downloaded, just generate TS types
-          # This only runs the TypeScript generation part, no Rust compilation
-          npx tsx generate-schema.ts
-
       - name: Build packages
         run: |
-          cd ui/acp
-          # Build only TypeScript, schema is already generated
+          cd ui/sdk
           pnpm run build:ts
-          
+
           cd ../text
           pnpm run build
 
-      - name: Prepare summary
+      - name: Upload built packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-packages
+          path: ui/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build summary
         run: |
           {
             echo "## 📦 Build Summary"
             echo ""
-            echo "### ACP Schema"
-            echo "✅ Generated and cached"
+            echo "### Release"
+            echo "Tag: \`${{ inputs.release-tag }}\`"
             echo ""
             echo "### Goose CLI Binaries"
-            echo "✅ Built for all platforms:"
-            for dir in goose-binaries/goose-*; do
-              platform=$(basename "$dir" | sed 's/goose-//')
+            echo "✅ Downloaded from release for all platforms:"
+            for dir in ui/goose-binary/goose-binary-*/; do
+              platform=$(basename "$dir" | sed 's/goose-binary-//')
               echo "  - $platform"
             done
             echo ""
             echo "### npm Packages"
-            echo "✅ @aaif/goose-acp"
-            echo "✅ @aaif/goose (TUI)"
-            echo ""
+            cd ui
+            for pkg in sdk text goose-binary/*/; do
+              if [ -f "$pkg/package.json" ]; then
+                name=$(jq -r '.name' "$pkg/package.json")
+                version=$(jq -r '.version' "$pkg/package.json")
+                echo "- $name@$version"
+              fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Dry run notice
-        if: inputs.dry-run == true || github.ref != 'refs/heads/main'
-        run: |
-          {
-            echo "## 🧪 Dry Run Mode"
-            echo ""
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            {
-              echo "⚠️  Skipping actual npm publish (not on main branch)"
-              echo ""
-              echo "**Current branch:** \`${{ github.ref }}\`"
-              echo ""
-              echo "Publishing is only allowed from the \`main\` branch for security."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "⚠️  Skipping actual npm publish (dry-run mode)"
-              echo ""
-              echo "To publish for real, run this workflow without dry-run enabled."
-              echo ""
-              echo "**Note:** Changesets will still run to verify functionality."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: [build]
+    environment: npm-production-publishing
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: npm-packages
+          path: ui/
 
-      - name: Configure npm authentication
-        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
-        run: |
-          cd ui
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+      - name: Restore executable bits on goose binaries
+        run: find ui/goose-binary -name 'goose' -type f -exec chmod +x {} +
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.10.0'
+          registry-url: 'https://registry.npmjs.org'
+          always-auth: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4
+        with:
+          version: 10.30.3
 
       - name: Publish to npm
-        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
         run: |
           cd ui
-          # Publish all packages in the workspace
-          pnpm publish -r --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
-
-      - name: Dry run - Show what would be published
-        if: inputs.dry-run == true || github.ref != 'refs/heads/main'
-        run: |
-          cd ui
-          echo "## 📦 Packages that would be published:" | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
-          
-          # List all publishable packages
-          for pkg in acp text goose-binary/*/; do
+          # Publish each package individually so one failure doesn't abort the rest.
+          # Skips packages whose version is already published (409/403).
+          failed=0
+          for pkg in sdk goose-binary/*/ text; do
             if [ -f "$pkg/package.json" ]; then
               name=$(jq -r '.name' "$pkg/package.json")
               version=$(jq -r '.version' "$pkg/package.json")
-              echo "- $name@$version" | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "Publishing $name@$version..."
+              if (cd "$pkg" && pnpm publish --access public --no-git-checks --provenance); then
+                echo "  ✅ $name@$version published"
+              else
+                # Check if it failed because the version already exists
+                if npm view "$name@$version" version > /dev/null 2>&1; then
+                  echo "  ⏭️  $name@$version already published, skipping"
+                else
+                  echo "  ❌ $name@$version failed to publish"
+                  failed=1
+                fi
+              fi
             fi
           done
-          
-          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "**Note:** This is a dry run. No packages were published." | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" -eq 1 ]; then
+            echo "::error::One or more packages failed to publish"
+            exit 1
+          fi
 
       - name: Publish summary
-        if: inputs.dry-run != true && github.ref == 'refs/heads/main'
+        if: always()
         run: |
           cd ui
           {
             echo "## 🚀 Published Packages"
             echo ""
-            for pkg in acp text goose-binary/*/; do
+            for pkg in sdk text goose-binary/*/; do
               if [ -f "$pkg/package.json" ]; then
                 name=$(jq -r '.name' "$pkg/package.json")
                 version=$(jq -r '.version' "$pkg/package.json")

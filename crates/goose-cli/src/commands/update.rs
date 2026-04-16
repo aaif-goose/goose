@@ -462,9 +462,25 @@ fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        // On Unix, copy the new binary over the existing one
-        fs::copy(new_binary, current_exe)
-            .with_context(|| format!("Failed to copy new binary to {}", current_exe.display()))?;
+        let old_exe = current_exe.with_extension("old");
+
+        // Rename current binary to avoid ETXTBSY on Linux
+        if current_exe.exists() {
+            fs::rename(current_exe, &old_exe).with_context(|| {
+                format!("Failed to rename {} before update", current_exe.display())
+            })?;
+        }
+
+        if let Err(e) = fs::copy(new_binary, current_exe) {
+            // Restore old binary if copy fails
+            let _ = fs::rename(&old_exe, current_exe);
+            return Err(e).with_context(|| {
+                format!("Failed to copy new binary to {}", current_exe.display())
+            });
+        }
+
+        // Delete the old backup binary
+        let _ = fs::remove_file(&old_exe);
 
         // Ensure the binary is executable
         #[cfg(unix)]

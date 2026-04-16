@@ -603,14 +603,21 @@ pub fn get_usage(usage: &Value) -> Usage {
         .filter(|nested| nested.is_object())
         .unwrap_or(usage);
 
+    // Try standard OpenAI fields first, then fall back to Ollama-native fields
+    // (prompt_eval_count / eval_count) for compatibility with older Ollama builds
+    // that don't translate to OpenAI field names.
+    // Parse the value before falling back so that present-but-null keys
+    // (e.g. "completion_tokens": null) don't block the fallback.
     let input_tokens = usage
         .get("prompt_tokens")
         .and_then(|v| v.as_i64())
+        .or_else(|| usage.get("prompt_eval_count").and_then(|v| v.as_i64()))
         .map(|v| v as i32);
 
     let output_tokens = usage
         .get("completion_tokens")
         .and_then(|v| v.as_i64())
+        .or_else(|| usage.get("eval_count").and_then(|v| v.as_i64()))
         .map(|v| v as i32);
 
     let cache_read_input_tokens = usage
@@ -2287,5 +2294,48 @@ data: [DONE]"#;
         assert_eq!(messages[2]["role"], "user");
         assert_eq!(messages[2]["content"], "what happened?");
         assert_eq!(messages[3]["tool_calls"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_get_usage_with_ollama_native_fields() {
+        // Ollama-native fields should be picked up as fallback
+        let usage = json!({
+            "prompt_eval_count": 42,
+            "eval_count": 128
+        });
+        let result = get_usage(&usage);
+        assert_eq!(result.input_tokens, Some(42));
+        assert_eq!(result.output_tokens, Some(128));
+        assert_eq!(result.total_tokens, Some(170));
+    }
+
+    #[test]
+    fn test_get_usage_prefers_openai_fields_over_ollama() {
+        // Standard OpenAI fields should take precedence
+        let usage = json!({
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "prompt_eval_count": 42,
+            "eval_count": 128
+        });
+        let result = get_usage(&usage);
+        assert_eq!(result.input_tokens, Some(10));
+        assert_eq!(result.output_tokens, Some(20));
+        assert_eq!(result.total_tokens, Some(30));
+    }
+
+    #[test]
+    fn test_get_usage_falls_back_when_openai_fields_are_null() {
+        // When OpenAI fields exist but are null, should fall back to Ollama-native
+        let usage = json!({
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "prompt_eval_count": 42,
+            "eval_count": 128
+        });
+        let result = get_usage(&usage);
+        assert_eq!(result.input_tokens, Some(42));
+        assert_eq!(result.output_tokens, Some(128));
+        assert_eq!(result.total_tokens, Some(170));
     }
 }

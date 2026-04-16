@@ -3,9 +3,10 @@ title: "How to Break Up with Your Agent"
 description: "ACP lets you keep your favorite editor but swap the AI agent, or keep your agent but use it from any editor. Here's what actually works today in Goose."
 authors:
     - codefromthecrypt
+image: /img/blog/how-to-break-up-with-your-agent.png
 ---
 
-![Editors connect to Goose via ACP, and Goose connects to multiple agents](header.png)
+![Editors connect to Goose via ACP, and Goose connects to multiple agents](/img/blog/how-to-break-up-with-your-agent.png)
 
 The biggest shift in developer tooling over the last year wasn't the rise of agents. It was the rise of agent subscriptions. We stopped choosing LLM platforms and counting tokens. We started choosing an agent CLI and paying a flat monthly fee.
 

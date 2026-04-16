@@ -2291,6 +2291,34 @@ impl GooseAcpAgent {
         })
     }
 
+    #[custom_method(GetSessionExtensionsRequest)]
+    async fn on_get_session_extensions(
+        &self,
+        req: GetSessionExtensionsRequest,
+    ) -> Result<GetSessionExtensionsResponse, sacp::Error> {
+        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session = self
+            .session_manager
+            .get_session(&internal_id, false)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        let extensions = EnabledExtensionsState::extensions_or_default(
+            Some(&session.extension_data),
+            goose::config::Config::global(),
+        );
+
+        let extensions_json = extensions
+            .into_iter()
+            .map(|e| serde_json::to_value(&e))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        Ok(GetSessionExtensionsResponse {
+            extensions: extensions_json,
+        })
+    }
+
     #[custom_method(UpdateProviderRequest)]
     async fn on_update_provider(
         &self,
@@ -2321,6 +2349,120 @@ impl GooseAcpAgent {
         Ok(ListProvidersResponse {
             providers: list_provider_entries(None).await,
         })
+    }
+
+    #[custom_method(GetProviderDetailsRequest)]
+    async fn on_get_provider_details(
+        &self,
+        _req: GetProviderDetailsRequest,
+    ) -> Result<GetProviderDetailsResponse, sacp::Error> {
+        let config = self.load_config().ok();
+        let all = goose::providers::providers().await;
+        let entries = all
+            .into_iter()
+            .map(|(metadata, provider_type)| {
+                let is_configured = config
+                    .as_ref()
+                    .map(|c| {
+                        metadata.config_keys.iter().all(|k| {
+                            if !k.required {
+                                return true;
+                            }
+                            if k.secret {
+                                c.get_secret::<String>(&k.name).is_ok()
+                            } else {
+                                c.get_param::<String>(&k.name).is_ok()
+                            }
+                        })
+                    })
+                    .unwrap_or(false);
+                ProviderDetailEntry {
+                    name: metadata.name.clone(),
+                    display_name: metadata.display_name.clone(),
+                    description: metadata.description.clone(),
+                    default_model: metadata.default_model.clone(),
+                    is_configured,
+                    provider_type: format!("{:?}", provider_type),
+                    config_keys: metadata
+                        .config_keys
+                        .iter()
+                        .map(|k| ProviderConfigKey {
+                            name: k.name.clone(),
+                            required: k.required,
+                            secret: k.secret,
+                            default: k.default.clone(),
+                            oauth_flow: k.oauth_flow,
+                            device_code_flow: k.device_code_flow,
+                            primary: k.primary,
+                        })
+                        .collect(),
+                    setup_steps: metadata.setup_steps.clone(),
+                    known_models: metadata
+                        .known_models
+                        .iter()
+                        .map(|m| ModelEntry {
+                            name: m.name.clone(),
+                            context_limit: m.context_limit,
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
+        Ok(GetProviderDetailsResponse { providers: entries })
+    }
+
+    #[custom_method(GetProviderModelsRequest)]
+    async fn on_get_provider_models(
+        &self,
+        req: GetProviderModelsRequest,
+    ) -> Result<GetProviderModelsResponse, sacp::Error> {
+        let config = self.load_config().ok();
+        let all = goose::providers::providers().await;
+
+        let Some((metadata, _provider_type)) =
+            all.into_iter().find(|(m, _)| m.name == req.provider_name)
+        else {
+            return Err(sacp::Error::invalid_params()
+                .data(format!("Unknown provider: {}", req.provider_name)));
+        };
+
+        let is_configured = config
+            .as_ref()
+            .map(|c| {
+                metadata.config_keys.iter().all(|k| {
+                    if !k.required {
+                        return true;
+                    }
+                    if k.secret {
+                        c.get_secret::<String>(&k.name).is_ok()
+                    } else {
+                        c.get_param::<String>(&k.name).is_ok()
+                    }
+                })
+            })
+            .unwrap_or(false);
+
+        if !is_configured {
+            return Err(sacp::Error::invalid_params().data(format!(
+                "Provider '{}' is not configured",
+                req.provider_name
+            )));
+        }
+
+        let model_config = goose::model::ModelConfig::new(&metadata.default_model)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?
+            .with_canonical_limits(&req.provider_name);
+
+        let provider = (self.provider_factory)(req.provider_name.clone(), model_config, Vec::new())
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        let models = provider
+            .fetch_recommended_models()
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        Ok(GetProviderModelsResponse { models })
     }
 
     #[custom_method(ReadConfigRequest)]

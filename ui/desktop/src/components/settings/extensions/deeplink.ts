@@ -141,8 +141,8 @@ export async function addExtensionFromDeepLink(
     headerParams.length > 0
       ? Object.fromEntries(
           headerParams.map((header) => {
-            const [key, value] = header.split('=');
-            return [key, decodeURIComponent(value || '')];
+            const [key, ...rest] = header.split('=');
+            return [key, decodeURIComponent(rest.join('=') || '')];
           })
         )
       : undefined;
