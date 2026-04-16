@@ -8,9 +8,10 @@ default:
 
 # ── Dev Environment ──────────────────────────────────────────
 
-# Install dependencies
+# Install dependencies and build workspace packages
 setup:
     pnpm install
+    cd ../sdk && pnpm build
     cd src-tauri && cargo build
 
 # ── Build & Check ────────────────────────────────────────────

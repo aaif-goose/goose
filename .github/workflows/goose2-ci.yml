@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "ui/goose2/**"
+      - "ui/sdk/**"
   pull_request:
     branches: [main]
     paths:
       - "ui/goose2/**"
+      - "ui/sdk/**"
   merge_group:
     branches: [main]
   workflow_dispatch:
@@ -37,6 +39,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
       - run: pnpm check
       - run: pnpm typecheck
 
@@ -55,6 +60,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
       - run: pnpm test
 
   desktop:
@@ -95,6 +103,10 @@ jobs:
           key: ${{ runner.os }}-goose2-cargo-${{ hashFiles('ui/goose2/src-tauri/Cargo.lock') }}
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
 
       - name: Build frontend
         run: pnpm build
