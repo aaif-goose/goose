@@ -8,6 +8,7 @@ import type { Message } from "@/shared/types/messages";
 const mockOpenPath = vi.fn();
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openPath: (path: string) => mockOpenPath(path),
+  openUrl: vi.fn(),
 }));
 
 // ── helpers ───────────────────────────────────────────────────────────

@@ -30,6 +30,7 @@ vi.mock("@/shared/hooks/useChangedFiles", () => ({
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openPath: vi.fn(),
+  openUrl: vi.fn(),
 }));
 
 vi.mock("@/shared/api/system", () => ({

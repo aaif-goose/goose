@@ -16,6 +16,7 @@ vi.mock("@/shared/api/system", () => ({
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openPath: mockOpenPath,
+  openUrl: vi.fn(),
 }));
 
 vi.mock("@/shared/lib/fileManager", () => ({
