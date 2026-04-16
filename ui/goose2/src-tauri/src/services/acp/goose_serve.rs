@@ -9,8 +9,6 @@ use tokio_tungstenite::connect_async;
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
-pub(crate) const WS_BRIDGE_BUFFER_BYTES: usize = 64 * 1024;
-
 // ---------------------------------------------------------------------------
 // GooseServeProcess — singleton that owns the long-lived `goose serve` child
 // ---------------------------------------------------------------------------

@@ -1752,8 +1752,6 @@ name = "goose2"
 version = "0.1.0"
 dependencies = [
  "acp-client",
- "agent-client-protocol",
- "async-trait",
  "base64 0.22.1",
  "chrono",
  "dirs",
@@ -1777,7 +1775,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
- "tokio-util",
  "uuid",
 ]
 
@@ -5056,7 +5053,6 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
- "futures-util",
  "pin-project-lite",
  "tokio",
 ]

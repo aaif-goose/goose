@@ -1,20 +1,17 @@
 import { useEffect } from "react";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
-import { USE_DIRECT_ACP } from "@/shared/api/acpFeatureFlag";
 import { setNotificationHandler, getClient } from "@/shared/api/acpConnection";
 import notificationHandler from "@/shared/api/acpNotificationHandler";
 
 export function useAppStartup() {
   useEffect(() => {
     (async () => {
-      if (USE_DIRECT_ACP) {
-        try {
-          setNotificationHandler(notificationHandler);
-          await getClient();
-        } catch (err) {
-          console.error("Failed to initialize ACP connection:", err);
-        }
+      try {
+        setNotificationHandler(notificationHandler);
+        await getClient();
+      } catch (err) {
+        console.error("Failed to initialize ACP connection:", err);
       }
 
       const store = useAgentStore.getState();
