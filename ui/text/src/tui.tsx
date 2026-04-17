@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { MultilineInput } from "ink-multiline-input";
 import meow from "meow";
@@ -574,13 +574,18 @@ function App({
   const queueRef = useRef<string[]>([]);
   const isProcessingRef = useRef(false);
 
+  // Only run the animation tick when something is actually animating:
+  // the splash goose while the banner is up, or the spinner while loading.
+  // Otherwise we were re-rendering the entire viewport every 300ms forever,
+  // which rebuilds every turn's markdown and can OOM long-running sessions.
   useEffect(() => {
+    if (!bannerVisible && !loading) return;
     const t = setInterval(() => {
-      setSpinIdx((i) => (i + 1) % SPINNER_FRAMES.length);
-      setGooseFrame((f) => f + 1);
+      if (loading) setSpinIdx((i) => (i + 1) % SPINNER_FRAMES.length);
+      if (bannerVisible) setGooseFrame((f) => (f + 1) % GOOSE_FRAMES.length);
     }, 300);
     return () => clearInterval(t);
-  }, []);
+  }, [bannerVisible, loading]);
 
   useEffect(() => {
     if (turns.length > 0) setBannerVisible(false);
@@ -1046,18 +1051,34 @@ function App({
     3,
   );
 
-  const contentLines = buildContentLines({
-    turn: currentTurn,
-    turnIndex: effectiveTurnIdx,
-    width: contentWidth,
-    loading: isLatest && loading,
-    status,
-    spinIdx,
-    pendingPermission: isLatest ? pendingPermission : null,
-    permissionIdx,
-    toolCallsExpanded,
-    queuedMessages: isLatest ? queuedMessages : [],
-  });
+  const contentLines = useMemo(
+    () =>
+      buildContentLines({
+        turn: currentTurn,
+        turnIndex: effectiveTurnIdx,
+        width: contentWidth,
+        loading: isLatest && loading,
+        status,
+        spinIdx,
+        pendingPermission: isLatest ? pendingPermission : null,
+        permissionIdx,
+        toolCallsExpanded,
+        queuedMessages: isLatest ? queuedMessages : [],
+      }),
+    [
+      currentTurn,
+      effectiveTurnIdx,
+      contentWidth,
+      isLatest,
+      loading,
+      status,
+      spinIdx,
+      pendingPermission,
+      permissionIdx,
+      toolCallsExpanded,
+      queuedMessages,
+    ],
+  );
 
   if (needsOnboarding && clientRef.current) {
     return (
