@@ -16,6 +16,12 @@ import type {
 } from "@/shared/types/messages";
 import type { AcpNotificationHandler } from "./acpConnection";
 import {
+  attachMcpAppPayload,
+  extractToolResultText,
+  findMessageInReplayBuffer,
+  findReplayMessageWithToolCall,
+} from "./acpToolCallContent";
+import {
   getLocalSessionId,
   subscribeToSessionRegistration,
 } from "./acpSessionTracker";
@@ -228,7 +234,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     }
 
     case "tool_call": {
-      const msg = findMessageInBuffer(sessionId, update.toolCallId);
+      const msg = findMessageInReplayBuffer(sessionId);
       if (msg) {
         msg.content.push({
           type: "toolRequest",
@@ -243,7 +249,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     }
 
     case "tool_call_update": {
-      const msg = findMessageWithToolCall(sessionId, update.toolCallId);
+      const msg = findReplayMessageWithToolCall(sessionId, update.toolCallId);
       if (msg) {
         if (update.title) {
           const tc = msg.content.find(
@@ -274,6 +280,15 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
             result: resultText,
             isError: update.status === "failed",
           });
+          if (update.status === "completed") {
+            attachMcpAppPayload(
+              sessionId,
+              update.toolCallId,
+              (tc as ToolRequestContent)?.name ?? update.title ?? "",
+              update,
+              true,
+            );
+          }
         }
       }
       break;
@@ -299,29 +314,11 @@ function handleLive(
 
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
-      const messageId =
-        update.messageId ??
-        presetMessageIds.get(gooseSessionId) ??
-        crypto.randomUUID();
-      const existing = store.messagesBySession[sessionId]?.find(
-        (m) => m.id === messageId,
+      const messageId = ensureLiveAssistantMessage(
+        sessionId,
+        gooseSessionId,
+        update.messageId,
       );
-
-      if (!existing) {
-        store.addMessage(sessionId, {
-          id: messageId,
-          role: "assistant",
-          created: Date.now(),
-          content: [],
-          metadata: {
-            userVisible: true,
-            agentVisible: true,
-            completionStatus: "inProgress",
-          },
-        });
-        store.setPendingAssistantProvider(sessionId, null);
-        store.setStreamingMessageId(sessionId, messageId);
-      }
 
       if (update.content.type === "text" && "text" in update.content) {
         store.setStreamingMessageId(sessionId, messageId);
@@ -331,8 +328,7 @@ function handleLive(
     }
 
     case "tool_call": {
-      const messageId = findStreamingMessageId(sessionId);
-      if (!messageId) break;
+      const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
 
       const toolRequest: ToolRequestContent = {
         type: "toolRequest",
@@ -348,8 +344,7 @@ function handleLive(
     }
 
     case "tool_call_update": {
-      const messageId = findStreamingMessageId(sessionId);
-      if (!messageId) break;
+      const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
 
       if (update.title) {
         store.updateMessage(sessionId, messageId, (msg) => ({
@@ -389,6 +384,15 @@ function handleLive(
         };
         store.setStreamingMessageId(sessionId, messageId);
         store.appendToStreamingMessage(sessionId, toolResponse);
+        if (update.status === "completed") {
+          attachMcpAppPayload(
+            sessionId,
+            update.toolCallId,
+            toolRequest?.name ?? update.title ?? "",
+            update,
+            false,
+          );
+        }
       }
       break;
     }
@@ -475,8 +479,6 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
   }
 }
 
-// Helpers
-
 function findStreamingMessageId(sessionId: string): string | null {
   return useChatStore.getState().getSessionRuntime(sessionId)
     .streamingMessageId;
@@ -489,48 +491,47 @@ function makeTextBlock(
   return { type: "text", text, ...(ann ? { annotations: ann } : {}) };
 }
 
-function findMessageInBuffer(
+function ensureLiveAssistantMessage(
   sessionId: string,
-  _toolCallId: string,
-): ReturnType<typeof getBufferedMessage> {
-  const buffer = ensureReplayBuffer(sessionId);
-  return buffer[buffer.length - 1];
-}
+  gooseSessionId: string,
+  preferredMessageId?: string | null,
+): string {
+  const store = useChatStore.getState();
+  const existingStreamingMessageId = findStreamingMessageId(sessionId);
+  const messages = store.messagesBySession[sessionId] ?? [];
 
-function findMessageWithToolCall(
-  sessionId: string,
-  toolCallId: string,
-): ReturnType<typeof getBufferedMessage> {
-  const buffer = ensureReplayBuffer(sessionId);
-  for (let i = buffer.length - 1; i >= 0; i--) {
-    const msg = buffer[i];
-    if (
-      msg.content.some((c) => c.type === "toolRequest" && c.id === toolCallId)
-    ) {
-      return msg;
-    }
+  if (
+    existingStreamingMessageId &&
+    messages.some((message) => message.id === existingStreamingMessageId)
+  ) {
+    return existingStreamingMessageId;
   }
-  return buffer[buffer.length - 1];
-}
 
-function extractToolResultText(update: {
-  // biome-ignore lint/suspicious/noExplicitAny: ACP SDK ToolCallContent type is complex
-  content?: Array<any> | null;
-  rawOutput?: unknown;
-}): string {
-  if (update.content && update.content.length > 0) {
-    for (const item of update.content) {
-      if (item.type === "content" && item.content?.type === "text") {
-        return item.content.text;
-      }
-    }
+  const messageId =
+    preferredMessageId ??
+    presetMessageIds.get(gooseSessionId) ??
+    existingStreamingMessageId ??
+    crypto.randomUUID();
+
+  if (!messages.some((message) => message.id === messageId)) {
+    store.addMessage(sessionId, {
+      id: messageId,
+      role: "assistant",
+      created: Date.now(),
+      content: [],
+      metadata: {
+        userVisible: true,
+        agentVisible: true,
+        completionStatus: "inProgress",
+      },
+    });
   }
-  if (update.rawOutput !== undefined && update.rawOutput !== null) {
-    return typeof update.rawOutput === "string"
-      ? update.rawOutput
-      : JSON.stringify(update.rawOutput);
-  }
-  return "";
+
+  store.setPendingAssistantProvider(sessionId, null);
+  store.setStreamingMessageId(sessionId, messageId);
+  clearActiveMessageId(gooseSessionId);
+
+  return messageId;
 }
 
 export function clearMessageTracking(): void {

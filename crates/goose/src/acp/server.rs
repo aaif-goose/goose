@@ -1532,12 +1532,11 @@ impl GooseAcpAgent {
             }
         }
 
+        let update = ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
+            .meta(extract_tool_call_update_meta(tool_response));
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
-            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                ToolCallId::new(tool_response.id.clone()),
-                fields,
-            )),
+            SessionUpdate::ToolCallUpdate(update),
         ))?;
 
         Ok(())
@@ -1627,6 +1626,16 @@ fn outcome_to_confirmation(outcome: &RequestPermissionOutcome) -> PermissionConf
         principal_type: PrincipalType::Tool,
         permission: Permission::from(PermissionDecision::from(outcome)),
     }
+}
+
+fn extract_tool_call_update_meta(
+    tool_response: &goose::conversation::message::ToolResponse,
+) -> Option<Meta> {
+    let tool_result = tool_response.tool_result.as_ref().ok()?;
+    let goose_meta = tool_result.meta.as_ref()?.0.get("goose")?.clone();
+    let mut meta_map = serde_json::Map::new();
+    meta_map.insert("goose".to_string(), goose_meta);
+    Some(meta_map)
 }
 
 fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<ToolCallContent> {
@@ -2144,12 +2153,12 @@ impl GooseAcpAgent {
                             }
                         }
 
+                        let update =
+                            ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
+                                .meta(extract_tool_call_update_meta(tool_response));
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(tool_response.id.clone()),
-                                fields,
-                            )),
+                            SessionUpdate::ToolCallUpdate(update),
                         ))?;
                     }
                     MessageContent::Thinking(thinking) => {

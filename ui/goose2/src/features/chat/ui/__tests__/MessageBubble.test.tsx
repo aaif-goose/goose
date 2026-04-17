@@ -380,6 +380,59 @@ describe("MessageBubble", () => {
     expect(screen.queryByText("Tool result")).not.toBeInTheDocument();
   });
 
+  it("renders MCP App blocks", () => {
+    const msg = assistantMessage([
+      {
+        type: "toolRequest",
+        id: "tool-1",
+        name: "weather: open app",
+        arguments: {},
+        status: "completed",
+      },
+      {
+        type: "toolResponse",
+        id: "tool-1",
+        name: "weather: open app",
+        result: "done",
+        isError: false,
+      },
+      {
+        type: "mcpApp",
+        id: "tool-1",
+        payload: {
+          sessionId: "local-session",
+          gooseSessionId: "goose-session",
+          toolCallId: "tool-1",
+          toolCallTitle: "weather: open app",
+          source: "toolCallUpdateMeta",
+          tool: {
+            name: "weather__open_app",
+            extensionName: "weather",
+            resourceUri: "ui://weather/app",
+          },
+          resource: {
+            result: {
+              contents: [
+                {
+                  uri: "ui://weather/app",
+                  mimeType: "text/html",
+                  text: "<div>Hello</div>",
+                },
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    render(<MessageBubble message={msg} />);
+
+    const mcpAppView = screen.getByTestId("mcp-app-view");
+    expect(mcpAppView).toBeInTheDocument();
+    expect(mcpAppView).toHaveTextContent("ui://weather/app");
+    expect(mcpAppView).toHaveTextContent("<div>Hello</div>");
+  });
+
   it("renders thinking content as Reasoning block", () => {
     const msg = assistantMessage([{ type: "thinking", text: "deep thoughts" }]);
     render(<MessageBubble message={msg} />);

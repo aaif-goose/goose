@@ -97,17 +97,19 @@ export async function acpSendMessage(
   const tPrompt = performance.now();
   const meta: Record<string, unknown> = {};
   if (personaId) meta.personaId = personaId;
-  await directAcp.prompt(
-    gooseSessionId,
-    content,
-    Object.keys(meta).length > 0 ? meta : undefined,
-  );
-  const tDone = performance.now();
-  perfLog(
-    `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
-  );
-
-  clearActiveMessageId(gooseSessionId);
+  try {
+    await directAcp.prompt(
+      gooseSessionId,
+      content,
+      Object.keys(meta).length > 0 ? meta : undefined,
+    );
+    const tDone = performance.now();
+    perfLog(
+      `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
+    );
+  } finally {
+    clearActiveMessageId(gooseSessionId);
+  }
 }
 
 /** Prepare or warm an ACP session ahead of the first prompt. */

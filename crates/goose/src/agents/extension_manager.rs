@@ -45,8 +45,8 @@ use crate::oauth::oauth_flow;
 use crate::prompt_template;
 use crate::subprocess::configure_subprocess;
 use rmcp::model::{
-    CallToolRequestParams, Content, ErrorCode, ErrorData, GetPromptResult, Prompt, Resource,
-    ResourceContents, ServerInfo, Tool,
+    CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData, GetPromptResult, Meta,
+    Prompt, Resource, ResourceContents, ServerInfo, Tool,
 };
 use rmcp::transport::auth::AuthClient;
 use schemars::_private::NoSerialize;
@@ -119,6 +119,20 @@ impl Extension {
 pub struct ExtensionManagerCapabilities {
     pub mcpui: bool,
     pub host_info: Option<GooseMcpHostInfo>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GooseMcpAppToolAttachment {
+    pub tool_name: String,
+    pub extension_name: String,
+    pub resource_uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_meta: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_error: Option<String>,
 }
 
 /// Manages goose extensions / MCP clients and their interactions
@@ -214,6 +228,42 @@ pub fn get_tool_owner(tool: &Tool) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+fn get_tool_meta_value(tool: &Tool) -> Option<Value> {
+    tool.meta.as_ref().map(|meta| Value::Object(meta.0.clone()))
+}
+
+fn get_tool_resource_uri(tool: &Tool) -> Option<String> {
+    tool.meta
+        .as_ref()
+        .and_then(|meta| meta.0.get("ui"))
+        .and_then(Value::as_object)
+        .and_then(|ui| ui.get("resourceUri"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
+fn merge_mcp_app_attachment_meta(
+    result: &mut CallToolResult,
+    attachment: &GooseMcpAppToolAttachment,
+) {
+    let mut meta_map = result
+        .meta
+        .as_ref()
+        .map(|meta| meta.0.clone())
+        .unwrap_or_default();
+    let mut goose_value = meta_map
+        .remove("goose")
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+
+    goose_value.insert(
+        "mcpApp".to_string(),
+        serde_json::to_value(attachment).unwrap_or(Value::Null),
+    );
+    meta_map.insert("goose".to_string(), Value::Object(goose_value));
+    result.meta = Some(Meta(meta_map));
+}
+
 fn is_unprefixed_extension(config: &ExtensionConfig) -> bool {
     match config {
         ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. } => {
@@ -241,9 +291,12 @@ pub fn is_hidden_extension(name: &str) -> bool {
 
 /// Result of resolving a tool call to its owning extension
 struct ResolvedTool {
+    tool_name: String,
     extension_name: String,
     actual_tool_name: String,
     client: McpClientBox,
+    tool_meta: Option<Value>,
+    resource_uri: Option<String>,
 }
 
 async fn child_process_client(
@@ -1063,6 +1116,55 @@ impl ExtensionManager {
         Ok(tools)
     }
 
+    fn host_supports_mcp_apps(&self) -> bool {
+        if let Some(host_info) = &self.capabilities.host_info {
+            if host_info.explicit_extensions {
+                return host_info.mcpui_enabled();
+            }
+        }
+
+        self.capabilities.mcpui
+    }
+
+    async fn hydrate_mcp_app_attachment(
+        client: &McpClientBox,
+        session_id: &str,
+        resolved_tool: &ResolvedTool,
+        cancellation_token: CancellationToken,
+        result: &mut CallToolResult,
+    ) {
+        if result.is_error == Some(true) {
+            return;
+        }
+
+        let Some(resource_uri) = resolved_tool.resource_uri.clone() else {
+            return;
+        };
+
+        let mut attachment = GooseMcpAppToolAttachment {
+            tool_name: resolved_tool.tool_name.clone(),
+            extension_name: resolved_tool.extension_name.clone(),
+            resource_uri: resource_uri.clone(),
+            tool_meta: resolved_tool.tool_meta.clone(),
+            resource_result: None,
+            read_error: None,
+        };
+
+        match client
+            .read_resource(session_id, &resource_uri, cancellation_token)
+            .await
+        {
+            Ok(resource_result) => {
+                attachment.resource_result = serde_json::to_value(&resource_result).ok();
+            }
+            Err(error) => {
+                attachment.read_error = Some(error.to_string());
+            }
+        }
+
+        merge_mcp_app_attachment_meta(result, &attachment);
+    }
+
     async fn invalidate_tools_cache_and_bump_version(&self) {
         self.tools_cache_version.fetch_add(1, Ordering::SeqCst);
         *self.tools_cache.lock().await = None;
@@ -1432,17 +1534,6 @@ impl ExtensionManager {
         session_id: &str,
         tool_name: &str,
     ) -> Result<ResolvedTool, ErrorData> {
-        if let Some((prefix, actual)) = tool_name.split_once("__") {
-            let owner = name_to_key(prefix);
-            if let Some(client) = self.get_server_client(&owner).await {
-                return Ok(ResolvedTool {
-                    extension_name: owner,
-                    actual_tool_name: actual.to_string(),
-                    client,
-                });
-            }
-        }
-
         let tools = self.get_all_tools_cached(session_id).await.map_err(|e| {
             ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
@@ -1452,13 +1543,19 @@ impl ExtensionManager {
         })?;
 
         if let Some(tool) = tools.iter().find(|t| *t.name == *tool_name) {
-            let owner = get_tool_owner(tool).ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::RESOURCE_NOT_FOUND,
-                    format!("Tool '{}' has no owner", tool_name),
-                    None,
-                )
-            })?;
+            let owner = get_tool_owner(tool)
+                .or_else(|| {
+                    tool_name
+                        .split_once("__")
+                        .map(|(prefix, _)| name_to_key(prefix))
+                })
+                .ok_or_else(|| {
+                    ErrorData::new(
+                        ErrorCode::RESOURCE_NOT_FOUND,
+                        format!("Tool '{}' has no owner", tool_name),
+                        None,
+                    )
+                })?;
 
             let actual_tool_name = tool_name
                 .strip_prefix(&format!("{owner}__"))
@@ -1474,10 +1571,27 @@ impl ExtensionManager {
             })?;
 
             return Ok(ResolvedTool {
+                tool_name: tool.name.to_string(),
                 extension_name: owner,
                 actual_tool_name,
                 client,
+                tool_meta: get_tool_meta_value(tool),
+                resource_uri: get_tool_resource_uri(tool),
             });
+        }
+
+        if let Some((prefix, actual)) = tool_name.split_once("__") {
+            let owner = name_to_key(prefix);
+            if let Some(client) = self.get_server_client(&owner).await {
+                return Ok(ResolvedTool {
+                    tool_name: tool_name.to_string(),
+                    extension_name: owner,
+                    actual_tool_name: actual.to_string(),
+                    client,
+                    tool_meta: None,
+                    resource_uri: None,
+                });
+            }
         }
 
         Err(ErrorData::new(
@@ -1515,8 +1629,13 @@ impl ExtensionManager {
 
         let arguments = tool_call.arguments.clone();
         let client = resolved.client.clone();
+        let hydration_client = client.clone();
         let notifications_receiver = client.subscribe().await;
-        let actual_tool_name = resolved.actual_tool_name;
+        let actual_tool_name = resolved.actual_tool_name.clone();
+        let resolved_tool = resolved;
+        let should_hydrate_mcp_app = self.host_supports_mcp_apps();
+        let read_cancellation_token = cancellation_token.clone();
+        let session_id = ctx.session_id.clone();
         let owned_ctx = ToolCallContext::new(
             ctx.session_id.clone(),
             ctx.working_dir.clone(),
@@ -1530,7 +1649,7 @@ impl ExtensionManager {
                 owned_ctx.session_id,
                 owned_ctx.working_dir,
             );
-            client
+            let mut result = client
                 .call_tool(&owned_ctx, &actual_tool_name, arguments, cancellation_token)
                 .await
                 .map_err(|e| match e {
@@ -1538,7 +1657,20 @@ impl ExtensionManager {
                     _ => {
                         ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), e.maybe_to_value())
                     }
-                })
+                })?;
+
+            if should_hydrate_mcp_app {
+                Self::hydrate_mcp_app_attachment(
+                    &hydration_client,
+                    &session_id,
+                    &resolved_tool,
+                    read_cancellation_token,
+                    &mut result,
+                )
+                .await;
+            }
+
+            Ok(result)
         };
 
         Ok(ToolCallResult {
