@@ -3412,6 +3412,20 @@ export type SearchHfModelsResponses = {
 
 export type SearchHfModelsResponse = SearchHfModelsResponses[keyof SearchHfModelsResponses];
 
+export type SyncFeaturedModelsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/local-inference/sync-featured';
+};
+
+export type SyncFeaturedModelsResponses = {
+    /**
+     * Featured models synced to registry
+     */
+    200: unknown;
+};
+
 export type McpUiProxyData = {
     body?: never;
     path?: never;

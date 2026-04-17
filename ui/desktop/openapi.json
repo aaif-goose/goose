@@ -2283,6 +2283,19 @@
         }
       }
     },
+    "/local-inference/sync-featured": {
+      "post": {
+        "tags": [
+          "super::routes::local_inference"
+        ],
+        "operationId": "sync_featured_models",
+        "responses": {
+          "200": {
+            "description": "Featured models synced to registry"
+          }
+        }
+      }
+    },
     "/mcp-ui-proxy": {
       "get": {
         "tags": [
