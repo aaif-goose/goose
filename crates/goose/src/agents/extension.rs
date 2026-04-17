@@ -479,6 +479,7 @@ impl ExtensionConfig {
                         (k, v)
                     })
                     .collect();
+                let socket = socket.map(|s| substitute_env_vars(&s, &merged));
                 Ok(Self::StreamableHttp {
                     name,
                     description,
