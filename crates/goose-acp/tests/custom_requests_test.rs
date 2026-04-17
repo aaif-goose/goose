@@ -208,48 +208,15 @@ fn test_provider_switching_updates_session_state() {
 
         conn.set_config_option(&session_id, "provider", "anthropic")
             .await
-            .expect("provider config option should succeed");
+            .expect("provider switch to anthropic should succeed");
 
-        let response = send_custom(
-            conn.cx(),
-            "_goose/session/provider/update",
-            serde_json::json!({
-                "sessionId": session_id,
-                "provider": "openai",
-                "model": "o4-mini",
-            }),
-        )
-        .await
-        .expect("provider update should succeed");
-        let config_options = response
-            .get("configOptions")
-            .and_then(|value| value.as_array())
-            .expect("missing config options");
-        assert!(
-            !config_options.is_empty(),
-            "expected refreshed config options"
-        );
+        conn.set_config_option(&session_id, "provider", "openai")
+            .await
+            .expect("provider switch to openai should succeed");
 
-        let response = send_custom(
-            conn.cx(),
-            "_goose/session/provider/update",
-            serde_json::json!({
-                "sessionId": session_id,
-                "provider": "goose",
-            }),
-        )
-        .await
-        .expect("provider reset to goose should succeed");
-        let config_options = response
-            .get("configOptions")
-            .and_then(|value| value.as_array())
-            .expect("missing config options after reset");
-        assert!(
-            config_options
-                .iter()
-                .any(|option| option.get("id") == Some(&serde_json::json!("provider"))),
-            "missing provider config option after reset"
-        );
+        conn.set_config_option(&session_id, "provider", "goose")
+            .await
+            .expect("provider reset to goose should succeed");
     });
 }
 

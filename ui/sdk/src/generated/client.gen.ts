@@ -37,8 +37,6 @@ import type {
   RemoveExtensionRequest,
   RemoveSecretRequest,
   UnarchiveSessionRequest,
-  UpdateProviderRequest,
-  UpdateProviderResponse,
   UpdateWorkingDirRequest,
   UpsertConfigRequest,
   UpsertSecretRequest,
@@ -55,7 +53,6 @@ import {
   zListProvidersResponse,
   zReadConfigResponse,
   zReadResourceResponse,
-  zUpdateProviderResponse,
 } from './zod.gen.js';
 
 export class GooseExtClient {
@@ -103,16 +100,6 @@ export class GooseExtClient {
     return zGetSessionExtensionsResponse.parse(
       raw,
     ) as GetSessionExtensionsResponse;
-  }
-
-  async GooseSessionProviderUpdate(
-    params: UpdateProviderRequest,
-  ): Promise<UpdateProviderResponse> {
-    const raw = await this.conn.extMethod(
-      "_goose/session/provider/update",
-      params,
-    );
-    return zUpdateProviderResponse.parse(raw) as UpdateProviderResponse;
   }
 
   async GooseProvidersList(

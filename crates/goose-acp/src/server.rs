@@ -2084,7 +2084,7 @@ impl GooseAcpAgent {
         model_name: Option<&str>,
         context_limit: Option<usize>,
         request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
-    ) -> Result<Vec<SessionConfigOption>, sacp::Error> {
+    ) -> Result<(), sacp::Error> {
         let sid = sid_short(thread_id);
         let t_total = std::time::Instant::now();
         debug!(target: "perf", sid = %sid, provider = %provider_name, "perf: update_provider start");
@@ -2236,12 +2236,6 @@ impl GooseAcpAgent {
             "perf: update_provider persist_session"
         );
 
-        let t_step = std::time::Instant::now();
-        let (_, config_options) = self
-            .build_config_update(&SessionId::new(thread_id.to_string()))
-            .await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider build_config_update");
-
         debug!(
             target: "perf",
             sid = %sid,
@@ -2251,7 +2245,7 @@ impl GooseAcpAgent {
             changing = is_changing_provider,
             "perf: update_provider done"
         );
-        Ok(config_options)
+        Ok(())
     }
 
     async fn on_list_sessions(&self) -> Result<ListSessionsResponse, sacp::Error> {
@@ -2528,28 +2522,6 @@ impl GooseAcpAgent {
         Ok(GetSessionExtensionsResponse {
             extensions: extensions_json,
         })
-    }
-
-    #[custom_method(UpdateProviderRequest)]
-    async fn on_update_provider(
-        &self,
-        req: UpdateProviderRequest,
-    ) -> Result<UpdateProviderResponse, sacp::Error> {
-        let config_options = self
-            .update_provider(
-                &req.session_id,
-                &req.provider,
-                req.model.as_deref(),
-                req.context_limit,
-                req.request_params,
-            )
-            .await?;
-        let config_options = config_options
-            .into_iter()
-            .map(|option| serde_json::to_value(&option))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-        Ok(UpdateProviderResponse { config_options })
     }
 
     #[custom_method(ListProvidersRequest)]
