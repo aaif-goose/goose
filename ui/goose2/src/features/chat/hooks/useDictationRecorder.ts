@@ -84,6 +84,15 @@ export function useDictationRecorder({
   const vadStateRef = useRef(createInitialVadState());
   const pendingTranscriptionsRef = useRef(0);
   const generationRef = useRef(0);
+  // Per-generation sequence numbers so out-of-order transcription responses
+  // can be reassembled into the order the chunks were captured. Without this,
+  // a later chunk whose API call resolves faster can be appended before an
+  // earlier, slower one — scrambling long dictation sessions with variable
+  // API latency. Empty transcriptions still occupy a slot so they don't block
+  // subsequent chunks.
+  const chunkSeqRef = useRef(0);
+  const nextExpectedSeqRef = useRef(0);
+  const pendingResultsRef = useRef<Map<number, string>>(new Map());
   // Guards against overlapping startRecording calls while getUserMedia is
   // pending (user double-clicks the mic before the first startup resolves).
   const startingRef = useRef(false);
@@ -121,6 +130,8 @@ export function useDictationRecorder({
     }
 
     const gen = generationRef.current;
+    const mySeq = chunkSeqRef.current;
+    chunkSeqRef.current += 1;
     pendingTranscriptionsRef.current += 1;
     setIsTranscribing(true);
 
@@ -139,11 +150,34 @@ export function useDictationRecorder({
         return;
       }
 
-      if (response.text.trim()) {
-        onTranscriptionRef.current(response.text);
+      // Buffer by sequence number, then drain any contiguous prefix so
+      // emissions to onTranscription stay in capture order even when API
+      // responses resolve out of order.
+      pendingResultsRef.current.set(mySeq, response.text);
+      while (pendingResultsRef.current.has(nextExpectedSeqRef.current)) {
+        const text = pendingResultsRef.current.get(nextExpectedSeqRef.current);
+        pendingResultsRef.current.delete(nextExpectedSeqRef.current);
+        nextExpectedSeqRef.current += 1;
+        if (text && text.trim()) {
+          onTranscriptionRef.current(text);
+        }
       }
     } catch (error) {
       onErrorRef.current(toErrorMessage(error));
+      // Unblock the queue so a failure doesn't stall every subsequent chunk.
+      if (gen === generationRef.current) {
+        pendingResultsRef.current.set(mySeq, "");
+        while (pendingResultsRef.current.has(nextExpectedSeqRef.current)) {
+          const text = pendingResultsRef.current.get(
+            nextExpectedSeqRef.current,
+          );
+          pendingResultsRef.current.delete(nextExpectedSeqRef.current);
+          nextExpectedSeqRef.current += 1;
+          if (text && text.trim()) {
+            onTranscriptionRef.current(text);
+          }
+        }
+      }
     } finally {
       pendingTranscriptionsRef.current -= 1;
       if (pendingTranscriptionsRef.current === 0) {
@@ -188,6 +222,12 @@ export function useDictationRecorder({
       } else if (!flushPending) {
         samplesRef.current = [];
         generationRef.current += 1;
+        // Reset chunk-ordering state so the new generation starts at seq 0.
+        // In-flight chunks from the old generation bail at the gen check in
+        // transcribeChunk without touching the pending map.
+        chunkSeqRef.current = 0;
+        nextExpectedSeqRef.current = 0;
+        pendingResultsRef.current.clear();
       }
 
       vadStateRef.current = createInitialVadState();

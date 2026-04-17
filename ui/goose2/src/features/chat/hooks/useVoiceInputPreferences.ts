@@ -67,9 +67,23 @@ export function useVoiceInputPreferences() {
     if (providerValue === DISABLED_DICTATION_PROVIDER_CONFIG_VALUE) {
       setSelectedProviderState(null);
       setHasStoredProviderPreferenceState(true);
+    } else if (providerValue != null) {
+      const normalized = normalizeDictationProvider(providerValue);
+      if (normalized !== null) {
+        setSelectedProviderState(normalized);
+        setHasStoredProviderPreferenceState(true);
+      } else {
+        // Stored value isn't a recognized provider (stale from an older
+        // build, typo, etc.). Treat as no preference — don't pin the user
+        // to voice-off — and clear the config key so future boots fall
+        // through to the default cleanly.
+        setSelectedProviderState(null);
+        setHasStoredProviderPreferenceState(false);
+        void removeConfigKey(VOICE_DICTATION_PROVIDER_CONFIG_KEY);
+      }
     } else {
-      setSelectedProviderState(normalizeDictationProvider(providerValue));
-      setHasStoredProviderPreferenceState(providerValue !== null);
+      setSelectedProviderState(null);
+      setHasStoredProviderPreferenceState(false);
     }
 
     setPreferredMicrophoneIdState(micValue);
