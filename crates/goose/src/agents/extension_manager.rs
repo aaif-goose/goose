@@ -443,10 +443,7 @@ async fn create_streamable_http_client(
 
     let transport = StreamableHttpClientTransport::with_client(
         http_client,
-        StreamableHttpClientTransportConfig {
-            uri: uri.into(),
-            ..Default::default()
-        },
+        StreamableHttpClientTransportConfig::with_uri(uri),
     );
 
     let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
@@ -475,10 +472,7 @@ async fn create_streamable_http_client(
                 let auth_client = AuthClient::new(auth_http_client, auth_manager);
                 let transport = StreamableHttpClientTransport::with_client(
                     auth_client,
-                    StreamableHttpClientTransportConfig {
-                        uri: uri.into(),
-                        ..Default::default()
-                    },
+                    StreamableHttpClientTransportConfig::with_uri(uri),
                 );
                 Ok(Box::new(
                     McpClient::connect(
