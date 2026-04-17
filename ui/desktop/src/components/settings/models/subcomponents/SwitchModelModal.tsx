@@ -498,7 +498,11 @@ export const SwitchModelModal = ({
 
   // Fetch models lazily when the selected provider changes
   useEffect(() => {
-    if (!provider || usePredefinedModels || fetchedProviders.current.has(provider)) return;
+    if (!provider || usePredefinedModels) return;
+    if (fetchedProviders.current.has(provider)) {
+      setLoadingModels(false);
+      return;
+    }
 
     const activeProvider = activeProvidersList.find((p) => p.name === provider);
     if (!activeProvider) return;
@@ -555,9 +559,17 @@ export const SwitchModelModal = ({
           }
         });
 
-        // Merge with existing state
-        setProviderErrors((prev) => ({ ...prev, ...newErrors }));
-        setProviderWarnings((prev) => ({ ...prev, ...newWarnings }));
+        // Merge with existing state, clearing stale errors/warnings for this provider on success
+        setProviderErrors((prev) => {
+          const next = { ...prev, ...newErrors };
+          if (!newErrors[activeProvider.name]) delete next[activeProvider.name];
+          return next;
+        });
+        setProviderWarnings((prev) => {
+          const next = { ...prev, ...newWarnings };
+          if (!newWarnings[activeProvider.name]) delete next[activeProvider.name];
+          return next;
+        });
 
         setModelOptions((prev) => [...prev, ...newGroupedOptions]);
         setOriginalModelOptions((prev) => [...prev, ...newGroupedOptions]);
@@ -573,6 +585,7 @@ export const SwitchModelModal = ({
 
     return () => {
       cancelled = true;
+      setLoadingModels(false);
     };
   }, [provider, activeProvidersList, usePredefinedModels, intl]);
 
