@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
+use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
@@ -1078,11 +1079,20 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
     } else {
         builtins
     };
+    let goose_platform = match std::env::var("GOOSE_PLATFORM").ok().as_deref() {
+        Some("desktop") | Some("goose-desktop") => GoosePlatform::GooseDesktop,
+        Some("cli") | Some("goose-cli") | None => GoosePlatform::GooseCli,
+        Some(other) => {
+            warn!("Unknown GOOSE_PLATFORM value '{other}', defaulting ACP server to goose-cli");
+            GoosePlatform::GooseCli
+        }
+    };
 
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
+        goose_platform,
     }));
     let router = create_router(server);
 
