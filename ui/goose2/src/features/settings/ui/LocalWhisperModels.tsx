@@ -153,6 +153,11 @@ export function LocalWhisperModels({
             : t("general.voiceInput.saveError"),
         );
       } finally {
+        setProgresses((prev) => {
+          const next = new Map(prev);
+          next.delete(modelId);
+          return next;
+        });
         setDownloadingIds((prev) => {
           const next = new Set(prev);
           next.delete(modelId);
