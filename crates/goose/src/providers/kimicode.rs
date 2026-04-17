@@ -270,35 +270,31 @@ impl KimiCodeProvider {
         }
     }
 
-    fn device_flow_config(&self) -> (String, String, DeviceFlowConfig<'_>) {
+    async fn device_flow_login(&self) -> Result<KimiToken> {
         let device_auth_url = format!("{}/api/oauth/device_authorization", self.auth_host);
         let token_url = format!("{}/api/oauth/token", self.auth_host);
-        // Borrow via caller-owned strings — see how callers destructure this.
-        (
-            device_auth_url,
-            token_url,
-            DeviceFlowConfig {
-                device_auth_url: "",
-                token_url: "",
-                client_id: KIMI_CODE_CLIENT_ID,
-                scopes: None,
-                extra_headers: self.kimi_headers(),
-                encoding: RequestEncoding::Form,
-            },
-        )
-    }
-
-    async fn device_flow_login(&self) -> Result<KimiToken> {
-        let (device_auth_url, token_url, mut cfg) = self.device_flow_config();
-        cfg.device_auth_url = &device_auth_url;
-        cfg.token_url = &token_url;
+        let cfg = DeviceFlowConfig {
+            device_auth_url: &device_auth_url,
+            token_url: &token_url,
+            client_id: KIMI_CODE_CLIENT_ID,
+            scopes: None,
+            extra_headers: self.kimi_headers(),
+            encoding: RequestEncoding::Form,
+        };
         let tokens = run_device_flow(&self.client, &cfg).await?;
         Ok(tokens_to_kimi(tokens, ""))
     }
 
     async fn do_refresh_token(&self, refresh_token: &str) -> Result<KimiToken> {
-        let (_device_auth_url, token_url, mut cfg) = self.device_flow_config();
-        cfg.token_url = &token_url;
+        let token_url = format!("{}/api/oauth/token", self.auth_host);
+        let cfg = DeviceFlowConfig {
+            device_auth_url: "",
+            token_url: &token_url,
+            client_id: KIMI_CODE_CLIENT_ID,
+            scopes: None,
+            extra_headers: self.kimi_headers(),
+            encoding: RequestEncoding::Form,
+        };
         let tokens = refresh_device_flow_token(&self.client, &cfg, refresh_token).await?;
         // RFC 6749 §6: the server MAY omit `refresh_token` from a refresh
         // response, in which case the client should keep reusing the prior one.

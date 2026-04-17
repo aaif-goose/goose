@@ -271,10 +271,9 @@ async fn parse_token_response(response: reqwest::Response) -> Result<TokenPollOu
         Some("authorization_pending") => TokenPollOutcome::Pending,
         Some("slow_down") => TokenPollOutcome::SlowDown,
         Some(err) => TokenPollOutcome::Failed(err.to_string()),
-        None => {
-            tracing::debug!("unexpected poll response: no token and no error");
-            TokenPollOutcome::Pending
-        }
+        None => TokenPollOutcome::Failed(
+            "unexpected token response: no access_token and no error code".to_string(),
+        ),
     })
 }
 
