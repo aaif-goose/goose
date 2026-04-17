@@ -21,9 +21,7 @@ import {
   clearReplayBuffer,
   getAndDeleteReplayBuffer,
 } from "@/features/chat/hooks/replayBuffer";
-import {
-  resolveSessionCwd,
-} from "@/features/projects/lib/sessionCwdSelection";
+import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 
 export type AppView =
   | "home"

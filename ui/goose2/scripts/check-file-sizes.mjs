@@ -11,7 +11,7 @@ const EXCEPTIONS = {
       "Drag-and-drop handlers for session-to-project moves and project reorder, plus activeProjectId highlight.",
   },
   "src/features/chat/ui/ChatView.tsx": {
-    limit: 535,
+    limit: 560,
     justification:
       "ACP prewarm guards, project-aware working dir selection, working context sync, and chat bootstrapping still live together here.",
   },

@@ -361,9 +361,14 @@ describe("useChat", () => {
       await result.current.sendMessage("Hello");
     });
 
-    expect(mockAcpPrepareSession).toHaveBeenCalledWith("session-1", "openai", "/tmp", {
-      personaId: undefined,
-    });
+    expect(mockAcpPrepareSession).toHaveBeenCalledWith(
+      "session-1",
+      "openai",
+      "/tmp",
+      {
+        personaId: undefined,
+      },
+    );
     expect(mockAcpSetModel).toHaveBeenCalledWith("session-1", "gpt-4.1");
     expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "Hello", {
       systemPrompt: undefined,

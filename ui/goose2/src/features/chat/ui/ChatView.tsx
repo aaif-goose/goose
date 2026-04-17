@@ -248,9 +248,14 @@ export function ChatView({
             return;
           }
 
-          await acpPrepareSession(activeSessionId, selectedProvider, workingDir, {
-            personaId: selectedPersonaId ?? undefined,
-          });
+          await acpPrepareSession(
+            activeSessionId,
+            selectedProvider,
+            workingDir,
+            {
+              personaId: selectedPersonaId ?? undefined,
+            },
+          );
         }
 
         void updateProjectSessionCwd().catch((error) => {
