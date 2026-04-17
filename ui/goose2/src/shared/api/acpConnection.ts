@@ -84,22 +84,24 @@ async function initializeConnection(): Promise<GooseClient> {
   );
 
   const tInit = performance.now();
-  await client.initialize(
-    {
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: {
-        _meta: {
-          goose: {
-            mcpHostCapabilities: DEFAULT_GOOSE_MCP_HOST_CAPABILITIES,
-          },
+  await client.initialize({
+    protocolVersion: PROTOCOL_VERSION,
+    clientCapabilities: {
+      _meta: {
+        goose: {
+          mcpHostCapabilities: DEFAULT_GOOSE_MCP_HOST_CAPABILITIES,
         },
       },
       clientInfo: {
         name: packageJson.name,
         version: packageJson.version,
       },
-    } satisfies GooseInitializeRequest,
-  );
+    },
+    clientInfo: {
+      name: packageJson.name,
+      version: packageJson.version,
+    },
+  } satisfies GooseInitializeRequest);
   perfLog(
     `[perf:conn] client.initialize in ${(performance.now() - tInit).toFixed(1)}ms (total ${(performance.now() - tStart).toFixed(1)}ms)`,
   );
