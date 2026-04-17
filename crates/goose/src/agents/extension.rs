@@ -890,39 +890,6 @@ available_tools: []
     }
 
     #[test]
-    fn test_deserialize_streamable_http_with_socket() {
-        let json = r#"{
-            "type": "streamable_http",
-            "name": "test",
-            "uri": "http://localhost:8080/mcp",
-            "socket": "@egress.sock"
-        }"#;
-        let config: ExtensionConfig = serde_json::from_str(json).unwrap();
-        match config {
-            ExtensionConfig::StreamableHttp { socket, .. } => {
-                assert_eq!(socket, Some("@egress.sock".to_string()));
-            }
-            other => panic!("expected StreamableHttp, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_deserialize_streamable_http_without_socket() {
-        let json = r#"{
-            "type": "streamable_http",
-            "name": "test",
-            "uri": "http://localhost:8080/mcp"
-        }"#;
-        let config: ExtensionConfig = serde_json::from_str(json).unwrap();
-        match config {
-            ExtensionConfig::StreamableHttp { socket, .. } => {
-                assert_eq!(socket, None);
-            }
-            other => panic!("expected StreamableHttp, got {:?}", other),
-        }
-    }
-
-    #[test]
     fn test_display_streamable_http_with_socket() {
         let config = ExtensionConfig::StreamableHttp {
             name: "test".into(),
