@@ -58,7 +58,6 @@ pub struct LocalModelResponse {
 async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
     let mut mmproj_downloads_needed: Vec<(String, String, PathBuf)> = Vec::new();
 
-    // Phase 1: Check registry to find which featured models need HF resolution.
     struct PendingResolve {
         spec: &'static str,
         repo_id: String,
@@ -99,7 +98,7 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
                 if !needs_backfill {
                     continue;
                 }
-                // Fall through to resolve for sync_with_featured backfill
+                // Fall through to resolve for backfill
             }
         }
 
@@ -111,7 +110,6 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
         });
     }
 
-    // Phase 2: Resolve all pending models from HuggingFace concurrently.
     let resolved: Vec<(PendingResolve, HfGgufFile)> =
         join_all(to_resolve.into_iter().map(|pending| async move {
             let hf_file = match resolve_model_spec(pending.spec).await {
@@ -137,7 +135,6 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
         }))
         .await;
 
-    // Phase 3: Build entries from resolved results.
     let entries_to_add: Vec<LocalModelEntry> = resolved
         .into_iter()
         .map(|(pending, hf_file)| {

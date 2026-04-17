@@ -468,7 +468,6 @@ export const SwitchModelModal = ({
     }
   }, [currentModel, currentProvider, usePredefinedModels, provider, model, initialProvider]);
 
-  // Load provider list (fast, no model fetching)
   useEffect(() => {
     if (usePredefinedModels) {
       const models = getPredefinedModelsFromEnv();
@@ -496,7 +495,6 @@ export const SwitchModelModal = ({
     })();
   }, [getProviders, usePredefinedModels, read, intl]);
 
-  // Fetch models lazily when the selected provider changes
   useEffect(() => {
     if (!provider || usePredefinedModels) return;
     if (fetchedProviders.current.has(provider)) {
@@ -559,7 +557,6 @@ export const SwitchModelModal = ({
           }
         });
 
-        // Merge with existing state, clearing stale errors/warnings for this provider on success
         setProviderErrors((prev) => {
           const next = { ...prev, ...newErrors };
           if (!newErrors[activeProvider.name]) delete next[activeProvider.name];
