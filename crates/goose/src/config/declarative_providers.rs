@@ -302,22 +302,11 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             fast_model: existing_config.fast_model.clone(),
         })
     } else {
-        let custom_file = custom_providers_dir().join(format!("{}.json", params.id));
-        if params.requires_auth {
-            Some(DeclarativeProviderConfig {
-                requires_auth: true,
-                api_key_env,
-                ..existing_config
-            })
-        } else {
-            if !existing_config.api_key_env.is_empty() {
-                let _ = config.delete_secret(&existing_config.api_key_env);
-            }
-            if custom_file.exists() {
-                std::fs::remove_file(custom_file)?;
-            }
-            None
-        }
+        Some(build_fixed_provider_auth_override(
+            existing_config,
+            params.requires_auth,
+            api_key_env,
+        ))
     };
 
     if let Some(config_to_write) = updated_config {
@@ -329,6 +318,24 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
     }
 
     Ok(())
+}
+
+fn build_fixed_provider_auth_override(
+    existing_config: DeclarativeProviderConfig,
+    requires_auth: bool,
+    api_key_env: String,
+) -> DeclarativeProviderConfig {
+    let api_key_env = if requires_auth {
+        api_key_env
+    } else {
+        existing_config.api_key_env.clone()
+    };
+
+    DeclarativeProviderConfig {
+        requires_auth,
+        api_key_env,
+        ..existing_config
+    }
 }
 
 pub fn remove_custom_provider(id: &str) -> Result<()> {
@@ -682,5 +689,63 @@ mod tests {
 
         let result = expand_env_vars("${TEST_EXPAND_OVERRIDE}/path", &env_vars).unwrap();
         assert_eq!(result, "https://from-env.com/path");
+    }
+
+    #[test]
+    fn test_build_fixed_provider_auth_override_preserves_api_key_env_when_disabling_auth() {
+        let existing = DeclarativeProviderConfig {
+            name: "ollama_cloud".to_string(),
+            engine: ProviderEngine::OpenAI,
+            display_name: "Ollama Cloud".to_string(),
+            description: None,
+            api_key_env: "OLLAMA_CLOUD_API_KEY".to_string(),
+            base_url: "https://ollama.com/v1/chat/completions".to_string(),
+            models: vec![],
+            headers: None,
+            timeout_seconds: None,
+            supports_streaming: Some(true),
+            requires_auth: true,
+            catalog_provider_id: None,
+            base_path: None,
+            env_vars: None,
+            dynamic_models: Some(true),
+            skip_canonical_filtering: true,
+            fast_model: None,
+        };
+
+        let override_config =
+            build_fixed_provider_auth_override(existing, false, "IGNORED_API_KEY_ENV".to_string());
+
+        assert!(!override_config.requires_auth);
+        assert_eq!(override_config.api_key_env, "OLLAMA_CLOUD_API_KEY");
+    }
+
+    #[test]
+    fn test_build_fixed_provider_auth_override_uses_updated_api_key_env_when_enabling_auth() {
+        let existing = DeclarativeProviderConfig {
+            name: "lmstudio".to_string(),
+            engine: ProviderEngine::OpenAI,
+            display_name: "LM Studio".to_string(),
+            description: None,
+            api_key_env: String::new(),
+            base_url: "http://localhost:1234/v1/chat/completions".to_string(),
+            models: vec![],
+            headers: None,
+            timeout_seconds: None,
+            supports_streaming: Some(true),
+            requires_auth: false,
+            catalog_provider_id: None,
+            base_path: None,
+            env_vars: None,
+            dynamic_models: Some(true),
+            skip_canonical_filtering: false,
+            fast_model: None,
+        };
+
+        let override_config =
+            build_fixed_provider_auth_override(existing, true, "LMSTUDIO_API_KEY".to_string());
+
+        assert!(override_config.requires_auth);
+        assert_eq!(override_config.api_key_env, "LMSTUDIO_API_KEY");
     }
 }
