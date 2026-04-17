@@ -393,7 +393,7 @@ export function ChatInputToolbar({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  disabled={!voiceEnabled || (disabled && !voiceRecording)}
+                  disabled={!voiceRecording && (!voiceEnabled || disabled)}
                   onClick={onVoiceToggle}
                   aria-label={
                     voiceRecording

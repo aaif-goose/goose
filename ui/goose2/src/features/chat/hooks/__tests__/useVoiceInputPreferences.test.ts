@@ -22,6 +22,43 @@ describe("useVoiceInputPreferences", () => {
     mockGetClient.mockReset();
   });
 
+  it("does not hydrate until provider config can be read successfully", async () => {
+    let shouldFailProviderRead = true;
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GooseConfigRead: vi.fn().mockImplementation(({ key }) => {
+          if (key === "VOICE_DICTATION_PROVIDER") {
+            if (shouldFailProviderRead) {
+              return Promise.reject(new Error("temporary acp failure"));
+            }
+            return Promise.resolve({ value: "groq" });
+          }
+          return Promise.resolve({ value: null });
+        }),
+        GooseConfigUpsert: vi.fn().mockResolvedValue({}),
+        GooseConfigRemove: vi.fn().mockResolvedValue({}),
+      },
+    });
+
+    const { result } = renderHook(() => useVoiceInputPreferences());
+
+    await act(async () => {});
+
+    expect(result.current.isHydrated).toBe(false);
+    expect(result.current.selectedProvider).toBeNull();
+
+    shouldFailProviderRead = false;
+
+    await act(async () => {
+      window.dispatchEvent(new Event("goose:voice-input-preferences"));
+    });
+
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    expect(result.current.selectedProvider).toBe("groq");
+    expect(result.current.hasStoredProviderPreference).toBe(true);
+  });
+
   it("broadcasts preference changes only after config persistence settles", async () => {
     const upsert = vi.fn();
     const providerRead = deferred<{ value?: unknown }>();

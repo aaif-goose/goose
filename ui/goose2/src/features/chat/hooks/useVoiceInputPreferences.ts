@@ -13,13 +13,18 @@ import type { DictationProvider } from "@/shared/types/dictation";
 
 const VOICE_INPUT_PREFERENCES_EVENT = "goose:voice-input-preferences";
 
-async function readConfigString(key: string): Promise<string | null> {
+type ConfigReadResult = { ok: true; value: string | null } | { ok: false };
+
+async function readConfigString(key: string): Promise<ConfigReadResult> {
   try {
     const client = await getClient();
     const response = await client.goose.GooseConfigRead({ key });
-    return typeof response.value === "string" ? response.value : null;
+    return {
+      ok: true,
+      value: typeof response.value === "string" ? response.value : null,
+    };
   } catch {
-    return null;
+    return { ok: false };
   }
 }
 
@@ -60,21 +65,30 @@ export function useVoiceInputPreferences() {
   const [isHydrated, setIsHydrated] = useState(false);
 
   const syncFromConfig = useCallback(async () => {
-    const [phrasesValue, providerValue, micValue] = await Promise.all([
+    const [phrasesResult, providerResult, micResult] = await Promise.all([
       readConfigString(VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY),
       readConfigString(VOICE_DICTATION_PROVIDER_CONFIG_KEY),
       readConfigString(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY),
     ]);
 
-    setRawAutoSubmitPhrasesState(
-      phrasesValue ?? DEFAULT_AUTO_SUBMIT_PHRASES_RAW,
-    );
+    if (phrasesResult.ok) {
+      setRawAutoSubmitPhrasesState(
+        phrasesResult.value ?? DEFAULT_AUTO_SUBMIT_PHRASES_RAW,
+      );
+    }
 
-    if (providerValue === DISABLED_DICTATION_PROVIDER_CONFIG_VALUE) {
+    if (!providerResult.ok) {
+      if (micResult.ok) {
+        setPreferredMicrophoneIdState(micResult.value);
+      }
+      return;
+    }
+
+    if (providerResult.value === DISABLED_DICTATION_PROVIDER_CONFIG_VALUE) {
       setSelectedProviderState(null);
       setHasStoredProviderPreferenceState(true);
-    } else if (providerValue != null) {
-      const normalized = normalizeDictationProvider(providerValue);
+    } else if (providerResult.value != null) {
+      const normalized = normalizeDictationProvider(providerResult.value);
       if (normalized !== null) {
         setSelectedProviderState(normalized);
         setHasStoredProviderPreferenceState(true);
@@ -92,7 +106,9 @@ export function useVoiceInputPreferences() {
       setHasStoredProviderPreferenceState(false);
     }
 
-    setPreferredMicrophoneIdState(micValue);
+    if (micResult.ok) {
+      setPreferredMicrophoneIdState(micResult.value);
+    }
     setIsHydrated(true);
   }, []);
 
