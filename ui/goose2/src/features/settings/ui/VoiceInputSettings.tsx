@@ -32,6 +32,7 @@ const DISABLED_PROVIDER = "__disabled__";
 export function VoiceInputSettings() {
   const { t } = useTranslation(["settings", "chat", "common"]);
   const {
+    clearSelectedProvider,
     hasStoredProviderPreference,
     preferredMicrophoneId,
     rawAutoSubmitPhrases,
@@ -75,10 +76,20 @@ export function VoiceInputSettings() {
       return;
     }
 
+    // The stored provider is no longer in the fetched config (e.g. it was
+    // feature-flagged off or removed). Clear the preference entirely rather
+    // than writing `null`, which would persist the explicit "voice off"
+    // sentinel and leave the user opted out across future sessions even
+    // after valid providers reappear.
     if (!nextConfig[selectedProvider]) {
-      setSelectedProvider(null);
+      clearSelectedProvider();
     }
-  }, [hasStoredProviderPreference, selectedProvider, setSelectedProvider]);
+  }, [
+    clearSelectedProvider,
+    hasStoredProviderPreference,
+    selectedProvider,
+    setSelectedProvider,
+  ]);
 
   useEffect(() => {
     const load = async () => {

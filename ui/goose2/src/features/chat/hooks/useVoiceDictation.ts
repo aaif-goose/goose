@@ -23,6 +23,16 @@ interface UseVoiceDictationOptions {
     attachments?: ChatAttachmentDraft[],
   ) => void;
   resetTextarea: () => void;
+  /**
+   * When true, auto-submit on trigger phrase will NOT call `onSend`.
+   * Instead, the trigger phrase is stripped and the remaining transcription
+   * is left in the textarea for the user to review and send manually.
+   * Caller should set this to match `ChatInput`'s own send guards
+   * (queued-message lockout, outer `disabled` state, etc.) so voice
+   * auto-submit can't bypass the UI's protection against extra sends
+   * during an active run.
+   */
+  isSendLocked?: boolean;
 }
 
 export function useVoiceDictation({
@@ -33,6 +43,7 @@ export function useVoiceDictation({
   selectedPersonaId,
   onSend,
   resetTextarea,
+  isSendLocked = false,
 }: UseVoiceDictationOptions) {
   const voicePrefs = useVoiceInputPreferences();
   const [providerStatuses, setProviderStatuses] = useState<
@@ -114,18 +125,27 @@ export function useVoiceDictation({
       const match = getAutoSubmitMatch(fragment, voicePrefs.autoSubmitPhrases);
       if (match) {
         const merged = appendTranscribedText(latest, match.textWithoutPhrase);
-        if (merged.trim()) {
-          stopRecordingRef.current({ flushPending: false });
-          onSend(
-            merged.trim(),
-            selectedPersonaId ?? undefined,
-            attachments.length > 0 ? attachments : undefined,
-          );
-          setText("");
-          textRef.current = "";
-          clearAttachments();
-          resetTextarea();
+        if (!merged.trim()) {
+          return;
         }
+        stopRecordingRef.current({ flushPending: false });
+        if (isSendLocked) {
+          // Parent UI is blocking sends (queued message, disabled, etc.).
+          // Strip the trigger phrase and leave the transcription in the
+          // textarea so the user can send it manually when the lock clears.
+          setText(merged);
+          textRef.current = merged;
+          return;
+        }
+        onSend(
+          merged.trim(),
+          selectedPersonaId ?? undefined,
+          attachments.length > 0 ? attachments : undefined,
+        );
+        setText("");
+        textRef.current = "";
+        clearAttachments();
+        resetTextarea();
       } else {
         const merged = appendTranscribedText(latest, fragment);
         setText(merged);
@@ -135,6 +155,7 @@ export function useVoiceDictation({
     [
       attachments,
       clearAttachments,
+      isSendLocked,
       onSend,
       resetTextarea,
       selectedPersonaId,
