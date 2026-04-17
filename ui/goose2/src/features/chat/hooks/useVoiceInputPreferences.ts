@@ -98,18 +98,15 @@ export function useVoiceInputPreferences() {
     window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
   }, []);
 
-  const setSelectedProvider = useCallback(
-    (value: DictationProvider | null) => {
-      setSelectedProviderState(value);
-      setHasStoredProviderPreferenceState(true);
-      void writeConfigString(
-        VOICE_DICTATION_PROVIDER_CONFIG_KEY,
-        value ?? DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
-      );
-      window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-    },
-    [],
-  );
+  const setSelectedProvider = useCallback((value: DictationProvider | null) => {
+    setSelectedProviderState(value);
+    setHasStoredProviderPreferenceState(true);
+    void writeConfigString(
+      VOICE_DICTATION_PROVIDER_CONFIG_KEY,
+      value ?? DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
+    );
+    window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
+  }, []);
 
   // Remove the stored preference entirely, so the user falls through to the
   // default provider on next boot. Distinct from setSelectedProvider(null),
