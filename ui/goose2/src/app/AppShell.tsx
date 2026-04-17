@@ -22,6 +22,7 @@ import {
   getAndDeleteReplayBuffer,
 } from "@/features/chat/hooks/replayBuffer";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
+import { perfLog } from "@/shared/lib/perfLog";
 
 export type AppView =
   | "home"
@@ -65,43 +66,43 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   );
 
   const loadSessionMessages = useCallback(async (sessionId: string) => {
-    const existing = useChatStore.getState().messagesBySession[sessionId];
-    if (existing && existing.length > 0) {
-      console.log(
-        `[perf:load] ${sessionId.slice(0, 8)} skip — already has messages`,
-      );
+    const sid = sessionId.slice(0, 8);
+    const existingMsgs = useChatStore.getState().messagesBySession[sessionId];
+    if ((existingMsgs?.length ?? 0) > 0) {
+      perfLog(`[perf:load] ${sid} skip — has messages`);
       return;
     }
-
     const t0 = performance.now();
-    console.log(`[perf:load] ${sessionId.slice(0, 8)} start`);
-    const store = useChatStore.getState();
-    store.setSessionLoading(sessionId, true);
+    perfLog(`[perf:load] ${sid} start`);
+    useChatStore.getState().setSessionLoading(sessionId, true);
     try {
+      const [{ acpLoadSession }, { getReplayPerf, clearReplayPerf }] =
+        await Promise.all([
+          import("@/shared/api/acp"),
+          import("@/shared/api/acpNotificationHandler"),
+        ]);
       const t1 = performance.now();
-      const { acpLoadSession } = await import("@/shared/api/acp");
-      const t2 = performance.now();
-      console.log(
-        `[perf:load] ${sessionId.slice(0, 8)} import took ${(t2 - t1).toFixed(1)}ms`,
-      );
+      perfLog(`[perf:load] ${sid} import in ${(t1 - t0).toFixed(1)}ms`);
       const session = useChatSessionStore.getState().getSession(sessionId);
       const gooseSessionId = session?.acpSessionId ?? sessionId;
       const project = session?.projectId
         ? (useProjectStore
             .getState()
-            .projects.find((candidate) => candidate.id === session.projectId) ??
-          null)
+            .projects.find((p) => p.id === session.projectId) ?? null)
         : null;
       const workingDir = await resolveSessionCwd(project);
       await acpLoadSession(sessionId, gooseSessionId, workingDir);
+      const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
+      const replayStats = getReplayPerf(sessionId);
+      clearReplayPerf(sessionId);
       if (buffer && buffer.length > 0) {
         useChatStore.getState().setMessages(sessionId, buffer);
       }
-      const t3 = performance.now();
-      console.log(
-        `[perf:load] ${sessionId.slice(0, 8)} acpLoadSession resolved in ${(t3 - t2).toFixed(1)}ms (total ${(t3 - t0).toFixed(1)}ms)`,
+      const t2 = performance.now();
+      perfLog(
+        `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${buffer?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,
       );
     } catch (err) {
       console.error("Failed to load session messages:", err);
@@ -160,6 +161,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   const createNewTab = useCallback(
     (title = DEFAULT_CHAT_TITLE, project?: ProjectInfo) => {
+      const tStart = performance.now();
+      perfLog(
+        `[perf:newtab] createNewTab start (project=${project?.id ?? "none"})`,
+      );
       const agentId = agentStore.activeAgentId ?? undefined;
       const providerId = project?.preferredProvider ?? homeSelectedProvider;
       const personaId = homeSelectedPersonaId;
@@ -186,11 +191,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         sessionState.setActiveSession(existingDraft.id);
         setActiveView("chat");
         chatStore.setActiveSession(existingDraft.id);
+        perfLog(
+          `[perf:newtab] ${existingDraft.id.slice(0, 8)} reused draft in ${(performance.now() - tStart).toFixed(1)}ms`,
+        );
         return existingDraft;
       }
-
       cleanupEmptyDraft(sessionState.activeSessionId);
-
       const session = sessionStore.createDraftSession({
         title,
         projectId: project?.id,
@@ -198,11 +204,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         providerId,
         personaId,
       });
-
       sessionStore.setActiveSession(session.id);
       setActiveView("chat");
       chatStore.setActiveSession(session.id);
-
+      perfLog(
+        `[perf:newtab] ${session.id.slice(0, 8)} created draft in ${(performance.now() - tStart).toFixed(1)}ms`,
+      );
       return session;
     },
     [

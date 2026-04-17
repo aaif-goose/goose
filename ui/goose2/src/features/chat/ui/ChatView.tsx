@@ -25,6 +25,7 @@ import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { ArtifactPolicyProvider } from "../hooks/ArtifactPolicyContext";
 import type { ModelOption } from "../types";
 import { ChatContextPanel } from "./ChatContextPanel";
+import { perfLog } from "@/shared/lib/perfLog";
 
 const EMPTY_MODELS: ModelOption[] = [];
 
@@ -51,6 +52,12 @@ export function ChatView({
 }: ChatViewProps) {
   const { t } = useTranslation("chat");
   const activeSessionId = sessionId;
+  const mountStart = useRef(performance.now());
+  // biome-ignore lint/correctness/useExhaustiveDependencies: log once on mount per session
+  useEffect(() => {
+    const ms = (performance.now() - mountStart.current).toFixed(1);
+    perfLog(`[perf:chatview] ${sessionId.slice(0, 8)} mounted in ${ms}ms`);
+  }, [sessionId]);
   const isContextPanelOpen = useChatSessionStore(
     (s) => s.contextPanelOpenBySession[activeSessionId] ?? false,
   );

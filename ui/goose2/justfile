@@ -84,6 +84,9 @@ dev:
 
     VITE_PORT={{ vite_port }}
     export VITE_PORT
+    # Enable perf logs in the child `goose serve` process by default.
+    # Override with e.g. RUST_LOG=info just dev to disable.
+    export RUST_LOG="${RUST_LOG:-perf=debug,info}"
     PROJECT_DIR=$(pwd)
     GOOSE_BIN="${PROJECT_DIR}/../../target/debug/goose"
     export GOOSE_BIN
@@ -114,8 +117,9 @@ dev-debug:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT={{ vite_port }}
-    export VITE_PORT
+    # Enable perf logs in the child `goose serve` process by default.
+    # Override with e.g. RUST_LOG=info just dev-debug to disable.
+    export RUST_LOG="${RUST_LOG:-perf=debug,info}"
     PROJECT_DIR=$(pwd)
     GOOSE_BIN="${PROJECT_DIR}/../../target/debug/goose"
     export GOOSE_BIN

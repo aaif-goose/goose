@@ -5,6 +5,7 @@ import type {
   PromptResponse,
 } from "@agentclientprotocol/sdk";
 import { getClient } from "./acpConnection";
+import { perfLog } from "@/shared/lib/perfLog";
 
 export interface AcpProvider {
   id: string;
@@ -84,24 +85,36 @@ export async function setModel(
   sessionId: string,
   modelId: string,
 ): Promise<void> {
+  const sid = sessionId.slice(0, 8);
+  const tClient = performance.now();
   const client = await getClient();
+  const tCall = performance.now();
   await client.setSessionConfigOption({
     sessionId,
     configId: "model",
     value: modelId,
   });
+  perfLog(
+    `[perf:api] ${sid} setModel(${modelId}) getClient=${(tCall - tClient).toFixed(1)}ms wire=${(performance.now() - tCall).toFixed(1)}ms`,
+  );
 }
 
 export async function setProvider(
   sessionId: string,
   providerId: string,
 ): Promise<void> {
+  const sid = sessionId.slice(0, 8);
+  const tClient = performance.now();
   const client = await getClient();
+  const tCall = performance.now();
   await client.setSessionConfigOption({
     sessionId,
     configId: "provider",
     value: providerId,
   });
+  perfLog(
+    `[perf:api] ${sid} setProvider(${providerId}) getClient=${(tCall - tClient).toFixed(1)}ms wire=${(performance.now() - tCall).toFixed(1)}ms`,
+  );
 }
 
 export async function updateWorkingDir(
@@ -120,16 +133,34 @@ export async function cancelSession(sessionId: string): Promise<void> {
 export async function newSession(
   workingDir: string,
 ): Promise<NewSessionResponse> {
+  const tClient = performance.now();
   const client = await getClient();
-  return client.newSession({ cwd: workingDir, mcpServers: [] });
+  const tCall = performance.now();
+  const response = await client.newSession({ cwd: workingDir, mcpServers: [] });
+  const sid = response.sessionId.slice(0, 8);
+  perfLog(
+    `[perf:api] ${sid} newSession getClient=${(tCall - tClient).toFixed(1)}ms wire=${(performance.now() - tCall).toFixed(1)}ms`,
+  );
+  return response;
 }
 
 export async function loadSession(
   sessionId: string,
   workingDir: string,
 ): Promise<LoadSessionResponse> {
+  const sid = sessionId.slice(0, 8);
+  const tClient = performance.now();
   const client = await getClient();
-  return client.loadSession({ sessionId, cwd: workingDir, mcpServers: [] });
+  const tCall = performance.now();
+  const response = await client.loadSession({
+    sessionId,
+    cwd: workingDir,
+    mcpServers: [],
+  });
+  perfLog(
+    `[perf:api] ${sid} loadSession getClient=${(tCall - tClient).toFixed(1)}ms wire=${(performance.now() - tCall).toFixed(1)}ms`,
+  );
+  return response;
 }
 
 export async function prompt(

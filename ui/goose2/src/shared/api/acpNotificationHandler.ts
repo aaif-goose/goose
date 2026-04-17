@@ -15,19 +15,52 @@ import type {
 } from "@/shared/types/messages";
 import type { AcpNotificationHandler } from "./acpConnection";
 import { getLocalSessionId } from "./acpSessionTracker";
+import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per goose session
 const presetMessageIds = new Map<string, string>();
+
+// Per-session perf counters for replay/live streaming.
+interface ReplayPerf {
+  firstAt: number;
+  lastAt: number;
+  count: number;
+}
+const replayPerf = new Map<string, ReplayPerf>();
+interface LivePerf {
+  sendStartedAt: number;
+  firstChunkAt: number | null;
+  chunkCount: number;
+}
+const livePerf = new Map<string, LivePerf>();
 
 export function setActiveMessageId(
   gooseSessionId: string,
   messageId: string,
 ): void {
   presetMessageIds.set(gooseSessionId, messageId);
+  livePerf.set(gooseSessionId, {
+    sendStartedAt: performance.now(),
+    firstChunkAt: null,
+    chunkCount: 0,
+  });
 }
 
 export function clearActiveMessageId(gooseSessionId: string): void {
   presetMessageIds.delete(gooseSessionId);
+  const perf = livePerf.get(gooseSessionId);
+  if (perf) {
+    const sid = gooseSessionId.slice(0, 8);
+    const total = performance.now() - perf.sendStartedAt;
+    const ttft =
+      perf.firstChunkAt !== null
+        ? (perf.firstChunkAt - perf.sendStartedAt).toFixed(1)
+        : "n/a";
+    perfLog(
+      `[perf:stream] ${sid} stream ended — ttft=${ttft}ms total=${total.toFixed(1)}ms chunks=${perf.chunkCount}`,
+    );
+    livePerf.delete(gooseSessionId);
+  }
 }
 
 export async function handleSessionNotification(
@@ -39,10 +72,43 @@ export async function handleSessionNotification(
   const isReplay = useChatStore.getState().loadingSessionIds.has(sessionId);
 
   if (isReplay) {
+    const sid = sessionId.slice(0, 8);
+    let perf = replayPerf.get(sessionId);
+    const now = performance.now();
+    if (!perf) {
+      perf = { firstAt: now, lastAt: now, count: 0 };
+      replayPerf.set(sessionId, perf);
+      perfLog(`[perf:replay] ${sid} first notification received`);
+    }
+    perf.lastAt = now;
+    perf.count += 1;
     handleReplay(sessionId, update);
   } else {
+    const perf = livePerf.get(gooseSessionId);
+    if (perf && update.sessionUpdate === "agent_message_chunk") {
+      perf.chunkCount += 1;
+      if (perf.firstChunkAt === null) {
+        perf.firstChunkAt = performance.now();
+        const sid = gooseSessionId.slice(0, 8);
+        perfLog(
+          `[perf:stream] ${sid} first agent_message_chunk at ttft=${(perf.firstChunkAt - perf.sendStartedAt).toFixed(1)}ms`,
+        );
+      }
+    }
     handleLive(sessionId, gooseSessionId, update);
   }
+}
+
+export function getReplayPerf(
+  sessionId: string,
+): { count: number; spanMs: number } | null {
+  const perf = replayPerf.get(sessionId);
+  if (!perf) return null;
+  return { count: perf.count, spanMs: perf.lastAt - perf.firstAt };
+}
+
+export function clearReplayPerf(sessionId: string): void {
+  replayPerf.delete(sessionId);
 }
 
 function handleReplay(sessionId: string, update: SessionUpdate): void {

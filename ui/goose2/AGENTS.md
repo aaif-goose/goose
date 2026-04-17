@@ -161,6 +161,12 @@ Additional tooling notes:
 - Pre-push hooks run `just fmt-check`, `just clippy`, `just check`, `just test`, `just build`, and `just tauri-check`.
 - Do not use `--no-verify` to bypass hooks. Fix the underlying issue instead.
 
+## Performance Logging
+
+- Frontend perf logs use `perfLog()` from `@/shared/lib/perfLog`. Messages are tagged `[perf:<channel>]` (startup, conn, load, newtab, prepare, send, api, stream, replay, chatview). Enabled automatically in Vite dev mode, or opt-in via `localStorage.setItem("goose.perf", "1")` in a release build.
+- Backend perf logs live in `crates/goose-acp/src/server.rs` under `target: "perf"` at `debug!` level. Off by default; enable with `RUST_LOG=perf=debug,info` on the `goose serve` process.
+- `just dev` and `just dev-debug` export `RUST_LOG=perf=debug,info` so the child `goose serve` emits perf logs without extra setup. Override by setting `RUST_LOG` in the environment before invoking `just`.
+
 ## Testing & Verification
 
 - Unit/component tests use Vitest and Testing Library via `just test` or `pnpm test`.

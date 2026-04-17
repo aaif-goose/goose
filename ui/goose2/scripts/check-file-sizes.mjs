@@ -11,9 +11,9 @@ const EXCEPTIONS = {
       "Drag-and-drop handlers for session-to-project moves and project reorder, plus activeProjectId highlight.",
   },
   "src/features/chat/ui/ChatView.tsx": {
-    limit: 560,
+    limit: 570,
     justification:
-      "ACP prewarm guards, project-aware working dir selection, working context sync, and chat bootstrapping still live together here.",
+      "ACP prewarm guards, project-aware working dir selection, working context sync, and chat bootstrapping still live together here. Includes gated [perf:chatview] logging via perfLog (dev-only by default).",
   },
   "src/features/chat/ui/__tests__/ContextPanel.test.tsx": {
     limit: 550,
@@ -26,9 +26,9 @@ const EXCEPTIONS = {
       "Search-as-you-type filtering and draft-aware sidebar highlight logic.",
   },
   "src/app/AppShell.tsx": {
-    limit: 650,
+    limit: 660,
     justification:
-      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, and app-level chat routing.",
+      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, and app-level chat routing. Includes gated [perf:load]/[perf:newtab] logging via perfLog (dev-only by default).",
   },
   "src/features/chat/stores/__tests__/chatSessionStore.test.ts": {
     limit: 540,
