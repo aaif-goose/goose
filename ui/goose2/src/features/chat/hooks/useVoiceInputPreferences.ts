@@ -52,6 +52,12 @@ export function useVoiceInputPreferences() {
   const [preferredMicrophoneId, setPreferredMicrophoneIdState] = useState<
     string | null
   >(null);
+  // Flips true after the first syncFromConfig completes so consumers can
+  // distinguish "no stored preference" from "the ACP round-trip hasn't
+  // finished yet." Without this, a consumer that auto-writes a default when
+  // hasStoredProviderPreference is false can race ahead and overwrite the
+  // user's saved choice before it loads.
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const syncFromConfig = useCallback(async () => {
     const [phrasesValue, providerValue, micValue] = await Promise.all([
@@ -87,6 +93,7 @@ export function useVoiceInputPreferences() {
     }
 
     setPreferredMicrophoneIdState(micValue);
+    setIsHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -151,6 +158,7 @@ export function useVoiceInputPreferences() {
     autoSubmitPhrases,
     clearSelectedProvider,
     hasStoredProviderPreference,
+    isHydrated,
     preferredMicrophoneId,
     rawAutoSubmitPhrases,
     selectedProvider,

@@ -34,6 +34,7 @@ export function VoiceInputSettings() {
   const {
     clearSelectedProvider,
     hasStoredProviderPreference,
+    isHydrated: voicePrefsHydrated,
     preferredMicrophoneId,
     rawAutoSubmitPhrases,
     selectedProvider,
@@ -64,6 +65,14 @@ export function VoiceInputSettings() {
     const nextConfig = await getDictationConfig();
     setProviderStatuses(nextConfig);
 
+    // Wait for useVoiceInputPreferences to finish loading the stored value
+    // from goose config before deciding whether to auto-select a default.
+    // Otherwise the initial mount sees hasStoredProviderPreference=false
+    // (pre-hydration default) and clobbers the user's saved choice.
+    if (!voicePrefsHydrated) {
+      return;
+    }
+
     if (!hasStoredProviderPreference) {
       const defaultProvider = getDefaultDictationProvider(nextConfig);
       if (defaultProvider) {
@@ -89,6 +98,7 @@ export function VoiceInputSettings() {
     hasStoredProviderPreference,
     selectedProvider,
     setSelectedProvider,
+    voicePrefsHydrated,
   ]);
 
   useEffect(() => {
