@@ -5,7 +5,7 @@ export interface ResolvePathParams {
 }
 
 export interface ResolvedPath {
-  path?: string;
+  path: string;
 }
 
 export async function resolvePath({
@@ -14,14 +14,4 @@ export async function resolvePath({
   return invoke("resolve_path", {
     request: { parts },
   });
-}
-
-export async function resolveOptionalPath(
-  parts?: string[] | null,
-): Promise<string | undefined> {
-  if (!parts) {
-    return undefined;
-  }
-
-  return (await resolvePath({ parts })).path;
 }

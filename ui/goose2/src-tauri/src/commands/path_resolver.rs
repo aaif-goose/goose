@@ -9,7 +9,7 @@ pub struct ResolvePathRequest {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvePathResponse {
-    pub path: Option<String>,
+    pub path: String,
 }
 
 fn trim_part(part: &str) -> Option<&str> {
@@ -32,26 +32,28 @@ fn expand_home_prefix(part: &str) -> Option<PathBuf> {
     }
 }
 
-fn resolve_path_parts(parts: Vec<String>) -> Option<String> {
+fn resolve_path_parts(parts: Vec<String>) -> Result<String, String> {
     let mut normalized_parts = parts
         .iter()
         .filter_map(|part| trim_part(part))
         .peekable();
 
-    let first = normalized_parts.next()?;
+    let first = normalized_parts
+        .next()
+        .ok_or_else(|| "Path parts must include at least one non-empty segment".to_string())?;
     let mut path = expand_home_prefix(first).unwrap_or_else(|| PathBuf::from(first));
 
     for part in normalized_parts {
         path.push(part);
     }
 
-    Some(path.to_string_lossy().into_owned())
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
 pub fn resolve_path(request: ResolvePathRequest) -> Result<ResolvePathResponse, String> {
     Ok(ResolvePathResponse {
-        path: resolve_path_parts(request.parts),
+        path: resolve_path_parts(request.parts)?,
     })
 }
 
@@ -63,7 +65,7 @@ mod tests {
     fn joins_absolute_path_and_subpath() {
         assert_eq!(
             resolve_path_parts(vec!["/tmp/project".to_string(), "artifacts".to_string()]),
-            Some("/tmp/project/artifacts".to_string())
+            Ok("/tmp/project/artifacts".to_string())
         );
     }
 
@@ -71,7 +73,7 @@ mod tests {
     fn ignores_empty_parts() {
         assert_eq!(
             resolve_path_parts(vec!["  ".to_string(), "/tmp/project".to_string()]),
-            Some("/tmp/project".to_string())
+            Ok("/tmp/project".to_string())
         );
     }
 
@@ -83,15 +85,23 @@ mod tests {
 
         assert_eq!(
             resolve_path_parts(vec!["~".to_string(), ".goose".to_string(), "artifacts".to_string()]),
-            Some(home.join(".goose").join("artifacts").to_string_lossy().into_owned())
+            Ok(home.join(".goose").join("artifacts").to_string_lossy().into_owned())
         );
         assert_eq!(
             resolve_path_parts(vec!["~/artifacts".to_string()]),
-            Some(home.join("artifacts").to_string_lossy().into_owned())
+            Ok(home.join("artifacts").to_string_lossy().into_owned())
         );
         assert_eq!(
             resolve_path_parts(vec!["~\\artifacts".to_string()]),
-            Some(home.join("artifacts").to_string_lossy().into_owned())
+            Ok(home.join("artifacts").to_string_lossy().into_owned())
+        );
+    }
+
+    #[test]
+    fn errors_when_no_non_empty_parts_exist() {
+        assert_eq!(
+            resolve_path_parts(vec!["  ".to_string(), "".to_string()]),
+            Err("Path parts must include at least one non-empty segment".to_string())
         );
     }
 }

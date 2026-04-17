@@ -353,14 +353,15 @@ describe("useChat", () => {
       ],
     });
 
-    const { result } = renderHook(() => useChat("session-1", "openai"));
+    const { result } = renderHook(() =>
+      useChat("session-1", "openai", undefined, undefined, async () => "/tmp"),
+    );
 
     await act(async () => {
       await result.current.sendMessage("Hello");
     });
 
-    expect(mockAcpPrepareSession).toHaveBeenCalledWith("session-1", "openai", {
-      workingDir: undefined,
+    expect(mockAcpPrepareSession).toHaveBeenCalledWith("session-1", "openai", "/tmp", {
       personaId: undefined,
     });
     expect(mockAcpSetModel).toHaveBeenCalledWith("session-1", "gpt-4.1");

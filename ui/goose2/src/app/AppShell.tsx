@@ -22,10 +22,8 @@ import {
   getAndDeleteReplayBuffer,
 } from "@/features/chat/hooks/replayBuffer";
 import {
-  buildSessionCwdParts,
   resolveSessionCwd,
 } from "@/features/projects/lib/sessionCwdSelection";
-import { resolveOptionalPath } from "@/shared/api/pathResolver";
 
 export type AppView =
   | "home"
@@ -314,16 +312,15 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             : (useProjectStore
                 .getState()
                 .projects.find((project) => project.id === projectId) ?? null);
-        const nextWorkingDirParts = buildSessionCwdParts(nextProject);
-        if (!nextWorkingDirParts) {
+        const workingDir = await resolveSessionCwd(nextProject);
+        if (!workingDir) {
           return;
         }
-        const workingDir = await resolveOptionalPath(nextWorkingDirParts);
         await acpPrepareSession(
           sessionId,
           session.providerId ?? agentStore.selectedProvider ?? "goose",
+          workingDir,
           {
-            workingDir,
             personaId: session.personaId,
           },
         );

@@ -219,8 +219,10 @@ export function useChat(
       try {
         if (wasDraft || selectedModelId) {
           const workingDir = await getWorkingDir?.();
-          await acpPrepareSession(sessionId, providerId, {
-            workingDir,
+          if (!workingDir) {
+            throw new Error("Missing session working directory");
+          }
+          await acpPrepareSession(sessionId, providerId, workingDir, {
             personaId: effectivePersonaInfo?.id,
           });
           if (selectedModelId) {

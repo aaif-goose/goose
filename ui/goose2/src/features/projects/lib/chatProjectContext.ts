@@ -1,6 +1,5 @@
 import type { ProjectInfo } from "../api/projects";
-import { resolveProjectDefaultArtifactRoot } from "./sessionCwdSelection";
-
+import { resolvePath } from "@/shared/api/pathResolver";
 export interface ProjectFolderOption {
   id: string;
   name: string;
@@ -45,6 +44,24 @@ export function getProjectArtifactRoots(
   project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
 ): string[] {
   return resolveProjectArtifactRoots(project);
+}
+
+export function resolveProjectDefaultArtifactRoot(
+  project: ProjectInfo | null | undefined,
+): string | undefined {
+  const workingDirs = (project?.workingDirs ?? [])
+    .map((directory) => trimValue(directory))
+    .filter((directory): directory is string => directory !== null);
+
+  if (workingDirs.length > 0) {
+    return appendArtifactsSegment(workingDirs[0]);
+  }
+
+  return trimValue(project?.artifactsDir) ?? undefined;
+}
+
+export async function defaultGlobalArtifactRoot(): Promise<string> {
+  return (await resolvePath({ parts: ["~", ".goose", "artifacts"] })).path;
 }
 
 export function getProjectFolderOption(

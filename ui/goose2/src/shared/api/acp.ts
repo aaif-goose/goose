@@ -21,7 +21,6 @@ export interface AcpSendMessageOptions {
 }
 
 export interface AcpPrepareSessionOptions {
-  workingDir?: string;
   personaId?: string;
 }
 
@@ -67,9 +66,9 @@ export async function acpSendMessage(
 export async function acpPrepareSession(
   sessionId: string,
   providerId: string,
+  workingDir: string,
   options: AcpPrepareSessionOptions = {},
 ): Promise<void> {
-  const workingDir = options.workingDir ?? "~/.goose/artifacts";
   await sessionTracker.prepareSession(
     sessionId,
     providerId,
