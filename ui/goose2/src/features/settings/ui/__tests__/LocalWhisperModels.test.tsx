@@ -77,10 +77,11 @@ describe("LocalWhisperModels", () => {
       ).toBeInTheDocument(),
     );
 
-    await waitFor(() =>
-      expect(mockGetDictationLocalModelDownloadProgress).toHaveBeenCalledWith(
-        "tiny",
-      ),
+    await waitFor(
+      () =>
+        expect(mockGetDictationLocalModelDownloadProgress).toHaveBeenCalledWith(
+          "tiny",
+        ),
       { timeout: 2000 },
     );
 

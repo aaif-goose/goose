@@ -113,21 +113,42 @@ export function useVoiceInputPreferences() {
     };
   }, [syncFromConfig]);
 
-  const setRawAutoSubmitPhrases = useCallback((value: string) => {
-    setRawAutoSubmitPhrasesState(value);
-    void writeConfigString(VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY, value);
+  const dispatchPreferencesEvent = useCallback(() => {
     window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
   }, []);
 
-  const setSelectedProvider = useCallback((value: DictationProvider | null) => {
-    setSelectedProviderState(value);
-    setHasStoredProviderPreferenceState(true);
-    void writeConfigString(
-      VOICE_DICTATION_PROVIDER_CONFIG_KEY,
-      value ?? DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
-    );
-    window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-  }, []);
+  const persistAndBroadcast = useCallback(
+    (operation: Promise<void>) => {
+      void operation.finally(() => {
+        dispatchPreferencesEvent();
+      });
+    },
+    [dispatchPreferencesEvent],
+  );
+
+  const setRawAutoSubmitPhrases = useCallback(
+    (value: string) => {
+      setRawAutoSubmitPhrasesState(value);
+      persistAndBroadcast(
+        writeConfigString(VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY, value),
+      );
+    },
+    [persistAndBroadcast],
+  );
+
+  const setSelectedProvider = useCallback(
+    (value: DictationProvider | null) => {
+      setSelectedProviderState(value);
+      setHasStoredProviderPreferenceState(true);
+      persistAndBroadcast(
+        writeConfigString(
+          VOICE_DICTATION_PROVIDER_CONFIG_KEY,
+          value ?? DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
+        ),
+      );
+    },
+    [persistAndBroadcast],
+  );
 
   // Remove the stored preference entirely, so the user falls through to the
   // default provider on next boot. Distinct from setSelectedProvider(null),
@@ -135,19 +156,24 @@ export function useVoiceInputPreferences() {
   const clearSelectedProvider = useCallback(() => {
     setSelectedProviderState(null);
     setHasStoredProviderPreferenceState(false);
-    void removeConfigKey(VOICE_DICTATION_PROVIDER_CONFIG_KEY);
-    window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-  }, []);
+    persistAndBroadcast(removeConfigKey(VOICE_DICTATION_PROVIDER_CONFIG_KEY));
+  }, [persistAndBroadcast]);
 
-  const setPreferredMicrophoneId = useCallback((value: string | null) => {
-    setPreferredMicrophoneIdState(value);
-    if (value) {
-      void writeConfigString(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY, value);
-    } else {
-      void removeConfigKey(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY);
-    }
-    window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-  }, []);
+  const setPreferredMicrophoneId = useCallback(
+    (value: string | null) => {
+      setPreferredMicrophoneIdState(value);
+      if (value) {
+        persistAndBroadcast(
+          writeConfigString(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY, value),
+        );
+      } else {
+        persistAndBroadcast(
+          removeConfigKey(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY),
+        );
+      }
+    },
+    [persistAndBroadcast],
+  );
 
   const autoSubmitPhrases = useMemo(
     () => parseAutoSubmitPhrases(rawAutoSubmitPhrases),
