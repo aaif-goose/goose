@@ -10,9 +10,9 @@ default:
 
 # Install dependencies and build workspace packages
 setup:
-    pnpm install
+    cd ../ && pnpm install
     cd ../sdk && pnpm build
-    cd src-tauri && cargo build
+    cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
 
 # ── Build & Check ────────────────────────────────────────────
 
@@ -85,7 +85,9 @@ dev:
     VITE_PORT={{ vite_port }}
     export VITE_PORT
     PROJECT_DIR=$(pwd)
-    TAURI_CONFIG="{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"cd ${PROJECT_DIR} && exec pnpm exec vite --port ${VITE_PORT} --strictPort\",\"cwd\":\".\",\"wait\":false}}}"
+    GOOSE_BIN="${PROJECT_DIR}/../../target/debug/goose"
+    export GOOSE_BIN
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"cd ${PROJECT_DIR} && exec pnpm exec vite --port ${VITE_PORT} --strictPort\",\"cwd\":\".\",\"wait\":false}}}")
 
     # In worktrees, generate a labeled icon so you can tell instances apart
     if git rev-parse --is-inside-work-tree &>/dev/null; then
@@ -100,12 +102,12 @@ dev:
 
             if swift scripts/generate-dev-icon.swift src-tauri/icons/icon.icns "$DEV_ICON" "$WORKTREE_LABEL"; then
                 echo "🌳 Worktree: ${WORKTREE_LABEL}"
-                TAURI_CONFIG=$(python3 -c "import json,sys; a=json.loads(sys.argv[1]); a['bundle']={'icon':['$DEV_ICON']}; print(json.dumps(a))" "$TAURI_CONFIG")
+                EXTRA_CONFIG_ARGS+=(--config "{\"bundle\":{\"icon\":[\"$DEV_ICON\"]}}")
             fi
         fi
     fi
 
-    pnpm tauri dev --features app-test-driver --config "$TAURI_CONFIG"
+    pnpm tauri dev --features app-test-driver --config src-tauri/tauri.dev.conf.json "${EXTRA_CONFIG_ARGS[@]}"
 
 # Start the desktop app with dev config
 dev-debug:
@@ -114,7 +116,10 @@ dev-debug:
 
     VITE_PORT={{ vite_port }}
     export VITE_PORT
-    EXTRA_CONFIG="--config {\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./node_modules/.bin/vite --port ${VITE_PORT} --strictPort\",\"cwd\":\"..\",\"wait\":false}}}"
+    PROJECT_DIR=$(pwd)
+    GOOSE_BIN="${PROJECT_DIR}/../../target/debug/goose"
+    export GOOSE_BIN
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./node_modules/.bin/vite --port ${VITE_PORT} --strictPort\",\"cwd\":\"..\",\"wait\":false}}}")
 
     # In worktrees, generate a labeled icon so you can tell instances apart
     if git rev-parse --is-inside-work-tree &>/dev/null; then
@@ -129,12 +134,12 @@ dev-debug:
 
             if swift scripts/generate-dev-icon.swift src-tauri/icons/icon.icns "$DEV_ICON" "$WORKTREE_LABEL"; then
                 echo "🌳 Worktree: ${WORKTREE_LABEL}"
-                EXTRA_CONFIG="$EXTRA_CONFIG --config {\"bundle\":{\"icon\":[\"$DEV_ICON\"]}}"
+                EXTRA_CONFIG_ARGS+=(--config "{\"bundle\":{\"icon\":[\"$DEV_ICON\"]}}")
             fi
         fi
     fi
 
-    pnpm tauri dev --config src-tauri/tauri.dev.conf.json $EXTRA_CONFIG
+    pnpm tauri dev --config src-tauri/tauri.dev.conf.json "${EXTRA_CONFIG_ARGS[@]}"
 
 # Start only the frontend dev server
 dev-frontend:
@@ -169,8 +174,3 @@ clean:
     cd src-tauri && cargo clean
     rm -rf dist
     rm -rf node_modules
-
-# Cherry-pick commits from the goose2 repo into ui/goose2/
-cherry-pick-goose2 *ARGS:
-    git fetch goose2
-    git format-patch -1 {{ARGS}} --stdout | git am --directory=ui/goose2
