@@ -549,7 +549,12 @@ export type Icon = {
     mimeType?: string;
     sizes?: Array<string>;
     src: string;
+    theme?: IconTheme | {
+        [key: string]: unknown;
+    };
 };
+
+export type IconTheme = 'light' | 'dark';
 
 export type ImageContent = {
     _meta?: {
