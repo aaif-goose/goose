@@ -22,7 +22,7 @@ import {
   getAndDeleteReplayBuffer,
 } from "@/features/chat/hooks/replayBuffer";
 import { getHomeDir } from "@/shared/api/system";
-import { resolveEffectiveWorkingDir } from "@/features/projects/lib/chatProjectContext";
+import { resolveDefaultSessionCwd } from "@/features/projects/lib/chatProjectContext";
 
 export type AppView =
   | "home"
@@ -93,12 +93,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             .projects.find((candidate) => candidate.id === session.projectId) ??
           null)
         : null;
-      const workingDir =
-        resolveEffectiveWorkingDir(project) ??
+      const sessionCwd =
+        resolveDefaultSessionCwd(project) ??
         (!project
-          ? resolveEffectiveWorkingDir(null, await getHomeDir())
+          ? resolveDefaultSessionCwd(null, await getHomeDir())
           : undefined);
-      await acpLoadSession(sessionId, gooseSessionId, workingDir);
+      await acpLoadSession(sessionId, gooseSessionId, sessionCwd);
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
       if (buffer && buffer.length > 0) {
@@ -315,19 +315,19 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             : (useProjectStore
                 .getState()
                 .projects.find((project) => project.id === projectId) ?? null);
-        const nextWorkingDir =
-          resolveEffectiveWorkingDir(nextProject) ??
+        const nextSessionCwd =
+          resolveDefaultSessionCwd(nextProject) ??
           (nextProject == null
-            ? resolveEffectiveWorkingDir(null, await getHomeDir())
+            ? resolveDefaultSessionCwd(null, await getHomeDir())
             : undefined);
-        if (!nextWorkingDir) {
+        if (!nextSessionCwd) {
           return;
         }
         await acpPrepareSession(
           sessionId,
           session.providerId ?? agentStore.selectedProvider ?? "goose",
           {
-            workingDir: nextWorkingDir,
+            workingDir: nextSessionCwd,
             personaId: session.personaId,
           },
         );

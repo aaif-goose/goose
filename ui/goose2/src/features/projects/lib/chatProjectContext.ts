@@ -6,6 +6,17 @@ export interface ProjectFolderOption {
   path?: string;
 }
 
+/**
+ * Path concepts in goose2:
+ * - workspaceRoot: raw project/worktree path from project.workingDirs
+ * - artifactRoot: default output path derived from a workspace root or stored on the project
+ * - sessionCwd: runtime cwd passed to ACP session preparation
+ *
+ * This module currently preserves existing behavior, where project-backed
+ * session cwd values are artifact-root oriented. Keep those concepts explicit
+ * in names even before the behavior moves to Rust.
+ */
+
 function trimValue(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -25,7 +36,7 @@ function appendArtifactsSegment(path: string): string {
   return `${path.replace(/[\\/]+$/, "")}/artifacts`;
 }
 
-function resolveProjectFolderPaths(
+function resolveProjectArtifactRoots(
   project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
 ): string[] {
   const workingDirs = (project?.workingDirs ?? [])
@@ -43,23 +54,23 @@ function resolveProjectFolderPaths(
 export function getProjectArtifactRoots(
   project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
 ): string[] {
-  return resolveProjectFolderPaths(project);
+  return resolveProjectArtifactRoots(project);
 }
 
 export function getProjectFolderOption(
   project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
 ): ProjectFolderOption[] {
-  return resolveProjectFolderPaths(project).map((d) => ({
+  return resolveProjectArtifactRoots(project).map((d) => ({
     id: d,
     name: getProjectFolderName(d),
     path: d,
   }));
 }
 
-export function resolveProjectWorkingDir(
+export function resolveProjectDefaultArtifactRoot(
   project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
 ): string | undefined {
-  return resolveProjectFolderPaths(project)[0];
+  return resolveProjectArtifactRoots(project)[0];
 }
 
 export function buildProjectSystemPrompt(
@@ -69,7 +80,7 @@ export function buildProjectSystemPrompt(
     return undefined;
   }
 
-  const artifactDir = resolveProjectWorkingDir(project);
+  const artifactDir = resolveProjectDefaultArtifactRoot(project);
   const settings: string[] = [`Project name: ${project.name}`];
   const description = trimValue(project.description);
   const workingDirs = (project.workingDirs ?? [])
@@ -124,7 +135,7 @@ export function buildProjectSystemPrompt(
  * Builds the default artifacts directory from a raw home-dir string.
  * Normalises path separators and trailing slashes before appending `.goose/artifacts`.
  */
-export function defaultArtifactsDir(homeDir: string): string {
+export function defaultGlobalArtifactRoot(homeDir: string): string {
   const normalizedHome = homeDir.replace(/\\/g, "/").replace(/\/+$/, "");
   return `${normalizedHome}/.goose/artifacts`;
 }
@@ -137,13 +148,13 @@ export function defaultArtifactsDir(homeDir: string): string {
  * When a project is provided but has no configured working dirs, returns
  * `undefined` so the caller can decide how to handle it.
  */
-export function resolveEffectiveWorkingDir(
+export function resolveDefaultSessionCwd(
   project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
   homeDir?: string,
 ): string | undefined {
-  const projectDir = resolveProjectWorkingDir(project);
-  if (projectDir) {
-    return projectDir;
+  const projectArtifactRoot = resolveProjectDefaultArtifactRoot(project);
+  if (projectArtifactRoot) {
+    return projectArtifactRoot;
   }
   if (project) {
     return undefined;
@@ -151,7 +162,7 @@ export function resolveEffectiveWorkingDir(
   if (!homeDir) {
     return undefined;
   }
-  return defaultArtifactsDir(homeDir);
+  return defaultGlobalArtifactRoot(homeDir);
 }
 
 export function composeSystemPrompt(

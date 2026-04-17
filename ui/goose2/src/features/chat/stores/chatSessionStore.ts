@@ -37,7 +37,7 @@ export interface ChatSession {
   userSetName?: boolean;
 }
 
-export interface WorkingContext {
+export interface ActiveWorkspace {
   path: string;
   branch: string | null;
 }
@@ -47,7 +47,7 @@ interface ChatSessionStoreState {
   activeSessionId: string | null;
   isLoading: boolean;
   contextPanelOpenBySession: Record<string, boolean>;
-  activeWorkingContextBySession: Record<string, WorkingContext>;
+  activeWorkspaceBySession: Record<string, ActiveWorkspace>;
   modelsBySession: Record<string, ModelOption[]>;
   modelCacheByProvider: Record<string, ModelOption[]>;
 }
@@ -83,8 +83,8 @@ interface ChatSessionStoreActions {
 
   setActiveSession: (sessionId: string | null) => void;
   setContextPanelOpen: (sessionId: string, open: boolean) => void;
-  setActiveWorkingContext: (sessionId: string, context: WorkingContext) => void;
-  clearActiveWorkingContext: (sessionId: string) => void;
+  setActiveWorkspace: (sessionId: string, context: ActiveWorkspace) => void;
+  clearActiveWorkspace: (sessionId: string) => void;
   setSessionModels: (sessionId: string, models: ModelOption[]) => void;
   switchSessionProvider: (
     sessionId: string,
@@ -300,7 +300,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
   activeSessionId: null,
   isLoading: false,
   contextPanelOpenBySession: {},
-  activeWorkingContextBySession: {},
+  activeWorkspaceBySession: {},
   modelsBySession: {},
   modelCacheByProvider: loadModelCache(),
 
@@ -346,7 +346,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     const { [id]: _ignoredPanelState, ...remainingPanelState } =
       get().contextPanelOpenBySession;
     const { [id]: _ignoredContext, ...remainingContextState } =
-      get().activeWorkingContextBySession;
+      get().activeWorkspaceBySession;
     const remainingModels = { ...get().modelsBySession };
     delete remainingModels[id];
     set((state) => ({
@@ -354,7 +354,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       activeSessionId:
         state.activeSessionId === id ? null : state.activeSessionId,
       contextPanelOpenBySession: remainingPanelState,
-      activeWorkingContextBySession: remainingContextState,
+      activeWorkspaceBySession: remainingContextState,
       modelsBySession: remainingModels,
     }));
     removeDraftSessionRecord(id);
@@ -544,19 +544,19 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }));
   },
 
-  setActiveWorkingContext: (sessionId, context) => {
+  setActiveWorkspace: (sessionId, context) => {
     set((state) => ({
-      activeWorkingContextBySession: {
-        ...state.activeWorkingContextBySession,
+      activeWorkspaceBySession: {
+        ...state.activeWorkspaceBySession,
         [sessionId]: context,
       },
     }));
   },
 
-  clearActiveWorkingContext: (sessionId) => {
+  clearActiveWorkspace: (sessionId) => {
     set((state) => {
-      const { [sessionId]: _, ...rest } = state.activeWorkingContextBySession;
-      return { activeWorkingContextBySession: rest };
+      const { [sessionId]: _, ...rest } = state.activeWorkspaceBySession;
+      return { activeWorkspaceBySession: rest };
     });
   },
 

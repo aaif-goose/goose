@@ -5,7 +5,7 @@ import type { CreatedWorktree, GitState } from "@/shared/types/git";
 import { Button } from "@/shared/ui/button";
 import { SplitButton } from "@/shared/ui/split-button";
 import { Spinner } from "@/shared/ui/spinner";
-import type { WorkingContext } from "../../stores/chatSessionStore";
+import type { ActiveWorkspace } from "../../stores/chatSessionStore";
 import { formatErrorMessage } from "./formatError";
 import {
   WorkspaceCreateDialog,
@@ -15,9 +15,9 @@ import {
 interface WorkspaceActionsMenuProps {
   currentProjectPath: string;
   gitState: GitState;
-  activeContext: WorkingContext | undefined;
+  activeContext: ActiveWorkspace | undefined;
   disabled?: boolean;
-  onContextChange: (context: WorkingContext) => void;
+  onContextChange: (context: ActiveWorkspace) => void;
   onFetch: (path: string) => Promise<void>;
   onPull: (path: string) => Promise<void>;
   onCreateBranch: (

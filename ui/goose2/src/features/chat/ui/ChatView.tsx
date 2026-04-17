@@ -17,9 +17,9 @@ import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
-  defaultArtifactsDir,
+  defaultGlobalArtifactRoot,
   getProjectArtifactRoots,
-  resolveProjectWorkingDir,
+  resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
 import { getHomeDir } from "@/shared/api/system";
 import { ArtifactPolicyProvider } from "../hooks/ArtifactPolicyContext";
@@ -55,11 +55,11 @@ export function ChatView({
     (s) => s.contextPanelOpenBySession[activeSessionId] ?? false,
   );
   const setContextPanelOpen = useChatSessionStore((s) => s.setContextPanelOpen);
-  const activeWorkingContext = useChatSessionStore(
-    (s) => s.activeWorkingContextBySession[activeSessionId],
+  const activeWorkspace = useChatSessionStore(
+    (s) => s.activeWorkspaceBySession[activeSessionId],
   );
-  const clearActiveWorkingContext = useChatSessionStore(
-    (s) => s.clearActiveWorkingContext,
+  const clearActiveWorkspace = useChatSessionStore(
+    (s) => s.clearActiveWorkspace,
   );
 
   const {
@@ -85,7 +85,7 @@ export function ChatView({
       ? s.projects.find((candidate) => candidate.id === session.projectId)
       : undefined,
   );
-  const [homeArtifactsRoot, setHomeArtifactsRoot] = useState<string | null>(
+  const [globalArtifactRoot, setGlobalArtifactRoot] = useState<string | null>(
     null,
   );
   const project = storedProject ?? null;
@@ -115,36 +115,36 @@ export function ChatView({
     () => getProjectArtifactRoots(project),
     [project],
   );
-  const resolvedProjectWorkingDir = useMemo(
-    () => resolveProjectWorkingDir(project),
+  const projectDefaultArtifactRoot = useMemo(
+    () => resolveProjectDefaultArtifactRoot(project),
     [project],
   );
   const projectMetadataPending = Boolean(
-    session?.projectId && !resolvedProjectWorkingDir && projectsLoading,
+    session?.projectId && !projectDefaultArtifactRoot && projectsLoading,
   );
-  const defaultWorkingDir = resolvedProjectWorkingDir
-    ? resolvedProjectWorkingDir
+  const defaultSessionCwd = projectDefaultArtifactRoot
+    ? projectDefaultArtifactRoot
     : !session?.projectId
-      ? (homeArtifactsRoot ?? undefined)
+      ? (globalArtifactRoot ?? undefined)
       : undefined;
-  const effectiveWorkingDir = activeWorkingContext?.path ?? defaultWorkingDir;
+  const effectiveSessionCwd = activeWorkspace?.path ?? defaultSessionCwd;
   const allowedArtifactRoots = useMemo(() => {
     const roots = [
       ...projectArtifactRoots.map((path) => path.trim()).filter(Boolean),
     ];
-    if (homeArtifactsRoot) {
-      roots.push(homeArtifactsRoot);
+    if (globalArtifactRoot) {
+      roots.push(globalArtifactRoot);
     }
     return [...new Set(roots)];
-  }, [homeArtifactsRoot, projectArtifactRoots]);
+  }, [globalArtifactRoot, projectArtifactRoots]);
   const projectSystemPrompt = useMemo(
     () => buildProjectSystemPrompt(project),
     [project],
   );
   const workingContextPrompt = useMemo(() => {
-    if (!activeWorkingContext?.branch) return undefined;
-    return `<active-working-context>\nActive branch: ${activeWorkingContext.branch}\nWorking directory: ${activeWorkingContext.path}\n</active-working-context>`;
-  }, [activeWorkingContext?.branch, activeWorkingContext?.path]);
+    if (!activeWorkspace?.branch) return undefined;
+    return `<active-working-context>\nActive branch: ${activeWorkspace.branch}\nWorking directory: ${activeWorkspace.path}\n</active-working-context>`;
+  }, [activeWorkspace?.branch, activeWorkspace?.path]);
 
   const effectiveSystemPrompt = useMemo(
     () =>
@@ -161,11 +161,11 @@ export function ChatView({
     getHomeDir()
       .then((homeDir) => {
         if (cancelled) return;
-        setHomeArtifactsRoot(defaultArtifactsDir(homeDir));
+        setGlobalArtifactRoot(defaultGlobalArtifactRoot(homeDir));
       })
       .catch(() => {
         if (cancelled) return;
-        setHomeArtifactsRoot(null);
+        setGlobalArtifactRoot(null);
       });
     return () => {
       cancelled = true;
@@ -177,31 +177,31 @@ export function ChatView({
     const prevProjectId = prevProjectIdRef.current;
     prevProjectIdRef.current = session?.projectId;
     if (prevProjectId !== undefined && prevProjectId !== session?.projectId) {
-      clearActiveWorkingContext(activeSessionId);
+      clearActiveWorkspace(activeSessionId);
     }
-  }, [session?.projectId, activeSessionId, clearActiveWorkingContext]);
+  }, [session?.projectId, activeSessionId, clearActiveWorkspace]);
 
-  const prevContextRef = useRef(activeWorkingContext);
+  const prevWorkspaceRef = useRef(activeWorkspace);
   useEffect(() => {
-    const prev = prevContextRef.current;
+    const prev = prevWorkspaceRef.current;
     if (
-      !activeWorkingContext ||
+      !activeWorkspace ||
       !selectedProvider ||
       session?.draft ||
-      activeWorkingContext === prev
+      activeWorkspace === prev
     ) {
       return;
     }
-    prevContextRef.current = activeWorkingContext;
-    if (prev && prev.path === activeWorkingContext.path) return;
+    prevWorkspaceRef.current = activeWorkspace;
+    if (prev && prev.path === activeWorkspace.path) return;
     void acpPrepareSession(activeSessionId, selectedProvider, {
-      workingDir: activeWorkingContext.path,
+      workingDir: activeWorkspace.path,
       personaId: selectedPersonaId ?? undefined,
     }).catch((error) => {
       console.error("Failed to prepare ACP session:", error);
     });
   }, [
-    activeWorkingContext,
+    activeWorkspace,
     activeSessionId,
     selectedProvider,
     selectedPersonaId,
@@ -230,17 +230,17 @@ export function ChatView({
               .getState()
               .projects.find((candidate) => candidate.id === projectId) ??
             null);
-      const nextWorkingDir =
-        resolveProjectWorkingDir(nextProject) ??
-        (projectId == null ? (homeArtifactsRoot ?? undefined) : undefined);
+      const nextSessionCwd =
+        resolveProjectDefaultArtifactRoot(nextProject) ??
+        (projectId == null ? (globalArtifactRoot ?? undefined) : undefined);
 
       useChatSessionStore
         .getState()
         .updateSession(activeSessionId, { projectId });
 
-      if (!session?.draft && selectedProvider && nextWorkingDir) {
+      if (!session?.draft && selectedProvider && nextSessionCwd) {
         void acpPrepareSession(activeSessionId, selectedProvider, {
-          workingDir: nextWorkingDir,
+          workingDir: nextSessionCwd,
           personaId: selectedPersonaId ?? undefined,
         }).catch((error) => {
           console.error(
@@ -252,7 +252,7 @@ export function ChatView({
     },
     [
       activeSessionId,
-      homeArtifactsRoot,
+      globalArtifactRoot,
       selectedPersonaId,
       selectedProvider,
       session?.draft,
@@ -343,7 +343,7 @@ export function ChatView({
     selectedProvider,
     effectiveSystemPrompt,
     personaInfo,
-    effectiveWorkingDir,
+    effectiveSessionCwd,
   );
   const isLoadingHistory = useChatStore(
     (s) =>

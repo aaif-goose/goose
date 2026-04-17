@@ -32,7 +32,7 @@ describe("useChat attachments", () => {
       activeSessionId: null,
       isLoading: false,
       contextPanelOpenBySession: {},
-      activeWorkingContextBySession: {},
+      activeWorkspaceBySession: {},
       modelsBySession: {},
       modelCacheByProvider: {},
     });

@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
-  defaultArtifactsDir,
+  defaultGlobalArtifactRoot,
   getProjectArtifactRoots,
   getProjectFolderName,
   getProjectFolderOption,
-  resolveEffectiveWorkingDir,
-  resolveProjectWorkingDir,
+  resolveDefaultSessionCwd,
+  resolveProjectDefaultArtifactRoot,
 } from "./chatProjectContext";
 
 describe("chatProjectContext", () => {
@@ -112,57 +112,57 @@ describe("chatProjectContext", () => {
     ]);
   });
 
-  it("resolves the first working directory to an artifacts subfolder", () => {
+  it("resolves the first workspace root to the default artifact root", () => {
     expect(
-      resolveProjectWorkingDir({
+      resolveProjectDefaultArtifactRoot({
         workingDirs: ["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"],
         artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
       }),
     ).toBe("/Users/wesb/dev/goose2/artifacts");
   });
 
-  it("falls back to the project artifacts dir when no working dirs exist", () => {
+  it("falls back to the stored project artifact root when no workspace roots exist", () => {
     expect(
-      resolveProjectWorkingDir({
+      resolveProjectDefaultArtifactRoot({
         workingDirs: [],
         artifactsDir: "/Users/wesb/.goose/projects/sample-project/artifacts",
       }),
     ).toBe("/Users/wesb/.goose/projects/sample-project/artifacts");
   });
 
-  describe("defaultArtifactsDir", () => {
+  describe("defaultGlobalArtifactRoot", () => {
     it("normalises path separators and appends .goose/artifacts", () => {
-      expect(defaultArtifactsDir("/Users/wesb")).toBe(
+      expect(defaultGlobalArtifactRoot("/Users/wesb")).toBe(
         "/Users/wesb/.goose/artifacts",
       );
     });
 
     it("normalises backslashes on Windows-style paths", () => {
-      expect(defaultArtifactsDir("C:\\Users\\wesb\\")).toBe(
+      expect(defaultGlobalArtifactRoot("C:\\Users\\wesb\\")).toBe(
         "C:/Users/wesb/.goose/artifacts",
       );
     });
 
     it("strips trailing slashes", () => {
-      expect(defaultArtifactsDir("/Users/wesb/")).toBe(
+      expect(defaultGlobalArtifactRoot("/Users/wesb/")).toBe(
         "/Users/wesb/.goose/artifacts",
       );
     });
   });
 
-  describe("resolveEffectiveWorkingDir", () => {
-    it("returns the project working dir without requiring homeDir", () => {
+  describe("resolveDefaultSessionCwd", () => {
+    it("returns the project default artifact root without requiring homeDir", () => {
       expect(
-        resolveEffectiveWorkingDir({
+        resolveDefaultSessionCwd({
           workingDirs: ["/Users/wesb/dev/goose2"],
           artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
         }),
       ).toBe("/Users/wesb/dev/goose2/artifacts");
     });
 
-    it("returns the project working dir when available", () => {
+    it("returns the project default artifact root when available", () => {
       expect(
-        resolveEffectiveWorkingDir(
+        resolveDefaultSessionCwd(
           {
             workingDirs: ["/Users/wesb/dev/goose2"],
             artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
@@ -174,7 +174,7 @@ describe("chatProjectContext", () => {
 
     it("returns undefined when a project exists but has no working dirs", () => {
       expect(
-        resolveEffectiveWorkingDir(
+        resolveDefaultSessionCwd(
           { workingDirs: [], artifactsDir: "" },
           "/Users/wesb",
         ),
@@ -182,13 +182,13 @@ describe("chatProjectContext", () => {
     });
 
     it("falls back to home artifacts dir when no project", () => {
-      expect(resolveEffectiveWorkingDir(null, "/Users/wesb")).toBe(
+      expect(resolveDefaultSessionCwd(null, "/Users/wesb")).toBe(
         "/Users/wesb/.goose/artifacts",
       );
     });
 
     it("does not resolve a non-project fallback without homeDir", () => {
-      expect(resolveEffectiveWorkingDir(null)).toBeUndefined();
+      expect(resolveDefaultSessionCwd(null)).toBeUndefined();
     });
   });
 });
