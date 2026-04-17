@@ -21,8 +21,11 @@ import {
   clearReplayBuffer,
   getAndDeleteReplayBuffer,
 } from "@/features/chat/hooks/replayBuffer";
-import { getHomeDir } from "@/shared/api/system";
-import { resolveDefaultSessionCwd } from "@/features/projects/lib/chatProjectContext";
+import {
+  buildSessionCwdParts,
+  resolveSessionCwd,
+} from "@/features/projects/lib/sessionCwdSelection";
+import { resolveOptionalPath } from "@/shared/api/pathResolver";
 
 export type AppView =
   | "home"
@@ -93,12 +96,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             .projects.find((candidate) => candidate.id === session.projectId) ??
           null)
         : null;
-      const sessionCwd =
-        resolveDefaultSessionCwd(project) ??
-        (!project
-          ? resolveDefaultSessionCwd(null, await getHomeDir())
-          : undefined);
-      await acpLoadSession(sessionId, gooseSessionId, sessionCwd);
+      const workingDir = await resolveSessionCwd(project);
+      await acpLoadSession(sessionId, gooseSessionId, workingDir);
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
       if (buffer && buffer.length > 0) {
@@ -315,19 +314,16 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             : (useProjectStore
                 .getState()
                 .projects.find((project) => project.id === projectId) ?? null);
-        const nextSessionCwd =
-          resolveDefaultSessionCwd(nextProject) ??
-          (nextProject == null
-            ? resolveDefaultSessionCwd(null, await getHomeDir())
-            : undefined);
-        if (!nextSessionCwd) {
+        const nextWorkingDirParts = buildSessionCwdParts(nextProject);
+        if (!nextWorkingDirParts) {
           return;
         }
+        const workingDir = await resolveOptionalPath(nextWorkingDirParts);
         await acpPrepareSession(
           sessionId,
           session.providerId ?? agentStore.selectedProvider ?? "goose",
           {
-            workingDir: nextSessionCwd,
+            workingDir,
             personaId: session.personaId,
           },
         );

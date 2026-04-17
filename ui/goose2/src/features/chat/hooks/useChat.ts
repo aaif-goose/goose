@@ -83,7 +83,7 @@ export function useChat(
   providerOverride?: string,
   systemPromptOverride?: string,
   personaInfo?: { id: string; name: string },
-  workingDirOverride?: string,
+  getWorkingDir?: () => Promise<string | undefined>,
 ) {
   const store = useChatStore();
   const abortRef = useRef<AbortController | null>(null);
@@ -218,8 +218,9 @@ export function useChat(
 
       try {
         if (wasDraft || selectedModelId) {
+          const workingDir = await getWorkingDir?.();
           await acpPrepareSession(sessionId, providerId, {
-            workingDir: workingDirOverride,
+            workingDir,
             personaId: effectivePersonaInfo?.id,
           });
           if (selectedModelId) {
@@ -299,7 +300,7 @@ export function useChat(
       providerOverride,
       systemPromptOverride,
       resolvePersonaInfo,
-      workingDirOverride,
+      getWorkingDir,
     ],
   );
 

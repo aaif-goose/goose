@@ -15,12 +15,16 @@ import { useChatSessionStore } from "../stores/chatSessionStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
+  defaultGlobalArtifactRoot,
+  buildSessionCwdParts,
+  resolveProjectDefaultArtifactRoot,
+} from "@/features/projects/lib/sessionCwdSelection";
+import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
-  defaultGlobalArtifactRoot,
   getProjectArtifactRoots,
-  resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
+import { resolveOptionalPath } from "@/shared/api/pathResolver";
 import { getHomeDir } from "@/shared/api/system";
 import { ArtifactPolicyProvider } from "../hooks/ArtifactPolicyContext";
 import type { ModelOption } from "../types";
@@ -122,12 +126,10 @@ export function ChatView({
   const projectMetadataPending = Boolean(
     session?.projectId && !projectDefaultArtifactRoot && projectsLoading,
   );
-  const defaultSessionCwd = projectDefaultArtifactRoot
-    ? projectDefaultArtifactRoot
-    : !session?.projectId
-      ? (globalArtifactRoot ?? undefined)
-      : undefined;
-  const effectiveSessionCwd = activeWorkspace?.path ?? defaultSessionCwd;
+  const sessionCwdParts = useMemo(
+    () => buildSessionCwdParts(project, activeWorkspace?.path),
+    [project, activeWorkspace?.path],
+  );
   const allowedArtifactRoots = useMemo(() => {
     const roots = [
       ...projectArtifactRoots.map((path) => path.trim()).filter(Boolean),
@@ -194,12 +196,16 @@ export function ChatView({
     }
     prevWorkspaceRef.current = activeWorkspace;
     if (prev && prev.path === activeWorkspace.path) return;
-    void acpPrepareSession(activeSessionId, selectedProvider, {
-      workingDir: activeWorkspace.path,
-      personaId: selectedPersonaId ?? undefined,
-    }).catch((error) => {
-      console.error("Failed to prepare ACP session:", error);
-    });
+    void resolveOptionalPath([activeWorkspace.path])
+      .then((path) =>
+        acpPrepareSession(activeSessionId, selectedProvider, {
+          workingDir: path,
+          personaId: selectedPersonaId ?? undefined,
+        }),
+      )
+      .catch((error) => {
+        console.error("Failed to prepare ACP session:", error);
+      });
   }, [
     activeWorkspace,
     activeSessionId,
@@ -230,29 +236,34 @@ export function ChatView({
               .getState()
               .projects.find((candidate) => candidate.id === projectId) ??
             null);
-      const nextSessionCwd =
-        resolveProjectDefaultArtifactRoot(nextProject) ??
-        (projectId == null ? (globalArtifactRoot ?? undefined) : undefined);
+      const nextWorkingDirParts = buildSessionCwdParts(
+        nextProject,
+        activeWorkspace?.path,
+      );
 
       useChatSessionStore
         .getState()
         .updateSession(activeSessionId, { projectId });
 
-      if (!session?.draft && selectedProvider && nextSessionCwd) {
-        void acpPrepareSession(activeSessionId, selectedProvider, {
-          workingDir: nextSessionCwd,
-          personaId: selectedPersonaId ?? undefined,
-        }).catch((error) => {
-          console.error(
-            "Failed to update ACP session working directory:",
-            error,
-          );
-        });
+      if (!session?.draft && selectedProvider && nextWorkingDirParts) {
+        void resolveOptionalPath(nextWorkingDirParts)
+          .then((path) =>
+            acpPrepareSession(activeSessionId, selectedProvider, {
+              workingDir: path,
+              personaId: selectedPersonaId ?? undefined,
+            }),
+          )
+          .catch((error) => {
+            console.error(
+              "Failed to update ACP session working directory:",
+              error,
+            );
+          });
       }
     },
     [
       activeSessionId,
-      globalArtifactRoot,
+      activeWorkspace?.path,
       selectedPersonaId,
       selectedProvider,
       session?.draft,
@@ -331,6 +342,10 @@ export function ChatView({
   const personaInfo = selectedPersona
     ? { id: selectedPersona.id, name: selectedPersona.displayName }
     : undefined;
+  const resolveCurrentSessionCwd = useCallback(
+    () => resolveOptionalPath(sessionCwdParts),
+    [sessionCwdParts],
+  );
   const {
     messages,
     chatState,
@@ -343,7 +358,7 @@ export function ChatView({
     selectedProvider,
     effectiveSystemPrompt,
     personaInfo,
-    effectiveSessionCwd,
+    resolveCurrentSessionCwd,
   );
   const isLoadingHistory = useChatStore(
     (s) =>
