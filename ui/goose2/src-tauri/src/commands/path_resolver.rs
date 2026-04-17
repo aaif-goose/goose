@@ -33,10 +33,7 @@ fn expand_home_prefix(part: &str) -> Option<PathBuf> {
 }
 
 fn resolve_path_parts(parts: Vec<String>) -> Result<String, String> {
-    let mut normalized_parts = parts
-        .iter()
-        .filter_map(|part| trim_part(part))
-        .peekable();
+    let mut normalized_parts = parts.iter().filter_map(|part| trim_part(part)).peekable();
 
     let first = normalized_parts
         .next()
@@ -84,8 +81,16 @@ mod tests {
         };
 
         assert_eq!(
-            resolve_path_parts(vec!["~".to_string(), ".goose".to_string(), "artifacts".to_string()]),
-            Ok(home.join(".goose").join("artifacts").to_string_lossy().into_owned())
+            resolve_path_parts(vec![
+                "~".to_string(),
+                ".goose".to_string(),
+                "artifacts".to_string()
+            ]),
+            Ok(home
+                .join(".goose")
+                .join("artifacts")
+                .to_string_lossy()
+                .into_owned())
         );
         assert_eq!(
             resolve_path_parts(vec!["~/artifacts".to_string()]),
