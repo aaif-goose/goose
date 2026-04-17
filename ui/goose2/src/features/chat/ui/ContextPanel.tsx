@@ -44,9 +44,7 @@ export function ContextPanel({
   const activeContext = useChatSessionStore(
     (s) => s.activeWorkspaceBySession[sessionId],
   );
-  const setActiveWorkspace = useChatSessionStore(
-    (s) => s.setActiveWorkspace,
-  );
+  const setActiveWorkspace = useChatSessionStore((s) => s.setActiveWorkspace);
 
   const gitTargetPath = activeContext?.path ?? primaryWorkspaceRoot;
   const {
