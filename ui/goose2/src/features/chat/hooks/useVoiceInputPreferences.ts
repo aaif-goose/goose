@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { getClient } from "@/shared/api/acpConnection";
 import {
-  DISABLED_DICTATION_PROVIDER_STORAGE_VALUE,
   DEFAULT_AUTO_SUBMIT_PHRASES_RAW,
-  VOICE_AUTO_SUBMIT_PHRASES_STORAGE_KEY,
-  VOICE_DICTATION_PREFERRED_MIC_STORAGE_KEY,
-  VOICE_DICTATION_PROVIDER_STORAGE_KEY,
+  DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
+  VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY,
+  VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY,
+  VOICE_DICTATION_PROVIDER_CONFIG_KEY,
   normalizeDictationProvider,
   parseAutoSubmitPhrases,
 } from "../lib/voiceInput";
@@ -12,150 +13,122 @@ import type { DictationProvider } from "@/shared/types/dictation";
 
 const VOICE_INPUT_PREFERENCES_EVENT = "goose:voice-input-preferences";
 
-function readStoredAutoSubmitPhrases() {
+async function readConfigString(key: string): Promise<string | null> {
   try {
-    return (
-      window.localStorage.getItem(VOICE_AUTO_SUBMIT_PHRASES_STORAGE_KEY) ??
-      DEFAULT_AUTO_SUBMIT_PHRASES_RAW
-    );
-  } catch {
-    return DEFAULT_AUTO_SUBMIT_PHRASES_RAW;
-  }
-}
-
-function readStoredDictationProvider(): DictationProvider | null {
-  try {
-    const storedValue = window.localStorage.getItem(
-      VOICE_DICTATION_PROVIDER_STORAGE_KEY,
-    );
-
-    if (storedValue === DISABLED_DICTATION_PROVIDER_STORAGE_VALUE) {
-      return null;
-    }
-
-    return normalizeDictationProvider(storedValue);
+    const client = await getClient();
+    const response = await client.goose.GooseConfigRead({ key });
+    return typeof response.value === "string" ? response.value : null;
   } catch {
     return null;
   }
 }
 
-function readHasStoredDictationProviderPreference() {
+async function writeConfigString(key: string, value: string): Promise<void> {
   try {
-    return (
-      window.localStorage.getItem(VOICE_DICTATION_PROVIDER_STORAGE_KEY) !== null
-    );
+    const client = await getClient();
+    await client.goose.GooseConfigUpsert({ key, value });
   } catch {
-    return false;
+    // goose config may be unavailable
   }
 }
 
-function readStoredPreferredMicrophoneId() {
+async function removeConfigKey(key: string): Promise<void> {
   try {
-    return window.localStorage.getItem(
-      VOICE_DICTATION_PREFERRED_MIC_STORAGE_KEY,
-    );
+    const client = await getClient();
+    await client.goose.GooseConfigRemove({ key });
   } catch {
-    return null;
+    // goose config may be unavailable
   }
 }
 
 export function useVoiceInputPreferences() {
-  const [rawAutoSubmitPhrases, setRawAutoSubmitPhrasesState] = useState(
-    readStoredAutoSubmitPhrases,
+  const [rawAutoSubmitPhrases, setRawAutoSubmitPhrasesState] = useState<string>(
+    DEFAULT_AUTO_SUBMIT_PHRASES_RAW,
   );
-  const [selectedProvider, setSelectedProviderState] = useState(
-    readStoredDictationProvider,
-  );
+  const [selectedProvider, setSelectedProviderState] =
+    useState<DictationProvider | null>(null);
   const [hasStoredProviderPreference, setHasStoredProviderPreferenceState] =
-    useState(readHasStoredDictationProviderPreference);
-  const [preferredMicrophoneId, setPreferredMicrophoneIdState] = useState(
-    readStoredPreferredMicrophoneId,
-  );
+    useState<boolean>(false);
+  const [preferredMicrophoneId, setPreferredMicrophoneIdState] = useState<
+    string | null
+  >(null);
 
-  useEffect(() => {
-    const syncFromStorage = () => {
-      setRawAutoSubmitPhrasesState(readStoredAutoSubmitPhrases());
-      setSelectedProviderState(readStoredDictationProvider());
-      setHasStoredProviderPreferenceState(
-        readHasStoredDictationProviderPreference(),
-      );
-      setPreferredMicrophoneIdState(readStoredPreferredMicrophoneId());
-    };
+  const syncFromConfig = useCallback(async () => {
+    const [phrasesValue, providerValue, micValue] = await Promise.all([
+      readConfigString(VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY),
+      readConfigString(VOICE_DICTATION_PROVIDER_CONFIG_KEY),
+      readConfigString(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY),
+    ]);
 
-    window.addEventListener("storage", syncFromStorage);
-    window.addEventListener(
-      VOICE_INPUT_PREFERENCES_EVENT,
-      syncFromStorage as EventListener,
+    setRawAutoSubmitPhrasesState(
+      phrasesValue ?? DEFAULT_AUTO_SUBMIT_PHRASES_RAW,
     );
 
+    if (providerValue === DISABLED_DICTATION_PROVIDER_CONFIG_VALUE) {
+      setSelectedProviderState(null);
+      setHasStoredProviderPreferenceState(true);
+    } else {
+      setSelectedProviderState(normalizeDictationProvider(providerValue));
+      setHasStoredProviderPreferenceState(providerValue !== null);
+    }
+
+    setPreferredMicrophoneIdState(micValue);
+  }, []);
+
+  useEffect(() => {
+    void syncFromConfig();
+    const handler = () => {
+      void syncFromConfig();
+    };
+    window.addEventListener(
+      VOICE_INPUT_PREFERENCES_EVENT,
+      handler as EventListener,
+    );
     return () => {
-      window.removeEventListener("storage", syncFromStorage);
       window.removeEventListener(
         VOICE_INPUT_PREFERENCES_EVENT,
-        syncFromStorage as EventListener,
+        handler as EventListener,
       );
     };
-  }, []);
+  }, [syncFromConfig]);
 
   const setRawAutoSubmitPhrases = useCallback((value: string) => {
     setRawAutoSubmitPhrasesState(value);
-
-    try {
-      window.localStorage.setItem(VOICE_AUTO_SUBMIT_PHRASES_STORAGE_KEY, value);
-      window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-    } catch {
-      // localStorage may be unavailable
-    }
+    void writeConfigString(VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY, value);
+    window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
   }, []);
 
-  const setSelectedProvider = useCallback((value: DictationProvider | null) => {
-    setSelectedProviderState(value);
-    setHasStoredProviderPreferenceState(true);
-
-    try {
-      window.localStorage.setItem(
-        VOICE_DICTATION_PROVIDER_STORAGE_KEY,
-        value ?? DISABLED_DICTATION_PROVIDER_STORAGE_VALUE,
+  const setSelectedProvider = useCallback(
+    (value: DictationProvider | null) => {
+      setSelectedProviderState(value);
+      setHasStoredProviderPreferenceState(true);
+      void writeConfigString(
+        VOICE_DICTATION_PROVIDER_CONFIG_KEY,
+        value ?? DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
       );
       window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-    } catch {
-      // localStorage may be unavailable
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Remove the stored preference entirely, so the user falls through to the
   // default provider on next boot. Distinct from setSelectedProvider(null),
-  // which explicitly pins the user to "voice off" via a sentinel value.
+  // which pins the user to "voice off" via a sentinel value.
   const clearSelectedProvider = useCallback(() => {
     setSelectedProviderState(null);
     setHasStoredProviderPreferenceState(false);
-
-    try {
-      window.localStorage.removeItem(VOICE_DICTATION_PROVIDER_STORAGE_KEY);
-      window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-    } catch {
-      // localStorage may be unavailable
-    }
+    void removeConfigKey(VOICE_DICTATION_PROVIDER_CONFIG_KEY);
+    window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
   }, []);
 
   const setPreferredMicrophoneId = useCallback((value: string | null) => {
     setPreferredMicrophoneIdState(value);
-
-    try {
-      if (value) {
-        window.localStorage.setItem(
-          VOICE_DICTATION_PREFERRED_MIC_STORAGE_KEY,
-          value,
-        );
-      } else {
-        window.localStorage.removeItem(
-          VOICE_DICTATION_PREFERRED_MIC_STORAGE_KEY,
-        );
-      }
-      window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
-    } catch {
-      // localStorage may be unavailable
+    if (value) {
+      void writeConfigString(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY, value);
+    } else {
+      void removeConfigKey(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY);
     }
+    window.dispatchEvent(new Event(VOICE_INPUT_PREFERENCES_EVENT));
   }, []);
 
   const autoSubmitPhrases = useMemo(

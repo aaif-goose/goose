@@ -3,14 +3,15 @@ import type {
   DictationProviderStatus,
 } from "@/shared/types/dictation";
 
-export const VOICE_AUTO_SUBMIT_PHRASES_STORAGE_KEY =
-  "goose:voice-auto-submit-phrases";
-export const VOICE_DICTATION_PROVIDER_STORAGE_KEY =
-  "goose:voice-dictation-provider";
-export const VOICE_DICTATION_PREFERRED_MIC_STORAGE_KEY =
-  "goose:voice-dictation-preferred-mic";
+// goose config keys — stored in the user's goose config.yaml via the
+// _goose/config/{read,upsert,remove} ACP methods, not localStorage.
+export const VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY =
+  "VOICE_AUTO_SUBMIT_PHRASES";
+export const VOICE_DICTATION_PROVIDER_CONFIG_KEY = "VOICE_DICTATION_PROVIDER";
+export const VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY =
+  "VOICE_DICTATION_PREFERRED_MIC";
 export const VOICE_DICTATION_CONFIG_EVENT = "goose:voice-dictation-config";
-export const DISABLED_DICTATION_PROVIDER_STORAGE_VALUE = "__disabled__";
+export const DISABLED_DICTATION_PROVIDER_CONFIG_VALUE = "__disabled__";
 
 export const DEFAULT_AUTO_SUBMIT_PHRASES_RAW = "submit";
 
