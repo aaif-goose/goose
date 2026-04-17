@@ -11,9 +11,8 @@ use goose::providers::base::{ConfigKey, ModelInfo, ProviderMetadata, ProviderTyp
 use goose::session::{Session, SessionInsights, SessionType, SystemInfo};
 use rmcp::model::{
     Annotations, Content, EmbeddedResource, Icon, IconTheme, ImageContent, JsonObject,
-    RawAudioContent, RawContent, RawEmbeddedResource, RawImageContent, RawResource,
-    RawTextContent, ResourceContents, Role, TaskSupport, TextContent, Tool, ToolAnnotations,
-    ToolExecution,
+    RawAudioContent, RawContent, RawEmbeddedResource, RawImageContent, RawResource, RawTextContent,
+    ResourceContents, Role, TaskSupport, TextContent, Tool, ToolAnnotations, ToolExecution,
 };
 use utoipa::{OpenApi, ToSchema};
 
