@@ -1,7 +1,7 @@
 use crate::conversation::message::{Message, MessageContent, ProviderMetadata};
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
-use crate::providers::base::{ProviderUsage, Usage};
+use crate::providers::base::{split_think_blocks, ProviderUsage, ThinkFilter, Usage};
 use crate::providers::errors::ProviderError;
 use crate::providers::utils::{
     convert_image, detect_image_path, extract_reasoning_effort, is_valid_function_name,
@@ -498,9 +498,11 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
     let reasoning_value = original
         .get("reasoning_content")
         .or_else(|| original.get("reasoning"));
+    let mut has_structured_thinking = false;
     if let Some(reasoning_content) = reasoning_value {
         if let Some(reasoning_str) = reasoning_content.as_str() {
             if !reasoning_str.is_empty() {
+                has_structured_thinking = true;
                 content.push(MessageContent::thinking(reasoning_str, ""));
             }
         }
@@ -508,7 +510,15 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
 
     if let Some(text) = original.get("content") {
         if let Some(text_str) = text.as_str() {
-            content.push(MessageContent::text(text_str));
+            let (cleaned, inline_thinking) = split_think_blocks(text_str);
+
+            if !has_structured_thinking && !inline_thinking.is_empty() {
+                content.push(MessageContent::thinking(inline_thinking, ""));
+            }
+
+            if !cleaned.is_empty() {
+                content.push(MessageContent::text(cleaned));
+            }
         }
     }
 
@@ -746,6 +756,8 @@ where
 
         let mut accumulated_reasoning: Vec<Value> = Vec::new();
         let mut accumulated_reasoning_content = String::new();
+        let mut think_filter = ThinkFilter::new();
+        let mut saw_structured_reasoning = false;
         let mut last_signature: Option<String> = None;
 
         'outer: while let Some(response) = stream.next().await {
@@ -770,6 +782,9 @@ where
                 }
                 if let Some(rc) = &chunk.choices[0].delta.reasoning_content {
                     accumulated_reasoning_content.push_str(rc);
+                    if !rc.is_empty() {
+                        saw_structured_reasoning = true;
+                    }
                 }
             }
 
@@ -812,6 +827,9 @@ where
                                     }
                                     if let Some(rc) = &tool_chunk.choices[0].delta.reasoning_content {
                                         accumulated_reasoning_content.push_str(rc);
+                                        if !rc.is_empty() {
+                                            saw_structured_reasoning = true;
+                                        }
                                     }
                                     if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
                                         for delta_call in delta_tool_calls {
@@ -851,6 +869,31 @@ where
                 } else {
                     None
                 };
+
+                let filtered = think_filter.push("");
+                if !filtered.content.is_empty() || (!filtered.thinking.is_empty() && !saw_structured_reasoning) {
+                    let mut filtered_contents = Vec::new();
+                    if !filtered.content.is_empty() {
+                        filtered_contents.push(MessageContent::text(filtered.content));
+                    }
+                    if !saw_structured_reasoning && !filtered.thinking.is_empty() {
+                        filtered_contents.push(MessageContent::thinking(filtered.thinking, ""));
+                    }
+
+                    if !filtered_contents.is_empty() {
+                        let mut msg = Message::new(
+                            Role::Assistant,
+                            chrono::Utc::now().timestamp(),
+                            filtered_contents,
+                        );
+
+                        if let Some(id) = chunk.id.clone() {
+                            msg = msg.with_id(id);
+                        }
+
+                        yield (Some(msg), None);
+                    }
+                }
 
                 let mut contents = Vec::new();
                 if !accumulated_reasoning_content.is_empty() {
@@ -935,8 +978,14 @@ where
                 }
 
                 if let Some(text) = text_content {
-                    if !text.is_empty() {
-                        content.push(MessageContent::text(&text));
+                    let filtered = think_filter.push(&text);
+
+                    if !saw_structured_reasoning && !filtered.thinking.is_empty() {
+                        content.push(MessageContent::thinking(filtered.thinking, ""));
+                    }
+
+                    if !filtered.content.is_empty() {
+                        content.push(MessageContent::text(filtered.content));
                     }
                 }
 
@@ -965,6 +1014,28 @@ where
             } else if usage.is_some() {
                 yield (None, usage)
             }
+        }
+
+        let filtered = think_filter.finish();
+        if !filtered.content.is_empty() || (!filtered.thinking.is_empty() && !saw_structured_reasoning) {
+            let mut content = Vec::new();
+
+            if !filtered.content.is_empty() {
+                content.push(MessageContent::text(filtered.content));
+            }
+
+            if !saw_structured_reasoning && !filtered.thinking.is_empty() {
+                content.push(MessageContent::thinking(filtered.thinking, ""));
+            }
+
+            yield (
+                Some(Message::new(
+                    Role::Assistant,
+                    chrono::Utc::now().timestamp(),
+                    content,
+                )),
+                None,
+            )
         }
     }
 }
@@ -2111,6 +2182,43 @@ data: [DONE]"#;
         panic!("Expected tool call message with nested extra_content metadata");
     }
 
+    #[tokio::test]
+    async fn test_streaming_response_extracts_inline_think_blocks() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            "data: {\"id\":\"chunk-1\",\"choices\":[{\"delta\":{\"content\":\"<thi\"},\"index\":0,\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"chunk-1\",\"choices\":[{\"delta\":{\"content\":\"nk>x</thi\"},\"index\":0,\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"chunk-1\",\"choices\":[{\"delta\":{\"content\":\"nk>y\"},\"index\":0,\"finish_reason\":\"stop\"}]}\n",
+            "data: [DONE]\n"
+        );
+
+        let response_stream =
+            tokio_stream::iter(response_lines.lines().map(|line| Ok(line.to_string())));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut text = String::new();
+        let mut thinking = String::new();
+
+        while let Some(result) = messages.next().await {
+            let (message, _) = result?;
+            if let Some(message) = message {
+                for item in message.content {
+                    match item {
+                        MessageContent::Text(text_content) => text.push_str(&text_content.text),
+                        MessageContent::Thinking(thinking_content) => {
+                            thinking.push_str(&thinking_content.thinking)
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text, "y");
+        assert_eq!(thinking, "x");
+
+        Ok(())
+    }
+
     #[test]
     fn test_response_to_message_with_reasoning_content() -> anyhow::Result<()> {
         // Test capturing reasoning_content from DeepSeek reasoning models
@@ -2142,6 +2250,66 @@ data: [DONE]"#;
         // Second should be text content
         if let MessageContent::Text(text) = &message.content[1] {
             assert_eq!(text.text, "The answer is 9.11 is greater than 9.8");
+        } else {
+            panic!("Expected Text content");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_response_to_message_extracts_inline_think_blocks() -> anyhow::Result<()> {
+        let response = json!({
+            "choices": [{
+                "role": "assistant",
+                "message": {
+                    "content": "<think>internal reasoning</think>Visible answer"
+                }
+            }]
+        });
+
+        let message = response_to_message(&response)?;
+        assert_eq!(message.content.len(), 2);
+
+        if let MessageContent::Thinking(thinking) = &message.content[0] {
+            assert_eq!(thinking.thinking, "internal reasoning");
+        } else {
+            panic!("Expected Thinking content, got {:?}", message.content[0]);
+        }
+
+        if let MessageContent::Text(text) = &message.content[1] {
+            assert_eq!(text.text, "Visible answer");
+        } else {
+            panic!("Expected Text content");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_response_to_message_prefers_structured_reasoning_over_inline_think(
+    ) -> anyhow::Result<()> {
+        let response = json!({
+            "choices": [{
+                "role": "assistant",
+                "message": {
+                    "reasoning_content": "structured reasoning",
+                    "content": "<think>inline reasoning</think>Visible answer"
+                }
+            }]
+        });
+
+        let message = response_to_message(&response)?;
+        assert_eq!(message.content.len(), 2);
+
+        if let MessageContent::Thinking(thinking) = &message.content[0] {
+            assert_eq!(thinking.thinking, "structured reasoning");
+        } else {
+            panic!("Expected Thinking content");
+        }
+
+        if let MessageContent::Text(text) = &message.content[1] {
+            assert_eq!(text.text, "Visible answer");
         } else {
             panic!("Expected Text content");
         }
