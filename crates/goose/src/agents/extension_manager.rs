@@ -2312,11 +2312,11 @@ mod tests {
 
     fn transport_err(error: Box<dyn std::error::Error + Send + Sync>) -> ClientInitializeError {
         ClientInitializeError::TransportError {
-            error: rmcp::transport::DynamicTransportError {
-                transport_name: "test".into(),
-                transport_type_id: std::any::TypeId::of::<()>(),
+            error: rmcp::transport::DynamicTransportError::from_parts(
+                "test",
+                std::any::TypeId::of::<()>(),
                 error,
-            },
+            ),
             context: "test context".into(),
         }
     }
@@ -2331,9 +2331,9 @@ mod tests {
     fn test_oauth_fallback_on_typed_auth_required() {
         let err = streamable_err(
             rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
-                rmcp::transport::streamable_http_client::AuthRequiredError {
-                    www_authenticate_header: "Bearer realm=\"test\"".to_string(),
-                },
+                rmcp::transport::streamable_http_client::AuthRequiredError::new(
+                    "Bearer realm=\"test\"".to_string(),
+                ),
             ),
         );
         assert!(should_attempt_oauth_fallback(&Err(err)));
