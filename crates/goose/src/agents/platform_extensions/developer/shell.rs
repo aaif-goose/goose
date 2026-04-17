@@ -3,13 +3,20 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::LazyLock;
+#[cfg(not(windows))]
+use std::sync::Arc;
+#[cfg(not(windows))]
+use std::sync::Mutex;
 use std::time::Duration;
 
 use rmcp::model::{CallToolResult, Content};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
+#[cfg(not(windows))]
+use tokio::sync::OnceCell;
+#[cfg(not(windows))]
+use tokio::task::JoinHandle;
 use tokio_stream::{wrappers::SplitStream, StreamExt};
 
 use crate::subprocess::SubprocessExt;
@@ -197,14 +204,61 @@ fn resolve_login_shell_path() -> Option<String> {
     }
 }
 
+/// Resolves the user's login-shell PATH in the background.
+///
+/// Spawned at `ShellTool` construction so the ~hundreds-of-ms cost of sourcing
+/// the user's shell profile overlaps with the rest of agent setup and the
+/// first LLM turn. The first `shell` invocation awaits the result; subsequent
+/// invocations read from the cached cell.
 #[cfg(not(windows))]
-static LOGIN_PATH: LazyLock<Option<String>> = LazyLock::new(resolve_login_shell_path);
+struct LoginPath {
+    cell: OnceCell<Option<Arc<str>>>,
+    handle: Mutex<Option<JoinHandle<Option<String>>>>,
+}
+
+#[cfg(not(windows))]
+impl LoginPath {
+    fn spawn() -> Self {
+        let handle = tokio::task::spawn_blocking(resolve_login_shell_path);
+        Self {
+            cell: OnceCell::new(),
+            handle: Mutex::new(Some(handle)),
+        }
+    }
+
+    #[cfg(test)]
+    fn resolved(value: Option<String>) -> Self {
+        let cell = OnceCell::new();
+        let _ = cell.set(value.map(Arc::from));
+        Self {
+            cell,
+            handle: Mutex::new(None),
+        }
+    }
+
+    async fn get(&self) -> Option<Arc<str>> {
+        self.cell
+            .get_or_init(|| async {
+                let handle = self
+                    .handle
+                    .lock()
+                    .expect("login_path mutex poisoned")
+                    .take();
+                match handle {
+                    Some(h) => h.await.ok().flatten().map(Arc::from),
+                    None => None,
+                }
+            })
+            .await
+            .clone()
+    }
+}
 
 pub struct ShellTool {
     output_dir: tempfile::TempDir,
     call_index: AtomicUsize,
     #[cfg(not(windows))]
-    login_path: Option<String>,
+    login_path: LoginPath,
 }
 
 impl ShellTool {
@@ -213,7 +267,7 @@ impl ShellTool {
             output_dir: tempfile::tempdir()?,
             call_index: AtomicUsize::new(0),
             #[cfg(not(windows))]
-            login_path: LOGIN_PATH.clone(),
+            login_path: LoginPath::spawn(),
         })
     }
 
@@ -223,7 +277,7 @@ impl ShellTool {
             output_dir: tempfile::tempdir()?,
             call_index: AtomicUsize::new(0),
             #[cfg(not(windows))]
-            login_path: None,
+            login_path: LoginPath::resolved(None),
         })
     }
 
@@ -241,15 +295,17 @@ impl ShellTool {
         }
 
         #[cfg(not(windows))]
-        let login_path = self.login_path.as_deref();
+        let login_path = self.login_path.get().await;
+        #[cfg(not(windows))]
+        let login_path_ref = login_path.as_deref();
         #[cfg(windows)]
-        let login_path: Option<&str> = None;
+        let login_path_ref: Option<&str> = None;
 
         let execution = match run_command(
             &params.command,
             params.timeout_secs,
             working_dir,
-            login_path,
+            login_path_ref,
         )
         .await
         {
