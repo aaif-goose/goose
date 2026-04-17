@@ -1,0 +1,165 @@
+---
+title: Sats4AI Extension
+description: Access 33+ AI tools paid per request with Bitcoin Lightning — no API keys or signups required.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
+import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructions';
+
+This tutorial covers how to add the [Sats4AI MCP Server](https://sats4ai.com/mcp) as a goose extension to access 33+ AI tools — image generation, background removal, upscaling, face restoration, video generation, TTS (467 voices, 45+ languages), transcription, music, OCR, translation, file conversion, email, SMS, phone calls, and AI voice agents — paid per request with Bitcoin Lightning micropayments.
+
+:::info
+You'll need a Lightning wallet with sats (any wallet: Phoenix, Wallet of Satoshi, Alby, etc.). No API keys, accounts, or KYC required.
+:::
+
+:::tip Quick Install
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  [Launch the installer](goose://extension?type=http&uri=https%3A%2F%2Fsats4ai.com%2Fapi%2Fmcp&id=sats4ai&name=Sats4AI&description=Bitcoin-powered%20AI%20tools%20marketplace)
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+  **Remote MCP (no install needed)**
+  ```
+  URL: https://sats4ai.com/api/mcp
+  ```
+  **Or via npm**
+  ```sh
+  npx -y sats4ai-mcp
+  ```
+  </TabItem>
+</Tabs>
+:::
+
+## Configuration
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+    <Tabs>
+      <TabItem value="remote" label="Remote (recommended)" default>
+        <GooseDesktopInstaller
+          extensionId="sats4ai"
+          extensionName="Sats4AI"
+          description="Bitcoin-powered AI tools marketplace"
+          type="http"
+          url="https://sats4ai.com/api/mcp"
+        />
+      </TabItem>
+      <TabItem value="local" label="Local (npm)">
+        <GooseDesktopInstaller
+          extensionId="sats4ai-local"
+          extensionName="Sats4AI"
+          description="Bitcoin-powered AI tools marketplace"
+          command="npx"
+          args={["-y", "sats4ai-mcp"]}
+        />
+      </TabItem>
+    </Tabs>
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    <Tabs>
+      <TabItem value="remote" label="Remote (recommended)" default>
+        <CLIExtensionInstructions
+          name="Sats4AI"
+          description="Bitcoin-powered AI tools marketplace"
+          type="http"
+          url="https://sats4ai.com/api/mcp"
+        />
+      </TabItem>
+      <TabItem value="local" label="Local (npm)">
+        <CLIExtensionInstructions
+          name="Sats4AI"
+          description="Bitcoin-powered AI tools marketplace"
+          command="npx -y sats4ai-mcp"
+        />
+      </TabItem>
+    </Tabs>
+  </TabItem>
+</Tabs>
+
+## Payment Flow
+
+Every tool requires a Lightning micropayment. The flow is:
+
+1. **Create invoice** — call `create_invoice` with the tool name and parameters to get a BOLT-11 Lightning invoice
+2. **Pay** — pay the invoice with any Lightning wallet (confirms in seconds)
+3. **Confirm** — call `check_payment` to verify the payment landed
+4. **Use** — call the tool with your `paymentId` to get the result
+
+If a service fails after payment, call `request_refund` — refunds are processed manually.
+
+## Example Usage
+
+### Generate an image
+
+> _Generate an image of a mountain landscape at sunset_
+
+<details>
+<summary>Tool Calls</summary>
+
+```
+─── list_tools | sats4ai ──────────────────────
+(browse available tools and pricing)
+
+─── create_invoice | sats4ai ──────────────────
+tool: "generate_image"
+prompt: "mountain landscape at sunset, golden hour lighting"
+model: "seedream-4"
+
+─── check_payment | sats4ai ──────────────────
+paymentId: "pay_abc123"
+
+─── generate_image | sats4ai ──────────────────
+paymentId: "pay_abc123"
+prompt: "mountain landscape at sunset, golden hour lighting"
+model: "seedream-4"
+```
+
+</details>
+
+Here's your image of a mountain landscape at sunset. The image was generated using Seedream 4 for 15 sats (~$0.002).
+
+### Remove a background
+
+> _Remove the background from this photo_
+
+<details>
+<summary>Tool Calls</summary>
+
+```
+─── create_invoice | sats4ai ──────────────────
+tool: "remove_background"
+
+─── check_payment | sats4ai ──────────────────
+paymentId: "pay_def456"
+
+─── remove_background | sats4ai ──────────────────
+paymentId: "pay_def456"
+imageUrl: "https://example.com/photo.jpg"
+```
+
+</details>
+
+Background removed using BiRefNet (SOTA, handles hair and transparency). Cost: 5 sats.
+
+## Available Tools
+
+| Category | Tools | Starting Price |
+|----------|-------|---------------|
+| Image Generation | text-to-image (Grok Imagine, Seedream 4, Nano Banana 2) | 15 sats |
+| Image Processing | background removal, upscaling, face restoration, object detection, inpainting, colorization, deblurring, NSFW classification | 2-20 sats |
+| Video & 3D | text-to-video, image-to-video, 3D model generation | 50+ sats |
+| Audio | TTS (467 voices, 45+ langs), voice cloning, transcription, music generation | 5+ sats |
+| Documents | OCR, receipt extraction, file conversion, PDF merge, PDF generation, audiobook creation | 5+ sats |
+| Text | chat (frontier LLMs), vision, translation (119 langs) | 5+ sats |
+| Communication | email, SMS, phone calls, AI voice agents | 5+ sats |
+
+Call `list_tools` (free) for the full catalog with current pricing.
+
+## Resources
+
+- [Documentation](https://sats4ai.com/mcp)
+- [Discovery manifest](https://sats4ai.com/.well-known/mcp)
+- [Tool catalog API](https://sats4ai.com/api/mcp/discovery)
+- [npm package](https://www.npmjs.com/package/sats4ai-mcp)
