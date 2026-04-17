@@ -23,7 +23,7 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     setupMethod: "cli_auth",
     binaryName: "claude-agent-acp",
     installCommand:
-      "npm install -g @anthropic-ai/claude-code @zed-industries/claude-agent-acp",
+      "npm install -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp",
     authCommand: "claude auth login",
     authStatusCommand: "claude auth status",
     docsUrl: "https://docs.anthropic.com/en/docs/claude-code",
