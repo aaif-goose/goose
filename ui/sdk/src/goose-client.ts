@@ -33,10 +33,14 @@ export class GooseClient {
   private conn: ClientSideConnection;
   private ext: GooseExtClient;
 
-  constructor(toClient: () => Client, streamOrUrl: Stream | string) {
+  constructor(
+    toClient: () => Client,
+    streamOrUrl: Stream | string,
+    token?: string,
+  ) {
     const stream =
       typeof streamOrUrl === "string"
-        ? createHttpStream(streamOrUrl)
+        ? createHttpStream(streamOrUrl, token)
         : streamOrUrl;
     this.conn = new ClientSideConnection(toClient, stream);
     this.ext = new GooseExtClient(this.conn);

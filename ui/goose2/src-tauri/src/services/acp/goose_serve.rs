@@ -169,9 +169,9 @@ async fn read_auth_token(child: &mut Child) -> Result<String, String> {
                         return Err("Goose serve emitted an empty ACP token".to_string());
                     }
 
-                    tokio::spawn(async move {
-                        while matches!(lines.next_line().await, Ok(Some(_))) {}
-                    });
+                    tokio::spawn(
+                        async move { while matches!(lines.next_line().await, Ok(Some(_))) {} },
+                    );
 
                     return Ok(token.to_string());
                 }

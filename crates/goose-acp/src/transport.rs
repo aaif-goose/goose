@@ -9,7 +9,7 @@ use axum::{
         ws::{rejection::WebSocketUpgradeRejection, WebSocketUpgrade},
         Extension, State,
     },
-    http::{header, HeaderValue, Method, Request, StatusCode},
+    http::{header, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -174,15 +174,11 @@ async fn require_acp_auth(
 pub fn create_router(server: Arc<AcpServer>, auth_token: Arc<str>) -> Router {
     let http_state = Arc::new(http::HttpState::new(server.clone()));
     let ws_state = Arc::new(websocket::WsState::new(server));
-    let allowed_origins = [
-        "http://127.0.0.1".parse::<HeaderValue>().unwrap(),
-        "http://localhost".parse::<HeaderValue>().unwrap(),
-        "tauri://localhost".parse::<HeaderValue>().unwrap(),
-        "https://tauri.localhost".parse::<HeaderValue>().unwrap(),
-    ];
 
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::list(allowed_origins))
+        .allow_origin(AllowOrigin::predicate(|origin, _| {
+            is_allowed_origin(origin.as_bytes())
+        }))
         .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([
             header::AUTHORIZATION,
@@ -213,6 +209,17 @@ pub fn create_router(server: Arc<AcpServer>, auth_token: Arc<str>) -> Router {
         .route("/status", get(health))
         .merge(acp_routes)
         .layer(cors)
+}
+
+fn is_allowed_origin(origin: &[u8]) -> bool {
+    if origin == b"tauri://localhost" || origin == b"https://tauri.localhost" {
+        return true;
+    }
+    if let Some(rest) = origin.strip_prefix(b"http://") {
+        let host = rest.split(|&b| b == b':').next().unwrap_or(rest);
+        return host == b"localhost" || host == b"127.0.0.1";
+    }
+    false
 }
 
 #[cfg(test)]
@@ -313,5 +320,30 @@ mod tests {
                 .unwrap(),
             &protocol
         );
+    }
+
+    #[test]
+    fn cors_accepts_localhost_with_any_port() {
+        assert!(is_allowed_origin(b"http://localhost"));
+        assert!(is_allowed_origin(b"http://localhost:1420"));
+        assert!(is_allowed_origin(b"http://localhost:1520"));
+        assert!(is_allowed_origin(b"http://localhost:5173"));
+        assert!(is_allowed_origin(b"http://127.0.0.1"));
+        assert!(is_allowed_origin(b"http://127.0.0.1:3000"));
+    }
+
+    #[test]
+    fn cors_accepts_tauri_origins() {
+        assert!(is_allowed_origin(b"tauri://localhost"));
+        assert!(is_allowed_origin(b"https://tauri.localhost"));
+    }
+
+    #[test]
+    fn cors_rejects_non_local_origins() {
+        assert!(!is_allowed_origin(b"http://evil.com"));
+        assert!(!is_allowed_origin(b"https://localhost"));
+        assert!(!is_allowed_origin(b"http://localhost.evil.com"));
+        assert!(!is_allowed_origin(b"http://127.0.0.1.evil.com"));
+        assert!(!is_allowed_origin(b""));
     }
 }
