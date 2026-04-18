@@ -1,7 +1,7 @@
 import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
 
-export function createWebSocketStream(wsUrl: string): Stream {
-  const ws = new WebSocket(wsUrl);
+export function createWebSocketStream(wsUrl: string, token: string): Stream {
+  const ws = new WebSocket(wsUrl, [`goose-acp-auth.${token}`]);
 
   const incoming: AnyMessage[] = [];
   const waiters: Array<() => void> = [];
