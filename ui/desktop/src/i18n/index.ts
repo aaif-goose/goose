@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Locale detection and message loading for the i18n system.
  *
  * Locale resolution order:
@@ -11,7 +11,7 @@
 export { defineMessages, useIntl } from 'react-intl';
 
 /** The set of locales that have translation catalogs. */
-const SUPPORTED_LOCALES = new Set(['en']);
+const SUPPORTED_LOCALES = new Set(['en', 'zh', 'zh-CN']);
 
 /**
  * Detect the user's preferred locale.
@@ -87,3 +87,4 @@ export async function loadMessages(
     return {};
   }
 }
+

@@ -8,7 +8,19 @@ import { AppEvents } from '../../constants/events';
 import { CondensedRenderer } from './CondensedRenderer';
 import { ExpandedRenderer } from './ExpandedRenderer';
 import { NavigationOverlay } from './navigation';
+import { defineMessages, useIntl } from '../../i18n';
 import type { SessionStatus, DragHandlers } from './navigation/types';
+
+const i18n = defineMessages({
+  home: { id: 'navigationCustomization.itemHome', defaultMessage: 'Home' },
+  chat: { id: 'navigationCustomization.itemChat', defaultMessage: 'Chat' },
+  recipes: { id: 'navigationCustomization.itemRecipes', defaultMessage: 'Recipes' },
+  skills: { id: 'skillsView.skillsTitle', defaultMessage: 'Skills' },
+  apps: { id: 'navigationCustomization.itemApps', defaultMessage: 'Apps' },
+  scheduler: { id: 'navigationCustomization.itemScheduler', defaultMessage: 'Scheduler' },
+  extensions: { id: 'navigationCustomization.itemExtensions', defaultMessage: 'Extensions' },
+  settings: { id: 'navigationCustomization.itemSettings', defaultMessage: 'Settings' },
+});
 
 export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
   const {
@@ -26,6 +38,21 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
 
   const location = useLocation();
   const { extensionsList } = useConfig();
+  const intl = useIntl();
+
+  const translatedLabels = useMemo(
+    () => ({
+      home: intl.formatMessage(i18n.home),
+      chat: intl.formatMessage(i18n.chat),
+      recipes: intl.formatMessage(i18n.recipes),
+      skills: intl.formatMessage(i18n.skills),
+      apps: intl.formatMessage(i18n.apps),
+      scheduler: intl.formatMessage(i18n.scheduler),
+      extensions: intl.formatMessage(i18n.extensions),
+      settings: intl.formatMessage(i18n.settings),
+    }),
+    [intl]
+  );
 
   const appsExtensionEnabled = !!extensionsList?.find((ext) => ext.name === 'apps')?.enabled;
 
@@ -37,8 +64,12 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
       .filter((item) => {
         if (item.path === '/apps') return appsExtensionEnabled;
         return true;
-      });
-  }, [preferences.itemOrder, preferences.enabledItems, appsExtensionEnabled]);
+      })
+      .map((item) => ({
+        ...item,
+        label: translatedLabels[item.id as keyof typeof translatedLabels] ?? item.label,
+      }));
+  }, [preferences.itemOrder, preferences.enabledItems, appsExtensionEnabled, translatedLabels]);
 
   const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
 
@@ -202,7 +233,6 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
 
   if (isOverlayMode) {
     if (effectiveNavigationStyle === 'expanded') {
-      // Expanded overlay uses its own AnimatePresence layout
       return content;
     }
     return (

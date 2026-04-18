@@ -1,4 +1,4 @@
-import type { OpenDialogOptions, OpenDialogReturnValue } from 'electron';
+﻿import type { OpenDialogOptions, OpenDialogReturnValue } from 'electron';
 import {
   app,
   App,
@@ -1124,6 +1124,91 @@ const buildRecentFilesMenu = () => {
   }));
 };
 
+
+type MenuKey = 'file' | 'edit' | 'view' | 'window' | 'help';
+
+const MENU_LABEL_ALIASES: Record<MenuKey, string[]> = {
+  file: ['File', '文件'],
+  edit: ['Edit', '编辑'],
+  view: ['View', '视图'],
+  window: ['Window', '窗口'],
+  help: ['Help', '帮助'],
+};
+
+const MENU_ZH_TRANSLATIONS: Record<string, string> = {
+  File: '文件',
+  Edit: '编辑',
+  View: '视图',
+  Window: '窗口',
+  Help: '帮助',
+  About: '关于',
+  'About Goose': '关于 Goose',
+  Reload: '重新加载',
+  'Force Reload': '强制重新加载',
+  'Toggle Developer Tools': '切换开发者工具',
+  Undo: '撤销',
+  Redo: '重做',
+  Cut: '剪切',
+  Copy: '复制',
+  Paste: '粘贴',
+  Delete: '删除',
+  'Select All': '全选',
+  Find: '查找',
+  'Find…': '查找…',
+  'Find Next': '查找下一个',
+  'Find Previous': '查找上一个',
+  'Use Selection for Find': '使用所选内容查找',
+  Settings: '设置',
+  'New Window': '新建窗口',
+  'New Chat': '新建聊天',
+  'New Chat Window': '新建聊天窗口',
+  'Open Directory...': '打开目录…',
+  'Recent Directories': '最近目录',
+  'Focus Goose Window': '聚焦 Goose 窗口',
+  'Quick Launcher': '快速启动器',
+  'Always on Top': '窗口置顶',
+  'Toggle Navigation': '切换导航栏',
+  Close: '关闭',
+  Minimize: '最小化',
+  Zoom: '缩放',
+  'Bring All to Front': '全部置于前台',
+  'Actual Size': '实际大小',
+  'Zoom In': '放大',
+  'Zoom Out': '缩小',
+  'Toggle Full Screen': '切换全屏',
+};
+
+function isZhLocale(): boolean {
+  const locale = app.getLocale()?.toLowerCase() ?? '';
+  return locale === 'zh' || locale.startsWith('zh-');
+}
+
+function findTopMenu(menu: Menu | null, key: MenuKey): MenuItem | undefined {
+  return menu?.items.find((item) => MENU_LABEL_ALIASES[key].includes(item.label));
+}
+
+function translateMenuLabel(label: string): string {
+  const hasAmpersand = label.includes('&');
+  const normalized = label.replace(/&/g, '').trim();
+
+  if (normalized.startsWith('Version ')) {
+    const suffix = normalized.slice('Version '.length);
+    return `${hasAmpersand ? '&' : ''}版本 ${suffix}`;
+  }
+
+  const translated = MENU_ZH_TRANSLATIONS[normalized];
+  if (!translated) return label;
+  return `${hasAmpersand ? '&' : ''}${translated}`;
+}
+
+function localizeMenuTree(menu: Menu): void {
+  for (const item of menu.items) {
+    item.label = translateMenuLabel(item.label);
+    if (item.submenu) {
+      localizeMenuTree(item.submenu);
+    }
+  }
+}
 const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
   // Get the current working directory from the focused window
   let defaultPath: string | undefined;
@@ -1919,7 +2004,7 @@ async function appMain() {
     appMenu.submenu.insert(1, new MenuItem({ type: 'separator' }));
   }
 
-  const editMenu = menu?.items.find((item) => item.label === 'Edit');
+  const editMenu = findTopMenu(menu, 'edit');
   if (editMenu?.submenu) {
     const selectAllIndex = editMenu.submenu.items.findIndex((item) => item.label === 'Select All');
 
@@ -1968,7 +2053,7 @@ async function appMain() {
     );
   }
 
-  const fileMenu = menu?.items.find((item) => item.label === 'File');
+  const fileMenu = findTopMenu(menu, 'file');
 
   if (fileMenu?.submenu) {
     // Use a counter to track the actual insertion index
@@ -2051,7 +2136,7 @@ async function appMain() {
   }
 
   if (menu) {
-    let windowMenu = menu.items.find((item) => item.label === 'Window');
+    let windowMenu = findTopMenu(menu, 'window');
 
     if (!windowMenu) {
       windowMenu = new MenuItem({
@@ -2059,7 +2144,7 @@ async function appMain() {
         submenu: Menu.buildFromTemplate([]),
       });
 
-      const helpMenuIndex = menu.items.findIndex((item) => item.label === 'Help');
+      const helpMenuIndex = menu.items.findIndex((item) => ['Help', '帮助'].includes(item.label));
       if (helpMenuIndex >= 0) {
         menu.items.splice(helpMenuIndex, 0, windowMenu);
       } else {
@@ -2095,7 +2180,7 @@ async function appMain() {
       }
     }
 
-    const viewMenu = menu.items.find((item) => item.label === 'View');
+    const viewMenu = findTopMenu(menu, 'view');
     if (viewMenu?.submenu && shortcuts.toggleNavigation) {
       viewMenu.submenu.append(new MenuItem({ type: 'separator' }));
       viewMenu.submenu.append(
@@ -2115,7 +2200,7 @@ async function appMain() {
 
   // on macOS, the topbar is hidden
   if (menu && process.platform !== 'darwin') {
-    let helpMenu = menu.items.find((item) => item.label === 'Help');
+    let helpMenu = findTopMenu(menu, 'help');
 
     // If Help menu doesn't exist, create it and add it to the menu
     if (!helpMenu) {
@@ -2156,6 +2241,9 @@ async function appMain() {
   }
 
   if (menu) {
+    if (isZhLocale()) {
+      localizeMenuTree(menu);
+    }
     Menu.setApplicationMenu(menu);
   }
 
@@ -2549,3 +2637,5 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+
+
