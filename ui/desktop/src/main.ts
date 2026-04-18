@@ -1179,7 +1179,8 @@ const MENU_ZH_TRANSLATIONS: Record<string, string> = {
 };
 
 function isZhLocale(): boolean {
-  const locale = app.getLocale()?.toLowerCase() ?? '';
+  const configuredLocale = (process.env.GOOSE_LOCALE ?? '').trim().toLowerCase().replace('_', '-');
+  const locale = configuredLocale || (app.getLocale()?.toLowerCase() ?? '');
   return locale === 'zh' || locale.startsWith('zh-');
 }
 
