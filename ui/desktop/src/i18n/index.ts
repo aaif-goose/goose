@@ -37,25 +37,29 @@ export function getLocale(): { locale: string; messageLocale: string } {
   }
 
   for (const candidate of candidates) {
-    const normalized = candidate.replace('_', '-');
+    const normalized = candidate.replace(/_/g, '-');
 
-    let canonical = normalized;
+    let canonical: string | undefined;
     try {
       [canonical] = Intl.getCanonicalLocales(normalized);
     } catch {
-      canonical = normalized;
+      canonical = undefined;
     }
 
+    const resolved = canonical ?? normalized;
+
     // Exact match first
-    if (SUPPORTED_LOCALES.has(canonical)) {
-      return { locale: canonical, messageLocale: canonical };
+    if (SUPPORTED_LOCALES.has(resolved)) {
+      return { locale: resolved, messageLocale: resolved };
     }
 
     // Try base language (e.g. "pt-BR" → "pt") for the catalog, but keep the
     // full regional tag for formatting so date/number output respects the region.
-    const base = canonical.split('-')[0];
+    const base = resolved.split('-')[0];
     if (SUPPORTED_LOCALES.has(base)) {
-      return { locale: canonical, messageLocale: base };
+      // If canonicalization fails, return the base locale so downstream Intl APIs
+      // never receive malformed tags like "en-".
+      return { locale: canonical ?? base, messageLocale: base };
     }
   }
 
