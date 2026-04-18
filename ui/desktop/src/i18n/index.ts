@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Locale detection and message loading for the i18n system.
  *
  * Locale resolution order:
@@ -36,23 +36,26 @@ export function getLocale(): { locale: string; messageLocale: string } {
     candidates.push(navigator.language);
   }
 
-  for (const tag of candidates) {
+  for (const candidate of candidates) {
+    const normalized = candidate.replace('_', '-');
+
+    let canonical = normalized;
+    try {
+      [canonical] = Intl.getCanonicalLocales(normalized);
+    } catch {
+      canonical = normalized;
+    }
+
     // Exact match first
-    if (SUPPORTED_LOCALES.has(tag)) return { locale: tag, messageLocale: tag };
+    if (SUPPORTED_LOCALES.has(canonical)) {
+      return { locale: canonical, messageLocale: canonical };
+    }
+
     // Try base language (e.g. "pt-BR" → "pt") for the catalog, but keep the
     // full regional tag for formatting so date/number output respects the region.
-    const base = tag.split('-')[0];
+    const base = canonical.split('-')[0];
     if (SUPPORTED_LOCALES.has(base)) {
-      // Validate the full tag is a well-formed BCP 47 locale before using it
-      // for formatting. Invalid tags (e.g. "en-") would cause RangeError in
-      // Intl APIs, so fall back to the base language in that case.
-      let locale = base;
-      try {
-        [locale] = Intl.getCanonicalLocales(tag);
-      } catch {
-        // tag is not valid BCP 47 — use the base language instead
-      }
-      return { locale, messageLocale: base };
+      return { locale: canonical, messageLocale: base };
     }
   }
 
@@ -87,4 +90,3 @@ export async function loadMessages(
     return {};
   }
 }
-
