@@ -594,7 +594,7 @@
     "defaultMessage": "Year"
   },
   "customProviderForm.add": {
-    "defaultMessage": "Add"
+    "defaultMessage": "添加"
   },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic Compatible"
@@ -603,97 +603,97 @@
     "defaultMessage": "API Base Path (optional)"
   },
   "customProviderForm.apiBasePathHint": {
-    "defaultMessage": "Override the default API path. Leave blank to use the provider's default path."
+    "defaultMessage": "Override the default API path. Leave blank 以 use the 提供方's default path."
   },
   "customProviderForm.apiBasePathPlaceholder": {
     "defaultMessage": "e.g., v1/chat/completions or project_id/v1"
   },
   "customProviderForm.apiKey": {
-    "defaultMessage": "API Key"
+    "defaultMessage": "API 密钥"
   },
   "customProviderForm.apiKeyPlaceholderExisting": {
-    "defaultMessage": "Leave blank to keep existing key"
+    "defaultMessage": "Leave blank 以 keep existing key"
   },
   "customProviderForm.apiKeyPlaceholderNew": {
     "defaultMessage": "Your API key"
   },
   "customProviderForm.apiKeyRequired": {
-    "defaultMessage": "API key is required"
+    "defaultMessage": "API 密钥为必填项"
   },
   "customProviderForm.apiUrl": {
-    "defaultMessage": "API URL"
+    "defaultMessage": "API 地址"
   },
   "customProviderForm.apiUrlPlaceholder": {
     "defaultMessage": "https://api.example.com"
   },
   "customProviderForm.apiUrlRequired": {
-    "defaultMessage": "API URL is required"
+    "defaultMessage": "API 地址为必填项"
   },
   "customProviderForm.attachments": {
-    "defaultMessage": "Attachments"
+    "defaultMessage": "附件支持"
   },
   "customProviderForm.authHint": {
     "defaultMessage": "Local LLMs like Ollama typically don't require an API key."
   },
   "customProviderForm.authentication": {
-    "defaultMessage": "Authentication"
+    "defaultMessage": "身份验证"
   },
   "customProviderForm.availableModels": {
-    "defaultMessage": "Available Models (comma-separated)"
+    "defaultMessage": "可用模型（逗号分隔）"
   },
   "customProviderForm.back": {
-    "defaultMessage": "← Back"
+    "defaultMessage": "← 返回"
   },
   "customProviderForm.cancel": {
-    "defaultMessage": "Cancel"
+    "defaultMessage": "取消"
   },
   "customProviderForm.cannotDeleteActive": {
-    "defaultMessage": "You cannot delete this provider while it's currently in use. Please switch to a different model first."
+    "defaultMessage": "当前正在使用该提供方，无法删除。请先切换到其他模型。"
   },
   "customProviderForm.chooseSetup": {
-    "defaultMessage": "Choose how you'd like to set up your provider."
+    "defaultMessage": "选择 how you'd like 以 set up your 提供方."
   },
   "customProviderForm.clear": {
     "defaultMessage": "Clear"
   },
   "customProviderForm.configureManually": {
-    "defaultMessage": "Configure manually"
+    "defaultMessage": "手动配置"
   },
   "customProviderForm.configureManuallyDesc": {
-    "defaultMessage": "Enter all provider details yourself"
+    "defaultMessage": "手动输入所有提供方信息"
   },
   "customProviderForm.confirmDelete": {
-    "defaultMessage": "Confirm Delete"
+    "defaultMessage": "确认删除"
   },
   "customProviderForm.createProvider": {
-    "defaultMessage": "Create Provider"
+    "defaultMessage": "创建提供方"
   },
   "customProviderForm.customHeaders": {
-    "defaultMessage": "Custom Headers"
+    "defaultMessage": "自定义请求头"
   },
   "customProviderForm.customHeadersHint": {
-    "defaultMessage": "Add custom HTTP headers to include in requests to the provider. Click the \"+\" button to add after filling both fields."
+    "defaultMessage": "添加 custom HTTP headers 以 include in requests 以 the 提供方. Click the \"+\" button 以 add after filling both fields."
   },
   "customProviderForm.deleteConfirmation": {
-    "defaultMessage": "Are you sure you want to delete this custom provider? This will permanently remove the provider and its stored API key. This action cannot be undone."
+    "defaultMessage": "Are you sure you want 以 delete this custom 提供方? This will permanently remove the 提供方 和 its stored API key. This action cannot be undone."
   },
   "customProviderForm.deleteProvider": {
-    "defaultMessage": "Delete Provider"
+    "defaultMessage": "删除提供方"
   },
   "customProviderForm.displayName": {
-    "defaultMessage": "Display Name"
+    "defaultMessage": "显示名称"
   },
   "customProviderForm.displayNamePlaceholder": {
     "defaultMessage": "Your Provider Name"
   },
   "customProviderForm.displayNameRequired": {
-    "defaultMessage": "Display name is required"
+    "defaultMessage": "显示名称为必填项"
   },
   "customProviderForm.docs": {
     "defaultMessage": "Docs"
   },
   "customProviderForm.headerBothRequired": {
-    "defaultMessage": "Both header name and value must be entered"
+    "defaultMessage": "Both header name 和 value must be entered"
   },
   "customProviderForm.headerDuplicate": {
     "defaultMessage": "A header with this name already exists"
@@ -705,43 +705,43 @@
     "defaultMessage": "Header name cannot contain spaces"
   },
   "customProviderForm.modelsPlaceholder": {
-    "defaultMessage": "model-a, model-b, model-c"
+    "defaultMessage": "模型-a, 模型-b, 模型-c"
   },
   "customProviderForm.modelsRequired": {
-    "defaultMessage": "At least one model is required"
+    "defaultMessage": "至少需要一个模型"
   },
   "customProviderForm.ollamaCompatible": {
     "defaultMessage": "Ollama Compatible"
   },
   "customProviderForm.openaiCompatible": {
-    "defaultMessage": "OpenAI Compatible"
+    "defaultMessage": "打开AI Compatible"
   },
   "customProviderForm.providerType": {
-    "defaultMessage": "Provider Type"
+    "defaultMessage": "提供方类型"
   },
   "customProviderForm.reasoning": {
-    "defaultMessage": "Reasoning"
+    "defaultMessage": "推理能力"
   },
   "customProviderForm.requiresApiKey": {
-    "defaultMessage": "This provider requires an API key"
+    "defaultMessage": "This 提供方 requires an API key"
   },
   "customProviderForm.startFromTemplate": {
-    "defaultMessage": "Start from a provider template"
+    "defaultMessage": "从提供方模板开始"
   },
   "customProviderForm.startFromTemplateDesc": {
-    "defaultMessage": "Pick a known provider and we'll auto-fill the configuration"
+    "defaultMessage": "选择已知提供方，系统将自动填充配置"
   },
   "customProviderForm.submitError": {
-    "defaultMessage": "Failed to save provider. Please check your configuration and try again."
+    "defaultMessage": "保存提供方失败，请检查配置后重试。"
   },
   "customProviderForm.supportsStreaming": {
-    "defaultMessage": "Provider supports streaming responses"
+    "defaultMessage": "支持流式响应"
   },
   "customProviderForm.toolCalling": {
-    "defaultMessage": "Tool calling"
+    "defaultMessage": "工具调用"
   },
   "customProviderForm.updateProvider": {
-    "defaultMessage": "Update Provider"
+    "defaultMessage": "更新提供方"
   },
   "customProviderForm.usingTemplate": {
     "defaultMessage": "Using template: {name}"
@@ -846,49 +846,49 @@
     "defaultMessage": "Close"
   },
   "dictationSettings.addApiKey": {
-    "defaultMessage": "Add API Key"
+    "defaultMessage": "添加 API 密钥"
   },
   "dictationSettings.apiKey": {
-    "defaultMessage": "API Key"
+    "defaultMessage": "API 密钥"
   },
   "dictationSettings.cancel": {
-    "defaultMessage": "Cancel"
+    "defaultMessage": "取消"
   },
   "dictationSettings.chooseVoiceConversion": {
-    "defaultMessage": "Choose how voice is converted to text"
+    "defaultMessage": "选择语音转文本方式"
   },
   "dictationSettings.configureApiKey": {
-    "defaultMessage": "Configure the API key in <b>{settingsPath}</b>"
+    "defaultMessage": "配置 the API key in <b>{设置Path}</b>"
   },
   "dictationSettings.configured": {
-    "defaultMessage": "(Configured)"
+    "defaultMessage": "(配置d)"
   },
   "dictationSettings.configuredIn": {
-    "defaultMessage": "✓ Configured in {settingsPath}"
+    "defaultMessage": "✓ 配置d in {设置Path}"
   },
   "dictationSettings.disabled": {
     "defaultMessage": "Disabled"
   },
   "dictationSettings.enterApiKey": {
-    "defaultMessage": "Enter your API key"
+    "defaultMessage": "请输入 API 密钥"
   },
   "dictationSettings.notConfigured": {
     "defaultMessage": "(not configured)"
   },
   "dictationSettings.removeApiKey": {
-    "defaultMessage": "Remove API Key"
+    "defaultMessage": "移除 API 密钥"
   },
   "dictationSettings.requiredForTranscription": {
-    "defaultMessage": "Required for transcription"
+    "defaultMessage": "必填 for transcription"
   },
   "dictationSettings.save": {
-    "defaultMessage": "Save"
+    "defaultMessage": "保存"
   },
   "dictationSettings.updateApiKey": {
-    "defaultMessage": "Update API Key"
+    "defaultMessage": "更新 API 密钥"
   },
   "dictationSettings.voiceDictationProvider": {
-    "defaultMessage": "Voice Dictation Provider"
+    "defaultMessage": "语音听写提供方"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Failed to update working directory"
@@ -1206,31 +1206,31 @@
     "defaultMessage": "An unexpected error occurred during setup."
   },
   "gatewaySettings.botFatherInstructions": {
-    "defaultMessage": "Open @BotFather on your phone, send /newbot, and follow the prompts to name your bot. BotFather will reply with an API token — paste it below."
+    "defaultMessage": "打开 @BotFather on your phone, send /newbot, 和 follow the prompts 以 name your bot. BotFather will reply with an API token — paste it below."
   },
   "gatewaySettings.close": {
-    "defaultMessage": "Close"
+    "defaultMessage": "关闭"
   },
   "gatewaySettings.expiresIn": {
     "defaultMessage": "Expires in {time}"
   },
   "gatewaySettings.failedToGeneratePairingCode": {
-    "defaultMessage": "Failed to generate pairing code"
+    "defaultMessage": "失败 以 generate pairing code"
   },
   "gatewaySettings.failedToRemove": {
-    "defaultMessage": "Failed to remove"
+    "defaultMessage": "失败 以 remove"
   },
   "gatewaySettings.failedToStart": {
-    "defaultMessage": "Failed to start"
+    "defaultMessage": "失败 以 start"
   },
   "gatewaySettings.failedToStop": {
-    "defaultMessage": "Failed to stop"
+    "defaultMessage": "失败 以 stop"
   },
   "gatewaySettings.failedToUnpairUser": {
-    "defaultMessage": "Failed to unpair user"
+    "defaultMessage": "失败 以 unpair user"
   },
   "gatewaySettings.loading": {
-    "defaultMessage": "Loading..."
+    "defaultMessage": "加载中..."
   },
   "gatewaySettings.pairDevice": {
     "defaultMessage": "Pair Device"
@@ -1245,22 +1245,22 @@
     "defaultMessage": "Paste bot token here"
   },
   "gatewaySettings.remove": {
-    "defaultMessage": "Remove"
+    "defaultMessage": "移除"
   },
   "gatewaySettings.running": {
-    "defaultMessage": "Running"
+    "defaultMessage": "运行中"
   },
   "gatewaySettings.sendCodeToPair": {
-    "defaultMessage": "Send this code to your {gatewayType} bot to pair."
+    "defaultMessage": "Send this code 以 your {gatewayType} bot 以 pair."
   },
   "gatewaySettings.start": {
-    "defaultMessage": "Start"
+    "defaultMessage": "启动"
   },
   "gatewaySettings.stop": {
-    "defaultMessage": "Stop"
+    "defaultMessage": "停止"
   },
   "gatewaySettings.stopped": {
-    "defaultMessage": "Stopped"
+    "defaultMessage": "已停止"
   },
   "gatewaySettings.telegram": {
     "defaultMessage": "Telegram"
@@ -1794,55 +1794,55 @@
     "defaultMessage": "goose is waiting…"
   },
   "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "Delete this model? You can re-download it later."
+    "defaultMessage": "删除这个模型吗？之后可重新下载。"
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Download and manage local LLM models for inference without API keys. Search HuggingFace for any GGUF model or use the featured picks below."
+    "defaultMessage": "下载并管理本地 LLM 模型，无需 API 密钥即可推理。可搜索 HuggingFace 上的 GGUF 模型，或使用下方推荐。"
   },
   "localInferenceSettings.download": {
-    "defaultMessage": "Download"
+    "defaultMessage": "下载"
   },
   "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "Download failed"
+    "defaultMessage": "下载失败"
   },
   "localInferenceSettings.downloadProgress": {
     "defaultMessage": "{downloaded} / {total} ({percent}%)"
   },
   "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "Downloaded Models"
+    "defaultMessage": "已下载模型"
   },
   "localInferenceSettings.downloading": {
-    "defaultMessage": "Downloading"
+    "defaultMessage": "下载中"
   },
   "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Featured Models"
+    "defaultMessage": "推荐模型"
   },
   "localInferenceSettings.modelSettings": {
-    "defaultMessage": "Model Settings"
+    "defaultMessage": "模型设置"
   },
   "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "Model settings"
+    "defaultMessage": "模型设置"
   },
   "localInferenceSettings.noModels": {
-    "defaultMessage": "No models available"
+    "defaultMessage": "暂无可用模型"
   },
   "localInferenceSettings.recommended": {
-    "defaultMessage": "Recommended"
+    "defaultMessage": "推荐"
   },
   "localInferenceSettings.remaining": {
-    "defaultMessage": "{time} remaining"
+    "defaultMessage": "剩余 {time}"
   },
   "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Show all featured ({count} more)"
+    "defaultMessage": "显示全部推荐（另有 {count} 个）"
   },
   "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Show recommended only"
+    "defaultMessage": "仅显示推荐"
   },
   "localInferenceSettings.title": {
-    "defaultMessage": "Local Inference Models"
+    "defaultMessage": "本地推理模型"
   },
   "localInferenceSettings.vision": {
-    "defaultMessage": "Vision"
+    "defaultMessage": "视觉"
   },
   "localInferenceSettings.visionEncoderDownloading": {
     "defaultMessage": "Vision encoder downloading…"
@@ -2196,13 +2196,13 @@
     "defaultMessage": "Prompt processing batch"
   },
   "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "Context & Generation"
+    "defaultMessage": "上下文与生成"
   },
   "modelSettingsPanel.contextSize": {
     "defaultMessage": "Context size"
   },
   "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "Max context window (0 = model default)"
+    "defaultMessage": "Max context window (0 = 模型 default)"
   },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta (learning rate)"
@@ -2223,16 +2223,16 @@
     "defaultMessage": "GPU layers"
   },
   "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "Layers to offload to GPU"
+    "defaultMessage": "Layers 以 offload 以 GPU"
   },
   "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "Loading settings..."
+    "defaultMessage": "正在加载设置..."
   },
   "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "Lock model in RAM (mlock)"
+    "defaultMessage": "Lock 模型 in RAM (mlock)"
   },
   "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "Prevent model from being swapped to disk"
+    "defaultMessage": "Prevent 模型 from being swapped 以 disk"
   },
   "modelSettingsPanel.maxOutputTokens": {
     "defaultMessage": "Max output tokens"
@@ -2247,10 +2247,10 @@
     "defaultMessage": "Native tool calling"
   },
   "modelSettingsPanel.nativeToolCallingDescription": {
-    "defaultMessage": "Use the model's built-in tool-call format instead of the shell-command emulator. Enable for large models that reliably support tool calling."
+    "defaultMessage": "Use the 模型's built-in tool-call format instead of the shell-command emulator. Enable for large 模型s that reliably support tool calling."
   },
   "modelSettingsPanel.performance": {
-    "defaultMessage": "Performance"
+    "defaultMessage": "性能"
   },
   "modelSettingsPanel.presencePenalty": {
     "defaultMessage": "Presence penalty"
@@ -2268,22 +2268,22 @@
     "defaultMessage": "Repeat window"
   },
   "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "Tokens to look back"
+    "defaultMessage": "Tokens 以 look back"
   },
   "modelSettingsPanel.repetitionPenalty": {
     "defaultMessage": "Repetition Penalty"
   },
   "modelSettingsPanel.reset": {
-    "defaultMessage": "Reset"
+    "defaultMessage": "重置"
   },
   "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "Reset to defaults"
+    "defaultMessage": "恢复默认"
   },
   "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "Sampling Strategy"
+    "defaultMessage": "采样策略"
   },
   "modelSettingsPanel.saving": {
-    "defaultMessage": "Saving..."
+    "defaultMessage": "保存中..."
   },
   "modelSettingsPanel.seed": {
     "defaultMessage": "Seed"
@@ -2301,7 +2301,7 @@
     "defaultMessage": "CPU threads for generation"
   },
   "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "Tool Calling"
+    "defaultMessage": "工具调用"
   },
   "modelSettingsPanel.topK": {
     "defaultMessage": "Top K"
@@ -2328,10 +2328,10 @@
     "defaultMessage": "Select Model"
   },
   "modelsSection.resetDescription": {
-    "defaultMessage": "Clear your selected model and provider settings to start fresh"
+    "defaultMessage": "清除当前选择的模型和提供方设置，重新开始"
   },
   "modelsSection.resetTitle": {
-    "defaultMessage": "Reset Provider and Model"
+    "defaultMessage": "重置提供方和模型"
   },
   "navigationCustomization.dragInstructions": {
     "defaultMessage": "拖拽调整顺序, click the eye icon to show/hide items"
@@ -2637,28 +2637,28 @@
     "defaultMessage": "Press Cmd/Ctrl+F to load all messages immediately for search"
   },
   "promptsSettings.allPromptsReset": {
-    "defaultMessage": "All prompts reset to defaults"
+    "defaultMessage": "All prompts reset 以 defaults"
   },
   "promptsSettings.backToList": {
-    "defaultMessage": "Back to List"
+    "defaultMessage": "返回列表"
   },
   "promptsSettings.confirmReplaceWithDefault": {
     "defaultMessage": "Replace current content with default? Your changes will be lost."
   },
   "promptsSettings.confirmResetAll": {
-    "defaultMessage": "Are you sure you want to reset all prompts to their defaults? This cannot be undone."
+    "defaultMessage": "Are you sure you want 以 reset all prompts 以 their defaults? This cannot be undone."
   },
   "promptsSettings.confirmResetOne": {
-    "defaultMessage": "Are you sure you want to reset this prompt to its default? This cannot be undone."
+    "defaultMessage": "Are you sure you want 以 reset this prompt 以 its default? This cannot be undone."
   },
   "promptsSettings.confirmUnsavedBack": {
-    "defaultMessage": "You have unsaved changes. Are you sure you want to go back?"
+    "defaultMessage": "You have unsaved changes. Are you sure you want 以 go back?"
   },
   "promptsSettings.customized": {
     "defaultMessage": "Customized"
   },
   "promptsSettings.edit": {
-    "defaultMessage": "Edit"
+    "defaultMessage": "编辑"
   },
   "promptsSettings.editPromptTitle": {
     "defaultMessage": "Edit: {name}"
@@ -2670,49 +2670,49 @@
     "defaultMessage": "Enter prompt content..."
   },
   "promptsSettings.failedToLoadPrompt": {
-    "defaultMessage": "Failed to load prompt"
+    "defaultMessage": "失败 以 load prompt"
   },
   "promptsSettings.failedToLoadPrompts": {
-    "defaultMessage": "Failed to load prompts"
+    "defaultMessage": "失败 以 load prompts"
   },
   "promptsSettings.failedToResetPrompt": {
-    "defaultMessage": "Failed to reset prompt"
+    "defaultMessage": "失败 以 reset prompt"
   },
   "promptsSettings.failedToResetPrompts": {
-    "defaultMessage": "Failed to reset prompts"
+    "defaultMessage": "失败 以 reset prompts"
   },
   "promptsSettings.failedToSavePrompt": {
-    "defaultMessage": "Failed to save prompt"
+    "defaultMessage": "失败 以 save prompt"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "Customize the prompts that define goose's behavior in different contexts. These prompts use Jinja2 templating syntax. Be careful when modifying template variables, as incorrect changes can break functionality. Please share any improvements with the community."
+    "defaultMessage": "自定义 Goose 在不同场景下的提示词行为。"
   },
   "promptsSettings.promptEditingTitle": {
-    "defaultMessage": "Prompt Editing"
+    "defaultMessage": "提示词编辑"
   },
   "promptsSettings.promptResetToDefault": {
-    "defaultMessage": "Prompt reset to default"
+    "defaultMessage": "Prompt reset 以 default"
   },
   "promptsSettings.promptSaved": {
     "defaultMessage": "Prompt saved"
   },
   "promptsSettings.resetAll": {
-    "defaultMessage": "Reset All"
+    "defaultMessage": "全部重置"
   },
   "promptsSettings.resetToDefault": {
-    "defaultMessage": "Reset to Default"
+    "defaultMessage": "恢复默认"
   },
   "promptsSettings.restoreDefault": {
-    "defaultMessage": "Restore Default"
+    "defaultMessage": "恢复默认"
   },
   "promptsSettings.save": {
-    "defaultMessage": "Save"
+    "defaultMessage": "保存"
   },
   "promptsSettings.templateTip": {
-    "defaultMessage": "Template variables like {extensionsExample} or {forExample} are replaced with actual values at runtime. Be careful not to remove required variables."
+    "defaultMessage": "Template variables like {extensionsExample} or {forExample} are replaced with actual values at runtime. Be careful not 以 remove required variables."
   },
   "promptsSettings.unsavedChanges": {
-    "defaultMessage": "You have unsaved changes"
+    "defaultMessage": "你有未保存的更改"
   },
   "providerCard.noMetadata": {
     "defaultMessage": "ProviderCard error: No metadata provided"
@@ -2727,199 +2727,199 @@
     "defaultMessage": "API Format"
   },
   "providerCatalogPicker.cancel": {
-    "defaultMessage": "Cancel"
+    "defaultMessage": "取消"
   },
   "providerCatalogPicker.chooseProvider": {
-    "defaultMessage": "Choose Provider"
+    "defaultMessage": "选择 Provider"
   },
   "providerCatalogPicker.errorPrefix": {
-    "defaultMessage": "Error: {error}"
+    "defaultMessage": "错误: {error}"
   },
   "providerCatalogPicker.loadingProviders": {
-    "defaultMessage": "Loading providers..."
+    "defaultMessage": "加载中 提供方..."
   },
   "providerCatalogPicker.modelsAvailable": {
-    "defaultMessage": "{count} models available"
+    "defaultMessage": "{count} 模型s available"
   },
   "providerCatalogPicker.noProvidersAvailable": {
-    "defaultMessage": "No providers available"
+    "defaultMessage": "No 提供方 available"
   },
   "providerCatalogPicker.noProvidersFound": {
-    "defaultMessage": "No providers found for \"{query}\""
+    "defaultMessage": "No 提供方 found for \"{query}\""
   },
   "providerCatalogPicker.openaiCompatible": {
-    "defaultMessage": "OpenAI Compatible"
+    "defaultMessage": "打开AI Compatible"
   },
   "providerCatalogPicker.requiresEnvVar": {
     "defaultMessage": "• Requires {envVar}"
   },
   "providerCatalogPicker.searchProviders": {
-    "defaultMessage": "Search providers..."
+    "defaultMessage": "搜索 提供方..."
   },
   "providerCatalogPicker.selectFormatDescription": {
-    "defaultMessage": "Select an API format and provider. We'll auto-fill the configuration for you."
+    "defaultMessage": "Select an API format 和 提供方. We'll auto-fill the 配置 for you."
   },
   "providerConfigForm.browserWindowOpen": {
-    "defaultMessage": "A browser window will open for you to complete the login."
+    "defaultMessage": "将打开浏览器窗口以完成登录。"
   },
   "providerConfigForm.configuring": {
     "defaultMessage": "Configuring..."
   },
   "providerConfigForm.continue": {
-    "defaultMessage": "Continue"
+    "defaultMessage": "继续"
   },
   "providerConfigForm.deviceCodeFlowHint": {
-    "defaultMessage": "A browser window will open and the verification code will be copied to your clipboard. Paste it in the browser to complete sign-in."
+    "defaultMessage": "A browser window will open 和 the verification code will be copied 以 your clipboard. Paste it in the browser 以 complete sign-in."
   },
   "providerConfigForm.noApiKey": {
-    "defaultMessage": "Don't have an API key?"
+    "defaultMessage": "还没有 API 密钥？"
   },
   "providerConfigForm.signInWith": {
-    "defaultMessage": "Sign in with {providerName}"
+    "defaultMessage": "使用 {providerName} 登录"
   },
   "providerConfigForm.signingIn": {
-    "defaultMessage": "Signing in..."
+    "defaultMessage": "登录中..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "Add your API key(s) for this provider to integrate into goose"
+    "defaultMessage": "添加 your API key(s) for this 提供方 以 integrate into goose"
   },
   "providerConfigurationModal.browserWindowHint": {
-    "defaultMessage": "A browser window will open for you to complete the login."
+    "defaultMessage": "A browser window will open for you 以 complete the login."
   },
   "providerConfigurationModal.cancel": {
-    "defaultMessage": "Cancel"
+    "defaultMessage": "取消"
   },
   "providerConfigurationModal.cannotDeleteActive": {
-    "defaultMessage": "You cannot delete this provider while it's currently in use. Please switch to a different model first."
+    "defaultMessage": "当前正在使用该提供方，无法删除。请先切换到其他模型。"
   },
   "providerConfigurationModal.checkConfigAgain": {
-    "defaultMessage": "Check your configuration again to use this provider."
+    "defaultMessage": "请重新检查配置后再使用该提供方。"
   },
   "providerConfigurationModal.close": {
-    "defaultMessage": "Close"
+    "defaultMessage": "关闭"
   },
   "providerConfigurationModal.configureHeader": {
-    "defaultMessage": "Configure {providerName}"
+    "defaultMessage": "配置 {providerName}"
   },
   "providerConfigurationModal.deleteConfigHeader": {
-    "defaultMessage": "Delete configuration for {providerName}"
+    "defaultMessage": "删除 {providerName} 配置"
   },
   "providerConfigurationModal.deleteConfirmation": {
-    "defaultMessage": "This will permanently delete the current provider configuration."
+    "defaultMessage": "这将永久删除当前提供方配置。"
   },
   "providerConfigurationModal.deviceCodeFlowHint": {
-    "defaultMessage": "A browser window will open and the verification code will be copied to your clipboard. Paste it in the browser to complete sign-in."
+    "defaultMessage": "A browser window will open 和 the verification code will be copied 以 your clipboard. Paste it in the browser 以 complete sign-in."
   },
   "providerConfigurationModal.errorCheckingConfig": {
-    "defaultMessage": "There was an error checking this provider configuration."
+    "defaultMessage": "检查该提供方配置时发生错误。"
   },
   "providerConfigurationModal.errorTitle": {
-    "defaultMessage": "Error"
+    "defaultMessage": "错误"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "This provider is configured outside of goose. Follow these steps:"
+    "defaultMessage": "This 提供方 is configured outside of goose. Follow these steps:"
   },
   "providerConfigurationModal.goBack": {
-    "defaultMessage": "Go Back"
+    "defaultMessage": "Go 返回"
   },
   "providerConfigurationModal.oauthLoginFailed": {
-    "defaultMessage": "OAuth login failed: {error}"
+    "defaultMessage": "OAuth login 失败: {error}"
   },
   "providerConfigurationModal.oauthSignInDescription": {
-    "defaultMessage": "Sign in with your {providerName} account to use this provider"
+    "defaultMessage": "Sign in with your {提供方Name} account 以 use this 提供方"
   },
   "providerConfigurationModal.parameterRequired": {
     "defaultMessage": "{paramName} is required"
   },
   "providerConfigurationModal.removeConfiguration": {
-    "defaultMessage": "Remove Configuration"
+    "defaultMessage": "移除配置"
   },
   "providerConfigurationModal.seeDocumentation": {
     "defaultMessage": "See the <link>documentation</link> for more details."
   },
   "providerConfigurationModal.signInWith": {
-    "defaultMessage": "Sign in with {providerName}"
+    "defaultMessage": "使用 {providerName} 登录"
   },
   "providerConfigurationModal.signingIn": {
-    "defaultMessage": "Signing in..."
+    "defaultMessage": "登录中..."
   },
   "providerGrid.addProvider": {
-    "defaultMessage": "Add Provider"
+    "defaultMessage": "添加提供方"
   },
   "providerGrid.addProviderTitle": {
-    "defaultMessage": "Add Provider"
+    "defaultMessage": "添加提供方"
   },
   "providerGrid.chooseModel": {
-    "defaultMessage": "Choose Model"
+    "defaultMessage": "选择模型"
   },
   "providerGrid.configureProvider": {
-    "defaultMessage": "Configure Provider"
+    "defaultMessage": "配置提供方"
   },
   "providerGrid.editProvider": {
-    "defaultMessage": "Edit Provider"
+    "defaultMessage": "编辑提供方"
   },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "From template or manual setup"
   },
   "providerLogo.alt": {
-    "defaultMessage": "{providerName} logo"
+    "defaultMessage": "{提供方Name} logo"
   },
   "providerSelector.addCustomProvider": {
-    "defaultMessage": "Add a custom provider"
+    "defaultMessage": "添加自定义提供方"
   },
   "providerSelector.addCustomProviderTitle": {
-    "defaultMessage": "Add Custom Provider"
+    "defaultMessage": "添加自定义提供方"
   },
   "providerSelector.connectProvider": {
-    "defaultMessage": "Connect to a Provider"
+    "defaultMessage": "连接提供方"
   },
   "providerSelector.connectProviderDescription": {
-    "defaultMessage": "Connect OpenAI, Anthropic, Google, etc"
+    "defaultMessage": "连接 OpenAI、Anthropic、Google 等"
   },
   "providerSelector.freeLocalDescription": {
-    "defaultMessage": "Use a local model or a provider with free credits"
+    "defaultMessage": "使用本地模型或有免费额度的提供方"
   },
   "providerSelector.selectProvider": {
-    "defaultMessage": "Select a provider"
+    "defaultMessage": "选择提供方"
   },
   "providerSelector.useFreeLocal": {
-    "defaultMessage": "Use Free/Local Providers"
+    "defaultMessage": "使用免费/本地提供方"
   },
   "providerSettings.configurationSettings": {
-    "defaultMessage": "Provider Configuration Settings"
+    "defaultMessage": "提供方配置设置"
   },
   "providerSettings.loadingProviders": {
-    "defaultMessage": "Loading providers..."
+    "defaultMessage": "正在加载提供方..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "Select an AI model provider to get started with goose. You'll need to use API keys generated by each provider which will be encrypted and stored locally. You can change your provider at any time in settings."
+    "defaultMessage": "Select an AI 模型 提供方 以 get started with goose. You'll need 以 use API keys generated by each 提供方 which will be encrypted 和 stored locally. You can change your 提供方 at any time in 设置."
   },
   "providerSettings.otherProviders": {
-    "defaultMessage": "Other providers"
+    "defaultMessage": "其他提供方"
   },
   "providerSetupActions.cancel": {
-    "defaultMessage": "Cancel"
+    "defaultMessage": "取消"
   },
   "providerSetupActions.cannotDeleteActive": {
-    "defaultMessage": "You cannot delete {providerName} while it's currently in use. Please switch to a different model before deleting this provider."
+    "defaultMessage": "当前正在使用 {providerName}，无法删除。请先切换到其他模型后再删除该提供方。"
   },
   "providerSetupActions.confirmDelete": {
-    "defaultMessage": "Confirm Delete"
+    "defaultMessage": "确认删除"
   },
   "providerSetupActions.confirmDeleteMessage": {
-    "defaultMessage": "Are you sure you want to delete the configuration parameters for {providerName}? This action cannot be undone."
+    "defaultMessage": "确定要删除 {providerName} 的配置参数吗？此操作无法撤销。"
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Delete Provider"
+    "defaultMessage": "删除提供方"
   },
   "providerSetupActions.enableProvider": {
-    "defaultMessage": "Enable Provider"
+    "defaultMessage": "启用提供方"
   },
   "providerSetupActions.ok": {
-    "defaultMessage": "Ok"
+    "defaultMessage": "确定"
   },
   "providerSetupActions.submit": {
-    "defaultMessage": "Submit"
+    "defaultMessage": "提交"
   },
   "recipeActivityEditor.activitiesDescription": {
     "defaultMessage": "The top-line prompts and activity buttons that will display in the recipe chat window."
@@ -3954,16 +3954,16 @@
     "defaultMessage": "Loading..."
   },
   "settings.appearance.description": {
-    "defaultMessage": "Configure how goose appears on your system"
+    "defaultMessage": "配置 how goose appears on your system"
   },
   "settings.appearance.title": {
     "defaultMessage": "Appearance"
   },
   "settings.close": {
-    "defaultMessage": "Close"
+    "defaultMessage": "关闭"
   },
   "settings.costTracking.description": {
-    "defaultMessage": "Show model pricing and usage costs"
+    "defaultMessage": "Show 模型 pricing 和 usage costs"
   },
   "settings.costTracking.title": {
     "defaultMessage": "Cost Tracking"
@@ -3996,7 +3996,7 @@
     "defaultMessage": "Customize Items"
   },
   "settings.navigation.description": {
-    "defaultMessage": "Customize navigation layout and behavior"
+    "defaultMessage": "Customize navigation layout 和 behavior"
   },
   "settings.navigation.mode": {
     "defaultMessage": "Mode"
@@ -4020,37 +4020,37 @@
     "defaultMessage": "To enable notifications on macOS:"
   },
   "settings.notifications.modal.macStep1": {
-    "defaultMessage": "Open System Preferences"
+    "defaultMessage": "打开 System Preferences"
   },
   "settings.notifications.modal.macStep2": {
     "defaultMessage": "Click on Notifications"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "Find and select goose in the application list"
+    "defaultMessage": "Find 和 select goose in the application list"
   },
   "settings.notifications.modal.macStep4": {
-    "defaultMessage": "Enable notifications and adjust settings as desired"
+    "defaultMessage": "Enable notifications 和 adjust 设置 as desired"
   },
   "settings.notifications.modal.title": {
-    "defaultMessage": "How to Enable Notifications"
+    "defaultMessage": "How 以 Enable Notifications"
   },
   "settings.notifications.modal.winInstructions": {
     "defaultMessage": "To enable notifications on Windows:"
   },
   "settings.notifications.modal.winStep1": {
-    "defaultMessage": "Open Settings"
+    "defaultMessage": "打开 设置"
   },
   "settings.notifications.modal.winStep2": {
-    "defaultMessage": "Go to System > Notifications"
+    "defaultMessage": "Go 以 System > Notifications"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "Find and select goose in the application list"
+    "defaultMessage": "Find 和 select goose in the application list"
   },
   "settings.notifications.modal.winStep4": {
-    "defaultMessage": "Toggle notifications on and adjust settings as desired"
+    "defaultMessage": "Toggle notifications on 和 adjust 设置 as desired"
   },
   "settings.notifications.openSettings": {
-    "defaultMessage": "Open Settings"
+    "defaultMessage": "打开 设置"
   },
   "settings.notifications.title": {
     "defaultMessage": "Notifications"
@@ -4062,40 +4062,40 @@
     "defaultMessage": "Prevent Sleep"
   },
   "settings.theme.description": {
-    "defaultMessage": "Customize the look and feel of goose"
+    "defaultMessage": "Customize the look 和 feel of goose"
   },
   "settings.theme.title": {
     "defaultMessage": "Theme"
   },
   "settings.updates.description": {
-    "defaultMessage": "Check for and install updates to keep goose running at its best"
+    "defaultMessage": "Check for 和 install updates 以 keep goose running at its best"
   },
   "settings.updates.title": {
-    "defaultMessage": "Updates"
+    "defaultMessage": "更新s"
   },
   "settings.version.title": {
     "defaultMessage": "Version"
   },
   "settingsView.tabApp": {
-    "defaultMessage": "App"
+    "defaultMessage": "应用"
   },
   "settingsView.tabChat": {
     "defaultMessage": "聊天"
   },
   "settingsView.tabKeyboard": {
-    "defaultMessage": "Keyboard"
+    "defaultMessage": "快捷键"
   },
   "settingsView.tabLocalInference": {
-    "defaultMessage": "Local Inference"
+    "defaultMessage": "本地推理"
   },
   "settingsView.tabModels": {
-    "defaultMessage": "Models"
+    "defaultMessage": "模型"
   },
   "settingsView.tabPrompts": {
-    "defaultMessage": "Prompts"
+    "defaultMessage": "提示词"
   },
   "settingsView.tabSession": {
-    "defaultMessage": "Session"
+    "defaultMessage": "会话"
   },
   "settingsView.title": {
     "defaultMessage": "设置"
