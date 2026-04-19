@@ -71,12 +71,19 @@ pub struct OpenAiProvider {
 
 impl OpenAiProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
-        let model = model.with_fast(OPEN_AI_DEFAULT_FAST_MODEL, OPEN_AI_PROVIDER_NAME)?;
-
         let config = crate::config::Config::global();
         let host: String = config
             .get_param("OPENAI_HOST")
             .unwrap_or_else(|_| "https://api.openai.com".to_string());
+
+        // Only apply the default fast model when talking to OpenAI directly.
+        // Custom/compatible endpoints likely don't serve gpt-4o-mini, so
+        // leave fast_model unset (complete_fast will fall back to the main model).
+        let model = if host.contains("api.openai.com") {
+            model.with_fast(OPEN_AI_DEFAULT_FAST_MODEL, OPEN_AI_PROVIDER_NAME)?
+        } else {
+            model
+        };
 
         let secrets = config
             .get_secrets("OPENAI_API_KEY", &["OPENAI_CUSTOM_HEADERS"])
