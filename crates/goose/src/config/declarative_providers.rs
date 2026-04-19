@@ -1,3 +1,4 @@
+use crate::config::base::atomic_write_overlay;
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::providers::anthropic::AnthropicProvider;
@@ -26,6 +27,15 @@ static FIXED_PROVIDERS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/providers/de
 
 pub fn custom_providers_dir() -> std::path::PathBuf {
     Paths::config_dir().join("custom_providers")
+}
+
+fn write_custom_provider_file(
+    path: &Path,
+    provider_config: &DeclarativeProviderConfig,
+) -> Result<()> {
+    let json_content = serde_json::to_vec_pretty(provider_config)?;
+    atomic_write_overlay(path, &json_content)?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -238,9 +248,8 @@ pub fn create_custom_provider(
     let custom_providers_dir = custom_providers_dir();
     std::fs::create_dir_all(&custom_providers_dir)?;
 
-    let json_content = serde_json::to_string_pretty(&provider_config)?;
     let file_path = custom_providers_dir.join(format!("{}.json", id));
-    std::fs::write(file_path, json_content)?;
+    write_custom_provider_file(&file_path, &provider_config)?;
 
     Ok(provider_config)
 }
@@ -303,8 +312,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
         };
 
         let file_path = custom_providers_dir().join(format!("{}.json", updated_config.name));
-        let json_content = serde_json::to_string_pretty(&updated_config)?;
-        std::fs::write(file_path, json_content)?;
+        write_custom_provider_file(&file_path, &updated_config)?;
     }
     Ok(())
 }
@@ -500,6 +508,7 @@ pub fn register_declarative_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_tanzu_json_deserializes() {
@@ -565,6 +574,72 @@ mod tests {
             serde_json::from_str(json).expect("groq.json should parse without env_vars");
         assert!(config.env_vars.is_none());
         assert!(config.dynamic_models.is_none());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_write_custom_provider_replaces_symlink_with_overlay_file() -> Result<()> {
+        use std::os::unix::fs as unix_fs;
+
+        let dir = TempDir::new().unwrap();
+        let target_path = dir.path().join("atlas_swap.json");
+        let symlink_path = dir.path().join("custom_provider.json");
+
+        let original = serde_json::json!({
+            "name": "atlas_swap",
+            "engine": "openai",
+            "display_name": "Atlas Swap",
+            "description": "Managed by Home Manager",
+            "api_key_env": "",
+            "base_url": "http://localhost:8013/v1/chat/completions",
+            "models": [],
+            "requires_auth": false,
+            "skip_canonical_filtering": true
+        });
+        std::fs::write(&target_path, serde_json::to_vec_pretty(&original)?)?;
+        unix_fs::symlink(&target_path, &symlink_path)?;
+
+        let provider_config = DeclarativeProviderConfig {
+            name: "atlas_swap".to_string(),
+            engine: ProviderEngine::OpenAI,
+            display_name: "Atlas Swap".to_string(),
+            description: Some("Editable overlay".to_string()),
+            api_key_env: String::new(),
+            base_url: "http://localhost:8013/v1/chat/completions".to_string(),
+            models: vec![ModelInfo::new("gemma4-31b", 32768)],
+            headers: None,
+            timeout_seconds: None,
+            supports_streaming: Some(true),
+            requires_auth: false,
+            catalog_provider_id: None,
+            base_path: None,
+            env_vars: None,
+            dynamic_models: Some(true),
+            skip_canonical_filtering: true,
+            fast_model: None,
+        };
+
+        write_custom_provider_file(&symlink_path, &provider_config)?;
+
+        let meta = std::fs::symlink_metadata(&symlink_path)?;
+        assert!(
+            meta.file_type().is_file(),
+            "custom provider path should become a regular overlay file"
+        );
+
+        let overlay: DeclarativeProviderConfig =
+            serde_json::from_str(&std::fs::read_to_string(&symlink_path)?)?;
+        assert_eq!(overlay.description, Some("Editable overlay".to_string()));
+        assert_eq!(overlay.models[0].name, "gemma4-31b");
+
+        let preserved_target: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&target_path)?)?;
+        assert_eq!(
+            preserved_target["description"],
+            serde_json::Value::String("Managed by Home Manager".to_string())
+        );
+
+        Ok(())
     }
 
     #[test]

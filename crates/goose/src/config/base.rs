@@ -34,6 +34,32 @@ fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
     }
 }
 
+pub(crate) fn atomic_write_overlay(path: &Path, content: &[u8]) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
+    }
+
+    let temp_path = path.with_extension("tmp");
+
+    {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&temp_path)?;
+
+        file.lock_exclusive()
+            .map_err(|e| ConfigError::LockError(e.to_string()))?;
+
+        file.write_all(content)?;
+        file.sync_all()?;
+    }
+
+    std::fs::rename(&temp_path, path)?;
+
+    Ok(())
+}
+
 const KEYRING_SERVICE: &str = "goose";
 const KEYRING_USERNAME: &str = "secrets";
 pub const CONFIG_YAML_NAME: &str = "config.yaml";
@@ -498,80 +524,14 @@ impl Config {
         load_init_config_from_workspace()
     }
 
-    fn config_write_target_path(&self) -> Result<PathBuf, ConfigError> {
-        let mut path = self.config_path.clone();
-
-        // Follow symlinks so we update the target file without replacing the link itself.
-        const MAX_SYMLINK_HOPS: usize = 1;
-        let mut hops = 0usize;
-        loop {
-            match std::fs::symlink_metadata(&path) {
-                Ok(meta) if meta.file_type().is_symlink() => {
-                    if hops >= MAX_SYMLINK_HOPS {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!(
-                                "Too many symlink levels (or a cycle) while resolving config path: {:?}",
-                                self.config_path
-                            ),
-                        )
-                        .into());
-                    }
-                    hops += 1;
-
-                    let link = std::fs::read_link(&path)?;
-                    path = if link.is_absolute() {
-                        link
-                    } else {
-                        path.parent().unwrap_or_else(|| Path::new(".")).join(link)
-                    };
-                }
-                Ok(_) => return Ok(path),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(path),
-                Err(e) => return Err(e.into()),
-            }
-        }
-    }
-
     fn save_values(&self, values: &Mapping) -> Result<(), ConfigError> {
         // Create backup before writing new config
         self.create_backup_if_needed()?;
 
-        let target_path = self.config_write_target_path()?;
-
         // Convert to YAML for storage
         let yaml_value = serde_yaml::to_string(values)?;
 
-        if let Some(parent) = target_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
-        }
-
-        // Write to a temporary file first for atomic operation
-        let temp_path = target_path.with_extension("tmp");
-
-        {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&temp_path)?;
-
-            // Acquire an exclusive lock
-            file.lock_exclusive()
-                .map_err(|e| ConfigError::LockError(e.to_string()))?;
-
-            // Write the contents using the same file handle
-            file.write_all(yaml_value.as_bytes())?;
-            file.sync_all()?;
-
-            // Unlock is handled automatically when file is dropped
-        }
-
-        // Atomically replace the original file
-        std::fs::rename(&temp_path, &target_path)?;
-
-        Ok(())
+        atomic_write_overlay(&self.config_path, yaml_value.as_bytes())
     }
 
     pub fn initialize_if_empty(&self, values: Mapping) -> Result<(), ConfigError> {
@@ -1333,7 +1293,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_write_follows_symlink() -> Result<(), ConfigError> {
+    fn test_write_replaces_symlink_with_overlay_file() -> Result<(), ConfigError> {
         use std::os::unix::fs as unix_fs;
 
         let dir = TempDir::new().unwrap();
@@ -1350,31 +1310,28 @@ mod tests {
 
         let meta = std::fs::symlink_metadata(&symlink_path)?;
         assert!(
-            meta.file_type().is_symlink(),
-            "config path should remain a symlink"
+            meta.file_type().is_file(),
+            "config path should become a regular overlay file"
         );
 
         let content = std::fs::read_to_string(&symlink_path)?;
         assert!(content.contains("key1: value1"));
 
         let content = std::fs::read_to_string(&target_path)?;
-        assert!(content.contains("key1: value1"));
+        assert_eq!(content, "{}\n");
 
         Ok(())
     }
 
     #[test]
     #[cfg(unix)]
-    fn test_write_fails_on_long_symlink_chain() -> Result<(), ConfigError> {
+    fn test_write_replaces_head_of_symlink_chain() -> Result<(), ConfigError> {
         use std::os::unix::fs as unix_fs;
 
         let dir = TempDir::new().unwrap();
         let target_path = dir.path().join("real_config.yaml");
         std::fs::write(&target_path, "{}\n")?;
 
-        // config.yaml -> link1.yaml -> real_config.yaml
-        // We only allow following one symlink hop. If there's another symlink, we should fail
-        // rather than overwrite the intermediate symlink.
         let config_symlink = dir.path().join("config.yaml");
         let link1 = dir.path().join("link1.yaml");
         unix_fs::symlink(&target_path, &link1)?;
@@ -1383,22 +1340,24 @@ mod tests {
         let secrets_file = NamedTempFile::new().unwrap();
         let config = Config::new_with_file_secrets(&config_symlink, secrets_file.path())?;
 
-        let err = config.set_param("key1", "value1").unwrap_err();
-        assert!(
-            err.to_string().contains("Too many symlink levels"),
-            "unexpected error: {err}"
-        );
+        config.set_param("key1", "value1")?;
 
         let meta = std::fs::symlink_metadata(&config_symlink)?;
         assert!(
-            meta.file_type().is_symlink(),
-            "config path should remain a symlink"
+            meta.file_type().is_file(),
+            "config path should become a regular overlay file"
         );
         let meta = std::fs::symlink_metadata(&link1)?;
         assert!(
             meta.file_type().is_symlink(),
             "intermediate link should remain a symlink"
         );
+
+        let content = std::fs::read_to_string(&config_symlink)?;
+        assert!(content.contains("key1: value1"));
+
+        let content = std::fs::read_to_string(&target_path)?;
+        assert_eq!(content, "{}\n");
 
         Ok(())
     }
