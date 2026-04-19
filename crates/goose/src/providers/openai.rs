@@ -79,7 +79,14 @@ impl OpenAiProvider {
         // Only apply the default fast model when talking to OpenAI directly.
         // Custom/compatible endpoints likely don't serve gpt-4o-mini, so
         // leave fast_model unset (complete_fast will fall back to the main model).
-        let model = if host.contains("api.openai.com") {
+        // Parse the URL and compare the hostname exactly to avoid false positives
+        // (e.g. https://api.openai.com.local:8000 or proxy paths containing api.openai.com).
+        let is_openai = url::Url::parse(&host)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+            .map(|h| h == "api.openai.com")
+            .unwrap_or(false);
+        let model = if is_openai {
             model.with_fast(OPEN_AI_DEFAULT_FAST_MODEL, OPEN_AI_PROVIDER_NAME)?
         } else {
             model
