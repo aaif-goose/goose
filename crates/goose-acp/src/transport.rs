@@ -118,8 +118,14 @@ fn constant_time_token_matches(expected: &str, actual: &str) -> bool {
 
 fn extract_bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    let token = value.strip_prefix("Bearer ")?;
-    Some(token.trim())
+    // HTTP authentication scheme names are case-insensitive per RFC 7235 §2.1,
+    // so match "Bearer" / "bearer" / "BEARER" / any other casing. Split on the
+    // first space so we only normalize the scheme, not the token itself.
+    let (scheme, rest) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+    Some(rest.trim())
 }
 
 fn extract_websocket_auth_protocol(
@@ -345,5 +351,21 @@ mod tests {
         assert!(!is_allowed_origin(b"http://localhost.evil.com"));
         assert!(!is_allowed_origin(b"http://127.0.0.1.evil.com"));
         assert!(!is_allowed_origin(b""));
+    }
+
+    #[test]
+    fn extract_bearer_token_accepts_case_variants() {
+        fn make(value: &'static str) -> axum::http::HeaderMap {
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(header::AUTHORIZATION, value.parse().unwrap());
+            headers
+        }
+        assert_eq!(extract_bearer_token(&make("Bearer abc")), Some("abc"));
+        assert_eq!(extract_bearer_token(&make("bearer abc")), Some("abc"));
+        assert_eq!(extract_bearer_token(&make("BEARER abc")), Some("abc"));
+        assert_eq!(extract_bearer_token(&make("BeArEr abc")), Some("abc"));
+        assert_eq!(extract_bearer_token(&make("Basic abc")), None);
+        assert_eq!(extract_bearer_token(&make("Bearer")), None);
+        assert_eq!(extract_bearer_token(&make("")), None);
     }
 }
