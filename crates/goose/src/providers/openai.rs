@@ -9,7 +9,7 @@ use super::formats::openai_responses::{
 };
 use super::inventory::{config_secret_value, InventoryIdentityInput};
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status_openai_compat, stream_openai_compat,
+    handle_response_openai_compat, handle_status, stream_openai_compat,
 };
 use super::retry::ProviderRetry;
 use super::utils::ImageFormat;
@@ -556,7 +556,7 @@ impl Provider for OpenAiProvider {
                             &payload_clone,
                         )
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {
@@ -621,7 +621,7 @@ impl Provider for OpenAiProvider {
                         .api_client
                         .response_post(Some(session_id), &self.base_path, &payload)
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {

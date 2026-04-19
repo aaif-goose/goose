@@ -22,7 +22,7 @@ use super::formats::openai_responses::{
 };
 use super::oauth;
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status_openai_compat, map_http_error_to_provider_error,
+    handle_response_openai_compat, handle_status, map_http_error_to_provider_error,
     stream_openai_compat,
 };
 use super::retry::ProviderRetry;
@@ -394,7 +394,7 @@ impl Provider for DatabricksProvider {
                         .api_client
                         .response_post(Some(session_id), &path, &payload_clone)
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {

@@ -22,7 +22,7 @@ use super::formats::anthropic::{create_request, response_to_streaming_message};
 use super::oauth_device_flow::{
     refresh_device_flow_token, run_device_flow, DeviceFlowConfig, DeviceFlowTokens, RequestEncoding,
 };
-use super::openai_compatible::handle_status_openai_compat;
+use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use super::utils::RequestLog;
 use crate::conversation::message::Message;
@@ -403,7 +403,7 @@ impl Provider for KimiCodeProvider {
         let response = self
             .with_retry(|| async {
                 let resp = self.post(Some(session_id), &payload).await?;
-                handle_status_openai_compat(resp).await
+                handle_status(resp).await
             })
             .await
             .inspect_err(|e| {
@@ -454,7 +454,7 @@ impl Provider for KimiCodeProvider {
             .send()
             .await
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
-        let resp = handle_status_openai_compat(resp).await?;
+        let resp = handle_status(resp).await?;
 
         let parsed: ModelsResp = resp.json().await.map_err(|e| {
             ProviderError::RequestFailed(format!("/v1/models body is not valid JSON: {}", e))
