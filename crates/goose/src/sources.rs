@@ -77,8 +77,10 @@ fn validate_source_name(name: &str) -> Result<(), Error> {
         }
     }
     if expect_alnum {
-        return Err(Error::invalid_params()
-            .data(format!("Invalid source name \"{}\". Names must not end with a hyphen.", name)));
+        return Err(Error::invalid_params().data(format!(
+            "Invalid source name \"{}\". Names must not end with a hyphen.",
+            name
+        )));
     }
     Ok(())
 }
@@ -157,18 +159,27 @@ pub fn create_source(
     let dir = source_base_dir(source_type, global, project_dir)?.join(name);
 
     if dir.exists() {
-        return Err(Error::invalid_params()
-            .data(format!("A source named \"{}\" already exists", name)));
+        return Err(
+            Error::invalid_params().data(format!("A source named \"{}\" already exists", name))
+        );
     }
 
-    fs::create_dir_all(&dir)
-        .map_err(|e| Error::internal_error().data(format!("Failed to create source directory: {e}")))?;
+    fs::create_dir_all(&dir).map_err(|e| {
+        Error::internal_error().data(format!("Failed to create source directory: {e}"))
+    })?;
     let file_path = dir.join("SKILL.md");
     let md = build_skill_md(name, description, content);
     fs::write(&file_path, md)
         .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
 
-    Ok(source_entry(source_type, name, description, content, &dir, global))
+    Ok(source_entry(
+        source_type,
+        name,
+        description,
+        content,
+        &dir,
+        global,
+    ))
 }
 
 pub fn update_source(
@@ -191,7 +202,14 @@ pub fn update_source(
     fs::write(&file_path, md)
         .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
 
-    Ok(source_entry(source_type, name, description, content, &dir, global))
+    Ok(source_entry(
+        source_type,
+        name,
+        description,
+        content,
+        &dir,
+        global,
+    ))
 }
 
 pub fn delete_source(
@@ -328,12 +346,14 @@ pub fn import_sources(
     }
 
     // Default to `skill` to preserve compatibility with pre-sources skill exports.
-    let source_type = match value.get("type").and_then(|v| v.as_str()).unwrap_or("skill") {
+    let source_type = match value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("skill")
+    {
         "skill" => SourceType::Skill,
         other => {
-            return Err(
-                Error::invalid_params().data(format!("Unsupported source type: {}", other))
-            );
+            return Err(Error::invalid_params().data(format!("Unsupported source type: {}", other)));
         }
     };
 
@@ -377,8 +397,9 @@ pub fn import_sources(
     }
 
     let dir = base.join(&final_name);
-    fs::create_dir_all(&dir)
-        .map_err(|e| Error::internal_error().data(format!("Failed to create source directory: {e}")))?;
+    fs::create_dir_all(&dir).map_err(|e| {
+        Error::internal_error().data(format!("Failed to create source directory: {e}"))
+    })?;
     let file_path = dir.join("SKILL.md");
     let md = build_skill_md(&final_name, &description, &content);
     fs::write(&file_path, md)
@@ -452,24 +473,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
 
-        create_source(
-            SourceType::Skill,
-            "dup",
-            "d",
-            "c",
-            false,
-            Some(project),
-        )
-        .unwrap();
-        let err = create_source(
-            SourceType::Skill,
-            "dup",
-            "d",
-            "c",
-            false,
-            Some(project),
-        )
-        .unwrap_err();
+        create_source(SourceType::Skill, "dup", "d", "c", false, Some(project)).unwrap();
+        let err =
+            create_source(SourceType::Skill, "dup", "d", "c", false, Some(project)).unwrap_err();
         assert!(format!("{:?}", err).contains("already exists"));
     }
 
@@ -506,8 +512,7 @@ mod tests {
         .unwrap();
         assert_eq!(filename, "portable.skill.json");
 
-        let imported =
-            import_sources(&json, false, Some(project_b.to_str().unwrap())).unwrap();
+        let imported = import_sources(&json, false, Some(project_b.to_str().unwrap())).unwrap();
         assert_eq!(imported.len(), 1);
         assert_eq!(imported[0].name, "portable");
         assert_eq!(imported[0].description, "describes itself");

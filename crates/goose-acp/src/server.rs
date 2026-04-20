@@ -2926,8 +2926,7 @@ impl GooseAcpAgent {
         &self,
         req: ListSourcesRequest,
     ) -> Result<ListSourcesResponse, sacp::Error> {
-        let sources =
-            goose::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
+        let sources = goose::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
         Ok(ListSourcesResponse { sources })
     }
 
