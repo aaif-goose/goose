@@ -99,16 +99,13 @@ fn build_skill_md(name: &str, description: &str, content: &str) -> String {
 
 fn parse_skill_frontmatter(raw: &str) -> (String, String) {
     let trimmed = raw.trim();
-    if !trimmed.starts_with("---") {
-        return (String::new(), raw.to_string());
-    }
-
-    let Some(end) = trimmed[3..].find("\n---") else {
+    let Some(after_open) = trimmed.strip_prefix("---") else {
         return (String::new(), raw.to_string());
     };
-
-    let front = trimmed[3..3 + end].trim();
-    let body = trimmed[3 + end + 4..].trim().to_string();
+    let Some((front, body)) = after_open.split_once("\n---") else {
+        return (String::new(), raw.to_string());
+    };
+    let body = body.trim().to_string();
 
     let mut description = String::new();
     for line in front.lines() {
