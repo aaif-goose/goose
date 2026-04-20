@@ -27,6 +27,7 @@ pub enum InputResult {
     Compact,
     ToggleFullToolOutput,
     Edit(Option<String>),
+    Skills,
 }
 
 #[derive(Debug)]
@@ -204,6 +205,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_SUMMARIZE_DEPRECATED: &str = "/summarize";
     const CMD_EDIT: &str = "/edit";
     const CMD_EDIT_WITH_SPACE: &str = "/edit ";
+    const CMD_SKILLS: &str = "/skills";
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
@@ -284,6 +286,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
                 Some(InputResult::Edit(Some(prefill.to_string())))
             }
         }
+        s if s == CMD_SKILLS => Some(InputResult::Skills),
         _ => None,
     }
 }
@@ -412,6 +415,7 @@ fn print_help() {
                         The model is used based on $GOOSE_PLANNER_PROVIDER and $GOOSE_PLANNER_MODEL environment variables.
                         If no model is set, the default model is used.
 /endplan - Exit plan mode and return to 'normal' goose mode.
+/skills - List all available skills and their descriptions.
 /recipe [filepath] - Generate a recipe from the current conversation and save it to the specified filepath (must end with .yaml).
                        If no filepath is provided, it will be saved to ./recipe.yaml.
 /compact - Compact the current conversation to reduce context length while preserving key information.

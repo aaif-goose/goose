@@ -637,6 +637,10 @@ impl CliSession {
                 history.save(editor);
                 self.handle_compact().await?;
             }
+            InputResult::Skills => {
+                history.save(editor);
+                self.handle_skills().await?;
+            }
             InputResult::Edit(prefill) => {
                 history.save(editor);
                 match crate::session::editor::resolve_editor_command() {
@@ -790,6 +794,14 @@ impl CliSession {
         self.agent.update_goose_mode(mode, &self.session_id).await?;
         config.set_goose_mode(mode)?;
         output::goose_mode_message(&format!("Goose mode set to '{mode}'"));
+        Ok(())
+    }
+
+    async fn handle_skills(&mut self) -> Result<()> {
+        let skills = goose::agents::platform_extensions::skills::list_installed_skills(
+            std::env::current_dir().ok().as_deref(),
+        );
+        output::render_skills(&skills);
         Ok(())
     }
 

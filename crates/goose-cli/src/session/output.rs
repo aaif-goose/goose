@@ -607,6 +607,22 @@ pub fn render_prompt_info(info: &PromptInfo) {
     println!();
 }
 
+pub fn render_skills(skills: &[goose::agents::platform_extensions::skills::Source]) {
+    println!();
+    if skills.is_empty() {
+        println!("  {}", style("No skills found.").dim());
+    } else {
+        println!("  {}", style("Available skills:").green().bold());
+        for skill in skills {
+            println!("  - {}", style(&skill.name).cyan());
+            if let Some(desc) = &skill.description {
+                println!("    {}", style(desc).dim());
+            }
+        }
+    }
+    println!();
+}
+
 fn render_arguments(info: &PromptInfo) {
     if let Some(args) = &info.arguments {
         println!("\n Arguments:");
