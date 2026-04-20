@@ -26,3 +26,4 @@ serde_json = "1"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
 dirs = "6"
+serde_yaml = "0.9"
