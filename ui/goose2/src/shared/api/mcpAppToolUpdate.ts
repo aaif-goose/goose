@@ -29,6 +29,7 @@ export function buildMcpAppPayloadFromToolUpdate(
   toolCallId: string,
   toolCallTitle: string,
   update: SessionUpdate,
+  gooseSessionIdOverride?: string | null,
 ): McpAppPayload | null {
   const payload = extractMcpAppPayload(update);
   if (!payload) {
@@ -37,7 +38,8 @@ export function buildMcpAppPayloadFromToolUpdate(
 
   return {
     sessionId,
-    gooseSessionId: getGooseSessionId(sessionId),
+    gooseSessionId:
+      gooseSessionIdOverride ?? getGooseSessionId(sessionId) ?? null,
     toolCallId,
     toolCallTitle,
     source: "toolCallUpdateMeta",

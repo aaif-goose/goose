@@ -18,58 +18,19 @@ import type { AcpNotificationHandler } from "./acpConnection";
 import {
   attachMcpAppPayload,
   extractToolResultText,
-  findMessageInReplayBuffer,
   findReplayMessageWithToolCall,
 } from "./acpToolCallContent";
 import {
-  getLocalSessionId,
-  subscribeToSessionRegistration,
-} from "./acpSessionTracker";
+  clearReplayAssistantMessage,
+  clearReplayAssistantTracking,
+  ensureReplayAssistantMessage,
+  getTrackedReplayAssistantMessageId,
+} from "./acpReplayAssistant";
+import { getLocalSessionId } from "./acpSessionTracker";
 import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per goose session
 const presetMessageIds = new Map<string, string>();
-const pendingUsageUpdates = new Map<string, SessionUpdate[]>();
-
-function shouldBufferPendingUpdate(update: SessionUpdate): boolean {
-  return update.sessionUpdate === "usage_update";
-}
-
-function queuePendingUsageUpdate(
-  gooseSessionId: string,
-  update: SessionUpdate,
-): void {
-  const pending = pendingUsageUpdates.get(gooseSessionId);
-  if (pending) {
-    pending.push(update);
-    return;
-  }
-  pendingUsageUpdates.set(gooseSessionId, [update]);
-}
-
-function flushPendingUsageUpdates(
-  localSessionId: string,
-  gooseSessionId: string,
-): void {
-  const pending = pendingUsageUpdates.get(gooseSessionId);
-  if (!pending?.length) {
-    return;
-  }
-
-  pendingUsageUpdates.delete(gooseSessionId);
-
-  for (const update of pending) {
-    if (useChatStore.getState().loadingSessionIds.has(localSessionId)) {
-      handleReplay(localSessionId, update);
-    } else {
-      handleLive(localSessionId, gooseSessionId, update);
-    }
-  }
-}
-
-subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
-  flushPendingUsageUpdates(localSessionId, gooseSessionId);
-});
 
 // Per-session perf counters for replay/live streaming.
 interface ReplayPerf {
@@ -118,32 +79,22 @@ export async function handleSessionNotification(
   notification: SessionNotification,
 ): Promise<void> {
   const gooseSessionId = notification.sessionId;
+  const sessionId = getLocalSessionId(gooseSessionId) ?? gooseSessionId;
   const { update } = notification;
-  const localSessionId = getLocalSessionId(gooseSessionId);
-
-  if (!localSessionId) {
-    if (shouldBufferPendingUpdate(update)) {
-      queuePendingUsageUpdate(gooseSessionId, update);
-    }
-    return;
-  }
-
-  const isReplay = useChatStore
-    .getState()
-    .loadingSessionIds.has(localSessionId);
+  const isReplay = useChatStore.getState().loadingSessionIds.has(sessionId);
 
   if (isReplay) {
-    const sid = localSessionId.slice(0, 8);
-    let perf = replayPerf.get(localSessionId);
+    const sid = sessionId.slice(0, 8);
+    let perf = replayPerf.get(sessionId);
     const now = performance.now();
     if (!perf) {
       perf = { firstAt: now, lastAt: now, count: 0 };
-      replayPerf.set(localSessionId, perf);
+      replayPerf.set(sessionId, perf);
       perfLog(`[perf:replay] ${sid} first notification received`);
     }
     perf.lastAt = now;
     perf.count += 1;
-    handleReplay(localSessionId, update);
+    handleReplay(sessionId, gooseSessionId, update);
   } else {
     const perf = livePerf.get(gooseSessionId);
     if (perf && update.sessionUpdate === "agent_message_chunk") {
@@ -156,7 +107,7 @@ export async function handleSessionNotification(
         );
       }
     }
-    handleLive(localSessionId, gooseSessionId, update);
+    handleLive(sessionId, gooseSessionId, update);
   }
 }
 
@@ -172,25 +123,17 @@ export function clearReplayPerf(sessionId: string): void {
   replayPerf.delete(sessionId);
 }
 
-function handleReplay(sessionId: string, update: SessionUpdate): void {
+function handleReplay(
+  sessionId: string,
+  gooseSessionId: string,
+  update: SessionUpdate,
+): void {
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
-      const messageId = update.messageId ?? crypto.randomUUID();
-      const buffer = ensureReplayBuffer(sessionId);
-      if (!getBufferedMessage(sessionId, messageId)) {
-        buffer.push({
-          id: messageId,
-          role: "assistant",
-          created: Date.now(),
-          content: [],
-          metadata: {
-            userVisible: true,
-            agentVisible: true,
-            completionStatus: "inProgress",
-          },
-        });
-      }
-      const msg = getBufferedMessage(sessionId, messageId);
+      const msg = ensureReplayAssistantMessage(
+        sessionId,
+        update.messageId ?? null,
+      );
       if (msg && update.content.type === "text" && "text" in update.content) {
         const last = msg.content[msg.content.length - 1];
         if (last?.type === "text") {
@@ -203,6 +146,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     }
 
     case "user_message_chunk": {
+      clearReplayAssistantMessage(sessionId);
       if (update.content.type !== "text" || !("text" in update.content)) break;
       const messageId = update.messageId ?? crypto.randomUUID();
       const buffer = ensureReplayBuffer(sessionId);
@@ -234,22 +178,25 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     }
 
     case "tool_call": {
-      const msg = findMessageInReplayBuffer(sessionId);
-      if (msg) {
-        msg.content.push({
-          type: "toolRequest",
-          id: update.toolCallId,
-          name: update.title,
-          arguments: {},
-          status: "executing",
-          startedAt: Date.now(),
-        });
-      }
+      const msg = ensureReplayAssistantMessage(sessionId);
+      msg.content.push({
+        type: "toolRequest",
+        id: update.toolCallId,
+        name: update.title,
+        arguments: {},
+        status: "executing",
+        startedAt: Date.now(),
+      });
       break;
     }
 
     case "tool_call_update": {
-      const msg = findReplayMessageWithToolCall(sessionId, update.toolCallId);
+      const replayMessageId = getTrackedReplayAssistantMessageId(sessionId);
+      const msg =
+        findReplayMessageWithToolCall(sessionId, update.toolCallId) ??
+        (replayMessageId
+          ? getBufferedMessage(sessionId, replayMessageId)
+          : undefined);
       if (msg) {
         if (update.title) {
           const tc = msg.content.find(
@@ -287,6 +234,10 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
               (tc as ToolRequestContent)?.name ?? update.title ?? "",
               update,
               true,
+              {
+                gooseSessionId,
+                replayMessageId,
+              },
             );
           }
         }
@@ -456,10 +407,12 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
             currentModelId;
 
           const sessionStore = useChatSessionStore.getState();
-          sessionStore.updateSession(sessionId, {
-            modelId: currentModelId,
-            modelName: currentModelName,
-          });
+          sessionStore.setSessionModels(sessionId, availableModels);
+          sessionStore.updateSession(
+            sessionId,
+            { modelId: currentModelId, modelName: currentModelName },
+            { persistOverlay: false },
+          );
         }
       }
       break;
@@ -536,6 +489,7 @@ function ensureLiveAssistantMessage(
 
 export function clearMessageTracking(): void {
   presetMessageIds.clear();
+  clearReplayAssistantTracking();
 }
 
 const handler: AcpNotificationHandler = {

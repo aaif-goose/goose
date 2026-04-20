@@ -2,20 +2,10 @@ import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import {
   getReplayBuffer,
-  type getBufferedMessage,
+  getBufferedMessage,
 } from "@/features/chat/hooks/replayBuffer";
 import type { McpAppContent, MessageContent } from "@/shared/types/messages";
 import { buildMcpAppPayloadFromToolUpdate } from "./mcpAppToolUpdate";
-
-export function findMessageInReplayBuffer(
-  sessionId: string,
-): ReturnType<typeof getBufferedMessage> {
-  const buffer = getReplayBuffer(sessionId);
-  if (!buffer) {
-    return undefined;
-  }
-  return buffer[buffer.length - 1];
-}
 
 export function findReplayMessageWithToolCall(
   sessionId: string,
@@ -36,7 +26,7 @@ export function findReplayMessageWithToolCall(
       return message;
     }
   }
-  return buffer[buffer.length - 1];
+  return undefined;
 }
 
 export function extractToolResultText(update: {
@@ -65,12 +55,17 @@ export function attachMcpAppPayload(
   toolCallTitle: string,
   update: SessionUpdate,
   isReplay: boolean,
+  options?: {
+    gooseSessionId?: string | null;
+    replayMessageId?: string | null;
+  },
 ): void {
   const payload = buildMcpAppPayloadFromToolUpdate(
     sessionId,
     toolCallId,
     toolCallTitle,
     update,
+    options?.gooseSessionId,
   );
   if (!payload) {
     return;
@@ -83,7 +78,11 @@ export function attachMcpAppPayload(
   };
 
   if (isReplay) {
-    const message = findReplayMessageWithToolCall(sessionId, toolCallId);
+    const message =
+      findReplayMessageWithToolCall(sessionId, toolCallId) ??
+      (options?.replayMessageId
+        ? getBufferedMessage(sessionId, options.replayMessageId)
+        : undefined);
     if (message) {
       message.content = insertMcpAppContent(message.content, block);
       return;
