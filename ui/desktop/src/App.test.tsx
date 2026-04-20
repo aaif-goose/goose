@@ -87,6 +87,8 @@ vi.mock('./components/ModelAndProviderContext', () => ({
     provider: null,
     model: null,
     getCurrentModelAndProvider: vi.fn(),
+    getFallbackModelAndProvider: vi.fn().mockResolvedValue({ provider: '', model: '' }),
+    refreshCurrentModelAndProvider: vi.fn().mockResolvedValue(undefined),
     setCurrentModelAndProvider: vi.fn(),
   }),
 }));
@@ -205,8 +207,6 @@ describe('App Component - Brand New State', () => {
     window.location.hash = '';
     window.location.search = '';
     window.location.pathname = '/';
-    window.sessionStorage?.clear?.();
-    window.localStorage?.clear?.();
   });
 
   afterEach(() => {
