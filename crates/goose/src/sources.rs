@@ -3,10 +3,18 @@
 //! directory — `~/.agents/skills` for global sources and `<project>/.goose/skills`
 //! for project-specific sources.
 
+use crate::agents::platform_extensions::parse_frontmatter;
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
+
+#[derive(Deserialize)]
+struct SkillFront {
+    #[serde(default)]
+    description: String,
+}
 
 const GLOBAL_SKILLS_SUBPATH: &[&str] = &[".agents", "skills"];
 const PROJECT_SKILLS_SUBPATH: &[&str] = &[".goose", "skills"];
@@ -98,32 +106,13 @@ fn build_skill_md(name: &str, description: &str, content: &str) -> String {
 }
 
 fn parse_skill_frontmatter(raw: &str) -> (String, String) {
-    let trimmed = raw.trim();
-    let Some(after_open) = trimmed.strip_prefix("---") else {
+    if !raw.trim_start().starts_with("---") {
         return (String::new(), raw.to_string());
-    };
-    let Some((front, body)) = after_open.split_once("\n---") else {
-        return (String::new(), raw.to_string());
-    };
-    let body = body.trim().to_string();
-
-    let mut description = String::new();
-    for line in front.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("description:") {
-            let val = rest.trim();
-            let unquoted = val
-                .trim_start_matches(['\'', '"'])
-                .trim_end_matches(['\'', '"']);
-            description = if val.starts_with('\'') {
-                unquoted.replace("''", "'")
-            } else {
-                unquoted.replace("\\\"", "\"")
-            };
-        }
     }
-
-    (description, body)
+    match parse_frontmatter::<SkillFront>(raw) {
+        Ok(Some((meta, body))) => (meta.description, body),
+        _ => (String::new(), raw.to_string()),
+    }
 }
 
 fn source_entry(
