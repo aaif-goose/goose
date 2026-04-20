@@ -16,7 +16,7 @@ import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
 import { PersonaPicker } from "./PersonaPicker";
-import type { ProjectOption } from "./ChatInput";
+import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,

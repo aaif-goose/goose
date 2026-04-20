@@ -2,8 +2,6 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { AcpProvider } from "@/shared/api/acp";
-import type { Persona } from "@/shared/types/agents";
 import { cn } from "@/shared/lib/cn";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -14,63 +12,14 @@ import { ChatInputToolbar } from "./ChatInputToolbar";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 import { PersonaAvatar } from "./PersonaPicker";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useAttachmentDropTarget } from "../hooks/useAttachmentDropTarget";
 import {
   normalizeDialogSelection,
   useChatInputAttachments,
 } from "../hooks/useChatInputAttachments";
-import type { ModelOption } from "../types";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
-
-export interface ProjectOption {
-  id: string;
-  name: string;
-  workingDirs: string[];
-  color?: string | null;
-}
-
-interface ChatInputProps {
-  onSend: (
-    text: string,
-    personaId?: string,
-    attachments?: ChatAttachmentDraft[],
-  ) => void;
-  onStop?: () => void;
-  isStreaming?: boolean;
-  disabled?: boolean;
-  queuedMessage?: { text: string } | null;
-  onDismissQueue?: () => void;
-  initialValue?: string;
-  onDraftChange?: (text: string) => void;
-  className?: string;
-  personas?: Persona[];
-  selectedPersonaId?: string | null;
-  onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
-  providers?: AcpProvider[];
-  providersLoading?: boolean;
-  selectedProvider?: string;
-  onProviderChange?: (providerId: string) => void;
-  currentModelId?: string | null;
-  currentModel?: string;
-  availableModels?: ModelOption[];
-  modelsLoading?: boolean;
-  modelStatusMessage?: string | null;
-  onModelChange?: (modelId: string) => void;
-  selectedProjectId?: string | null;
-  availableProjects?: ProjectOption[];
-  onProjectChange?: (projectId: string | null) => void;
-  onCreateProject?: (options?: {
-    onCreated?: (projectId: string) => void;
-  }) => void;
-  contextTokens?: number;
-  contextLimit?: number;
-  onCompactContext?: () => void | Promise<void>;
-  canCompactContext?: boolean;
-  isCompactingContext?: boolean;
-}
+import type { ChatInputProps } from "../types";
 
 export function ChatInput({
   onSend,

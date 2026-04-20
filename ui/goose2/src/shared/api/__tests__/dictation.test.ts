@@ -15,8 +15,12 @@ vi.mock("../acpConnection", () => ({
   getClient: vi.fn(),
 }));
 
+interface MockClient {
+  goose: Record<string, ReturnType<typeof vi.fn>>;
+}
+
 describe("dictation SDK wiring", () => {
-  let client: any;
+  let client: MockClient;
   beforeEach(() => {
     client = {
       goose: {
@@ -46,7 +50,7 @@ describe("dictation SDK wiring", () => {
     const result = await transcribeDictation({
       audio: "base64==",
       mimeType: "audio/webm",
-      provider: "openai" as any,
+      provider: "openai",
     });
     expect(client.goose.GooseDictationTranscribe).toHaveBeenCalledWith({
       audio: "base64==",
@@ -58,7 +62,7 @@ describe("dictation SDK wiring", () => {
 
   it("saveDictationModelSelection calls GooseDictationModelSelect", async () => {
     client.goose.GooseDictationModelSelect = vi.fn().mockResolvedValue({});
-    await saveDictationModelSelection("local" as any, "tiny");
+    await saveDictationModelSelection("local", "tiny");
     expect(client.goose.GooseDictationModelSelect).toHaveBeenCalledWith({
       provider: "local",
       modelId: "tiny",

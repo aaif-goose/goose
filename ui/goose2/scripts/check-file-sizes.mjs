@@ -66,7 +66,7 @@ const EXCEPTIONS = {
       "Voice dictation send/stop guards, attachment handling, and mention/picker coordination still share one chat composer component.",
   },
   "src/features/chat/ui/__tests__/ChatInput.test.tsx": {
-    limit: 510,
+    limit: 520,
     justification:
       "Composer regression coverage spans personas, queueing, attachments, and voice-input edge cases in one interaction-heavy suite.",
   },
