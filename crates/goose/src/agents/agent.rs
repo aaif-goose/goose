@@ -617,7 +617,7 @@ impl Agent {
     /// Save current extension state to session metadata
     /// Should be called after any extension add/remove operation
     pub async fn save_extension_state(&self, session: &SessionConfig) -> Result<()> {
-        let extension_configs = self.extension_manager.get_extension_configs().await;
+        let extension_configs = self.get_extension_configs().await;
 
         let extensions_state = EnabledExtensionsState::new(extension_configs);
 
@@ -640,7 +640,7 @@ impl Agent {
 
     /// Save current extension state to session by session_id
     pub async fn persist_extension_state(&self, session_id: &str) -> Result<()> {
-        let extension_configs = self.extension_manager.get_extension_configs().await;
+        let extension_configs = self.get_extension_configs().await;
         let extensions_state = EnabledExtensionsState::new(extension_configs);
 
         let session_manager = self.config.session_manager.clone();
