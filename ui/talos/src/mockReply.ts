@@ -1,4 +1,3 @@
-import { CANNED_REPLY } from "./data";
 import type { Chat, Message } from "./types";
 
 function truncate(s: string, n: number) {
@@ -75,13 +74,3 @@ export function generateFakeConversation(chat: Chat): Message[] {
   ];
 }
 
-export function makeCannedAssistantReply(modelName: string): Message {
-  return {
-    role: "assistant",
-    model: modelName,
-    paragraphs: CANNED_REPLY.paragraphs,
-    bullets: CANNED_REPLY.bullets,
-    followup: CANNED_REPLY.followup,
-    tool: { name: "memory_search", summary: "Found 3 relevant notes" },
-  };
-}

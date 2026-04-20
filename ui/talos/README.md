@@ -30,13 +30,18 @@ ui/talos/
       palette/            CommandPalette
       StatusBar.tsx
       Toast.tsx
+    services/             ACP client (createWebSocketStream, acpConnection, acp)
   src-tauri/
     Cargo.toml            Rust crate `talos` (bin `talos-tauri`)
     build.rs
     tauri.conf.json       productName "Talos", identifier com.talos.app
+                          externalBin = target/release/goose (sidecar)
     src/
       main.rs             Thin entry
-      lib.rs              Tauri Builder
+      lib.rs              Tauri Builder + get_goose_serve_url command
+      commands/acp.rs     Returns ws://127.0.0.1:{port}/acp
+      services/goose_serve.rs
+                          Spawns `goose serve` (sidecar or $GOOSE_BIN)
     capabilities/
       default.json        Minimal permission set
     icons/                Placeholder icons (copied from goose2)
@@ -55,15 +60,32 @@ pnpm --filter talos tauri:build    # production desktop build
 ## Roadmap
 
 - **Phase 0 (done)** — scaffold, rename myui \u2192 talos.
-- **Phase 1 (this commit)** — full static shell from design-ref ported to React:
-  ribbon, collapsible panels, tabs, empty-state, composer, chat view with mock reply,
-  right-panel notes list + editor, command palette, status bar, toasts.
-- **Phase 2** — wire composer through `@aaif/goose-sdk` (ACP). Stream real
-  assistant messages + tool-use events.
+- **Phase 1 (done)** — static shell ported from design-ref.
+- **Phase 2 (this commit)** — composer wired through `@aaif/goose-sdk` (ACP).
+  Tauri backend spawns a long-lived `goose serve` (via sidecar or `$GOOSE_BIN`
+  override), exposes `get_goose_serve_url` so the frontend can open a WebSocket
+  to `/acp`. Frontend streams `agent_message_chunk` into the current tab's
+  assistant message and surfaces `tool_call` / `tool_call_update` events as
+  pills. First send in a tab lazily creates a new ACP session.
 - **Phase 3** — folder-backed Memory + Projects (paths in Settings). Map
   Workflows \u2192 Goose recipes. Settings surface for folder paths and MCP.
 - **Phase 4** — persistence (tabs, chat history, prefs) via `tauri-plugin-store`
   or SQLite.
+
+## Running with a real goose binary
+
+`tauri:dev` and `tauri:build` resolve `goose` via the sidecar declared in
+`src-tauri/tauri.conf.json > bundle > externalBin`. Build the binary first:
+
+```
+cargo build --release -p goose-cli   # or whatever the workspace crate is
+```
+
+Or point Talos at an arbitrary binary at runtime:
+
+```
+GOOSE_BIN=/path/to/goose pnpm --filter talos tauri:dev
+```
 
 ## Design variants not implemented
 

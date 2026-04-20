@@ -17,7 +17,14 @@ function Message({ msg }: { msg: MessageT }) {
           {msg.model && <span>· {msg.model}</span>}
         </div>
         <div className="msg-content">
-          {msg.paragraphs?.map((p, i) => <p key={i}>{p}</p>)}
+          {msg.paragraphs?.map((p, i) => (
+            <p key={i} style={{ whiteSpace: "pre-wrap" }}>
+              {p}
+              {msg.streaming && i === (msg.paragraphs?.length ?? 1) - 1 && (
+                <span className="typing-dots" style={{ marginLeft: 4 }}>●</span>
+              )}
+            </p>
+          ))}
           {msg.bullets && (
             <ul>
               {msg.bullets.map((b, i) => <li key={i}>{b}</li>)}
@@ -35,6 +42,17 @@ function Message({ msg }: { msg: MessageT }) {
               </div>
             </div>
           )}
+          {msg.tools?.map((t) => (
+            <div key={t.id} className="tool-use">
+              <div className="tool-use-header">
+                <span className="status-dot" />
+                <Icon name="zap" size={12} />
+                <span className="tool-name">{t.name}</span>
+                <span style={{ color: "var(--color-text-muted)" }}>·</span>
+                <span>{t.status === "executing" ? "running…" : t.status === "completed" ? "done" : "failed"}</span>
+              </div>
+            </div>
+          ))}
         </div>
         {!isUser && (
           <div className="msg-actions">

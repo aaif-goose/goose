@@ -80,13 +80,26 @@ export interface ToolUse {
   summary: string;
 }
 
+export type ToolStatus = "executing" | "completed" | "failed";
+
+export interface ToolEvent extends ToolUse {
+  id: string;
+  status: ToolStatus;
+}
+
 export interface Message {
+  id?: string;
   role: MessageRole;
   model?: string;
   paragraphs?: string[];
   bullets?: string[];
   followup?: string;
+  /** Single inline tool pill (legacy; used by mock fixtures). */
   tool?: ToolUse;
+  /** Tool events attached to this message as they stream in. */
+  tools?: ToolEvent[];
+  /** True while this assistant message is still being streamed. */
+  streaming?: boolean;
 }
 
 export interface ChatTab {
@@ -96,6 +109,8 @@ export interface ChatTab {
   messages: Message[];
   composer: string;
   attachments: string[];
+  /** Assigned lazily on first send. */
+  gooseSessionId?: string;
 }
 
 export type SectionId = "chat" | "projects" | "memory" | "workflows" | "skills";

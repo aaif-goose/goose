@@ -256,15 +256,3 @@ export const SECTIONS: SectionDef[] = [
   { id: "skills", label: "Skills", icon: "sparkles" },
 ];
 
-export const CANNED_REPLY = {
-  paragraphs: [
-    "Good question. Let me think through this with you.",
-    "A few things stand out here:",
-  ],
-  bullets: [
-    "The scope folder defaults to *Memory*, which means context leaks across sessions unless a project is set.",
-    "The token counter should live in the composer footer — that keeps the Claude Code pattern intact.",
-    "Auto-compact at 80% is a fine default, but we should expose it per-model since context windows vary a lot.",
-  ],
-  followup: "Want me to draft the plugin manifest schema next, or dig into the auto-compact threshold logic?",
-};

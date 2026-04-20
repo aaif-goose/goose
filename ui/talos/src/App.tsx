@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { SessionNotification } from "@agentclientprotocol/sdk";
 import { LeftFooter, LeftHeader, Ribbon } from "./components/sidebar/Ribbon";
 import {
   ChatSection,
@@ -17,8 +18,9 @@ import { CommandPalette } from "./components/palette/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
 import { ToastStack } from "./components/Toast";
 import { CHATS, MCP_SERVERS, MODELS, PROJECTS, SECTIONS, SKILLS, USER } from "./data";
-import type { ChatTab, Command, McpServer, SectionId, Skill, Toast } from "./types";
-import { generateFakeConversation, makeCannedAssistantReply, truncate } from "./mockReply";
+import type { ChatTab, Command, McpServer, Message, SectionId, Skill, Toast, ToolEvent } from "./types";
+import { generateFakeConversation, truncate } from "./mockReply";
+import { initAcp, sendMessage, startSession } from "./services/acp";
 
 export function App() {
   const [activeApp, setActiveApp] = useState("chat");
@@ -38,6 +40,11 @@ export function App() {
   const [contextFolder, setContextFolder] = useState("memory");
   const [skills, setSkills] = useState<Skill[]>(SKILLS);
   const [sending, setSending] = useState(false);
+
+  // Maps goose sessionId → local tab id so streaming notifications route correctly.
+  const sessionToTab = useRef<Map<string, string>>(new Map());
+  // Most recently started assistant message per goose session (for chunk coalescing).
+  const streamingMsgId = useRef<Map<string, string>>(new Map());
 
   const addToast = (msg: string) => {
     const id = Date.now() + Math.random();
@@ -61,6 +68,115 @@ export function App() {
     setTabs(next);
     if (activeTab === id) setActiveTab(next[Math.max(0, idx - 1)]!.id);
   };
+
+  // ---------- ACP notification handler ----------
+  const handleNotification = (n: SessionNotification) => {
+    const gooseSessionId = n.sessionId;
+    const tabId = sessionToTab.current.get(gooseSessionId);
+    if (!tabId) return;
+    const update = n.update;
+
+    const mutateTab = (fn: (msgs: Message[]) => Message[]) => {
+      setTabs((ts) => ts.map((t) => (t.id === tabId ? { ...t, messages: fn(t.messages) } : t)));
+    };
+
+    switch (update.sessionUpdate) {
+      case "agent_message_chunk": {
+        const content = update.content;
+        if (content.type !== "text" || typeof content.text !== "string") break;
+        const chunkText = content.text;
+        const incomingMsgId =
+          (update as { messageId?: string }).messageId ?? streamingMsgId.current.get(gooseSessionId);
+        mutateTab((msgs) => {
+          const last = msgs[msgs.length - 1];
+          if (last && last.role === "assistant" && last.streaming && (!incomingMsgId || last.id === incomingMsgId)) {
+            const paragraphs = [...(last.paragraphs ?? [""])];
+            paragraphs[0] = (paragraphs[0] ?? "") + chunkText;
+            return [...msgs.slice(0, -1), { ...last, paragraphs }];
+          }
+          const id = incomingMsgId ?? crypto.randomUUID();
+          streamingMsgId.current.set(gooseSessionId, id);
+          return [
+            ...msgs,
+            { id, role: "assistant", streaming: true, paragraphs: [chunkText], tools: [] },
+          ];
+        });
+        if (incomingMsgId) streamingMsgId.current.set(gooseSessionId, incomingMsgId);
+        break;
+      }
+      case "tool_call": {
+        const toolEvent: ToolEvent = {
+          id: update.toolCallId,
+          name: update.title,
+          summary: "Running\u2026",
+          status: "executing",
+        };
+        mutateTab((msgs) => {
+          const last = msgs[msgs.length - 1];
+          if (last && last.role === "assistant" && last.streaming) {
+            return [...msgs.slice(0, -1), { ...last, tools: [...(last.tools ?? []), toolEvent] }];
+          }
+          const id = crypto.randomUUID();
+          streamingMsgId.current.set(gooseSessionId, id);
+          return [
+            ...msgs,
+            { id, role: "assistant", streaming: true, paragraphs: [""], tools: [toolEvent] },
+          ];
+        });
+        break;
+      }
+      case "tool_call_update": {
+        const status: ToolEvent["status"] =
+          update.status === "completed"
+            ? "completed"
+            : update.status === "failed"
+              ? "failed"
+              : "executing";
+        mutateTab((msgs) =>
+          msgs.map((m) => {
+            if (!m.tools?.some((t) => t.id === update.toolCallId)) return m;
+            return {
+              ...m,
+              tools: m.tools.map((t) =>
+                t.id === update.toolCallId
+                  ? {
+                      ...t,
+                      status,
+                      name: update.title ?? t.name,
+                      summary:
+                        status === "completed"
+                          ? "Done"
+                          : status === "failed"
+                            ? "Failed"
+                            : t.summary,
+                    }
+                  : t,
+              ),
+            };
+          }),
+        );
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
+  // Warm the ACP client + register our handler once.
+  useEffect(() => {
+    let cancelled = false;
+    initAcp((n) => {
+      if (!cancelled) handleNotification(n);
+    }).catch((err: unknown) => {
+      console.error("[acp] init failed", err);
+      addToast(`ACP init failed: ${String(err)}`);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // handleNotification closes over setTabs which is stable; addToast is defined above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -127,21 +243,55 @@ export function App() {
     setTabs((ts) => ts.map((t) => (t.id === activeTab ? { ...t, ...patch } : t)));
   };
 
-  const handleSend = () => {
-    const text = currentTab.composer.trim();
+  const handleSend = async () => {
+    const tab = currentTab;
+    const text = tab.composer.trim();
     if (!text) return;
-    updateTab({
-      messages: [...currentTab.messages, { role: "user", paragraphs: [text] }],
-      composer: "",
-      title: currentTab.messages.length === 0 ? truncate(text, 36) : currentTab.title,
-    });
+
+    const userMsg: Message = { role: "user", paragraphs: [text] };
+    const nextTitle = tab.messages.length === 0 ? truncate(text, 36) : tab.title;
+
+    // Push user message immediately; clear composer.
+    setTabs((ts) =>
+      ts.map((t) =>
+        t.id === tab.id
+          ? { ...t, messages: [...t.messages, userMsg], composer: "", title: nextTitle }
+          : t,
+      ),
+    );
     setSending(true);
-    setTimeout(() => {
-      const modelName = MODELS.find((m) => m.id === model)?.name || "Claude";
-      const reply = makeCannedAssistantReply(modelName);
-      setTabs((ts) => ts.map((t) => (t.id === activeTab ? { ...t, messages: [...t.messages, reply] } : t)));
+
+    try {
+      let gooseSessionId = tab.gooseSessionId;
+      if (!gooseSessionId) {
+        gooseSessionId = await startSession();
+        sessionToTab.current.set(gooseSessionId, tab.id);
+        setTabs((ts) =>
+          ts.map((t) => (t.id === tab.id ? { ...t, gooseSessionId } : t)),
+        );
+      }
+      await sendMessage(gooseSessionId, text);
+    } catch (err) {
+      console.error("[acp] sendMessage failed", err);
+      addToast(`Send failed: ${String(err)}`);
+    } finally {
+      // Mark the streaming assistant message as complete.
+      setTabs((ts) =>
+        ts.map((t) =>
+          t.id !== tab.id
+            ? t
+            : {
+                ...t,
+                messages: t.messages.map((m, i, arr) =>
+                  i === arr.length - 1 && m.role === "assistant" && m.streaming
+                    ? { ...m, streaming: false }
+                    : m,
+                ),
+              },
+        ),
+      );
       setSending(false);
-    }, 1400);
+    }
   };
 
   const composerProps: ComposerProps = {
