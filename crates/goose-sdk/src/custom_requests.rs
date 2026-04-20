@@ -309,6 +309,146 @@ pub struct ProviderConfigKey {
     pub primary: bool,
 }
 
+/// The type of source entity. Currently only `skill` is supported; additional
+/// variants (e.g. recipe, agent) may be added later.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum SourceType {
+    #[default]
+    Skill,
+}
+
+/// A source — a user-editable entity (currently: a skill) backed by an on-disk
+/// directory. Sources may be either `global` (shared across all projects) or
+/// project-specific.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceEntry {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    /// Absolute path to the source's directory on disk.
+    pub directory: String,
+    /// True when the source lives in the user's global sources directory; false
+    /// when it lives inside a specific project.
+    pub global: bool,
+}
+
+/// Create a new source (global or project-scoped).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/create", response = CreateSourceResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub global: bool,
+    /// Absolute path to the project root. Required when `global` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSourceResponse {
+    pub source: SourceEntry,
+}
+
+/// List sources. If `type` is omitted, sources of all known types are returned.
+/// Both global and project-scoped sources are included when `project_dir` is set.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/list", response = ListSourcesResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSourcesRequest {
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<SourceType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSourcesResponse {
+    pub sources: Vec<SourceEntry>,
+}
+
+/// Update an existing source's description and content.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/update", response = UpdateSourceResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSourceResponse {
+    pub source: SourceEntry,
+}
+
+/// Delete a source and its on-disk directory.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/delete", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+/// Export a source as a portable JSON payload.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/export", response = ExportSourceResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSourceResponse {
+    pub json: String,
+    pub filename: String,
+}
+
+/// Import a source from a JSON export payload produced by `_goose/sources/export`.
+/// The imported source is written under the given scope; on name collisions a
+/// `-imported` suffix is appended.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/import", response = ImportSourcesResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSourcesRequest {
+    pub data: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSourcesResponse {
+    pub sources: Vec<SourceEntry>,
+}
+
 /// Empty success response for operations that return no data.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct EmptyResponse {}
