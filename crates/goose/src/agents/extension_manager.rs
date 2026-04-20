@@ -710,6 +710,7 @@ impl ExtensionManager {
                     .map(|(k, v)| (k.clone(), substitute_env_vars(v, &all_envs)))
                     .collect();
                 let resolved_socket = socket.as_ref().map(|s| substitute_env_vars(s, &all_envs));
+                let capability = self.mcp_client_capabilities();
                 create_streamable_http_client(
                     &resolved_uri,
                     *timeout,
