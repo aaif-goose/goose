@@ -166,6 +166,7 @@ impl ProviderDef for OpenRouterProvider {
                     Some("https://openrouter.ai"),
                     false,
                 ),
+                ConfigKey::new("OPENROUTER_PARAMETERS", false, false, None, false),
             ],
         )
         .with_setup_steps(vec![
@@ -281,6 +282,19 @@ impl Provider for OpenRouterProvider {
 
         if let Some(obj) = payload.as_object_mut() {
             obj.insert("transforms".to_string(), json!(["middle-out"]));
+        }
+
+        let config = crate::config::Config::global();
+        if let Ok(params) =
+            config.get_param::<serde_json::Map<String, Value>>("OPENROUTER_PARAMETERS")
+        {
+            if let Some(obj) = payload.as_object_mut() {
+                for (k, v) in params {
+                    if !obj.contains_key(&k) {
+                        obj.insert(k, v);
+                    }
+                }
+            }
         }
 
         let mut log = RequestLog::start(model_config, &payload)?;

@@ -1221,6 +1221,28 @@ Here are some local providers we support:
 
 
 
+## OpenRouter Advanced Configuration
+
+OpenRouter supports a variety of advanced configuration options in their API, such as `verbosity`, [plugins](https://openrouter.ai/docs/plugins), and `require_parameters`. You can pass these generic API parameters directly to OpenRouter by modifying your `config.yaml` file to include an `OPENROUTER_PARAMETERS` dictionary.
+
+1. Open your `~/.config/goose/config.yaml` file.
+2. Add the `OPENROUTER_PARAMETERS` key with your desired OpenRouter payload attributes. 
+
+You can format it as a YAML object:
+```yaml
+OPENROUTER_PARAMETERS:
+  verbosity: xhigh
+  plugins:
+    - id: web
+```
+
+Or as a JSON string:
+```yaml
+OPENROUTER_PARAMETERS: '{"verbosity": "xhigh", "plugins": [{"id": "web"}]}'
+```
+
+goose will automatically parse these values and append them directly to the OpenRouter inference request payload.
+
 ## GitHub Copilot Authentication
 
 GitHub Copilot uses a device flow for authentication, so no API keys are required:
