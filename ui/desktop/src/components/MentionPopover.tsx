@@ -38,12 +38,12 @@ const i18n = defineMessages({
 type DisplayItemType = CommandType | 'Directory' | 'File';
 
 const typeOrder: Record<DisplayItemType, number> = {
-  Directory: 0,
-  File: 1,
-  Builtin: 2,
-  Skill: 3,
-  Recipe: 4,
-  Agent: 5,
+  Agent: 0,
+  Directory: 1,
+  File: 2,
+  Builtin: 3,
+  Skill: 4,
+  Recipe: 5,
 };
 
 export interface DisplayItem {
@@ -427,7 +427,9 @@ const MentionPopover = forwardRef<
           );
 
           let finalScore = bestMatch.score;
-          if (finalScore > 0 && currentWorkingDir) {
+          if (finalScore > 0 && file.itemType === 'Agent') {
+            finalScore += 100;
+          } else if (finalScore > 0 && currentWorkingDir) {
             const depth = file.extra.replace(currentWorkingDir, '').split('/').length - 1;
             finalScore += depth <= 1 ? 50 : depth <= 2 ? 30 : depth <= 3 ? 15 : 0;
           }
