@@ -64,7 +64,7 @@ struct ContentPart {
     thought_signature: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 struct Delta {
     #[serde(default)]
     content: Option<DeltaContent>,
@@ -77,6 +77,7 @@ struct Delta {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct StreamingChoice {
+    #[serde(default)]
     delta: Delta,
     index: Option<i32>,
     finish_reason: Option<String>,
@@ -953,11 +954,7 @@ where
 
                     yield (
                         Some(msg),
-                        if chunk.choices[0].finish_reason.is_some() {
-                            usage
-                        } else {
-                            None
-                        },
+                        usage,
                     )
                 } else if usage.is_some() {
                     yield (None, usage)
