@@ -113,6 +113,7 @@ strum = { workspace = true }
 once_cell = { workspace = true }
 etcetera = { workspace = true }
 fs-err = "3"
+goose-sdk = { path = "../goose-sdk" }
 rand = { workspace = true }
 utoipa = { workspace = true, features = ["chrono"] }
 tokio-cron-scheduler = "0.14.0"

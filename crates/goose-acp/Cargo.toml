@@ -37,7 +37,6 @@ regex = { workspace = true }
 fs-err = "3"
 strum = { workspace = true }
 url = { workspace = true }
-dirs = { workspace = true }
 
 # HTTP server dependencies
 axum = { workspace = true, features = ["ws"] }
