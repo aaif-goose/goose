@@ -75,10 +75,14 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
 
         const fallback = await getFallbackModelAndProvider();
         if (fallback.provider?.trim() && fallback.model?.trim()) {
-          await refreshCurrentModelAndProvider();
-          setHasProvider(true);
-          setIsCheckingProvider(false);
-          return;
+          const configuredProvider = (await read('GOOSE_PROVIDER', false)) as string | null;
+          const configuredModel = (await read('GOOSE_MODEL', false)) as string | null;
+          if (configuredProvider?.trim() && configuredModel?.trim()) {
+            await refreshCurrentModelAndProvider();
+            setHasProvider(true);
+            setIsCheckingProvider(false);
+            return;
+          }
         }
 
         setHasProvider(false);
