@@ -1,7 +1,7 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
-//! methods. A source is a user-editable entity (currently only the `skill`
-//! variant) stored under a per-scope root directory — `~/.agents/skills` for
-//! global sources and `<project>/.goose/skills` for project-specific sources.
+//! methods. A source is a user-editable entity stored under a per-scope root
+//! directory — `~/.agents/skills` for global sources and `<project>/.goose/skills`
+//! for project-specific sources.
 
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
