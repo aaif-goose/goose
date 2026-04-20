@@ -271,6 +271,146 @@ export const zUnarchiveSessionRequest = z.object({
     sessionId: z.string()
 });
 
+/**
+ * Transcribe audio via a dictation provider.
+ */
+export const zDictationTranscribeRequest = z.object({
+    audio: z.string(),
+    mimeType: z.string(),
+    provider: z.string()
+});
+
+/**
+ * Transcription result.
+ */
+export const zDictationTranscribeResponse = z.object({
+    text: z.string()
+});
+
+/**
+ * Get the configuration status of all dictation providers.
+ */
+export const zDictationConfigRequest = z.record(z.unknown());
+
+export const zDictationModelOption = z.object({
+    id: z.string(),
+    label: z.string(),
+    description: z.string()
+});
+
+/**
+ * Per-provider configuration status.
+ */
+export const zDictationProviderStatusEntry = z.object({
+    configured: z.boolean(),
+    host: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    description: z.string(),
+    usesProviderConfig: z.boolean(),
+    settingsPath: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    configKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    modelConfigKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultModel: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    selectedModel: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    availableModels: z.array(zDictationModelOption).optional().default([])
+});
+
+/**
+ * Dictation config response — map of provider name to status.
+ */
+export const zDictationConfigResponse = z.object({
+    providers: z.record(zDictationProviderStatusEntry)
+});
+
+/**
+ * List available local Whisper models with their download status.
+ */
+export const zDictationModelsListRequest = z.record(z.unknown());
+
+export const zDictationLocalModelStatus = z.object({
+    id: z.string(),
+    label: z.string(),
+    description: z.string(),
+    sizeMb: z.number().int().gte(0),
+    downloaded: z.boolean(),
+    downloadInProgress: z.boolean()
+});
+
+export const zDictationModelsListResponse = z.object({
+    models: z.array(zDictationLocalModelStatus)
+});
+
+/**
+ * Kick off a background download of a local Whisper model.
+ */
+export const zDictationModelDownloadRequest = z.object({
+    modelId: z.string()
+});
+
+/**
+ * Poll the progress of an in-flight download.
+ */
+export const zDictationModelDownloadProgressRequest = z.object({
+    modelId: z.string()
+});
+
+export const zDictationDownloadProgress = z.object({
+    bytesDownloaded: z.number().int().gte(0),
+    totalBytes: z.number().int().gte(0),
+    progressPercent: z.number(),
+    status: z.string(),
+    error: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zDictationModelDownloadProgressResponse = z.object({
+    progress: z.union([
+        zDictationDownloadProgress,
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Cancel an in-flight download.
+ */
+export const zDictationModelCancelRequest = z.object({
+    modelId: z.string()
+});
+
+/**
+ * Delete a downloaded local Whisper model from disk.
+ */
+export const zDictationModelDeleteRequest = z.object({
+    modelId: z.string()
+});
+
+/**
+ * Persist the user's model selection for a given provider.
+ */
+export const zDictationModelSelectRequest = z.object({
+    provider: z.string(),
+    modelId: z.string()
+});
+
 export const zExtRequest = z.object({
     id: z.string(),
     method: z.string(),
@@ -296,7 +436,15 @@ export const zExtRequest = z.object({
             zExportSessionRequest,
             zImportSessionRequest,
             zArchiveSessionRequest,
-            zUnarchiveSessionRequest
+            zUnarchiveSessionRequest,
+            zDictationTranscribeRequest,
+            zDictationConfigRequest,
+            zDictationModelsListRequest,
+            zDictationModelDownloadRequest,
+            zDictationModelDownloadProgressRequest,
+            zDictationModelCancelRequest,
+            zDictationModelDeleteRequest,
+            zDictationModelSelectRequest
         ]),
         z.union([
             z.record(z.unknown()),
@@ -321,7 +469,11 @@ export const zExtResponse = z.union([
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,
-                zImportSessionResponse
+                zImportSessionResponse,
+                zDictationTranscribeResponse,
+                zDictationConfigResponse,
+                zDictationModelsListResponse,
+                zDictationModelDownloadProgressResponse
             ]),
             z.unknown()
         ]).optional()

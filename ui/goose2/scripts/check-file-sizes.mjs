@@ -50,6 +50,16 @@ const EXCEPTIONS = {
     justification:
       "ACP-backed session overlay persistence, draft migration, and sidebar-facing session merge logic live together for now.",
   },
+  "src/features/chat/ui/ChatInput.tsx": {
+    limit: 510,
+    justification:
+      "Voice dictation send/stop guards, attachment handling, and mention/picker coordination still share one chat composer component.",
+  },
+  "src/features/chat/ui/__tests__/ChatInput.test.tsx": {
+    limit: 510,
+    justification:
+      "Composer regression coverage spans personas, queueing, attachments, and voice-input edge cases in one interaction-heavy suite.",
+  },
   "src-tauri/src/commands/projects.rs": {
     limit: 520,
     justification:

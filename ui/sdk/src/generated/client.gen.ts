@@ -13,6 +13,18 @@ import type {
   CheckSecretRequest,
   CheckSecretResponse,
   DeleteSessionRequest,
+  DictationConfigRequest,
+  DictationConfigResponse,
+  DictationModelCancelRequest,
+  DictationModelDeleteRequest,
+  DictationModelDownloadProgressRequest,
+  DictationModelDownloadProgressResponse,
+  DictationModelDownloadRequest,
+  DictationModelSelectRequest,
+  DictationModelsListRequest,
+  DictationModelsListResponse,
+  DictationTranscribeRequest,
+  DictationTranscribeResponse,
   ExportSessionRequest,
   ExportSessionResponse,
   GetExtensionsRequest,
@@ -43,6 +55,10 @@ import type {
 } from './types.gen.js';
 import {
   zCheckSecretResponse,
+  zDictationConfigResponse,
+  zDictationModelDownloadProgressResponse,
+  zDictationModelsListResponse,
+  zDictationTranscribeResponse,
   zExportSessionResponse,
   zGetExtensionsResponse,
   zGetProviderDetailsResponse,
@@ -173,5 +189,72 @@ export class GooseExtClient {
 
   async GooseSessionUnarchive(params: UnarchiveSessionRequest): Promise<void> {
     await this.conn.extMethod("_goose/session/unarchive", params);
+  }
+
+  async GooseDictationTranscribe(
+    params: DictationTranscribeRequest,
+  ): Promise<DictationTranscribeResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/dictation/transcribe",
+      params,
+    );
+    return zDictationTranscribeResponse.parse(
+      raw,
+    ) as DictationTranscribeResponse;
+  }
+
+  async GooseDictationConfig(
+    params: DictationConfigRequest,
+  ): Promise<DictationConfigResponse> {
+    const raw = await this.conn.extMethod("_goose/dictation/config", params);
+    return zDictationConfigResponse.parse(raw) as DictationConfigResponse;
+  }
+
+  async GooseDictationModelsList(
+    params: DictationModelsListRequest,
+  ): Promise<DictationModelsListResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/dictation/models/list",
+      params,
+    );
+    return zDictationModelsListResponse.parse(
+      raw,
+    ) as DictationModelsListResponse;
+  }
+
+  async GooseDictationModelsDownload(
+    params: DictationModelDownloadRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/dictation/models/download", params);
+  }
+
+  async GooseDictationModelsDownloadProgress(
+    params: DictationModelDownloadProgressRequest,
+  ): Promise<DictationModelDownloadProgressResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/dictation/models/download/progress",
+      params,
+    );
+    return zDictationModelDownloadProgressResponse.parse(
+      raw,
+    ) as DictationModelDownloadProgressResponse;
+  }
+
+  async GooseDictationModelsCancel(
+    params: DictationModelCancelRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/dictation/models/cancel", params);
+  }
+
+  async GooseDictationModelsDelete(
+    params: DictationModelDeleteRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/dictation/models/delete", params);
+  }
+
+  async GooseDictationModelSelect(
+    params: DictationModelSelectRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/dictation/model/select", params);
   }
 }

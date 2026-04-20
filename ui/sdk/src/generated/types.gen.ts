@@ -281,17 +281,154 @@ export type UnarchiveSessionRequest = {
     sessionId: string;
 };
 
+/**
+ * Transcribe audio via a dictation provider.
+ */
+export type DictationTranscribeRequest = {
+    /**
+     * Base64-encoded audio data
+     */
+    audio: string;
+    /**
+     * MIME type (e.g. "audio/wav", "audio/webm")
+     */
+    mimeType: string;
+    /**
+     * Provider to use: "openai", "groq", "elevenlabs", or "local"
+     */
+    provider: string;
+};
+
+/**
+ * Transcription result.
+ */
+export type DictationTranscribeResponse = {
+    text: string;
+};
+
+/**
+ * Get the configuration status of all dictation providers.
+ */
+export type DictationConfigRequest = {
+    [key: string]: unknown;
+};
+
+/**
+ * Dictation config response — map of provider name to status.
+ */
+export type DictationConfigResponse = {
+    providers: {
+        [key: string]: DictationProviderStatusEntry;
+    };
+};
+
+/**
+ * Per-provider configuration status.
+ */
+export type DictationProviderStatusEntry = {
+    configured: boolean;
+    host?: string | null;
+    description: string;
+    usesProviderConfig: boolean;
+    settingsPath?: string | null;
+    configKey?: string | null;
+    modelConfigKey?: string | null;
+    defaultModel?: string | null;
+    selectedModel?: string | null;
+    availableModels?: Array<DictationModelOption>;
+};
+
+export type DictationModelOption = {
+    id: string;
+    label: string;
+    description: string;
+};
+
+/**
+ * List available local Whisper models with their download status.
+ */
+export type DictationModelsListRequest = {
+    [key: string]: unknown;
+};
+
+export type DictationModelsListResponse = {
+    models: Array<DictationLocalModelStatus>;
+};
+
+export type DictationLocalModelStatus = {
+    id: string;
+    label: string;
+    description: string;
+    sizeMb: number;
+    downloaded: boolean;
+    downloadInProgress: boolean;
+};
+
+/**
+ * Kick off a background download of a local Whisper model.
+ */
+export type DictationModelDownloadRequest = {
+    modelId: string;
+};
+
+/**
+ * Poll the progress of an in-flight download.
+ */
+export type DictationModelDownloadProgressRequest = {
+    modelId: string;
+};
+
+export type DictationModelDownloadProgressResponse = {
+    /**
+     * None when no download is active for this model id.
+     */
+    progress?: DictationDownloadProgress | null;
+};
+
+export type DictationDownloadProgress = {
+    bytesDownloaded: number;
+    totalBytes: number;
+    progressPercent: number;
+    /**
+     * serde lowercase of DownloadStatus: "downloading" | "completed" | "failed" | "cancelled"
+     */
+    status: string;
+    error?: string | null;
+};
+
+/**
+ * Cancel an in-flight download.
+ */
+export type DictationModelCancelRequest = {
+    modelId: string;
+};
+
+/**
+ * Delete a downloaded local Whisper model from disk.
+ */
+export type DictationModelDeleteRequest = {
+    modelId: string;
+};
+
+/**
+ * Persist the user's model selection for a given provider.
+ */
+export type DictationModelSelectRequest = {
+    provider: string;
+    modelId: string;
+};
+
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderModelsRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderModelsRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderModelsResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderModelsResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;
