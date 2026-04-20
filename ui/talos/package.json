@@ -22,6 +22,7 @@
     "@tauri-apps/plugin-dialog": "~2.7.0",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@tauri-apps/plugin-shell": "~2.3.5",
+    "@tauri-apps/plugin-store": "~2.4.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

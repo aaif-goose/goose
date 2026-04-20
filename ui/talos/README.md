@@ -67,10 +67,16 @@ pnpm --filter talos tauri:build    # production desktop build
   to `/acp`. Frontend streams `agent_message_chunk` into the current tab's
   assistant message and surfaces `tool_call` / `tool_call_update` events as
   pills. First send in a tab lazily creates a new ACP session.
-- **Phase 3** — folder-backed Memory + Projects (paths in Settings). Map
-  Workflows \u2192 Goose recipes. Settings surface for folder paths and MCP.
-- **Phase 4** — persistence (tabs, chat history, prefs) via `tauri-plugin-store`
-  or SQLite.
+- **Phase 3 (done)** — folder-backed Memory + Projects (paths in Settings),
+  Workflows wired to Goose recipes, Settings modal for folder paths.
+- **Phase 4 (this commit)** — UI state (tabs, active tab, section, collapse
+  flags, open note) persists via `tauri-plugin-store` under
+  `$APP_CONFIG_DIR/state.json`. Hydrates on mount; saves debounced 500ms
+  after changes. Transient runtime data (streaming flags, `gooseSessionId`)
+  is stripped from disk so the app never resumes in an inconsistent state.
+- **Future** — MCP surface in Settings; recipe parameter prompts; real ACP
+  session resume (`client.loadSession`) so restored tabs continue their
+  prior conversation instead of starting fresh.
 
 ## Running with a real goose binary
 

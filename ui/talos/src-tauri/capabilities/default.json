@@ -12,6 +12,7 @@
     "opener:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "shell:default"
+    "shell:default",
+    "store:default"
   ]
 }

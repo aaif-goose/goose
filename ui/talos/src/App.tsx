@@ -31,6 +31,7 @@ import {
 } from "./services/folders";
 import { listRecipes, loadRecipePrompt, type Recipe } from "./services/recipes";
 import { getSettings, updateSettings, type Settings } from "./services/settings";
+import { loadUiState, saveUiState } from "./services/persistence";
 
 export function App() {
   const [activeApp, setActiveApp] = useState("chat");
@@ -50,6 +51,7 @@ export function App() {
   const [contextFolder, setContextFolder] = useState("memory");
   const [skills, setSkills] = useState<Skill[]>(SKILLS);
   const [sending, setSending] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   // Phase 3 state: settings + folder-backed data + recipes.
   const [settings, setSettings] = useState<Settings>({});
@@ -90,6 +92,58 @@ export function App() {
     setTabs(next);
     if (activeTab === id) setActiveTab(next[Math.max(0, idx - 1)]!.id);
   };
+
+  // ---------- Persistence: hydrate on mount ----------
+  useEffect(() => {
+    let cancelled = false;
+    loadUiState()
+      .then((persisted) => {
+        if (cancelled || !persisted) return;
+        // Clean: clear gooseSessionId (ACP sessions don't survive restart)
+        // and drop streaming flags.
+        const restoredTabs: ChatTab[] = persisted.tabs.map((t) => ({
+          ...t,
+          gooseSessionId: undefined,
+          messages: t.messages.map((m) =>
+            m.streaming ? { ...m, streaming: false } : m,
+          ),
+        }));
+        if (restoredTabs.length > 0) {
+          setTabs(restoredTabs);
+          const wantedActive =
+            restoredTabs.find((t) => t.id === persisted.activeTab)?.id ??
+            restoredTabs[0]!.id;
+          setActiveTab(wantedActive);
+        }
+        setSection(persisted.section);
+        setLeftCollapsed(persisted.leftCollapsed);
+        setRightCollapsed(persisted.rightCollapsed);
+        setOpenNote(persisted.openNote);
+      })
+      .catch((err) => console.warn("[persistence] hydrate failed", err))
+      .finally(() => {
+        if (!cancelled) setHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ---------- Persistence: debounced save after hydrate ----------
+  useEffect(() => {
+    if (!hydrated) return;
+    const handle = window.setTimeout(() => {
+      void saveUiState({
+        tabs,
+        activeTab,
+        section,
+        leftCollapsed,
+        rightCollapsed,
+        openNote,
+      });
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [hydrated, tabs, activeTab, section, leftCollapsed, rightCollapsed, openNote]);
 
   // ---------- Settings, folders, recipes ----------
   useEffect(() => {
