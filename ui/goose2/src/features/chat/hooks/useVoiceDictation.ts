@@ -75,12 +75,14 @@ export function useVoiceDictation({
     voicePrefs.selectedProvider != null &&
     providerStatuses[voicePrefs.selectedProvider] !== undefined;
 
-  const activeVoiceProvider = storedProviderIsPresent
-    ? voicePrefs.selectedProvider
-    : voicePrefs.hasStoredProviderPreference &&
-        voicePrefs.selectedProvider == null
-      ? null
-      : getDefaultDictationProvider(providerStatuses);
+  const activeVoiceProvider = !voicePrefs.isHydrated
+    ? null
+    : storedProviderIsPresent
+      ? voicePrefs.selectedProvider
+      : voicePrefs.hasStoredProviderPreference &&
+          voicePrefs.selectedProvider == null
+        ? null
+        : getDefaultDictationProvider(providerStatuses);
 
   // If a stored preference points at a provider that's no longer in
   // providerStatuses (feature-flagged off, removed), clear it so next boot

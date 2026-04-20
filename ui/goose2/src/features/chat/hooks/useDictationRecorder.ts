@@ -158,7 +158,7 @@ export function useDictationRecorder({
         const text = pendingResultsRef.current.get(nextExpectedSeqRef.current);
         pendingResultsRef.current.delete(nextExpectedSeqRef.current);
         nextExpectedSeqRef.current += 1;
-        if (text && text.trim()) {
+        if (text?.trim()) {
           onTranscriptionRef.current(text);
         }
       }
@@ -173,7 +173,7 @@ export function useDictationRecorder({
           );
           pendingResultsRef.current.delete(nextExpectedSeqRef.current);
           nextExpectedSeqRef.current += 1;
-          if (text && text.trim()) {
+          if (text?.trim()) {
             onTranscriptionRef.current(text);
           }
         }
@@ -373,11 +373,8 @@ export function useDictationRecorder({
   ]);
 
   const toggleRecording = useCallback(() => {
-    // If a startup is already in-flight, swallow the click. The pending
-    // startRecording will either resolve into isRecording=true (and a
-    // subsequent click will correctly stop) or be cancelled via
-    // cancelStartRef if something else calls stopRecording in the meantime.
     if (startingRef.current) {
+      stopRecording({ flushPending: false });
       return;
     }
     if (isRecording) {
