@@ -309,8 +309,7 @@ pub struct ProviderConfigKey {
     pub primary: bool,
 }
 
-/// The type of source entity. Currently only `skill` is supported; additional
-/// variants (e.g. recipe, agent) may be added later.
+/// The type of source entity.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum SourceType {
@@ -318,9 +317,8 @@ pub enum SourceType {
     Skill,
 }
 
-/// A source — a user-editable entity (currently: a skill) backed by an on-disk
-/// directory. Sources may be either `global` (shared across all projects) or
-/// project-specific.
+/// A source — a user-editable entity backed by an on-disk directory. Sources
+/// may be either `global` (shared across all projects) or project-specific.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceEntry {
