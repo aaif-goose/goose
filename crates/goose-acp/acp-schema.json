@@ -607,6 +607,299 @@
       "x-side": "agent",
       "x-method": "_goose/session/unarchive"
     },
+    "CreateSourceRequest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Absolute path to the project root. Required when `global` is false."
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "description",
+        "content",
+        "global"
+      ],
+      "description": "Create a new source (global or project-scoped).",
+      "x-side": "agent",
+      "x-method": "_goose/sources/create"
+    },
+    "SourceType": {
+      "type": "string",
+      "enum": [
+        "skill"
+      ],
+      "description": "The type of source entity."
+    },
+    "CreateSourceResponse": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SourceEntry"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/sources/create"
+    },
+    "SourceEntry": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string",
+          "description": "Absolute path to the source's directory on disk."
+        },
+        "global": {
+          "type": "boolean",
+          "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "description",
+        "content",
+        "directory",
+        "global"
+      ],
+      "description": "A source — a user-editable entity backed by an on-disk directory. Sources\nmay be either `global` (shared across all projects) or project-specific."
+    },
+    "ListSourcesRequest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "description": "List sources. If `type` is omitted, sources of all known types are returned.\nBoth global and project-scoped sources are included when `project_dir` is set.",
+      "x-side": "agent",
+      "x-method": "_goose/sources/list"
+    },
+    "ListSourcesResponse": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceEntry"
+          }
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/sources/list"
+    },
+    "UpdateSourceRequest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "description",
+        "content",
+        "global"
+      ],
+      "description": "Update an existing source's description and content.",
+      "x-side": "agent",
+      "x-method": "_goose/sources/update"
+    },
+    "UpdateSourceResponse": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SourceEntry"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/sources/update"
+    },
+    "DeleteSourceRequest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "global"
+      ],
+      "description": "Delete a source and its on-disk directory.",
+      "x-side": "agent",
+      "x-method": "_goose/sources/delete"
+    },
+    "ExportSourceRequest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "global"
+      ],
+      "description": "Export a source as a portable JSON payload.",
+      "x-side": "agent",
+      "x-method": "_goose/sources/export"
+    },
+    "ExportSourceResponse": {
+      "type": "object",
+      "properties": {
+        "json": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "json",
+        "filename"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/sources/export"
+    },
+    "ImportSourcesRequest": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data",
+        "global"
+      ],
+      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written under the given scope; on name collisions a\n`-imported` suffix is appended.",
+      "x-side": "agent",
+      "x-method": "_goose/sources/import"
+    },
+    "ImportSourcesResponse": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceEntry"
+          }
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/sources/import"
+    },
     "ExtRequest": {
       "properties": {
         "id": {
@@ -807,6 +1100,60 @@
                   ],
                   "description": "Params for _goose/session/unarchive",
                   "title": "UnarchiveSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CreateSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/create",
+                  "title": "CreateSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ListSourcesRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/list",
+                  "title": "ListSourcesRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpdateSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/update",
+                  "title": "UpdateSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DeleteSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/delete",
+                  "title": "DeleteSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ExportSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/export",
+                  "title": "ExportSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ImportSourcesRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/import",
+                  "title": "ImportSourcesRequest"
                 }
               ]
             },
@@ -933,6 +1280,46 @@
                         }
                       ],
                       "title": "ImportSessionResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CreateSourceResponse"
+                        }
+                      ],
+                      "title": "CreateSourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ListSourcesResponse"
+                        }
+                      ],
+                      "title": "ListSourcesResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/UpdateSourceResponse"
+                        }
+                      ],
+                      "title": "UpdateSourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ExportSourceResponse"
+                        }
+                      ],
+                      "title": "ExportSourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ImportSourcesResponse"
+                        }
+                      ],
+                      "title": "ImportSourcesResponse"
                     }
                   ]
                 },

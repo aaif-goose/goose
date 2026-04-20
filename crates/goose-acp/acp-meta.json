@@ -104,6 +104,36 @@
       "method": "_goose/session/unarchive",
       "requestType": "UnarchiveSessionRequest",
       "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/sources/create",
+      "requestType": "CreateSourceRequest",
+      "responseType": "CreateSourceResponse"
+    },
+    {
+      "method": "_goose/sources/list",
+      "requestType": "ListSourcesRequest",
+      "responseType": "ListSourcesResponse"
+    },
+    {
+      "method": "_goose/sources/update",
+      "requestType": "UpdateSourceRequest",
+      "responseType": "UpdateSourceResponse"
+    },
+    {
+      "method": "_goose/sources/delete",
+      "requestType": "DeleteSourceRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/sources/export",
+      "requestType": "ExportSourceRequest",
+      "responseType": "ExportSourceResponse"
+    },
+    {
+      "method": "_goose/sources/import",
+      "requestType": "ImportSourcesRequest",
+      "responseType": "ImportSourcesResponse"
     }
   ]
 }
