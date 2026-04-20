@@ -1,6 +1,7 @@
 [package]
 name = "goose-test-support"
 edition.workspace = true
+rust-version.workspace = true
 version.workspace = true
 authors.workspace = true
 license.workspace = true
