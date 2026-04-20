@@ -4,7 +4,8 @@
     "acp",
     "text",
     "desktop",
-    "goose-binary/*"
+    "goose-binary/*",
+    "myui"
   ],
   "scripts": {
     "changeset": "changeset",
