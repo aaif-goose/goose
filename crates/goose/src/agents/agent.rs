@@ -930,7 +930,24 @@ impl Agent {
     }
 
     pub async fn get_extension_configs(&self) -> Vec<ExtensionConfig> {
-        self.extension_manager.get_extension_configs().await
+        let mut configs = self.extension_manager.get_extension_configs().await;
+
+        let frontend_tools = self.frontend_tools.lock().await;
+        if !frontend_tools.is_empty() {
+            let tools: Vec<Tool> = frontend_tools.values().map(|t| t.tool.clone()).collect();
+            let instructions = self.frontend_instructions.lock().await.clone();
+
+            configs.push(ExtensionConfig::Frontend {
+                name: "frontend".to_string(),
+                description: "Frontend-provided tools".to_string(),
+                tools,
+                instructions,
+                bundled: None,
+                available_tools: Vec::new(),
+            });
+        }
+
+        configs
     }
 
     /// Handle a confirmation response for a tool request
