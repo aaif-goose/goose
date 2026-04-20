@@ -101,27 +101,9 @@ else
   if [[ "${WINDIR:-}" ]] || [[ "${windir:-}" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
     OS="windows"
   elif [[ -f "/proc/version" ]] && grep -q "Microsoft\|WSL" /proc/version 2>/dev/null; then
-    # WSL detected. Prefer Linux unless there are clear signs we should install the Windows build:
-    # - running on a Windows-mounted path like /mnt/c/...   OR
-    # - Windows executables are available AND we're on a Windows mount
-    if [[ "$PWD" =~ ^/mnt/[a-zA-Z]/ ]]; then
-      OS="windows"
-    else
-      # If powershell/cmd exist, only treat as Windows when in a Windows mount
-      if command -v powershell.exe >/dev/null 2>&1 || command -v cmd.exe >/dev/null 2>&1; then
-        if [[ "$PWD" =~ ^/mnt/[a-zA-Z]/ ]] || [[ -d "/c" || -d "/d" || -d "/e" ]]; then
-          OS="windows"
-        else
-          OS="linux"
-        fi
-      else
-        # No strong Windows interop present — install Linux build inside WSL by default
-        OS="linux"
-      fi
-    fi
-  elif [[ "$PWD" =~ ^/mnt/[a-zA-Z]/ ]]; then
-    # WSL mount point detection (like /mnt/c/) outside of /proc/version check
-    OS="windows"
+    # WSL detected. Always install the native Linux build inside WSL
+    # so the binary matches the execution environment.
+    OS="linux"
   elif [[ "$OSTYPE" == "darwin"* ]]; then
     OS="darwin"
   elif command -v powershell.exe >/dev/null 2>&1 || command -v cmd.exe >/dev/null 2>&1; then
