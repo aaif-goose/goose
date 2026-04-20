@@ -654,13 +654,78 @@ impl Provider for OpenAiProvider {
     }
 }
 
+fn split_on_commas_outside_quotes(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut escape_next = false;
+
+    for c in s.chars() {
+        if escape_next {
+            current.push(c);
+            escape_next = false;
+        } else if c == '\\' {
+            current.push(c);
+            escape_next = true;
+        } else if c == '"' {
+            in_quotes = !in_quotes;
+            current.push(c);
+        } else if c == ',' && !in_quotes {
+            parts.push(current.clone());
+            current.clear();
+        } else {
+            current.push(c);
+        }
+    }
+
+    parts.push(current);
+    parts
+}
+
 fn parse_custom_headers(s: String) -> HashMap<String, String> {
-    s.split(',')
+    fn unquote_and_unescape(val: &str) -> String {
+        let val = val.trim();
+        // check if it starts and ends with double quotes
+        let inner = if val.len() >= 2 && val.starts_with('"') && val.ends_with('"') {
+            &val[1..val.len() - 1]
+        } else {
+            val
+        };
+
+        let mut out = String::with_capacity(inner.len());
+        let mut chars = inner.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(next) = chars.next() {
+                    match next {
+                        '"' => out.push('"'),
+                        '\\' => out.push('\\'),
+                        // keep unknown escapes as-is (e.g., \n) rather than guessing
+                        other => {
+                            out.push('\\');
+                            out.push(other);
+                        }
+                    }
+                } else {
+                    out.push('\\');
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    split_on_commas_outside_quotes(&s)
+        .into_iter()
         .filter_map(|header| {
-            let mut parts = header.splitn(2, '=');
-            let key = parts.next().map(|s| s.trim().to_string())?;
-            let value = parts.next().map(|s| s.trim().to_string())?;
-            Some((key, value))
+            let (k, v) = header.split_once('=')?;
+            let key = k.trim();
+            if key.is_empty() {
+                return None;
+            }
+            let value = unquote_and_unescape(v);
+            Some((key.to_string(), value))
         })
         .collect()
 }
@@ -740,6 +805,30 @@ mod tests {
             custom_models: None,
             skip_canonical_filtering: false,
         }
+    }
+
+    #[test]
+    fn test_parse_custom_headers_respects_commas_in_quotes() {
+        let headers = r#"A="1,2",B=3"#.to_string();
+        let parsed = parse_custom_headers(headers);
+        assert_eq!(parsed.get("A").unwrap(), "1,2");
+        assert_eq!(parsed.get("B").unwrap(), "3");
+    }
+
+    #[test]
+    fn test_parse_custom_headers_trims_and_unquotes() {
+        let headers = r#" A = "x, y" , B = z "#.to_string();
+        let parsed = parse_custom_headers(headers);
+        assert_eq!(parsed.get("A").unwrap(), "x, y");
+        assert_eq!(parsed.get("B").unwrap(), "z");
+    }
+
+    #[test]
+    fn test_parse_custom_headers_supports_escaped_quotes() {
+        let headers = r#"A="hello \"world\"",B=ok"#.to_string();
+        let parsed = parse_custom_headers(headers);
+        assert_eq!(parsed.get("A").unwrap(), r#"hello "world""#);
+        assert_eq!(parsed.get("B").unwrap(), "ok");
     }
 
     #[test]
