@@ -148,6 +148,7 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
       if (lastSessionIdRef.current === sessionId) {
         lastSessionIdRef.current = null;
       }
+      fetchSessions();
     };
 
     const handleSessionRenamed = (event: Event) => {
@@ -169,7 +170,7 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
       window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
     };
-  }, []);
+  }, [fetchSessions]);
 
   const handleNavClick = useCallback(
     (path: string) => {
