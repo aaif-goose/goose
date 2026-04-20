@@ -15,12 +15,8 @@ vi.mock("../acpConnection", () => ({
   getClient: vi.fn(),
 }));
 
-interface MockClient {
-  goose: Record<string, ReturnType<typeof vi.fn>>;
-}
-
 describe("dictation SDK wiring", () => {
-  let client: MockClient;
+  let client: { goose: Record<string, ReturnType<typeof vi.fn>> };
   beforeEach(() => {
     client = {
       goose: {
@@ -37,7 +33,9 @@ describe("dictation SDK wiring", () => {
         GooseDictationTranscribe: vi.fn().mockResolvedValue({ text: "hello" }),
       },
     };
-    vi.mocked(getClient).mockResolvedValue(client);
+    vi.mocked(getClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getClient>>,
+    );
   });
 
   it("getDictationConfig calls GooseDictationConfig and returns providers map", async () => {
