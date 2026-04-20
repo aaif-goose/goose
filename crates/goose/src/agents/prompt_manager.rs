@@ -442,9 +442,15 @@ mod tests {
             .map(|def| {
                 let client = (def.client_factory)(context.clone());
                 let info = client.get_info();
-                let instructions = info
+                let mut instructions = info
                     .and_then(|i| i.instructions.clone())
                     .unwrap_or_default();
+                    
+                // Force determinism for snapshot testing so local developer skills don't pollute the diff
+                if def.name == "skills" {
+                    instructions = "<Deterministic skill instructions for snapshot tests>".to_string();
+                }
+                
                 let has_resources = info
                     .and_then(|i| i.capabilities.resources.as_ref())
                     .is_some();
