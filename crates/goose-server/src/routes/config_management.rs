@@ -444,7 +444,11 @@ pub async fn get_slash_commands(
         goose::agents::platform_extensions::summon::discover_filesystem_sources(discover_dir)
     {
         use goose::agents::platform_extensions::SourceKind;
-        if source.kind == SourceKind::Agent && !source.content.is_empty() {
+        if matches!(
+            source.kind,
+            SourceKind::Agent | SourceKind::Recipe | SourceKind::Subrecipe
+        ) && !source.content.is_empty()
+        {
             commands.push(SlashCommand {
                 command: source.name,
                 help: source.description,

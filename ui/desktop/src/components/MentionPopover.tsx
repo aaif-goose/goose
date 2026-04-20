@@ -490,12 +490,14 @@ const MentionPopover = forwardRef<
               throwOnError: true,
             });
             if (cancelled) return;
-            const commandItems: DisplayItem[] = (response.data?.commands || []).map((cmd) => ({
-              name: cmd.command,
-              extra: cmd.help,
-              itemType: cmd.command_type,
-              relativePath: cmd.command,
-            }));
+            const commandItems: DisplayItem[] = (response.data?.commands || [])
+              .filter((cmd) => cmd.command_type !== 'Agent')
+              .map((cmd) => ({
+                name: cmd.command,
+                extra: cmd.help,
+                itemType: cmd.command_type,
+                relativePath: cmd.command,
+              }));
             setItems(commandItems);
           } else {
             // Fetch agents from server and scan files in parallel
