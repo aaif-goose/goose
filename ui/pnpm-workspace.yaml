@@ -4,4 +4,4 @@ packages:
   - 'desktop'
   - 'goose-binary/*'
   - 'goose2'
-  - 'myui'
+  - 'talos'

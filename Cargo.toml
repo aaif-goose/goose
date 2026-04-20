@@ -4,7 +4,7 @@ members = [
     # Mainly for cargo-machete to not error out during inspection.
     "vendor/v8",
 ]
-exclude = ["ui/goose2/src-tauri", "ui/myui/src-tauri"]
+exclude = ["ui/goose2/src-tauri", "ui/talos/src-tauri"]
 resolver = "2"
 
 [workspace.package]

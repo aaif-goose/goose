@@ -1,16 +1,16 @@
 [package]
-name = "myui"
+name = "talos"
 version = "0.1.0"
-description = "MyUI desktop app"
+description = "Talos desktop app"
 authors = ["you"]
 edition = "2021"
 
 [[bin]]
-name = "myui-tauri"
+name = "talos-tauri"
 path = "src/main.rs"
 
 [lib]
-name = "myui_lib"
+name = "talos_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

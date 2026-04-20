@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MyUI",
+  "productName": "Talos",
   "version": "0.1.0",
-  "identifier": "com.myui.app",
+  "identifier": "com.talos.app",
   "build": {
     "beforeDevCommand": {
       "script": "exec ./node_modules/.bin/vite",
@@ -16,10 +16,15 @@
   "app": {
     "windows": [
       {
-        "title": "MyUI",
-        "width": 1000,
-        "height": 700,
-        "visible": true
+        "title": "Talos",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "visible": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 12, "y": 22 }
       }
     ],
     "security": {

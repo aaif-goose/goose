@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  
+  <defs>
+    <linearGradient id="gemBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a093ff"></stop>
+      <stop offset="100%" stop-color="#6758d9"></stop>
+    </linearGradient>
+    <linearGradient id="gemLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c9c0ff" stop-opacity="0.9"></stop>
+      <stop offset="100%" stop-color="#8b7cff" stop-opacity="0"></stop>
+    </linearGradient>
+  </defs>
+  
+  <path d="M24 4 L40 16 L32 42 L16 42 L8 16 Z" fill="url(#gemBody)"></path>
+  
+  <path d="M24 4 L40 16 L24 18 L8 16 Z" fill="#a093ff"></path>
+  
+  <path d="M24 4 L24 42" stroke="#16171b" stroke-width="1.2" stroke-opacity="0.35"></path>
+  
+  <path d="M8 16 L24 18 L16 42" stroke="#16171b" stroke-width="1.2" stroke-opacity="0.3" fill="none"></path>
+  <path d="M40 16 L24 18 L32 42" stroke="#16171b" stroke-width="1.2" stroke-opacity="0.3" fill="none"></path>
+  
+  <path d="M24 4 L34 13 L24 18 Z" fill="url(#gemLight)"></path>
+</svg>

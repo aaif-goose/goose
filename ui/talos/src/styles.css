@@ -1,0 +1,12 @@
+/* Small app-level additions on top of design/app.css. */
+
+.typing-dots {
+  display: inline-block;
+  animation: typing 1.2s infinite;
+  letter-spacing: 2px;
+}
+
+@keyframes typing {
+  0%, 60%, 100% { opacity: 0.3; }
+  30% { opacity: 1; }
+}

@@ -1,5 +1,5 @@
 {
-  "name": "myui",
+  "name": "talos",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -15,6 +15,9 @@
   "dependencies": {
     "@aaif/goose-sdk": "workspace:*",
     "@agentclientprotocol/sdk": "^0.19.0",
+    "@fontsource/inter": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.5",
+    "@fontsource/lora": "^5.2.5",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "~2.7.0",
     "@tauri-apps/plugin-opener": "^2.5.3",

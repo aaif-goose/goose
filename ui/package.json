@@ -5,7 +5,7 @@
     "text",
     "desktop",
     "goose-binary/*",
-    "myui"
+    "talos"
   ],
   "scripts": {
     "changeset": "changeset",
