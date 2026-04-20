@@ -158,7 +158,7 @@ jobs:
             patchelf
 
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
           components: rustfmt, clippy
 
