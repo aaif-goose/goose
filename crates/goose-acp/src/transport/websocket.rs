@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info, warn};
 
-use super::{TransportSession, HEADER_SESSION_ID};
+use super::{AcpAuthContext, TransportSession, HEADER_SESSION_ID};
 use crate::adapters::{ReceiverToAsyncRead, SenderToAsyncWrite};
 use crate::server_factory::AcpServer;
 
@@ -66,7 +66,11 @@ impl WsState {
     }
 }
 
-pub(crate) async fn handle_get(state: Arc<WsState>, ws: WebSocketUpgrade) -> Response {
+pub(crate) async fn handle_get(
+    state: Arc<WsState>,
+    ws: WebSocketUpgrade,
+    auth_context: Option<AcpAuthContext>,
+) -> Response {
     let acp_session_id = match state.create_connection().await {
         Ok(id) => id,
         Err(e) => {
@@ -77,6 +81,13 @@ pub(crate) async fn handle_get(state: Arc<WsState>, ws: WebSocketUpgrade) -> Res
             )
                 .into_response();
         }
+    };
+
+    let protocol = auth_context.and_then(|context| context.websocket_protocol);
+    let ws = if let Some(protocol) = protocol {
+        ws.protocols([protocol])
+    } else {
+        ws
     };
 
     let mut response = ws.on_upgrade({

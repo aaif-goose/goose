@@ -65,13 +65,15 @@ function monitorConnection(client: GooseClient): void {
 
 async function initializeConnection(): Promise<GooseClient> {
   const tStart = performance.now();
-  const wsUrl: string = await invoke("get_goose_serve_url");
+  const { url, token } = await invoke<{ url: string; token: string }>(
+    "get_goose_serve_connection",
+  );
   perfLog(
-    `[perf:conn] get_goose_serve_url in ${(performance.now() - tStart).toFixed(1)}ms`,
+    `[perf:conn] get_goose_serve_connection in ${(performance.now() - tStart).toFixed(1)}ms`,
   );
 
   const tStream = performance.now();
-  const stream = createWebSocketStream(wsUrl);
+  const stream = createWebSocketStream(url, token);
 
   const client = new GooseClient(createClientCallbacks(), stream);
   perfLog(

@@ -48,6 +48,7 @@ uuid = { workspace = true, features = ["v7"] }
 schemars = { workspace = true, features = ["derive"] }
 goose-acp-macros = { path = "../goose-acp-macros" }
 goose-sdk = { path = "../goose-sdk" }
+subtle = "2.6"
 
 [dev-dependencies]
 async-trait = { workspace = true }
@@ -58,6 +59,7 @@ test-case = { workspace = true }
 axum = { workspace = true }
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+tower = "0.5"
 
 [package.metadata.cargo-machete]
 # Used to provide extras imports for sacp

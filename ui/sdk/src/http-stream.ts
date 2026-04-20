@@ -2,11 +2,12 @@ import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
 
 const ACP_SESSION_HEADER = "Acp-Session-Id";
 
-export function createHttpStream(serverUrl: string): Stream {
+export function createHttpStream(serverUrl: string, token?: string): Stream {
   let sessionId: string | null = null;
   const incoming: AnyMessage[] = [];
   const waiters: Array<() => void> = [];
   const sseAbort = new AbortController();
+  const authHeader = token ? `Bearer ${token}` : null;
 
   function pushMessage(msg: AnyMessage) {
     incoming.push(msg);
@@ -77,6 +78,9 @@ export function createHttpStream(serverUrl: string): Stream {
       };
       if (sessionId) {
         headers[ACP_SESSION_HEADER] = sessionId;
+      }
+      if (authHeader) {
+        headers["Authorization"] = authHeader;
       }
 
       if (isFirstRequest && isRequest) {

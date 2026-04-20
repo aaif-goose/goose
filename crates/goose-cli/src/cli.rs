@@ -1066,6 +1066,7 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
 async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) -> Result<()> {
     use goose::config::paths::Paths;
     use goose_acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+    use rand::{rngs::OsRng, RngCore};
     use std::net::SocketAddr;
     use std::sync::Arc;
     use tracing::info;
@@ -1081,10 +1082,19 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
     }));
-    let router = goose_acp::transport::create_router(server);
+    let mut auth_bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut auth_bytes);
+    let mut auth_token = String::with_capacity(auth_bytes.len() * 2);
+    for byte in auth_bytes {
+        use std::fmt::Write as _;
+
+        write!(&mut auth_token, "{byte:02x}")?;
+    }
+    let router = goose_acp::transport::create_router(server, Arc::<str>::from(auth_token.clone()));
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);
+    println!("ACP_TOKEN={auth_token}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router).await?;

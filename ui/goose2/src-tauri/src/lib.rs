@@ -43,7 +43,7 @@ pub fn run() {
             commands::agents::save_persona_avatar,
             commands::agents::save_persona_avatar_bytes,
             commands::agents::get_avatars_dir,
-            commands::acp::get_goose_serve_url,
+            commands::acp::get_goose_serve_connection,
             commands::skills::create_skill,
             commands::skills::list_skills,
             commands::skills::delete_skill,

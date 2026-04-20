@@ -3,6 +3,7 @@ use tauri_plugin_shell::ShellExt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::OnceCell;
 
@@ -20,6 +21,7 @@ const LOCALHOST: &str = "127.0.0.1";
 /// concurrent sessions.
 pub struct GooseServeProcess {
     port: u16,
+    token: String,
     _child: Child,
 }
 
@@ -30,6 +32,10 @@ impl GooseServeProcess {
     /// Return the WebSocket URL for connecting to this server.
     pub fn ws_url(&self) -> String {
         format!("ws://{LOCALHOST}:{}/acp", self.port)
+    }
+
+    pub fn token(&self) -> &str {
+        &self.token
     }
 
     /// Get a reference to the running process, or an error if it was never
@@ -64,7 +70,7 @@ impl GooseServeProcess {
             .arg(port.to_string())
             .current_dir(&working_dir)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
 
@@ -80,12 +86,14 @@ impl GooseServeProcess {
             )
         })?;
 
+        let token = read_auth_token(&mut child).await?;
         wait_for_server_ready(port, &mut child).await?;
 
         log::info!("Goose serve is ready on port {port}");
 
         Ok(GooseServeProcess {
             port,
+            token,
             _child: child,
         })
     }
@@ -126,6 +134,56 @@ async fn wait_for_server_ready(port: u16, child: &mut Child) -> Result<(), Strin
                 }
 
                 tokio::time::sleep(GOOSE_SERVE_CONNECT_RETRY_DELAY).await;
+            }
+        }
+    }
+}
+
+async fn read_auth_token(child: &mut Child) -> Result<String, String> {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Goose serve stdout was not piped".to_string())?;
+    let deadline = Instant::now() + GOOSE_SERVE_CONNECT_TIMEOUT;
+    let mut lines = BufReader::new(stdout).lines();
+
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| format!("Failed to poll goose serve process: {e}"))?
+        {
+            return Err(format!(
+                "Goose serve exited before emitting ACP token: {status}"
+            ));
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("Timed out waiting for goose serve auth token".to_string());
+        }
+
+        match tokio::time::timeout(remaining, lines.next_line()).await {
+            Ok(Ok(Some(line))) => {
+                if let Some(token) = line.strip_prefix("ACP_TOKEN=") {
+                    if token.is_empty() {
+                        return Err("Goose serve emitted an empty ACP token".to_string());
+                    }
+
+                    tokio::spawn(
+                        async move { while matches!(lines.next_line().await, Ok(Some(_))) {} },
+                    );
+
+                    return Ok(token.to_string());
+                }
+            }
+            Ok(Ok(None)) => {
+                return Err("Goose serve closed stdout before emitting ACP token".to_string());
+            }
+            Ok(Err(error)) => {
+                return Err(format!("Failed to read goose serve stdout: {error}"));
+            }
+            Err(_) => {
+                return Err("Timed out waiting for goose serve auth token".to_string());
             }
         }
     }
