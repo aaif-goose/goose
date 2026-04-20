@@ -69,10 +69,11 @@ struct KimiToken {
 /// Normalize helper output into the on-disk `KimiToken` shape. When the helper
 /// returns `None` for `refresh_token` or `expires_at`, fall back to the prior
 /// refresh token (per RFC 6749 §6) and a default lifetime.
-fn tokens_to_kimi(tokens: DeviceFlowTokens, prior_refresh: &str) -> KimiToken {
+fn tokens_to_kimi(tokens: DeviceFlowTokens, prior_refresh: Option<&str>) -> KimiToken {
     let refresh_token = tokens
         .refresh_token
-        .unwrap_or_else(|| prior_refresh.to_string());
+        .or_else(|| prior_refresh.map(str::to_string))
+        .unwrap_or_default();
     let expires_at = tokens
         .expires_at
         .unwrap_or_else(|| Utc::now() + Duration::seconds(DEFAULT_TOKEN_LIFETIME_SECS));
@@ -274,7 +275,7 @@ impl KimiCodeProvider {
         let device_auth_url = format!("{}/api/oauth/device_authorization", self.auth_host);
         let token_url = format!("{}/api/oauth/token", self.auth_host);
         let cfg = DeviceFlowConfig {
-            device_auth_url: &device_auth_url,
+            device_auth_url: Some(&device_auth_url),
             token_url: &token_url,
             client_id: KIMI_CODE_CLIENT_ID,
             scopes: None,
@@ -282,13 +283,13 @@ impl KimiCodeProvider {
             encoding: RequestEncoding::Form,
         };
         let tokens = run_device_flow(&self.client, &cfg).await?;
-        Ok(tokens_to_kimi(tokens, ""))
+        Ok(tokens_to_kimi(tokens, None))
     }
 
     async fn do_refresh_token(&self, refresh_token: &str) -> Result<KimiToken> {
         let token_url = format!("{}/api/oauth/token", self.auth_host);
         let cfg = DeviceFlowConfig {
-            device_auth_url: "",
+            device_auth_url: None,
             token_url: &token_url,
             client_id: KIMI_CODE_CLIENT_ID,
             scopes: None,
@@ -298,7 +299,7 @@ impl KimiCodeProvider {
         let tokens = refresh_device_flow_token(&self.client, &cfg, refresh_token).await?;
         // RFC 6749 §6: the server MAY omit `refresh_token` from a refresh
         // response, in which case the client should keep reusing the prior one.
-        Ok(tokens_to_kimi(tokens, refresh_token))
+        Ok(tokens_to_kimi(tokens, Some(refresh_token)))
     }
 
     // ── HTTP ─────────────────────────────────────────────────────────────────

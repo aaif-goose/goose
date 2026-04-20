@@ -33,7 +33,8 @@ pub enum RequestEncoding {
 #[derive(Debug, Clone)]
 pub struct DeviceFlowConfig<'a> {
     /// `device_authorization_endpoint` (RFC 8628 §3.1).
-    pub device_auth_url: &'a str,
+    /// `None` when only the refresh grant is needed.
+    pub device_auth_url: Option<&'a str>,
     /// `token_endpoint` used for both device-code polling and refresh grants.
     pub token_url: &'a str,
     /// Public OAuth client identifier.
@@ -98,7 +99,10 @@ pub async fn request_device_code(
         scope: cfg.scopes,
     };
 
-    send_request(client, cfg, cfg.device_auth_url, &body)
+    let url = cfg
+        .device_auth_url
+        .ok_or_else(|| anyhow!("device_auth_url is required for device code request"))?;
+    send_request(client, cfg, url, &body)
         .await
         .context("failed to request device authorization")?
         .error_for_status()
@@ -293,7 +297,9 @@ async fn send_request<T: Serialize + ?Sized>(
 
 fn announce_user_action(device: &DeviceCodeResponse) {
     if let Ok(mut clipboard) = arboard::Clipboard::new() {
-        let _ = clipboard.set_text(&device.user_code);
+        if let Err(e) = clipboard.set_text(&device.user_code) {
+            tracing::warn!("Failed to copy verification code to clipboard: {}", e);
+        }
     }
     let verify_url = device.verification_url();
     if let Err(e) = webbrowser::open(verify_url) {
@@ -313,7 +319,7 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn make_cfg<'a>(device_auth_url: &'a str, token_url: &'a str) -> DeviceFlowConfig<'a> {
+    fn make_cfg<'a>(device_auth_url: Option<&'a str>, token_url: &'a str) -> DeviceFlowConfig<'a> {
         DeviceFlowConfig {
             device_auth_url,
             token_url,
@@ -338,7 +344,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let tokens = poll_for_tokens(&client, &cfg, "device-abc", 0, 30)
@@ -370,7 +376,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let tokens = poll_for_tokens(&client, &cfg, "device-abc", 0, 30)
@@ -401,7 +407,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let tokens = poll_for_tokens(&client, &cfg, "device-abc", 0, 30)
@@ -422,7 +428,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let err = poll_for_tokens(&client, &cfg, "device-abc", 0, 0)
@@ -441,7 +447,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let err = poll_for_tokens(&client, &cfg, "device-abc", 0, 5)
@@ -464,7 +470,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let err = poll_for_tokens(&client, &cfg, "device-abc", 0, 5)
@@ -490,7 +496,7 @@ mod tests {
             .await;
 
         let device_url = format!("{}/device_authorization", server.uri());
-        let cfg = make_cfg(&device_url, "");
+        let cfg = make_cfg(Some(&device_url), "");
 
         let client = Client::new();
         let resp = request_device_code(&client, &cfg).await.unwrap();
@@ -517,7 +523,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let tokens = refresh_device_flow_token(&client, &cfg, "old_refresh")
@@ -541,7 +547,7 @@ mod tests {
             .await;
 
         let token_url = format!("{}/token", server.uri());
-        let cfg = make_cfg("", &token_url);
+        let cfg = make_cfg(None, &token_url);
 
         let client = Client::new();
         let tokens = refresh_device_flow_token(&client, &cfg, "old_refresh")

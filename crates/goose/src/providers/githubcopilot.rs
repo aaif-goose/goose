@@ -339,7 +339,7 @@ impl GithubCopilotProvider {
 
     async fn login(&self) -> Result<String> {
         let cfg = DeviceFlowConfig {
-            device_auth_url: &self.urls.device_code_url,
+            device_auth_url: Some(&self.urls.device_code_url),
             token_url: &self.urls.access_token_url,
             client_id: &self.client_id,
             scopes: Some("read:user"),
