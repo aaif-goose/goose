@@ -759,6 +759,10 @@ where
         let mut think_filter = ThinkFilter::new();
         let mut saw_structured_reasoning = false;
         let mut last_signature: Option<String> = None;
+        // Buffer inline <think>...</think> content until we know whether structured
+        // reasoning will arrive. Emitting it immediately and then receiving
+        // reasoning_content in a later chunk would produce duplicated reasoning.
+        let mut pending_inline_thinking = String::new();
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -784,6 +788,7 @@ where
                     accumulated_reasoning_content.push_str(rc);
                     if !rc.is_empty() {
                         saw_structured_reasoning = true;
+                        pending_inline_thinking.clear();
                     }
                 }
             }
@@ -829,6 +834,7 @@ where
                                         accumulated_reasoning_content.push_str(rc);
                                         if !rc.is_empty() {
                                             saw_structured_reasoning = true;
+                                            pending_inline_thinking.clear();
                                         }
                                     }
                                     if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
@@ -871,13 +877,19 @@ where
                 };
 
                 let filtered = think_filter.push("");
-                if !filtered.content.is_empty() || (!filtered.thinking.is_empty() && !saw_structured_reasoning) {
+                let mut flush_thinking = String::new();
+                if !saw_structured_reasoning {
+                    flush_thinking.push_str(&pending_inline_thinking);
+                    flush_thinking.push_str(&filtered.thinking);
+                }
+                pending_inline_thinking.clear();
+                if !filtered.content.is_empty() || !flush_thinking.is_empty() {
                     let mut filtered_contents = Vec::new();
                     if !filtered.content.is_empty() {
                         filtered_contents.push(MessageContent::text(filtered.content));
                     }
-                    if !saw_structured_reasoning && !filtered.thinking.is_empty() {
-                        filtered_contents.push(MessageContent::thinking(filtered.thinking, ""));
+                    if !flush_thinking.is_empty() {
+                        filtered_contents.push(MessageContent::thinking(flush_thinking, ""));
                     }
 
                     if !filtered_contents.is_empty() {
@@ -981,7 +993,7 @@ where
                     let filtered = think_filter.push(&text);
 
                     if !saw_structured_reasoning && !filtered.thinking.is_empty() {
-                        content.push(MessageContent::thinking(filtered.thinking, ""));
+                        pending_inline_thinking.push_str(&filtered.thinking);
                     }
 
                     if !filtered.content.is_empty() {
@@ -1017,15 +1029,22 @@ where
         }
 
         let filtered = think_filter.finish();
-        if !filtered.content.is_empty() || (!filtered.thinking.is_empty() && !saw_structured_reasoning) {
+        let mut trailing_thinking = String::new();
+        if !saw_structured_reasoning {
+            trailing_thinking.push_str(&pending_inline_thinking);
+            trailing_thinking.push_str(&filtered.thinking);
+        }
+        pending_inline_thinking.clear();
+
+        if !filtered.content.is_empty() || !trailing_thinking.is_empty() {
             let mut content = Vec::new();
 
             if !filtered.content.is_empty() {
                 content.push(MessageContent::text(filtered.content));
             }
 
-            if !saw_structured_reasoning && !filtered.thinking.is_empty() {
-                content.push(MessageContent::thinking(filtered.thinking, ""));
+            if !trailing_thinking.is_empty() {
+                content.push(MessageContent::thinking(trailing_thinking, ""));
             }
 
             yield (
@@ -2215,6 +2234,48 @@ data: [DONE]"#;
 
         assert_eq!(text, "y");
         assert_eq!(thinking, "x");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_suppresses_inline_think_when_structured_reasoning_follows(
+    ) -> anyhow::Result<()> {
+        // Inline <think>...</think> arrives in an early content chunk, then
+        // reasoning_content arrives in a later chunk. The inline thinking
+        // should be discarded in favor of the structured reasoning so users
+        // do not get duplicated reasoning output.
+        let response_lines = concat!(
+            "data: {\"id\":\"chunk-1\",\"choices\":[{\"delta\":{\"content\":\"<think>inline reasoning</think>Hi\"},\"index\":0,\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"chunk-2\",\"choices\":[{\"delta\":{\"reasoning_content\":\"structured reasoning\"},\"index\":0,\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"chunk-3\",\"choices\":[{\"delta\":{\"content\":\" there\"},\"index\":0,\"finish_reason\":\"stop\"}]}\n",
+            "data: [DONE]\n"
+        );
+
+        let response_stream =
+            tokio_stream::iter(response_lines.lines().map(|line| Ok(line.to_string())));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut text = String::new();
+        let mut thinking = String::new();
+
+        while let Some(result) = messages.next().await {
+            let (message, _) = result?;
+            if let Some(message) = message {
+                for item in message.content {
+                    match item {
+                        MessageContent::Text(text_content) => text.push_str(&text_content.text),
+                        MessageContent::Thinking(thinking_content) => {
+                            thinking.push_str(&thinking_content.thinking)
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text, "Hi there");
+        assert_eq!(thinking, "structured reasoning");
 
         Ok(())
     }

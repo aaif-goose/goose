@@ -211,6 +211,17 @@ fn parse_think_tag(buffer: &str, start: usize) -> Option<(ThinkTag, usize)> {
         return None;
     }
 
+    // Require a real tag boundary immediately after the name (>, /, or whitespace).
+    // Without this, `<thinking-mode>` or `<thinking123>` would be classified as a
+    // think tag and stripped from normal content.
+    let valid_open_boundary = match bytes.get(idx) {
+        Some(&b) => b == b'>' || b == b'/' || b.is_ascii_whitespace(),
+        None => false,
+    };
+    if !valid_open_boundary {
+        return None;
+    }
+
     while let Some(byte) = bytes.get(idx) {
         if *byte == b'>' {
             return Some((ThinkTag::Open, idx + 1));
@@ -1180,6 +1191,40 @@ mod tests {
 
         assert!(out.content.is_empty());
         assert_eq!(out.thinking, "unfinished");
+    }
+
+    #[test]
+    fn test_think_filter_preserves_tags_with_think_prefix() {
+        for input in [
+            "<thinking-mode>hello</thinking-mode>",
+            "<thinking123>payload</thinking123>",
+            "<thinker>note</thinker>",
+        ] {
+            let mut filter = ThinkFilter::new();
+            let mut out = filter.push(input);
+            let final_out = filter.finish();
+            out.content.push_str(&final_out.content);
+            out.thinking.push_str(&final_out.thinking);
+
+            assert_eq!(out.content, input, "content mismatch for {input:?}");
+            assert!(
+                out.thinking.is_empty(),
+                "unexpected thinking for {input:?}: {:?}",
+                out.thinking
+            );
+        }
+    }
+
+    #[test]
+    fn test_think_filter_accepts_think_with_attributes() {
+        let mut filter = ThinkFilter::new();
+        let mut out = filter.push("<think data-source=\"x\">hidden</think>visible");
+        let final_out = filter.finish();
+        out.content.push_str(&final_out.content);
+        out.thinking.push_str(&final_out.thinking);
+
+        assert_eq!(out.content, "visible");
+        assert_eq!(out.thinking, "hidden");
     }
 
     #[test]
