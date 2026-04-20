@@ -2,6 +2,10 @@
  * Playwright custom fixture that injects a Tauri IPC mock into the page
  * before every navigation. This allows E2E tests to run against the frontend
  * without the real Tauri backend.
+ *
+ * Also installs a `window.WebSocket` stub for the ACP connection so features
+ * like skills (which use `client.extMethod("_goose/sources/...")`) can run
+ * without a live goose-acp server.
  */
 
 import { test as base, expect, type Page } from "@playwright/test";
@@ -11,7 +15,7 @@ import { MOCK_PERSONAS, MOCK_PROJECTS, MOCK_SKILLS } from "./mock-data";
  * Build the init script that will be injected into the page via
  * `page.addInitScript()`. The script sets up `window.__TAURI_INTERNALS__`
  * with an `invoke` handler that returns mock data for every Tauri command
- * the app is known to call.
+ * the app is known to call, plus a WebSocket mock for ACP traffic.
  *
  * Callers can override the default personas and skills arrays to test
  * empty-state or custom scenarios.
@@ -30,10 +34,155 @@ export function buildInitScript(options?: {
       const PERSONAS = ${personas};
       const SKILLS = ${skills};
       const PROJECTS = ${projects};
+      const FAKE_ACP_URL = "ws://127.0.0.1:0/mock-acp";
+
+      // ------------------------------------------------------------------
+      // ACP over a fake WebSocket. The frontend opens a ws connection
+      // obtained from invoke("get_goose_serve_url") and then speaks
+      // JSON-RPC 2.0 to the ACP SDK. We intercept that socket here and
+      // respond to the handful of methods the app calls.
+      // ------------------------------------------------------------------
+
+      const skillToSourceEntry = (s) => ({
+        type: "skill",
+        name: s.name,
+        description: s.description,
+        content: s.instructions ?? s.content ?? "",
+        directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
+        global: true,
+      });
+
+      function handleAcpRequest(method, params) {
+        switch (method) {
+          case "initialize":
+            return {
+              protocolVersion: 1,
+              agentCapabilities: {},
+              authMethods: [],
+            };
+          case "_goose/sources/list":
+            return { sources: SKILLS.map(skillToSourceEntry) };
+          case "_goose/sources/create":
+            return {
+              source: {
+                type: "skill",
+                name: params?.name ?? "new-skill",
+                description: params?.description ?? "",
+                content: params?.content ?? "",
+                directory: "/mock/.agents/skills/" + (params?.name ?? "new-skill"),
+                global: params?.global ?? true,
+              },
+            };
+          case "_goose/sources/update":
+            return {
+              source: {
+                type: "skill",
+                name: params?.name ?? "updated-skill",
+                description: params?.description ?? "",
+                content: params?.content ?? "",
+                directory: "/mock/.agents/skills/" + (params?.name ?? "updated-skill"),
+                global: params?.global ?? true,
+              },
+            };
+          case "_goose/sources/delete":
+            return {};
+          case "_goose/sources/export":
+            return {
+              json: "{}",
+              filename: (params?.name ?? "skill") + ".skill.json",
+            };
+          case "_goose/sources/import":
+            return { sources: SKILLS.map(skillToSourceEntry) };
+          default:
+            // Unknown extension method — return empty object so callers
+            // don't crash on unmocked fields.
+            return {};
+        }
+      }
+
+      class MockAcpWebSocket extends EventTarget {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        constructor(url) {
+          super();
+          this.url = url;
+          this.readyState = 0;
+          this.binaryType = "blob";
+          // Dispatch open in a microtask so listeners can be registered.
+          queueMicrotask(() => {
+            this.readyState = 1;
+            this.dispatchEvent(new Event("open"));
+          });
+        }
+
+        send(data) {
+          if (this.readyState !== 1) return;
+          let msg;
+          try {
+            msg = typeof data === "string" ? JSON.parse(data) : null;
+          } catch {
+            return;
+          }
+          if (!msg || typeof msg !== "object") return;
+
+          // Requests have both method and id; notifications have method
+          // but no id; responses have id but no method. Only requests need
+          // a reply.
+          if (msg.method !== undefined && msg.id !== undefined) {
+            let response;
+            try {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: handleAcpRequest(msg.method, msg.params),
+              };
+            } catch (e) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: { code: -32603, message: String(e) },
+              };
+            }
+            queueMicrotask(() => {
+              this.dispatchEvent(
+                new MessageEvent("message", { data: JSON.stringify(response) }),
+              );
+            });
+          }
+        }
+
+        close() {
+          if (this.readyState === 3) return;
+          this.readyState = 3;
+          queueMicrotask(() => {
+            this.dispatchEvent(new CloseEvent("close"));
+          });
+        }
+      }
+
+      const RealWebSocket = window.WebSocket;
+      const PatchedWebSocket = function (url, protocols) {
+        if (url === FAKE_ACP_URL) {
+          return new MockAcpWebSocket(url);
+        }
+        return new RealWebSocket(url, protocols);
+      };
+      PatchedWebSocket.CONNECTING = 0;
+      PatchedWebSocket.OPEN = 1;
+      PatchedWebSocket.CLOSING = 2;
+      PatchedWebSocket.CLOSED = 3;
+      window.WebSocket = PatchedWebSocket;
 
       window.__TAURI_INTERNALS__ = {
         invoke(cmd, args) {
           switch (cmd) {
+            // ---- ACP transport ----
+            case "get_goose_serve_url":
+              return Promise.resolve(FAKE_ACP_URL);
+
             // ---- Personas ----
             case "list_personas":
               return Promise.resolve(PERSONAS);
@@ -70,28 +219,6 @@ export function buildInitScript(options?: {
               });
             case "import_personas":
               return Promise.resolve(PERSONAS);
-
-            // ---- Skills ----
-            case "list_skills":
-              return Promise.resolve(SKILLS);
-            case "create_skill":
-              return Promise.resolve(null);
-            case "update_skill":
-              return Promise.resolve({
-                name: args?.name ?? "updated-skill",
-                description: args?.description ?? "",
-                instructions: args?.instructions ?? "",
-                path: "",
-              });
-            case "delete_skill":
-              return Promise.resolve(null);
-            case "export_skill":
-              return Promise.resolve({
-                json: "{}",
-                filename: "skill.json",
-              });
-            case "import_skills":
-              return Promise.resolve(SKILLS);
 
             // ---- Sessions / Misc ----
             case "list_sessions":
