@@ -28,7 +28,7 @@ const i18n = defineMessages({
   description: {
     id: 'appsView.description',
     defaultMessage:
-      'Applications from your MCP servers and Apps build by goose itself. You can ask it to create new apps through the chat interface and they will appear here.',
+      'Applications from your MCP servers and Apps built by goose itself. You can ask it to create new apps through the chat interface and they will appear here.',
   },
   loading: {
     id: 'appsView.loading',
