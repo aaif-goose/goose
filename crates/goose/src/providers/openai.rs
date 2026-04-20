@@ -807,6 +807,14 @@ mod tests {
     }
 
     #[test]
+    fn gpt_5_4_xhigh_uses_responses() {
+        assert!(OpenAiProvider::should_use_responses_api(
+            "gpt-5.4-xhigh",
+            "v1/chat/completions"
+        ));
+    }
+
+    #[test]
     fn gpt_4o_does_not_use_responses() {
         assert!(!OpenAiProvider::should_use_responses_api(
             "gpt-4o",

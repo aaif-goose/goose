@@ -1798,6 +1798,47 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_create_request_gpt_5_4_xhigh_reasoning_effort() -> anyhow::Result<()> {
+        let model_config = ModelConfig {
+            model_name: "gpt-5.4-xhigh".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+        let expected = json!({
+            "model": "gpt-5.4",
+            "messages": [
+                {
+                    "role": "developer",
+                    "content": "system"
+                }
+            ],
+            "reasoning_effort": "xhigh",
+            "max_completion_tokens": 1024
+        });
+
+        for (key, value) in expected.as_object().unwrap() {
+            assert_eq!(obj.get(key).unwrap(), value);
+        }
+
+        Ok(())
+    }
+
     struct StreamingUsageTestResult {
         usage_count: usize,
         usage: Option<ProviderUsage>,

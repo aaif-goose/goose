@@ -207,7 +207,7 @@ pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
     let parts: Vec<&str> = model_name.split('-').collect();
     let last_part = parts.last().unwrap();
     match *last_part {
-        "low" | "medium" | "high" => {
+        "low" | "medium" | "high" | "xhigh" => {
             let base_name = parts[..parts.len() - 1].join("-");
             (base_name, Some(last_part.to_string()))
         }

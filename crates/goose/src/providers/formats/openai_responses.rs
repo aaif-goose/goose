@@ -854,6 +854,29 @@ mod tests {
     }
 
     #[test]
+    fn test_create_responses_request_gpt_5_4_xhigh_reasoning_effort() -> anyhow::Result<()> {
+        let model_config = ModelConfig {
+            model_name: "gpt-5.4-xhigh".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let request = create_responses_request(&model_config, "system", &[], &[])?;
+
+        assert_eq!(request["model"], "gpt-5.4");
+        assert_eq!(request["reasoning"]["effort"], "xhigh");
+        assert_eq!(request["reasoning"]["summary"], "auto");
+
+        Ok(())
+    }
+
+    #[test]
     fn test_responses_api_to_message_captures_reasoning_summary() -> anyhow::Result<()> {
         let response: ResponsesApiResponse = serde_json::from_value(serde_json::json!({
             "id": "resp_1",
