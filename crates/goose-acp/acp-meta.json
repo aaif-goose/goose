@@ -134,6 +134,46 @@
       "method": "_goose/sources/import",
       "requestType": "ImportSourcesRequest",
       "responseType": "ImportSourcesResponse"
+    },
+    {
+      "method": "_goose/dictation/transcribe",
+      "requestType": "DictationTranscribeRequest",
+      "responseType": "DictationTranscribeResponse"
+    },
+    {
+      "method": "_goose/dictation/config",
+      "requestType": "DictationConfigRequest",
+      "responseType": "DictationConfigResponse"
+    },
+    {
+      "method": "_goose/dictation/models/list",
+      "requestType": "DictationModelsListRequest",
+      "responseType": "DictationModelsListResponse"
+    },
+    {
+      "method": "_goose/dictation/models/download",
+      "requestType": "DictationModelDownloadRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/models/download/progress",
+      "requestType": "DictationModelDownloadProgressRequest",
+      "responseType": "DictationModelDownloadProgressResponse"
+    },
+    {
+      "method": "_goose/dictation/models/cancel",
+      "requestType": "DictationModelCancelRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/models/delete",
+      "requestType": "DictationModelDeleteRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/model/select",
+      "requestType": "DictationModelSelectRequest",
+      "responseType": "EmptyResponse"
     }
   ]
 }

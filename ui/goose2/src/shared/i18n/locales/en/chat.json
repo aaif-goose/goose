@@ -169,7 +169,11 @@
     "selectProject": "Select project",
     "sendMessage": "Send message",
     "stopGeneration": "Stop generation",
-    "voiceInputSoon": "Voice input (coming soon)"
+    "voiceInput": "Voice dictation",
+    "voiceInputDisabled": "Configure a voice provider in Settings to enable dictation",
+    "voiceInputRecording": "Listening...",
+    "voiceInputTranscribing": "Transcribing...",
+    "voiceInputAutoSubmitHint": "Say \"submit\" to send"
   },
   "tools": {
     "fileNotFound": "File not found: {{path}}",

@@ -900,6 +900,329 @@
       "x-side": "agent",
       "x-method": "_goose/sources/import"
     },
+    "DictationTranscribeRequest": {
+      "type": "object",
+      "properties": {
+        "audio": {
+          "type": "string",
+          "description": "Base64-encoded audio data"
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type (e.g. \"audio/wav\", \"audio/webm\")"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Provider to use: \"openai\", \"groq\", \"elevenlabs\", or \"local\""
+        }
+      },
+      "required": [
+        "audio",
+        "mimeType",
+        "provider"
+      ],
+      "description": "Transcribe audio via a dictation provider.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/transcribe"
+    },
+    "DictationTranscribeResponse": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "description": "Transcription result.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/transcribe"
+    },
+    "DictationConfigRequest": {
+      "type": "object",
+      "description": "Get the configuration status of all dictation providers.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/config"
+    },
+    "DictationConfigResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/DictationProviderStatusEntry"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "description": "Dictation config response — map of provider name to status.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/config"
+    },
+    "DictationProviderStatusEntry": {
+      "type": "object",
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "usesProviderConfig": {
+          "type": "boolean"
+        },
+        "settingsPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelConfigKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectedModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "availableModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DictationModelOption"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "configured",
+        "description",
+        "usesProviderConfig"
+      ],
+      "description": "Per-provider configuration status."
+    },
+    "DictationModelOption": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "description"
+      ]
+    },
+    "DictationModelsListRequest": {
+      "type": "object",
+      "description": "List available local Whisper models with their download status.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/models/list"
+    },
+    "DictationModelsListResponse": {
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DictationLocalModelStatus"
+          }
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/dictation/models/list"
+    },
+    "DictationLocalModelStatus": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "sizeMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "downloaded": {
+          "type": "boolean"
+        },
+        "downloadInProgress": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "description",
+        "sizeMb",
+        "downloaded",
+        "downloadInProgress"
+      ]
+    },
+    "DictationModelDownloadRequest": {
+      "type": "object",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "description": "Kick off a background download of a local Whisper model.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/models/download"
+    },
+    "DictationModelDownloadProgressRequest": {
+      "type": "object",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "description": "Poll the progress of an in-flight download.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/models/download/progress"
+    },
+    "DictationModelDownloadProgressResponse": {
+      "type": "object",
+      "properties": {
+        "progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DictationDownloadProgress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "None when no download is active for this model id."
+        }
+      },
+      "x-side": "agent",
+      "x-method": "_goose/dictation/models/download/progress"
+    },
+    "DictationDownloadProgress": {
+      "type": "object",
+      "properties": {
+        "bytesDownloaded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "progressPercent": {
+          "type": "number",
+          "format": "float"
+        },
+        "status": {
+          "type": "string",
+          "description": "serde lowercase of DownloadStatus: \"downloading\" | \"completed\" | \"failed\" | \"cancelled\""
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bytesDownloaded",
+        "totalBytes",
+        "progressPercent",
+        "status"
+      ]
+    },
+    "DictationModelCancelRequest": {
+      "type": "object",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "description": "Cancel an in-flight download.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/models/cancel"
+    },
+    "DictationModelDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "description": "Delete a downloaded local Whisper model from disk.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/models/delete"
+    },
+    "DictationModelSelectRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "modelId"
+      ],
+      "description": "Persist the user's model selection for a given provider.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/model/select"
+    },
     "ExtRequest": {
       "properties": {
         "id": {
@@ -1154,6 +1477,78 @@
                   ],
                   "description": "Params for _goose/sources/import",
                   "title": "ImportSourcesRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationTranscribeRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/transcribe",
+                  "title": "DictationTranscribeRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/config",
+                  "title": "DictationConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelsListRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/list",
+                  "title": "DictationModelsListRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelDownloadRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/download",
+                  "title": "DictationModelDownloadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelDownloadProgressRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/download/progress",
+                  "title": "DictationModelDownloadProgressRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelCancelRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/cancel",
+                  "title": "DictationModelCancelRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/delete",
+                  "title": "DictationModelDeleteRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelSelectRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/model/select",
+                  "title": "DictationModelSelectRequest"
                 }
               ]
             },
@@ -1320,6 +1715,38 @@
                         }
                       ],
                       "title": "ImportSourcesResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationTranscribeResponse"
+                        }
+                      ],
+                      "title": "DictationTranscribeResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationConfigResponse"
+                        }
+                      ],
+                      "title": "DictationConfigResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationModelsListResponse"
+                        }
+                      ],
+                      "title": "DictationModelsListResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationModelDownloadProgressResponse"
+                        }
+                      ],
+                      "title": "DictationModelDownloadProgressResponse"
                     }
                   ]
                 },

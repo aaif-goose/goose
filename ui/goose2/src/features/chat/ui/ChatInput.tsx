@@ -22,6 +22,7 @@ import {
 } from "../hooks/useChatInputAttachments";
 import type { ModelOption } from "../types";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { useVoiceDictation } from "../hooks/useVoiceDictation";
 
 export interface ProjectOption {
   id: string;
@@ -121,6 +122,25 @@ export function ChatInput({
     clearAttachments,
   } = useChatInputAttachments();
 
+  const resetTextarea = useCallback(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, []);
+
+  const hasQueuedMessage = queuedMessage !== null;
+
+  const dictation = useVoiceDictation({
+    text,
+    setText,
+    attachments,
+    clearAttachments,
+    selectedPersonaId,
+    onSend,
+    resetTextarea,
+    isSendLocked: hasQueuedMessage || disabled,
+  });
+
   const activePersona = useMemo(
     () => personas.find((persona) => persona.id === selectedPersonaId) ?? null,
     [personas, selectedPersonaId],
@@ -133,7 +153,6 @@ export function ChatInput({
   );
   const stickyPersona = activePersona;
 
-  const hasQueuedMessage = queuedMessage !== null;
   const canSend =
     (text.trim().length > 0 || attachments.length > 0) &&
     !hasQueuedMessage &&
@@ -182,6 +201,24 @@ export function ChatInput({
       return;
     }
 
+    // If recording, stop without waiting for final flush and send what's
+    // already transcribed into the textarea. This makes Send a single click
+    // even while the mic is hot; any in-flight audio after the user clicked
+    // Send is intentionally dropped.
+    //
+    // Also handles the edge case where the user clicks Send while a
+    // getUserMedia startup is still pending (isRecording is still false but
+    // a stream is about to be acquired) — stopRecording sets the internal
+    // cancel flag so the pending startup tears itself down instead of
+    // leaving the OS mic indicator on.
+    if (
+      dictation.isRecording ||
+      dictation.isTranscribing ||
+      dictation.isStarting()
+    ) {
+      dictation.stopRecording({ flushPending: false });
+    }
+
     onSend(
       text.trim(),
       selectedPersonaId ?? undefined,
@@ -196,6 +233,7 @@ export function ChatInput({
     attachments,
     canSend,
     clearAttachments,
+    dictation,
     onSend,
     selectedPersonaId,
     setText,
@@ -408,7 +446,13 @@ export function ChatInput({
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  placeholder={effectivePlaceholder}
+                  placeholder={
+                    dictation.isRecording
+                      ? t("toolbar.voiceInputRecording")
+                      : dictation.isTranscribing
+                        ? t("toolbar.voiceInputTranscribing")
+                        : effectivePlaceholder
+                  }
                   disabled={disabled}
                   rows={1}
                   className="mb-3 min-h-[36px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-foreground placeholder:font-light placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
@@ -447,6 +491,10 @@ export function ChatInput({
                 onSend={handleSend}
                 onStop={onStop}
                 isCompact={isCompact}
+                voiceEnabled={dictation.isEnabled}
+                voiceRecording={dictation.isRecording}
+                voiceTranscribing={dictation.isTranscribing}
+                onVoiceToggle={dictation.toggleRecording}
               />
             </div>
           </Popover>

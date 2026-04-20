@@ -16,6 +16,13 @@ use goose::config::paths::Paths;
 use goose::config::permission::PermissionManager;
 use goose::config::{Config, GooseMode};
 use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
+#[cfg(feature = "local-inference")]
+use goose::dictation::providers::transcribe_local;
+use goose::dictation::providers::{
+    all_providers, is_configured, transcribe_with_provider, DictationProvider,
+};
+#[cfg(feature = "local-inference")]
+use goose::dictation::whisper;
 use goose::mcp_utils::ToolResult;
 use goose::permission::permission_confirmation::PrincipalType;
 use goose::permission::{Permission, PermissionConfirmation};
@@ -68,6 +75,12 @@ pub type AcpProviderFactory = Arc<
 
 const DEFAULT_PROVIDER_ID: &str = "goose";
 const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
+const OPENAI_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "OPENAI_TRANSCRIPTION_MODEL";
+const GROQ_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "GROQ_TRANSCRIPTION_MODEL";
+const ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "ELEVENLABS_TRANSCRIPTION_MODEL";
+const OPENAI_TRANSCRIPTION_MODEL: &str = "whisper-1";
+const GROQ_TRANSCRIPTION_MODEL: &str = "whisper-large-v3-turbo";
+const ELEVENLABS_TRANSCRIPTION_MODEL: &str = "scribe_v1";
 
 /// In-memory state for an active ACP session.
 ///
@@ -2982,6 +2995,420 @@ impl GooseAcpAgent {
         let sources =
             goose::sources::import_sources(&req.data, req.global, req.project_dir.as_deref())?;
         Ok(ImportSourcesResponse { sources })
+    }
+
+    #[custom_method(DictationTranscribeRequest)]
+    async fn on_dictation_transcribe(
+        &self,
+        req: DictationTranscribeRequest,
+    ) -> Result<DictationTranscribeResponse, sacp::Error> {
+        use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+        let config = goose::config::Config::global();
+
+        #[cfg(not(feature = "local-inference"))]
+        if req.provider == "local" {
+            return Err(sacp::Error::invalid_params()
+                .data("Local inference is not available in this build"));
+        }
+
+        let provider: DictationProvider = serde_json::from_value(serde_json::Value::String(
+            req.provider.clone(),
+        ))
+        .map_err(|_| {
+            sacp::Error::invalid_params().data(format!("Unknown provider: {}", req.provider))
+        })?;
+
+        let audio_bytes = BASE64
+            .decode(&req.audio)
+            .map_err(|_| sacp::Error::invalid_params().data("Invalid base64 audio data"))?;
+
+        if audio_bytes.len() > 50 * 1024 * 1024 {
+            return Err(sacp::Error::invalid_params().data("Audio too large (max 50MB)"));
+        }
+
+        let extension = match req.mime_type.as_str() {
+            "audio/webm" | "audio/webm;codecs=opus" => "webm",
+            "audio/mp4" => "mp4",
+            "audio/mpeg" | "audio/mpga" => "mp3",
+            "audio/m4a" => "m4a",
+            "audio/wav" | "audio/x-wav" => "wav",
+            other => {
+                return Err(
+                    sacp::Error::invalid_params().data(format!("Unsupported format: {other}"))
+                )
+            }
+        };
+
+        let text = match provider {
+            DictationProvider::OpenAI => {
+                let model = dictation_selected_model(config, DictationProvider::OpenAI)
+                    .unwrap_or_else(|| OPENAI_TRANSCRIPTION_MODEL.to_string());
+                transcribe_with_provider(
+                    DictationProvider::OpenAI,
+                    "model".to_string(),
+                    model,
+                    audio_bytes,
+                    extension,
+                    &req.mime_type,
+                )
+                .await
+            }
+            DictationProvider::Groq => {
+                let model = dictation_selected_model(config, DictationProvider::Groq)
+                    .unwrap_or_else(|| GROQ_TRANSCRIPTION_MODEL.to_string());
+                transcribe_with_provider(
+                    DictationProvider::Groq,
+                    "model".to_string(),
+                    model,
+                    audio_bytes,
+                    extension,
+                    &req.mime_type,
+                )
+                .await
+            }
+            DictationProvider::ElevenLabs => {
+                let model = dictation_selected_model(config, DictationProvider::ElevenLabs)
+                    .unwrap_or_else(|| ELEVENLABS_TRANSCRIPTION_MODEL.to_string());
+                transcribe_with_provider(
+                    DictationProvider::ElevenLabs,
+                    "model_id".to_string(),
+                    model,
+                    audio_bytes,
+                    extension,
+                    &req.mime_type,
+                )
+                .await
+            }
+            #[cfg(feature = "local-inference")]
+            DictationProvider::Local => transcribe_local(audio_bytes).await,
+        }
+        .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        Ok(DictationTranscribeResponse { text })
+    }
+
+    #[custom_method(DictationConfigRequest)]
+    async fn on_dictation_config(
+        &self,
+        _req: DictationConfigRequest,
+    ) -> Result<DictationConfigResponse, sacp::Error> {
+        let config = goose::config::Config::global();
+        let mut providers = std::collections::HashMap::new();
+
+        for def in all_providers() {
+            let provider = def.provider;
+            let host = if let Some(host_key) = def.host_key {
+                config
+                    .get(host_key, false)
+                    .ok()
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+            } else {
+                None
+            };
+
+            let provider_key = serde_json::to_value(provider)
+                .ok()
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| format!("{:?}", provider).to_lowercase());
+            providers.insert(
+                provider_key,
+                DictationProviderStatusEntry {
+                    configured: is_configured(provider),
+                    host,
+                    description: def.description.to_string(),
+                    uses_provider_config: def.uses_provider_config,
+                    settings_path: def.settings_path.map(|s| s.to_string()),
+                    config_key: if !def.uses_provider_config {
+                        Some(def.config_key.to_string())
+                    } else {
+                        None
+                    },
+                    model_config_key: dictation_model_config_key(provider),
+                    default_model: dictation_default_model(provider),
+                    selected_model: dictation_selected_model(config, provider),
+                    available_models: dictation_available_models(provider),
+                },
+            );
+        }
+
+        Ok(DictationConfigResponse { providers })
+    }
+
+    #[custom_method(DictationModelsListRequest)]
+    async fn on_dictation_models_list(
+        &self,
+        _req: DictationModelsListRequest,
+    ) -> Result<DictationModelsListResponse, sacp::Error> {
+        #[cfg(feature = "local-inference")]
+        {
+            use goose::download_manager::{get_download_manager, DownloadStatus};
+
+            let manager = get_download_manager();
+            let models = whisper::available_models()
+                .iter()
+                .map(|model| DictationLocalModelStatus {
+                    id: model.id.to_string(),
+                    label: model.id.to_string(),
+                    description: model.description.to_string(),
+                    size_mb: model.size_mb,
+                    downloaded: model.is_downloaded(),
+                    download_in_progress: manager
+                        .get_progress(model.id)
+                        .map(|progress| progress.status == DownloadStatus::Downloading)
+                        .unwrap_or(false),
+                })
+                .collect();
+
+            Ok(DictationModelsListResponse { models })
+        }
+
+        #[cfg(not(feature = "local-inference"))]
+        Ok(DictationModelsListResponse::default())
+    }
+
+    #[custom_method(DictationModelDownloadRequest)]
+    async fn on_dictation_model_download(
+        &self,
+        _req: DictationModelDownloadRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        #[cfg(feature = "local-inference")]
+        {
+            use goose::download_manager::get_download_manager;
+
+            let model = whisper::get_model(&_req.model_id)
+                .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
+            let manager = get_download_manager();
+            let model_id_for_config = model.id.to_string();
+
+            manager
+                .download_model(
+                    model.id.to_string(),
+                    model.url.to_string(),
+                    model.local_path(),
+                    Some(Box::new(move || {
+                        let config = goose::config::Config::global();
+                        // Only auto-select this model if the user has no model
+                        // currently selected. This prevents silently switching
+                        // the active model mid-session when a user downloads an
+                        // additional model while one is already in use.
+                        let already_selected = config
+                            .get(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
+                            .ok()
+                            .and_then(|value| value.as_str().map(str::to_owned))
+                            .filter(|model_id| {
+                                // Treat a deleted model file as no active selection
+                                // so a fresh download can auto-select cleanly.
+                                whisper::get_model(model_id)
+                                    .is_some_and(|model| model.is_downloaded())
+                            });
+                        if already_selected.is_none() {
+                            if let Err(e) = config.set_param(
+                                whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY,
+                                model_id_for_config.clone(),
+                            ) {
+                                error!("Failed to save LOCAL_WHISPER_MODEL after download: {}", e);
+                            }
+                        }
+                    })),
+                )
+                .await
+                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+            Ok(EmptyResponse {})
+        }
+
+        #[cfg(not(feature = "local-inference"))]
+        Err(sacp::Error::invalid_params().data("Local inference not enabled"))
+    }
+
+    #[custom_method(DictationModelDownloadProgressRequest)]
+    async fn on_dictation_model_download_progress(
+        &self,
+        _req: DictationModelDownloadProgressRequest,
+    ) -> Result<DictationModelDownloadProgressResponse, sacp::Error> {
+        #[cfg(feature = "local-inference")]
+        {
+            use goose::download_manager::get_download_manager;
+
+            let manager = get_download_manager();
+            let progress =
+                manager
+                    .get_progress(&_req.model_id)
+                    .map(|progress| DictationDownloadProgress {
+                        bytes_downloaded: progress.bytes_downloaded,
+                        total_bytes: progress.total_bytes,
+                        progress_percent: progress.progress_percent,
+                        status: serde_json::to_value(&progress.status)
+                            .ok()
+                            .and_then(|value| value.as_str().map(ToOwned::to_owned))
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        error: progress.error,
+                    });
+
+            Ok(DictationModelDownloadProgressResponse { progress })
+        }
+
+        #[cfg(not(feature = "local-inference"))]
+        Ok(DictationModelDownloadProgressResponse { progress: None })
+    }
+
+    #[custom_method(DictationModelCancelRequest)]
+    async fn on_dictation_model_cancel(
+        &self,
+        _req: DictationModelCancelRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        #[cfg(feature = "local-inference")]
+        {
+            use goose::download_manager::get_download_manager;
+
+            let manager = get_download_manager();
+            manager
+                .cancel_download(&_req.model_id)
+                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+            Ok(EmptyResponse {})
+        }
+
+        #[cfg(not(feature = "local-inference"))]
+        Err(sacp::Error::invalid_params().data("Local inference not enabled"))
+    }
+
+    #[custom_method(DictationModelDeleteRequest)]
+    async fn on_dictation_model_delete(
+        &self,
+        _req: DictationModelDeleteRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        #[cfg(feature = "local-inference")]
+        {
+            let model = whisper::get_model(&_req.model_id)
+                .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
+            let path = model.local_path();
+
+            if !path.exists() {
+                return Err(sacp::Error::invalid_params().data("Model not downloaded"));
+            }
+
+            std::fs::remove_file(path)
+                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+            Ok(EmptyResponse {})
+        }
+
+        #[cfg(not(feature = "local-inference"))]
+        Err(sacp::Error::invalid_params().data("Local inference not enabled"))
+    }
+
+    #[custom_method(DictationModelSelectRequest)]
+    async fn on_dictation_model_select(
+        &self,
+        req: DictationModelSelectRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        #[cfg(not(feature = "local-inference"))]
+        if req.provider == "local" {
+            return Err(sacp::Error::invalid_params().data("Local inference not enabled"));
+        }
+
+        let provider: DictationProvider = serde_json::from_value(serde_json::Value::String(
+            req.provider.clone(),
+        ))
+        .map_err(|_| {
+            sacp::Error::invalid_params().data(format!("Unknown provider: {}", req.provider))
+        })?;
+
+        let key = match provider {
+            DictationProvider::OpenAI => OPENAI_TRANSCRIPTION_MODEL_CONFIG_KEY,
+            DictationProvider::Groq => GROQ_TRANSCRIPTION_MODEL_CONFIG_KEY,
+            DictationProvider::ElevenLabs => ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY,
+            #[cfg(feature = "local-inference")]
+            DictationProvider::Local => {
+                let model = whisper::get_model(&req.model_id)
+                    .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
+                if !model.is_downloaded() {
+                    return Err(
+                        sacp::Error::invalid_params().data("Local Whisper model is not downloaded")
+                    );
+                }
+                whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY
+            }
+        };
+
+        goose::config::Config::global()
+            .set_param(key, req.model_id)
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        Ok(EmptyResponse {})
+    }
+}
+
+fn dictation_model_config_key(provider: DictationProvider) -> Option<String> {
+    match provider {
+        DictationProvider::OpenAI => Some(OPENAI_TRANSCRIPTION_MODEL_CONFIG_KEY.to_string()),
+        DictationProvider::Groq => Some(GROQ_TRANSCRIPTION_MODEL_CONFIG_KEY.to_string()),
+        DictationProvider::ElevenLabs => {
+            Some(ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY.to_string())
+        }
+        #[cfg(feature = "local-inference")]
+        DictationProvider::Local => Some(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY.to_string()),
+    }
+}
+
+fn dictation_default_model(provider: DictationProvider) -> Option<String> {
+    match provider {
+        DictationProvider::OpenAI => Some(OPENAI_TRANSCRIPTION_MODEL.to_string()),
+        DictationProvider::Groq => Some(GROQ_TRANSCRIPTION_MODEL.to_string()),
+        DictationProvider::ElevenLabs => Some(ELEVENLABS_TRANSCRIPTION_MODEL.to_string()),
+        #[cfg(feature = "local-inference")]
+        DictationProvider::Local => Some(whisper::recommend_model().to_string()),
+    }
+}
+
+fn dictation_selected_model(config: &Config, provider: DictationProvider) -> Option<String> {
+    #[cfg(feature = "local-inference")]
+    if provider == DictationProvider::Local {
+        return config
+            .get(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .filter(|model_id| whisper::get_model(model_id).is_some())
+            .or_else(|| dictation_default_model(provider));
+    }
+
+    dictation_model_config_key(provider)
+        .and_then(|key| {
+            config
+                .get(&key, false)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+        })
+        .or_else(|| dictation_default_model(provider))
+}
+
+fn dictation_available_models(provider: DictationProvider) -> Vec<DictationModelOption> {
+    match provider {
+        DictationProvider::OpenAI => vec![DictationModelOption {
+            id: OPENAI_TRANSCRIPTION_MODEL.to_string(),
+            label: "Whisper-1".to_string(),
+            description: "OpenAI's hosted Whisper transcription model.".to_string(),
+        }],
+        DictationProvider::Groq => vec![DictationModelOption {
+            id: GROQ_TRANSCRIPTION_MODEL.to_string(),
+            label: "Whisper Large V3 Turbo".to_string(),
+            description: "Groq's fast hosted Whisper transcription model.".to_string(),
+        }],
+        DictationProvider::ElevenLabs => vec![DictationModelOption {
+            id: ELEVENLABS_TRANSCRIPTION_MODEL.to_string(),
+            label: "Scribe v1".to_string(),
+            description: "ElevenLabs' hosted speech-to-text model.".to_string(),
+        }],
+        #[cfg(feature = "local-inference")]
+        DictationProvider::Local => whisper::available_models()
+            .iter()
+            .map(|model| DictationModelOption {
+                id: model.id.to_string(),
+                label: model.id.to_string(),
+                description: model.description.to_string(),
+            })
+            .collect(),
     }
 }
 

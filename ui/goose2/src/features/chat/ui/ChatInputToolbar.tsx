@@ -90,6 +90,11 @@ interface ChatInputToolbarProps {
   onAttachFiles?: () => void;
   onAttachFolders?: () => void;
   disabled?: boolean;
+  // Voice
+  voiceEnabled?: boolean;
+  voiceRecording?: boolean;
+  voiceTranscribing?: boolean;
+  onVoiceToggle?: () => void;
   // Layout
   isCompact: boolean;
 }
@@ -124,6 +129,10 @@ export function ChatInputToolbar({
   onAttachFiles,
   onAttachFolders,
   disabled = false,
+  voiceEnabled = false,
+  voiceRecording = false,
+  voiceTranscribing = false,
+  onVoiceToggle,
   isCompact,
 }: ChatInputToolbarProps) {
   const { t } = useTranslation("chat");
@@ -384,14 +393,32 @@ export function ChatInputToolbar({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  disabled
-                  aria-label={t("toolbar.voiceInputSoon")}
+                  disabled={!voiceRecording && (!voiceEnabled || disabled)}
+                  onClick={onVoiceToggle}
+                  aria-label={
+                    voiceRecording
+                      ? t("toolbar.voiceInputRecording")
+                      : t("toolbar.voiceInput")
+                  }
+                  className={cn(
+                    voiceRecording &&
+                      "bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive",
+                    voiceTranscribing && "animate-pulse",
+                  )}
                 >
                   <Mic />
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>{t("toolbar.voiceInputSoon")}</TooltipContent>
+            <TooltipContent>
+              {!voiceEnabled
+                ? t("toolbar.voiceInputDisabled")
+                : voiceRecording
+                  ? t("toolbar.voiceInputRecording")
+                  : voiceTranscribing
+                    ? t("toolbar.voiceInputTranscribing")
+                    : t("toolbar.voiceInput")}
+            </TooltipContent>
           </Tooltip>
         </div>
 

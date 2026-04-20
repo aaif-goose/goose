@@ -63,7 +63,7 @@ jobs:
           sudo apt-get install -y jq ripgrep
       
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
           toolchain: stable
       

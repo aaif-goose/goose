@@ -3,7 +3,21 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ChatInput } from "../ChatInput";
+import { ChatInputToolbar } from "../ChatInputToolbar";
 import type { Persona } from "@/shared/types/agents";
+
+const mockVoiceDictation = {
+  isEnabled: true,
+  isRecording: false,
+  isTranscribing: false,
+  isStarting: vi.fn(() => false),
+  stopRecording: vi.fn(),
+  toggleRecording: vi.fn(),
+};
+
+vi.mock("../hooks/useVoiceDictation", () => ({
+  useVoiceDictation: () => mockVoiceDictation,
+}));
 
 vi.mock("@/features/providers/hooks/useAgentProviderStatus", () => ({
   useAgentProviderStatus: () => ({
@@ -63,6 +77,13 @@ describe("ChatInput", () => {
   beforeEach(() => {
     mockListFilesForMentions.mockClear();
     mockListFilesForMentions.mockResolvedValue([]);
+    mockVoiceDictation.isEnabled = true;
+    mockVoiceDictation.isRecording = false;
+    mockVoiceDictation.isTranscribing = false;
+    mockVoiceDictation.isStarting.mockReset();
+    mockVoiceDictation.isStarting.mockReturnValue(false);
+    mockVoiceDictation.stopRecording.mockReset();
+    mockVoiceDictation.toggleRecording.mockReset();
   });
 
   it("renders with default placeholder", () => {
@@ -416,6 +437,53 @@ describe("ChatInput", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("does not stop dictation when send is blocked", async () => {
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    mockVoiceDictation.isRecording = true;
+
+    render(
+      <ChatInput
+        onSend={onSend}
+        isStreaming
+        queuedMessage={{ text: "queued msg" }}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "another message");
+    await user.keyboard("{Enter}");
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockVoiceDictation.stopRecording).not.toHaveBeenCalled();
+  });
+
+  it("keeps the mic toggle enabled while recording even if voice input becomes unavailable", () => {
+    render(
+      <ChatInputToolbar
+        personas={[]}
+        selectedPersonaId={null}
+        providers={[]}
+        selectedProvider="goose"
+        onProviderChange={vi.fn()}
+        availableModels={[]}
+        selectedProjectId={null}
+        availableProjects={[]}
+        contextTokens={0}
+        contextLimit={0}
+        canSend={false}
+        isStreaming={false}
+        hasQueuedMessage={false}
+        onSend={vi.fn()}
+        voiceEnabled={false}
+        voiceRecording
+        onVoiceToggle={vi.fn()}
+        isCompact={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Listening..." })).toBeEnabled();
   });
 
   it("keeps the selected assistant chip after sending subsequent messages", async () => {

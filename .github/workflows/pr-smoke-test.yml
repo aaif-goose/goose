@@ -55,7 +55,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
 
       - name: Install Dependencies
         run: |
