@@ -4,17 +4,25 @@ import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useChatStore } from "../../stores/chatStore";
 import { useChatSessionStore } from "../../stores/chatSessionStore";
 import type { Message } from "@/shared/types/messages";
+import { clearReplayBuffer } from "../replayBuffer";
 
 const mockAcpSendMessage = vi.fn();
 const mockAcpCancelSession = vi.fn();
+const mockAcpLoadSession = vi.fn();
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
+const mockGetGooseSessionId = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
   acpCancelSession: (...args: unknown[]) => mockAcpCancelSession(...args),
+  acpLoadSession: (...args: unknown[]) => mockAcpLoadSession(...args),
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
+}));
+
+vi.mock("@/shared/api/acpSessionTracker", () => ({
+  getGooseSessionId: (...args: unknown[]) => mockGetGooseSessionId(...args),
 }));
 
 import { useChat } from "../useChat";
@@ -53,7 +61,14 @@ function createDeferredPromise<T = void>() {
 
 describe("useChat", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockAcpSendMessage.mockReset();
+    mockAcpCancelSession.mockReset();
+    mockAcpLoadSession.mockReset();
+    mockAcpPrepareSession.mockReset();
+    mockAcpSetModel.mockReset();
+    mockGetGooseSessionId.mockReset();
+    clearReplayBuffer("session-1");
+    clearReplayBuffer("session-2");
     useChatStore.setState({
       messagesBySession: {},
       sessionStateById: {},
@@ -65,7 +80,7 @@ describe("useChat", () => {
       activeSessionId: null,
       isLoading: false,
       contextPanelOpenBySession: {},
-      activeWorkingContextBySession: {},
+      activeWorkspaceBySession: {},
       modelsBySession: {},
       modelCacheByProvider: {},
     });
@@ -96,9 +111,12 @@ describe("useChat", () => {
       personaEditorOpen: false,
       editingPersona: null,
     });
+    mockAcpSendMessage.mockResolvedValue(undefined);
     mockAcpCancelSession.mockResolvedValue(true);
+    mockAcpLoadSession.mockResolvedValue(undefined);
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
+    mockGetGooseSessionId.mockReturnValue(null);
   });
 
   it("cancels the active override persona instead of the hook default persona", async () => {
@@ -353,16 +371,22 @@ describe("useChat", () => {
       ],
     });
 
-    const { result } = renderHook(() => useChat("session-1", "openai"));
+    const { result } = renderHook(() =>
+      useChat("session-1", "openai", undefined, undefined, async () => "/tmp"),
+    );
 
     await act(async () => {
       await result.current.sendMessage("Hello");
     });
 
-    expect(mockAcpPrepareSession).toHaveBeenCalledWith("session-1", "openai", {
-      workingDir: undefined,
-      personaId: undefined,
-    });
+    expect(mockAcpPrepareSession).toHaveBeenCalledWith(
+      "session-1",
+      "openai",
+      "/tmp",
+      {
+        personaId: undefined,
+      },
+    );
     expect(mockAcpSetModel).toHaveBeenCalledWith("session-1", "gpt-4.1");
     expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "Hello", {
       systemPrompt: undefined,

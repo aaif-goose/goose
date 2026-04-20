@@ -195,61 +195,6 @@
       "x-side": "agent",
       "x-method": "_goose/session/extensions"
     },
-    "UpdateProviderRequest": {
-      "type": "object",
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "provider": {
-          "type": "string"
-        },
-        "model": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "contextLimit": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint",
-          "minimum": 0
-        },
-        "requestParams": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": {}
-        }
-      },
-      "required": [
-        "sessionId",
-        "provider"
-      ],
-      "description": "Atomically update the provider for a live session.",
-      "x-side": "agent",
-      "x-method": "_goose/session/provider/update"
-    },
-    "UpdateProviderResponse": {
-      "type": "object",
-      "properties": {
-        "configOptions": {
-          "type": "array",
-          "items": {},
-          "description": "Refreshed session config options after the provider/model change."
-        }
-      },
-      "required": [
-        "configOptions"
-      ],
-      "description": "Provider update response.",
-      "x-side": "agent",
-      "x-method": "_goose/session/provider/update"
-    },
     "ListProvidersRequest": {
       "type": "object",
       "description": "List providers available through goose, including the config-default sentinel.",
@@ -749,15 +694,6 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/UpdateProviderRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/session/provider/update",
-                  "title": "UpdateProviderRequest"
-                },
-                {
-                  "allOf": [
-                    {
                       "$ref": "#/$defs/ListProvidersRequest"
                     }
                   ],
@@ -941,14 +877,6 @@
                         }
                       ],
                       "title": "GetSessionExtensionsResponse"
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "$ref": "#/$defs/UpdateProviderResponse"
-                        }
-                      ],
-                      "title": "UpdateProviderResponse"
                     },
                     {
                       "allOf": [

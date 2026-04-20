@@ -111,6 +111,7 @@
     "placeholder": "Message {{agent}}, @ to mention personas"
   },
   "loading": {
+    "compacting": "Compacting conversation...",
     "thinking": "Thinking...",
     "responding": "Responding..."
   },
@@ -151,9 +152,14 @@
     "attachFolder": "Folder",
     "chooseAgentModel": "Choose agent and model",
     "chooseProject": "Choose a project",
+    "compactNow": "Compact",
+    "compacting": "Compacting...",
     "chooseProvider": "Choose a provider",
+    "contextTokensBreakdown": "{{tokens}} / {{limit}} tokens used",
     "contextUsage": "Context usage",
+    "contextUsageBreakdown": "{{used}} used ({{left}} left)",
     "contextUsageTitle": "{{tokens}} / {{limit}} tokens",
+    "contextWindow": "Context window",
     "createProject": "Create project",
     "generalChatWithoutProject": "General chat without project context",
     "loading": "Loading...",

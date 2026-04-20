@@ -8,6 +8,7 @@ import {
   type RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import { createWebSocketStream } from "./createWebSocketStream";
+import { perfLog } from "@/shared/lib/perfLog";
 
 let notificationHandler: AcpNotificationHandler | null = null;
 
@@ -63,12 +64,21 @@ function monitorConnection(client: GooseClient): void {
 }
 
 async function initializeConnection(): Promise<GooseClient> {
+  const tStart = performance.now();
   const wsUrl: string = await invoke("get_goose_serve_url");
+  perfLog(
+    `[perf:conn] get_goose_serve_url in ${(performance.now() - tStart).toFixed(1)}ms`,
+  );
 
+  const tStream = performance.now();
   const stream = createWebSocketStream(wsUrl);
 
   const client = new GooseClient(createClientCallbacks(), stream);
+  perfLog(
+    `[perf:conn] ws stream + client created in ${(performance.now() - tStream).toFixed(1)}ms`,
+  );
 
+  const tInit = performance.now();
   await client.initialize({
     protocolVersion: PROTOCOL_VERSION,
     clientCapabilities: {},
@@ -77,6 +87,9 @@ async function initializeConnection(): Promise<GooseClient> {
       version: "0.1.0",
     },
   });
+  perfLog(
+    `[perf:conn] client.initialize in ${(performance.now() - tInit).toFixed(1)}ms (total ${(performance.now() - tStart).toFixed(1)}ms)`,
+  );
 
   monitorConnection(client);
 
@@ -89,6 +102,7 @@ export async function getClient(): Promise<GooseClient> {
   }
 
   if (!clientPromise) {
+    perfLog("[perf:conn] getClient() → initializing new ACP connection");
     clientPromise = initializeConnection()
       .then((client) => {
         resolvedClient = client;
@@ -98,6 +112,8 @@ export async function getClient(): Promise<GooseClient> {
         clientPromise = null;
         throw error;
       });
+  } else {
+    perfLog("[perf:conn] getClient() awaiting in-flight initializeConnection");
   }
 
   return clientPromise;

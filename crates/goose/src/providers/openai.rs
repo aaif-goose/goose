@@ -187,12 +187,7 @@ impl OpenAiProvider {
         let base_path = if let Some(ref explicit_path) = config.base_path {
             explicit_path.trim_start_matches('/').to_string()
         } else {
-            let url_path = url.path().trim_start_matches('/').to_string();
-            if url_path.is_empty() || url_path == "v1" || url_path == "v1/" {
-                "v1/chat/completions".to_string()
-            } else {
-                url_path
-            }
+            Self::derive_base_path(url.path())
         };
 
         let timeout_secs = config.timeout_seconds.unwrap_or(600);
@@ -239,6 +234,19 @@ impl OpenAiProvider {
             custom_models,
             skip_canonical_filtering: config.skip_canonical_filtering,
         })
+    }
+
+    // Derive a base path from the raw URL path
+    fn derive_base_path(url_path: &str) -> String {
+        let stripped = url_path.trim_start_matches('/');
+        let normalized = stripped.trim_end_matches('/');
+        if normalized.is_empty() {
+            "v1/chat/completions".to_string()
+        } else if normalized == "v1" || normalized.ends_with("/v1") {
+            format!("{}/chat/completions", normalized)
+        } else {
+            stripped.to_string()
+        }
     }
 
     fn normalize_base_path(base_path: &str) -> String {
@@ -848,5 +856,55 @@ mod tests {
     fn unknown_absolute_path_falls_back_to_absolute_models_path() {
         let models_path = OpenAiProvider::map_base_path("/custom/path", "models", "v1/models");
         assert_eq!(models_path, "/v1/models");
+    }
+
+    #[test]
+    fn derive_base_path_empty_path_gives_default_endpoint() {
+        assert_eq!(OpenAiProvider::derive_base_path("/"), "v1/chat/completions");
+    }
+
+    #[test]
+    fn derive_base_path_bare_v1_gives_chat_completions() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/v1"),
+            "v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_v1_with_trailing_slash() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/v1/"),
+            "v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_prefixed_v1_appends_chat_completions() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/zen/go/v1"),
+            "zen/go/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_prefixed_v1_with_trailing_slash() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/zen/go/v1/"),
+            "zen/go/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_full_chat_completions_url_unchanged() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/openai/v1/chat/completions"),
+            "openai/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_non_v1_prefix_unchanged() {
+        assert_eq!(OpenAiProvider::derive_base_path("/anthropic"), "anthropic");
     }
 }

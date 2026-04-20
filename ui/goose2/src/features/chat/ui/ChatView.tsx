@@ -17,14 +17,15 @@ import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
-  defaultArtifactsDir,
+  defaultGlobalArtifactRoot,
   getProjectArtifactRoots,
-  resolveProjectWorkingDir,
+  resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
-import { getHomeDir } from "@/shared/api/system";
+import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { ArtifactPolicyProvider } from "../hooks/ArtifactPolicyContext";
 import type { ModelOption } from "../types";
 import { ChatContextPanel } from "./ChatContextPanel";
+import { perfLog } from "@/shared/lib/perfLog";
 
 const EMPTY_MODELS: ModelOption[] = [];
 
@@ -51,15 +52,20 @@ export function ChatView({
 }: ChatViewProps) {
   const { t } = useTranslation("chat");
   const activeSessionId = sessionId;
+  const mountStart = useRef(performance.now());
+  useEffect(() => {
+    const ms = (performance.now() - mountStart.current).toFixed(1);
+    perfLog(`[perf:chatview] ${sessionId.slice(0, 8)} mounted in ${ms}ms`);
+  }, [sessionId]);
   const isContextPanelOpen = useChatSessionStore(
     (s) => s.contextPanelOpenBySession[activeSessionId] ?? false,
   );
   const setContextPanelOpen = useChatSessionStore((s) => s.setContextPanelOpen);
-  const activeWorkingContext = useChatSessionStore(
-    (s) => s.activeWorkingContextBySession[activeSessionId],
+  const activeWorkspace = useChatSessionStore(
+    (s) => s.activeWorkspaceBySession[activeSessionId],
   );
-  const clearActiveWorkingContext = useChatSessionStore(
-    (s) => s.clearActiveWorkingContext,
+  const clearActiveWorkspace = useChatSessionStore(
+    (s) => s.clearActiveWorkspace,
   );
 
   const {
@@ -85,7 +91,7 @@ export function ChatView({
       ? s.projects.find((candidate) => candidate.id === session.projectId)
       : undefined,
   );
-  const [homeArtifactsRoot, setHomeArtifactsRoot] = useState<string | null>(
+  const [globalArtifactRoot, setGlobalArtifactRoot] = useState<string | null>(
     null,
   );
   const project = storedProject ?? null;
@@ -115,36 +121,30 @@ export function ChatView({
     () => getProjectArtifactRoots(project),
     [project],
   );
-  const resolvedProjectWorkingDir = useMemo(
-    () => resolveProjectWorkingDir(project),
+  const projectDefaultArtifactRoot = useMemo(
+    () => resolveProjectDefaultArtifactRoot(project),
     [project],
   );
   const projectMetadataPending = Boolean(
-    session?.projectId && !resolvedProjectWorkingDir && projectsLoading,
+    session?.projectId && !projectDefaultArtifactRoot && projectsLoading,
   );
-  const defaultWorkingDir = resolvedProjectWorkingDir
-    ? resolvedProjectWorkingDir
-    : !session?.projectId
-      ? (homeArtifactsRoot ?? undefined)
-      : undefined;
-  const effectiveWorkingDir = activeWorkingContext?.path ?? defaultWorkingDir;
   const allowedArtifactRoots = useMemo(() => {
     const roots = [
       ...projectArtifactRoots.map((path) => path.trim()).filter(Boolean),
     ];
-    if (homeArtifactsRoot) {
-      roots.push(homeArtifactsRoot);
+    if (globalArtifactRoot) {
+      roots.push(globalArtifactRoot);
     }
     return [...new Set(roots)];
-  }, [homeArtifactsRoot, projectArtifactRoots]);
+  }, [globalArtifactRoot, projectArtifactRoots]);
   const projectSystemPrompt = useMemo(
     () => buildProjectSystemPrompt(project),
     [project],
   );
   const workingContextPrompt = useMemo(() => {
-    if (!activeWorkingContext?.branch) return undefined;
-    return `<active-working-context>\nActive branch: ${activeWorkingContext.branch}\nWorking directory: ${activeWorkingContext.path}\n</active-working-context>`;
-  }, [activeWorkingContext?.branch, activeWorkingContext?.path]);
+    if (!activeWorkspace?.branch) return undefined;
+    return `<active-working-context>\nActive branch: ${activeWorkspace.branch}\nWorking directory: ${activeWorkspace.path}\n</active-working-context>`;
+  }, [activeWorkspace?.branch, activeWorkspace?.path]);
 
   const effectiveSystemPrompt = useMemo(
     () =>
@@ -158,14 +158,14 @@ export function ChatView({
 
   useEffect(() => {
     let cancelled = false;
-    getHomeDir()
-      .then((homeDir) => {
+    defaultGlobalArtifactRoot()
+      .then((artifactRoot) => {
         if (cancelled) return;
-        setHomeArtifactsRoot(defaultArtifactsDir(homeDir));
+        setGlobalArtifactRoot(artifactRoot);
       })
       .catch(() => {
         if (cancelled) return;
-        setHomeArtifactsRoot(null);
+        setGlobalArtifactRoot(null);
       });
     return () => {
       cancelled = true;
@@ -177,32 +177,41 @@ export function ChatView({
     const prevProjectId = prevProjectIdRef.current;
     prevProjectIdRef.current = session?.projectId;
     if (prevProjectId !== undefined && prevProjectId !== session?.projectId) {
-      clearActiveWorkingContext(activeSessionId);
+      clearActiveWorkspace(activeSessionId);
     }
-  }, [session?.projectId, activeSessionId, clearActiveWorkingContext]);
+  }, [session?.projectId, activeSessionId, clearActiveWorkspace]);
 
-  const prevContextRef = useRef(activeWorkingContext);
+  const prevWorkspaceRef = useRef(activeWorkspace);
   useEffect(() => {
-    const prev = prevContextRef.current;
+    const prev = prevWorkspaceRef.current;
     if (
-      !activeWorkingContext ||
+      !activeWorkspace ||
       !selectedProvider ||
       session?.draft ||
-      activeWorkingContext === prev
+      activeWorkspace === prev
     ) {
       return;
     }
-    prevContextRef.current = activeWorkingContext;
-    if (prev && prev.path === activeWorkingContext.path) return;
-    void acpPrepareSession(activeSessionId, selectedProvider, {
-      workingDir: activeWorkingContext.path,
-      personaId: selectedPersonaId ?? undefined,
-    }).catch((error) => {
+    prevWorkspaceRef.current = activeWorkspace;
+    if (prev && prev.path === activeWorkspace.path) return;
+
+    async function prepareWorkspaceSession() {
+      const workingDir = await resolveSessionCwd(project, activeWorkspace.path);
+      if (!workingDir) {
+        return;
+      }
+      await acpPrepareSession(activeSessionId, selectedProvider, workingDir, {
+        personaId: selectedPersonaId ?? undefined,
+      });
+    }
+
+    void prepareWorkspaceSession().catch((error) => {
       console.error("Failed to prepare ACP session:", error);
     });
   }, [
-    activeWorkingContext,
+    activeWorkspace,
     activeSessionId,
+    project,
     selectedProvider,
     selectedPersonaId,
     session?.draft,
@@ -230,19 +239,32 @@ export function ChatView({
               .getState()
               .projects.find((candidate) => candidate.id === projectId) ??
             null);
-      const nextWorkingDir =
-        resolveProjectWorkingDir(nextProject) ??
-        (projectId == null ? (homeArtifactsRoot ?? undefined) : undefined);
 
       useChatSessionStore
         .getState()
         .updateSession(activeSessionId, { projectId });
 
-      if (!session?.draft && selectedProvider && nextWorkingDir) {
-        void acpPrepareSession(activeSessionId, selectedProvider, {
-          workingDir: nextWorkingDir,
-          personaId: selectedPersonaId ?? undefined,
-        }).catch((error) => {
+      if (!session?.draft && selectedProvider) {
+        async function updateProjectSessionCwd() {
+          const workingDir = await resolveSessionCwd(
+            nextProject,
+            activeWorkspace?.path,
+          );
+          if (!workingDir) {
+            return;
+          }
+
+          await acpPrepareSession(
+            activeSessionId,
+            selectedProvider,
+            workingDir,
+            {
+              personaId: selectedPersonaId ?? undefined,
+            },
+          );
+        }
+
+        void updateProjectSessionCwd().catch((error) => {
           console.error(
             "Failed to update ACP session working directory:",
             error,
@@ -252,7 +274,7 @@ export function ChatView({
     },
     [
       activeSessionId,
-      homeArtifactsRoot,
+      activeWorkspace?.path,
       selectedPersonaId,
       selectedProvider,
       session?.draft,
@@ -331,11 +353,16 @@ export function ChatView({
   const personaInfo = selectedPersona
     ? { id: selectedPersona.id, name: selectedPersona.displayName }
     : undefined;
+  const resolveCurrentSessionCwd = useCallback(
+    () => resolveSessionCwd(project, activeWorkspace?.path),
+    [project, activeWorkspace?.path],
+  );
   const {
     messages,
     chatState,
     tokenState,
     sendMessage,
+    compactConversation,
     stopStreaming,
     streamingMessageId,
   } = useChat(
@@ -343,7 +370,7 @@ export function ChatView({
     selectedProvider,
     effectiveSystemPrompt,
     personaInfo,
-    effectiveWorkingDir,
+    resolveCurrentSessionCwd,
   );
   const isLoadingHistory = useChatStore(
     (s) =>
@@ -426,6 +453,7 @@ export function ChatView({
     onInitialMessageConsumed,
   ]);
   const isStreaming = chatState === "streaming";
+  const isCompacting = chatState === "compacting";
   const showIndicator =
     chatState === "thinking" ||
     chatState === "streaming" ||
@@ -517,6 +545,13 @@ export function ChatView({
             }
             contextTokens={tokenState.accumulatedTotal}
             contextLimit={tokenState.contextLimit}
+            onCompactContext={compactConversation}
+            canCompactContext={
+              chatState === "idle" &&
+              tokenState.accumulatedTotal > 0 &&
+              !projectMetadataPending
+            }
+            isCompactingContext={isCompacting}
           />
         </div>
 

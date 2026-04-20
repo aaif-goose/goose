@@ -827,5 +827,17 @@
     "is_builtin": false,
     "endorsed": true,
     "environmentVariables": []
+  },
+  {
+    "id": "cash-app",
+    "name": "Cash App",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
+    "type": "streamable-http",
+    "url": "https://connect.squareup.com/v2/mcp/cash-app",
+    "link": "",
+    "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
+    "is_builtin": false,
+    "endorsed": true,
+    "environmentVariables": []
   }
 ]

@@ -90,33 +90,6 @@ export const zGetSessionExtensionsResponse = z.object({
 });
 
 /**
- * Atomically update the provider for a live session.
- */
-export const zUpdateProviderRequest = z.object({
-    sessionId: z.string(),
-    provider: z.string(),
-    model: z.union([
-        z.string(),
-        z.null()
-    ]).optional(),
-    contextLimit: z.union([
-        z.number().int().gte(0),
-        z.null()
-    ]).optional(),
-    requestParams: z.union([
-        z.record(z.unknown()),
-        z.null()
-    ]).optional()
-});
-
-/**
- * Provider update response.
- */
-export const zUpdateProviderResponse = z.object({
-    configOptions: z.array(z.unknown())
-});
-
-/**
  * List providers available through goose, including the config-default sentinel.
  */
 export const zListProvidersRequest = z.record(z.unknown());
@@ -311,7 +284,6 @@ export const zExtRequest = z.object({
             zDeleteSessionRequest,
             zGetExtensionsRequest,
             zGetSessionExtensionsRequest,
-            zUpdateProviderRequest,
             zListProvidersRequest,
             zGetProviderDetailsRequest,
             zGetProviderModelsRequest,
@@ -343,7 +315,6 @@ export const zExtResponse = z.union([
                 zReadResourceResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
-                zUpdateProviderResponse,
                 zListProvidersResponse,
                 zGetProviderDetailsResponse,
                 zGetProviderModelsResponse,

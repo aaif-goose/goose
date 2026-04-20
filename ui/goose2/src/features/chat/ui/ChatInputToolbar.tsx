@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Mic,
   ArrowUp,
@@ -24,6 +24,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import { Progress } from "@/shared/ui/progress";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/tooltip";
 import { AgentModelPicker } from "./AgentModelPicker";
 import type { ModelOption } from "../types";
@@ -77,6 +79,9 @@ interface ChatInputToolbarProps {
   contextTokens: number;
   contextLimit: number;
   // Actions
+  canCompactContext?: boolean;
+  isCompactingContext?: boolean;
+  onCompactContext?: () => void | Promise<void>;
   canSend: boolean;
   isStreaming: boolean;
   hasQueuedMessage: boolean;
@@ -108,6 +113,9 @@ export function ChatInputToolbar({
   onCreateProject,
   contextTokens,
   contextLimit,
+  canCompactContext = false,
+  isCompactingContext = false,
+  onCompactContext,
   canSend,
   isStreaming,
   hasQueuedMessage,
@@ -121,6 +129,7 @@ export function ChatInputToolbar({
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
   const { readyAgentIds } = useAgentProviderStatus();
+  const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
 
   const agentProviders = useMemo(() => {
     const seen = new Set<string>();
@@ -156,6 +165,21 @@ export function ChatInputToolbar({
   const projectTitle = selectedProject?.workingDirs.length
     ? selectedProject.workingDirs.join(", ")
     : undefined;
+  const contextProgress =
+    contextLimit > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
+  const contextPercentDigits =
+    contextProgress > 0 && contextProgress < 0.1 ? 1 : 0;
+  const usedPercentLabel = formatNumber(contextProgress, {
+    style: "percent",
+    minimumFractionDigits: contextPercentDigits,
+    maximumFractionDigits: contextPercentDigits,
+  });
+  const formatCompactTokenCount = (value: number) =>
+    formatNumber(value, {
+      notation: "compact",
+      compactDisplay: "short",
+      maximumFractionDigits: value < 10_000 ? 1 : 0,
+    });
 
   const handleProjectValueChange = (value: string) => {
     if (value === CREATE_PROJECT_VALUE) {
@@ -164,6 +188,15 @@ export function ChatInputToolbar({
     }
 
     onProjectChange?.(value === NO_PROJECT_VALUE ? null : value);
+  };
+
+  const handleCompactContext = () => {
+    if (!canCompactContext || isCompactingContext || !onCompactContext) {
+      return;
+    }
+
+    setIsContextPopoverOpen(false);
+    void onCompactContext();
   };
 
   return (
@@ -247,19 +280,70 @@ export function ChatInputToolbar({
           )}
 
           {contextLimit > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label={t("toolbar.contextUsage")}
-              title={t("toolbar.contextUsageTitle", {
-                tokens: formatNumber(contextTokens),
-                limit: formatNumber(contextLimit),
-              })}
+            <Popover
+              open={isContextPopoverOpen}
+              onOpenChange={setIsContextPopoverOpen}
             >
-              <ContextRing tokens={contextTokens} limit={contextLimit} />
-            </Button>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size={isCompact ? "icon-sm" : "sm"}
+                  className={cn(
+                    "group rounded-full bg-transparent text-foreground/80 shadow-none hover:bg-transparent hover:text-foreground data-[state=open]:bg-transparent data-[state=open]:text-foreground",
+                    isCompact ? "px-0" : "px-2.5",
+                  )}
+                  aria-label={t("toolbar.contextUsage")}
+                  title={t("toolbar.contextUsageTitle", {
+                    tokens: formatNumber(contextTokens),
+                    limit: formatNumber(contextLimit),
+                  })}
+                >
+                  <ContextRing
+                    tokens={contextTokens}
+                    limit={contextLimit}
+                    size={18}
+                  />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                sideOffset={8}
+                className="w-52 rounded-2xl p-1 text-left"
+              >
+                <div className="px-2 py-1.5 text-sm font-semibold text-foreground">
+                  {t("toolbar.contextWindow")}
+                </div>
+                <div className="space-y-2 px-2 pb-1.5">
+                  <Progress
+                    className="h-1.5 bg-muted"
+                    value={contextProgress * 100}
+                  />
+                  <div className="flex items-center justify-between gap-3 text-xs text-foreground">
+                    <div className="truncate">
+                      {t("toolbar.contextTokensBreakdown", {
+                        tokens: formatCompactTokenCount(contextTokens),
+                        limit: formatCompactTokenCount(contextLimit),
+                      })}
+                    </div>
+                    <div className="shrink-0">{usedPercentLabel}</div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="xs"
+                    className="w-full justify-center"
+                    onClick={handleCompactContext}
+                    disabled={!canCompactContext || isCompactingContext}
+                  >
+                    {isCompactingContext
+                      ? t("toolbar.compacting")
+                      : t("toolbar.compactNow")}
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           )}
 
           <DropdownMenu>

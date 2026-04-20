@@ -1,7 +1,6 @@
 use sacp::{JsonRpcRequest, JsonRpcResponse};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Schema descriptor for a single custom method, produced by the
 /// `#[custom_methods]` macro's generated `custom_method_schemas()` function.
@@ -114,26 +113,6 @@ pub struct GetSessionExtensionsRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct GetSessionExtensionsResponse {
     pub extensions: Vec<serde_json::Value>,
-}
-
-/// Atomically update the provider for a live session.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/session/provider/update", response = UpdateProviderResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateProviderRequest {
-    pub session_id: String,
-    pub provider: String,
-    pub model: Option<String>,
-    pub context_limit: Option<usize>,
-    pub request_params: Option<HashMap<String, serde_json::Value>>,
-}
-
-/// Provider update response.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateProviderResponse {
-    /// Refreshed session config options after the provider/model change.
-    pub config_options: Vec<serde_json::Value>,
 }
 
 /// Read a single non-secret config value.

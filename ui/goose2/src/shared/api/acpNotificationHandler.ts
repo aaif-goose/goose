@@ -14,35 +14,155 @@ import type {
   ToolResponseContent,
 } from "@/shared/types/messages";
 import type { AcpNotificationHandler } from "./acpConnection";
-import { getLocalSessionId } from "./acpSessionTracker";
+import {
+  getLocalSessionId,
+  subscribeToSessionRegistration,
+} from "./acpSessionTracker";
+import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per goose session
 const presetMessageIds = new Map<string, string>();
+const pendingUsageUpdates = new Map<string, SessionUpdate[]>();
+
+function shouldBufferPendingUpdate(update: SessionUpdate): boolean {
+  return update.sessionUpdate === "usage_update";
+}
+
+function queuePendingUsageUpdate(
+  gooseSessionId: string,
+  update: SessionUpdate,
+): void {
+  const pending = pendingUsageUpdates.get(gooseSessionId);
+  if (pending) {
+    pending.push(update);
+    return;
+  }
+  pendingUsageUpdates.set(gooseSessionId, [update]);
+}
+
+function flushPendingUsageUpdates(
+  localSessionId: string,
+  gooseSessionId: string,
+): void {
+  const pending = pendingUsageUpdates.get(gooseSessionId);
+  if (!pending?.length) {
+    return;
+  }
+
+  pendingUsageUpdates.delete(gooseSessionId);
+
+  for (const update of pending) {
+    if (useChatStore.getState().loadingSessionIds.has(localSessionId)) {
+      handleReplay(localSessionId, update);
+    } else {
+      handleLive(localSessionId, gooseSessionId, update);
+    }
+  }
+}
+
+subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
+  flushPendingUsageUpdates(localSessionId, gooseSessionId);
+});
+
+// Per-session perf counters for replay/live streaming.
+interface ReplayPerf {
+  firstAt: number;
+  lastAt: number;
+  count: number;
+}
+const replayPerf = new Map<string, ReplayPerf>();
+interface LivePerf {
+  sendStartedAt: number;
+  firstChunkAt: number | null;
+  chunkCount: number;
+}
+const livePerf = new Map<string, LivePerf>();
 
 export function setActiveMessageId(
   gooseSessionId: string,
   messageId: string,
 ): void {
   presetMessageIds.set(gooseSessionId, messageId);
+  livePerf.set(gooseSessionId, {
+    sendStartedAt: performance.now(),
+    firstChunkAt: null,
+    chunkCount: 0,
+  });
 }
 
 export function clearActiveMessageId(gooseSessionId: string): void {
   presetMessageIds.delete(gooseSessionId);
+  const perf = livePerf.get(gooseSessionId);
+  if (perf) {
+    const sid = gooseSessionId.slice(0, 8);
+    const total = performance.now() - perf.sendStartedAt;
+    const ttft =
+      perf.firstChunkAt !== null
+        ? (perf.firstChunkAt - perf.sendStartedAt).toFixed(1)
+        : "n/a";
+    perfLog(
+      `[perf:stream] ${sid} stream ended — ttft=${ttft}ms total=${total.toFixed(1)}ms chunks=${perf.chunkCount}`,
+    );
+    livePerf.delete(gooseSessionId);
+  }
 }
 
 export async function handleSessionNotification(
   notification: SessionNotification,
 ): Promise<void> {
   const gooseSessionId = notification.sessionId;
-  const sessionId = getLocalSessionId(gooseSessionId) ?? gooseSessionId;
   const { update } = notification;
-  const isReplay = useChatStore.getState().loadingSessionIds.has(sessionId);
+  const localSessionId = getLocalSessionId(gooseSessionId);
+
+  if (!localSessionId) {
+    if (shouldBufferPendingUpdate(update)) {
+      queuePendingUsageUpdate(gooseSessionId, update);
+    }
+    return;
+  }
+
+  const isReplay = useChatStore
+    .getState()
+    .loadingSessionIds.has(localSessionId);
 
   if (isReplay) {
-    handleReplay(sessionId, update);
+    const sid = localSessionId.slice(0, 8);
+    let perf = replayPerf.get(localSessionId);
+    const now = performance.now();
+    if (!perf) {
+      perf = { firstAt: now, lastAt: now, count: 0 };
+      replayPerf.set(localSessionId, perf);
+      perfLog(`[perf:replay] ${sid} first notification received`);
+    }
+    perf.lastAt = now;
+    perf.count += 1;
+    handleReplay(localSessionId, update);
   } else {
-    handleLive(sessionId, gooseSessionId, update);
+    const perf = livePerf.get(gooseSessionId);
+    if (perf && update.sessionUpdate === "agent_message_chunk") {
+      perf.chunkCount += 1;
+      if (perf.firstChunkAt === null) {
+        perf.firstChunkAt = performance.now();
+        const sid = gooseSessionId.slice(0, 8);
+        perfLog(
+          `[perf:stream] ${sid} first agent_message_chunk at ttft=${(perf.firstChunkAt - perf.sendStartedAt).toFixed(1)}ms`,
+        );
+      }
+    }
+    handleLive(localSessionId, gooseSessionId, update);
   }
+}
+
+export function getReplayPerf(
+  sessionId: string,
+): { count: number; spanMs: number } | null {
+  const perf = replayPerf.get(sessionId);
+  if (!perf) return null;
+  return { count: perf.count, spanMs: perf.lastAt - perf.firstAt };
+}
+
+export function clearReplayPerf(sessionId: string): void {
+  replayPerf.delete(sessionId);
 }
 
 function handleReplay(sessionId: string, update: SessionUpdate): void {

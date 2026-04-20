@@ -64,6 +64,9 @@ interface ChatInputProps {
   }) => void;
   contextTokens?: number;
   contextLimit?: number;
+  onCompactContext?: () => void | Promise<void>;
+  canCompactContext?: boolean;
+  isCompactingContext?: boolean;
 }
 
 export function ChatInput({
@@ -94,6 +97,9 @@ export function ChatInput({
   onCreateProject,
   contextTokens = 0,
   contextLimit = 0,
+  onCompactContext,
+  canCompactContext = false,
+  isCompactingContext = false,
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
@@ -429,6 +435,9 @@ export function ChatInput({
                 onCreateProject={onCreateProject}
                 contextTokens={contextTokens}
                 contextLimit={contextLimit}
+                onCompactContext={onCompactContext}
+                canCompactContext={canCompactContext}
+                isCompactingContext={isCompactingContext}
                 canSend={canSend}
                 isStreaming={isStreaming}
                 hasQueuedMessage={hasQueuedMessage}

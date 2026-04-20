@@ -111,6 +111,7 @@
     "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar personas"
   },
   "loading": {
+    "compacting": "Compactando conversación...",
     "thinking": "Pensando...",
     "responding": "Respondiendo..."
   },
@@ -151,9 +152,14 @@
     "attachFolder": "Carpeta",
     "chooseAgentModel": "Elegir agente y modelo",
     "chooseProject": "Elegir un proyecto",
+    "compactNow": "Compactar",
+    "compacting": "Compactando...",
     "chooseProvider": "Elegir un proveedor",
+    "contextTokensBreakdown": "{{tokens}} / {{limit}} tokens usados",
     "contextUsage": "Uso del contexto",
+    "contextUsageBreakdown": "{{used}} en uso ({{left}} libres)",
     "contextUsageTitle": "{{tokens}} / {{limit}} tokens",
+    "contextWindow": "Ventana de contexto",
     "createProject": "Crear proyecto",
     "generalChatWithoutProject": "Chat general sin contexto de proyecto",
     "loading": "Cargando...",

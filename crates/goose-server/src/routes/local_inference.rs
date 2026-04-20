@@ -8,6 +8,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use futures::future::join_all;
 use goose::config::paths::Paths;
 use goose::download_manager::{get_download_manager, DownloadProgress};
 use goose::providers::local_inference::hf_models::{self, HfModelInfo, HfQuantVariant};
@@ -55,8 +56,15 @@ pub struct LocalModelResponse {
 }
 
 async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
-    let mut entries_to_add = Vec::new();
     let mut mmproj_downloads_needed: Vec<(String, String, PathBuf)> = Vec::new();
+
+    struct PendingResolve {
+        spec: &'static str,
+        repo_id: String,
+        quantization: String,
+        model_id: String,
+    }
+    let mut to_resolve = Vec::new();
 
     for featured in FEATURED_MODELS {
         let (repo_id, quantization) = match hf_models::parse_model_spec(featured.spec) {
@@ -90,49 +98,64 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
                 if !needs_backfill {
                     continue;
                 }
-                // Fall through to build the entry for sync_with_featured backfill
+                // Fall through to resolve for backfill
             }
         }
 
-        let hf_file = match resolve_model_spec(featured.spec).await {
-            Ok((_repo, file)) => file,
-            Err(_) => {
-                let filename = format!(
-                    "{}-{}.gguf",
-                    repo_id.split('/').next_back().unwrap_or("model"),
-                    quantization
-                );
-                HfGgufFile {
-                    filename: filename.clone(),
-                    size_bytes: 0,
-                    quantization: quantization.to_string(),
-                    download_url: format!(
-                        "https://huggingface.co/{}/resolve/main/{}",
-                        repo_id, filename
-                    ),
-                }
-            }
-        };
-
-        let local_path = Paths::in_data_dir("models").join(&hf_file.filename);
-
-        // enrich_with_featured_mmproj is called by sync_with_featured/add_model,
-        // so we don't need to populate mmproj fields here.
-        entries_to_add.push(LocalModelEntry {
-            id: model_id.clone(),
+        to_resolve.push(PendingResolve {
+            spec: featured.spec,
             repo_id,
-            filename: hf_file.filename,
             quantization,
-            local_path,
-            source_url: hf_file.download_url,
-            settings: default_settings_for_model(&model_id),
-            size_bytes: hf_file.size_bytes,
-            mmproj_path: None,
-            mmproj_source_url: None,
-            mmproj_size_bytes: 0,
-            shard_files: vec![],
+            model_id,
         });
     }
+
+    let resolved: Vec<(PendingResolve, HfGgufFile)> =
+        join_all(to_resolve.into_iter().map(|pending| async move {
+            let hf_file = match resolve_model_spec(pending.spec).await {
+                Ok((_repo, file)) => file,
+                Err(_) => {
+                    let filename = format!(
+                        "{}-{}.gguf",
+                        pending.repo_id.split('/').next_back().unwrap_or("model"),
+                        pending.quantization
+                    );
+                    HfGgufFile {
+                        filename: filename.clone(),
+                        size_bytes: 0,
+                        quantization: pending.quantization.to_string(),
+                        download_url: format!(
+                            "https://huggingface.co/{}/resolve/main/{}",
+                            pending.repo_id, filename
+                        ),
+                    }
+                }
+            };
+            (pending, hf_file)
+        }))
+        .await;
+
+    let entries_to_add: Vec<LocalModelEntry> = resolved
+        .into_iter()
+        .map(|(pending, hf_file)| {
+            let local_path = Paths::in_data_dir("models").join(&hf_file.filename);
+            let settings = default_settings_for_model(&pending.model_id);
+            LocalModelEntry {
+                id: pending.model_id,
+                repo_id: pending.repo_id,
+                filename: hf_file.filename,
+                quantization: pending.quantization,
+                local_path,
+                source_url: hf_file.download_url,
+                settings,
+                size_bytes: hf_file.size_bytes,
+                mmproj_path: None,
+                mmproj_source_url: None,
+                mmproj_size_bytes: 0,
+                shard_files: vec![],
+            }
+        })
+        .collect();
 
     {
         let mut registry = get_registry()
@@ -186,6 +209,18 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
 }
 
 #[utoipa::path(
+    post,
+    path = "/local-inference/sync-featured",
+    responses(
+        (status = 200, description = "Featured models synced to registry")
+    )
+)]
+pub async fn sync_featured_models() -> Result<StatusCode, ErrorResponse> {
+    ensure_featured_models_in_registry().await?;
+    Ok(StatusCode::OK)
+}
+
+#[utoipa::path(
     get,
     path = "/local-inference/models",
     responses(
@@ -195,8 +230,6 @@ async fn ensure_featured_models_in_registry() -> Result<(), ErrorResponse> {
 pub async fn list_local_models(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Result<Json<Vec<LocalModelResponse>>, ErrorResponse> {
-    ensure_featured_models_in_registry().await?;
-
     let recommended_id = recommend_local_model(&state.inference_runtime);
 
     let registry = get_registry()
@@ -635,6 +668,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
 
     Router::new()
         .route("/local-inference/models", get(list_local_models))
+        .route("/local-inference/sync-featured", post(sync_featured_models))
         .route("/local-inference/search", get(search_hf_models))
         .route(
             "/local-inference/repo/{author}/{repo}/files",

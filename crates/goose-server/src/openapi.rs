@@ -674,6 +674,7 @@ pub struct ApiDoc;
         super::routes::dictation::cancel_download,
         super::routes::dictation::delete_model,
         super::routes::local_inference::list_local_models,
+        super::routes::local_inference::sync_featured_models,
         super::routes::local_inference::search_hf_models,
         super::routes::local_inference::get_repo_files,
         super::routes::local_inference::download_hf_model,

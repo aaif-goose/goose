@@ -6,6 +6,7 @@ import {
   clearActiveMessageId,
 } from "./acpNotificationHandler";
 import { searchSessionsViaExports } from "./sessionSearch";
+import { perfLog } from "@/shared/lib/perfLog";
 
 export interface AcpProvider {
   id: string;
@@ -21,7 +22,6 @@ export interface AcpSendMessageOptions {
 }
 
 export interface AcpPrepareSessionOptions {
-  workingDir?: string;
   personaId?: string;
 }
 
@@ -37,6 +37,8 @@ export async function acpSendMessage(
   options: AcpSendMessageOptions = {},
 ): Promise<void> {
   const { systemPrompt, personaId, images } = options;
+  const sid = sessionId.slice(0, 8);
+  const tStart = performance.now();
 
   const gooseSessionId = sessionTracker.getGooseSessionId(sessionId, personaId);
   if (!gooseSessionId) {
@@ -58,7 +60,15 @@ export async function acpSendMessage(
   const messageId = crypto.randomUUID();
   setActiveMessageId(gooseSessionId, messageId);
 
+  perfLog(
+    `[perf:send] ${sid} acpSendMessage → prompt(len=${prompt.length}, imgs=${images?.length ?? 0})`,
+  );
+  const tPrompt = performance.now();
   await directAcp.prompt(gooseSessionId, content);
+  const tDone = performance.now();
+  perfLog(
+    `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
+  );
 
   clearActiveMessageId(gooseSessionId);
 }
@@ -67,14 +77,22 @@ export async function acpSendMessage(
 export async function acpPrepareSession(
   sessionId: string,
   providerId: string,
+  workingDir: string,
   options: AcpPrepareSessionOptions = {},
 ): Promise<void> {
-  const workingDir = options.workingDir ?? "~/.goose/artifacts";
+  const sid = sessionId.slice(0, 8);
+  const t0 = performance.now();
+  perfLog(
+    `[perf:prepare] ${sid} acpPrepareSession start (provider=${providerId})`,
+  );
   await sessionTracker.prepareSession(
     sessionId,
     providerId,
     workingDir,
     options.personaId,
+  );
+  perfLog(
+    `[perf:prepare] ${sid} acpPrepareSession done in ${(performance.now() - t0).toFixed(1)}ms`,
   );
 }
 
@@ -126,13 +144,24 @@ export async function acpLoadSession(
   workingDir?: string,
 ): Promise<void> {
   const effectiveWorkingDir = workingDir ?? "~/.goose/artifacts";
-  await directAcp.loadSession(gooseSessionId, effectiveWorkingDir);
-  sessionTracker.registerSession(
+  const sid = sessionId.slice(0, 8);
+  const t0 = performance.now();
+  const rollbackSessionRegistration = sessionTracker.registerSession(
     sessionId,
     gooseSessionId,
     "goose",
     effectiveWorkingDir,
   );
+  try {
+    perfLog(`[perf:load] ${sid} acpLoadSession → client.loadSession`);
+    await directAcp.loadSession(gooseSessionId, effectiveWorkingDir);
+    perfLog(
+      `[perf:load] ${sid} client.loadSession resolved in ${(performance.now() - t0).toFixed(1)}ms`,
+    );
+  } catch (error) {
+    rollbackSessionRegistration();
+    throw error;
+  }
 }
 
 /** Export a session as JSON via the goose binary. */

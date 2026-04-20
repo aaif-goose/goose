@@ -41,7 +41,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 519
+    "model_count": 518
   },
   {
     "id": "abacus",
@@ -129,7 +129,7 @@
     "env": [
       "FIREWORKS_API_KEY"
     ],
-    "model_count": 16
+    "model_count": 17
   },
   {
     "id": "kimi-for-coding",
@@ -162,7 +162,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 9
   },
   {
     "id": "io-net",
@@ -184,7 +184,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 75
+    "model_count": 76
   },
   {
     "id": "minimax-cn-coding-plan",
@@ -250,7 +250,7 @@
     "env": [
       "ZENMUX_API_KEY"
     ],
-    "model_count": 87
+    "model_count": 88
   },
   {
     "id": "upstage",
@@ -415,7 +415,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 49
+    "model_count": 52
   },
   {
     "id": "stepfun",
@@ -536,7 +536,7 @@
     "env": [
       "FIRMWARE_API_KEY"
     ],
-    "model_count": 25
+    "model_count": 24
   },
   {
     "id": "lmstudio",
@@ -635,7 +635,7 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 75
+    "model_count": 76
   },
   {
     "id": "inference",
@@ -657,7 +657,7 @@
     "env": [
       "INCEPTION_API_KEY"
     ],
-    "model_count": 4
+    "model_count": 2
   },
   {
     "id": "requesty",
@@ -723,7 +723,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 30
+    "model_count": 32
   },
   {
     "id": "siliconflow",
@@ -880,6 +880,17 @@
       "MODELSCOPE_API_KEY"
     ],
     "model_count": 7
+  },
+  {
+    "id": "hpc-ai",
+    "display_name": "HPC-AI",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.hpc-ai.com/inference/v1",
+    "doc": "https://www.hpc-ai.com/doc/docs/quickstart/",
+    "env": [
+      "HPC_AI_API_KEY"
+    ],
+    "model_count": 3
   },
   {
     "id": "xiaomi",

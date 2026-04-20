@@ -48,7 +48,7 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
   const intl = useIntl();
   const navigate = useNavigate();
   const { read, upsert, getProviders } = useConfig();
-  const { refreshCurrentModelAndProvider } = useModelAndProvider();
+  const { getFallbackModelAndProvider, refreshCurrentModelAndProvider } = useModelAndProvider();
 
   const [isCheckingProvider, setIsCheckingProvider] = useState(true);
   const [hasProvider, setHasProvider] = useState(false);
@@ -67,7 +67,25 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const provider = (await read('GOOSE_PROVIDER', false, { throwOnError: true })) as string | null;
-        setHasProvider(!!provider?.trim());
+        if (provider?.trim()) {
+          setHasProvider(true);
+          setIsCheckingProvider(false);
+          return;
+        }
+
+        const fallback = await getFallbackModelAndProvider();
+        if (fallback.provider?.trim() && fallback.model?.trim()) {
+          const configuredProvider = (await read('GOOSE_PROVIDER', false)) as string | null;
+          const configuredModel = (await read('GOOSE_MODEL', false)) as string | null;
+          if (configuredProvider?.trim() && configuredModel?.trim()) {
+            await refreshCurrentModelAndProvider();
+            setHasProvider(true);
+            setIsCheckingProvider(false);
+            return;
+          }
+        }
+
+        setHasProvider(false);
         setIsCheckingProvider(false);
         return;
       } catch (error) {

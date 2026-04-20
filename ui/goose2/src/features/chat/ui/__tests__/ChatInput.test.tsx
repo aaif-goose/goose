@@ -223,6 +223,49 @@ describe("ChatInput", () => {
     expect(screen.getByText("goose2")).toBeInTheDocument();
   });
 
+  it("opens a context usage popover when token tracking is available", async () => {
+    const user = userEvent.setup();
+    render(
+      <ChatInput onSend={vi.fn()} contextTokens={1536} contextLimit={8192} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+
+    expect(screen.getByText("Context window")).toBeInTheDocument();
+    expect(screen.getByText("1.5K / 8.2K tokens used")).toBeInTheDocument();
+    expect(screen.getByText("19%")).toBeInTheDocument();
+  });
+
+  it("runs compaction from the context usage popover", async () => {
+    const user = userEvent.setup();
+    const onCompactContext = vi.fn();
+
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        contextTokens={1536}
+        contextLimit={8192}
+        canCompactContext
+        onCompactContext={onCompactContext}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+    await user.click(screen.getByRole("button", { name: "Compact" }));
+
+    expect(onCompactContext).toHaveBeenCalledOnce();
+  });
+
+  it("hides the context usage control when the context limit is unavailable", () => {
+    render(
+      <ChatInput onSend={vi.fn()} contextTokens={1536} contextLimit={0} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /context usage/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows stop button when streaming", () => {
     render(<ChatInput onSend={vi.fn()} onStop={vi.fn()} isStreaming />);
     expect(

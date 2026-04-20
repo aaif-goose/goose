@@ -41,11 +41,6 @@
       "responseType": "GetSessionExtensionsResponse"
     },
     {
-      "method": "_goose/session/provider/update",
-      "requestType": "UpdateProviderRequest",
-      "responseType": "UpdateProviderResponse"
-    },
-    {
       "method": "_goose/providers/list",
       "requestType": "ListProvidersRequest",
       "responseType": "ListProvidersResponse"
