@@ -34,17 +34,13 @@ export async function listProviders(): Promise<AcpProvider[]> {
 
 export async function listSessions(): Promise<AcpSessionInfo[]> {
   const client = await getClient();
-  // GooseClient.unstable_listSessions doesn't work with SDK 0.19 (renamed to listSessions).
-  // Bypass GooseClient and call the connection directly. Fix when ui/acp is updated.
-  // biome-ignore lint/suspicious/noExplicitAny: SDK doesn't expose conn property
-  const conn = (client as any).conn;
-  const response = await conn.listSessions({});
+  const response = await client.listSessions({});
   return response.sessions.map(
     (info: {
       sessionId: string;
-      title?: string;
-      updatedAt?: string;
-      _meta?: Record<string, unknown>;
+      title?: string | null;
+      updatedAt?: string | null;
+      _meta?: Record<string, unknown> | null;
     }) => ({
       sessionId: info.sessionId,
       title: info.title ?? null,

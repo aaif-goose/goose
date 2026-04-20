@@ -14,7 +14,7 @@ import type {
   ToolCall,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
-import { ndJsonStream } from "@agentclientprotocol/sdk";
+import { PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
 import { GooseClient } from "@aaif/goose-sdk";
 import { resolveGooseBinary } from "@aaif/goose-sdk/node";
 import Onboarding from "./onboarding.js";
@@ -841,7 +841,7 @@ function App({
 
         setStatus("handshaking…");
         await client.initialize({
-          protocolVersion: 0,
+          protocolVersion: PROTOCOL_VERSION,
           clientInfo: { name: "goose-text", version: "0.1.0" },
           clientCapabilities: {},
         });
@@ -1255,7 +1255,7 @@ async function runTextMode(serverConnection: Stream | string, prompt: string) {
     );
 
     await client.initialize({
-      protocolVersion: 0,
+      protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: "goose-text", version: "0.1.0" },
       clientCapabilities: {},
     });

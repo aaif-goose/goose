@@ -432,10 +432,15 @@ export default function ConfigureScreen({
         }
         await client.goose.GooseConfigUpsert({ key: "GOOSE_PROVIDER", value: provider.name });
         await client.goose.GooseConfigUpsert({ key: "GOOSE_MODEL", value: model });
-        await client.goose.GooseSessionProviderUpdate({
+        await client.setSessionConfigOption({
           sessionId,
-          provider: provider.name,
-          model,
+          configId: "provider",
+          value: provider.name,
+        });
+        await client.setSessionConfigOption({
+          sessionId,
+          configId: "model",
+          value: model,
         });
         onComplete();
       } catch (e: unknown) {

@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Goose - an open-source AI agent",
   "license": "Apache-2.0",
   "repository": {
@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@aaif/goose-sdk": "workspace:*",
-    "@agentclientprotocol/sdk": "^0.14.1",
+    "@agentclientprotocol/sdk": "^0.19.0",
     "@inkjs/ui": "^2.0.0",
     "ink": "^6.8.0",
     "ink-multiline-input": "^0.1.0",
