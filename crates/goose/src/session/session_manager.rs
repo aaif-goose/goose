@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 12;
+pub const CURRENT_SCHEMA_VERSION: i32 = 11;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -1064,16 +1064,6 @@ impl SessionStorage {
             }
             11 => {
                 crate::providers::inventory::create_tables_in_tx(tx).await?;
-            }
-            12 => {
-                // Add recommended column to provider_inventory_models.
-                // Ignore error if column already exists (fresh installs
-                // created the table with the column in migration 11).
-                let _ = sqlx::query(
-                    "ALTER TABLE provider_inventory_models ADD COLUMN recommended BOOLEAN",
-                )
-                .execute(&mut **tx)
-                .await;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
