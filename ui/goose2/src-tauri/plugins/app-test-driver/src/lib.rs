@@ -3,6 +3,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, Runtime};
+#[cfg(target_os = "macos")]
+use tauri::WebviewWindow;
 
 #[derive(Deserialize, Debug)]
 struct TestCommand {
