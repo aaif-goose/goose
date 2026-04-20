@@ -455,7 +455,6 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
             currentModelId;
 
           const sessionStore = useChatSessionStore.getState();
-          sessionStore.setSessionModels(sessionId, availableModels);
           sessionStore.updateSession(
             sessionId,
             { modelId: currentModelId, modelName: currentModelName },

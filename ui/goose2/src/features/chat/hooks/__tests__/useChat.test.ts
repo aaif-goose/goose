@@ -81,8 +81,6 @@ describe("useChat", () => {
       isLoading: false,
       contextPanelOpenBySession: {},
       activeWorkspaceBySession: {},
-      modelsBySession: {},
-      modelCacheByProvider: {},
     });
     useAgentStore.setState({
       personas: [
@@ -354,7 +352,7 @@ describe("useChat", () => {
     });
   });
 
-  it("prepares draft sessions before applying a selected model on first send", async () => {
+  it("sends messages without an extra session preparation step", async () => {
     useChatSessionStore.setState({
       sessions: [
         {
@@ -366,34 +364,66 @@ describe("useChat", () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           messageCount: 0,
-          draft: true,
         },
       ],
     });
 
-    const { result } = renderHook(() =>
-      useChat("session-1", "openai", undefined, undefined, async () => "/tmp"),
-    );
+    const { result } = renderHook(() => useChat("session-1", "openai"));
 
     await act(async () => {
       await result.current.sendMessage("Hello");
     });
 
-    expect(mockAcpPrepareSession).toHaveBeenCalledWith(
-      "session-1",
-      "openai",
-      "/tmp",
-      {
-        personaId: undefined,
-      },
-    );
-    expect(mockAcpSetModel).toHaveBeenCalledWith("session-1", "gpt-4.1");
     expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "Hello", {
       systemPrompt: undefined,
       personaId: undefined,
       personaName: undefined,
       images: undefined,
     });
+  });
+
+  it("fires onMessageAccepted only after the message enters the session", async () => {
+    const onMessageAccepted = vi.fn();
+    const deferred = createDeferredPromise();
+    mockAcpSendMessage.mockReturnValue(deferred.promise);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        onMessageAccepted,
+      }),
+    );
+
+    await act(async () => {
+      const sendPromise = result.current.sendMessage("Hello");
+      await Promise.resolve();
+
+      expect(onMessageAccepted).toHaveBeenCalledTimes(1);
+      expect(
+        useChatStore.getState().messagesBySession["session-1"],
+      ).toHaveLength(1);
+
+      deferred.resolve();
+      await sendPromise;
+    });
+  });
+
+  it("awaits ensurePrepared before prompting", async () => {
+    const ensurePrepared = vi.fn().mockResolvedValue(undefined);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        ensurePrepared,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("Hello");
+    });
+
+    expect(ensurePrepared).toHaveBeenCalledTimes(1);
+    expect(ensurePrepared.mock.invocationCallOrder[0]).toBeLessThan(
+      mockAcpSendMessage.mock.invocationCallOrder[0],
+    );
   });
 
   it("appends an error message and removes the empty assistant placeholder when send fails", async () => {

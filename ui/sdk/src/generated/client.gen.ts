@@ -31,8 +31,8 @@ import type {
   GetExtensionsResponse,
   GetProviderDetailsRequest,
   GetProviderDetailsResponse,
-  GetProviderModelsRequest,
-  GetProviderModelsResponse,
+  GetProviderInventoryRequest,
+  GetProviderInventoryResponse,
   GetSessionExtensionsRequest,
   GetSessionExtensionsResponse,
   GetToolsRequest,
@@ -45,6 +45,8 @@ import type {
   ReadConfigResponse,
   ReadResourceRequest,
   ReadResourceResponse,
+  RefreshProviderInventoryRequest,
+  RefreshProviderInventoryResponse,
   RemoveConfigRequest,
   RemoveExtensionRequest,
   RemoveSecretRequest,
@@ -62,13 +64,14 @@ import {
   zExportSessionResponse,
   zGetExtensionsResponse,
   zGetProviderDetailsResponse,
-  zGetProviderModelsResponse,
+  zGetProviderInventoryResponse,
   zGetSessionExtensionsResponse,
   zGetToolsResponse,
   zImportSessionResponse,
   zListProvidersResponse,
   zReadConfigResponse,
   zReadResourceResponse,
+  zRefreshProviderInventoryResponse,
 } from './zod.gen.js';
 
 export class GooseExtClient {
@@ -132,11 +135,25 @@ export class GooseExtClient {
     return zGetProviderDetailsResponse.parse(raw) as GetProviderDetailsResponse;
   }
 
-  async GooseProvidersModels(
-    params: GetProviderModelsRequest,
-  ): Promise<GetProviderModelsResponse> {
-    const raw = await this.conn.extMethod("_goose/providers/models", params);
-    return zGetProviderModelsResponse.parse(raw) as GetProviderModelsResponse;
+  async GooseProvidersInventory(
+    params: GetProviderInventoryRequest,
+  ): Promise<GetProviderInventoryResponse> {
+    const raw = await this.conn.extMethod("_goose/providers/inventory", params);
+    return zGetProviderInventoryResponse.parse(
+      raw,
+    ) as GetProviderInventoryResponse;
+  }
+
+  async GooseProvidersInventoryRefresh(
+    params: RefreshProviderInventoryRequest,
+  ): Promise<RefreshProviderInventoryResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/inventory/refresh",
+      params,
+    );
+    return zRefreshProviderInventoryResponse.parse(
+      raw,
+    ) as RefreshProviderInventoryResponse;
   }
 
   async GooseConfigRead(

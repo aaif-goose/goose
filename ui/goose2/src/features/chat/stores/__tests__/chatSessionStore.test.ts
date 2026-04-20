@@ -1,29 +1,45 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpSessionInfo } from "@/shared/api/acp";
-import { useChatSessionStore } from "../chatSessionStore";
+import { useChatSessionStore, type ChatSession } from "../chatSessionStore";
+
+const mockAcpCreateSession = vi.fn();
+const mockAcpListSessions = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
-  acpListSessions: vi.fn(),
+  acpCreateSession: (...args: unknown[]) => mockAcpCreateSession(...args),
+  acpListSessions: (...args: unknown[]) => mockAcpListSessions(...args),
 }));
-
-import { acpListSessions } from "@/shared/api/acp";
-
-const mockedAcpListSessions = vi.mocked(acpListSessions);
 
 const LEGACY_SESSION_CACHE_KEY = "goose:chat-sessions";
 const OVERLAY_CACHE_KEY = "goose:acp-session-metadata";
-const DRAFT_SESSION_CACHE_KEY = "goose:chat-draft-sessions";
 
 function resetStore() {
   useChatSessionStore.setState({
     sessions: [],
     activeSessionId: null,
     isLoading: false,
+    hasHydratedSessions: false,
     contextPanelOpenBySession: {},
     activeWorkspaceBySession: {},
-    modelsBySession: {},
-    modelCacheByProvider: {},
   });
+}
+
+function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
+  return {
+    id: "session-1",
+    acpSessionId: "session-1",
+    title: "Test Session",
+    createdAt: "2026-04-01T00:00:00.000Z",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+    messageCount: 0,
+    ...overrides,
+  };
+}
+
+function seedSession(overrides: Partial<ChatSession> = {}): ChatSession {
+  const session = makeSession(overrides);
+  useChatSessionStore.getState().addSession(session);
+  return session;
 }
 
 describe("chatSessionStore", () => {
@@ -31,118 +47,51 @@ describe("chatSessionStore", () => {
     resetStore();
     window.localStorage.removeItem(LEGACY_SESSION_CACHE_KEY);
     window.localStorage.removeItem(OVERLAY_CACHE_KEY);
-    window.localStorage.removeItem(DRAFT_SESSION_CACHE_KEY);
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     window.localStorage.removeItem(LEGACY_SESSION_CACHE_KEY);
     window.localStorage.removeItem(OVERLAY_CACHE_KEY);
-    window.localStorage.removeItem(DRAFT_SESSION_CACHE_KEY);
   });
 
-  describe("createDraftSession", () => {
-    it("creates a draft session with default title", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
+  describe("createSession", () => {
+    it("creates a real ACP-backed session", async () => {
+      mockAcpCreateSession.mockResolvedValue({ sessionId: "acp-1" });
 
-      expect(session.title).toBe("New Chat");
-      expect(session.draft).toBe(true);
-      expect(session.messageCount).toBe(0);
-      expect(useChatSessionStore.getState().sessions).toContainEqual(session);
-    });
-
-    it("creates a draft session with custom options", () => {
-      const session = useChatSessionStore.getState().createDraftSession({
-        title: "My Custom Chat",
-        projectId: "proj-1",
+      const session = await useChatSessionStore.getState().createSession({
+        title: "New Chat",
         providerId: "openai",
         personaId: "persona-1",
+        modelId: "gpt-4.1",
+        modelName: "GPT-4.1",
+        workingDir: "/tmp/project",
       });
 
-      expect(session.title).toBe("My Custom Chat");
-      expect(session.projectId).toBe("proj-1");
-      expect(session.providerId).toBe("openai");
-      expect(session.personaId).toBe("persona-1");
-      expect(session.draft).toBe(true);
-    });
-  });
-
-  describe("promoteDraft", () => {
-    it("removes draft flag from a draft session", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
-      expect(session.draft).toBe(true);
-
-      useChatSessionStore.getState().promoteDraft(session.id);
-
-      const updated = useChatSessionStore
-        .getState()
-        .sessions.find((s) => s.id === session.id);
-      expect(updated?.draft).toBeUndefined();
-    });
-
-    it("does nothing for non-draft sessions", () => {
-      useChatSessionStore.setState({
-        sessions: [
-          {
-            id: "non-draft",
-            title: "Regular Session",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            messageCount: 5,
-          },
-        ],
+      expect(mockAcpCreateSession).toHaveBeenCalledWith(
+        "openai",
+        "/tmp/project",
+        {
+          personaId: "persona-1",
+          modelId: "gpt-4.1",
+        },
+      );
+      expect(session).toMatchObject({
+        id: "acp-1",
+        acpSessionId: "acp-1",
+        title: "New Chat",
+        providerId: "openai",
+        personaId: "persona-1",
+        modelId: "gpt-4.1",
+        modelName: "GPT-4.1",
       });
-
-      useChatSessionStore.getState().promoteDraft("non-draft");
-
-      const session = useChatSessionStore
-        .getState()
-        .sessions.find((s) => s.id === "non-draft");
-      expect(session?.draft).toBeUndefined();
-    });
-  });
-
-  describe("removeDraft", () => {
-    it("removes a draft session", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
-      expect(useChatSessionStore.getState().sessions).toHaveLength(1);
-
-      useChatSessionStore.getState().removeDraft(session.id);
-
-      expect(useChatSessionStore.getState().sessions).toHaveLength(0);
-    });
-
-    it("clears activeSessionId if removing the active draft", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
-      useChatSessionStore.getState().setActiveSession(session.id);
-
-      useChatSessionStore.getState().removeDraft(session.id);
-
-      expect(useChatSessionStore.getState().activeSessionId).toBeNull();
-    });
-
-    it("does not remove non-draft sessions", () => {
-      useChatSessionStore.setState({
-        sessions: [
-          {
-            id: "non-draft",
-            title: "Regular Session",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            messageCount: 5,
-          },
-        ],
-      });
-
-      useChatSessionStore.getState().removeDraft("non-draft");
-
-      expect(useChatSessionStore.getState().sessions).toHaveLength(1);
+      expect(useChatSessionStore.getState().sessions).toContainEqual(session);
     });
   });
 
   describe("loadSessions", () => {
     it("loads sessions from ACP and maps them correctly", async () => {
-      mockedAcpListSessions.mockResolvedValue([
+      mockAcpListSessions.mockResolvedValue([
         {
           sessionId: "acp-1",
           title: "ACP Session 1",
@@ -161,62 +110,12 @@ describe("chatSessionStore", () => {
 
       const sessions = useChatSessionStore.getState().sessions;
       expect(sessions).toHaveLength(2);
-      expect(sessions[0].id).toBe("acp-2"); // Most recent first
-      expect(sessions[0].title).toBe("Untitled"); // null title becomes "Untitled"
+      expect(sessions[0].id).toBe("acp-2");
+      expect(sessions[0].title).toBe("Untitled");
       expect(sessions[0].messageCount).toBe(7);
       expect(sessions[1].id).toBe("acp-1");
       expect(sessions[1].title).toBe("ACP Session 1");
       expect(sessions[1].messageCount).toBe(4);
-    });
-
-    it("preserves local drafts alongside ACP sessions", async () => {
-      const draft = useChatSessionStore.getState().createDraftSession({
-        title: "My Draft",
-      });
-
-      mockedAcpListSessions.mockResolvedValue([
-        {
-          sessionId: "acp-1",
-          title: "ACP Session",
-          updatedAt: "2026-04-01",
-          messageCount: 3,
-        },
-      ]);
-
-      await useChatSessionStore.getState().loadSessions();
-
-      const sessions = useChatSessionStore.getState().sessions;
-      expect(sessions).toHaveLength(2);
-      expect(sessions.find((s) => s.id === "acp-1")).toBeDefined();
-      expect(sessions.find((s) => s.id === draft.id)).toBeDefined();
-    });
-
-    it("migrates promoted draft metadata onto the resolved ACP session id", async () => {
-      const draft = useChatSessionStore.getState().createDraftSession({
-        title: "Project Draft",
-        projectId: "project-123",
-        providerId: "goose",
-      });
-
-      useChatSessionStore.getState().promoteDraft(draft.id);
-      useChatSessionStore.getState().setSessionAcpId(draft.id, "acp-1");
-
-      mockedAcpListSessions.mockResolvedValue([
-        {
-          sessionId: "acp-1",
-          title: "ACP Session",
-          updatedAt: "2026-04-02",
-          messageCount: 3,
-        },
-      ]);
-
-      await useChatSessionStore.getState().loadSessions();
-
-      const session = useChatSessionStore.getState().sessions[0];
-      expect(session.id).toBe("acp-1");
-      expect(session.acpSessionId).toBe("acp-1");
-      expect(session.projectId).toBe("project-123");
-      expect(session.providerId).toBe("goose");
     });
 
     it("rehydrates cached project metadata for ACP sessions", async () => {
@@ -237,7 +136,7 @@ describe("chatSessionStore", () => {
         ]),
       );
 
-      mockedAcpListSessions.mockResolvedValue([
+      mockAcpListSessions.mockResolvedValue([
         {
           sessionId: "acp-1",
           title: null,
@@ -259,21 +158,37 @@ describe("chatSessionStore", () => {
       expect(session.userSetName).toBe(true);
     });
 
-    it("drops stale non-draft sessions that are no longer in ACP", async () => {
-      useChatSessionStore.setState({
-        sessions: [
+    it("ignores legacy draft records while hydrating overlays", async () => {
+      window.localStorage.setItem(
+        LEGACY_SESSION_CACHE_KEY,
+        JSON.stringify([
           {
-            id: "stale-session",
-            title: "Stale Session",
+            id: "cached-draft",
+            title: "Cached Draft",
+            draft: true,
             createdAt: "2026-04-01",
             updatedAt: "2026-04-01",
-            messageCount: 2,
+            messageCount: 0,
           },
+        ]),
+      );
+
+      mockAcpListSessions.mockResolvedValue([]);
+
+      await useChatSessionStore.getState().loadSessions();
+
+      expect(useChatSessionStore.getState().sessions).toEqual([]);
+    });
+
+    it("drops stale sessions that are no longer in ACP", async () => {
+      useChatSessionStore.setState({
+        sessions: [
+          makeSession({ id: "stale-session", title: "Stale Session" }),
         ],
         activeSessionId: "stale-session",
       });
 
-      mockedAcpListSessions.mockResolvedValue([
+      mockAcpListSessions.mockResolvedValue([
         {
           sessionId: "acp-1",
           title: "ACP Session",
@@ -292,7 +207,7 @@ describe("chatSessionStore", () => {
 
     it("sets isLoading during fetch", async () => {
       let resolvePromise: (value: AcpSessionInfo[]) => void = () => {};
-      mockedAcpListSessions.mockReturnValue(
+      mockAcpListSessions.mockReturnValue(
         new Promise((resolve) => {
           resolvePromise = resolve;
         }),
@@ -300,11 +215,13 @@ describe("chatSessionStore", () => {
 
       const loadPromise = useChatSessionStore.getState().loadSessions();
       expect(useChatSessionStore.getState().isLoading).toBe(true);
+      expect(useChatSessionStore.getState().hasHydratedSessions).toBe(false);
 
       resolvePromise([]);
       await loadPromise;
 
       expect(useChatSessionStore.getState().isLoading).toBe(false);
+      expect(useChatSessionStore.getState().hasHydratedSessions).toBe(true);
     });
 
     it("falls back to cached sessions on error", async () => {
@@ -315,56 +232,51 @@ describe("chatSessionStore", () => {
             id: "cached-session",
             title: "Cached Session",
             projectId: "project-123",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            createdAt: "2026-04-01T00:00:00.000Z",
+            updatedAt: "2026-04-01T00:00:00.000Z",
             messageCount: 8,
           },
           {
             id: "cached-draft",
             title: "Cached Draft",
             draft: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            createdAt: "2026-04-01T00:00:00.000Z",
+            updatedAt: "2026-04-01T00:00:00.000Z",
             messageCount: 0,
           },
         ]),
       );
 
-      mockedAcpListSessions.mockRejectedValue(new Error("Network error"));
+      mockAcpListSessions.mockRejectedValue(new Error("Network error"));
 
       await useChatSessionStore.getState().loadSessions();
 
       const sessions = useChatSessionStore.getState().sessions;
-      expect(sessions).toHaveLength(2);
-      expect(
-        sessions.find((session) => session.id === "cached-session"),
-      ).toMatchObject({
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).toMatchObject({
+        id: "cached-session",
         projectId: "project-123",
       });
-      expect(
-        sessions.find((session) => session.id === "cached-draft")?.draft,
-      ).toBe(true);
+      expect(useChatSessionStore.getState().hasHydratedSessions).toBe(true);
     });
   });
 
   describe("updateSession", () => {
     it("updates session properties", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
+      const session = seedSession();
 
       useChatSessionStore.getState().updateSession(session.id, {
         title: "Updated Title",
         projectId: "new-project",
       });
 
-      const updated = useChatSessionStore
-        .getState()
-        .sessions.find((s) => s.id === session.id);
+      const updated = useChatSessionStore.getState().getSession(session.id);
       expect(updated?.title).toBe("Updated Title");
       expect(updated?.projectId).toBe("new-project");
     });
 
     it("preserves updatedAt when not explicitly provided in patch", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
+      const session = seedSession();
       const originalUpdatedAt = session.updatedAt;
 
       vi.useFakeTimers();
@@ -376,14 +288,12 @@ describe("chatSessionStore", () => {
 
       vi.useRealTimers();
 
-      const updated = useChatSessionStore
-        .getState()
-        .sessions.find((s) => s.id === session.id);
+      const updated = useChatSessionStore.getState().getSession(session.id);
       expect(updated?.updatedAt).toBe(originalUpdatedAt);
     });
 
     it("updates updatedAt when explicitly provided in patch", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
+      const session = seedSession();
       const originalUpdatedAt = session.updatedAt;
 
       vi.useFakeTimers();
@@ -397,76 +307,43 @@ describe("chatSessionStore", () => {
 
       vi.useRealTimers();
 
-      const updated = useChatSessionStore
-        .getState()
-        .sessions.find((s) => s.id === session.id);
+      const updated = useChatSessionStore.getState().getSession(session.id);
       expect(updated?.updatedAt).not.toBe(originalUpdatedAt);
       expect(updated?.updatedAt).toBe(newTimestamp);
     });
   });
 
-  describe("session models", () => {
-    it("stores models per session", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
+  describe("provider switching", () => {
+    it("clears the selected model when switching providers", () => {
+      const session = seedSession({
+        providerId: "openai",
+        modelId: "gpt-4o",
+        modelName: "GPT-4o",
+      });
 
-      useChatSessionStore.getState().setSessionModels(session.id, [
-        { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
-        { id: "gpt-4o", name: "GPT-4o" },
-      ]);
-
-      expect(
-        useChatSessionStore.getState().getSessionModels(session.id),
-      ).toEqual([
-        { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
-        { id: "gpt-4o", name: "GPT-4o" },
-      ]);
-    });
-
-    it("removes stored models when a draft session is removed", () => {
-      const session = useChatSessionStore.getState().createDraftSession();
       useChatSessionStore
         .getState()
-        .setSessionModels(session.id, [
-          { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
-        ]);
+        .switchSessionProvider(session.id, "anthropic");
 
-      useChatSessionStore.getState().removeDraft(session.id);
-
-      expect(
-        useChatSessionStore.getState().getSessionModels(session.id),
-      ).toEqual([]);
-    });
-
-    it("removes stored models when a session is archived", async () => {
-      const session = useChatSessionStore.getState().createDraftSession();
-      useChatSessionStore
-        .getState()
-        .setSessionModels(session.id, [
-          { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
-        ]);
-
-      await useChatSessionStore.getState().archiveSession(session.id);
-
-      expect(
-        useChatSessionStore.getState().getSessionModels(session.id),
-      ).toEqual([]);
+      const updated = useChatSessionStore.getState().getSession(session.id);
+      expect(updated?.providerId).toBe("anthropic");
+      expect(updated?.modelId).toBeUndefined();
+      expect(updated?.modelName).toBeUndefined();
     });
   });
 
   describe("archiveSession", () => {
     it("sets archivedAt on the session", async () => {
-      const session = useChatSessionStore.getState().createDraftSession();
+      const session = seedSession();
 
       await useChatSessionStore.getState().archiveSession(session.id);
 
-      const archived = useChatSessionStore
-        .getState()
-        .sessions.find((s) => s.id === session.id);
+      const archived = useChatSessionStore.getState().getSession(session.id);
       expect(archived?.archivedAt).toBeDefined();
     });
 
     it("clears activeSessionId if archiving the active session", async () => {
-      const session = useChatSessionStore.getState().createDraftSession();
+      const session = seedSession();
       useChatSessionStore.getState().setActiveSession(session.id);
 
       await useChatSessionStore.getState().archiveSession(session.id);
@@ -478,13 +355,14 @@ describe("chatSessionStore", () => {
   describe("addSession", () => {
     it("prepends a new session to the list", () => {
       const { addSession } = useChatSessionStore.getState();
-      addSession({
-        id: "imported-1",
-        title: "Imported Session",
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-        messageCount: 5,
-      });
+      addSession(
+        makeSession({
+          id: "imported-1",
+          title: "Imported Session",
+          messageCount: 5,
+        }),
+      );
+
       const sessions = useChatSessionStore.getState().sessions;
       expect(sessions[0].id).toBe("imported-1");
       expect(sessions[0].title).toBe("Imported Session");
@@ -493,22 +371,13 @@ describe("chatSessionStore", () => {
 
     it("does not create a duplicate if session ID already exists", () => {
       const { addSession } = useChatSessionStore.getState();
-      addSession({
-        id: "dup-1",
-        title: "First",
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-        messageCount: 1,
-      });
-      addSession({
-        id: "dup-1",
-        title: "Second",
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-        messageCount: 2,
-      });
+      addSession(makeSession({ id: "dup-1", title: "First", messageCount: 1 }));
+      addSession(
+        makeSession({ id: "dup-1", title: "Second", messageCount: 2 }),
+      );
+
       const sessions = useChatSessionStore.getState().sessions;
-      const matches = sessions.filter((s) => s.id === "dup-1");
+      const matches = sessions.filter((session) => session.id === "dup-1");
       expect(matches).toHaveLength(1);
       expect(matches[0].title).toBe("Second");
     });

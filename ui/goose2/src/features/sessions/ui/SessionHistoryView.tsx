@@ -8,7 +8,11 @@ import { Button } from "@/shared/ui/button";
 import { SessionCard } from "./SessionCard";
 import { groupSessionsByDate } from "../lib/groupSessionsByDate";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
-import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
+import {
+  getVisibleSessions,
+  useChatSessionStore,
+} from "@/features/chat/stores/chatSessionStore";
+import { useChatStore } from "@/features/chat/stores/chatStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import {
   acpDuplicateSession,
@@ -38,10 +42,14 @@ export function SessionHistoryView({
 }: SessionHistoryViewProps) {
   const { t, i18n } = useTranslation(["sessions", "common"]);
   const sessions = useChatSessionStore((s) => s.sessions);
+  const messagesBySession = useChatStore((s) => s.messagesBySession);
   const loadSessions = useChatSessionStore((s) => s.loadSessions);
   const activeSessions = useMemo(
-    () => sessions.filter((session) => !session.draft && !session.archivedAt),
-    [sessions],
+    () =>
+      getVisibleSessions(sessions, messagesBySession).filter(
+        (session) => !session.archivedAt,
+      ),
+    [messagesBySession, sessions],
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 

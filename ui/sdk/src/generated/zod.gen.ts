@@ -149,17 +149,94 @@ export const zGetProviderDetailsResponse = z.object({
 });
 
 /**
- * Fetch the full list of models available for a specific provider.
+ * Read per-provider inventory. Always returns immediately from stored state.
  */
-export const zGetProviderModelsRequest = z.object({
-    providerName: z.string()
+export const zGetProviderInventoryRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
 });
 
 /**
- * Provider models response.
+ * A single model in provider inventory.
  */
-export const zGetProviderModelsResponse = z.object({
-    models: z.array(z.string())
+export const zProviderInventoryModelDto = z.object({
+    id: z.string(),
+    name: z.string(),
+    family: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    contextLimit: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional(),
+    reasoning: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    recommended: z.boolean().optional().default(false)
+});
+
+/**
+ * Provider inventory entry.
+ */
+export const zProviderInventoryEntryDto = z.object({
+    providerId: z.string(),
+    providerName: z.string(),
+    configured: z.boolean(),
+    supportsRefresh: z.boolean(),
+    refreshing: z.boolean(),
+    models: z.array(zProviderInventoryModelDto),
+    lastUpdatedAt: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    lastRefreshAttemptAt: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    lastRefreshError: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    stale: z.boolean(),
+    modelSelectionHint: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Provider inventory response.
+ */
+export const zGetProviderInventoryResponse = z.object({
+    entries: z.array(zProviderInventoryEntryDto)
+});
+
+/**
+ * Trigger a background refresh of provider inventories.
+ */
+export const zRefreshProviderInventoryRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
+});
+
+export const zRefreshProviderInventorySkipReasonDto = z.enum([
+    'unknown_provider',
+    'not_configured',
+    'does_not_support_refresh',
+    'already_refreshing'
+]);
+
+export const zRefreshProviderInventorySkipDto = z.object({
+    providerId: z.string(),
+    reason: zRefreshProviderInventorySkipReasonDto
+});
+
+/**
+ * Refresh acknowledgement.
+ */
+export const zRefreshProviderInventoryResponse = z.object({
+    started: z.array(z.string()),
+    skipped: z.array(zRefreshProviderInventorySkipDto).optional().default([])
 });
 
 /**
@@ -426,7 +503,8 @@ export const zExtRequest = z.object({
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
             zGetProviderDetailsRequest,
-            zGetProviderModelsRequest,
+            zGetProviderInventoryRequest,
+            zRefreshProviderInventoryRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
             zRemoveConfigRequest,
@@ -465,7 +543,8 @@ export const zExtResponse = z.union([
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
                 zGetProviderDetailsResponse,
-                zGetProviderModelsResponse,
+                zGetProviderInventoryResponse,
+                zRefreshProviderInventoryResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,

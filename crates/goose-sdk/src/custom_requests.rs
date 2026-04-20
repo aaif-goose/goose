@@ -257,20 +257,6 @@ pub struct GetProviderDetailsResponse {
     pub providers: Vec<ProviderDetailEntry>,
 }
 
-/// Fetch the full list of models available for a specific provider.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/providers/models", response = GetProviderModelsResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct GetProviderModelsRequest {
-    pub provider_name: String,
-}
-
-/// Provider models response.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct GetProviderModelsResponse {
-    pub models: Vec<String>,
-}
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderDetailEntry {
@@ -368,6 +354,120 @@ pub struct DictationProviderStatusEntry {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct DictationConfigResponse {
     pub providers: HashMap<String, DictationProviderStatusEntry>,
+}
+
+/// Read per-provider inventory. Always returns immediately from stored state.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/inventory",
+    response = GetProviderInventoryResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct GetProviderInventoryRequest {
+    /// Only return entries for these providers. Empty means all.
+    #[serde(default)]
+    pub provider_ids: Vec<String>,
+}
+
+/// Provider inventory response.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetProviderInventoryResponse {
+    pub entries: Vec<ProviderInventoryEntryDto>,
+}
+
+/// Trigger a background refresh of provider inventories.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/inventory/refresh",
+    response = RefreshProviderInventoryResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshProviderInventoryRequest {
+    /// Which providers to refresh. Empty means all known providers.
+    #[serde(default)]
+    pub provider_ids: Vec<String>,
+}
+
+/// Refresh acknowledgement.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshProviderInventoryResponse {
+    /// Which providers will be refreshed.
+    pub started: Vec<String>,
+    /// Which providers were skipped and why.
+    #[serde(default)]
+    pub skipped: Vec<RefreshProviderInventorySkipDto>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshProviderInventorySkipDto {
+    pub provider_id: String,
+    pub reason: RefreshProviderInventorySkipReasonDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RefreshProviderInventorySkipReasonDto {
+    #[default]
+    UnknownProvider,
+    NotConfigured,
+    DoesNotSupportRefresh,
+    AlreadyRefreshing,
+}
+
+/// A single model in provider inventory.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderInventoryModelDto {
+    /// Model identifier as the provider knows it.
+    pub id: String,
+    /// Human-readable display name.
+    pub name: String,
+    /// Model family for grouping in UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    /// Context window size in tokens.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_limit: Option<usize>,
+    /// Whether the model supports reasoning/extended thinking.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<bool>,
+    /// Whether this model should appear in the compact recommended picker.
+    #[serde(default)]
+    pub recommended: bool,
+}
+
+/// Provider inventory entry.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderInventoryEntryDto {
+    /// Provider identifier.
+    pub provider_id: String,
+    /// Human-readable provider name.
+    pub provider_name: String,
+    /// Whether Goose has enough configuration to use this provider.
+    pub configured: bool,
+    /// Whether this provider supports background inventory refresh.
+    pub supports_refresh: bool,
+    /// Whether a refresh is currently in flight.
+    pub refreshing: bool,
+    /// The list of available models.
+    pub models: Vec<ProviderInventoryModelDto>,
+    /// When this entry was last successfully refreshed (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_updated_at: Option<String>,
+    /// When a refresh was most recently attempted (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_refresh_attempt_at: Option<String>,
+    /// The last refresh failure message, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_refresh_error: Option<String>,
+    /// Whether we believe this data may be outdated.
+    pub stale: bool,
+    /// Guidance message shown when this provider manages its own model selection externally.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_selection_hint: Option<String>,
 }
 
 /// Empty success response for operations that return no data.

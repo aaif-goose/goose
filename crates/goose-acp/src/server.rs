@@ -27,6 +27,9 @@ use goose::mcp_utils::ToolResult;
 use goose::permission::permission_confirmation::PrincipalType;
 use goose::permission::{Permission, PermissionConfirmation};
 use goose::providers::base::Provider;
+use goose::providers::inventory::{
+    ProviderInventoryEntry, ProviderInventoryService, RefreshSkipReason,
+};
 use goose::session::session_manager::SessionType;
 use goose::session::{EnabledExtensionsState, Session, SessionManager};
 use goose_acp_macros::custom_methods;
@@ -125,6 +128,8 @@ struct AgentSetupRequest {
     /// Pre-resolved provider name + model config (from config, no network).
     /// When present the spawn skips re-deriving these from config.
     resolved_provider: Option<(String, goose::model::ModelConfig)>,
+    /// Pre-instantiated provider reused from synchronous session initialization.
+    prebuilt_provider: Option<Arc<dyn Provider>>,
 }
 
 pub struct GooseAcpAgent {
@@ -139,6 +144,7 @@ pub struct GooseAcpAgent {
     permission_manager: Arc<PermissionManager>,
     goose_mode: GooseMode,
     disable_session_naming: bool,
+    provider_inventory: ProviderInventoryService,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -415,19 +421,50 @@ fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
     }
 }
 
-async fn build_model_state(provider: &dyn Provider) -> Result<SessionModelState, sacp::Error> {
-    let models = provider
-        .fetch_recommended_models()
-        .await
-        .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-    let current_model = &provider.get_model_config().model_name;
-    Ok(SessionModelState::new(
-        ModelId::new(current_model.as_str()),
-        models
-            .iter()
-            .map(|name| ModelInfo::new(ModelId::new(&**name), &**name))
+fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEntryDto {
+    let stale = ProviderInventoryService::is_stale(&entry);
+    ProviderInventoryEntryDto {
+        provider_id: entry.provider_id,
+        provider_name: entry.provider_name,
+        configured: entry.configured,
+        supports_refresh: entry.supports_refresh,
+        refreshing: entry.refreshing,
+        models: entry
+            .models
+            .into_iter()
+            .map(|m| ProviderInventoryModelDto {
+                id: m.id,
+                name: m.name,
+                family: m.family,
+                context_limit: m.context_limit,
+                reasoning: m.reasoning,
+                recommended: m.recommended,
+            })
             .collect(),
-    ))
+        last_updated_at: entry.last_updated_at.map(|t| t.to_rfc3339()),
+        last_refresh_attempt_at: entry.last_refresh_attempt_at.map(|t| t.to_rfc3339()),
+        last_refresh_error: entry.last_refresh_error,
+        stale,
+        model_selection_hint: entry.model_selection_hint,
+    }
+}
+
+fn build_model_state(current_model: &str, inventory: &ProviderInventoryEntry) -> SessionModelState {
+    let mut available_models = inventory
+        .models
+        .iter()
+        .map(|model| ModelInfo::new(ModelId::new(model.id.as_str()), model.name.as_str()))
+        .collect::<Vec<_>>();
+    if !available_models
+        .iter()
+        .any(|model| model.model_id.0.as_ref() == current_model)
+    {
+        available_models.insert(
+            0,
+            ModelInfo::new(ModelId::new(current_model), current_model),
+        );
+    }
+    SessionModelState::new(ModelId::new(current_model), available_models)
 }
 
 async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderListEntry> {
@@ -546,31 +583,25 @@ fn build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::E
     ))
 }
 
-/// Build model state and config options eagerly from the canonical registry.
-///
-/// TODO: This trades speed for correctness — the canonical registry may not perfectly
-/// match what the provider API returns (new models not yet in the registry, deprecated
-/// models still listed, or locally-installed models for providers like Ollama). Consider
-/// whether to reconcile with a live API call in the background.
-async fn build_eager_config(
-    resolved: &Result<(String, goose::model::ModelConfig), String>,
+fn should_refresh_inventory_for_session_init(entry: &ProviderInventoryEntry) -> bool {
+    entry.configured
+        && entry.supports_refresh
+        && (entry.last_updated_at.is_none() || ProviderInventoryService::is_stale(entry))
+}
+
+async fn build_eager_config_from_inventory(
+    provider_name: &str,
+    current_model: &str,
+    inventory: &ProviderInventoryEntry,
     mode_state: &SessionModeState,
     goose_session: &Session,
-) -> (Option<SessionModelState>, Option<Vec<SessionConfigOption>>) {
-    let Ok((ref provider_name, ref mc)) = resolved else {
-        return (None, None);
-    };
-    let recommended = goose::providers::canonical::recommended_models_from_registry(provider_name);
-    let available: Vec<ModelInfo> = recommended
-        .iter()
-        .map(|name| ModelInfo::new(ModelId::new(&**name), &**name))
-        .collect();
-    let ms = SessionModelState::new(ModelId::new(mc.model_name.as_str()), available);
+) -> (SessionModelState, Vec<SessionConfigOption>) {
+    let ms = build_model_state(current_model, inventory);
     let provider_selection = session_provider_selection(goose_session);
-    let provider_options = build_provider_options(Some(provider_name.as_str())).await;
+    let provider_options = build_provider_options(Some(provider_name)).await;
     let config_options =
         build_config_options(mode_state, &ms, provider_selection, provider_options);
-    (Some(ms), Some(config_options))
+    (ms, config_options)
 }
 
 fn build_config_options(
@@ -651,6 +682,7 @@ impl GooseAcpAgent {
             session_manager.storage().clone(),
         ));
         let permission_manager = Arc::new(PermissionManager::new(config_dir.clone()));
+        let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
 
         Ok(Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -664,6 +696,7 @@ impl GooseAcpAgent {
             permission_manager,
             goose_mode,
             disable_session_naming,
+            provider_inventory,
         })
     }
 
@@ -680,6 +713,125 @@ impl GooseAcpAgent {
         (self.provider_factory)(provider_name.to_string(), model_config, extensions).await
     }
 
+    async fn prepare_session_init_config(
+        &self,
+        resolved: &Result<(String, goose::model::ModelConfig), String>,
+        mode_state: &SessionModeState,
+        goose_session: &Session,
+    ) -> (
+        Option<SessionModelState>,
+        Option<Vec<SessionConfigOption>>,
+        Option<Arc<dyn Provider>>,
+    ) {
+        let Ok((provider_name, model_config)) = resolved else {
+            return (None, None, None);
+        };
+
+        let Some(mut inventory) = self
+            .provider_inventory
+            .entry_for_provider(provider_name)
+            .await
+            .ok()
+            .flatten()
+        else {
+            return (None, None, None);
+        };
+
+        let mut prebuilt_provider = None;
+        if should_refresh_inventory_for_session_init(&inventory) {
+            match self.load_config() {
+                Ok(config) => {
+                    let ext_state = EnabledExtensionsState::extensions_or_default(
+                        Some(&goose_session.extension_data),
+                        &config,
+                    );
+                    match self
+                        .create_provider(provider_name, model_config.clone(), ext_state)
+                        .await
+                    {
+                        Ok(provider) => {
+                            let provider_id = provider_name.clone();
+                            prebuilt_provider = Some(provider.clone());
+                            match self
+                                .provider_inventory
+                                .plan_refresh(std::slice::from_ref(&provider_id))
+                                .await
+                            {
+                                Ok(plan) if plan.started.iter().any(|id| id == &provider_id) => {
+                                    match provider.fetch_recommended_models().await {
+                                        Ok(models) => {
+                                            if let Err(error) = self
+                                                .provider_inventory
+                                                .store_refreshed_models(&provider_id, &models)
+                                                .await
+                                            {
+                                                warn!(
+                                                    provider = %provider_id,
+                                                    error = %error,
+                                                    "failed to store refreshed provider inventory during session init"
+                                                );
+                                            }
+                                        }
+                                        Err(error) => {
+                                            if let Err(store_error) = self
+                                                .provider_inventory
+                                                .store_refresh_error(
+                                                    &provider_id,
+                                                    error.to_string(),
+                                                )
+                                                .await
+                                            {
+                                                warn!(
+                                                    provider = %provider_id,
+                                                    error = %store_error,
+                                                    "failed to store provider inventory refresh error during session init"
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(_) => {}
+                                Err(error) => warn!(
+                                    provider = %provider_id,
+                                    error = %error,
+                                    "failed to plan provider inventory refresh during session init"
+                                ),
+                            }
+
+                            if let Ok(Some(refreshed_inventory)) = self
+                                .provider_inventory
+                                .entry_for_provider(provider_name)
+                                .await
+                            {
+                                inventory = refreshed_inventory;
+                            }
+                        }
+                        Err(error) => warn!(
+                            provider = %provider_name,
+                            error = %error,
+                            "failed to initialize provider during synchronous inventory refresh"
+                        ),
+                    }
+                }
+                Err(error) => warn!(
+                    provider = %provider_name,
+                    error = %error,
+                    "failed to load config during synchronous inventory refresh"
+                ),
+            }
+        }
+
+        let (model_state, config_options) = build_eager_config_from_inventory(
+            provider_name,
+            model_config.model_name.as_str(),
+            &inventory,
+            mode_state,
+            goose_session,
+        )
+        .await;
+        (Some(model_state), Some(config_options), prebuilt_provider)
+    }
+
     fn spawn_agent_setup(
         &self,
         cx: &ConnectionTo<Client>,
@@ -691,6 +843,7 @@ impl GooseAcpAgent {
             goose_session,
             mcp_servers,
             resolved_provider,
+            prebuilt_provider,
         } = req;
 
         let goose_mode = goose_session.goose_mode;
@@ -845,9 +998,12 @@ impl GooseAcpAgent {
                     Some(&goose_session.extension_data),
                     &config,
                 );
-                let provider = provider_factory(provider_name.to_string(), model_config, ext_state)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let provider = match prebuilt_provider {
+                    Some(provider) => provider,
+                    None => provider_factory(provider_name.to_string(), model_config, ext_state)
+                        .await
+                        .map_err(|e| e.to_string())?,
+                };
                 agent
                     .update_provider(provider.clone(), &goose_session.id)
                     .await
@@ -1416,9 +1572,10 @@ impl GooseAcpAgent {
             .as_ref()
             .ok()
             .map(|(_, mc)| build_usage_update(&goose_session, mc.context_limit()));
-        let (model_state, config_options) =
-            build_eager_config(&resolved, &mode_state, &goose_session).await;
         let session_id = SessionId::new(thread_id.clone());
+        let (model_state, config_options, prebuilt_provider) = self
+            .prepare_session_init_config(&resolved, &mode_state, &goose_session)
+            .await;
 
         self.spawn_agent_setup(
             cx,
@@ -1428,6 +1585,7 @@ impl GooseAcpAgent {
                 goose_session,
                 mcp_servers: args.mcp_servers,
                 resolved_provider: resolved.as_ref().ok().cloned(),
+                prebuilt_provider,
             },
         );
 
@@ -1798,8 +1956,9 @@ impl GooseAcpAgent {
                     .as_ref()
                     .map(|mc| build_usage_update(&goose_session, mc.context_limit()))
             });
-        let (model_state, config_options) =
-            build_eager_config(&resolved, &mode_state, &goose_session).await;
+        let (model_state, config_options, prebuilt_provider) = self
+            .prepare_session_init_config(&resolved, &mode_state, &goose_session)
+            .await;
 
         self.spawn_agent_setup(
             cx,
@@ -1809,6 +1968,7 @@ impl GooseAcpAgent {
                 goose_session,
                 mcp_servers: args.mcp_servers,
                 resolved_provider: None,
+                prebuilt_provider,
             },
         );
 
@@ -2116,10 +2276,21 @@ impl GooseAcpAgent {
         let provider = agent.provider().await.map_err(|e| {
             sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
         })?;
+        let provider_name = provider.get_name().to_string();
+        let current_model = provider.get_model_config().model_name.clone();
         let goose_mode = agent.goose_mode().await;
-        let model_state = build_model_state(&*provider).await?;
+        let inventory = self
+            .provider_inventory
+            .entry_for_provider(&provider_name)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let Some(inventory) = inventory else {
+            return Err(sacp::Error::internal_error()
+                .data(format!("Unknown provider inventory: {}", provider_name)));
+        };
+        let model_state = build_model_state(current_model.as_str(), &inventory);
         let mode_state = build_mode_state(goose_mode)?;
-        let provider_options = build_provider_options(Some(provider.get_name())).await;
+        let provider_options = build_provider_options(Some(&provider_name)).await;
         let config_options = build_config_options(
             &mode_state,
             &model_state,
@@ -2399,8 +2570,9 @@ impl GooseAcpAgent {
 
         let mode_state = build_mode_state(self.goose_mode)?;
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
-        let (model_state, config_options) =
-            build_eager_config(&resolved, &mode_state, &goose_session).await;
+        let (model_state, config_options, prebuilt_provider) = self
+            .prepare_session_init_config(&resolved, &mode_state, &goose_session)
+            .await;
 
         self.spawn_agent_setup(
             cx,
@@ -2410,6 +2582,7 @@ impl GooseAcpAgent {
                 goose_session,
                 mcp_servers: args.mcp_servers,
                 resolved_provider: resolved.ok(),
+                prebuilt_provider,
             },
         );
 
@@ -2677,58 +2850,82 @@ impl GooseAcpAgent {
         Ok(GetProviderDetailsResponse { providers: entries })
     }
 
-    #[custom_method(GetProviderModelsRequest)]
-    async fn on_get_provider_models(
+    #[custom_method(GetProviderInventoryRequest)]
+    async fn on_get_provider_inventory(
         &self,
-        req: GetProviderModelsRequest,
-    ) -> Result<GetProviderModelsResponse, sacp::Error> {
-        let config = self.load_config().ok();
-        let all = goose::providers::providers().await;
+        req: GetProviderInventoryRequest,
+    ) -> Result<GetProviderInventoryResponse, sacp::Error> {
+        let entries = self
+            .provider_inventory
+            .entries(&req.provider_ids)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        Ok(GetProviderInventoryResponse {
+            entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
+        })
+    }
 
-        let Some((metadata, _provider_type)) =
-            all.into_iter().find(|(m, _)| m.name == req.provider_name)
-        else {
-            return Err(sacp::Error::invalid_params()
-                .data(format!("Unknown provider: {}", req.provider_name)));
-        };
-
-        let is_configured = config
-            .as_ref()
-            .map(|c| {
-                metadata.config_keys.iter().all(|k| {
-                    if !k.required {
-                        return true;
-                    }
-                    if k.secret {
-                        c.get_secret::<String>(&k.name).is_ok()
-                    } else {
-                        c.get_param::<String>(&k.name).is_ok()
-                    }
-                })
-            })
-            .unwrap_or(false);
-
-        if !is_configured {
-            return Err(sacp::Error::invalid_params().data(format!(
-                "Provider '{}' is not configured",
-                req.provider_name
-            )));
+    #[custom_method(RefreshProviderInventoryRequest)]
+    async fn on_refresh_provider_inventory(
+        &self,
+        req: RefreshProviderInventoryRequest,
+    ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
+        let refresh_plan = self
+            .provider_inventory
+            .plan_refresh(&req.provider_ids)
+            .await;
+        let refresh_plan =
+            refresh_plan.map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        for provider_id in &refresh_plan.started {
+            let provider_inventory = self.provider_inventory.clone();
+            let provider_factory = Arc::clone(&self.provider_factory);
+            let provider_id = provider_id.clone();
+            tokio::spawn(async move {
+                let result = async {
+                    let metadata = goose::providers::get_from_registry(&provider_id).await?;
+                    let model_config =
+                        goose::model::ModelConfig::new(&metadata.metadata().default_model)?
+                            .with_canonical_limits(&provider_id);
+                    let provider =
+                        provider_factory(provider_id.clone(), model_config, Vec::new()).await?;
+                    let models = provider.fetch_recommended_models().await?;
+                    provider_inventory
+                        .store_refreshed_models(&provider_id, &models)
+                        .await
+                }
+                .await;
+                if let Err(error) = result {
+                    let _ = provider_inventory
+                        .store_refresh_error(&provider_id, error.to_string())
+                        .await;
+                    warn!(provider = %provider_id, error = %error, "provider inventory refresh failed");
+                }
+            });
         }
-
-        let model_config = goose::model::ModelConfig::new(&metadata.default_model)
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?
-            .with_canonical_limits(&req.provider_name);
-
-        let provider = (self.provider_factory)(req.provider_name.clone(), model_config, Vec::new())
-            .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-
-        let models = provider
-            .fetch_recommended_models()
-            .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-
-        Ok(GetProviderModelsResponse { models })
+        Ok(RefreshProviderInventoryResponse {
+            started: refresh_plan.started,
+            skipped: refresh_plan
+                .skipped
+                .into_iter()
+                .map(|entry| RefreshProviderInventorySkipDto {
+                    provider_id: entry.provider_id,
+                    reason: match entry.reason {
+                        RefreshSkipReason::UnknownProvider => {
+                            RefreshProviderInventorySkipReasonDto::UnknownProvider
+                        }
+                        RefreshSkipReason::NotConfigured => {
+                            RefreshProviderInventorySkipReasonDto::NotConfigured
+                        }
+                        RefreshSkipReason::DoesNotSupportRefresh => {
+                            RefreshProviderInventorySkipReasonDto::DoesNotSupportRefresh
+                        }
+                        RefreshSkipReason::AlreadyRefreshing => {
+                            RefreshProviderInventorySkipReasonDto::AlreadyRefreshing
+                        }
+                    },
+                })
+                .collect(),
+        })
     }
 
     #[custom_method(ReadConfigRequest)]
@@ -3450,11 +3647,77 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                 return Ok(());
                             }
                         }
+                        // Respond immediately using the current provider inventory snapshot.
                         let t_tail = std::time::Instant::now();
                         let (notification, config_options) = agent.build_config_update(&session_id).await?;
                         cx.send_notification(notification)?;
                         responder.respond(SetSessionConfigOptionResponse::new(config_options))?;
-                        debug!(target: "perf", sid = %sid, ms = t_tail.elapsed().as_millis() as u64, "perf: set_config_option notification_and_respond");
+                        debug!(target: "perf", sid = %sid, ms = t_tail.elapsed().as_millis() as u64, "perf: set_config_option inventory_respond");
+
+                        let maybe_refresh = if config_id == "provider" {
+                            let provider_id = value_id.0.to_string();
+                            agent
+                                .provider_inventory
+                                .plan_refresh(std::slice::from_ref(&provider_id))
+                                .await
+                                .ok()
+                                .filter(|plan| plan.started.iter().any(|id| id == &provider_id))
+                        } else {
+                            None
+                        };
+                        if maybe_refresh.is_some() {
+                            let agent_bg = agent.clone();
+                            let cx_bg = cx.clone();
+                            let session_id_bg = session_id.clone();
+                            let sid_bg = sid.clone();
+                            tokio::spawn(async move {
+                                let t_bg = std::time::Instant::now();
+                                let refreshed = async {
+                                    let session_agent =
+                                        agent_bg.get_session_agent(&session_id_bg.0, None).await?;
+                                    let provider = session_agent
+                                        .provider()
+                                        .await
+                                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                                    let provider_name = provider.get_name().to_string();
+                                    let models = provider
+                                        .fetch_recommended_models()
+                                        .await
+                                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                                    agent_bg
+                                        .provider_inventory
+                                        .store_refreshed_models(&provider_name, &models)
+                                        .await?;
+                                    agent_bg
+                                        .build_config_update(&session_id_bg)
+                                        .await
+                                        .map_err(|e| anyhow::anyhow!(e.to_string()))
+                                }
+                                .await;
+
+                                match refreshed {
+                                    Ok((fresh_notification, _)) => {
+                                        let _ = cx_bg.send_notification(fresh_notification);
+                                        debug!(target: "perf", sid = %sid_bg, ms = t_bg.elapsed().as_millis() as u64, "perf: set_config_option background_refresh done");
+                                    }
+                                    Err(e) => {
+                                        if let Ok(session_agent) =
+                                            agent_bg.get_session_agent(&session_id_bg.0, None).await
+                                        {
+                                            if let Ok(provider) = session_agent.provider().await {
+                                                let provider_name = provider.get_name().to_string();
+                                                let _ = agent_bg
+                                                    .provider_inventory
+                                                    .store_refresh_error(&provider_name, e.to_string())
+                                                    .await;
+                                            }
+                                        }
+                                        debug!(target: "perf", sid = %sid_bg, error = %e, ms = t_bg.elapsed().as_millis() as u64, "perf: set_config_option background_refresh failed");
+                                    }
+                                }
+                            });
+                        }
+
                         debug!(target: "perf", sid = %sid, ms = t_handler.elapsed().as_millis() as u64, config_id = %config_id, "perf: set_config_option done");
                         Ok(())
                     }
@@ -3597,7 +3860,6 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
 mod tests {
     use super::*;
     use goose::conversation::message::{ToolRequest, ToolResponse};
-    use goose::providers::errors::ProviderError;
     use rmcp::model::{CallToolRequestParams, Content as RmcpContent};
     use sacp::schema::{
         EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
@@ -3787,61 +4049,48 @@ print(\"hello, world\")
         assert_eq!(outcome_to_confirmation(&input), expected);
     }
 
-    struct MockModelProvider {
-        models: Result<Vec<String>, ProviderError>,
-    }
-
-    #[async_trait::async_trait]
-    impl Provider for MockModelProvider {
-        fn get_name(&self) -> &str {
-            "mock"
-        }
-
-        async fn stream(
-            &self,
-            _model_config: &goose::model::ModelConfig,
-            _session_id: &str,
-            _system: &str,
-            _messages: &[goose::conversation::message::Message],
-            _tools: &[rmcp::model::Tool],
-        ) -> Result<goose::providers::base::MessageStream, ProviderError> {
-            unimplemented!()
-        }
-
-        fn get_model_config(&self) -> goose::model::ModelConfig {
-            goose::model::ModelConfig::new_or_fail("unused")
-        }
-
-        async fn fetch_recommended_models(&self) -> Result<Vec<String>, ProviderError> {
-            self.models.clone()
-        }
-    }
-
     #[test_case(
-        Ok(vec!["model-a".into(), "model-b".into()])
-        => Ok(SessionModelState::new(
+        vec!["model-a".into(), "model-b".into()]
+        => SessionModelState::new(
             ModelId::new("unused"),
-            vec![ModelInfo::new(ModelId::new("model-a"), "model-a"),
+            vec![ModelInfo::new(ModelId::new("unused"), "unused"),
+                 ModelInfo::new(ModelId::new("model-a"), "model-a"),
                  ModelInfo::new(ModelId::new("model-b"), "model-b")],
-        ))
+        )
         ; "returns current and available models"
     )]
     #[test_case(
-        Ok(vec![])
-        => Ok(SessionModelState::new(ModelId::new("unused"), vec![]))
+        vec![]
+        => SessionModelState::new(
+            ModelId::new("unused"),
+            vec![ModelInfo::new(ModelId::new("unused"), "unused")],
+        )
         ; "empty model list"
     )]
-    #[test_case(
-        Err(ProviderError::ExecutionError("fail".into()))
-        => Err(sacp::Error::internal_error().data("Execution error: fail".to_string()))
-        ; "fetch error propagates"
-    )]
-    #[tokio::test]
-    async fn test_build_model_state(
-        models: Result<Vec<String>, ProviderError>,
-    ) -> Result<SessionModelState, sacp::Error> {
-        let provider = MockModelProvider { models };
-        build_model_state(&provider).await
+    fn test_build_model_state(models: Vec<String>) -> SessionModelState {
+        let inventory = ProviderInventoryEntry {
+            provider_id: "mock".to_string(),
+            provider_name: "Mock".to_string(),
+            configured: true,
+            supports_refresh: true,
+            refreshing: false,
+            models: models
+                .into_iter()
+                .map(|id| goose::providers::inventory::InventoryModel {
+                    name: id.clone(),
+                    id,
+                    family: None,
+                    context_limit: None,
+                    reasoning: None,
+                    recommended: false,
+                })
+                .collect(),
+            last_updated_at: None,
+            last_refresh_attempt_at: None,
+            last_refresh_error: None,
+            model_selection_hint: None,
+        };
+        build_model_state("unused", &inventory)
     }
 
     fn json_object(pairs: Vec<(&str, serde_json::Value)>) -> rmcp::model::JsonObject {

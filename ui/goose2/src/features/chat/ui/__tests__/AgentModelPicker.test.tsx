@@ -59,7 +59,6 @@ describe("AgentModelPicker", () => {
       screen.getByRole("button", { name: /choose agent and model/i }),
     );
 
-    await user.click(screen.getByRole("button", { name: /OpenAI/i }));
     await user.click(screen.getByRole("button", { name: "GPT-4o" }));
 
     expect(onModelChange).toHaveBeenCalledWith("gpt-4o");
@@ -148,5 +147,50 @@ describe("AgentModelPicker", () => {
     });
     expect(trigger).toHaveTextContent("Goose");
     expect(trigger).not.toHaveTextContent("·");
+  });
+
+  it("shows a loading state while models are refreshing", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="goose"
+        onAgentChange={vi.fn()}
+        currentModelId={null}
+        currentModelName={null}
+        availableModels={[]}
+        modelsLoading
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    );
+
+    expect(screen.getByText("Loading models...")).toBeInTheDocument();
+  });
+
+  it("shows an empty-state message when no inventory models are available", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="goose"
+        onAgentChange={vi.fn()}
+        currentModelId={null}
+        currentModelName={null}
+        availableModels={[]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    );
+
+    expect(screen.getByText("No models available")).toBeInTheDocument();
   });
 });

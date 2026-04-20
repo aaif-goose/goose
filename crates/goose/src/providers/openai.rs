@@ -7,6 +7,7 @@ use super::formats::openai_responses::{
     create_responses_request, get_responses_usage, responses_api_to_message,
     responses_api_to_streaming_message, ResponsesApiResponse,
 };
+use super::inventory::{config_secret_value, InventoryIdentityInput};
 use super::openai_compatible::{
     handle_response_openai_compat, handle_status_openai_compat, stream_openai_compat,
 };
@@ -424,6 +425,58 @@ impl ProviderDef for OpenAiProvider {
         _extensions: Vec<crate::config::ExtensionConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
+    }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_configured() -> bool {
+        let config = crate::config::Config::global();
+        // If the host is explicitly set to something non-default, trust the user's
+        // custom setup (e.g. a local server that doesn't require an API key).
+        if let Ok(host) = config.get_param::<String>("OPENAI_HOST") {
+            if host != "https://api.openai.com" {
+                return true;
+            }
+        }
+        // Standard OpenAI endpoint requires an API key.
+        config
+            .get_secret::<serde_json::Value>("OPENAI_API_KEY")
+            .is_ok()
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        let config = crate::config::Config::global();
+        let mut identity =
+            InventoryIdentityInput::new(OPEN_AI_PROVIDER_NAME, OPEN_AI_PROVIDER_NAME)
+                .with_public(
+                    "host",
+                    config
+                        .get_param::<String>("OPENAI_HOST")
+                        .unwrap_or_else(|_| "https://api.openai.com".to_string()),
+                )
+                .with_public(
+                    "base_path",
+                    config
+                        .get_param::<String>("OPENAI_BASE_PATH")
+                        .unwrap_or_else(|_| OPEN_AI_DEFAULT_BASE_PATH.to_string()),
+                );
+
+        if let Ok(organization) = config.get_param::<String>("OPENAI_ORGANIZATION") {
+            identity = identity.with_public("organization", organization);
+        }
+        if let Ok(project) = config.get_param::<String>("OPENAI_PROJECT") {
+            identity = identity.with_public("project", project);
+        }
+        if let Some(api_key) = config_secret_value(config, "OPENAI_API_KEY") {
+            identity = identity.with_secret("api_key", api_key);
+        }
+        if let Some(custom_headers) = config_secret_value(config, "OPENAI_CUSTOM_HEADERS") {
+            identity = identity.with_secret("custom_headers", custom_headers);
+        }
+
+        Ok(identity)
     }
 }
 

@@ -1,9 +1,7 @@
 import type { ModelOption } from "../types";
 
 const ACP_SESSION_METADATA_STORAGE_KEY = "goose:acp-session-metadata";
-const DRAFT_SESSION_STORAGE_KEY = "goose:chat-draft-sessions";
 const LEGACY_SESSION_CACHE_STORAGE_KEY = "goose:chat-sessions";
-const DRAFT_TEXT_STORAGE_KEY = "goose:chat-drafts";
 
 export interface SessionMetadataOverlayRecord {
   sessionId: string;
@@ -22,7 +20,7 @@ export interface SessionMetadataOverlayRecord {
   updatedAt: string;
 }
 
-export interface DraftSessionRecord {
+interface LegacySessionRecord {
   id: string;
   acpSessionId?: string;
   title: string;
@@ -36,7 +34,7 @@ export interface DraftSessionRecord {
   updatedAt: string;
   archivedAt?: string;
   messageCount: number;
-  draft?: true;
+  draft?: boolean;
   userSetName?: boolean;
 }
 
@@ -65,32 +63,14 @@ function persistStorageArray<T>(storageKey: string, records: T[]): void {
   }
 }
 
-function draftsWithText(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const stored = window.localStorage.getItem(DRAFT_TEXT_STORAGE_KEY);
-    if (!stored) return new Set();
-    const parsed = JSON.parse(stored);
-    return new Set(
-      Object.entries(parsed)
-        .filter(([, value]) => typeof value === "string" && value.length > 0)
-        .map(([sessionId]) => sessionId),
-    );
-  } catch {
-    return new Set();
-  }
-}
-
-function loadLegacySessions(): Array<
-  DraftSessionRecord & {
-    userSetName?: boolean;
-  }
-> {
-  return parseStorageArray(LEGACY_SESSION_CACHE_STORAGE_KEY);
+function loadLegacySessions(): LegacySessionRecord[] {
+  return parseStorageArray<LegacySessionRecord>(
+    LEGACY_SESSION_CACHE_STORAGE_KEY,
+  );
 }
 
 function recordFromLegacySession(
-  session: DraftSessionRecord & { userSetName?: boolean },
+  session: LegacySessionRecord,
 ): SessionMetadataOverlayRecord {
   return {
     sessionId: session.acpSessionId ?? session.id,
@@ -138,49 +118,6 @@ export function persistSessionMetadataOverlay(
   );
 }
 
-export function loadDraftSessionRecords(): DraftSessionRecord[] {
-  const records = parseStorageArray<DraftSessionRecord>(
-    DRAFT_SESSION_STORAGE_KEY,
-  );
-  const drafts = new Map(records.map((record) => [record.id, record]));
-
-  for (const session of loadLegacySessions()) {
-    if (!session.draft) continue;
-    if (drafts.has(session.id)) continue;
-    drafts.set(session.id, session);
-  }
-
-  return [...drafts.values()];
-}
-
-export function persistDraftSessionRecords(
-  records: DraftSessionRecord[],
-): void {
-  const withText = draftsWithText();
-  persistStorageArray(
-    DRAFT_SESSION_STORAGE_KEY,
-    records.filter((record) => withText.has(record.id)),
-  );
-}
-
-export function migrateSessionMetadataOverlayId(
-  previousId: string,
-  nextId: string,
-): void {
-  if (!previousId || !nextId || previousId === nextId) return;
-  const overlays = loadSessionMetadataOverlay();
-  const previous = overlays.get(previousId);
-  if (!previous) return;
-  const existing = overlays.get(nextId);
-  overlays.set(nextId, {
-    ...previous,
-    ...existing,
-    sessionId: nextId,
-  });
-  overlays.delete(previousId);
-  persistSessionMetadataOverlay(overlays.values());
-}
-
 export function upsertSessionMetadataOverlayRecord(
   record: SessionMetadataOverlayRecord,
 ): void {
@@ -193,21 +130,6 @@ export function removeSessionMetadataOverlayRecord(sessionId: string): void {
   const overlays = loadSessionMetadataOverlay();
   if (!overlays.delete(sessionId)) return;
   persistSessionMetadataOverlay(overlays.values());
-}
-
-export function persistDraftSessionRecord(record: DraftSessionRecord): void {
-  const drafts = loadDraftSessionRecords();
-  const nextDrafts = [
-    ...drafts.filter((draft) => draft.id !== record.id),
-    record,
-  ];
-  persistDraftSessionRecords(nextDrafts);
-}
-
-export function removeDraftSessionRecord(sessionId: string): void {
-  persistDraftSessionRecords(
-    loadDraftSessionRecords().filter((record) => record.id !== sessionId),
-  );
 }
 
 export function modelIdsMatch(

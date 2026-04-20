@@ -33,8 +33,6 @@ describe("useChat attachments", () => {
       isLoading: false,
       contextPanelOpenBySession: {},
       activeWorkspaceBySession: {},
-      modelsBySession: {},
-      modelCacheByProvider: {},
     });
     useAgentStore.setState({
       personas: [],

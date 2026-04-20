@@ -1,23 +1,17 @@
 import { create } from "zustand";
-import { acpListSessions, type AcpSessionInfo } from "@/shared/api/acp";
+import {
+  acpCreateSession,
+  acpListSessions,
+  type AcpSessionInfo,
+} from "@/shared/api/acp";
 import type { Session } from "@/shared/types/chat";
 import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
 import {
-  loadDraftSessionRecords,
   loadSessionMetadataOverlay,
-  migrateSessionMetadataOverlayId,
-  modelIdsMatch,
   persistSessionMetadataOverlay,
-  persistDraftSessionRecord,
-  persistDraftSessionRecords,
-  removeDraftSessionRecord,
   upsertSessionMetadataOverlayRecord,
-  type DraftSessionRecord,
   type SessionMetadataOverlayRecord,
 } from "@/features/chat/lib/sessionMetadataOverlay";
-import type { ModelOption } from "../types";
-
-const EMPTY_MODELS: ModelOption[] = [];
 
 export interface ChatSession {
   id: string;
@@ -33,7 +27,6 @@ export interface ChatSession {
   updatedAt: string;
   archivedAt?: string;
   messageCount: number;
-  draft?: boolean;
   userSetName?: boolean;
 }
 
@@ -42,14 +35,31 @@ export interface ActiveWorkspace {
   branch: string | null;
 }
 
+export function hasSessionStarted(
+  session: Pick<ChatSession, "messageCount">,
+  localMessages?: ArrayLike<unknown>,
+): boolean {
+  return session.messageCount > 0 || (localMessages?.length ?? 0) > 0;
+}
+
+export function getVisibleSessions<
+  T extends Pick<ChatSession, "id" | "messageCount">,
+>(
+  sessions: T[],
+  messagesBySession: Record<string, ArrayLike<unknown> | undefined>,
+): T[] {
+  return sessions.filter((session) =>
+    hasSessionStarted(session, messagesBySession[session.id]),
+  );
+}
+
 interface ChatSessionStoreState {
   sessions: ChatSession[];
   activeSessionId: string | null;
   isLoading: boolean;
+  hasHydratedSessions: boolean;
   contextPanelOpenBySession: Record<string, boolean>;
   activeWorkspaceBySession: Record<string, ActiveWorkspace>;
-  modelsBySession: Record<string, ModelOption[]>;
-  modelCacheByProvider: Record<string, ModelOption[]>;
 }
 
 interface CreateSessionOpts {
@@ -58,18 +68,17 @@ interface CreateSessionOpts {
   agentId?: string;
   providerId?: string;
   personaId?: string;
+  workingDir?: string;
+  modelId?: string;
+  modelName?: string;
 }
 
 interface UpdateSessionOptions {
-  localOnly?: boolean;
   persistOverlay?: boolean;
 }
 
 interface ChatSessionStoreActions {
   createSession: (opts?: CreateSessionOpts) => Promise<ChatSession>;
-  createDraftSession: (opts?: CreateSessionOpts) => ChatSession;
-  promoteDraft: (id: string) => void;
-  removeDraft: (id: string) => void;
   loadSessions: () => Promise<void>;
   updateSession: (
     id: string,
@@ -79,73 +88,19 @@ interface ChatSessionStoreActions {
   addSession: (session: ChatSession) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
-  setSessionAcpId: (id: string, acpSessionId: string) => void;
 
   setActiveSession: (sessionId: string | null) => void;
   setContextPanelOpen: (sessionId: string, open: boolean) => void;
   setActiveWorkspace: (sessionId: string, context: ActiveWorkspace) => void;
   clearActiveWorkspace: (sessionId: string) => void;
-  setSessionModels: (sessionId: string, models: ModelOption[]) => void;
-  switchSessionProvider: (
-    sessionId: string,
-    providerId: string,
-    models: ModelOption[],
-  ) => void;
-  cacheModelsForProvider: (providerId: string, models: ModelOption[]) => void;
-  getCachedModels: (providerId: string) => ModelOption[];
+  switchSessionProvider: (sessionId: string, providerId: string) => void;
 
   getSession: (id: string) => ChatSession | undefined;
   getActiveSession: () => ChatSession | null;
   getArchivedSessions: () => ChatSession[];
-  getSessionModels: (sessionId: string) => ModelOption[];
 }
 
 export type ChatSessionStore = ChatSessionStoreState & ChatSessionStoreActions;
-
-const MODEL_CACHE_STORAGE_KEY = "goose:model-cache";
-
-function loadModelCache(): Record<string, ModelOption[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const stored = window.localStorage.getItem(MODEL_CACHE_STORAGE_KEY);
-    if (!stored) return {};
-    const parsed = JSON.parse(stored);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, ModelOption[]>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function persistModelCache(cache: Record<string, ModelOption[]>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(MODEL_CACHE_STORAGE_KEY, JSON.stringify(cache));
-  } catch {
-    // localStorage may be unavailable
-  }
-}
-
-function draftSessionToRecord(session: ChatSession): DraftSessionRecord {
-  return {
-    id: session.id,
-    acpSessionId: session.acpSessionId,
-    title: session.title,
-    projectId: session.projectId,
-    agentId: session.agentId,
-    providerId: session.providerId,
-    personaId: session.personaId,
-    modelId: session.modelId,
-    modelName: session.modelName,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    archivedAt: session.archivedAt,
-    messageCount: session.messageCount,
-    draft: true,
-    userSetName: session.userSetName,
-  };
-}
 
 function overlayKeyForSession(
   session: Pick<ChatSession, "id" | "acpSessionId">,
@@ -225,40 +180,12 @@ function mergeAcpSessionWithOverlay(
   };
 }
 
-function mergeDraftSessions(
-  currentDrafts: ChatSession[],
-  persistedDrafts: DraftSessionRecord[],
-): ChatSession[] {
-  const draftsById = new Map<string, ChatSession>(
-    persistedDrafts.map((record) => [
-      record.id,
-      {
-        ...record,
-        draft: true,
-      } satisfies ChatSession,
-    ]),
-  );
-
-  for (const draft of currentDrafts) {
-    draftsById.set(draft.id, draft);
-  }
-
-  return [...draftsById.values()];
-}
-
-function persistDraftsFromSessions(sessions: ChatSession[]): void {
-  persistDraftSessionRecords(
-    sessions.filter((session) => session.draft).map(draftSessionToRecord),
-  );
-}
-
 function syncOverlaySnapshots(
   sessions: ChatSession[],
   existingOverlays = loadSessionMetadataOverlay(),
 ): void {
   const overlays = new Map(existingOverlays);
   for (const session of sessions) {
-    if (session.draft) continue;
     overlays.set(
       overlayKeyForSession(session),
       buildOverlayRecord(
@@ -299,65 +226,42 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   isLoading: false,
+  hasHydratedSessions: false,
   contextPanelOpenBySession: {},
   activeWorkspaceBySession: {},
-  modelsBySession: {},
-  modelCacheByProvider: loadModelCache(),
 
-  createSession: async (_opts) => {
-    throw new Error(
-      "createSession not yet wired to ACP — use createDraftSession",
-    );
-  },
-
-  createDraftSession: (opts) => {
+  createSession: async (opts) => {
+    if (!opts?.workingDir) {
+      throw new Error("createSession requires a working directory");
+    }
     const now = new Date().toISOString();
+    const providerId = opts.providerId ?? "goose";
+    const { sessionId } = await acpCreateSession(providerId, opts.workingDir, {
+      personaId: opts.personaId,
+      modelId: opts.modelId,
+    });
     const chatSession: ChatSession = {
-      id: crypto.randomUUID(),
-      title: opts?.title ?? DEFAULT_CHAT_TITLE,
-      projectId: opts?.projectId,
-      agentId: opts?.agentId,
-      providerId: opts?.providerId,
-      personaId: opts?.personaId,
+      id: sessionId,
+      acpSessionId: sessionId,
+      title: opts.title ?? DEFAULT_CHAT_TITLE,
+      projectId: opts.projectId,
+      agentId: opts.agentId,
+      providerId,
+      personaId: opts.personaId,
+      modelId: opts.modelId,
+      modelName: opts.modelName,
       createdAt: now,
       updatedAt: now,
       messageCount: 0,
-      draft: true,
     };
-    set((state) => ({ sessions: [...state.sessions, chatSession] }));
-    persistDraftSessionRecord(draftSessionToRecord(chatSession));
+    set((state) => ({ sessions: [chatSession, ...state.sessions] }));
+    const existing = loadSessionMetadataOverlay().get(
+      overlayKeyForSession(chatSession),
+    );
+    upsertSessionMetadataOverlayRecord(
+      buildOverlayRecord(chatSession, existing),
+    );
     return chatSession;
-  },
-
-  promoteDraft: (id) => {
-    const session = get().sessions.find((candidate) => candidate.id === id);
-    if (!session?.draft) return;
-    set((state) => ({
-      sessions: state.sessions.map((candidate) =>
-        candidate.id === id ? { ...candidate, draft: undefined } : candidate,
-      ),
-    }));
-    persistDraftsFromSessions(get().sessions);
-  },
-
-  removeDraft: (id) => {
-    const session = get().sessions.find((candidate) => candidate.id === id);
-    if (!session?.draft) return;
-    const { [id]: _ignoredPanelState, ...remainingPanelState } =
-      get().contextPanelOpenBySession;
-    const { [id]: _ignoredContext, ...remainingContextState } =
-      get().activeWorkspaceBySession;
-    const remainingModels = { ...get().modelsBySession };
-    delete remainingModels[id];
-    set((state) => ({
-      sessions: state.sessions.filter((candidate) => candidate.id !== id),
-      activeSessionId:
-        state.activeSessionId === id ? null : state.activeSessionId,
-      contextPanelOpenBySession: remainingPanelState,
-      activeWorkspaceBySession: remainingContextState,
-      modelsBySession: remainingModels,
-    }));
-    removeDraftSessionRecord(id);
   },
 
   loadSessions: async () => {
@@ -365,15 +269,12 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     try {
       const overlays = loadSessionMetadataOverlay();
       const acpSessions = await acpListSessions();
-      const persistedDrafts = loadDraftSessionRecords();
-      const currentDrafts = get().sessions.filter((session) => session.draft);
-      const drafts = mergeDraftSessions(currentDrafts, persistedDrafts);
       const mergedAcpSessions = sortByUpdatedAtDesc(
         acpSessions.map((session) =>
           mergeAcpSessionWithOverlay(session, overlays.get(session.sessionId)),
         ),
       );
-      const merged = [...mergedAcpSessions, ...drafts];
+      const merged = mergedAcpSessions;
       const activeSessionId = get().activeSessionId;
       const activeSessionStillExists =
         activeSessionId == null ||
@@ -382,22 +283,16 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         sessions: merged,
         activeSessionId: activeSessionStillExists ? activeSessionId : null,
       });
-      persistDraftsFromSessions(merged);
       syncOverlaySnapshots(mergedAcpSessions, overlays);
     } catch (error) {
       console.error("Failed to load sessions from ACP:", error);
       const overlays = loadSessionMetadataOverlay();
-      const persistedDrafts = loadDraftSessionRecords();
-      const currentDrafts = get().sessions.filter((session) => session.draft);
-      const drafts = mergeDraftSessions(currentDrafts, persistedDrafts);
-      const fallbackSessions = sortByUpdatedAtDesc([
-        ...[...overlays.values()].map(overlayToFallbackSession),
-        ...drafts,
-      ]);
+      const fallbackSessions = sortByUpdatedAtDesc(
+        [...overlays.values()].map(overlayToFallbackSession),
+      );
       set({ sessions: fallbackSessions });
-      persistDraftsFromSessions(fallbackSessions);
     } finally {
-      set({ isLoading: false });
+      set({ isLoading: false, hasHydratedSessions: true });
     }
   },
 
@@ -415,23 +310,15 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }));
 
     const updatedSession = get().sessions.find((session) => session.id === id);
-    persistDraftsFromSessions(get().sessions);
 
-    if (
-      updatedSession &&
-      !updatedSession.draft &&
-      opts?.persistOverlay !== false
-    ) {
+    if (updatedSession && opts?.persistOverlay !== false) {
       const key = overlayKeyForSession(updatedSession);
       const existing = loadSessionMetadataOverlay().get(key);
       upsertSessionMetadataOverlayRecord(
         buildOverlayRecord(updatedSession, existing),
       );
     }
-
-    if (opts?.localOnly) return;
-    if (updatedSession?.draft) return;
-    // TODO: wire non-draft updates to ACP when supported
+    // TODO: wire session updates to ACP when supported
   },
 
   addSession: (session) => {
@@ -450,20 +337,15 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       }
       return { sessions: [normalizedSession, ...state.sessions] };
     });
-    persistDraftsFromSessions(get().sessions);
-    if (!normalizedSession.draft) {
-      const existing = loadSessionMetadataOverlay().get(
-        overlayKeyForSession(normalizedSession),
-      );
-      upsertSessionMetadataOverlayRecord(
-        buildOverlayRecord(normalizedSession, existing),
-      );
-    }
+    const existing = loadSessionMetadataOverlay().get(
+      overlayKeyForSession(normalizedSession),
+    );
+    upsertSessionMetadataOverlayRecord(
+      buildOverlayRecord(normalizedSession, existing),
+    );
   },
 
   archiveSession: async (id) => {
-    const remainingModels = { ...get().modelsBySession };
-    delete remainingModels[id];
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id
@@ -472,11 +354,9 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       ),
       activeSessionId:
         state.activeSessionId === id ? null : state.activeSessionId,
-      modelsBySession: remainingModels,
     }));
-    persistDraftsFromSessions(get().sessions);
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session && !session.draft) {
+    if (session) {
       const existing = loadSessionMetadataOverlay().get(
         overlayKeyForSession(session),
       );
@@ -490,43 +370,12 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         session.id === id ? { ...session, archivedAt: undefined } : session,
       ),
     }));
-    persistDraftsFromSessions(get().sessions);
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session && !session.draft) {
+    if (session) {
       const existing = loadSessionMetadataOverlay().get(
         overlayKeyForSession(session),
       );
       upsertSessionMetadataOverlayRecord(buildOverlayRecord(session, existing));
-    }
-  },
-
-  setSessionAcpId: (id, acpSessionId) => {
-    if (!acpSessionId) return;
-    const session = get().sessions.find((candidate) => candidate.id === id);
-    if (!session || session.acpSessionId === acpSessionId) return;
-
-    set((state) => ({
-      sessions: state.sessions.map((candidate) =>
-        candidate.id === id ? { ...candidate, acpSessionId } : candidate,
-      ),
-    }));
-
-    if (!session.draft) {
-      migrateSessionMetadataOverlayId(
-        overlayKeyForSession(session),
-        acpSessionId,
-      );
-      const updatedSession = get().sessions.find(
-        (candidate) => candidate.id === id,
-      );
-      if (updatedSession) {
-        const existing = loadSessionMetadataOverlay().get(acpSessionId);
-        upsertSessionMetadataOverlayRecord(
-          buildOverlayRecord(updatedSession, existing),
-        );
-      }
-    } else {
-      persistDraftsFromSessions(get().sessions);
     }
   },
 
@@ -560,66 +409,30 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     });
   },
 
-  setSessionModels: (sessionId, models) => {
+  switchSessionProvider: (sessionId, providerId) => {
     set((state) => ({
-      modelsBySession: {
-        ...state.modelsBySession,
-        [sessionId]: models,
-      },
-    }));
-  },
-
-  switchSessionProvider: (sessionId, providerId, models) => {
-    set((state) => ({
-      modelsBySession: {
-        ...state.modelsBySession,
-        [sessionId]: models,
-      },
       sessions: state.sessions.map((session) =>
         session.id === sessionId
           ? {
               ...session,
               providerId,
-              modelId: models.length > 0 ? models[0].id : undefined,
-              modelName:
-                models.length > 0
-                  ? (models[0].displayName ?? models[0].name)
-                  : undefined,
+              modelId: undefined,
+              modelName: undefined,
               updatedAt: session.updatedAt,
             }
           : session,
       ),
     }));
-    persistDraftsFromSessions(get().sessions);
     const session = get().sessions.find(
       (candidate) => candidate.id === sessionId,
     );
-    if (session && !session.draft) {
+    if (session) {
       const existing = loadSessionMetadataOverlay().get(
         overlayKeyForSession(session),
       );
       upsertSessionMetadataOverlayRecord(buildOverlayRecord(session, existing));
     }
   },
-
-  cacheModelsForProvider: (providerId, models) => {
-    if (models.length === 0) return;
-    const existing = get().modelCacheByProvider[providerId];
-    if (modelIdsMatch(existing, models)) {
-      return;
-    }
-    set((state) => {
-      const updated = {
-        ...state.modelCacheByProvider,
-        [providerId]: models,
-      };
-      persistModelCache(updated);
-      return { modelCacheByProvider: updated };
-    });
-  },
-
-  getCachedModels: (providerId) =>
-    get().modelCacheByProvider[providerId] ?? EMPTY_MODELS,
 
   getSession: (id) => get().sessions.find((session) => session.id === id),
 
@@ -631,7 +444,4 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
 
   getArchivedSessions: () =>
     get().sessions.filter((session) => !!session.archivedAt),
-
-  getSessionModels: (sessionId) =>
-    get().modelsBySession[sessionId] ?? EMPTY_MODELS,
 }));

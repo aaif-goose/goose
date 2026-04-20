@@ -30,6 +30,137 @@ export function buildInitScript(options?: {
       const PERSONAS = ${personas};
       const SKILLS = ${skills};
       const PROJECTS = ${projects};
+      const ACP_SESSIONS = [];
+
+      function nowIso() {
+        return new Date().toISOString();
+      }
+
+      function buildSession(sessionId, providerId = "goose") {
+        return {
+          sessionId,
+          title: "New Chat",
+          updatedAt: nowIso(),
+          messageCount: 0,
+          providerId,
+          modelId: null,
+        };
+      }
+
+      function findSession(sessionId) {
+        return ACP_SESSIONS.find((session) => session.sessionId === sessionId) ?? null;
+      }
+
+      function jsonRpcResult(id, result) {
+        return { jsonrpc: "2.0", id, result };
+      }
+
+      function handleAcpRequest(message) {
+        switch (message.method) {
+          case "initialize":
+            return jsonRpcResult(message.id, {
+              protocolVersion: "0.1.0",
+              agentCapabilities: {
+                loadSession: {},
+                listSessions: {},
+              },
+              agentInfo: {
+                name: "mock-goose",
+                version: "0.0.0",
+              },
+              authMethods: [],
+            });
+          case "session/list":
+            return jsonRpcResult(message.id, {
+              sessions: ACP_SESSIONS.map((session) => ({
+                sessionId: session.sessionId,
+                title: session.title,
+                updatedAt: session.updatedAt,
+                _meta: {
+                  messageCount: session.messageCount,
+                },
+              })),
+            });
+          case "session/new": {
+            const providerId = message.params?.meta?.provider ?? "goose";
+            const sessionId = "session-" + Math.random().toString(36).slice(2, 10);
+            ACP_SESSIONS.unshift(buildSession(sessionId, providerId));
+            return jsonRpcResult(message.id, { sessionId });
+          }
+          case "session/load":
+            return jsonRpcResult(message.id, {});
+          case "session/set_config_option": {
+            const session = findSession(message.params?.sessionId);
+            if (session) {
+              if (message.params?.configId === "provider") {
+                session.providerId = message.params?.value ?? session.providerId;
+                session.modelId = null;
+              }
+              if (message.params?.configId === "model") {
+                session.modelId = message.params?.value ?? null;
+              }
+              session.updatedAt = nowIso();
+            }
+            return jsonRpcResult(message.id, {});
+          }
+          case "session/prompt": {
+            const session = findSession(message.params?.sessionId);
+            if (session) {
+              session.messageCount += 1;
+              session.updatedAt = nowIso();
+            }
+            return jsonRpcResult(message.id, { stopReason: "end_turn" });
+          }
+          case "_goose/providers/list":
+            return jsonRpcResult(message.id, { providers: [] });
+          case "_goose/providers/inventory":
+            return jsonRpcResult(message.id, { entries: [] });
+          case "_goose/providers/inventory/refresh":
+            return jsonRpcResult(message.id, { started: [], skipped: [] });
+          case "_goose/working_dir/update":
+          case "goose/working_dir/update":
+            return jsonRpcResult(message.id, {});
+          default:
+            return jsonRpcResult(message.id, {});
+        }
+      }
+
+      class MockWebSocket extends EventTarget {
+        constructor(url) {
+          super();
+          this.url = url;
+          this.readyState = 0;
+          queueMicrotask(() => {
+            this.readyState = 1;
+            this.dispatchEvent(new Event("open"));
+          });
+        }
+
+        send(raw) {
+          const message = JSON.parse(raw);
+          const response =
+            message && typeof message === "object" && "id" in message
+              ? handleAcpRequest(message)
+              : null;
+          if (!response) {
+            return;
+          }
+          queueMicrotask(() => {
+            this.dispatchEvent(
+              new MessageEvent("message", {
+                data: JSON.stringify(response),
+              }),
+            );
+          });
+        }
+
+        close() {
+          this.readyState = 3;
+          this.dispatchEvent(new CloseEvent("close"));
+        }
+      }
+
+      window.WebSocket = MockWebSocket;
 
       window.__TAURI_INTERNALS__ = {
         invoke(cmd, args) {
@@ -95,7 +226,16 @@ export function buildInitScript(options?: {
 
             // ---- Sessions / Misc ----
             case "list_sessions":
-              return Promise.resolve([]);
+              return Promise.resolve(
+                ACP_SESSIONS.map((session) => ({
+                  sessionId: session.sessionId,
+                  title: session.title,
+                  updatedAt: session.updatedAt,
+                  messageCount: session.messageCount,
+                })),
+              );
+            case "get_goose_serve_url":
+              return Promise.resolve("ws://mock-goose");
             case "create_session":
               return Promise.resolve({
                 id: "session-" + Math.random().toString(36).slice(2, 10),
@@ -130,6 +270,16 @@ export function buildInitScript(options?: {
               return Promise.resolve("/tmp/home");
             case "path_exists":
               return Promise.resolve(false);
+            case "resolve_path": {
+              const parts = args?.request?.parts ?? [];
+              const path = parts
+                .filter((part) => typeof part === "string" && part.length > 0)
+                .join("/");
+              const normalizedPath = path.startsWith("~/")
+                ? "/tmp/home/" + path.slice(2)
+                : path;
+              return Promise.resolve({ path: normalizedPath });
+            }
 
             // ---- Fallback ----
             default:

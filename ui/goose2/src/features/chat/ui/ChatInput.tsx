@@ -56,6 +56,8 @@ interface ChatInputProps {
   currentModelId?: string | null;
   currentModel?: string;
   availableModels?: ModelOption[];
+  modelsLoading?: boolean;
+  modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
   selectedProjectId?: string | null;
   availableProjects?: ProjectOption[];
@@ -91,6 +93,8 @@ export function ChatInput({
   currentModelId = null,
   currentModel,
   availableModels = [],
+  modelsLoading = false,
+  modelStatusMessage = null,
   onModelChange,
   selectedProjectId = null,
   availableProjects = [],
@@ -104,6 +108,9 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
+  useEffect(() => {
+    setTextRaw(initialValue);
+  }, [initialValue]);
   const setText = useCallback(
     (value: string) => {
       setTextRaw(value);
@@ -351,8 +358,18 @@ export function ChatInput({
     providers.find((provider) => provider.id === selectedProvider)?.label ??
     formatProviderLabel(selectedProvider);
   const agentDisplayName = activePersona?.displayName ?? providerDisplayName;
-  const resolvedCurrentModel =
-    currentModel ?? availableModels[0]?.displayName ?? availableModels[0]?.name;
+  const resolvedCurrentModel = useMemo(() => {
+    if (currentModel) {
+      return currentModel;
+    }
+    if (!currentModelId) {
+      return undefined;
+    }
+    const selectedModel = availableModels.find(
+      (model) => model.id === currentModelId,
+    );
+    return selectedModel?.displayName ?? selectedModel?.name ?? currentModelId;
+  }, [availableModels, currentModel, currentModelId]);
   const effectivePlaceholder = t("input.placeholder", {
     agent: agentDisplayName,
   });
@@ -472,6 +489,8 @@ export function ChatInput({
                 currentModelId={currentModelId}
                 currentModel={resolvedCurrentModel}
                 availableModels={availableModels}
+                modelsLoading={modelsLoading}
+                modelStatusMessage={modelStatusMessage}
                 onModelChange={onModelChange}
                 selectedProjectId={selectedProjectId}
                 availableProjects={availableProjects}

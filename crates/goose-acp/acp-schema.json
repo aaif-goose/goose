@@ -362,36 +362,224 @@
         "contextLimit"
       ]
     },
-    "GetProviderModelsRequest": {
+    "GetProviderInventoryRequest": {
       "type": "object",
       "properties": {
-        "providerName": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "providerName"
-      ],
-      "description": "Fetch the full list of models available for a specific provider.",
-      "x-side": "agent",
-      "x-method": "_goose/providers/models"
-    },
-    "GetProviderModelsResponse": {
-      "type": "object",
-      "properties": {
-        "models": {
+        "providerIds": {
           "type": "array",
           "items": {
             "type": "string"
+          },
+          "description": "Only return entries for these providers. Empty means all.",
+          "default": []
+        }
+      },
+      "description": "Read per-provider inventory. Always returns immediately from stored state.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/inventory"
+    },
+    "GetProviderInventoryResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderInventoryEntryDto"
           }
         }
       },
       "required": [
-        "models"
+        "entries"
       ],
-      "description": "Provider models response.",
+      "description": "Provider inventory response.",
       "x-side": "agent",
-      "x-method": "_goose/providers/models"
+      "x-method": "_goose/providers/inventory"
+    },
+    "ProviderInventoryEntryDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "description": "Provider identifier."
+        },
+        "providerName": {
+          "type": "string",
+          "description": "Human-readable provider name."
+        },
+        "configured": {
+          "type": "boolean",
+          "description": "Whether Goose has enough configuration to use this provider."
+        },
+        "supportsRefresh": {
+          "type": "boolean",
+          "description": "Whether this provider supports background inventory refresh."
+        },
+        "refreshing": {
+          "type": "boolean",
+          "description": "Whether a refresh is currently in flight."
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderInventoryModelDto"
+          },
+          "description": "The list of available models."
+        },
+        "lastUpdatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "When this entry was last successfully refreshed (ISO 8601)."
+        },
+        "lastRefreshAttemptAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "When a refresh was most recently attempted (ISO 8601)."
+        },
+        "lastRefreshError": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The last refresh failure message, if any."
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "Whether we believe this data may be outdated."
+        },
+        "modelSelectionHint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Guidance message shown when this provider manages its own model selection externally."
+        }
+      },
+      "required": [
+        "providerId",
+        "providerName",
+        "configured",
+        "supportsRefresh",
+        "refreshing",
+        "models",
+        "stale"
+      ],
+      "description": "Provider inventory entry."
+    },
+    "ProviderInventoryModelDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Model identifier as the provider knows it."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable display name."
+        },
+        "family": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Model family for grouping in UI."
+        },
+        "contextLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0,
+          "description": "Context window size in tokens."
+        },
+        "reasoning": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether the model supports reasoning/extended thinking."
+        },
+        "recommended": {
+          "type": "boolean",
+          "description": "Whether this model should appear in the compact recommended picker.",
+          "default": false
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "description": "A single model in provider inventory."
+    },
+    "RefreshProviderInventoryRequest": {
+      "type": "object",
+      "properties": {
+        "providerIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Which providers to refresh. Empty means all known providers.",
+          "default": []
+        }
+      },
+      "description": "Trigger a background refresh of provider inventories.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/inventory/refresh"
+    },
+    "RefreshProviderInventoryResponse": {
+      "type": "object",
+      "properties": {
+        "started": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Which providers will be refreshed."
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RefreshProviderInventorySkipDto"
+          },
+          "description": "Which providers were skipped and why.",
+          "default": []
+        }
+      },
+      "required": [
+        "started"
+      ],
+      "description": "Refresh acknowledgement.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/inventory/refresh"
+    },
+    "RefreshProviderInventorySkipDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/RefreshProviderInventorySkipReasonDto"
+        }
+      },
+      "required": [
+        "providerId",
+        "reason"
+      ]
+    },
+    "RefreshProviderInventorySkipReasonDto": {
+      "type": "string",
+      "enum": [
+        "unknown_provider",
+        "not_configured",
+        "does_not_support_refresh",
+        "already_refreshing"
+      ]
     },
     "ReadConfigRequest": {
       "type": "object",
@@ -1035,11 +1223,20 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GetProviderModelsRequest"
+                      "$ref": "#/$defs/GetProviderInventoryRequest"
                     }
                   ],
-                  "description": "Params for _goose/providers/models",
-                  "title": "GetProviderModelsRequest"
+                  "description": "Params for _goose/providers/inventory",
+                  "title": "GetProviderInventoryRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RefreshProviderInventoryRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/inventory/refresh",
+                  "title": "RefreshProviderInventoryRequest"
                 },
                 {
                   "allOf": [
@@ -1292,10 +1489,18 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/GetProviderModelsResponse"
+                          "$ref": "#/$defs/GetProviderInventoryResponse"
                         }
                       ],
-                      "title": "GetProviderModelsResponse"
+                      "title": "GetProviderInventoryResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+                        }
+                      ],
+                      "title": "RefreshProviderInventoryResponse"
                     },
                     {
                       "allOf": [

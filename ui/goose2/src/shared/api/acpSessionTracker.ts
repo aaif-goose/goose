@@ -115,8 +115,10 @@ export async function prepareSession(
     `[perf:prepare] ${sid} tracker setProvider(${providerId}) in ${(performance.now() - tProv).toFixed(1)}ms (goose_sid=${gooseSid})`,
   );
 
-  prepared.set(key, { gooseSessionId, providerId, workingDir });
-  prepared.set(sessionId, { gooseSessionId, providerId, workingDir });
+  const entry = { gooseSessionId, providerId, workingDir };
+  prepared.set(key, entry);
+  prepared.set(sessionId, entry);
+  prepared.set(gooseSessionId, entry);
   gooseToLocal.set(gooseSessionId, sessionId);
   notifySessionRegistered(sessionId, gooseSessionId);
 
@@ -161,6 +163,7 @@ export function registerSession(
   }
 
   prepared.set(sessionId, entry);
+  prepared.set(gooseSessionId, entry);
   gooseToLocal.set(gooseSessionId, sessionId);
   notifySessionRegistered(sessionId, gooseSessionId);
 

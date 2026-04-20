@@ -1,6 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
+use super::inventory::InventoryIdentityInput;
 use super::openai_compatible::handle_status_openai_compat;
 use super::retry::{ProviderRetry, RetryConfig};
 use super::utils::{ImageFormat, RequestLog};
@@ -255,6 +256,22 @@ impl ProviderDef for OllamaProvider {
         _extensions: Vec<crate::config::ExtensionConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
+    }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        let config = crate::config::Config::global();
+        Ok(
+            InventoryIdentityInput::new(OLLAMA_PROVIDER_NAME, OLLAMA_PROVIDER_NAME).with_public(
+                "host",
+                config
+                    .get_param::<String>("OLLAMA_HOST")
+                    .unwrap_or_else(|_| OLLAMA_HOST.to_string()),
+            ),
+        )
     }
 }
 
