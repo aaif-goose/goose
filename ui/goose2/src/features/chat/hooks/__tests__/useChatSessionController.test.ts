@@ -9,10 +9,35 @@ const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
 const mockSetSelectedProvider = vi.fn();
 const mockResolveSessionCwd = vi.fn();
+const mockGooseConfigRead = vi.fn();
+const mockUseProviderInventory = vi.fn();
+const mockPickerState = {
+  pickerAgents: [{ id: "goose", label: "Goose" }],
+  availableModels: [] as Array<{
+    id: string;
+    name: string;
+    displayName?: string;
+    providerId?: string;
+  }>,
+  modelsLoading: false,
+  modelStatusMessage: null as string | null,
+};
 
 vi.mock("@/shared/api/acp", () => ({
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
+}));
+
+vi.mock("@/shared/api/acpConnection", () => ({
+  getClient: async () => ({
+    goose: {
+      GooseConfigRead: (...args: unknown[]) => mockGooseConfigRead(...args),
+    },
+  }),
+}));
+
+vi.mock("@/features/providers/hooks/useProviderInventory", () => ({
+  useProviderInventory: () => mockUseProviderInventory(),
 }));
 
 vi.mock("../useChat", () => ({
@@ -63,10 +88,10 @@ vi.mock("../useAgentModelPickerState", () => ({
     }) => void;
   }) => ({
     selectedAgentId: "goose",
-    pickerAgents: [{ id: "goose", label: "Goose" }],
-    availableModels: [],
-    modelsLoading: false,
-    modelStatusMessage: null,
+    pickerAgents: mockPickerState.pickerAgents,
+    availableModels: mockPickerState.availableModels,
+    modelsLoading: mockPickerState.modelsLoading,
+    modelStatusMessage: mockPickerState.modelStatusMessage,
     handleProviderChange: vi.fn(),
     handleModelChange: (modelId: string) => {
       if (modelId === "claude-sonnet-4") {
@@ -86,9 +111,18 @@ import { useChatSessionController } from "../useChatSessionController";
 describe("useChatSessionController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
     mockResolveSessionCwd.mockResolvedValue("/tmp/project");
+    mockGooseConfigRead.mockResolvedValue({ value: null });
+    mockUseProviderInventory.mockReturnValue({
+      getEntry: () => undefined,
+    });
+    mockPickerState.pickerAgents = [{ id: "goose", label: "Goose" }];
+    mockPickerState.availableModels = [];
+    mockPickerState.modelsLoading = false;
+    mockPickerState.modelStatusMessage = null;
 
     useAgentStore.setState({
       personas: [],
@@ -177,5 +211,57 @@ describe("useChatSessionController", () => {
       modelId: "claude-sonnet-4",
       modelName: "Claude Sonnet 4",
     });
+  });
+
+  it("shows the stored explicit model for new chats", async () => {
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        goose: {
+          modelId: "claude-sonnet-4",
+          modelName: "Claude Sonnet 4",
+          providerId: "anthropic",
+        },
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: null }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.currentModelId).toBe("claude-sonnet-4");
+    });
+    expect(result.current.currentModelName).toBe("Claude Sonnet 4");
+  });
+
+  it("falls back to the configured goose default model when no explicit model is stored", async () => {
+    mockGooseConfigRead.mockImplementation(
+      async ({ key }: { key: string }): Promise<{ value: string | null }> => {
+        if (key === "GOOSE_PROVIDER") {
+          return { value: "databricks" };
+        }
+        if (key === "GOOSE_MODEL") {
+          return { value: "goose-claude-4-6-opus" };
+        }
+        return { value: null };
+      },
+    );
+    mockPickerState.availableModels = [
+      {
+        id: "goose-claude-4-6-opus",
+        name: "Claude 4.6 Opus",
+        providerId: "databricks",
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: null }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.currentModelId).toBe("goose-claude-4-6-opus");
+    });
+    expect(result.current.currentModelName).toBe("Claude 4.6 Opus");
   });
 });

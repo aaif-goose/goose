@@ -7,7 +7,6 @@ import { useChatSessionStore } from "../stores/chatSessionStore";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProviderSelection } from "@/features/agents/hooks/useProviderSelection";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
-import { useAgentModelPickerState } from "./useAgentModelPickerState";
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
@@ -16,6 +15,10 @@ import {
 } from "@/features/projects/lib/chatProjectContext";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
+import {
+  useResolvedAgentModelPicker,
+  type PreferredModelSelection,
+} from "./useResolvedAgentModelPicker";
 
 interface UseChatSessionControllerOptions {
   sessionId: string | null;
@@ -52,11 +55,8 @@ export function useChatSessionController({
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>();
   const [pendingProjectId, setPendingProjectId] = useState<string | null>();
   const [pendingProviderId, setPendingProviderId] = useState<string>();
-  const [pendingModelSelection, setPendingModelSelection] = useState<{
-    id: string;
-    name: string;
-    providerId?: string;
-  } | null>();
+  const [pendingModelSelection, setPendingModelSelection] =
+    useState<PreferredModelSelection | null>();
   const pendingDraftValue = useChatStore(
     (s) => s.draftsBySession[PENDING_HOME_SESSION_ID] ?? "",
   );
@@ -140,6 +140,7 @@ export function useChatSessionController({
       nextProject = project,
       nextWorkspacePath = activeWorkspace?.path,
       personaId = selectedPersonaId ?? undefined,
+      modelSelection?: PreferredModelSelection | null,
     ) => {
       if (!sessionId) {
         return;
@@ -149,8 +150,38 @@ export function useChatSessionController({
         nextWorkspacePath,
       );
       await acpPrepareSession(sessionId, providerId, workingDir, { personaId });
+      if (!modelSelection?.id) {
+        return;
+      }
+
+      const sessionStore = useChatSessionStore.getState();
+      const liveSession = sessionStore.getSession(sessionId);
+      const modelAlreadyApplied =
+        liveSession?.modelId === modelSelection.id &&
+        liveSession?.modelName === modelSelection.name;
+
+      if (modelAlreadyApplied) {
+        return;
+      }
+
+      sessionStore.updateSession(sessionId, {
+        modelId: modelSelection.id,
+        modelName: modelSelection.name,
+      });
+      await acpSetModel(sessionId, modelSelection.id);
     },
     [activeWorkspace?.path, project, selectedPersonaId, sessionId],
+  );
+  const prepareSelectedProvider = useCallback(
+    (providerId: string, modelSelection?: PreferredModelSelection | null) =>
+      prepareCurrentSession(
+        providerId,
+        project,
+        activeWorkspace?.path,
+        selectedPersonaId ?? undefined,
+        modelSelection,
+      ),
+    [activeWorkspace?.path, prepareCurrentSession, project, selectedPersonaId],
   );
 
   const prevProjectIdRef = useRef(session?.projectId);
@@ -168,6 +199,27 @@ export function useChatSessionController({
     }
   }, [clearActiveWorkspace, session?.projectId, sessionId]);
 
+  const {
+    selectedAgentId,
+    pickerAgents,
+    availableModels,
+    modelsLoading,
+    modelStatusMessage,
+    handleProviderChange,
+    handleModelChange,
+    effectiveModelSelection,
+  } = useResolvedAgentModelPicker({
+    providers,
+    selectedProvider,
+    sessionId,
+    session,
+    pendingModelSelection,
+    setPendingProviderId,
+    setPendingModelSelection,
+    setGlobalSelectedProvider,
+    prepareSelectedProvider,
+  });
+
   const prevWorkspaceRef = useRef(activeWorkspace);
   useEffect(() => {
     const previousWorkspace = prevWorkspaceRef.current;
@@ -183,114 +235,19 @@ export function useChatSessionController({
     if (previousWorkspace?.path === activeWorkspace.path) {
       return;
     }
-    void prepareCurrentSession(selectedProvider).catch((error) => {
+    void prepareSelectedProvider(
+      selectedProvider,
+      effectiveModelSelection,
+    ).catch((error) => {
       console.error("Failed to prepare ACP session:", error);
     });
-  }, [activeWorkspace, prepareCurrentSession, selectedProvider, sessionId]);
-
-  const {
-    selectedAgentId,
-    pickerAgents,
-    availableModels,
-    modelsLoading,
-    modelStatusMessage,
-    handleProviderChange,
-    handleModelChange,
-  } = useAgentModelPickerState({
-    providers,
+  }, [
+    activeWorkspace,
+    effectiveModelSelection,
+    prepareSelectedProvider,
     selectedProvider,
-    onProviderSelected: (providerId) => {
-      if (!sessionId) {
-        setGlobalSelectedProvider(providerId);
-        setPendingProviderId(providerId);
-        setPendingModelSelection(null);
-        return;
-      }
-      useChatSessionStore
-        .getState()
-        .switchSessionProvider(sessionId, providerId);
-      setGlobalSelectedProvider(providerId);
-      void prepareCurrentSession(providerId).catch((error) => {
-        console.error("Failed to update ACP session provider:", error);
-      });
-    },
-    onModelSelected: (model) => {
-      const modelId = model.id;
-      const modelName = model.displayName ?? model.name ?? model.id;
-      const nextProviderId = model.providerId ?? selectedProvider;
-
-      if (!sessionId) {
-        if (nextProviderId && nextProviderId !== selectedProvider) {
-          setPendingProviderId(nextProviderId);
-          setGlobalSelectedProvider(nextProviderId);
-        }
-        setPendingModelSelection({
-          id: modelId,
-          name: modelName,
-          providerId: nextProviderId,
-        });
-        return;
-      }
-      if (
-        !session ||
-        (modelId === session.modelId &&
-          (!nextProviderId || nextProviderId === session.providerId))
-      ) {
-        return;
-      }
-      const previousProviderId = session.providerId;
-      const previousModelId = session.modelId;
-      const previousModelName = session.modelName;
-      const providerChanged =
-        Boolean(nextProviderId) && nextProviderId !== session.providerId;
-
-      if (providerChanged && nextProviderId) {
-        useChatSessionStore
-          .getState()
-          .switchSessionProvider(sessionId, nextProviderId);
-        setGlobalSelectedProvider(nextProviderId);
-      }
-
-      useChatSessionStore.getState().updateSession(sessionId, {
-        modelId,
-        modelName,
-      });
-
-      void (async () => {
-        try {
-          if (providerChanged && nextProviderId) {
-            await prepareCurrentSession(nextProviderId);
-          }
-          await acpSetModel(sessionId, modelId);
-        } catch (error) {
-          console.error("Failed to set model:", error);
-          if (providerChanged && previousProviderId) {
-            setGlobalSelectedProvider(previousProviderId);
-          }
-          useChatSessionStore.getState().updateSession(sessionId, {
-            providerId: previousProviderId,
-            modelId: previousModelId,
-            modelName: previousModelName,
-          });
-          void (async () => {
-            try {
-              if (providerChanged && previousProviderId) {
-                await prepareCurrentSession(previousProviderId);
-              }
-              if (previousModelId) {
-                await acpSetModel(sessionId, previousModelId);
-              }
-            } catch (rollbackError) {
-              console.error(
-                "Failed to restore previous provider/model after setModel failure:",
-                rollbackError,
-              );
-            }
-          })();
-        }
-      })();
-    },
-  });
+    sessionId,
+  ]);
 
   const handleProjectChange = useCallback(
     (projectId: string | null) => {
@@ -310,16 +267,24 @@ export function useChatSessionController({
       if (!selectedProvider) {
         return;
       }
-      void prepareCurrentSession(selectedProvider, nextProject).catch(
-        (error) => {
-          console.error(
-            "Failed to update ACP session working directory:",
-            error,
-          );
-        },
-      );
+      void prepareCurrentSession(
+        selectedProvider,
+        nextProject,
+        activeWorkspace?.path,
+        selectedPersonaId ?? undefined,
+        effectiveModelSelection,
+      ).catch((error) => {
+        console.error("Failed to update ACP session working directory:", error);
+      });
     },
-    [prepareCurrentSession, selectedProvider, sessionId],
+    [
+      activeWorkspace?.path,
+      effectiveModelSelection,
+      prepareCurrentSession,
+      selectedPersonaId,
+      selectedProvider,
+      sessionId,
+    ],
   );
 
   const handlePersonaChange = useCallback(
@@ -334,7 +299,7 @@ export function useChatSessionController({
         if (matchingProvider) {
           if (!sessionId) {
             setPendingProviderId(matchingProvider.id);
-            setPendingModelSelection(null);
+            setPendingModelSelection(undefined);
             setGlobalSelectedProvider(matchingProvider.id);
           } else {
             handleProviderChange(matchingProvider.id);
@@ -399,7 +364,8 @@ export function useChatSessionController({
     {
       onMessageAccepted: sessionId ? onMessageAccepted : undefined,
       ensurePrepared: selectedProvider
-        ? () => prepareCurrentSession(selectedProvider)
+        ? () =>
+            prepareSelectedProvider(selectedProvider, effectiveModelSelection)
         : undefined,
     },
   );
@@ -582,15 +548,10 @@ export function useChatSessionController({
             nextProject,
             activeWorkspace?.path,
             nextPersonaId,
+            pendingModelSelection,
           );
           if (cancelled) {
             return;
-          }
-          if (pendingModelSelection?.id) {
-            await acpSetModel(sessionId, pendingModelSelection.id);
-            if (cancelled) {
-              return;
-            }
           }
         } catch (error) {
           console.error("Failed to sync pending Home state:", error);
@@ -663,14 +624,8 @@ export function useChatSessionController({
     providersLoading,
     selectedProvider: selectedAgentId,
     handleProviderChange,
-    currentModelId:
-      pendingModelSelection !== undefined
-        ? (pendingModelSelection?.id ?? null)
-        : (session?.modelId ?? null),
-    currentModelName:
-      pendingModelSelection !== undefined
-        ? (pendingModelSelection?.name ?? null)
-        : session?.modelName,
+    currentModelId: effectiveModelSelection?.id ?? null,
+    currentModelName: effectiveModelSelection?.name ?? null,
     availableModels,
     modelsLoading,
     modelStatusMessage,

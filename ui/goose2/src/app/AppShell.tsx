@@ -16,8 +16,13 @@ import {
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { findExistingDraft } from "@/features/chat/lib/newChat";
+import { resolveSessionModelPreference } from "@/features/chat/lib/sessionModelPreference";
 import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
 import { useAppStartup } from "./hooks/useAppStartup";
+import {
+  loadStoredHomeSessionId,
+  persistHomeSessionId,
+} from "./lib/homeSessionStorage";
 import { AppShellContent } from "./ui/AppShellContent";
 import { acpPrepareSession } from "@/shared/api/acp";
 import {
@@ -40,34 +45,6 @@ const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 380;
 const SIDEBAR_SNAP_COLLAPSE_THRESHOLD = 100;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
-const HOME_SESSION_STORAGE_KEY = "goose:home-session-id";
-
-function loadStoredHomeSessionId(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  try {
-    return window.localStorage.getItem(HOME_SESSION_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function persistHomeSessionId(sessionId: string | null): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    if (sessionId) {
-      window.localStorage.setItem(HOME_SESSION_STORAGE_KEY, sessionId);
-      return;
-    }
-    window.localStorage.removeItem(HOME_SESSION_STORAGE_KEY);
-  } catch {
-    // localStorage may be unavailable
-  }
-}
-
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
@@ -220,15 +197,23 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         !homeSession.archivedAt &&
         homeSession.messageCount === 0
       ) {
+        const sessionModelPreference = resolveSessionModelPreference({
+          providerId: agentStore.selectedProvider ?? "goose",
+        });
         const project = homeSession.projectId
           ? (projectStore.projects.find(
               (candidate) => candidate.id === homeSession.projectId,
             ) ?? null)
           : null;
         const workingDir = await resolveSessionCwd(project);
+        sessionStore.updateSession(homeSession.id, {
+          providerId: sessionModelPreference.providerId,
+          modelId: sessionModelPreference.modelId,
+          modelName: sessionModelPreference.modelName,
+        });
         await acpPrepareSession(
           homeSession.id,
-          homeSession.providerId ?? agentStore.selectedProvider ?? "goose",
+          sessionModelPreference.providerId,
           workingDir,
           {
             personaId: homeSession.personaId,
@@ -238,10 +223,15 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       }
 
       const workingDir = await resolveSessionCwd(null);
+      const sessionModelPreference = resolveSessionModelPreference({
+        providerId: agentStore.selectedProvider ?? "goose",
+      });
       const session = await sessionStore.createSession({
         title: DEFAULT_CHAT_TITLE,
-        providerId: agentStore.selectedProvider ?? "goose",
+        providerId: sessionModelPreference.providerId,
         workingDir,
+        modelId: sessionModelPreference.modelId,
+        modelName: sessionModelPreference.modelName,
       });
       setHomeSessionId(session.id);
       return session;
@@ -282,7 +272,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const agentId = agentStore.activeAgentId ?? undefined;
       const providerId =
         project?.preferredProvider ?? agentStore.selectedProvider ?? "goose";
-      const modelId = project?.preferredModel ?? undefined;
+      const sessionModelPreference = resolveSessionModelPreference({
+        providerId,
+        preferredModel: project?.preferredModel ?? undefined,
+      });
       const sessionState = useChatSessionStore.getState();
       const chatState = useChatStore.getState();
       const existingDraft = findExistingDraft({
@@ -311,10 +304,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         title,
         projectId: project?.id,
         agentId,
-        providerId,
+        providerId: sessionModelPreference.providerId,
         workingDir,
-        modelId,
-        modelName: modelId,
+        modelId: sessionModelPreference.modelId,
+        modelName: sessionModelPreference.modelName,
       });
       sessionStore.setActiveSession(session.id);
       setActiveView("chat");
