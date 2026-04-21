@@ -34,8 +34,6 @@ import type {
   ExportSourceResponse,
   GetExtensionsRequest,
   GetExtensionsResponse,
-  GetProviderInventoryRequest,
-  GetProviderInventoryResponse,
   GetSessionExtensionsRequest,
   GetSessionExtensionsResponse,
   GetToolsRequest,
@@ -44,6 +42,8 @@ import type {
   ImportSessionResponse,
   ImportSourcesRequest,
   ImportSourcesResponse,
+  ListProvidersRequest,
+  ListProvidersResponse,
   ListSourcesRequest,
   ListSourcesResponse,
   ReadConfigRequest,
@@ -72,11 +72,11 @@ import {
   zExportSessionResponse,
   zExportSourceResponse,
   zGetExtensionsResponse,
-  zGetProviderInventoryResponse,
   zGetSessionExtensionsResponse,
   zGetToolsResponse,
   zImportSessionResponse,
   zImportSourcesResponse,
+  zListProvidersResponse,
   zListSourcesResponse,
   zReadConfigResponse,
   zReadResourceResponse,
@@ -131,13 +131,11 @@ export class GooseExtClient {
     ) as GetSessionExtensionsResponse;
   }
 
-  async GooseProvidersInventory(
-    params: GetProviderInventoryRequest,
-  ): Promise<GetProviderInventoryResponse> {
-    const raw = await this.conn.extMethod("_goose/providers/inventory", params);
-    return zGetProviderInventoryResponse.parse(
-      raw,
-    ) as GetProviderInventoryResponse;
+  async GooseProvidersList(
+    params: ListProvidersRequest,
+  ): Promise<ListProvidersResponse> {
+    const raw = await this.conn.extMethod("_goose/providers/list", params);
+    return zListProvidersResponse.parse(raw) as ListProvidersResponse;
   }
 
   async GooseProvidersInventoryRefresh(

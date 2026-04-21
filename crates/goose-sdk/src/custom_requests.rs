@@ -442,22 +442,19 @@ pub struct DictationConfigResponse {
     pub providers: HashMap<String, DictationProviderStatusEntry>,
 }
 
-/// Read per-provider inventory. Always returns immediately from stored state.
+/// List providers with setup metadata and the current model inventory snapshot.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(
-    method = "_goose/providers/inventory",
-    response = GetProviderInventoryResponse
-)]
+#[request(method = "_goose/providers/list", response = ListProvidersResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct GetProviderInventoryRequest {
+pub struct ListProvidersRequest {
     /// Only return entries for these providers. Empty means all.
     #[serde(default)]
     pub provider_ids: Vec<String>,
 }
 
-/// Provider inventory response.
+/// Provider list response.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct GetProviderInventoryResponse {
+pub struct ListProvidersResponse {
     pub entries: Vec<ProviderInventoryEntryDto>,
 }
 

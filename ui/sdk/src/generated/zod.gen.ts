@@ -90,9 +90,9 @@ export const zGetSessionExtensionsResponse = z.object({
 });
 
 /**
- * Read per-provider inventory. Always returns immediately from stored state.
+ * List providers with setup metadata and the current model inventory snapshot.
  */
-export const zGetProviderInventoryRequest = z.object({
+export const zListProvidersRequest = z.object({
     providerIds: z.array(z.string()).optional().default([])
 });
 
@@ -165,9 +165,9 @@ export const zProviderInventoryEntryDto = z.object({
 });
 
 /**
- * Provider inventory response.
+ * Provider list response.
  */
-export const zGetProviderInventoryResponse = z.object({
+export const zListProvidersResponse = z.object({
     entries: z.array(zProviderInventoryEntryDto)
 });
 
@@ -584,7 +584,7 @@ export const zExtRequest = z.object({
             zDeleteSessionRequest,
             zGetExtensionsRequest,
             zGetSessionExtensionsRequest,
-            zGetProviderInventoryRequest,
+            zListProvidersRequest,
             zRefreshProviderInventoryRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
@@ -628,7 +628,7 @@ export const zExtResponse = z.union([
                 zReadResourceResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
-                zGetProviderInventoryResponse,
+                zListProvidersResponse,
                 zRefreshProviderInventoryResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,

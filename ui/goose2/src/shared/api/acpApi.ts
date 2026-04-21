@@ -27,7 +27,7 @@ const DEFAULT_PROVIDER: AcpProvider = {
 
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
-  const result = await client.goose.GooseProvidersInventory({
+  const result = await client.goose.GooseProvidersList({
     providerIds: [],
   });
 

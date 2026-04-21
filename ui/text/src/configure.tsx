@@ -378,7 +378,7 @@ export default function ConfigureScreen({
 
     (async () => {
       try {
-        const resp = await client.goose.GooseProvidersInventory({ providerIds: [] });
+        const resp = await client.goose.GooseProvidersList({ providerIds: [] });
         if (cancelled) return;
         const sorted = [...resp.entries].sort((a, b) => {
           const aP = a.providerType === "Preferred" ? 0 : 1;

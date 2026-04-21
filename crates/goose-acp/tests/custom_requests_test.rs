@@ -117,13 +117,9 @@ fn test_custom_provider_inventory_includes_metadata() {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
 
-        let response = send_custom(
-            conn.cx(),
-            "_goose/providers/inventory",
-            serde_json::json!({}),
-        )
-        .await
-        .expect("provider inventory should succeed");
+        let response = send_custom(conn.cx(), "_goose/providers/list", serde_json::json!({}))
+            .await
+            .expect("provider inventory should succeed");
         let providers = response
             .get("entries")
             .and_then(|value| value.as_array())

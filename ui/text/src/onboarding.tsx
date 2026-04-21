@@ -539,7 +539,7 @@ export default function Onboarding({
   useEffect(() => {
     (async () => {
       try {
-        const resp = await client.goose.GooseProvidersInventory({ providerIds: [] });
+        const resp = await client.goose.GooseProvidersList({ providerIds: [] });
         const sorted = [...resp.entries].sort((a, b) => {
           const aP = a.providerType === "Preferred" ? 0 : 1;
           const bP = b.providerType === "Preferred" ? 0 : 1;

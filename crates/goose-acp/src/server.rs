@@ -2806,17 +2806,17 @@ impl GooseAcpAgent {
         })
     }
 
-    #[custom_method(GetProviderInventoryRequest)]
-    async fn on_get_provider_inventory(
+    #[custom_method(ListProvidersRequest)]
+    async fn on_list_providers(
         &self,
-        req: GetProviderInventoryRequest,
-    ) -> Result<GetProviderInventoryResponse, sacp::Error> {
+        req: ListProvidersRequest,
+    ) -> Result<ListProvidersResponse, sacp::Error> {
         let entries = self
             .provider_inventory
             .entries(&req.provider_ids)
             .await
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-        Ok(GetProviderInventoryResponse {
+        Ok(ListProvidersResponse {
             entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
         })
     }

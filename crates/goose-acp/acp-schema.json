@@ -195,7 +195,7 @@
       "x-side": "agent",
       "x-method": "_goose/session/extensions"
     },
-    "GetProviderInventoryRequest": {
+    "ListProvidersRequest": {
       "type": "object",
       "properties": {
         "providerIds": {
@@ -207,11 +207,11 @@
           "default": []
         }
       },
-      "description": "Read per-provider inventory. Always returns immediately from stored state.",
+      "description": "List providers with setup metadata and the current model inventory snapshot.",
       "x-side": "agent",
-      "x-method": "_goose/providers/inventory"
+      "x-method": "_goose/providers/list"
     },
-    "GetProviderInventoryResponse": {
+    "ListProvidersResponse": {
       "type": "object",
       "properties": {
         "entries": {
@@ -224,9 +224,9 @@
       "required": [
         "entries"
       ],
-      "description": "Provider inventory response.",
+      "description": "Provider list response.",
       "x-side": "agent",
-      "x-method": "_goose/providers/inventory"
+      "x-method": "_goose/providers/list"
     },
     "ProviderInventoryEntryDto": {
       "type": "object",
@@ -1400,11 +1400,11 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GetProviderInventoryRequest"
+                      "$ref": "#/$defs/ListProvidersRequest"
                     }
                   ],
-                  "description": "Params for _goose/providers/inventory",
-                  "title": "GetProviderInventoryRequest"
+                  "description": "Params for _goose/providers/list",
+                  "title": "ListProvidersRequest"
                 },
                 {
                   "allOf": [
@@ -1704,10 +1704,10 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/GetProviderInventoryResponse"
+                          "$ref": "#/$defs/ListProvidersResponse"
                         }
                       ],
-                      "title": "GetProviderInventoryResponse"
+                      "title": "ListProvidersResponse"
                     },
                     {
                       "allOf": [

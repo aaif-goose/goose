@@ -41,9 +41,9 @@
       "responseType": "GetSessionExtensionsResponse"
     },
     {
-      "method": "_goose/providers/inventory",
-      "requestType": "GetProviderInventoryRequest",
-      "responseType": "GetProviderInventoryResponse"
+      "method": "_goose/providers/list",
+      "requestType": "ListProvidersRequest",
+      "responseType": "ListProvidersResponse"
     },
     {
       "method": "_goose/providers/inventory/refresh",
