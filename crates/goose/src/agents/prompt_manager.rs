@@ -445,12 +445,13 @@ mod tests {
                 let mut instructions = info
                     .and_then(|i| i.instructions.clone())
                     .unwrap_or_default();
-                    
+
                 // Force determinism for snapshot testing so local developer skills don't pollute the diff
                 if def.name == "skills" {
-                    instructions = "<Deterministic skill instructions for snapshot tests>".to_string();
+                    instructions =
+                        "<Deterministic skill instructions for snapshot tests>".to_string();
                 }
-                
+
                 let has_resources = info
                     .and_then(|i| i.capabilities.resources.as_ref())
                     .is_some();
