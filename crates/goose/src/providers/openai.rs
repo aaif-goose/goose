@@ -664,7 +664,7 @@ fn split_on_commas_outside_quotes(s: &str) -> Vec<String> {
         if escape_next {
             current.push(c);
             escape_next = false;
-        } else if c == '\\' {
+        } else if c == '\\' && in_quotes {
             current.push(c);
             escape_next = true;
         } else if c == '"' {
@@ -684,12 +684,9 @@ fn split_on_commas_outside_quotes(s: &str) -> Vec<String> {
 
 fn parse_custom_headers(s: String) -> HashMap<String, String> {
     fn unquote_and_unescape(val: &str) -> String {
-        let val = val.trim();
-        // check if it starts and ends with double quotes
-        let inner = if val.len() >= 2 && val.starts_with('"') && val.ends_with('"') {
-            &val[1..val.len() - 1]
-        } else {
-            val
+        let trimmed = val.trim();
+        let Some(inner) = trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
+            return trimmed.to_string();
         };
 
         let mut out = String::with_capacity(inner.len());
@@ -829,6 +826,22 @@ mod tests {
         let parsed = parse_custom_headers(headers);
         assert_eq!(parsed.get("A").unwrap(), r#"hello "world""#);
         assert_eq!(parsed.get("B").unwrap(), "ok");
+    }
+
+    #[test]
+    fn test_parse_custom_headers_preserves_backslashes_in_unquoted_values() {
+        let headers = r#"X-Signature=a\\b,Y=ok"#.to_string();
+        let parsed = parse_custom_headers(headers);
+        assert_eq!(parsed.get("X-Signature").unwrap(), r#"a\\b"#);
+        assert_eq!(parsed.get("Y").unwrap(), "ok");
+    }
+
+    #[test]
+    fn test_parse_custom_headers_splits_on_commas_after_unquoted_backslashes() {
+        let headers = r#"X-Path=C:\,X-Env=prod"#.to_string();
+        let parsed = parse_custom_headers(headers);
+        assert_eq!(parsed.get("X-Path").unwrap(), "C:\\");
+        assert_eq!(parsed.get("X-Env").unwrap(), "prod");
     }
 
     #[test]
