@@ -1084,33 +1084,48 @@ impl SessionStorage {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         let today = chrono::Utc::now().format("%Y%m%d").to_string();
-        let session = sqlx::query_as(
+        let next_id = (sqlx::query_scalar::<_, Option<i64>>(
             r#"
-                INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
-                VALUES (
-                    ? || '_' || CAST(COALESCE((
-                        SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
-                        FROM sessions
-                        WHERE id LIKE ? || '_%'
-                    ), 0) + 1 AS TEXT),
-                    ?,
-                    FALSE,
-                    ?,
-                    ?,
-                    '{}',
-                    ?
-                )
-                RETURNING *
+                SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
+                FROM sessions
+                WHERE id LIKE ? || '_%'
                 "#,
         )
-            .bind(&today)
-            .bind(&today)
-            .bind(&name)
-            .bind(session_type.to_string())
-            .bind(&*working_dir.to_string_lossy())
-            .bind(goose_mode.to_string())
-            .fetch_one(&mut *tx)
-            .await?;
+        .bind(&today)
+        .fetch_one(&mut *tx)
+        .await?
+        .unwrap_or(0))
+            + 1;
+        let session_id = format!("{today}_{next_id}");
+
+        sqlx::query(
+            r#"
+            INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
+            VALUES (?, ?, FALSE, ?, ?, '{}', ?)
+            "#,
+        )
+        .bind(&session_id)
+        .bind(&name)
+        .bind(session_type.to_string())
+        .bind(&*working_dir.to_string_lossy())
+        .bind(goose_mode.to_string())
+        .execute(&mut *tx)
+        .await?;
+
+        let session = sqlx::query_as::<_, Session>(
+            r#"
+            SELECT id, working_dir, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
+                   total_tokens, input_tokens, output_tokens,
+                   accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+                   schedule_id, recipe_json, user_recipe_values_json,
+                   provider_name, model_config_json, goose_mode, thread_id
+            FROM sessions
+            WHERE id = ?
+            "#,
+        )
+        .bind(&session_id)
+        .fetch_one(&mut *tx)
+        .await?;
 
         tx.commit().await?;
         #[cfg(feature = "telemetry")]
