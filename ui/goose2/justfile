@@ -127,7 +127,7 @@ dev: setup
     pnpm tauri dev --features app-test-driver --config src-tauri/tauri.dev.conf.json "${EXTRA_CONFIG_ARGS[@]}"
 
 # Start the desktop app with dev config
-dev-debug:
+dev-debug: setup
     #!/usr/bin/env bash
     set -euo pipefail
 
