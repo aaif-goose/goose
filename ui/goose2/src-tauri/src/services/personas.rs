@@ -3,7 +3,7 @@ use crate::types::agents::{
 };
 use log::warn;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 pub struct PersonaStore {
@@ -201,7 +201,20 @@ impl PersonaStore {
         let slug = id
             .strip_prefix("md-")
             .ok_or_else(|| format!("Persona '{}' is not a file-backed persona", id))?;
+        Self::validate_markdown_persona_slug(slug)?;
         Ok(Self::agents_dir().join(format!("{}.md", slug)))
+    }
+
+    fn validate_markdown_persona_slug(slug: &str) -> Result<(), String> {
+        if slug.chars().any(|c| matches!(c, '/' | '\\')) {
+            return Err(format!("Persona '{}' has an invalid file-backed ID", slug));
+        }
+
+        let mut components = Path::new(slug).components();
+        match (components.next(), components.next()) {
+            (Some(Component::Normal(_)), None) => Ok(()),
+            _ => Err(format!("Persona '{}' has an invalid file-backed ID", slug)),
+        }
     }
 
     /// Re-scan markdown personas and update the in-memory list.
@@ -416,5 +429,29 @@ impl PersonaStore {
     pub fn delete_avatar_file(filename: &str) {
         let path = Self::avatars_dir().join(filename);
         let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PersonaStore;
+
+    #[test]
+    fn markdown_persona_path_rejects_parent_segments() {
+        assert!(PersonaStore::markdown_persona_path("md-../secret").is_err());
+        assert!(PersonaStore::markdown_persona_path("md-..").is_err());
+    }
+
+    #[test]
+    fn markdown_persona_path_rejects_path_separators() {
+        assert!(PersonaStore::markdown_persona_path("md-nested/slug").is_err());
+        assert!(PersonaStore::markdown_persona_path(r"md-nested\slug").is_err());
+    }
+
+    #[test]
+    fn markdown_persona_path_accepts_normal_slug() {
+        let path = PersonaStore::markdown_persona_path("md-scout").unwrap();
+        let file_name = path.file_name().and_then(|name| name.to_str());
+        assert_eq!(file_name, Some("scout.md"));
     }
 }

@@ -126,7 +126,12 @@ test.describe("Agents view", () => {
         hasText: "Code Reviewer",
       }),
     ).toBeVisible();
-    await expect(dialog.getByText("Claude")).toBeVisible();
+    await expect(
+      dialog
+        .locator("section")
+        .filter({ has: dialog.getByText(/^Provider$/) })
+        .getByText(/^claude$/i),
+    ).toBeVisible();
     await expect(dialog.getByText("claude-sonnet-4-20250514")).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Edit" })).toBeVisible();
   });
