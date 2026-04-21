@@ -1,5 +1,6 @@
 use crate::config::paths::Paths;
 use crate::providers::api_client::{ApiClient, AuthMethod};
+use crate::providers::oauth_device_flow::{run_device_flow, DeviceFlowConfig, RequestEncoding};
 use crate::providers::openai_compatible::{handle_status_openai_compat, stream_openai_compat};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -90,13 +91,6 @@ impl GithubCopilotUrls {
             }
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct DeviceCodeInfo {
-    device_code: String,
-    user_code: String,
-    verification_uri: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -344,105 +338,16 @@ impl GithubCopilotProvider {
     }
 
     async fn login(&self) -> Result<String> {
-        let device_code_info = self.get_device_code().await?;
-
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            if let Err(e) = clipboard.set_text(&device_code_info.user_code) {
-                tracing::warn!("Failed to copy verification code to clipboard: {}", e);
-            }
-        }
-
-        if let Err(e) = webbrowser::open(&device_code_info.verification_uri) {
-            tracing::warn!("Failed to open browser: {}", e);
-        }
-
-        println!(
-            "Please visit {} and enter code {}",
-            device_code_info.verification_uri, device_code_info.user_code
-        );
-
-        self.poll_for_access_token(&device_code_info.device_code)
-            .await
-    }
-
-    async fn get_device_code(&self) -> Result<DeviceCodeInfo> {
-        #[derive(Serialize)]
-        struct DeviceCodeRequest {
-            client_id: String,
-            scope: String,
-        }
-        self.client
-            .post(&self.urls.device_code_url)
-            .headers(self.get_github_headers())
-            .json(&DeviceCodeRequest {
-                client_id: self.client_id.clone(),
-                scope: "read:user".to_string(),
-            })
-            .send()
-            .await
-            .context("failed to send request to get device code")?
-            .error_for_status()
-            .context("failed to get device code")?
-            .json::<DeviceCodeInfo>()
-            .await
-            .context("failed to parse device code response")
-    }
-
-    async fn poll_for_access_token(&self, device_code: &str) -> Result<String> {
-        #[derive(Serialize)]
-        struct AccessTokenRequest {
-            client_id: String,
-            device_code: String,
-            grant_type: String,
-        }
-        #[derive(Debug, Deserialize)]
-        struct AccessTokenResponse {
-            access_token: Option<String>,
-            error: Option<String>,
-            #[serde(flatten)]
-            _extra: HashMap<String, Value>,
-        }
-
-        const MAX_ATTEMPTS: i32 = 36;
-        for attempt in 0..MAX_ATTEMPTS {
-            let resp = self
-                .client
-                .post(&self.urls.access_token_url)
-                .headers(self.get_github_headers())
-                .json(&AccessTokenRequest {
-                    client_id: self.client_id.clone(),
-                    device_code: device_code.to_string(),
-                    grant_type: "urn:ietf:params:oauth:grant-type:device_code".to_string(),
-                })
-                .send()
-                .await
-                .context("failed to make request while polling for access token")?
-                .error_for_status()
-                .context("error polling for access token")?
-                .json::<AccessTokenResponse>()
-                .await
-                .context("failed to parse response while polling for access token")?;
-            if resp.access_token.is_some() {
-                tracing::trace!("successful authorization: {:#?}", resp,);
-            }
-            if let Some(access_token) = resp.access_token {
-                return Ok(access_token);
-            } else if resp
-                .error
-                .as_ref()
-                .is_some_and(|err| err == "authorization_pending")
-            {
-                tracing::debug!(
-                    "authorization pending (attempt {}/{})",
-                    attempt + 1,
-                    MAX_ATTEMPTS
-                );
-            } else {
-                tracing::debug!("unexpected response: {:#?}", resp);
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        }
-        Err(anyhow!("failed to get access token"))
+        let cfg = DeviceFlowConfig {
+            device_auth_url: Some(&self.urls.device_code_url),
+            token_url: &self.urls.access_token_url,
+            client_id: &self.client_id,
+            scopes: Some("read:user"),
+            extra_headers: self.get_github_headers(),
+            encoding: RequestEncoding::Json,
+        };
+        let tokens = run_device_flow(&self.client, &cfg).await?;
+        Ok(tokens.access_token)
     }
 
     fn get_github_headers(&self) -> http::HeaderMap {

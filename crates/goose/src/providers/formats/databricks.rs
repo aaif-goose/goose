@@ -1100,12 +1100,16 @@ mod tests {
     fn test_create_request_enabled_thinking_with_budget() -> anyhow::Result<()> {
         let _guard = env_lock::lock_env([
             ("CLAUDE_THINKING_TYPE", None::<&str>),
-            ("CLAUDE_THINKING_ENABLED", Some("1")),
+            ("CLAUDE_THINKING_ENABLED", None::<&str>),
             ("CLAUDE_THINKING_BUDGET", Some("10000")),
         ]);
 
         let mut model_config = ModelConfig::new_or_fail("databricks-claude-3-7-sonnet");
         model_config.max_tokens = Some(4096);
+        model_config = model_config.with_request_params(Some(std::collections::HashMap::from([(
+            "thinking_type".to_string(),
+            json!("enabled"),
+        )])));
 
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
 

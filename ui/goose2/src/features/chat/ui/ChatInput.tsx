@@ -2,8 +2,6 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { AcpProvider } from "@/shared/api/acp";
-import type { Persona } from "@/shared/types/agents";
 import { cn } from "@/shared/lib/cn";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -14,60 +12,14 @@ import { ChatInputToolbar } from "./ChatInputToolbar";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 import { PersonaAvatar } from "./PersonaPicker";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useAttachmentDropTarget } from "../hooks/useAttachmentDropTarget";
 import {
   normalizeDialogSelection,
   useChatInputAttachments,
 } from "../hooks/useChatInputAttachments";
-import type { ModelOption } from "../types";
 import { ChatInputAttachments } from "./ChatInputAttachments";
-
-export interface ProjectOption {
-  id: string;
-  name: string;
-  workingDirs: string[];
-  color?: string | null;
-}
-
-interface ChatInputProps {
-  onSend: (
-    text: string,
-    personaId?: string,
-    attachments?: ChatAttachmentDraft[],
-  ) => void;
-  onStop?: () => void;
-  isStreaming?: boolean;
-  disabled?: boolean;
-  queuedMessage?: { text: string } | null;
-  onDismissQueue?: () => void;
-  initialValue?: string;
-  onDraftChange?: (text: string) => void;
-  className?: string;
-  personas?: Persona[];
-  selectedPersonaId?: string | null;
-  onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
-  providers?: AcpProvider[];
-  providersLoading?: boolean;
-  selectedProvider?: string;
-  onProviderChange?: (providerId: string) => void;
-  currentModelId?: string | null;
-  currentModel?: string;
-  availableModels?: ModelOption[];
-  onModelChange?: (modelId: string) => void;
-  selectedProjectId?: string | null;
-  availableProjects?: ProjectOption[];
-  onProjectChange?: (projectId: string | null) => void;
-  onCreateProject?: (options?: {
-    onCreated?: (projectId: string) => void;
-  }) => void;
-  contextTokens?: number;
-  contextLimit?: number;
-  onCompactContext?: () => void | Promise<void>;
-  canCompactContext?: boolean;
-  isCompactingContext?: boolean;
-}
+import { useVoiceDictation } from "../hooks/useVoiceDictation";
+import type { ChatInputProps } from "../types";
 
 export function ChatInput({
   onSend,
@@ -90,6 +42,8 @@ export function ChatInput({
   currentModelId = null,
   currentModel,
   availableModels = [],
+  modelsLoading = false,
+  modelStatusMessage = null,
   onModelChange,
   selectedProjectId = null,
   availableProjects = [],
@@ -103,6 +57,9 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
+  useEffect(() => {
+    setTextRaw(initialValue);
+  }, [initialValue]);
   const setText = useCallback(
     (value: string) => {
       setTextRaw(value);
@@ -121,6 +78,25 @@ export function ChatInput({
     clearAttachments,
   } = useChatInputAttachments();
 
+  const resetTextarea = useCallback(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, []);
+
+  const hasQueuedMessage = queuedMessage !== null;
+
+  const dictation = useVoiceDictation({
+    text,
+    setText,
+    attachments,
+    clearAttachments,
+    selectedPersonaId,
+    onSend,
+    resetTextarea,
+    isSendLocked: hasQueuedMessage || disabled,
+  });
+
   const activePersona = useMemo(
     () => personas.find((persona) => persona.id === selectedPersonaId) ?? null,
     [personas, selectedPersonaId],
@@ -133,7 +109,6 @@ export function ChatInput({
   );
   const stickyPersona = activePersona;
 
-  const hasQueuedMessage = queuedMessage !== null;
   const canSend =
     (text.trim().length > 0 || attachments.length > 0) &&
     !hasQueuedMessage &&
@@ -182,6 +157,24 @@ export function ChatInput({
       return;
     }
 
+    // If recording, stop without waiting for final flush and send what's
+    // already transcribed into the textarea. This makes Send a single click
+    // even while the mic is hot; any in-flight audio after the user clicked
+    // Send is intentionally dropped.
+    //
+    // Also handles the edge case where the user clicks Send while a
+    // getUserMedia startup is still pending (isRecording is still false but
+    // a stream is about to be acquired) — stopRecording sets the internal
+    // cancel flag so the pending startup tears itself down instead of
+    // leaving the OS mic indicator on.
+    if (
+      dictation.isRecording ||
+      dictation.isTranscribing ||
+      dictation.isStarting()
+    ) {
+      dictation.stopRecording({ flushPending: false });
+    }
+
     onSend(
       text.trim(),
       selectedPersonaId ?? undefined,
@@ -196,6 +189,7 @@ export function ChatInput({
     attachments,
     canSend,
     clearAttachments,
+    dictation,
     onSend,
     selectedPersonaId,
     setText,
@@ -313,8 +307,18 @@ export function ChatInput({
     providers.find((provider) => provider.id === selectedProvider)?.label ??
     formatProviderLabel(selectedProvider);
   const agentDisplayName = activePersona?.displayName ?? providerDisplayName;
-  const resolvedCurrentModel =
-    currentModel ?? availableModels[0]?.displayName ?? availableModels[0]?.name;
+  const resolvedCurrentModel = useMemo(() => {
+    if (currentModel) {
+      return currentModel;
+    }
+    if (!currentModelId) {
+      return undefined;
+    }
+    const selectedModel = availableModels.find(
+      (model) => model.id === currentModelId,
+    );
+    return selectedModel?.displayName ?? selectedModel?.name ?? currentModelId;
+  }, [availableModels, currentModel, currentModelId]);
   const effectivePlaceholder = t("input.placeholder", {
     agent: agentDisplayName,
   });
@@ -408,7 +412,13 @@ export function ChatInput({
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  placeholder={effectivePlaceholder}
+                  placeholder={
+                    dictation.isRecording
+                      ? t("toolbar.voiceInputRecording")
+                      : dictation.isTranscribing
+                        ? t("toolbar.voiceInputTranscribing")
+                        : effectivePlaceholder
+                  }
                   disabled={disabled}
                   rows={1}
                   className="mb-3 min-h-[36px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-foreground placeholder:font-light placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
@@ -428,6 +438,8 @@ export function ChatInput({
                 currentModelId={currentModelId}
                 currentModel={resolvedCurrentModel}
                 availableModels={availableModels}
+                modelsLoading={modelsLoading}
+                modelStatusMessage={modelStatusMessage}
                 onModelChange={onModelChange}
                 selectedProjectId={selectedProjectId}
                 availableProjects={availableProjects}
@@ -447,6 +459,10 @@ export function ChatInput({
                 onSend={handleSend}
                 onStop={onStop}
                 isCompact={isCompact}
+                voiceEnabled={dictation.isEnabled}
+                voiceRecording={dictation.isRecording}
+                voiceTranscribing={dictation.isTranscribing}
+                onVoiceToggle={dictation.toggleRecording}
               />
             </div>
           </Popover>

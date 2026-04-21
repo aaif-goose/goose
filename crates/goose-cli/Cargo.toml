@@ -71,7 +71,7 @@ winapi = { workspace = true }
 [features]
 default = ["code-mode", "local-inference", "aws-providers", "telemetry", "otel", "rustls-tls"]
 code-mode = ["goose/code-mode", "goose-acp/code-mode"]
-local-inference = ["goose/local-inference"]
+local-inference = ["goose/local-inference", "goose-acp/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]
 telemetry = ["goose/telemetry"]

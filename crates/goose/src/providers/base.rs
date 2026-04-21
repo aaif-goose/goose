@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use super::canonical::{map_to_canonical_model, CanonicalModelRegistry};
 use super::errors::ProviderError;
+use super::inventory::{default_inventory_identity, InventoryIdentityInput};
 use super::retry::RetryConfig;
 use crate::config::base::ConfigValue;
-use crate::config::{ExtensionConfig, GooseMode};
+use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::model::ModelConfig;
@@ -179,6 +180,9 @@ pub struct ProviderMetadata {
     /// step-by-step instructions for set up providers eg: api key
     #[serde(default)]
     pub setup_steps: Vec<String>,
+    /// Hint shown in the model picker when this provider manages its own model selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_selection_hint: Option<String>,
 }
 
 impl ProviderMetadata {
@@ -212,6 +216,7 @@ impl ProviderMetadata {
             model_doc_link: model_doc_link.to_string(),
             config_keys,
             setup_steps: vec![],
+            model_selection_hint: None,
         }
     }
 
@@ -233,6 +238,7 @@ impl ProviderMetadata {
             model_doc_link: model_doc_link.to_string(),
             config_keys,
             setup_steps: vec![],
+            model_selection_hint: None,
         }
     }
 
@@ -246,11 +252,17 @@ impl ProviderMetadata {
             model_doc_link: "".to_string(),
             config_keys: vec![],
             setup_steps: vec![],
+            model_selection_hint: None,
         }
     }
 
     pub fn with_setup_steps(mut self, steps: Vec<&str>) -> Self {
         self.setup_steps = steps.into_iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    pub fn with_model_selection_hint(mut self, hint: &str) -> Self {
+        self.model_selection_hint = Some(hint.to_string());
         self
     }
 }
@@ -492,6 +504,34 @@ pub trait ProviderDef: Send + Sync {
     ) -> BoxFuture<'static, Result<Self::Provider>>
     where
         Self: Sized;
+
+    fn supports_inventory_refresh() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput>
+    where
+        Self: Sized,
+    {
+        let metadata = Self::metadata();
+        Ok(default_inventory_identity(
+            &metadata.name,
+            &metadata.name,
+            &metadata.config_keys,
+            Config::global(),
+        ))
+    }
+
+    fn inventory_configured() -> bool
+    where
+        Self: Sized,
+    {
+        let metadata = Self::metadata();
+        super::inventory::default_inventory_configured(&metadata.config_keys, Config::global())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -588,7 +628,7 @@ pub trait Provider: Send + Sync {
         false
     }
 
-    /// Fetch models filtered by canonical registry and usability
+    /// Fetch inventory models filtered by canonical registry and usability.
     async fn fetch_recommended_models(&self) -> Result<Vec<String>, ProviderError> {
         let all_models = self.fetch_supported_models().await?;
 
@@ -637,15 +677,15 @@ pub trait Provider: Send + Sync {
             (None, None) => a.0.cmp(&b.0),
         });
 
-        let recommended_models: Vec<String> = models_with_dates
+        let inventory_models: Vec<String> = models_with_dates
             .into_iter()
             .map(|(name, _)| name)
             .collect();
 
-        if recommended_models.is_empty() {
+        if inventory_models.is_empty() {
             Ok(all_models)
         } else {
-            Ok(recommended_models)
+            Ok(inventory_models)
         }
     }
 

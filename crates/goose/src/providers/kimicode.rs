@@ -1,7 +1,7 @@
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::session_context::SESSION_ID_HEADER;
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -19,6 +19,9 @@ use uuid::Uuid;
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
 use super::formats::anthropic::{create_request, response_to_streaming_message};
+use super::oauth_device_flow::{
+    refresh_device_flow_token, run_device_flow, DeviceFlowConfig, DeviceFlowTokens, RequestEncoding,
+};
 use super::openai_compatible::handle_status_openai_compat;
 use super::retry::ProviderRetry;
 use super::utils::RequestLog;
@@ -49,16 +52,6 @@ const REFRESH_THRESHOLD_SECS: i64 = 300;
 /// Fallback access-token lifetime when the server omits `expires_in`.
 const DEFAULT_TOKEN_LIFETIME_SECS: i64 = 3600;
 
-/// Fallback device-code window when the server omits `expires_in`
-/// from `device_authorization`.
-const DEFAULT_DEVICE_CODE_LIFETIME_SECS: u64 = 300;
-
-/// Fallback poll interval when the server omits `interval`.
-const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
-
-/// Extra seconds added to the poll interval after an RFC 8628 `slow_down`.
-const SLOW_DOWN_BACKOFF_SECS: u64 = 5;
-
 /// Marker key written to the user config when OAuth completes successfully.
 /// `check_provider_configured` (server) keys off this when an OAuth-flow
 /// provider has no required secret env var.
@@ -71,6 +64,24 @@ struct KimiToken {
     access_token: String,
     refresh_token: String,
     expires_at: DateTime<Utc>,
+}
+
+/// Normalize helper output into the on-disk `KimiToken` shape. When the helper
+/// returns `None` for `refresh_token` or `expires_at`, fall back to the prior
+/// refresh token (per RFC 6749 §6) and a default lifetime.
+fn tokens_to_kimi(tokens: DeviceFlowTokens, prior_refresh: Option<&str>) -> KimiToken {
+    let refresh_token = tokens
+        .refresh_token
+        .or_else(|| prior_refresh.map(str::to_string))
+        .unwrap_or_default();
+    let expires_at = tokens
+        .expires_at
+        .unwrap_or_else(|| Utc::now() + Duration::seconds(DEFAULT_TOKEN_LIFETIME_SECS));
+    KimiToken {
+        access_token: tokens.access_token,
+        refresh_token,
+        expires_at,
+    }
 }
 
 #[derive(Debug)]
@@ -261,201 +272,34 @@ impl KimiCodeProvider {
     }
 
     async fn device_flow_login(&self) -> Result<KimiToken> {
-        #[derive(Serialize)]
-        struct DeviceAuthReq<'a> {
-            client_id: &'a str,
-        }
-        #[derive(Deserialize)]
-        struct DeviceAuthResp {
-            device_code: String,
-            user_code: String,
-            verification_uri_complete: Option<String>,
-            verification_uri: String,
-            interval: Option<u64>,
-            expires_in: Option<u64>,
-        }
-
-        let resp: DeviceAuthResp = self
-            .client
-            .post(format!("{}/api/oauth/device_authorization", self.auth_host))
-            .headers(self.kimi_headers())
-            .form(&DeviceAuthReq {
-                client_id: KIMI_CODE_CLIENT_ID,
-            })
-            .send()
-            .await
-            .context("failed to request device authorization")?
-            .error_for_status()
-            .context("device authorization request failed")?
-            .json()
-            .await
-            .context("failed to parse device authorization response")?;
-
-        let verify_url = resp
-            .verification_uri_complete
-            .as_deref()
-            .unwrap_or(&resp.verification_uri);
-        let interval = resp.interval.unwrap_or(DEFAULT_POLL_INTERVAL_SECS);
-
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            let _ = clipboard.set_text(&resp.user_code);
-        }
-        if let Err(e) = webbrowser::open(verify_url) {
-            tracing::warn!("Failed to open browser: {}", e);
-        }
-
-        // stderr so CLI workflows parsing stdout aren't interfered with.
-        eprintln!(
-            "Please visit {} and enter code {}",
-            verify_url, resp.user_code
-        );
-
-        let expires_in = resp.expires_in.unwrap_or(DEFAULT_DEVICE_CODE_LIFETIME_SECS);
-        self.poll_for_token(&resp.device_code, interval, expires_in)
-            .await
-    }
-
-    async fn poll_for_token(
-        &self,
-        device_code: &str,
-        interval_secs: u64,
-        expires_in_secs: u64,
-    ) -> Result<KimiToken> {
-        #[derive(Serialize)]
-        struct PollReq<'a> {
-            client_id: &'a str,
-            device_code: &'a str,
-            grant_type: &'static str,
-        }
-        #[derive(Deserialize, Debug)]
-        struct PollResp {
-            access_token: Option<String>,
-            refresh_token: Option<String>,
-            expires_in: Option<i64>,
-            error: Option<String>,
-        }
-
-        let deadline =
-            tokio::time::Instant::now() + tokio::time::Duration::from_secs(expires_in_secs);
-        let mut effective_interval = interval_secs;
-        loop {
-            if tokio::time::Instant::now() >= deadline {
-                return Err(anyhow!("timed out waiting for user authorization"));
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(effective_interval)).await;
-
-            let response = self
-                .client
-                .post(format!("{}/api/oauth/token", self.auth_host))
-                .headers(self.kimi_headers())
-                .form(&PollReq {
-                    client_id: KIMI_CODE_CLIENT_ID,
-                    device_code,
-                    grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-                })
-                .send()
-                .await
-                .context("failed to poll for token")?;
-
-            // RFC 8628 returns pending/slow_down as 4xx with a JSON error payload,
-            // so don't `error_for_status()` before parsing — but if the body is
-            // unparseable AND the status is non-2xx, surface the HTTP status.
-            let status = response.status();
-            let bytes = response
-                .bytes()
-                .await
-                .context("failed to read token poll response")?;
-            let resp: PollResp = match serde_json::from_slice(&bytes) {
-                Ok(p) => p,
-                Err(e) => {
-                    if !status.is_success() {
-                        return Err(anyhow!(
-                            "token poll HTTP {}: {}",
-                            status,
-                            String::from_utf8_lossy(&bytes)
-                        ));
-                    }
-                    return Err(
-                        anyhow::Error::new(e).context("failed to parse token poll response")
-                    );
-                }
-            };
-
-            if let Some(access_token) = resp.access_token {
-                // RFC 6749: refresh_token is optional in token responses.
-                // Kimi currently returns one, but be defensive for servers/
-                // versions that do not.
-                let refresh_token = resp.refresh_token.unwrap_or_default();
-                let expires_in = resp.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS);
-                return Ok(KimiToken {
-                    access_token,
-                    refresh_token,
-                    expires_at: Utc::now() + Duration::seconds(expires_in),
-                });
-            }
-
-            match resp.error.as_deref() {
-                Some("authorization_pending") => {
-                    tracing::debug!("authorization pending, continuing to poll");
-                }
-                // RFC 8628: client MUST increase polling interval by 5 seconds
-                Some("slow_down") => {
-                    tracing::debug!("slow_down received, increasing poll interval");
-                    effective_interval += SLOW_DOWN_BACKOFF_SECS;
-                }
-                Some(err) => {
-                    return Err(anyhow!("authorization failed: {}", err));
-                }
-                None => {
-                    tracing::debug!("unexpected poll response: no token and no error");
-                }
-            }
-        }
+        let device_auth_url = format!("{}/api/oauth/device_authorization", self.auth_host);
+        let token_url = format!("{}/api/oauth/token", self.auth_host);
+        let cfg = DeviceFlowConfig {
+            device_auth_url: Some(&device_auth_url),
+            token_url: &token_url,
+            client_id: KIMI_CODE_CLIENT_ID,
+            scopes: None,
+            extra_headers: self.kimi_headers(),
+            encoding: RequestEncoding::Form,
+        };
+        let tokens = run_device_flow(&self.client, &cfg).await?;
+        Ok(tokens_to_kimi(tokens, None))
     }
 
     async fn do_refresh_token(&self, refresh_token: &str) -> Result<KimiToken> {
-        #[derive(Serialize)]
-        struct RefreshReq<'a> {
-            client_id: &'a str,
-            grant_type: &'static str,
-            refresh_token: &'a str,
-        }
-        #[derive(Deserialize)]
-        struct RefreshResp {
-            access_token: String,
-            refresh_token: Option<String>,
-            expires_in: Option<i64>,
-        }
-
-        let resp: RefreshResp = self
-            .client
-            .post(format!("{}/api/oauth/token", self.auth_host))
-            .headers(self.kimi_headers())
-            .form(&RefreshReq {
-                client_id: KIMI_CODE_CLIENT_ID,
-                grant_type: "refresh_token",
-                refresh_token,
-            })
-            .send()
-            .await
-            .context("failed to refresh token")?
-            .error_for_status()
-            .context("token refresh failed")?
-            .json()
-            .await
-            .context("failed to parse token refresh response")?;
-
+        let token_url = format!("{}/api/oauth/token", self.auth_host);
+        let cfg = DeviceFlowConfig {
+            device_auth_url: None,
+            token_url: &token_url,
+            client_id: KIMI_CODE_CLIENT_ID,
+            scopes: None,
+            extra_headers: self.kimi_headers(),
+            encoding: RequestEncoding::Form,
+        };
+        let tokens = refresh_device_flow_token(&self.client, &cfg, refresh_token).await?;
         // RFC 6749 §6: the server MAY omit `refresh_token` from a refresh
         // response, in which case the client should keep reusing the prior one.
-        let next_refresh_token = resp
-            .refresh_token
-            .unwrap_or_else(|| refresh_token.to_string());
-        let expires_in = resp.expires_in.unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS);
-        Ok(KimiToken {
-            access_token: resp.access_token,
-            refresh_token: next_refresh_token,
-            expires_at: Utc::now() + Duration::seconds(expires_in),
-        })
+        Ok(tokens_to_kimi(tokens, Some(refresh_token)))
     }
 
     // ── HTTP ─────────────────────────────────────────────────────────────────
@@ -808,55 +652,10 @@ mod tests {
         assert_eq!(usable.refresh_token, "new_refresh");
     }
 
-    #[tokio::test]
-    async fn poll_for_token_handles_authorization_pending_then_success() {
-        let server = MockServer::start().await;
-
-        // First call: authorization_pending (returned as 400 per RFC 8628).
-        Mock::given(method("POST"))
-            .and(path("/api/oauth/token"))
-            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-                "error": "authorization_pending",
-            })))
-            .up_to_n_times(1)
-            .mount(&server)
-            .await;
-
-        // Subsequent call: token issued.
-        Mock::given(method("POST"))
-            .and(path("/api/oauth/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "the_token",
-                "refresh_token": "the_refresh",
-                "expires_in": 1800,
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = test_provider(&server.uri(), "abc");
-        let token = provider.poll_for_token("device-abc", 0, 30).await.unwrap();
-        assert_eq!(token.access_token, "the_token");
-        assert_eq!(token.refresh_token, "the_refresh");
-    }
-
-    #[tokio::test]
-    async fn poll_for_token_accepts_response_without_refresh_token() {
-        // RFC 6749: refresh_token is optional in token responses.
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/oauth/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "access_only",
-                "expires_in": 1800,
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = test_provider(&server.uri(), "abc");
-        let token = provider.poll_for_token("device-abc", 0, 5).await.unwrap();
-        assert_eq!(token.access_token, "access_only");
-        assert_eq!(token.refresh_token, "");
-    }
+    // NOTE: RFC 8628 polling behavior (authorization_pending, slow_down, missing
+    // refresh_token, HTTP errors during polling) is covered by
+    // `providers::oauth_device_flow` tests. Tests here focus on Kimi-specific
+    // integration — token cache, refresh-fallback when server omits refresh_token.
 
     #[tokio::test]
     async fn use_or_refresh_preserves_refresh_token_when_server_omits_it() {
@@ -883,29 +682,6 @@ mod tests {
         let usable = provider.use_or_refresh(near_stale).await.unwrap();
         assert_eq!(usable.access_token, "new_access");
         assert_eq!(usable.refresh_token, "original_refresh");
-    }
-
-    #[tokio::test]
-    async fn poll_for_token_surfaces_http_error_on_unparseable_body() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/oauth/token"))
-            .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
-            .mount(&server)
-            .await;
-
-        let provider = test_provider(&server.uri(), "abc");
-        let err = provider
-            .poll_for_token("device-abc", 0, 5)
-            .await
-            .unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("502"), "expected status in error: {}", msg);
-        assert!(
-            msg.contains("Bad Gateway"),
-            "expected body in error: {}",
-            msg
-        );
     }
 
     // ── fetch_supported_models ────────────────────────────────────────────────

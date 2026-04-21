@@ -125,6 +125,17 @@ pub(crate) static PROVIDER_CONFIG_DEFS: &[ProviderConfigDef] = &[
         keys: &[],
         oauth_cache_path: None,
     },
+    // Dictation providers (voice input)
+    ProviderConfigDef {
+        id: "dictation_groq",
+        keys: &[key("GROQ_API_KEY", true, true)],
+        oauth_cache_path: None,
+    },
+    ProviderConfigDef {
+        id: "dictation_elevenlabs",
+        keys: &[key("ELEVENLABS_API_KEY", true, true)],
+        oauth_cache_path: None,
+    },
 ];
 
 pub(crate) fn find_config_key(key_name: &str) -> Option<&'static ConfigKey> {

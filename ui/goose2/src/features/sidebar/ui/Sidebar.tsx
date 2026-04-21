@@ -11,7 +11,10 @@ import { cn } from "@/shared/lib/cn";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
-import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
+import {
+  getVisibleSessions,
+  useChatSessionStore,
+} from "@/features/chat/stores/chatSessionStore";
 import { isSessionRunning } from "@/features/chat/lib/sessionActivity";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
@@ -92,8 +95,12 @@ export function Sidebar({
 
   const chatStore = useChatStore();
   const { sessions } = useChatSessionStore();
-  const activeSessions = sessions.filter(
-    (session) => !session.draft && !session.archivedAt,
+  const visibleSessions = getVisibleSessions(
+    sessions,
+    chatStore.messagesBySession,
+  );
+  const activeSessions = visibleSessions.filter(
+    (session) => !session.archivedAt,
   );
 
   useEffect(() => {
@@ -137,8 +144,8 @@ export function Sidebar({
     };
     const byProject: Record<string, SessionItem[]> = {};
     const standalone: SessionItem[] = [];
-    for (const session of sessions) {
-      if (session.draft || session.archivedAt) continue;
+    for (const session of visibleSessions) {
+      if (session.archivedAt) continue;
       const runtime = chatStore.getSessionRuntime(session.id);
       const item: SessionItem = {
         id: session.id,
@@ -191,7 +198,7 @@ export function Sidebar({
 
   useEffect(() => {
     if (!activeSessionId) return;
-    const activeSession = sessions.find((s) => s.id === activeSessionId);
+    const activeSession = visibleSessions.find((s) => s.id === activeSessionId);
     const projectId = activeSession?.projectId;
     if (projectId) {
       setExpandedProjects((prev) => {
@@ -199,7 +206,7 @@ export function Sidebar({
         return { ...prev, [projectId]: true };
       });
     }
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId, visibleSessions]);
 
   useEffect(() => {
     try {
@@ -254,17 +261,13 @@ export function Sidebar({
     updateActiveRect,
   } = useSidebarHighlight(navRef);
 
-  const activeDraft = activeSessionId
-    ? sessions.find((s) => s.id === activeSessionId && s.draft)
-    : undefined;
-  const activeProjectId = activeDraft?.projectId ?? null;
+  const activeProjectId =
+    activeSessionId && activeView === "chat"
+      ? (sessions.find((s) => s.id === activeSessionId)?.projectId ?? null)
+      : null;
 
   useEffect(() => {
-    if (activeDraft) {
-      if (!activeProjectId) updateActiveRect(null);
-      return;
-    }
-    if (activeSessionId) return;
+    if (activeSessionId && activeView === "chat") return;
     if (activeView === "home") {
       updateActiveRect(homeRef.current);
     } else if (activeView && navItemRefs.current[activeView]) {
@@ -272,13 +275,7 @@ export function Sidebar({
     } else {
       updateActiveRect(null);
     }
-  }, [
-    activeSessionId,
-    activeDraft,
-    activeProjectId,
-    activeView,
-    updateActiveRect,
-  ]);
+  }, [activeSessionId, activeView, updateActiveRect]);
 
   const activeSessionRefCallback = useCallback(
     (el: HTMLElement | null) => {

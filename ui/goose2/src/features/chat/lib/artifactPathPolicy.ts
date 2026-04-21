@@ -17,7 +17,6 @@ export {
   evaluatePathScope,
   extractToolCallCandidates,
   inferHomeDirFromRoots,
-  isExternalHref,
   isWriteOrientedTool,
   normalizePath,
   resolveMarkdownLocalHref,

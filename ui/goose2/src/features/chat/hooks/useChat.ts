@@ -14,8 +14,6 @@ import {
   acpSendMessage,
   acpCancelSession,
   acpLoadSession,
-  acpPrepareSession,
-  acpSetModel,
 } from "@/shared/api/acp";
 import { getGooseSessionId } from "@/shared/api/acpSessionTracker";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
@@ -109,7 +107,10 @@ export function useChat(
   providerOverride?: string,
   systemPromptOverride?: string,
   personaInfo?: { id: string; name: string },
-  getWorkingDir?: () => Promise<string | undefined>,
+  options?: {
+    onMessageAccepted?: (sessionId: string) => void;
+    ensurePrepared?: () => Promise<void>;
+  },
 ) {
   const store = useChatStore();
   const abortRef = useRef<AbortController | null>(null);
@@ -215,15 +216,8 @@ export function useChat(
       store.setChatState(sessionId, "thinking");
       store.setError(sessionId, null);
 
-      // Promote draft to real backend session before first send
       const sessionStore = useChatSessionStore.getState();
       const session = sessionStore.getSession(sessionId);
-      const wasDraft = !!session?.draft;
-      const selectedModelId = session?.modelId;
-
-      if (wasDraft) {
-        sessionStore.promoteDraft(sessionId);
-      }
 
       // Immediately set the session/sidebar title from the user's message when
       // the session still has the default placeholder.  This gives instant
@@ -231,19 +225,17 @@ export function useChat(
       // A better backend-generated title will overwrite this if it arrives
       // via the acp:session_info event.
       if (session && isDefaultChatTitle(session.title)) {
-        sessionStore.updateSession(
-          sessionId,
-          {
-            title: getSessionTitleFromDraft(text, attachments),
-            updatedAt: new Date().toISOString(),
-          },
-          { localOnly: wasDraft },
-        );
+        sessionStore.updateSession(sessionId, {
+          title: getSessionTitleFromDraft(text, attachments),
+          updatedAt: new Date().toISOString(),
+        });
       } else {
         sessionStore.updateSession(sessionId, {
           updatedAt: new Date().toISOString(),
         });
       }
+
+      options?.onMessageAccepted?.(sessionId);
 
       store.clearDraft(sessionId);
 
@@ -252,26 +244,7 @@ export function useChat(
       streamingPersonaIdRef.current = effectivePersonaInfo?.id ?? null;
 
       try {
-        if (wasDraft || selectedModelId) {
-          const workingDir = await getWorkingDir?.();
-          if (!workingDir) {
-            throw new Error("Missing session working directory");
-          }
-          const tPrep = performance.now();
-          await acpPrepareSession(sessionId, providerId, workingDir, {
-            personaId: effectivePersonaInfo?.id,
-          });
-          perfLog(
-            `[perf:send] ${sid} acpPrepareSession in ${(performance.now() - tPrep).toFixed(1)}ms (wasDraft=${wasDraft})`,
-          );
-          if (selectedModelId) {
-            const tModel = performance.now();
-            await acpSetModel(sessionId, selectedModelId);
-            perfLog(
-              `[perf:send] ${sid} acpSetModel(${selectedModelId}) in ${(performance.now() - tModel).toFixed(1)}ms`,
-            );
-          }
-        }
+        await options?.ensurePrepared?.();
 
         store.setChatState(sessionId, "streaming");
         // When images are present with no text, pass a single space so the ACP
@@ -298,18 +271,6 @@ export function useChat(
 
         store.setChatState(sessionId, "idle");
         store.setStreamingMessageId(sessionId, null);
-
-        if (wasDraft) {
-          const promoted = sessionStore.getSession(sessionId);
-          if (promoted) {
-            sessionStore.updateSession(sessionId, {
-              title: promoted.title,
-              providerId: promoted.providerId,
-              personaId: promoted.personaId,
-              projectId: promoted.projectId,
-            });
-          }
-        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           store.setChatState(sessionId, "idle");
@@ -351,7 +312,7 @@ export function useChat(
       providerOverride,
       systemPromptOverride,
       resolvePersonaInfo,
-      getWorkingDir,
+      options,
     ],
   );
 
@@ -415,6 +376,12 @@ export function useChat(
     store.setPendingAssistantProvider(sessionId, null);
   }, [sessionId, store]);
 
+  const getWorkingDir = useCallback(
+    () =>
+      useChatSessionStore.getState().activeWorkspaceBySession[sessionId]?.path,
+    [sessionId],
+  );
+
   const compactConversation = useCallback(async () => {
     const currentChatState = useChatStore
       .getState()
@@ -457,7 +424,7 @@ export function useChat(
       // layer does not currently forward history replacement events. Drop those
       // transient chunks and refresh the session from replay instead.
       clearReplayBuffer(sessionId);
-      const workingDir = await getWorkingDir?.();
+      const workingDir = getWorkingDir();
       await acpLoadSession(sessionId, gooseSessionId, workingDir);
 
       store.setSessionLoading(sessionId, false);

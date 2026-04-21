@@ -7,6 +7,7 @@ use super::formats::openai_responses::{
     create_responses_request, get_responses_usage, responses_api_to_message,
     responses_api_to_streaming_message, ResponsesApiResponse,
 };
+use super::inventory::{config_secret_value, InventoryIdentityInput};
 use super::openai_compatible::{
     handle_response_openai_compat, handle_status_openai_compat, stream_openai_compat,
 };
@@ -187,12 +188,7 @@ impl OpenAiProvider {
         let base_path = if let Some(ref explicit_path) = config.base_path {
             explicit_path.trim_start_matches('/').to_string()
         } else {
-            let url_path = url.path().trim_start_matches('/').to_string();
-            if url_path.is_empty() || url_path == "v1" || url_path == "v1/" {
-                "v1/chat/completions".to_string()
-            } else {
-                url_path
-            }
+            Self::derive_base_path(url.path())
         };
 
         let timeout_secs = config.timeout_seconds.unwrap_or(600);
@@ -239,6 +235,19 @@ impl OpenAiProvider {
             custom_models,
             skip_canonical_filtering: config.skip_canonical_filtering,
         })
+    }
+
+    // Derive a base path from the raw URL path
+    fn derive_base_path(url_path: &str) -> String {
+        let stripped = url_path.trim_start_matches('/');
+        let normalized = stripped.trim_end_matches('/');
+        if normalized.is_empty() {
+            "v1/chat/completions".to_string()
+        } else if normalized == "v1" || normalized.ends_with("/v1") {
+            format!("{}/chat/completions", normalized)
+        } else {
+            stripped.to_string()
+        }
     }
 
     fn normalize_base_path(base_path: &str) -> String {
@@ -416,6 +425,58 @@ impl ProviderDef for OpenAiProvider {
         _extensions: Vec<crate::config::ExtensionConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
+    }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_configured() -> bool {
+        let config = crate::config::Config::global();
+        // If the host is explicitly set to something non-default, trust the user's
+        // custom setup (e.g. a local server that doesn't require an API key).
+        if let Ok(host) = config.get_param::<String>("OPENAI_HOST") {
+            if host != "https://api.openai.com" {
+                return true;
+            }
+        }
+        // Standard OpenAI endpoint requires an API key.
+        config
+            .get_secret::<serde_json::Value>("OPENAI_API_KEY")
+            .is_ok()
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        let config = crate::config::Config::global();
+        let mut identity =
+            InventoryIdentityInput::new(OPEN_AI_PROVIDER_NAME, OPEN_AI_PROVIDER_NAME)
+                .with_public(
+                    "host",
+                    config
+                        .get_param::<String>("OPENAI_HOST")
+                        .unwrap_or_else(|_| "https://api.openai.com".to_string()),
+                )
+                .with_public(
+                    "base_path",
+                    config
+                        .get_param::<String>("OPENAI_BASE_PATH")
+                        .unwrap_or_else(|_| OPEN_AI_DEFAULT_BASE_PATH.to_string()),
+                );
+
+        if let Ok(organization) = config.get_param::<String>("OPENAI_ORGANIZATION") {
+            identity = identity.with_public("organization", organization);
+        }
+        if let Ok(project) = config.get_param::<String>("OPENAI_PROJECT") {
+            identity = identity.with_public("project", project);
+        }
+        if let Some(api_key) = config_secret_value(config, "OPENAI_API_KEY") {
+            identity = identity.with_secret("api_key", api_key);
+        }
+        if let Some(custom_headers) = config_secret_value(config, "OPENAI_CUSTOM_HEADERS") {
+            identity = identity.with_secret("custom_headers", custom_headers);
+        }
+
+        Ok(identity)
     }
 }
 
@@ -848,5 +909,55 @@ mod tests {
     fn unknown_absolute_path_falls_back_to_absolute_models_path() {
         let models_path = OpenAiProvider::map_base_path("/custom/path", "models", "v1/models");
         assert_eq!(models_path, "/v1/models");
+    }
+
+    #[test]
+    fn derive_base_path_empty_path_gives_default_endpoint() {
+        assert_eq!(OpenAiProvider::derive_base_path("/"), "v1/chat/completions");
+    }
+
+    #[test]
+    fn derive_base_path_bare_v1_gives_chat_completions() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/v1"),
+            "v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_v1_with_trailing_slash() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/v1/"),
+            "v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_prefixed_v1_appends_chat_completions() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/zen/go/v1"),
+            "zen/go/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_prefixed_v1_with_trailing_slash() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/zen/go/v1/"),
+            "zen/go/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_full_chat_completions_url_unchanged() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/openai/v1/chat/completions"),
+            "openai/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_non_v1_prefix_unchanged() {
+        assert_eq!(OpenAiProvider::derive_base_path("/anthropic"), "anthropic");
     }
 }

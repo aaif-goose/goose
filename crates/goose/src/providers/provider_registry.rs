@@ -1,4 +1,5 @@
 use super::base::{ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
+use super::inventory::InventoryIdentityInput;
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use crate::model::ModelConfig;
 use anyhow::Result;
@@ -14,17 +15,41 @@ pub type ProviderConstructor = Arc<
 
 pub type ProviderCleanup = Arc<dyn Fn() -> BoxFuture<'static, Result<()>> + Send + Sync>;
 
+pub type ProviderInventoryIdentityResolver =
+    Arc<dyn Fn() -> Result<InventoryIdentityInput> + Send + Sync>;
+
+pub type ProviderInventoryConfiguredResolver = Arc<dyn Fn() -> bool + Send + Sync>;
+
 #[derive(Clone)]
 pub struct ProviderEntry {
     metadata: ProviderMetadata,
     pub(crate) constructor: ProviderConstructor,
+    pub(crate) inventory_identity: ProviderInventoryIdentityResolver,
+    pub(crate) inventory_configured: ProviderInventoryConfiguredResolver,
     pub(crate) cleanup: Option<ProviderCleanup>,
     provider_type: ProviderType,
+    supports_inventory_refresh: bool,
 }
 
 impl ProviderEntry {
     pub fn metadata(&self) -> &ProviderMetadata {
         &self.metadata
+    }
+
+    pub fn provider_type(&self) -> ProviderType {
+        self.provider_type
+    }
+
+    pub fn supports_inventory_refresh(&self) -> bool {
+        self.supports_inventory_refresh
+    }
+
+    pub fn inventory_identity(&self) -> Result<InventoryIdentityInput> {
+        (self.inventory_identity)()
+    }
+
+    pub fn inventory_configured(&self) -> bool {
+        (self.inventory_configured)()
     }
 
     fn normalize_model_config(&self, mut model: ModelConfig) -> ModelConfig {
@@ -92,24 +117,30 @@ impl ProviderRegistry {
                         Ok(Arc::new(provider) as Arc<dyn Provider>)
                     })
                 }),
+                inventory_identity: Arc::new(F::inventory_identity),
+                inventory_configured: Arc::new(F::inventory_configured),
                 cleanup: None,
                 provider_type: if preferred {
                     ProviderType::Preferred
                 } else {
                     ProviderType::Builtin
                 },
+                supports_inventory_refresh: F::supports_inventory_refresh(),
             },
         );
     }
 
-    pub fn register_with_name<P, F>(
+    pub fn register_with_name<P, F, G>(
         &mut self,
         config: &DeclarativeProviderConfig,
         provider_type: ProviderType,
+        supports_inventory_refresh: bool,
         constructor: F,
+        inventory_identity: G,
     ) where
         P: ProviderDef + 'static,
         F: Fn(ModelConfig) -> Result<P::Provider> + Send + Sync + 'static,
+        G: Fn() -> Result<InventoryIdentityInput> + Send + Sync + 'static,
     {
         let base_metadata = P::metadata();
         let description = config
@@ -174,7 +205,9 @@ impl ProviderRegistry {
             model_doc_link: base_metadata.model_doc_link,
             config_keys,
             setup_steps: vec![],
+            model_selection_hint: None,
         };
+        let inventory_config_keys = custom_metadata.config_keys.clone();
 
         self.entries.insert(
             config.name.clone(),
@@ -187,8 +220,16 @@ impl ProviderRegistry {
                         Ok(Arc::new(provider) as Arc<dyn Provider>)
                     })
                 }),
+                inventory_identity: Arc::new(inventory_identity),
+                inventory_configured: Arc::new(move || {
+                    super::inventory::default_inventory_configured(
+                        &inventory_config_keys,
+                        crate::config::Config::global(),
+                    )
+                }),
                 cleanup: None,
                 provider_type,
+                supports_inventory_refresh,
             },
         );
     }

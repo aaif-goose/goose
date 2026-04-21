@@ -5,31 +5,19 @@ import { AgentsView } from "@/features/agents/ui/AgentsView";
 import { ProjectsView } from "@/features/projects/ui/ProjectsView";
 import { SessionHistoryView } from "@/features/sessions/ui/SessionHistoryView";
 import type { ChatSession } from "@/features/chat/stores/chatSessionStore";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import type { AppView } from "../AppShell";
 
 interface AppShellContentProps {
   activeView: AppView;
   activeSession?: ChatSession;
-  activeSessionPersonaId?: string;
-  homeSelectedProvider?: string;
-  homeSelectedPersonaId?: string;
-  pendingInitialMessage?: string;
-  pendingInitialAttachments?: ChatAttachmentDraft[];
+  homeSessionId: string | null;
   onArchiveChat: (sessionId: string) => Promise<void>;
   onCreateProject: (options?: {
     initialWorkingDir?: string | null;
     onCreated?: (projectId: string) => void;
   }) => void;
-  onHomeStartChat: (
-    initialMessage?: string,
-    providerId?: string,
-    personaId?: string,
-    projectId?: string | null,
-    attachments?: ChatAttachmentDraft[],
-  ) => void;
-  onInitialMessageConsumed: () => void;
+  onActivateHomeSession: (sessionId: string) => void;
   onRenameChat: (sessionId: string, nextTitle: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectSearchResult: (
@@ -43,15 +31,10 @@ interface AppShellContentProps {
 export function AppShellContent({
   activeView,
   activeSession,
-  activeSessionPersonaId,
-  homeSelectedProvider,
-  homeSelectedPersonaId,
-  pendingInitialMessage,
-  pendingInitialAttachments,
+  homeSessionId,
   onArchiveChat,
   onCreateProject,
-  onHomeStartChat,
-  onInitialMessageConsumed,
+  onActivateHomeSession,
   onRenameChat,
   onSelectSession,
   onSelectSearchResult,
@@ -74,21 +57,24 @@ export function AppShellContent({
         />
       );
     case "chat":
-    case "home":
       return activeSession ? (
         <ChatView
           key={activeSession.id}
           sessionId={activeSession.id}
-          initialProvider={homeSelectedProvider}
-          initialPersonaId={activeSessionPersonaId ?? homeSelectedPersonaId}
-          initialMessage={pendingInitialMessage}
-          initialAttachments={pendingInitialAttachments}
           onCreateProject={onCreateProject}
-          onInitialMessageConsumed={onInitialMessageConsumed}
         />
       ) : (
         <HomeScreen
-          onStartChat={onHomeStartChat}
+          sessionId={homeSessionId}
+          onActivateSession={onActivateHomeSession}
+          onCreateProject={onCreateProject}
+        />
+      );
+    case "home":
+      return (
+        <HomeScreen
+          sessionId={homeSessionId}
+          onActivateSession={onActivateHomeSession}
           onCreateProject={onCreateProject}
         />
       );

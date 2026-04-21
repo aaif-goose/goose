@@ -124,7 +124,49 @@
       "spanish": "Spanish",
       "system": "System default ({{language}})"
     },
-    "title": "General"
+    "title": "General",
+    "voiceInput": {
+      "label": "Voice Input",
+      "description": "Configure voice dictation for hands-free input.",
+      "providerLabel": "Transcription Provider",
+      "disabled": "Disabled",
+      "notConfiguredSuffix": "(not configured)",
+      "placeholder": "Select a provider",
+      "modelLabel": "Model",
+      "apiKeyLabel": "API Key",
+      "apiKeyDescription": "Enter your API key for this provider.",
+      "apiKeyPlaceholder": "sk-...",
+      "apiKeyConfigured": "API key configured",
+      "addApiKey": "Add API key",
+      "updateApiKey": "Update API key",
+      "removeApiKey": "Remove API key",
+      "localModelLabel": "Local Whisper Model",
+      "localModelDescription": "Download a Whisper model to run transcription locally. Selecting a model sets it as your active local transcription model.",
+      "noLocalModels": "No local Whisper models available.",
+      "download": "Download",
+      "selectModel": "Select",
+      "selectedModel": "Selected",
+      "deleteModel": "Delete",
+      "microphoneLabel": "Microphone",
+      "microphoneDescription": "Choose which microphone to use for voice input.",
+      "microphoneUnavailable": "Microphone access is not available in this environment.",
+      "microphoneAccessPrompt": "Click \"Grant access\" to allow microphone use.",
+      "grantMicrophone": "Grant access",
+      "systemMicrophone": "System default",
+      "unknownMicrophone": "Unknown microphone",
+      "autoSubmitLabel": "Auto-submit Phrases",
+      "autoSubmitDescription": "Comma-separated words that trigger automatic send (e.g. \"submit\").",
+      "providers": {
+        "openai": "OpenAI Whisper",
+        "groq": "Groq",
+        "elevenlabs": "ElevenLabs",
+        "local": "Local Whisper"
+      },
+      "downloadProgress": "Downloading... {{percent}}%",
+      "loadError": "Failed to load voice settings.",
+      "saveError": "Failed to save.",
+      "deleteError": "Failed to delete."
+    }
   },
   "nav": {
     "about": "About",
@@ -134,7 +176,8 @@
     "general": "General",
     "projects": "Projects",
     "extensions": "Extensions",
-    "providers": "Providers"
+    "providers": "Providers",
+    "voice": "Voice"
   },
   "projects": {
     "description": "Manage your projects.",

@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   IconCheck,
   IconChevronDown,
-  IconChevronRight,
+  IconChevronLeft,
+  IconSearch,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import type { AcpProvider } from "@/shared/api/acp";
+import { getProviderInventory } from "@/features/providers/api/inventory";
+import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { ScrollArea } from "@/shared/ui/scroll-area";
+import { Spinner } from "@/shared/ui/spinner";
 import {
   formatProviderLabel,
   getProviderIcon,
@@ -23,66 +27,42 @@ interface AgentModelPickerProps {
   currentModelId?: string | null;
   currentModelName?: string | null;
   availableModels: ModelOption[];
+  modelsLoading?: boolean;
+  modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
   loading?: boolean;
   isCompact?: boolean;
 }
 
-interface ModelGroup {
-  provider: string;
-  models: ModelOption[];
-  hasSelectedModel: boolean;
-}
-
-const MODEL_PROVIDER_MATCHERS: Array<[string, RegExp]> = [
-  ["Anthropic", /claude|anthropic/i],
-  ["OpenAI", /(^|[\s-])(gpt|o1|o3|o4)([\s-]|$)|openai/i],
-  ["Google", /gemini|google/i],
-  ["Mistral", /mistral/i],
-  ["Meta", /llama|meta/i],
-  ["DeepSeek", /deepseek/i],
-  ["Qwen", /qwen/i],
-  ["Cohere", /cohere|command/i],
-];
-
 function getModelDisplayName(model: ModelOption) {
   return model.displayName ?? model.name;
 }
 
-function inferModelProvider(model: ModelOption) {
-  if (model.provider) {
-    return model.provider;
+function getGooseModelProviderLabel(model: ModelOption) {
+  if (model.providerName) {
+    return model.providerName;
   }
 
-  const candidate = `${model.id} ${model.name}`;
-  for (const [provider, pattern] of MODEL_PROVIDER_MATCHERS) {
-    if (pattern.test(candidate)) {
-      return provider;
-    }
+  if (model.providerId) {
+    return formatProviderLabel(model.providerId);
   }
 
-  return "Other";
+  return null;
 }
 
-function groupModels(models: ModelOption[], currentModelId: string | null) {
-  const grouped = new Map<string, ModelOption[]>();
+function sortModels(models: ModelOption[], currentModelId: string | null) {
+  return [...models].sort((left, right) => {
+    if (left.id === currentModelId) return -1;
+    if (right.id === currentModelId) return 1;
 
-  for (const model of models) {
-    const provider = inferModelProvider(model);
-    const existing = grouped.get(provider) ?? [];
-    existing.push(model);
-    grouped.set(provider, existing);
-  }
+    const leftProvider = getGooseModelProviderLabel(left) ?? "";
+    const rightProvider = getGooseModelProviderLabel(right) ?? "";
+    if (leftProvider !== rightProvider) {
+      return leftProvider.localeCompare(rightProvider);
+    }
 
-  const groups = Array.from(grouped.entries())
-    .map(([provider, groupedModels]) => ({
-      provider,
-      models: groupedModels,
-      hasSelectedModel: groupedModels.some((m) => m.id === currentModelId),
-    }))
-    .sort((left, right) => left.provider.localeCompare(right.provider));
-
-  return groups;
+    return getModelDisplayName(left).localeCompare(getModelDisplayName(right));
+  });
 }
 
 function PickerItem({
@@ -116,6 +96,219 @@ function PickerItem({
   );
 }
 
+// ── Model list views ────────────────────────────────────────────────
+
+type ModelView = "recommended" | "all";
+
+function RecommendedModelList({
+  models,
+  currentModelId,
+  selectedAgentId,
+  onModelSelect,
+  onShowAll,
+  t,
+}: {
+  models: ModelOption[];
+  currentModelId: string | null;
+  selectedAgentId: string;
+  onModelSelect: (id: string) => void;
+  onShowAll: () => void;
+  t: (key: string) => string;
+}) {
+  const recommended = useMemo(() => {
+    const rec = models.filter((m) => m.recommended);
+    // If the current model isn't in the recommended list, prepend it
+    // so the user can always see what's selected.
+    if (
+      currentModelId &&
+      rec.length > 0 &&
+      !rec.some((m) => m.id === currentModelId)
+    ) {
+      const current = models.find((m) => m.id === currentModelId);
+      if (current) {
+        return [current, ...rec];
+      }
+    }
+    // Fall back to full list if no recommendations exist (e.g. ACP agents).
+    return rec.length > 0 ? rec : models;
+  }, [models, currentModelId]);
+
+  const sorted = useMemo(
+    () => sortModels(recommended, currentModelId),
+    [recommended, currentModelId],
+  );
+
+  const hasMore = models.length > recommended.length;
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="shrink-0 px-2 py-1.5 text-sm font-semibold">
+        {t("toolbar.model")}
+      </div>
+      <ScrollArea className="min-h-0 min-w-0 flex-1">
+        <div className="space-y-0.5 p-1">
+          {sorted.map((model) => {
+            const providerLabel = getGooseModelProviderLabel(model);
+            return (
+              <PickerItem
+                key={`${model.providerId ?? "model"}:${model.id}`}
+                onClick={() => onModelSelect(model.id)}
+                selected={model.id === currentModelId}
+                className="justify-between"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                  {selectedAgentId === "goose" && model.providerId ? (
+                    <span
+                      className="shrink-0 text-muted-foreground"
+                      title={providerLabel ?? undefined}
+                    >
+                      {getProviderIcon(model.providerId, "size-3.5")}
+                    </span>
+                  ) : null}
+                  <div className="min-w-0 flex-1 truncate">
+                    {getModelDisplayName(model)}
+                  </div>
+                </div>
+                {model.id === currentModelId ? (
+                  <IconCheck className="size-4 shrink-0 text-muted-foreground" />
+                ) : null}
+              </PickerItem>
+            );
+          })}
+        </div>
+      </ScrollArea>
+      {hasMore ? (
+        <div className="shrink-0 border-t px-1 py-1">
+          <button
+            type="button"
+            onClick={onShowAll}
+            className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <IconSearch className="size-3.5" />
+            <span>{t("toolbar.showAllModels")}</span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AllModelsList({
+  models,
+  currentModelId,
+  selectedAgentId,
+  onModelSelect,
+  onBack,
+  t,
+}: {
+  models: ModelOption[];
+  currentModelId: string | null;
+  selectedAgentId: string;
+  onModelSelect: (id: string) => void;
+  onBack: () => void;
+  t: (key: string) => string;
+}) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Auto-focus search on mount.
+    inputRef.current?.focus();
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) {
+      return sortModels(models, currentModelId);
+    }
+    const q = query.toLowerCase();
+    const matches = models.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.id.toLowerCase().includes(q) ||
+        m.displayName?.toLowerCase().includes(q) ||
+        m.providerName?.toLowerCase().includes(q) ||
+        m.providerId?.toLowerCase().includes(q),
+    );
+    return sortModels(matches, currentModelId);
+  }, [models, query, currentModelId]);
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-1 px-1 py-1">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex shrink-0 items-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label={t("toolbar.model")}
+        >
+          <IconChevronLeft className="size-4" />
+        </button>
+        <div className="relative min-w-0 flex-1">
+          <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("toolbar.searchModels")}
+            className="h-7 w-full rounded-sm border bg-transparent pl-7 pr-2 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+          />
+        </div>
+      </div>
+      {filtered.length > 0 ? (
+        <ScrollArea className="min-h-0 min-w-0 flex-1">
+          <div className="space-y-0.5 p-1">
+            {filtered.map((model) => {
+              const providerLabel = getGooseModelProviderLabel(model);
+              const displayName = getModelDisplayName(model);
+              // Show the raw model_id as secondary text when it differs from name
+              const showModelId =
+                model.id !== model.name && model.id !== displayName;
+
+              return (
+                <PickerItem
+                  key={`${model.providerId ?? "model"}:${model.id}`}
+                  onClick={() => onModelSelect(model.id)}
+                  selected={model.id === currentModelId}
+                  className="justify-between"
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                    {selectedAgentId === "goose" && model.providerId ? (
+                      <span
+                        className="shrink-0 text-muted-foreground"
+                        title={providerLabel ?? undefined}
+                      >
+                        {getProviderIcon(model.providerId, "size-3.5")}
+                      </span>
+                    ) : null}
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <div className="truncate">{displayName}</div>
+                      {showModelId ? (
+                        <div className="truncate text-xs text-muted-foreground">
+                          {model.id}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {model.id === currentModelId ? (
+                    <IconCheck className="size-4 shrink-0 text-muted-foreground" />
+                  ) : null}
+                </PickerItem>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      ) : (
+        <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+          {t("toolbar.noSearchResults")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ──────────────────────────────────────────────────
+
 export function AgentModelPicker({
   agents,
   selectedAgentId,
@@ -123,54 +316,31 @@ export function AgentModelPicker({
   currentModelId = null,
   currentModelName = null,
   availableModels,
+  modelsLoading = false,
+  modelStatusMessage = null,
   onModelChange,
   loading = false,
   isCompact = false,
 }: AgentModelPickerProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [modelView, setModelView] = useState<ModelView>("recommended");
+  const mergeInventoryEntries = useProviderInventoryStore(
+    (s) => s.mergeEntries,
+  );
 
   const selectedAgentLabel =
     agents.find((agent) => agent.id === selectedAgentId)?.label ??
     formatProviderLabel(selectedAgentId);
-  const groupedModels = useMemo<ModelGroup[]>(
-    () => groupModels(availableModels, currentModelId),
-    [availableModels, currentModelId],
-  );
-  const hasModelInfo = currentModelName !== null || availableModels.length > 0;
-  const triggerModelLabel = hasModelInfo
-    ? (currentModelName ?? t("toolbar.loading"))
+  const hasSelectedModel = currentModelName !== null || currentModelId !== null;
+  const triggerModelLabel = hasSelectedModel
+    ? (currentModelName ?? currentModelId)
     : null;
-
-  useEffect(() => {
-    if (open) {
-      const selected = groupedModels.find((g) => g.hasSelectedModel);
-      if (selected) {
-        setExpandedGroups(new Set([selected.provider]));
-      }
-    }
-  }, [open, groupedModels]);
-
-  const toggleGroup = (provider: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(provider)) {
-        next.delete(provider);
-      } else {
-        next.add(provider);
-      }
-      return next;
-    });
-  };
-
-  const isGroupExpanded = (group: ModelGroup) => {
-    return expandedGroups.has(group.provider);
-  };
 
   const handleAgentSelect = (agentId: string) => {
     if (agentId !== selectedAgentId) {
       onAgentChange(agentId);
+      setModelView("recommended");
     }
   };
 
@@ -178,6 +348,42 @@ export function AgentModelPicker({
     onModelChange?.(modelId);
     setOpen(false);
   };
+
+  // Reset to recommended view when popover closes.
+  useEffect(() => {
+    if (!open) {
+      setModelView("recommended");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncInventory = async () => {
+      try {
+        const entries = await getProviderInventory();
+        if (cancelled) {
+          return;
+        }
+        mergeInventoryEntries(entries);
+      } catch (error) {
+        console.error("Failed to sync provider inventory from picker:", error);
+      }
+    };
+
+    void syncInventory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mergeInventoryEntries]);
+
+  // When in "all" view, expand the popover to full width for the search experience.
+  const isAllView = modelView === "all";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -251,133 +457,97 @@ export function AgentModelPicker({
           }
         }}
       >
-        <div className="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-1 overflow-hidden">
-          <div
-            data-col="agent"
-            className="flex min-h-0 min-w-0 overflow-hidden p-1"
-          >
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="shrink-0 px-2 py-1.5 text-sm font-semibold">
-                {t("toolbar.agent")}
-              </div>
-              <ScrollArea className="min-h-0 min-w-0 flex-1">
-                <div className="p-1 space-y-0.5">
-                  {agents.map((agent) => {
-                    const isSelected = agent.id === selectedAgentId;
-
-                    return (
-                      <PickerItem
-                        key={agent.id}
-                        onClick={() => handleAgentSelect(agent.id)}
-                        selected={isSelected}
-                      >
-                        <span className="shrink-0">
-                          {getProviderIcon(agent.id, "size-4")}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {agent.label}
-                        </span>
-                        {isSelected ? (
-                          <IconCheck className="size-4 shrink-0 text-muted-foreground" />
-                        ) : null}
-                      </PickerItem>
-                    );
-                  })}
+        <div
+          className={cn(
+            "grid h-full gap-1 overflow-hidden",
+            isAllView
+              ? "grid-cols-1"
+              : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]",
+          )}
+        >
+          {/* Agent column — hidden in "all models" search view */}
+          {!isAllView ? (
+            <div
+              data-col="agent"
+              className="flex min-h-0 min-w-0 overflow-hidden p-1"
+            >
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="shrink-0 px-2 py-1.5 text-sm font-semibold">
+                  {t("toolbar.agent")}
                 </div>
-              </ScrollArea>
-            </div>
-          </div>
-          <div
-            data-col="model"
-            className="flex min-h-0 min-w-0 overflow-hidden p-1"
-          >
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="shrink-0 px-2 py-1.5 text-sm font-semibold">
-                {t("toolbar.model")}
-              </div>
-              {groupedModels.length > 0 ? (
                 <ScrollArea className="min-h-0 min-w-0 flex-1">
-                  <div className="p-1 space-y-0.5">
-                    {groupedModels.map((group) => {
-                      const expanded = isGroupExpanded(group);
+                  <div className="space-y-0.5 p-1">
+                    {agents.map((agent) => {
+                      const isSelected = agent.id === selectedAgentId;
 
                       return (
-                        <div key={group.provider}>
-                          <button
-                            type="button"
-                            onClick={() => toggleGroup(group.provider)}
-                            className={cn(
-                              "flex min-w-0 w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-sm font-medium transition-colors",
-                              "hover:bg-muted focus:bg-muted focus:outline-none",
-                            )}
-                          >
-                            <IconChevronRight
-                              className={cn(
-                                "size-3.5 shrink-0 text-muted-foreground transition-transform",
-                                expanded && "rotate-90",
-                              )}
-                            />
-                            <span className="min-w-0 flex-1 truncate">
-                              {group.provider}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {group.models.length}
-                            </span>
-                          </button>
-                          {expanded ? (
-                            <div className="overflow-hidden pb-1">
-                              {group.models.map((model) => {
-                                const modelName = getModelDisplayName(model);
-
-                                return (
-                                  <PickerItem
-                                    key={model.id}
-                                    onClick={() => handleModelSelect(model.id)}
-                                    selected={model.id === currentModelId}
-                                    className="justify-between pl-6"
-                                  >
-                                    <div className="min-w-0 flex-1 truncate">
-                                      {modelName}
-                                    </div>
-                                    {model.id === currentModelId ? (
-                                      <IconCheck className="size-4 shrink-0 text-muted-foreground" />
-                                    ) : null}
-                                  </PickerItem>
-                                );
-                              })}
-                            </div>
-                          ) : group.hasSelectedModel ? (
-                            <div className="overflow-hidden pb-1">
-                              {group.models
-                                .filter((m) => m.id === currentModelId)
-                                .map((model) => (
-                                  <PickerItem
-                                    key={model.id}
-                                    onClick={() => handleModelSelect(model.id)}
-                                    selected
-                                    className="justify-between pl-6"
-                                  >
-                                    <div className="min-w-0 flex-1 truncate">
-                                      {getModelDisplayName(model)}
-                                    </div>
-                                    <IconCheck className="size-4 shrink-0 text-muted-foreground" />
-                                  </PickerItem>
-                                ))}
-                            </div>
+                        <PickerItem
+                          key={agent.id}
+                          onClick={() => handleAgentSelect(agent.id)}
+                          selected={isSelected}
+                        >
+                          <span className="shrink-0">
+                            {getProviderIcon(agent.id, "size-4")}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {agent.label}
+                          </span>
+                          {isSelected ? (
+                            <IconCheck className="size-4 shrink-0 text-muted-foreground" />
                           ) : null}
-                        </div>
+                        </PickerItem>
                       );
                     })}
                   </div>
                 </ScrollArea>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Model column */}
+          <div
+            data-col="model"
+            className="flex min-h-0 min-w-0 overflow-hidden p-1"
+          >
+            {modelsLoading ? (
+              <div className="flex min-h-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+                <Spinner className="size-4" />
+                <span>{t("toolbar.loadingModels")}</span>
+              </div>
+            ) : availableModels.length > 0 ? (
+              modelView === "recommended" ? (
+                <RecommendedModelList
+                  models={availableModels}
+                  currentModelId={currentModelId}
+                  selectedAgentId={selectedAgentId}
+                  onModelSelect={handleModelSelect}
+                  onShowAll={() => setModelView("all")}
+                  t={t}
+                />
               ) : (
+                <AllModelsList
+                  models={availableModels}
+                  currentModelId={currentModelId}
+                  selectedAgentId={selectedAgentId}
+                  onModelSelect={handleModelSelect}
+                  onBack={() => setModelView("recommended")}
+                  t={t}
+                />
+              )
+            ) : (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="shrink-0 px-2 py-1.5 text-sm font-semibold">
+                  {t("toolbar.model")}
+                </div>
                 <div className="px-2 py-2">
                   <div className="text-sm text-muted-foreground">
-                    {currentModelName ? currentModelName : t("toolbar.loading")}
+                    {modelStatusMessage ??
+                      currentModelName ??
+                      t("toolbar.noModelsAvailable")}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </PopoverContent>

@@ -8,8 +8,9 @@ default:
 
 # ── Dev Environment ──────────────────────────────────────────
 
-# Install dependencies and build workspace packages
+# Install dependencies, build workspace packages, and activate git hooks
 setup:
+    git config core.hooksPath .husky
     cd ../ && pnpm install
     cd ../sdk && pnpm build
     cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
@@ -33,7 +34,7 @@ fmt-check:
 
 # Run clippy on Tauri backend
 clippy:
-    cd src-tauri && cargo clippy -- -D warnings
+    cd src-tauri && TAURI_CONFIG='{"bundle":{"externalBin":[]}}' cargo clippy -- -D warnings
 
 # Build the frontend
 build:
@@ -45,7 +46,7 @@ tauri-fmt-check:
 
 # Check Tauri Rust types
 tauri-check:
-    cd src-tauri && cargo check
+    cd src-tauri && TAURI_CONFIG='{"bundle":{"externalBin":[]}}' cargo check
 
 # Full CI gate
 ci: check clippy test build tauri-check
@@ -78,7 +79,7 @@ test-e2e-all:
 # ── Run ──────────────────────────────────────────────────────
 
 # Start the desktop app in dev mode
-dev:
+dev: setup
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -127,7 +128,7 @@ dev:
     pnpm tauri dev --features app-test-driver --config src-tauri/tauri.dev.conf.json "${EXTRA_CONFIG_ARGS[@]}"
 
 # Start the desktop app with dev config
-dev-debug:
+dev-debug: setup
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -192,7 +193,8 @@ kill:
     fi
 
     PROC_NAME=$(ps -p "$PID" -o comm= 2>/dev/null) || true
-    if [[ "$PROC_NAME" != "node" ]]; then
+    PROC_BASENAME="${PROC_NAME##*/}"
+    if [[ "$PROC_BASENAME" != "node" ]]; then
         echo "Process on port $VITE_PORT is '$PROC_NAME', not 'node' — refusing to kill"
         exit 1
     fi

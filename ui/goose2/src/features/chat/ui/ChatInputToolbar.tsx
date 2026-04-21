@@ -16,7 +16,7 @@ import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
 import { PersonaPicker } from "./PersonaPicker";
-import type { ProjectOption } from "./ChatInput";
+import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -30,11 +30,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/tooltip";
 import { AgentModelPicker } from "./AgentModelPicker";
 import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
-import { useAgentProviderStatus } from "@/features/providers/hooks/useAgentProviderStatus";
-import {
-  getCatalogEntry,
-  resolveAgentProviderCatalogIdStrict,
-} from "@/features/providers/providerCatalog";
+import { getCatalogEntry } from "@/features/providers/providerCatalog";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
@@ -67,6 +63,8 @@ interface ChatInputToolbarProps {
   currentModelId?: string | null;
   currentModel?: string;
   availableModels: ModelOption[];
+  modelsLoading?: boolean;
+  modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
   // Project
   selectedProjectId: string | null;
@@ -90,6 +88,11 @@ interface ChatInputToolbarProps {
   onAttachFiles?: () => void;
   onAttachFolders?: () => void;
   disabled?: boolean;
+  // Voice
+  voiceEnabled?: boolean;
+  voiceRecording?: boolean;
+  voiceTranscribing?: boolean;
+  onVoiceToggle?: () => void;
   // Layout
   isCompact: boolean;
 }
@@ -106,6 +109,8 @@ export function ChatInputToolbar({
   currentModelId,
   currentModel,
   availableModels,
+  modelsLoading = false,
+  modelStatusMessage = null,
   onModelChange,
   selectedProjectId,
   availableProjects,
@@ -124,31 +129,30 @@ export function ChatInputToolbar({
   onAttachFiles,
   onAttachFolders,
   disabled = false,
+  voiceEnabled = false,
+  voiceRecording = false,
+  voiceTranscribing = false,
+  onVoiceToggle,
   isCompact,
 }: ChatInputToolbarProps) {
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
-  const { readyAgentIds } = useAgentProviderStatus();
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
 
   const agentProviders = useMemo(() => {
     const seen = new Set<string>();
-    const connected: AcpProvider[] = [];
-    for (const p of providers) {
-      const catalogId = resolveAgentProviderCatalogIdStrict(p.id);
-      if (
-        catalogId === null ||
-        !readyAgentIds.has(catalogId) ||
-        seen.has(catalogId)
-      )
+    const available: AcpProvider[] = [];
+    for (const provider of providers) {
+      if (seen.has(provider.id)) {
         continue;
-      seen.add(catalogId);
-      connected.push({
-        id: p.id,
-        label: getCatalogEntry(catalogId)?.displayName ?? p.label,
+      }
+      seen.add(provider.id);
+      available.push({
+        id: provider.id,
+        label: getCatalogEntry(provider.id)?.displayName ?? provider.label,
       });
     }
-    if (connected.length > 0) return connected;
+    if (available.length > 0) return available;
     return [
       {
         id: selectedProvider,
@@ -157,7 +161,7 @@ export function ChatInputToolbar({
           formatProviderLabel(selectedProvider),
       },
     ];
-  }, [providers, readyAgentIds, selectedProvider]);
+  }, [providers, selectedProvider]);
   const selectedProject = availableProjects.find(
     (project) => project.id === selectedProjectId,
   );
@@ -211,6 +215,8 @@ export function ChatInputToolbar({
             currentModelId={currentModelId}
             currentModelName={currentModel ?? null}
             availableModels={availableModels}
+            modelsLoading={modelsLoading}
+            modelStatusMessage={modelStatusMessage}
             onModelChange={onModelChange}
             loading={providersLoading}
             isCompact={isCompact}
@@ -384,14 +390,32 @@ export function ChatInputToolbar({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  disabled
-                  aria-label={t("toolbar.voiceInputSoon")}
+                  disabled={!voiceRecording && (!voiceEnabled || disabled)}
+                  onClick={onVoiceToggle}
+                  aria-label={
+                    voiceRecording
+                      ? t("toolbar.voiceInputRecording")
+                      : t("toolbar.voiceInput")
+                  }
+                  className={cn(
+                    voiceRecording &&
+                      "bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive",
+                    voiceTranscribing && "animate-pulse",
+                  )}
                 >
                   <Mic />
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>{t("toolbar.voiceInputSoon")}</TooltipContent>
+            <TooltipContent>
+              {!voiceEnabled
+                ? t("toolbar.voiceInputDisabled")
+                : voiceRecording
+                  ? t("toolbar.voiceInputRecording")
+                  : voiceTranscribing
+                    ? t("toolbar.voiceInputTranscribing")
+                    : t("toolbar.voiceInput")}
+            </TooltipContent>
           </Tooltip>
         </div>
 

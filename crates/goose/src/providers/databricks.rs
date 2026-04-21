@@ -340,6 +340,10 @@ impl ProviderDef for DatabricksProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
     }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
 }
 
 #[async_trait]

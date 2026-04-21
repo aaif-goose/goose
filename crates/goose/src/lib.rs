@@ -38,6 +38,7 @@ pub mod security;
 pub mod session;
 pub mod session_context;
 pub mod slash_commands;
+pub mod sources;
 pub mod subprocess;
 pub mod token_counter;
 pub mod tool_inspection;

@@ -6,15 +6,12 @@ import {
   useArtifactPolicyContext,
 } from "../ArtifactPolicyContext";
 
+import { openPath } from "@tauri-apps/plugin-opener";
+
 const mockPathExists = vi.fn<(path: string) => Promise<boolean>>();
-const mockOpenPath = vi.fn<(path: string) => Promise<void>>();
 
 vi.mock("@/shared/api/system", () => ({
   pathExists: (path: string) => mockPathExists(path),
-}));
-
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: (path: string) => mockOpenPath(path),
 }));
 
 function Probe({
@@ -117,7 +114,7 @@ function FallbackProbe({
 describe("ArtifactPolicyContext", () => {
   it("computes one primary host per message and resolves tool cards by args identity", () => {
     mockPathExists.mockReset();
-    mockOpenPath.mockReset();
+    vi.mocked(openPath).mockReset();
     const readArgs = { path: "/Users/test/project-a/notes.md" };
     const writeArgs = {
       paths: [
@@ -189,7 +186,7 @@ describe("ArtifactPolicyContext", () => {
 
   it("does not treat read-only tool paths as session artifacts", () => {
     mockPathExists.mockReset();
-    mockOpenPath.mockReset();
+    vi.mocked(openPath).mockReset();
     const readArgs = { path: "/Users/test/project-a/notes.md" };
     const messages: Message[] = [
       {
@@ -230,7 +227,7 @@ describe("ArtifactPolicyContext", () => {
 
   it("falls back to the home artifacts root when a project artifacts path is missing", async () => {
     mockPathExists.mockReset();
-    mockOpenPath.mockReset();
+    vi.mocked(openPath).mockReset();
     mockPathExists.mockImplementation(
       async (path: string) => path === "/Users/test/.goose/artifacts/report.md",
     );
@@ -256,7 +253,7 @@ describe("ArtifactPolicyContext", () => {
 
     screen.getByRole("button", { name: "Open path" }).click();
     await waitFor(() => {
-      expect(mockOpenPath).toHaveBeenCalledWith(
+      expect(vi.mocked(openPath)).toHaveBeenCalledWith(
         "/Users/test/.goose/artifacts/report.md",
       );
     });
@@ -264,7 +261,7 @@ describe("ArtifactPolicyContext", () => {
 
   it("falls back from a working-dir artifacts path to the project root when the file lives there", async () => {
     mockPathExists.mockReset();
-    mockOpenPath.mockReset();
+    vi.mocked(openPath).mockReset();
     mockPathExists.mockImplementation(
       async (path: string) =>
         path === "/Users/test/project-a/README_ENHANCED.md",
@@ -292,7 +289,7 @@ describe("ArtifactPolicyContext", () => {
 
     screen.getByRole("button", { name: "Open path" }).click();
     await waitFor(() => {
-      expect(mockOpenPath).toHaveBeenCalledWith(
+      expect(vi.mocked(openPath)).toHaveBeenCalledWith(
         "/Users/test/project-a/README_ENHANCED.md",
       );
     });
@@ -300,7 +297,7 @@ describe("ArtifactPolicyContext", () => {
 
   it("does not strip /artifacts/ from a parent directory in the path", async () => {
     mockPathExists.mockReset();
-    mockOpenPath.mockReset();
+    vi.mocked(openPath).mockReset();
     // The file lives at the nested artifacts path — the parent `/artifacts/` should NOT be stripped
     mockPathExists.mockImplementation(
       async (path: string) =>
@@ -329,7 +326,7 @@ describe("ArtifactPolicyContext", () => {
 
     screen.getByRole("button", { name: "Open path" }).click();
     await waitFor(() => {
-      expect(mockOpenPath).toHaveBeenCalledWith(
+      expect(vi.mocked(openPath)).toHaveBeenCalledWith(
         "/Users/test/artifacts/project/artifacts/README_ENHANCED.md",
       );
     });
@@ -337,7 +334,7 @@ describe("ArtifactPolicyContext", () => {
 
   it("falls back correctly when /artifacts/ appears in a parent dir", async () => {
     mockPathExists.mockReset();
-    mockOpenPath.mockReset();
+    vi.mocked(openPath).mockReset();
     // File is NOT at the artifacts path, but IS at the root-stripped path
     mockPathExists.mockImplementation(
       async (path: string) =>
@@ -366,7 +363,7 @@ describe("ArtifactPolicyContext", () => {
 
     screen.getByRole("button", { name: "Open path" }).click();
     await waitFor(() => {
-      expect(mockOpenPath).toHaveBeenCalledWith(
+      expect(vi.mocked(openPath)).toHaveBeenCalledWith(
         "/Users/test/artifacts/project/README.md",
       );
     });
@@ -374,7 +371,7 @@ describe("ArtifactPolicyContext", () => {
 
   it("uses assistant text after a tool call to populate file actions and the Files tab", () => {
     mockPathExists.mockReset();
-    mockOpenPath.mockReset();
+    vi.mocked(openPath).mockReset();
     const writeArgs = {};
     const messages: Message[] = [
       {
