@@ -7,6 +7,8 @@ import {
   normalizeAutoCompactThreshold,
 } from "../lib/autoCompact";
 
+const AUTO_COMPACT_RETRY_DELAY_MS = 1000;
+
 type ConfigReadResult =
   | {
       ok: true;
@@ -39,19 +41,15 @@ export function useAutoCompactPreferences() {
     DEFAULT_AUTO_COMPACT_THRESHOLD,
   );
   const [isHydrated, setIsHydrated] = useState(false);
+  const [syncVersion, setSyncVersion] = useState(0);
 
-  const syncFromConfig = useCallback(async () => {
-    const result = await readConfigValue(AUTO_COMPACT_THRESHOLD_CONFIG_KEY);
-    if (result.ok) {
-      setAutoCompactThresholdState(normalizeAutoCompactThreshold(result.value));
-    }
-    setIsHydrated(true);
+  const requestSyncFromConfig = useCallback(() => {
+    setSyncVersion((current) => current + 1);
   }, []);
 
   useEffect(() => {
-    void syncFromConfig();
     const handler = () => {
-      void syncFromConfig();
+      requestSyncFromConfig();
     };
     window.addEventListener(
       AUTO_COMPACT_PREFERENCES_EVENT,
@@ -63,7 +61,46 @@ export function useAutoCompactPreferences() {
         handler as EventListener,
       );
     };
-  }, [syncFromConfig]);
+  }, [requestSyncFromConfig]);
+
+  const syncFromConfig = useCallback(async (_syncVersion: number) => {
+    void _syncVersion;
+    const result = await readConfigValue(AUTO_COMPACT_THRESHOLD_CONFIG_KEY);
+    return result;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: number | null = null;
+
+    const applyConfig = async () => {
+      const result = await syncFromConfig(syncVersion);
+      if (cancelled) {
+        return;
+      }
+
+      if (result.ok) {
+        setAutoCompactThresholdState(
+          normalizeAutoCompactThreshold(result.value),
+        );
+      } else {
+        retryTimer = window.setTimeout(
+          requestSyncFromConfig,
+          AUTO_COMPACT_RETRY_DELAY_MS,
+        );
+      }
+      setIsHydrated(true);
+    };
+
+    void applyConfig();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [requestSyncFromConfig, syncFromConfig, syncVersion]);
 
   const dispatchPreferencesEvent = useCallback(() => {
     window.dispatchEvent(new Event(AUTO_COMPACT_PREFERENCES_EVENT));

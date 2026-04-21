@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_COMPACT_PREFERENCES_EVENT,
   AUTO_COMPACT_THRESHOLD_CONFIG_KEY,
@@ -17,6 +17,10 @@ import { useAutoCompactPreferences } from "../useAutoCompactPreferences";
 describe("useAutoCompactPreferences", () => {
   beforeEach(() => {
     mockGetClient.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("hydrates from the stored threshold value", async () => {
@@ -79,5 +83,39 @@ describe("useAutoCompactPreferences", () => {
     expect(result.current.autoCompactThreshold).toBe(
       DEFAULT_AUTO_COMPACT_THRESHOLD,
     );
+  });
+
+  it("retries hydration after a transient read failure", async () => {
+    vi.useFakeTimers();
+    const read = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("ACP not ready"))
+      .mockResolvedValueOnce({ value: 0.65 });
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GooseConfigRead: read,
+        GooseConfigUpsert: vi.fn().mockResolvedValue({}),
+      },
+    });
+
+    const { result } = renderHook(() => useAutoCompactPreferences());
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.isHydrated).toBe(true);
+    expect(result.current.autoCompactThreshold).toBe(
+      DEFAULT_AUTO_COMPACT_THRESHOLD,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(result.current.autoCompactThreshold).toBe(0.65);
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });
