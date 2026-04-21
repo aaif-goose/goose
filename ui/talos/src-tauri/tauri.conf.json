@@ -4,11 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.talos.app",
   "build": {
-    "beforeDevCommand": {
-      "script": "exec ./node_modules/.bin/vite",
-      "cwd": "..",
-      "wait": false
-    },
+    "beforeDevCommand": "pnpm --filter talos dev",
     "devUrl": "http://localhost:1521",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
