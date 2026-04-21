@@ -112,32 +112,33 @@ fn test_custom_get_extensions() {
 }
 
 #[test]
-fn test_custom_list_providers() {
+fn test_custom_provider_inventory_includes_metadata() {
     run_test(async {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
 
-        let response = send_custom(conn.cx(), "_goose/providers/list", serde_json::json!({}))
-            .await
-            .expect("provider list should succeed");
+        let response = send_custom(
+            conn.cx(),
+            "_goose/providers/inventory",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("provider inventory should succeed");
         let providers = response
-            .get("providers")
+            .get("entries")
             .and_then(|value| value.as_array())
-            .expect("missing providers array");
+            .expect("missing entries array");
+        let openai = providers
+            .iter()
+            .find(|provider| provider.get("providerId") == Some(&serde_json::json!("openai")))
+            .expect("expected openai inventory entry");
 
-        assert!(
-            providers.iter().any(|provider| {
-                provider.get("id") == Some(&serde_json::json!("goose"))
-                    && provider.get("label") == Some(&serde_json::json!("Goose (Default)"))
-            }),
-            "expected Goose default provider sentinel"
-        );
-        assert!(
-            providers
-                .iter()
-                .any(|provider| provider.get("id") == Some(&serde_json::json!("openai"))),
-            "expected at least one concrete provider from the goose registry"
-        );
+        assert!(openai.get("providerName").is_some(), "missing providerName");
+        assert!(openai.get("description").is_some(), "missing description");
+        assert!(openai.get("defaultModel").is_some(), "missing defaultModel");
+        assert!(openai.get("providerType").is_some(), "missing providerType");
+        assert!(openai.get("configKeys").is_some(), "missing configKeys");
+        assert!(openai.get("setupSteps").is_some(), "missing setupSteps");
     });
 }
 
