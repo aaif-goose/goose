@@ -150,7 +150,7 @@ export function PersonaEditor({
     ? `__saved__:${model}`
     : model || "__none__";
 
-  const readOnlyDescription = persona
+  const readOnlyDescription = readOnlyBySource
     ? personaSource === "builtin"
       ? t("editor.readOnlyBuiltIn")
       : t("editor.readOnlyFile")
