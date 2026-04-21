@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Run goose2 pre-push checks if any commits being pushed include goose2 changes.
 
 # --- Helper functions ---

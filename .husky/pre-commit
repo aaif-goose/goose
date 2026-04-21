@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 set -e
 
 # Only auto-format desktop TS code if relevant files are modified
