@@ -7,7 +7,9 @@ import { useArtifactPolicyContext } from "@/features/chat/hooks/ArtifactPolicyCo
  * container and routes them through the artifact policy layer.
  *
  * External links are intentionally not handled here — MarkdownLink
- * renders them as buttons that open a LinkSafetyModal for confirmation.
+ * renders them as <a> elements with preventDefault that open a
+ * LinkSafetyModal for confirmation. The isExternalHref early return
+ * below ensures there is no conflict.
  */
 export function useArtifactLinkHandler() {
   const { resolveMarkdownHref, openResolvedPath } = useArtifactPolicyContext();

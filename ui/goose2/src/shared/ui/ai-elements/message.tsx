@@ -333,8 +333,11 @@ const LinkSafetyContext = createContext<OpenLinkSafetyModal | null>(null);
 
 /**
  * Custom link component that splits behavior by link type:
- * - External links → button that opens a shared LinkSafetyModal via context
+ * - External links → <a> with preventDefault that opens a LinkSafetyModal via context
  * - Internal links → plain <a> so useArtifactLinkHandler can intercept via closest("a")
+ *
+ * Both render as <a> elements. useArtifactLinkHandler has an early return for external
+ * hrefs, so there is no conflict with its delegated click handler.
  *
  * This replaces Streamdown's built-in linkSafety which renders <button> for ALL
  * links, breaking artifact navigation since useArtifactLinkHandler matches on <a>.
@@ -350,14 +353,19 @@ const MarkdownLink = memo(
 
     if (isExternalHref(href)) {
       return (
-        <button
-          className="wrap-anywhere appearance-none text-left font-medium text-primary underline"
+        <a
+          className="wrap-anywhere font-medium text-primary underline"
           data-streamdown="link"
-          onClick={() => openModal?.(href ?? "")}
-          type="button"
+          href={href}
+          rel="noreferrer"
+          onClick={(e) => {
+            e.preventDefault();
+            openModal?.(href ?? "");
+          }}
+          {...rest}
         >
           {children}
-        </button>
+        </a>
       );
     }
 
