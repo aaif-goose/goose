@@ -12,7 +12,10 @@ import type {
   ArchiveSessionRequest,
   CheckSecretRequest,
   CheckSecretResponse,
+  CreateSourceRequest,
+  CreateSourceResponse,
   DeleteSessionRequest,
+  DeleteSourceRequest,
   DictationConfigRequest,
   DictationConfigResponse,
   DictationModelCancelRequest,
@@ -27,6 +30,8 @@ import type {
   DictationTranscribeResponse,
   ExportSessionRequest,
   ExportSessionResponse,
+  ExportSourceRequest,
+  ExportSourceResponse,
   GetExtensionsRequest,
   GetExtensionsResponse,
   GetProviderDetailsRequest,
@@ -39,8 +44,12 @@ import type {
   GetToolsResponse,
   ImportSessionRequest,
   ImportSessionResponse,
+  ImportSourcesRequest,
+  ImportSourcesResponse,
   ListProvidersRequest,
   ListProvidersResponse,
+  ListSourcesRequest,
+  ListSourcesResponse,
   ReadConfigRequest,
   ReadConfigResponse,
   ReadResourceRequest,
@@ -51,27 +60,34 @@ import type {
   RemoveExtensionRequest,
   RemoveSecretRequest,
   UnarchiveSessionRequest,
+  UpdateSourceRequest,
+  UpdateSourceResponse,
   UpdateWorkingDirRequest,
   UpsertConfigRequest,
   UpsertSecretRequest,
 } from './types.gen.js';
 import {
   zCheckSecretResponse,
+  zCreateSourceResponse,
   zDictationConfigResponse,
   zDictationModelDownloadProgressResponse,
   zDictationModelsListResponse,
   zDictationTranscribeResponse,
   zExportSessionResponse,
+  zExportSourceResponse,
   zGetExtensionsResponse,
   zGetProviderDetailsResponse,
   zGetProviderInventoryResponse,
   zGetSessionExtensionsResponse,
   zGetToolsResponse,
   zImportSessionResponse,
+  zImportSourcesResponse,
   zListProvidersResponse,
+  zListSourcesResponse,
   zReadConfigResponse,
   zReadResourceResponse,
   zRefreshProviderInventoryResponse,
+  zUpdateSourceResponse,
 } from './zod.gen.js';
 
 export class GooseExtClient {
@@ -206,6 +222,45 @@ export class GooseExtClient {
 
   async GooseSessionUnarchive(params: UnarchiveSessionRequest): Promise<void> {
     await this.conn.extMethod("_goose/session/unarchive", params);
+  }
+
+  async GooseSourcesCreate(
+    params: CreateSourceRequest,
+  ): Promise<CreateSourceResponse> {
+    const raw = await this.conn.extMethod("_goose/sources/create", params);
+    return zCreateSourceResponse.parse(raw) as CreateSourceResponse;
+  }
+
+  async GooseSourcesList(
+    params: ListSourcesRequest,
+  ): Promise<ListSourcesResponse> {
+    const raw = await this.conn.extMethod("_goose/sources/list", params);
+    return zListSourcesResponse.parse(raw) as ListSourcesResponse;
+  }
+
+  async GooseSourcesUpdate(
+    params: UpdateSourceRequest,
+  ): Promise<UpdateSourceResponse> {
+    const raw = await this.conn.extMethod("_goose/sources/update", params);
+    return zUpdateSourceResponse.parse(raw) as UpdateSourceResponse;
+  }
+
+  async GooseSourcesDelete(params: DeleteSourceRequest): Promise<void> {
+    await this.conn.extMethod("_goose/sources/delete", params);
+  }
+
+  async GooseSourcesExport(
+    params: ExportSourceRequest,
+  ): Promise<ExportSourceResponse> {
+    const raw = await this.conn.extMethod("_goose/sources/export", params);
+    return zExportSourceResponse.parse(raw) as ExportSourceResponse;
+  }
+
+  async GooseSourcesImport(
+    params: ImportSourcesRequest,
+  ): Promise<ImportSourcesResponse> {
+    const raw = await this.conn.extMethod("_goose/sources/import", params);
+    return zImportSourcesResponse.parse(raw) as ImportSourcesResponse;
   }
 
   async GooseDictationTranscribe(
