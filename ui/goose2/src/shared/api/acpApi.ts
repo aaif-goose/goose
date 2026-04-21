@@ -3,6 +3,7 @@ import type {
   NewSessionResponse,
   LoadSessionResponse,
   PromptResponse,
+  SessionInfo,
 } from "@agentclientprotocol/sdk";
 import { getClient } from "./acpConnection";
 import { perfLog } from "@/shared/lib/perfLog";
@@ -36,12 +37,7 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
   const client = await getClient();
   const response = await client.listSessions({});
   return response.sessions.map(
-    (info: {
-      sessionId: string;
-      title?: string | null;
-      updatedAt?: string | null;
-      _meta?: Record<string, unknown> | null;
-    }) => ({
+    (info: SessionInfo) => ({
       sessionId: info.sessionId,
       title: info.title ?? null,
       updatedAt: info.updatedAt ?? null,
