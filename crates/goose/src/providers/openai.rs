@@ -683,7 +683,7 @@ fn split_on_commas_outside_quotes(s: &str) -> Vec<String> {
 }
 
 fn parse_custom_headers(s: String) -> HashMap<String, String> {
-    fn unquote_and_unescape(val: &str) -> String {
+    fn normalize_header_value(val: &str) -> String {
         let trimmed = val.trim();
         let Some(inner) = trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
             return trimmed.to_string();
@@ -710,7 +710,12 @@ fn parse_custom_headers(s: String) -> HashMap<String, String> {
                 out.push(c);
             }
         }
-        out
+
+        if inner.contains(',') {
+            out
+        } else {
+            format!("\"{}\"", out)
+        }
     }
 
     split_on_commas_outside_quotes(&s)
@@ -721,7 +726,7 @@ fn parse_custom_headers(s: String) -> HashMap<String, String> {
             if key.is_empty() {
                 return None;
             }
-            let value = unquote_and_unescape(v);
+            let value = normalize_header_value(v);
             Some((key.to_string(), value))
         })
         .collect()
@@ -824,7 +829,15 @@ mod tests {
     fn test_parse_custom_headers_supports_escaped_quotes() {
         let headers = r#"A="hello \"world\"",B=ok"#.to_string();
         let parsed = parse_custom_headers(headers);
-        assert_eq!(parsed.get("A").unwrap(), r#"hello "world""#);
+        assert_eq!(parsed.get("A").unwrap(), r#""hello "world"""#);
+        assert_eq!(parsed.get("B").unwrap(), "ok");
+    }
+
+    #[test]
+    fn test_parse_custom_headers_preserves_literal_quotes_without_commas() {
+        let headers = r#"If-None-Match="abc",B=ok"#.to_string();
+        let parsed = parse_custom_headers(headers);
+        assert_eq!(parsed.get("If-None-Match").unwrap(), r#""abc""#);
         assert_eq!(parsed.get("B").unwrap(), "ok");
     }
 
