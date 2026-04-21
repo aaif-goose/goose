@@ -276,4 +276,70 @@ mod tests {
         assert!(!rendered.contains("goose"), "{rendered}");
         assert!(!rendered.contains("Goose"), "{rendered}");
     }
+
+    /// Regression guard: under a synthetic non-default brand, no subcommand's
+    /// rendered help (including every argument's help / long_help) may leak
+    /// the default product noun.
+    ///
+    /// This walks the entire command tree recursively, so when a contributor
+    /// adds a new subcommand or argument that accidentally hardcodes `goose`
+    /// / `Goose` in a clap derive attribute, this test fails with the name
+    /// of the offending command and the full rendered help text — pointing
+    /// them at [`apply_branding`] / [`rewrite_command`] so they can either
+    /// route the string through the rewriter or move it out of the derive
+    /// and into a runtime [`Brand::get()`] lookup.
+    ///
+    /// It does NOT catch hardcoded runtime strings (e.g. a new
+    /// `println!("goose ...")` call) — PR review remains the safety net for
+    /// those. But the clap-derive surface is where the bulk of regressions
+    /// would land.
+    #[test]
+    fn no_goose_leaks_in_any_branded_subcommand_help() {
+        use clap::CommandFactory;
+        let b = Brand {
+            product_name: "Foobar",
+            binary_name: "foobar",
+            shell_alias_primary: "foobar",
+            shell_alias_short: "fb",
+            shell_fn_prefix: "foobar",
+            deeplink_scheme: "foobar",
+            github_owner: "acme",
+            github_repo: "foobar",
+            agent_identity_sentence: "You are foobar, an AI assistant.",
+        };
+        let cmd = rewrite_command(crate::Cli::command(), &b);
+        assert_no_leaks_recursive(&cmd, "");
+    }
+
+    fn assert_no_leaks_recursive(cmd: &clap::Command, path: &str) {
+        let current_path = if path.is_empty() {
+            cmd.get_name().to_string()
+        } else {
+            format!("{path} {}", cmd.get_name())
+        };
+
+        // render_long_help() needs &mut self; clone is cheap for a test.
+        let mut clone = cmd.clone();
+        let help = clone.render_long_help().to_string();
+
+        assert!(
+            !help.contains("goose"),
+            "branding leak: `{current_path}` help contains lowercase `goose`. \
+             Either route the offending string through `apply_branding` / `Brand::get()` \
+             or remove it from the clap derive attribute.\n\nFull help:\n{help}"
+        );
+        assert!(
+            !help.contains("Goose"),
+            "branding leak: `{current_path}` help contains capitalized `Goose`. \
+             Either route the offending string through `apply_branding` / `Brand::get()` \
+             or remove it from the clap derive attribute.\n\nFull help:\n{help}"
+        );
+
+        for sub in cmd.get_subcommands() {
+            if sub.get_name() == "help" {
+                continue;
+            }
+            assert_no_leaks_recursive(sub, &current_path);
+        }
+    }
 }
