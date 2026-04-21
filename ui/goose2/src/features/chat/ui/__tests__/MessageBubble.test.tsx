@@ -1,10 +1,14 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import type { Message } from "@/shared/types/messages";
 import { openPath } from "@tauri-apps/plugin-opener";
+const mockWriteText = vi.fn().mockResolvedValue(undefined);
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openPath: vi.fn(),
+}));
 
 // ── helpers ───────────────────────────────────────────────────────────
 
@@ -37,6 +41,17 @@ describe("MessageBubble", () => {
   beforeEach(() => {
     useAgentStore.setState({ personas: [] });
     vi.mocked(openPath).mockClear();
+    mockWriteText.mockClear();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: mockWriteText,
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders user message with correct alignment", () => {
@@ -66,6 +81,18 @@ describe("MessageBubble", () => {
     expect(screen.getByText("hello world")).toBeInTheDocument();
   });
 
+  it("renders user text inside a muted bubble shell", () => {
+    const { container } = render(
+      <MessageBubble message={userMessage("hello world")} />,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-role="user-message"] .rounded-2xl.bg-muted',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders multiple content blocks", () => {
     const msg = assistantMessage([
       { type: "text", text: "first block" },
@@ -76,16 +103,56 @@ describe("MessageBubble", () => {
     expect(screen.getByText("second block")).toBeInTheDocument();
   });
 
-  it("shows action buttons on hover (retry for assistant)", () => {
+  it("renders a reserved actions tray for assistant messages", () => {
     const onRetryMessage = vi.fn();
-    render(
+    const { container } = render(
       <MessageBubble
         message={assistantMessage([{ type: "text", text: "response" }])}
         onRetryMessage={onRetryMessage}
       />,
     );
-    const retryBtn = screen.getByRole("button", { name: /retry/i });
-    expect(retryBtn).toBeInTheDocument();
+
+    expect(
+      container.querySelector('[data-role="assistant-message"] .pb-9'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(
+        '[data-role="assistant-message"] [data-role="message-actions"]',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("keeps copy confirmation visible until it resets", async () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <MessageBubble
+        message={assistantMessage([{ type: "text", text: "response" }])}
+      />,
+    );
+
+    const actions = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-actions"]',
+    );
+    expect(actions).toHaveAttribute("data-copy-confirmed", "false");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+      await Promise.resolve();
+    });
+
+    expect(mockWriteText).toHaveBeenCalledWith("response");
+    expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1999);
+    });
+    expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(actions).toHaveAttribute("data-copy-confirmed", "false");
   });
 
   it("renders tool request content as ToolCallCard", () => {

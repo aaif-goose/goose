@@ -1,11 +1,10 @@
-import { useState, memo } from "react";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Copy,
   Check,
   RotateCcw,
   Pencil,
-  User,
   FileText,
   FolderClosed,
 } from "lucide-react";
@@ -14,6 +13,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import { cn } from "@/shared/lib/cn";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { getCatalogEntry } from "@/features/providers/providerCatalog";
 import {
   getProviderIcon,
@@ -281,20 +281,19 @@ function renderContentBlock(
   }
 }
 
-function CopyAction({ text }: { text: string }) {
+function CopyAction({
+  copied,
+  onCopy,
+}: {
+  copied: boolean;
+  onCopy: () => void;
+}) {
   const { t } = useTranslation(["chat", "common"]);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   return (
     <MessageAction
       tooltip={copied ? t("message.copied") : t("common:actions.copy")}
-      onClick={handleCopy}
+      onClick={onCopy}
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
     </MessageAction>
@@ -316,6 +315,7 @@ export const MessageBubble = memo(function MessageBubble({
       ? state.getPersonaById(message.metadata.personaId)
       : undefined,
   );
+  const { isCopied: isCopyConfirmed, copyToClipboard } = useCopyToClipboard();
   const personaAvatarUrl = useAvatarSrc(persona?.avatar);
 
   const textContent = content
@@ -360,22 +360,16 @@ export const MessageBubble = memo(function MessageBubble({
   return (
     <div
       className={cn(
-        "group flex px-4 py-1",
+        "flex px-4 py-1",
         "animate-in fade-in duration-200 motion-reduce:animate-none",
         isUser ? "ml-auto flex-row-reverse gap-3" : "flex-row",
       )}
       data-role={isUser ? "user-message" : "assistant-message"}
     >
-      {isUser ? (
-        <div className="flex h-7 w-7 shrink-0 self-start -mt-1 items-center justify-center rounded-full bg-accent">
-          <User size={14} className="text-muted-foreground" />
-        </div>
-      ) : null}
-
       <div
         className={cn(
-          "min-w-0 flex flex-col gap-1",
-          isUser ? "max-w-[80%] items-end" : "max-w-[85%] items-start",
+          "group relative min-w-0 flex flex-col gap-1 pb-9",
+          isUser ? "max-w-[640px] items-end" : "max-w-[85%] items-start",
         )}
       >
         {showAssistantIdentity ? (
@@ -406,7 +400,10 @@ export const MessageBubble = memo(function MessageBubble({
         {/* biome-ignore lint/a11y/useKeyWithClickEvents: delegated link handler */}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: delegated link handler */}
         <div
-          className="w-full min-w-0 text-[13px] leading-relaxed"
+          className={cn(
+            "w-full min-w-0 text-[13px] leading-relaxed",
+            isUser && "rounded-2xl bg-muted p-3",
+          )}
           onClick={handleContentClick}
         >
           {messageAttachments.length > 0 && (
@@ -447,32 +444,49 @@ export const MessageBubble = memo(function MessageBubble({
           )}
         </div>
 
-        {/* Hover actions + timestamp */}
-        <MessageActions className="opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          {textContent && <CopyAction text={textContent} />}
-          {!isUser && onRetryMessage && (
-            <MessageAction
-              tooltip={t("common:actions.retry")}
-              onClick={() => onRetryMessage(message.id)}
-            >
-              <RotateCcw className="size-3.5" />
-            </MessageAction>
+        <div
+          data-role="message-actions"
+          data-copy-confirmed={isCopyConfirmed ? "true" : "false"}
+          className={cn(
+            "absolute bottom-0 transition-opacity duration-150 ease-out",
+            "opacity-0 pointer-events-none",
+            "group-hover:animate-in group-hover:slide-in-from-top-2 group-hover:opacity-100 group-hover:pointer-events-auto",
+            "group-focus-within:animate-in group-focus-within:slide-in-from-top-2 group-focus-within:opacity-100 group-focus-within:pointer-events-auto",
+            isCopyConfirmed && "opacity-100 pointer-events-auto",
+            isUser ? "right-0" : "left-0",
           )}
-          {isUser && onEditMessage && (
-            <MessageAction
-              tooltip={t("common:actions.edit")}
-              onClick={() => onEditMessage(message.id)}
-            >
-              <Pencil className="size-3.5" />
-            </MessageAction>
-          )}
-          <span className="px-1 text-[10px] text-muted-foreground">
-            {formatDate(created, {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-        </MessageActions>
+        >
+          <MessageActions className="pt-1">
+            {textContent && (
+              <CopyAction
+                copied={isCopyConfirmed}
+                onCopy={() => copyToClipboard(textContent)}
+              />
+            )}
+            {!isUser && onRetryMessage && (
+              <MessageAction
+                tooltip={t("common:actions.retry")}
+                onClick={() => onRetryMessage(message.id)}
+              >
+                <RotateCcw className="size-3.5" />
+              </MessageAction>
+            )}
+            {isUser && onEditMessage && (
+              <MessageAction
+                tooltip={t("common:actions.edit")}
+                onClick={() => onEditMessage(message.id)}
+              >
+                <Pencil className="size-3.5" />
+              </MessageAction>
+            )}
+            <span className="px-1 text-[10px] text-muted-foreground">
+              {formatDate(created, {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </MessageActions>
+        </div>
       </div>
     </div>
   );
