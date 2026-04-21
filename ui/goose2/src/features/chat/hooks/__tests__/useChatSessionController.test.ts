@@ -66,7 +66,7 @@ vi.mock("@/features/agents/hooks/useProviderSelection", () => ({
       { id: "anthropic", label: "Anthropic" },
     ],
     providersLoading: false,
-    selectedProvider: "openai",
+    selectedProvider: useAgentStore.getState().selectedProvider ?? "openai",
     setSelectedProvider: (...args: unknown[]) =>
       mockSetSelectedProvider(...args),
   }),
@@ -258,6 +258,7 @@ describe("useChatSessionController", () => {
   });
 
   it("shows the stored explicit model for new chats", async () => {
+    useAgentStore.setState({ selectedProvider: "goose" });
     window.localStorage.setItem(
       "goose:preferredModelsByAgent",
       JSON.stringify({
@@ -280,6 +281,7 @@ describe("useChatSessionController", () => {
   });
 
   it("falls back to the configured goose default model when no explicit model is stored", async () => {
+    useAgentStore.setState({ selectedProvider: "goose" });
     mockGooseConfigRead.mockImplementation(
       async ({ key }: { key: string }): Promise<{ value: string | null }> => {
         if (key === "GOOSE_PROVIDER") {

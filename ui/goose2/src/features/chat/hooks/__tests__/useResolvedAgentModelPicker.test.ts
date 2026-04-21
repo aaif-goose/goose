@@ -324,4 +324,73 @@ describe("useResolvedAgentModelPicker", () => {
       source: "default",
     });
   });
+
+  it("drops Goose fallback models that are incompatible with a concrete provider", () => {
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        goose: {
+          modelId: "claude-sonnet-4",
+          modelName: "Claude Sonnet 4",
+          providerId: "anthropic",
+        },
+      }),
+    );
+
+    mockUseAgentModelPickerState.mockImplementation(
+      ({
+        onProviderSelected,
+      }: {
+        onProviderSelected: (providerId: string) => void;
+      }) => ({
+        pickerAgents: [
+          { id: "goose", label: "Goose" },
+          { id: "openai", label: "OpenAI" },
+        ],
+        availableModels: [
+          {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            providerId: "openai",
+          },
+          {
+            id: "claude-sonnet-4",
+            name: "Claude Sonnet 4",
+            providerId: "anthropic",
+          },
+        ],
+        modelsLoading: false,
+        modelStatusMessage: null,
+        handleProviderChange: (providerId: string) =>
+          onProviderSelected(providerId),
+        handleModelChange: vi.fn(),
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "openai", label: "OpenAI" },
+        ],
+        selectedProvider: "openai",
+        sessionId: "session-1",
+        session: {
+          id: "session-1",
+          title: "Chat",
+          providerId: "openai",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    expect(result.current.effectiveModelSelection).toBeNull();
+  });
 });

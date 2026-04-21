@@ -64,6 +64,10 @@ export function useResolvedAgentModelPicker({
 
   const selectedAgentId =
     resolveAgentProviderCatalogIdStrict(selectedProvider) ?? "goose";
+  const concreteSelectedProviderId =
+    resolveAgentProviderCatalogIdStrict(selectedProvider) == null
+      ? selectedProvider
+      : null;
   const storedModelPreference = useMemo(
     () => getStoredModelPreference(selectedAgentId),
     [selectedAgentId],
@@ -345,13 +349,19 @@ export function useResolvedAgentModelPicker({
               model.id === storedModelPreference.modelId &&
               (!storedModelPreference.providerId ||
                 !model.providerId ||
-                model.providerId === storedModelPreference.providerId),
+                model.providerId === storedModelPreference.providerId) &&
+              (!concreteSelectedProviderId ||
+                !model.providerId ||
+                model.providerId === concreteSelectedProviderId),
           ) ?? null;
+        const storedSelectionCompatible =
+          !concreteSelectedProviderId ||
+          storedModelPreference.providerId === concreteSelectedProviderId;
 
         if (
           matchingStoredModel ||
-          availableModels.length === 0 ||
-          modelsLoading
+          ((availableModels.length === 0 || modelsLoading) &&
+            storedSelectionCompatible)
         ) {
           return {
             id: storedModelPreference.modelId,
@@ -382,8 +392,18 @@ export function useResolvedAgentModelPicker({
             model.id === inventoryDefaultSelection.id &&
             (!inventoryDefaultSelection.providerId ||
               !model.providerId ||
-              model.providerId === inventoryDefaultSelection.providerId),
+              model.providerId === inventoryDefaultSelection.providerId) &&
+            (!concreteSelectedProviderId ||
+              !model.providerId ||
+              model.providerId === concreteSelectedProviderId),
         ) ?? null;
+      const defaultSelectionCompatible =
+        !concreteSelectedProviderId ||
+        inventoryDefaultSelection.providerId === concreteSelectedProviderId;
+
+      if (!matchingDefaultModel && !defaultSelectionCompatible) {
+        return null;
+      }
 
       return {
         id: inventoryDefaultSelection.id,
@@ -400,6 +420,7 @@ export function useResolvedAgentModelPicker({
       availableModels,
       getPreferredSelectionForAgent,
       modelsLoading,
+      concreteSelectedProviderId,
       selectedProvider,
       selectedAgentId,
       storedModelPreference,
