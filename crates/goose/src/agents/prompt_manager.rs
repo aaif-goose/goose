@@ -446,10 +446,14 @@ mod tests {
                     .and_then(|i| i.instructions.clone())
                     .unwrap_or_default();
 
-                // Force determinism for snapshot testing so local developer skills don't pollute the diff
+                // Force determinism for snapshot testing so host-specific extension instructions
+                // do not pollute the diff.
                 if def.name == "skills" {
                     instructions =
                         "<Deterministic skill instructions for snapshot tests>".to_string();
+                } else if def.name == "developer" {
+                    instructions =
+                        "<Deterministic developer instructions for snapshot tests>".to_string();
                 }
 
                 let has_resources = info
