@@ -1,9 +1,9 @@
 //! Fixture tests for the shell integration templates emitted by `goose term init`.
 //!
-//! These tests run the `goose term init <shell>` binary (built via the
-//! `CARGO_BIN_EXE_goose` env var cargo sets for integration tests), normalize
-//! the output for host-portable comparison, and diff against checked-in
-//! fixtures. The fixtures freeze the default-brand output of `main@HEAD`.
+//! These tests run the sibling CLI binary Cargo builds for integration tests,
+//! normalize the output for host-portable comparison, and diff against
+//! checked-in fixtures. The fixtures freeze the default shell-brand output of
+//! `main@HEAD`; branded builds run smoke assertions instead.
 //!
 //! Two sources of per-machine variability are normalized before compare:
 //!
@@ -18,16 +18,82 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
+
+use goose_cli::Brand;
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/shell_templates")
 }
 
+fn cli_bin() -> &'static Path {
+    static BIN: OnceLock<PathBuf> = OnceLock::new();
+    BIN.get_or_init(resolve_cli_bin).as_path()
+}
+
+fn resolve_cli_bin() -> PathBuf {
+    let target_dir = std::env::current_exe()
+        .expect("failed to resolve test binary path")
+        .parent()
+        .and_then(Path::parent)
+        .expect("failed to resolve target dir from test binary")
+        .to_path_buf();
+    let branded_name = format!(
+        "{}{}",
+        Brand::get().binary_name,
+        std::env::consts::EXE_SUFFIX
+    );
+    let branded_path = target_dir.join(&branded_name);
+    if branded_path.is_file() {
+        return branded_path;
+    }
+
+    let bins: Vec<PathBuf> = fs::read_dir(&target_dir)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", target_dir.display()))
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            entry.file_type().ok()?.is_file().then_some(entry.path())
+        })
+        .filter(|path| {
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                return false;
+            };
+            !name.starts_with('.')
+                && name != format!("generate_manpages{}", std::env::consts::EXE_SUFFIX)
+                && !name.ends_with(".d")
+        })
+        .collect();
+
+    match bins.as_slice() {
+        [path] => path.clone(),
+        [] => panic!(
+            "no CLI test binary found next to test artifacts in {}",
+            target_dir.display()
+        ),
+        _ => panic!(
+            "expected exactly one CLI test binary in {}, found: {}",
+            target_dir.display(),
+            bins.iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn shell_brand_matches_default() -> bool {
+    let brand = Brand::get();
+    brand.product_name == "goose"
+        && brand.binary_name == "goose"
+        && brand.shell_alias_primary == "goose"
+        && brand.shell_alias_short == "g"
+        && brand.shell_fn_prefix == "goose"
+}
+
 /// Run `goose term init <shell>` (optionally with `--default`) in an isolated
 /// HOME/XDG env so it doesn't create sessions in the real user's config.
 fn render_shell(shell: &str, with_default: bool, scratch: &Path) -> String {
-    let bin = env!("CARGO_BIN_EXE_goose");
-    let mut cmd = Command::new(bin);
+    let mut cmd = Command::new(cli_bin());
     cmd.arg("term").arg("init").arg(shell);
     if with_default {
         cmd.arg("--default");
@@ -35,16 +101,7 @@ fn render_shell(shell: &str, with_default: bool, scratch: &Path) -> String {
     cmd.env("HOME", scratch)
         .env("XDG_DATA_HOME", scratch.join("data"))
         .env("XDG_CONFIG_HOME", scratch.join("config"))
-        .env("XDG_STATE_HOME", scratch.join("state"))
-        .env_remove("GOOSE_BRAND_PRODUCT_NAME")
-        .env_remove("GOOSE_BRAND_BINARY_NAME")
-        .env_remove("GOOSE_BRAND_SHELL_ALIAS_PRIMARY")
-        .env_remove("GOOSE_BRAND_SHELL_ALIAS_SHORT")
-        .env_remove("GOOSE_BRAND_SHELL_FN_PREFIX")
-        .env_remove("GOOSE_BRAND_DEEPLINK_SCHEME")
-        .env_remove("GOOSE_BRAND_GITHUB_OWNER")
-        .env_remove("GOOSE_BRAND_GITHUB_REPO")
-        .env_remove("GOOSE_BRAND_AGENT_IDENTITY");
+        .env("XDG_STATE_HOME", scratch.join("state"));
 
     let output = cmd.output().expect("failed to run goose term init");
     assert!(
@@ -64,17 +121,77 @@ fn render_shell(shell: &str, with_default: bool, scratch: &Path) -> String {
 /// - Replace the absolute `current_exe()` path embedded by `term init` with
 ///   the stable placeholder `{GOOSE_BIN}` (differs by checkout location).
 fn normalize(s: &str) -> String {
-    let bin = env!("CARGO_BIN_EXE_goose");
+    let bin = cli_bin().to_string_lossy();
     s.lines()
         .filter(|line| !line.contains("AGENT_SESSION_ID"))
-        .map(|line| line.replace(bin, "{GOOSE_BIN}"))
+        .map(|line| line.replace(bin.as_ref(), "{GOOSE_BIN}"))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-fn check_or_update(name: &str, actual: String) {
+fn assert_branded_output(name: &str, shell: &str, with_default: bool, actual_normalized: &str) {
+    let brand = Brand::get();
+
+    assert!(
+        !actual_normalized.is_empty(),
+        "{name} produced empty output for shell {shell}"
+    );
+
+    for placeholder in [
+        "{session_id}",
+        "{goose_bin}",
+        "{binary_name}",
+        "{product_name}",
+        "{alias_primary}",
+        "{alias_short}",
+        "{fn_prefix}",
+        "{command_not_found_handler}",
+    ] {
+        assert!(
+            !actual_normalized.contains(placeholder),
+            "{name} left placeholder {placeholder} in rendered output:\n{actual_normalized}"
+        );
+    }
+
+    for expected in [
+        "{GOOSE_BIN}",
+        brand.binary_name,
+        brand.shell_alias_primary,
+        brand.shell_alias_short,
+        brand.shell_fn_prefix,
+    ] {
+        assert!(
+            actual_normalized.contains(expected),
+            "{name} missing branded token `{expected}` in rendered output:\n{actual_normalized}"
+        );
+    }
+
+    if with_default {
+        assert!(
+            actual_normalized.contains(&format!("Asking {}", brand.product_name)),
+            "{name} missing branded command-not-found message:\n{actual_normalized}"
+        );
+    } else {
+        assert!(
+            !actual_normalized.contains("Asking "),
+            "{name} unexpectedly rendered command-not-found handler:\n{actual_normalized}"
+        );
+    }
+}
+
+fn check_or_update(name: &str, shell: &str, with_default: bool, actual: String) {
     let path = fixtures_dir().join(name);
     let actual_normalized = normalize(&actual);
+
+    if !shell_brand_matches_default() {
+        assert!(
+            std::env::var_os("UPDATE_SHELL_FIXTURES").is_none(),
+            "shell fixtures snapshot only the default shell brand; rebuild without GOOSE_BRAND_* shell overrides to update {}",
+            path.display()
+        );
+        assert_branded_output(name, shell, with_default, &actual_normalized);
+        return;
+    }
 
     if std::env::var_os("UPDATE_SHELL_FIXTURES").is_some() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -104,7 +221,12 @@ fn scratch_home() -> tempfile::TempDir {
 #[test]
 fn bash_default_brand() {
     let scratch = scratch_home();
-    check_or_update("bash.txt", render_shell("bash", false, scratch.path()));
+    check_or_update(
+        "bash.txt",
+        "bash",
+        false,
+        render_shell("bash", false, scratch.path()),
+    );
 }
 
 #[test]
@@ -112,6 +234,8 @@ fn bash_with_command_not_found() {
     let scratch = scratch_home();
     check_or_update(
         "bash_default.txt",
+        "bash",
+        true,
         render_shell("bash", true, scratch.path()),
     );
 }
@@ -119,19 +243,34 @@ fn bash_with_command_not_found() {
 #[test]
 fn zsh_default_brand() {
     let scratch = scratch_home();
-    check_or_update("zsh.txt", render_shell("zsh", false, scratch.path()));
+    check_or_update(
+        "zsh.txt",
+        "zsh",
+        false,
+        render_shell("zsh", false, scratch.path()),
+    );
 }
 
 #[test]
 fn zsh_with_command_not_found() {
     let scratch = scratch_home();
-    check_or_update("zsh_default.txt", render_shell("zsh", true, scratch.path()));
+    check_or_update(
+        "zsh_default.txt",
+        "zsh",
+        true,
+        render_shell("zsh", true, scratch.path()),
+    );
 }
 
 #[test]
 fn fish_default_brand() {
     let scratch = scratch_home();
-    check_or_update("fish.txt", render_shell("fish", false, scratch.path()));
+    check_or_update(
+        "fish.txt",
+        "fish",
+        false,
+        render_shell("fish", false, scratch.path()),
+    );
 }
 
 #[test]
@@ -139,6 +278,8 @@ fn powershell_default_brand() {
     let scratch = scratch_home();
     check_or_update(
         "powershell.txt",
+        "powershell",
+        false,
         render_shell("powershell", false, scratch.path()),
     );
 }
