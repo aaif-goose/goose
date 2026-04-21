@@ -78,7 +78,7 @@ test-e2e-all:
 # ── Run ──────────────────────────────────────────────────────
 
 # Start the desktop app in dev mode
-dev:
+dev: setup
     #!/usr/bin/env bash
     set -euo pipefail
 
