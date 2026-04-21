@@ -402,8 +402,13 @@ export function useChatSessionController({
     {
       onMessageAccepted: sessionId ? onMessageAccepted : undefined,
       ensurePrepared: selectedProvider
-        ? () =>
-            prepareSelectedProvider(selectedProvider, effectiveModelSelection)
+        ? (personaId?: string) =>
+            prepareCurrentSession(
+              selectedProvider,
+              project,
+              activeWorkspace?.path,
+              personaId,
+            )
         : undefined,
     },
   );
@@ -449,7 +454,7 @@ export function useChatSessionController({
       }
 
       return (async () => {
-        const compactionResult = await compactConversation();
+        const compactionResult = await compactConversation(overridePersona);
         if (compactionResult !== "completed") {
           return false;
         }

@@ -113,6 +113,43 @@ describe("useChat compaction", () => {
     );
   });
 
+  it("prepares and compacts the override persona session", async () => {
+    let preparedPersonaId: string | undefined;
+    const ensurePrepared = vi.fn(async (personaId?: string) => {
+      preparedPersonaId = personaId;
+    });
+    mockGetGooseSessionId.mockImplementation(
+      (_sessionId: string, personaId?: string) =>
+        personaId === "persona-a" && preparedPersonaId === "persona-a"
+          ? "goose-session-a"
+          : null,
+    );
+
+    const { result } = renderHook(() =>
+      useChat(
+        "session-1",
+        undefined,
+        undefined,
+        { id: "persona-b", name: "Persona B" },
+        { ensurePrepared },
+      ),
+    );
+
+    await act(async () => {
+      await result.current.compactConversation({ id: "persona-a" });
+    });
+
+    expect(ensurePrepared).toHaveBeenCalledWith("persona-a");
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact", {
+      personaId: "persona-a",
+    });
+    expect(mockAcpLoadSession).toHaveBeenCalledWith(
+      "session-1",
+      "goose-session-a",
+      undefined,
+    );
+  });
+
   it("blocks new sends while compaction is in flight", async () => {
     mockGetGooseSessionId.mockReturnValue("goose-session-1");
     const compactDeferred = createDeferredPromise();

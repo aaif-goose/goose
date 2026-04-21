@@ -25,6 +25,8 @@ const mockPickerState = {
   modelStatusMessage: null as string | null,
 };
 const mockSetAutoCompactThreshold = vi.fn();
+const mockQueueEnqueue = vi.fn();
+const mockQueueDismiss = vi.fn();
 const INITIAL_TOKEN_STATE = {
   inputTokens: 0,
   outputTokens: 0,
@@ -35,6 +37,13 @@ const INITIAL_TOKEN_STATE = {
   contextLimit: 0,
 };
 let mockTokenState = { ...INITIAL_TOKEN_STATE };
+let capturedQueuedSend:
+  | ((
+      text: string,
+      overridePersona?: { id: string; name?: string },
+      attachments?: unknown[],
+    ) => boolean | Promise<boolean>)
+  | null = null;
 
 vi.mock("@/shared/api/acp", () => ({
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
@@ -67,10 +76,14 @@ vi.mock("../useChat", () => ({
 }));
 
 vi.mock("../useMessageQueue", () => ({
-  useMessageQueue: () => ({
-    queuedMessage: null,
-    enqueue: vi.fn(),
-  }),
+  useMessageQueue: (...args: unknown[]) => {
+    capturedQueuedSend = args[2] as typeof capturedQueuedSend;
+    return {
+      queuedMessage: null,
+      enqueue: (...enqueueArgs: unknown[]) => mockQueueEnqueue(...enqueueArgs),
+      dismiss: () => mockQueueDismiss(),
+    };
+  },
 }));
 
 vi.mock("../useAutoCompactPreferences", () => ({
@@ -151,6 +164,7 @@ describe("useChatSessionController", () => {
     mockPickerState.modelsLoading = false;
     mockPickerState.modelStatusMessage = null;
     mockTokenState = { ...INITIAL_TOKEN_STATE };
+    capturedQueuedSend = null;
 
     useAgentStore.setState({
       personas: [],
@@ -556,7 +570,6 @@ describe("useChatSessionController", () => {
       mockSendMessage.mock.invocationCallOrder[0],
     );
   });
-
   it("keeps compaction enabled for goose agent sessions backed by model providers", async () => {
     mockTokenState = {
       ...INITIAL_TOKEN_STATE,
@@ -581,5 +594,35 @@ describe("useChatSessionController", () => {
 
     expect(mockCompactConversation).toHaveBeenCalledOnce();
     expect(mockSendMessage).toHaveBeenCalledWith("hello", undefined, undefined);
+  });
+
+  it("compacts the queued persona session before sending", async () => {
+    mockTokenState = {
+      ...INITIAL_TOKEN_STATE,
+      accumulatedTotal: 8_500,
+      contextLimit: 10_000,
+    };
+    useChatStore
+      .getState()
+      .replaceTokenState("session-1", mockTokenState, true);
+    useChatSessionStore.getState().updateSession("session-1", {
+      providerId: "goose",
+      personaId: "persona-b",
+    });
+
+    renderHook(() => useChatSessionController({ sessionId: "session-1" }));
+
+    expect(capturedQueuedSend).not.toBeNull();
+
+    await act(async () => {
+      await capturedQueuedSend?.("hello", { id: "persona-a" });
+    });
+
+    expect(mockCompactConversation).toHaveBeenCalledWith({ id: "persona-a" });
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "hello",
+      { id: "persona-a" },
+      undefined,
+    );
   });
 });
