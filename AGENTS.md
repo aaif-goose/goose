@@ -47,7 +47,6 @@ git commit -s                # required for DCO sign-off
 ```
 crates/
 ├── goose              # core logic
-├── goose-acp          # Agent Client Protocol
 ├── goose-acp-macros   # ACP proc macros
 ├── goose-cli          # CLI entry
 ├── goose-server       # backend (binary: goosed)
