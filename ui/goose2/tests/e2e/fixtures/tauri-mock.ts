@@ -36,17 +36,22 @@ export function buildInitScript(options?: {
       const PROJECTS = ${projects};
       const FAKE_ACP_URL = "ws://127.0.0.1:0/mock-acp";
       const ACP_SESSIONS = [];
-      const ACP_PROVIDERS = [
-        { id: "claude", label: "Claude" },
-        { id: "openai", label: "OpenAI" },
-      ];
       const PROVIDER_INVENTORY = [
         {
           providerId: "claude",
           providerName: "Claude",
+          description: "Claude provider",
+          defaultModel: "claude-sonnet-4-20250514",
           configured: true,
+          providerType: "Preferred",
+          configKeys: [],
+          setupSteps: [],
+          supportsRefresh: true,
           refreshing: false,
+          lastUpdatedAt: null,
+          lastRefreshAttemptAt: null,
           lastRefreshError: null,
+          stale: false,
           modelSelectionHint: null,
           models: [
             {
@@ -60,9 +65,18 @@ export function buildInitScript(options?: {
         {
           providerId: "openai",
           providerName: "OpenAI",
+          description: "OpenAI provider",
+          defaultModel: "gpt-4.1",
           configured: true,
+          providerType: "Preferred",
+          configKeys: [],
+          setupSteps: [],
+          supportsRefresh: true,
           refreshing: false,
+          lastUpdatedAt: null,
+          lastRefreshAttemptAt: null,
           lastRefreshError: null,
+          stale: false,
           modelSelectionHint: null,
           models: [
             {
@@ -164,8 +178,6 @@ export function buildInitScript(options?: {
             return jsonRpcResult(message.id, { stopReason: "end_turn" });
           }
           case "_goose/providers/list":
-            return jsonRpcResult(message.id, { providers: ACP_PROVIDERS });
-          case "_goose/providers/inventory":
             return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
           case "_goose/providers/inventory/refresh":
             return jsonRpcResult(message.id, { started: [], skipped: [] });
