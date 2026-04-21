@@ -19,7 +19,8 @@ import {
 import { setStoredModelPreference } from "../lib/modelPreferences";
 import {
   shouldAutoCompactContext,
-  supportsGooseAutoCompaction,
+  supportsContextAutoCompaction,
+  supportsContextCompactionControls,
 } from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
@@ -408,7 +409,9 @@ export function useChatSessionController({
   );
   const resolvedTokenState = tokenState ?? INITIAL_TOKEN_STATE;
   const supportsAutoCompactContext =
-    supportsGooseAutoCompaction(selectedProvider);
+    supportsContextAutoCompaction(selectedAgentId);
+  const supportsCompactionControls =
+    supportsContextCompactionControls(selectedAgentId);
   const isCompactingContext = chatState === "compacting";
   const canAutoCompactBeforeSend = useCallback(() => {
     if (
@@ -717,9 +720,10 @@ export function useChatSessionController({
     streamingMessageId,
     compactConversation,
     canCompactContext:
-      supportsAutoCompactContext && messages.length > 0 && chatState === "idle",
+      supportsCompactionControls && messages.length > 0 && chatState === "idle",
     isCompactingContext,
     supportsAutoCompactContext,
+    supportsCompactionControls,
     isContextUsageReady:
       hasContextUsageSnapshot && resolvedTokenState.contextLimit > 0,
     isLoadingHistory,

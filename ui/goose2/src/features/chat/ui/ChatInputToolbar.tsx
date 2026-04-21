@@ -6,6 +6,7 @@ import {
   Paperclip,
   File,
   FolderOpen,
+  Settings2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
@@ -31,7 +32,7 @@ import { AgentModelPicker } from "./AgentModelPicker";
 import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { getCatalogEntry } from "@/features/providers/providerCatalog";
-import { supportsGooseAutoCompaction } from "../lib/autoCompact";
+import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
 
 const NO_PROJECT_VALUE = "__no_project__";
@@ -79,7 +80,7 @@ interface ChatInputToolbarProps {
   contextTokens: number;
   contextLimit: number;
   isContextUsageReady?: boolean;
-  supportsAutoCompactContext?: boolean;
+  supportsCompactionControls?: boolean;
   // Actions
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
@@ -123,7 +124,7 @@ export function ChatInputToolbar({
   contextTokens,
   contextLimit,
   isContextUsageReady,
-  supportsAutoCompactContext,
+  supportsCompactionControls,
   canCompactContext = false,
   isCompactingContext = false,
   onCompactContext,
@@ -144,8 +145,9 @@ export function ChatInputToolbar({
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
-  const autoCompactSupported =
-    supportsAutoCompactContext ?? supportsGooseAutoCompaction(selectedProvider);
+  const compactionControlsSupported =
+    supportsCompactionControls ??
+    supportsContextCompactionControls(selectedProvider);
 
   const agentProviders = useMemo(() => {
     const seen = new Set<string>();
@@ -355,13 +357,13 @@ export function ChatInputToolbar({
                     </div>
                     <div className="shrink-0">{usedPercentLabel}</div>
                   </div>
-                  {autoCompactSupported ? (
-                    <div className="space-y-1">
+                  {compactionControlsSupported ? (
+                    <div className="flex items-center gap-1 pt-0.5">
                       <Button
                         type="button"
                         variant="secondary"
                         size="xs"
-                        className="w-full justify-center"
+                        className="min-w-0 flex-1 justify-center"
                         onClick={handleCompactContext}
                         disabled={!canCompactContext || isCompactingContext}
                       >
@@ -372,11 +374,13 @@ export function ChatInputToolbar({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="xs"
-                        className="w-full justify-center text-muted-foreground"
+                        size="icon-xs"
+                        className="shrink-0 rounded-full"
                         onClick={handleOpenAutoCompactSettings}
+                        aria-label={t("toolbar.settings")}
+                        title={t("toolbar.settings")}
                       >
-                        {t("toolbar.settings")}
+                        <Settings2 className="size-4" />
                       </Button>
                     </div>
                   ) : null}

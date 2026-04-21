@@ -56,7 +56,7 @@ export function ChatInput({
   onCompactContext,
   canCompactContext = false,
   isCompactingContext = false,
-  supportsAutoCompactContext,
+  supportsCompactionControls,
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
@@ -460,7 +460,7 @@ export function ChatInput({
                 onCompactContext={onCompactContext}
                 canCompactContext={canCompactContext}
                 isCompactingContext={isCompactingContext}
-                supportsAutoCompactContext={supportsAutoCompactContext}
+                supportsCompactionControls={supportsCompactionControls}
                 canSend={canSend}
                 isStreaming={isStreaming}
                 hasQueuedMessage={hasQueuedMessage}

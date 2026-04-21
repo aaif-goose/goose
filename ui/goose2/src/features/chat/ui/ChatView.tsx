@@ -147,7 +147,7 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
             onCompactContext={controller.compactConversation}
             canCompactContext={controller.canCompactContext}
             isCompactingContext={controller.isCompactingContext}
-            supportsAutoCompactContext={controller.supportsAutoCompactContext}
+            supportsCompactionControls={controller.supportsCompactionControls}
           />
         </div>
 

@@ -3,6 +3,7 @@ export const AUTO_COMPACT_PREFERENCES_EVENT = "goose:auto-compact-preferences";
 export const DEFAULT_AUTO_COMPACT_THRESHOLD = 0.8;
 export const MIN_AUTO_COMPACT_THRESHOLD_PERCENT = 1;
 export const MAX_AUTO_COMPACT_THRESHOLD_PERCENT = 100;
+const CONTEXT_COMPACTION_PROVIDER_IDS = new Set(["goose"]);
 
 function coerceAutoCompactThreshold(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -76,8 +77,20 @@ export function shouldAutoCompactContext(
   return usedTokens / contextLimit > threshold;
 }
 
-export function supportsGooseAutoCompaction(
+function supportsContextCompactionProvider(
   providerId: string | null | undefined,
 ): boolean {
-  return providerId === "goose";
+  return providerId != null && CONTEXT_COMPACTION_PROVIDER_IDS.has(providerId);
+}
+
+export function supportsContextAutoCompaction(
+  providerId: string | null | undefined,
+): boolean {
+  return supportsContextCompactionProvider(providerId);
+}
+
+export function supportsContextCompactionControls(
+  providerId: string | null | undefined,
+): boolean {
+  return supportsContextCompactionProvider(providerId);
 }

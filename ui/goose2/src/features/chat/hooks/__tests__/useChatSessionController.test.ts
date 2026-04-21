@@ -556,4 +556,30 @@ describe("useChatSessionController", () => {
       mockSendMessage.mock.invocationCallOrder[0],
     );
   });
+
+  it("keeps compaction enabled for goose agent sessions backed by model providers", async () => {
+    mockTokenState = {
+      ...INITIAL_TOKEN_STATE,
+      accumulatedTotal: 8_500,
+      contextLimit: 10_000,
+    };
+    useChatStore
+      .getState()
+      .replaceTokenState("session-1", mockTokenState, true);
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: "session-1" }),
+    );
+
+    expect(result.current.selectedProvider).toBe("goose");
+    expect(result.current.supportsAutoCompactContext).toBe(true);
+    expect(result.current.supportsCompactionControls).toBe(true);
+
+    await act(async () => {
+      await result.current.handleSend("hello");
+    });
+
+    expect(mockCompactConversation).toHaveBeenCalledOnce();
+    expect(mockSendMessage).toHaveBeenCalledWith("hello", undefined, undefined);
+  });
 });

@@ -61,5 +61,5 @@ export interface ChatInputProps {
   onCompactContext?: () => Promise<unknown> | undefined;
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
-  supportsAutoCompactContext?: boolean;
+  supportsCompactionControls?: boolean;
 }
