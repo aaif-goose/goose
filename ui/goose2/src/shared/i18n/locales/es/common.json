@@ -40,6 +40,13 @@
     "codeBlock": {
       "copyLabel": "Copiar código"
     },
+    "linkSafety": {
+      "copied": "¡Copiado!",
+      "copyLink": "Copiar enlace",
+      "description": "Estás a punto de visitar un sitio web externo.",
+      "openLink": "Abrir enlace",
+      "title": "¿Abrir enlace externo?"
+    },
     "environmentVariables": {
       "copyLabel": "Copiar variable de entorno",
       "title": "Variables de entorno",
