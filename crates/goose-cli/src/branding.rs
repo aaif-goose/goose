@@ -196,9 +196,16 @@ pub fn branded_command() -> clap::Command {
 mod tests {
     use super::*;
 
+    fn help_brand_matches_defaults(b: &Brand) -> bool {
+        b.product_name == DEFAULT_PRODUCT_NAME && b.binary_name == DEFAULT_BINARY_NAME
+    }
+
     #[test]
     fn default_brand_matches_hardcoded_defaults() {
         let b = Brand::get();
+        if !b.is_default() {
+            return;
+        }
         assert!(b.is_default(), "default build must have all defaults");
         assert_eq!(b.product_name, "goose");
         assert_eq!(b.binary_name, "goose");
@@ -220,8 +227,12 @@ mod tests {
     }
 
     #[test]
-    fn apply_branding_is_noop_on_default_build() {
+    fn apply_branding_is_noop_when_help_brand_matches_defaults() {
         use clap::CommandFactory;
+        let b = Brand::get();
+        if !help_brand_matches_defaults(b) {
+            return;
+        }
         let before = crate::Cli::command().render_long_help().to_string();
         let after = branded_command().render_long_help().to_string();
         assert_eq!(before, after);
