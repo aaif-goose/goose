@@ -27,7 +27,9 @@ const DEFAULT_PROVIDER: AcpProvider = {
 
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
-  const result = await client.goose.GooseProvidersInventory({ providerIds: [] });
+  const result = await client.goose.GooseProvidersInventory({
+    providerIds: [],
+  });
 
   const providers = result.entries
     .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
