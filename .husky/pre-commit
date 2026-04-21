@@ -1,3 +1,5 @@
+set -e
+
 # Only auto-format desktop TS code if relevant files are modified
 if git diff --cached --name-only | grep -q "^ui/desktop/"; then
   if [ -d "ui/desktop" ]; then
@@ -13,9 +15,11 @@ if git diff --cached --name-only | grep -q '^ui/goose2/'; then
     REPO_ROOT="$(pwd)"
     echo "Running goose2 pre-commit checks..."
 
-    # Auto-format and re-stage changed files
+    # Auto-format only staged files and re-stage them
+    STAGED_FILES=$(git diff --cached --name-only | grep '^ui/goose2/' | sed 's|^ui/goose2/||')
     cd ui/goose2
-    npx biome format --write . && npx biome check --fix .
+    echo "$STAGED_FILES" | xargs npx biome format --write
+    echo "$STAGED_FILES" | xargs npx biome check --fix
     cd "$REPO_ROOT"
     git diff --cached --name-only | grep '^ui/goose2/' | xargs git add
 
