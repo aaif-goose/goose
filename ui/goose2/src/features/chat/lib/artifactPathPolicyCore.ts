@@ -146,8 +146,6 @@ function hasKnownScheme(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value);
 }
 
-
-
 function isLikelyAbsoluteFilesystemPath(candidate: string): boolean {
   if (/^[a-zA-Z]:[\\/]/.test(candidate)) return true;
   if (!candidate.startsWith("/")) return false;

@@ -117,7 +117,9 @@ describe("FilesList", () => {
 
     await user.click(await screen.findByText("README.md"));
 
-    expect(vi.mocked(openPath)).toHaveBeenCalledWith("/Users/test/project/README.md");
+    expect(vi.mocked(openPath)).toHaveBeenCalledWith(
+      "/Users/test/project/README.md",
+    );
   });
 
   it("supports context menu actions for folders and files", async () => {
