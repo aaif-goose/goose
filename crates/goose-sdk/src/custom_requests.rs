@@ -181,24 +181,6 @@ pub struct RemoveSecretRequest {
     pub key: String,
 }
 
-/// List providers available through goose, including the config-default sentinel.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/providers/list", response = ListProvidersResponse)]
-pub struct ListProvidersRequest {}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderListEntry {
-    pub id: String,
-    pub label: String,
-}
-
-/// Provider list response.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct ListProvidersResponse {
-    pub providers: Vec<ProviderListEntry>,
-}
-
 /// Archive a session (soft delete).
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/session/archive", response = EmptyResponse)]
@@ -244,40 +226,6 @@ pub struct ImportSessionResponse {
     pub title: Option<String>,
     pub updated_at: Option<String>,
     pub message_count: u64,
-}
-
-/// List providers with full metadata (config keys, setup steps, etc.).
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/providers/details", response = GetProviderDetailsResponse)]
-pub struct GetProviderDetailsRequest {}
-
-/// Provider details response.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct GetProviderDetailsResponse {
-    pub providers: Vec<ProviderDetailEntry>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderDetailEntry {
-    pub name: String,
-    pub display_name: String,
-    pub description: String,
-    pub default_model: String,
-    pub is_configured: bool,
-    pub provider_type: String,
-    pub config_keys: Vec<ProviderConfigKey>,
-    #[serde(default)]
-    pub setup_steps: Vec<String>,
-    #[serde(default)]
-    pub known_models: Vec<ModelEntry>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelEntry {
-    pub name: String,
-    pub context_limit: usize,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -494,22 +442,19 @@ pub struct DictationConfigResponse {
     pub providers: HashMap<String, DictationProviderStatusEntry>,
 }
 
-/// Read per-provider inventory. Always returns immediately from stored state.
+/// List providers with setup metadata and the current model inventory snapshot.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(
-    method = "_goose/providers/inventory",
-    response = GetProviderInventoryResponse
-)]
+#[request(method = "_goose/providers/list", response = ListProvidersResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct GetProviderInventoryRequest {
+pub struct ListProvidersRequest {
     /// Only return entries for these providers. Empty means all.
     #[serde(default)]
     pub provider_ids: Vec<String>,
 }
 
-/// Provider inventory response.
+/// Provider list response.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct GetProviderInventoryResponse {
+pub struct ListProvidersResponse {
     pub entries: Vec<ProviderInventoryEntryDto>,
 }
 
@@ -584,8 +529,18 @@ pub struct ProviderInventoryEntryDto {
     pub provider_id: String,
     /// Human-readable provider name.
     pub provider_name: String,
+    /// Description of the provider's capabilities.
+    pub description: String,
+    /// The default/recommended model for this provider.
+    pub default_model: String,
     /// Whether Goose has enough configuration to use this provider.
     pub configured: bool,
+    /// Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
+    pub provider_type: String,
+    /// Required configuration keys and setup metadata.
+    pub config_keys: Vec<ProviderConfigKey>,
+    /// Step-by-step setup instructions, when present.
+    pub setup_steps: Vec<String>,
     /// Whether this provider supports background inventory refresh.
     pub supports_refresh: bool,
     /// Whether a refresh is currently in flight.

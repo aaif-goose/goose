@@ -425,7 +425,16 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
     ProviderInventoryEntryDto {
         provider_id: entry.provider_id,
         provider_name: entry.provider_name,
+        description: entry.description,
+        default_model: entry.default_model,
         configured: entry.configured,
+        provider_type: format!("{:?}", entry.provider_type),
+        config_keys: entry
+            .config_keys
+            .into_iter()
+            .map(provider_config_key_to_dto)
+            .collect(),
+        setup_steps: entry.setup_steps,
         supports_refresh: entry.supports_refresh,
         refreshing: entry.refreshing,
         models: entry
@@ -448,6 +457,18 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
     }
 }
 
+fn provider_config_key_to_dto(key: crate::providers::base::ConfigKey) -> ProviderConfigKey {
+    ProviderConfigKey {
+        name: key.name,
+        required: key.required,
+        secret: key.secret,
+        default: key.default,
+        oauth_flow: key.oauth_flow,
+        device_code_flow: key.device_code_flow,
+        primary: key.primary,
+    }
+}
+
 fn build_model_state(current_model: &str, inventory: &ProviderInventoryEntry) -> SessionModelState {
     let mut available_models = inventory
         .models
@@ -466,11 +487,16 @@ fn build_model_state(current_model: &str, inventory: &ProviderInventoryEntry) ->
     SessionModelState::new(ModelId::new(current_model), available_models)
 }
 
-async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderListEntry> {
+struct ProviderOptionEntry {
+    id: String,
+    label: String,
+}
+
+async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOptionEntry> {
     let mut providers = crate::providers::providers()
         .await
         .into_iter()
-        .map(|(metadata, _)| ProviderListEntry {
+        .map(|(metadata, _)| ProviderOptionEntry {
             id: metadata.name,
             label: metadata.display_name,
         })
@@ -484,7 +510,7 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderLi
                 .iter()
                 .any(|provider| provider.id == current_provider)
         {
-            providers.push(ProviderListEntry {
+            providers.push(ProviderOptionEntry {
                 id: current_provider.to_string(),
                 label: current_provider.to_string(),
             });
@@ -493,7 +519,7 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderLi
     }
 
     let mut entries = Vec::with_capacity(providers.len() + 1);
-    entries.push(ProviderListEntry {
+    entries.push(ProviderOptionEntry {
         id: DEFAULT_PROVIDER_ID.to_string(),
         label: DEFAULT_PROVIDER_LABEL.to_string(),
     });
@@ -2782,84 +2808,14 @@ impl GooseAcpAgent {
     #[custom_method(ListProvidersRequest)]
     async fn on_list_providers(
         &self,
-        _req: ListProvidersRequest,
+        req: ListProvidersRequest,
     ) -> Result<ListProvidersResponse, sacp::Error> {
-        Ok(ListProvidersResponse {
-            providers: list_provider_entries(None).await,
-        })
-    }
-
-    #[custom_method(GetProviderDetailsRequest)]
-    async fn on_get_provider_details(
-        &self,
-        _req: GetProviderDetailsRequest,
-    ) -> Result<GetProviderDetailsResponse, sacp::Error> {
-        let config = self.load_config().ok();
-        let all = crate::providers::providers().await;
-        let entries = all
-            .into_iter()
-            .map(|(metadata, provider_type)| {
-                let is_configured = config
-                    .as_ref()
-                    .map(|c| {
-                        metadata.config_keys.iter().all(|k| {
-                            if !k.required {
-                                return true;
-                            }
-                            if k.secret {
-                                c.get_secret::<String>(&k.name).is_ok()
-                            } else {
-                                c.get_param::<String>(&k.name).is_ok()
-                            }
-                        })
-                    })
-                    .unwrap_or(false);
-                ProviderDetailEntry {
-                    name: metadata.name.clone(),
-                    display_name: metadata.display_name.clone(),
-                    description: metadata.description.clone(),
-                    default_model: metadata.default_model.clone(),
-                    is_configured,
-                    provider_type: format!("{:?}", provider_type),
-                    config_keys: metadata
-                        .config_keys
-                        .iter()
-                        .map(|k| ProviderConfigKey {
-                            name: k.name.clone(),
-                            required: k.required,
-                            secret: k.secret,
-                            default: k.default.clone(),
-                            oauth_flow: k.oauth_flow,
-                            device_code_flow: k.device_code_flow,
-                            primary: k.primary,
-                        })
-                        .collect(),
-                    setup_steps: metadata.setup_steps.clone(),
-                    known_models: metadata
-                        .known_models
-                        .iter()
-                        .map(|m| ModelEntry {
-                            name: m.name.clone(),
-                            context_limit: m.context_limit,
-                        })
-                        .collect(),
-                }
-            })
-            .collect();
-        Ok(GetProviderDetailsResponse { providers: entries })
-    }
-
-    #[custom_method(GetProviderInventoryRequest)]
-    async fn on_get_provider_inventory(
-        &self,
-        req: GetProviderInventoryRequest,
-    ) -> Result<GetProviderInventoryResponse, sacp::Error> {
         let entries = self
             .provider_inventory
             .entries(&req.provider_ids)
             .await
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-        Ok(GetProviderInventoryResponse {
+        Ok(ListProvidersResponse {
             entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
         })
     }
@@ -4149,7 +4105,12 @@ print(\"hello, world\")
         let inventory = ProviderInventoryEntry {
             provider_id: "mock".to_string(),
             provider_name: "Mock".to_string(),
+            description: "Mock".to_string(),
+            default_model: "unused".to_string(),
             configured: true,
+            provider_type: crate::providers::base::ProviderType::Builtin,
+            config_keys: vec![],
+            setup_steps: vec![],
             supports_refresh: true,
             refreshing: false,
             models: models

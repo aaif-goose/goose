@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
-import type { GooseClient, ProviderDetailEntry } from "@aaif/goose-sdk";
+import type { GooseClient, ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import {
   CRANBERRY,
   TEAL,
@@ -38,7 +38,7 @@ interface ConfigureProps {
 
 interface ModelSelectorProps {
   client: GooseClient;
-  provider: ProviderDetailEntry;
+  provider: ProviderInventoryEntryDto;
   height: number;
   onSelect: (model: string) => void;
   onBack: () => void;
@@ -74,7 +74,7 @@ const ModelSelector = React.memo(function ModelSelector({
         setLoading(true);
         setError(null);
         const resp = await client.goose.GooseProvidersModels({
-          providerName: provider.name,
+          providerName: provider.providerId,
         });
         if (!cancelled) {
           setModels(resp.models);
@@ -96,7 +96,7 @@ const ModelSelector = React.memo(function ModelSelector({
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [client, provider.name, provider.defaultModel]);
+  }, [client, provider.providerId, provider.defaultModel]);
 
   const filtered = (() => {
     if (!searchQuery) return models;
@@ -190,7 +190,7 @@ const ModelSelector = React.memo(function ModelSelector({
           <Text color={TEXT_PRIMARY} bold>◆ Select model ◆</Text>
         </Box>
         <Box justifyContent="center" marginBottom={2}>
-          <Text color={TEXT_DIM}>Loading models for {provider.displayName}…</Text>
+          <Text color={TEXT_DIM}>Loading models for {provider.providerName}…</Text>
         </Box>
         <Box justifyContent="center" flexGrow={1} alignItems="center">
           <Spinner idx={0} />
@@ -235,7 +235,7 @@ const ModelSelector = React.memo(function ModelSelector({
           <Text color={TEXT_PRIMARY} bold>◆ Enter model name ◆</Text>
         </Box>
         <Box justifyContent="center" marginBottom={2}>
-          <Text color={TEXT_DIM}>Type a model identifier for {provider.displayName}</Text>
+          <Text color={TEXT_DIM}>Type a model identifier for {provider.providerName}</Text>
         </Box>
 
         <Box justifyContent="center">
@@ -270,7 +270,7 @@ const ModelSelector = React.memo(function ModelSelector({
         <Text color={TEXT_PRIMARY} bold>◆ Select model ◆</Text>
       </Box>
       <Box justifyContent="center" marginBottom={2}>
-        <Text color={TEXT_DIM}>Choose a model for {provider.displayName}</Text>
+        <Text color={TEXT_DIM}>Choose a model for {provider.providerName}</Text>
       </Box>
 
       {/* Search Bar */}
@@ -359,8 +359,8 @@ export default function ConfigureScreen({
   initialIntent,
 }: ConfigureProps) {
   const [phase, setPhase] = useState<Phase>("loading");
-  const [providers, setProviders] = useState<ProviderDetailEntry[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<ProviderDetailEntry | null>(null);
+  const [providers, setProviders] = useState<ProviderInventoryEntryDto[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderInventoryEntryDto | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [spinIdx, setSpinIdx] = useState(0);
   const [fetchKey, setFetchKey] = useState(0);
@@ -378,13 +378,13 @@ export default function ConfigureScreen({
 
     (async () => {
       try {
-        const resp = await client.goose.GooseProvidersDetails({});
+        const resp = await client.goose.GooseProvidersList({ providerIds: [] });
         if (cancelled) return;
-        const sorted = [...resp.providers].sort((a, b) => {
+        const sorted = [...resp.entries].sort((a, b) => {
           const aP = a.providerType === "Preferred" ? 0 : 1;
           const bP = b.providerType === "Preferred" ? 0 : 1;
           if (aP !== bP) return aP - bP;
-          return a.displayName.localeCompare(b.displayName);
+          return a.providerName.localeCompare(b.providerName);
         });
         setProviders(sorted);
 
@@ -392,7 +392,7 @@ export default function ConfigureScreen({
           try {
             const cfg = await client.goose.GooseConfigRead({ key: "GOOSE_PROVIDER" });
             if (cancelled) return;
-            const current = sorted.find((p) => p.name === cfg.value);
+            const current = sorted.find((p) => p.providerId === cfg.value);
             if (current) {
               setSelectedProvider(current);
               setPendingConfigValues({});
@@ -419,7 +419,11 @@ export default function ConfigureScreen({
   }, [client, fetchKey, initialIntent]);
 
   const applyProviderModel = useCallback(
-    async (provider: ProviderDetailEntry, model: string, configValues: Record<string, string>) => {
+    async (
+      provider: ProviderInventoryEntryDto,
+      model: string,
+      configValues: Record<string, string>,
+    ) => {
       setPhase("saving");
       try {
         for (const [key, value] of Object.entries(configValues)) {
@@ -430,11 +434,14 @@ export default function ConfigureScreen({
             await client.goose.GooseConfigUpsert({ key, value });
           }
         }
-        await client.goose.GooseConfigUpsert({ key: "GOOSE_PROVIDER", value: provider.name });
+        await client.goose.GooseConfigUpsert({
+          key: "GOOSE_PROVIDER",
+          value: provider.providerId,
+        });
         await client.goose.GooseConfigUpsert({ key: "GOOSE_MODEL", value: model });
         await client.goose.GooseSessionProviderUpdate({
           sessionId,
-          provider: provider.name,
+          provider: provider.providerId,
           model,
         });
         onComplete();
@@ -449,12 +456,12 @@ export default function ConfigureScreen({
   const [pendingConfigValues, setPendingConfigValues] = useState<Record<string, string>>({});
 
   const handleProviderSelected = useCallback(
-    (provider: ProviderDetailEntry) => {
+    (provider: ProviderInventoryEntryDto) => {
       const keys = provider.configKeys.filter(
         (k) => k.required && !k.oauthFlow && !k.deviceCodeFlow,
       );
       setSelectedProvider(provider);
-      if (keys.length > 0 && !provider.isConfigured) {
+      if (keys.length > 0 && !provider.configured) {
         setPhase("configure");
       } else {
         setPendingConfigValues({});

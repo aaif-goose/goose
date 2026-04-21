@@ -197,173 +197,6 @@
     },
     "ListProvidersRequest": {
       "type": "object",
-      "description": "List providers available through goose, including the config-default sentinel.",
-      "x-side": "agent",
-      "x-method": "_goose/providers/list"
-    },
-    "ListProvidersResponse": {
-      "type": "object",
-      "properties": {
-        "providers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ProviderListEntry"
-          }
-        }
-      },
-      "required": [
-        "providers"
-      ],
-      "description": "Provider list response.",
-      "x-side": "agent",
-      "x-method": "_goose/providers/list"
-    },
-    "ProviderListEntry": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "label": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "label"
-      ]
-    },
-    "GetProviderDetailsRequest": {
-      "type": "object",
-      "description": "List providers with full metadata (config keys, setup steps, etc.).",
-      "x-side": "agent",
-      "x-method": "_goose/providers/details"
-    },
-    "GetProviderDetailsResponse": {
-      "type": "object",
-      "properties": {
-        "providers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ProviderDetailEntry"
-          }
-        }
-      },
-      "required": [
-        "providers"
-      ],
-      "description": "Provider details response.",
-      "x-side": "agent",
-      "x-method": "_goose/providers/details"
-    },
-    "ProviderDetailEntry": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "displayName": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "defaultModel": {
-          "type": "string"
-        },
-        "isConfigured": {
-          "type": "boolean"
-        },
-        "providerType": {
-          "type": "string"
-        },
-        "configKeys": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ProviderConfigKey"
-          }
-        },
-        "setupSteps": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "knownModels": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ModelEntry"
-          },
-          "default": []
-        }
-      },
-      "required": [
-        "name",
-        "displayName",
-        "description",
-        "defaultModel",
-        "isConfigured",
-        "providerType",
-        "configKeys"
-      ]
-    },
-    "ProviderConfigKey": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "required": {
-          "type": "boolean"
-        },
-        "secret": {
-          "type": "boolean"
-        },
-        "default": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "default": null
-        },
-        "oauthFlow": {
-          "type": "boolean",
-          "default": false
-        },
-        "deviceCodeFlow": {
-          "type": "boolean",
-          "default": false
-        },
-        "primary": {
-          "type": "boolean",
-          "default": false
-        }
-      },
-      "required": [
-        "name",
-        "required",
-        "secret"
-      ]
-    },
-    "ModelEntry": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "contextLimit": {
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "name",
-        "contextLimit"
-      ]
-    },
-    "GetProviderInventoryRequest": {
-      "type": "object",
       "properties": {
         "providerIds": {
           "type": "array",
@@ -374,11 +207,11 @@
           "default": []
         }
       },
-      "description": "Read per-provider inventory. Always returns immediately from stored state.",
+      "description": "List providers with setup metadata and the current model inventory snapshot.",
       "x-side": "agent",
-      "x-method": "_goose/providers/inventory"
+      "x-method": "_goose/providers/list"
     },
-    "GetProviderInventoryResponse": {
+    "ListProvidersResponse": {
       "type": "object",
       "properties": {
         "entries": {
@@ -391,9 +224,9 @@
       "required": [
         "entries"
       ],
-      "description": "Provider inventory response.",
+      "description": "Provider list response.",
       "x-side": "agent",
-      "x-method": "_goose/providers/inventory"
+      "x-method": "_goose/providers/list"
     },
     "ProviderInventoryEntryDto": {
       "type": "object",
@@ -406,9 +239,35 @@
           "type": "string",
           "description": "Human-readable provider name."
         },
+        "description": {
+          "type": "string",
+          "description": "Description of the provider's capabilities."
+        },
+        "defaultModel": {
+          "type": "string",
+          "description": "The default/recommended model for this provider."
+        },
         "configured": {
           "type": "boolean",
           "description": "Whether Goose has enough configuration to use this provider."
+        },
+        "providerType": {
+          "type": "string",
+          "description": "Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`."
+        },
+        "configKeys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigKey"
+          },
+          "description": "Required configuration keys and setup metadata."
+        },
+        "setupSteps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Step-by-step setup instructions, when present."
         },
         "supportsRefresh": {
           "type": "boolean",
@@ -461,13 +320,56 @@
       "required": [
         "providerId",
         "providerName",
+        "description",
+        "defaultModel",
         "configured",
+        "providerType",
+        "configKeys",
+        "setupSteps",
         "supportsRefresh",
         "refreshing",
         "models",
         "stale"
       ],
       "description": "Provider inventory entry."
+    },
+    "ProviderConfigKey": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "oauthFlow": {
+          "type": "boolean",
+          "default": false
+        },
+        "deviceCodeFlow": {
+          "type": "boolean",
+          "default": false
+        },
+        "primary": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "name",
+        "required",
+        "secret"
+      ]
     },
     "ProviderInventoryModelDto": {
       "type": "object",
@@ -1507,24 +1409,6 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GetProviderDetailsRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/providers/details",
-                  "title": "GetProviderDetailsRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/GetProviderInventoryRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/providers/inventory",
-                  "title": "GetProviderInventoryRequest"
-                },
-                {
-                  "allOf": [
-                    {
                       "$ref": "#/$defs/RefreshProviderInventoryRequest"
                     }
                   ],
@@ -1824,22 +1708,6 @@
                         }
                       ],
                       "title": "ListProvidersResponse"
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "$ref": "#/$defs/GetProviderDetailsResponse"
-                        }
-                      ],
-                      "title": "GetProviderDetailsResponse"
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "$ref": "#/$defs/GetProviderInventoryResponse"
-                        }
-                      ],
-                      "title": "GetProviderInventoryResponse"
                     },
                     {
                       "allOf": [

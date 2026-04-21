@@ -20,16 +20,25 @@ export interface AcpSessionInfo {
 }
 
 const DEPRECATED_PROVIDER_IDS = new Set(["claude-code", "codex", "gemini-cli"]);
+const DEFAULT_PROVIDER: AcpProvider = {
+  id: "goose",
+  label: "Goose (Default)",
+};
 
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
-  const result = await client.goose.GooseProvidersList({});
-  // biome-ignore lint/suspicious/noExplicitAny: ACP SDK types don't expose providers field
-  return (result as any).providers
-    .filter(
-      (p: { id: string; label: string }) => !DEPRECATED_PROVIDER_IDS.has(p.id),
-    )
-    .map((p: { id: string; label: string }) => ({ id: p.id, label: p.label }));
+  const result = await client.goose.GooseProvidersList({
+    providerIds: [],
+  });
+
+  const providers = result.entries
+    .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+    .map((entry) => ({
+      id: entry.providerId,
+      label: entry.providerName,
+    }));
+
+  return [DEFAULT_PROVIDER, ...providers];
 }
 
 export async function listSessions(): Promise<AcpSessionInfo[]> {

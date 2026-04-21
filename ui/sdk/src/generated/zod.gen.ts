@@ -90,26 +90,11 @@ export const zGetSessionExtensionsResponse = z.object({
 });
 
 /**
- * List providers available through goose, including the config-default sentinel.
+ * List providers with setup metadata and the current model inventory snapshot.
  */
-export const zListProvidersRequest = z.record(z.unknown());
-
-export const zProviderListEntry = z.object({
-    id: z.string(),
-    label: z.string()
+export const zListProvidersRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
 });
-
-/**
- * Provider list response.
- */
-export const zListProvidersResponse = z.object({
-    providers: z.array(zProviderListEntry)
-});
-
-/**
- * List providers with full metadata (config keys, setup steps, etc.).
- */
-export const zGetProviderDetailsRequest = z.record(z.unknown());
 
 export const zProviderConfigKey = z.object({
     name: z.string(),
@@ -122,37 +107,6 @@ export const zProviderConfigKey = z.object({
     oauthFlow: z.boolean().optional().default(false),
     deviceCodeFlow: z.boolean().optional().default(false),
     primary: z.boolean().optional().default(false)
-});
-
-export const zModelEntry = z.object({
-    name: z.string(),
-    contextLimit: z.number().int().gte(0)
-});
-
-export const zProviderDetailEntry = z.object({
-    name: z.string(),
-    displayName: z.string(),
-    description: z.string(),
-    defaultModel: z.string(),
-    isConfigured: z.boolean(),
-    providerType: z.string(),
-    configKeys: z.array(zProviderConfigKey),
-    setupSteps: z.array(z.string()).optional().default([]),
-    knownModels: z.array(zModelEntry).optional().default([])
-});
-
-/**
- * Provider details response.
- */
-export const zGetProviderDetailsResponse = z.object({
-    providers: z.array(zProviderDetailEntry)
-});
-
-/**
- * Read per-provider inventory. Always returns immediately from stored state.
- */
-export const zGetProviderInventoryRequest = z.object({
-    providerIds: z.array(z.string()).optional().default([])
 });
 
 /**
@@ -182,7 +136,12 @@ export const zProviderInventoryModelDto = z.object({
 export const zProviderInventoryEntryDto = z.object({
     providerId: z.string(),
     providerName: z.string(),
+    description: z.string(),
+    defaultModel: z.string(),
     configured: z.boolean(),
+    providerType: z.string(),
+    configKeys: z.array(zProviderConfigKey),
+    setupSteps: z.array(z.string()),
     supportsRefresh: z.boolean(),
     refreshing: z.boolean(),
     models: z.array(zProviderInventoryModelDto),
@@ -206,9 +165,9 @@ export const zProviderInventoryEntryDto = z.object({
 });
 
 /**
- * Provider inventory response.
+ * Provider list response.
  */
-export const zGetProviderInventoryResponse = z.object({
+export const zListProvidersResponse = z.object({
     entries: z.array(zProviderInventoryEntryDto)
 });
 
@@ -626,8 +585,6 @@ export const zExtRequest = z.object({
             zGetExtensionsRequest,
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
-            zGetProviderDetailsRequest,
-            zGetProviderInventoryRequest,
             zRefreshProviderInventoryRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
@@ -672,8 +629,6 @@ export const zExtResponse = z.union([
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
-                zGetProviderDetailsResponse,
-                zGetProviderInventoryResponse,
                 zRefreshProviderInventoryResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
