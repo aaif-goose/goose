@@ -95,14 +95,12 @@ export function PersonaEditor({
     let cancelled = false;
 
     const syncProviderOptions = async () => {
-      if (acpProviders.length === 0) {
-        try {
-          const providers = await discoverAcpProviders();
-          if (!cancelled && providers.length > 0) {
-            setProviders(providers);
-          }
-        } catch {}
-      }
+      try {
+        const providers = await discoverAcpProviders();
+        if (!cancelled) {
+          setProviders(providers);
+        }
+      } catch {}
 
       try {
         const entries = await getProviderInventory();
@@ -117,7 +115,7 @@ export function PersonaEditor({
     return () => {
       cancelled = true;
     };
-  }, [acpProviders.length, isOpen, mergeInventoryEntries, setProviders]);
+  }, [isOpen, mergeInventoryEntries, setProviders]);
 
   useEffect(() => {
     if (isOpen && persona) {

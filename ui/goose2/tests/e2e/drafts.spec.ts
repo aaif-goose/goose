@@ -13,9 +13,9 @@ test.describe("Draft persistence", () => {
     // Wait for the 300ms debounce to persist the draft
     await page.waitForTimeout(500);
 
-    // Navigate away to Personas
-    await page.getByRole("button", { name: "Personas" }).click();
-    await expect(page.locator("h1", { hasText: "Personas" })).toBeVisible();
+    // Navigate away to Agents
+    await page.getByRole("button", { name: "Agents" }).click();
+    await expect(page.locator("h1", { hasText: "Agents" })).toBeVisible();
 
     // Navigate back to Home
     await page.getByRole("button", { name: "Home" }).click();

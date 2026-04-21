@@ -122,7 +122,9 @@ test.describe("Agents view", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(
-      dialog.locator("h2", { hasText: "Code Reviewer" }),
+      dialog.locator("[data-slot='dialog-title']").filter({
+        hasText: "Code Reviewer",
+      }),
     ).toBeVisible();
     await expect(dialog.getByText("Claude")).toBeVisible();
     await expect(dialog.getByText("claude-sonnet-4-20250514")).toBeVisible();
@@ -137,7 +139,11 @@ test.describe("Agents view", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator("h2", { hasText: "Solo" })).toBeVisible();
+    await expect(
+      dialog.locator("[data-slot='dialog-title']").filter({
+        hasText: "Solo",
+      }),
+    ).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: /Duplicate/ }),
     ).toBeVisible();
