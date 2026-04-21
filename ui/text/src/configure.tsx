@@ -73,10 +73,21 @@ const ModelSelector = React.memo(function ModelSelector({
       try {
         setLoading(true);
         setError(null);
-        const knownModels = provider.knownModels?.map((model) => model.name) ?? [];
+        const inventory = await client.goose.GooseProvidersInventory({
+          providerIds: [provider.name],
+        });
+        const entry = inventory.entries.find(
+          (inventoryEntry) => inventoryEntry.providerId === provider.name,
+        );
+        const inventoryModels = entry?.models.map((m) => m.name) ?? [];
+        const metadataModels = provider.knownModels?.map((m) => m.name) ?? [];
+        const availableModels =
+          inventoryModels.length > 0 ? inventoryModels : metadataModels;
         if (!cancelled) {
-          setModels(knownModels);
-          const defaultIdx = knownModels.findIndex((m) => m === provider.defaultModel);
+          setModels(availableModels);
+          const defaultIdx = availableModels.findIndex(
+            (m) => m === provider.defaultModel,
+          );
           setSelectedIdx(defaultIdx >= 0 ? defaultIdx : 0);
           setLoading(false);
           clearTimeout(timeoutId);
@@ -94,7 +105,7 @@ const ModelSelector = React.memo(function ModelSelector({
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [provider.knownModels, provider.defaultModel]);
+  }, [client, provider.name, provider.knownModels, provider.defaultModel]);
 
   const filtered = (() => {
     if (!searchQuery) return models;
