@@ -422,10 +422,12 @@ pub async fn run_load_mode<C: Connection>() {
 }
 
 pub async fn run_load_model<C: Connection>() {
+    // Use a Chat Completions model so the canned SSE fixtures parse correctly.
+    // TODO: add a Responses API mock to OpenAiFixture for responses-routed models.
     let expected_session_id = C::expected_session_id();
     let openai = OpenAiFixture::new(
         vec![(
-            r#""model":"o4-mini""#.into(),
+            r#""model":"gpt-4.1""#.into(),
             include_str!("../acp_test_data/openai_basic.txt"),
         )],
         expected_session_id.clone(),
@@ -437,7 +439,7 @@ pub async fn run_load_model<C: Connection>() {
     expected_session_id.set(&session.session_id().0);
 
     let session_id = session.session_id().0.to_string();
-    conn.set_model(&session_id, "o4-mini").await.unwrap();
+    conn.set_model(&session_id, "gpt-4.1").await.unwrap();
 
     let output = session
         .prompt("what is 1+1", PermissionDecision::Cancel)
@@ -446,7 +448,7 @@ pub async fn run_load_model<C: Connection>() {
     assert_eq!(output.text, "2");
 
     let SessionData { models, .. } = conn.load_session(&session_id, vec![]).await.unwrap();
-    assert_eq!(&*models.unwrap().current_model_id.0, "o4-mini");
+    assert_eq!(&*models.unwrap().current_model_id.0, "gpt-4.1");
 }
 
 pub async fn run_load_session_mcp<C: Connection>() {
@@ -773,12 +775,14 @@ enum SetModelVia {
 }
 
 async fn run_model_set_impl<C: Connection>(via: SetModelVia) {
+    // Use a Chat Completions model so the canned SSE fixtures parse correctly.
+    // TODO: add a Responses API mock to OpenAiFixture for responses-routed models.
     let expected_session_id = C::expected_session_id();
     let openai = OpenAiFixture::new(
         vec![
             // Session B prompt with switched model
             (
-                r#""model":"o4-mini""#.into(),
+                r#""model":"gpt-4.1""#.into(),
                 include_str!("../acp_test_data/openai_basic.txt"),
             ),
             // Session A prompt with default model
@@ -803,23 +807,23 @@ async fn run_model_set_impl<C: Connection>(via: SetModelVia) {
         ..
     } = conn.new_session().await.unwrap();
 
-    // Session B: switch to o4-mini
+    // Session B: switch to gpt-4.1
     let SessionData {
         session: mut session_b,
         ..
     } = conn.new_session().await.unwrap();
     let session_id = &session_b.session_id().0;
     match via {
-        SetModelVia::Dedicated => conn.set_model(session_id, "o4-mini").await.unwrap(),
+        SetModelVia::Dedicated => conn.set_model(session_id, "gpt-4.1").await.unwrap(),
         SetModelVia::ConfigOption => conn
-            .set_config_option(session_id, "model", "o4-mini")
+            .set_config_option(session_id, "model", "gpt-4.1")
             .await
             .unwrap(),
     }
 
     let set_model_notifs = session_b.notifications();
 
-    // Prompt B — expects o4-mini
+    // Prompt B — expects gpt-4.1
     expected_session_id.set(&session_b.session_id().0);
     let output = session_b
         .prompt("what is 1+1", PermissionDecision::Cancel)
@@ -1152,13 +1156,16 @@ pub async fn run_prompt_mcp<C: Connection>() {
 }
 
 pub async fn run_prompt_model_mismatch<C: Connection>() {
-    // Start the connection where the current model is not desired.
+    // Start the connection where the current model differs from TEST_MODEL.
+    // Use a Chat Completions model so the canned SSE fixtures parse correctly.
+    // TODO: add a Responses API mock to OpenAiFixture so we can test with
+    // responses-routed models like o4-mini here.
     let config = TestConnectionConfig {
-        current_model: "o4-mini".to_string(),
+        current_model: "gpt-4.1".to_string(),
         ..Default::default()
     };
 
-    // Server starts on o4-mini; client is configured with TEST_MODEL.
+    // Server starts on gpt-4.1; client is configured with TEST_MODEL.
     // If session_model is seeded from the response, stream() detects the
     // mismatch and sends set_model(TEST_MODEL) before prompting.
     let BasicSession { conn: _, .. } = new_basic_session::<C>(config).await;

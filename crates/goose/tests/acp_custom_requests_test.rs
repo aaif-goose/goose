@@ -250,6 +250,9 @@ fn test_developer_fs_requests_use_acp_session_id() {
         )
         .await;
         let config = TestConnectionConfig {
+            // gpt-5-nano routes to the Responses API; use a Chat Completions
+            // model so the canned SSE fixtures are parsed correctly.
+            current_model: "gpt-4.1".to_string(),
             read_text_file: Some(Arc::new(move |req| {
                 *seen_session_id_clone.lock().unwrap() = Some(req.session_id.0.to_string());
                 Ok(sacp::schema::ReadTextFileResponse::new(

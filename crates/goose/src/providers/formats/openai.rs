@@ -4,8 +4,9 @@ use crate::model::ModelConfig;
 use crate::providers::base::{ProviderUsage, Usage};
 use crate::providers::errors::ProviderError;
 use crate::providers::utils::{
-    convert_image, detect_image_path, extract_reasoning_effort, is_valid_function_name,
-    load_image_file, safely_parse_json, sanitize_function_name, ImageFormat,
+    convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
+    is_valid_function_name, load_image_file, safely_parse_json, sanitize_function_name,
+    ImageFormat,
 };
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -984,7 +985,7 @@ pub fn create_request(
     }
 
     let (model_name, reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
-    let is_reasoning_model = reasoning_effort.is_some();
+    let is_reasoning_model = is_openai_responses_model(&model_name);
 
     let system_message = json!({
         "role": if is_reasoning_model { "developer" } else { "system" },
@@ -1716,7 +1717,8 @@ mod tests {
 
     #[test]
     fn test_create_request_o1_default() -> anyhow::Result<()> {
-        // Test default medium reasoning effort for O1 model
+        // Without an explicit effort suffix the API picks its own default;
+        // we should omit reasoning_effort entirely but still use "developer" role.
         let model_config = ModelConfig {
             model_name: "o1".to_string(),
             context_limit: Some(4096),
@@ -1745,13 +1747,16 @@ mod tests {
                     "content": "system"
                 }
             ],
-            "reasoning_effort": "medium",
             "max_completion_tokens": 1024
         });
 
         for (key, value) in expected.as_object().unwrap() {
             assert_eq!(obj.get(key).unwrap(), value);
         }
+        assert!(
+            obj.get("reasoning_effort").is_none(),
+            "reasoning_effort should be omitted when no explicit suffix is provided"
+        );
 
         Ok(())
     }

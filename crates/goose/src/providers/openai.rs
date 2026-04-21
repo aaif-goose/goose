@@ -48,9 +48,21 @@ pub const OPEN_AI_KNOWN_MODELS: &[(&str, usize)] = &[
     ("gpt-3.5-turbo", 16_385),
     ("gpt-4-turbo", 128_000),
     ("o4-mini", 128_000),
+    ("gpt-5", 400_000),
+    ("gpt-5-mini", 400_000),
     ("gpt-5-nano", 400_000),
-    ("gpt-5.1-codex", 400_000),
+    ("gpt-5-pro", 400_000),
     ("gpt-5-codex", 400_000),
+    ("gpt-5.1", 400_000),
+    ("gpt-5.1-codex", 400_000),
+    ("gpt-5.2", 400_000),
+    ("gpt-5.2-codex", 400_000),
+    ("gpt-5.2-pro", 400_000),
+    ("gpt-5.3-codex", 400_000),
+    ("gpt-5.4", 1_050_000),
+    ("gpt-5.4-mini", 400_000),
+    ("gpt-5.4-nano", 400_000),
+    ("gpt-5.4-pro", 1_050_000),
 ];
 
 pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
@@ -283,10 +295,7 @@ impl OpenAiProvider {
     }
 
     fn is_responses_model(model_name: &str) -> bool {
-        let normalized_model = model_name.to_ascii_lowercase();
-        (normalized_model.starts_with("gpt-5") && normalized_model.contains("codex"))
-            || normalized_model.starts_with("gpt-5.2-pro")
-            || normalized_model.starts_with("gpt-5.4")
+        super::utils::is_openai_responses_model(model_name)
     }
 
     fn should_use_responses_api(model_name: &str, base_path: &str) -> bool {
@@ -834,59 +843,20 @@ mod tests {
     }
 
     #[test]
-    fn gpt_5_2_codex_uses_responses_when_base_path_is_default() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-codex",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_2_pro_uses_responses_when_base_path_is_default() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-pro",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_2_pro_with_date_uses_responses() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-pro-2025-12-11",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn explicit_chat_path_forces_chat_completions() {
-        assert!(!OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-codex",
-            "openai/v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_4_uses_responses_when_base_path_is_default() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.4",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_4_with_date_uses_responses() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.4-2026-03-01",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_4o_does_not_use_responses() {
-        assert!(!OpenAiProvider::should_use_responses_api(
-            "gpt-4o",
-            "v1/chat/completions"
-        ));
+    fn responses_api_routing_uses_model_family_unless_path_forces_chat() {
+        for (model_name, base_path, expected) in [
+            ("gpt-5.4", "v1/chat/completions", true),
+            ("gpt-5.4-xhigh", "v1/chat/completions", true),
+            ("gpt-5.2-pro-2025-12-11", "v1/chat/completions", true),
+            ("gpt-4o", "v1/chat/completions", false),
+            ("gpt-5.2-codex", "openai/v1/chat/completions", false),
+        ] {
+            assert_eq!(
+                OpenAiProvider::should_use_responses_api(model_name, base_path),
+                expected,
+                "unexpected routing for {model_name} via {base_path}"
+            );
+        }
     }
 
     #[test]
