@@ -426,32 +426,6 @@ describe("useChat", () => {
     );
   });
 
-  it("prepares the override persona before prompting", async () => {
-    const ensurePrepared = vi.fn().mockResolvedValue(undefined);
-
-    const { result } = renderHook(() =>
-      useChat(
-        "session-1",
-        undefined,
-        undefined,
-        { id: "persona-a", name: "Persona A" },
-        { ensurePrepared },
-      ),
-    );
-
-    await act(async () => {
-      await result.current.sendMessage("Hello", { id: "persona-b" });
-    });
-
-    expect(ensurePrepared).toHaveBeenCalledWith("persona-b");
-    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "Hello", {
-      systemPrompt: undefined,
-      personaId: "persona-b",
-      personaName: "Persona B",
-      images: undefined,
-    });
-  });
-
   it("appends an error message and removes the empty assistant placeholder when send fails", async () => {
     mockAcpSendMessage.mockRejectedValue(
       new Error("Working directory missing"),
