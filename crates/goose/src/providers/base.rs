@@ -40,6 +40,10 @@ pub struct ThinkFilter {
 enum ThinkTag {
     Open,
     Close,
+    // `<think/>` is XML-legal but carries no reasoning payload. Treat it as a
+    // no-op so we don't flip `inside_think` forever and swallow the rest of
+    // the stream into the thinking bucket.
+    SelfClosing,
 }
 
 enum BufferEvent {
@@ -104,6 +108,7 @@ impl ThinkFilter {
                             self.think_depth = self.think_depth.saturating_sub(1);
                             self.inside_think = self.think_depth > 0;
                         }
+                        ThinkTag::SelfClosing => {}
                     }
                 }
                 Some(BufferEvent::Partial(pos)) => {
@@ -159,7 +164,7 @@ fn next_buffer_event(buffer: &str, inside_think: bool) -> Option<BufferEvent> {
         let suffix = buffer.get(pos..).unwrap_or_default();
 
         if let Some((kind, end)) = parse_think_tag(buffer, pos) {
-            if inside_think || kind == ThinkTag::Open {
+            if inside_think || matches!(kind, ThinkTag::Open | ThinkTag::SelfClosing) {
                 return Some(BufferEvent::Tag { pos, end, kind });
             }
         } else if !suffix.contains('>') && is_possible_partial_think_tag(suffix) {
@@ -222,9 +227,18 @@ fn parse_think_tag(buffer: &str, start: usize) -> Option<(ThinkTag, usize)> {
         return None;
     }
 
-    while let Some(byte) = bytes.get(idx) {
-        if *byte == b'>' {
-            return Some((ThinkTag::Open, idx + 1));
+    let mut last_non_ws: Option<u8> = None;
+    while let Some(&byte) = bytes.get(idx) {
+        if byte == b'>' {
+            let kind = if last_non_ws == Some(b'/') {
+                ThinkTag::SelfClosing
+            } else {
+                ThinkTag::Open
+            };
+            return Some((kind, idx + 1));
+        }
+        if !byte.is_ascii_whitespace() {
+            last_non_ws = Some(byte);
         }
         idx += 1;
     }
@@ -1225,6 +1239,67 @@ mod tests {
 
         assert_eq!(out.content, "visible");
         assert_eq!(out.thinking, "hidden");
+    }
+
+    #[test]
+    fn test_think_filter_treats_self_closing_as_noop() {
+        // `<think/>` carries no reasoning payload. It must not flip the filter
+        // into "inside_think" mode, and the tag itself must not leak into
+        // visible content.
+        for input in [
+            "before <think/> after",
+            "before <think /> after",
+            "before <thinking/> after",
+            "before <think data-source=\"x\"/> after",
+        ] {
+            let mut filter = ThinkFilter::new();
+            let mut out = filter.push(input);
+            let final_out = filter.finish();
+            out.content.push_str(&final_out.content);
+            out.thinking.push_str(&final_out.thinking);
+
+            assert_eq!(
+                out.content, "before  after",
+                "content mismatch for {input:?}"
+            );
+            assert!(
+                out.thinking.is_empty(),
+                "unexpected thinking for {input:?}: {:?}",
+                out.thinking
+            );
+        }
+    }
+
+    #[test]
+    fn test_think_filter_self_closing_does_not_swallow_following_content() {
+        // Regression: a self-closing `<think/>` used to be classified as an
+        // Open tag, which incremented think_depth and routed everything after
+        // it into the thinking bucket for the rest of the stream.
+        let mut filter = ThinkFilter::new();
+        let mut out = filter.push("<think/>visible chunk 1");
+        let final_out = filter.push("visible chunk 2");
+        let tail_out = filter.finish();
+        out.content.push_str(&final_out.content);
+        out.thinking.push_str(&final_out.thinking);
+        out.content.push_str(&tail_out.content);
+        out.thinking.push_str(&tail_out.thinking);
+
+        assert_eq!(out.content, "visible chunk 1visible chunk 2");
+        assert!(out.thinking.is_empty());
+    }
+
+    #[test]
+    fn test_think_filter_self_closing_inside_open_block_closes_nothing() {
+        // `<think/>` inside an open `<think>` block is still a no-op: depth
+        // should stay at 1 until the real `</think>` arrives.
+        let mut filter = ThinkFilter::new();
+        let mut out = filter.push("before <think>hidden1 <think/> hidden2</think>visible");
+        let final_out = filter.finish();
+        out.content.push_str(&final_out.content);
+        out.thinking.push_str(&final_out.thinking);
+
+        assert_eq!(out.content, "before visible");
+        assert_eq!(out.thinking, "hidden1  hidden2");
     }
 
     #[test]
