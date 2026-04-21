@@ -99,9 +99,41 @@ pub struct GetExtensionsRequest {}
 /// List configured extensions and any warnings.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct GetExtensionsResponse {
-    /// Array of ExtensionEntry objects with `enabled` flag and config details.
+    /// Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.
     pub extensions: Vec<serde_json::Value>,
     pub warnings: Vec<String>,
+}
+
+/// Persist a new extension to the user's global goose config.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/config/extensions/add", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct AddConfigExtensionRequest {
+    pub name: String,
+    /// Extension configuration. Must be a JSON object matching one of the
+    /// `ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).
+    /// `name` and `enabled` are injected server-side.
+    #[serde(default)]
+    pub extension_config: serde_json::Value,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// Remove a persisted extension from the user's global goose config.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/config/extensions/remove", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveConfigExtensionRequest {
+    pub config_key: String,
+}
+
+/// Toggle the `enabled` flag for a persisted extension in the user's global goose config.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/config/extensions/toggle", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ToggleConfigExtensionRequest {
+    pub config_key: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
