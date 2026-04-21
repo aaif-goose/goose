@@ -36,6 +36,44 @@ export function buildInitScript(options?: {
       const PROJECTS = ${projects};
       const FAKE_ACP_URL = "ws://127.0.0.1:0/mock-acp";
       const ACP_SESSIONS = [];
+      const ACP_PROVIDERS = [
+        { id: "claude", label: "Claude" },
+        { id: "openai", label: "OpenAI" },
+      ];
+      const PROVIDER_INVENTORY = [
+        {
+          providerId: "claude",
+          providerName: "Claude",
+          configured: true,
+          refreshing: false,
+          lastRefreshError: null,
+          modelSelectionHint: null,
+          models: [
+            {
+              id: "claude-sonnet-4-20250514",
+              name: "Claude Sonnet 4",
+              family: "Claude",
+              recommended: true,
+            },
+          ],
+        },
+        {
+          providerId: "openai",
+          providerName: "OpenAI",
+          configured: true,
+          refreshing: false,
+          lastRefreshError: null,
+          modelSelectionHint: null,
+          models: [
+            {
+              id: "gpt-4.1",
+              name: "GPT-4.1",
+              family: "OpenAI",
+              recommended: true,
+            },
+          ],
+        },
+      ];
 
       const skillToSourceEntry = (s) => ({
         type: "skill",
@@ -126,7 +164,9 @@ export function buildInitScript(options?: {
             return jsonRpcResult(message.id, { stopReason: "end_turn" });
           }
           case "_goose/providers/list":
-            return jsonRpcResult(message.id, { entries: [] });
+            return jsonRpcResult(message.id, { providers: ACP_PROVIDERS });
+          case "_goose/providers/inventory":
+            return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
           case "_goose/providers/inventory/refresh":
             return jsonRpcResult(message.id, { started: [], skipped: [] });
           case "_goose/working_dir/update":
@@ -222,7 +262,7 @@ export function buildInitScript(options?: {
             case "create_persona":
               return Promise.resolve({
                 id: "mock-" + Math.random().toString(36).slice(2, 10),
-                displayName: args?.displayName ?? "New Persona",
+                displayName: args?.displayName ?? "New Agent",
                 systemPrompt: args?.systemPrompt ?? "",
                 isBuiltin: false,
                 createdAt: new Date().toISOString(),
@@ -233,7 +273,7 @@ export function buildInitScript(options?: {
             case "update_persona":
               return Promise.resolve({
                 id: args?.id ?? "mock-updated",
-                displayName: args?.displayName ?? "Updated Persona",
+                displayName: args?.displayName ?? "Updated Agent",
                 systemPrompt: args?.systemPrompt ?? "",
                 isBuiltin: false,
                 createdAt: new Date().toISOString(),
@@ -348,13 +388,13 @@ export async function waitForHome(page: Page) {
   });
 }
 
-export async function navigateToPersonas(page: Page) {
+export async function navigateToAgents(page: Page) {
   await page.goto("/");
   await expect(page.getByText(/Good (morning|afternoon|evening)/)).toBeVisible({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Personas" }).click();
-  await expect(page.locator("h1", { hasText: "Personas" })).toBeVisible();
+  await page.getByRole("button", { name: "Agents" }).click();
+  await expect(page.locator("h1", { hasText: "Agents" })).toBeVisible();
 }
 
 export async function navigateToSkills(page: Page) {

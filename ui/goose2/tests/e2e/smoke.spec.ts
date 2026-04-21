@@ -21,7 +21,7 @@ test.describe("Smoke tests", () => {
     await page.goto("/");
 
     await expect(
-      page.getByPlaceholder(/Message .*, @ to mention personas/),
+      page.getByPlaceholder(/Message .*, @ to mention agents/),
     ).toBeVisible({ timeout: 10_000 });
   });
 });

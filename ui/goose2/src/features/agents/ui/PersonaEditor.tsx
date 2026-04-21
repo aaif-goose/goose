@@ -31,6 +31,7 @@ import type {
   CreatePersonaRequest,
   UpdatePersonaRequest,
 } from "@/shared/types/agents";
+import { discoverAcpProviders } from "@/shared/api/acp";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
 import { getProviderInventory } from "@/features/providers/api/inventory";
@@ -74,6 +75,7 @@ export function PersonaEditor({
   const canEditPersona = personaSource === "custom";
   const canDeletePersona = personaSource !== "builtin";
   const acpProviders = useAgentStore((s) => s.providers);
+  const setProviders = useAgentStore((s) => s.setProviders);
   const mergeInventoryEntries = useProviderInventoryStore(
     (s) => s.mergeEntries,
   );
@@ -91,18 +93,31 @@ export function PersonaEditor({
     }
 
     let cancelled = false;
-    void getProviderInventory()
-      .then((entries) => {
+
+    const syncProviderOptions = async () => {
+      if (acpProviders.length === 0) {
+        try {
+          const providers = await discoverAcpProviders();
+          if (!cancelled && providers.length > 0) {
+            setProviders(providers);
+          }
+        } catch {}
+      }
+
+      try {
+        const entries = await getProviderInventory();
         if (!cancelled) {
           mergeInventoryEntries(entries);
         }
-      })
-      .catch(() => {});
+      } catch {}
+    };
+
+    void syncProviderOptions();
 
     return () => {
       cancelled = true;
     };
-  }, [isOpen, mergeInventoryEntries]);
+  }, [acpProviders.length, isOpen, mergeInventoryEntries, setProviders]);
 
   useEffect(() => {
     if (isOpen && persona) {
