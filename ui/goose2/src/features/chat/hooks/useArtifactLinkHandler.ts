@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { isExternalHref } from "@/features/chat/lib/artifactPathPolicy";
+import { isExternalHref } from "@/shared/lib/isExternalHref";
 import { useArtifactPolicyContext } from "@/features/chat/hooks/ArtifactPolicyContext";
 
 /**
