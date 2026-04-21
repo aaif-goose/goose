@@ -58,7 +58,7 @@ export interface ChatInputProps {
   contextTokens?: number;
   contextLimit?: number;
   isContextUsageReady?: boolean;
-  onCompactContext?: () => void | Promise<unknown>;
+  onCompactContext?: () => Promise<unknown> | undefined;
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
   supportsAutoCompactContext?: boolean;

@@ -7,9 +7,8 @@ const mockSetAutoCompactThreshold = vi.fn();
 const mockUseAutoCompactPreferences = vi.fn();
 
 vi.mock("@/shared/i18n", async () => {
-  const actual = await vi.importActual<typeof import("@/shared/i18n")>(
-    "@/shared/i18n",
-  );
+  const actual =
+    await vi.importActual<typeof import("@/shared/i18n")>("@/shared/i18n");
 
   return {
     ...actual,

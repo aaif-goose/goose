@@ -36,14 +36,19 @@ const EXCEPTIONS = {
       "Search-as-you-type filtering and draft-aware sidebar highlight logic.",
   },
   "src/app/AppShell.tsx": {
-    limit: 730,
+    limit: 780,
     justification:
-      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, home-session restoration, app-level chat routing, and restored project-draft reuse. Includes gated [perf:load]/[perf:newtab] logging via perfLog (dev-only by default).",
+      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, home-session restoration, app-level chat routing, restored project-draft reuse, and app-level compaction settings deep links. Includes gated [perf:load]/[perf:newtab] logging via perfLog (dev-only by default).",
   },
   "src/features/chat/hooks/useChatSessionController.ts": {
-    limit: 690,
+    limit: 800,
     justification:
-      "Controller now centralizes home-to-chat pending state transfer, workspace/project preparation, provider/model/persona handoff, Goose cross-provider model selection sequencing with rollback, and chat input orchestration pending a later decomposition pass.",
+      "Controller now centralizes home-to-chat pending state transfer, workspace/project preparation, provider/model/persona handoff, Goose cross-provider model selection sequencing with rollback, context-usage readiness resets, and auto-compaction-aware send orchestration pending a later decomposition pass.",
+  },
+  "src/features/chat/stores/chatStore.ts": {
+    limit: 520,
+    justification:
+      "Chat runtime state, queued-message persistence, replay loading flags, and usage snapshot tracking still live together in one Zustand store.",
   },
   "src/features/chat/ui/AgentModelPicker.tsx": {
     limit: 570,
@@ -71,9 +76,9 @@ const EXCEPTIONS = {
       "Bubble rendering still owns assistant identity, grouped tool output, attachments, and the inline actions tray pending a later extraction pass.",
   },
   "src/features/chat/ui/__tests__/ChatInput.test.tsx": {
-    limit: 520,
+    limit: 570,
     justification:
-      "Composer regression coverage spans personas, queueing, attachments, and voice-input edge cases in one interaction-heavy suite.",
+      "Composer regression coverage spans personas, queueing, attachments, voice-input edge cases, and the compaction popover/settings ingress in one interaction-heavy suite.",
   },
   "src-tauri/src/commands/projects.rs": {
     limit: 520,

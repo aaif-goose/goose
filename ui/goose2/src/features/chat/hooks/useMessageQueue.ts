@@ -23,7 +23,7 @@ function getQueuedMessageKey(
         id: attachment.id,
         kind: attachment.kind,
         name: attachment.name,
-        path: "path" in attachment ? attachment.path ?? null : null,
+        path: "path" in attachment ? (attachment.path ?? null) : null,
       })) ?? [],
   });
 }
@@ -78,9 +78,8 @@ export function useMessageQueue(
     );
 
     const finalize = (accepted: boolean | undefined) => {
-      const latestQueuedMessage = useChatStore.getState().queuedMessageBySession[
-        sessionId
-      ] ?? null;
+      const latestQueuedMessage =
+        useChatStore.getState().queuedMessageBySession[sessionId] ?? null;
       if (getQueuedMessageKey(latestQueuedMessage) !== queuedMessageKey) {
         return;
       }

@@ -65,12 +65,8 @@ export function GeneralSettings() {
                 language: systemLocaleLabel,
               })}
             </SelectItem>
-            <SelectItem value="en">
-              {t("general.language.english")}
-            </SelectItem>
-            <SelectItem value="es">
-              {t("general.language.spanish")}
-            </SelectItem>
+            <SelectItem value="en">{t("general.language.english")}</SelectItem>
+            <SelectItem value="es">{t("general.language.spanish")}</SelectItem>
           </SelectContent>
         </Select>
       </SettingRow>

@@ -118,7 +118,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
-      const replayMessages = buffer ? sanitizeReplayMessages(buffer) : undefined;
+      const replayMessages = buffer
+        ? sanitizeReplayMessages(buffer)
+        : undefined;
       const replayStats = getReplayPerf(sessionId);
       clearReplayPerf(sessionId);
       if (replayMessages) {

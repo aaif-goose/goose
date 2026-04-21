@@ -83,7 +83,7 @@ interface ChatInputToolbarProps {
   // Actions
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
-  onCompactContext?: () => void | Promise<unknown>;
+  onCompactContext?: () => Promise<unknown> | undefined;
   canSend: boolean;
   isStreaming: boolean;
   hasQueuedMessage: boolean;

@@ -81,10 +81,8 @@ export function useChatSessionController({
       : undefined,
   );
   const project = storedProject ?? null;
-  const {
-    autoCompactThreshold,
-    isHydrated: isAutoCompactThresholdHydrated,
-  } = useAutoCompactPreferences();
+  const { autoCompactThreshold, isHydrated: isAutoCompactThresholdHydrated } =
+    useAutoCompactPreferences();
   const hasContextUsageSnapshot = useChatStore(
     (s) => s.sessionStateById[stateSessionId]?.hasUsageSnapshot ?? false,
   );
@@ -281,7 +279,6 @@ export function useChatSessionController({
       if (modelId === effectiveModelSelection?.id) {
         return;
       }
-
       useChatStore.getState().resetTokenState(stateSessionId);
       handleModelChange(modelId);
     },
@@ -422,7 +419,9 @@ export function useChatSessionController({
       return false;
     }
 
-    const liveRuntime = useChatStore.getState().getSessionRuntime(stateSessionId);
+    const liveRuntime = useChatStore
+      .getState()
+      .getSessionRuntime(stateSessionId);
     return shouldAutoCompactContext(
       liveRuntime.tokenState.accumulatedTotal,
       liveRuntime.tokenState.contextLimit,
@@ -534,11 +533,6 @@ export function useChatSessionController({
       const { text, attachments, resolve } = deferredSend.current;
       deferredSend.current = null;
       const sendResult = sendWithAutoCompact(text, undefined, attachments);
-      if (sendResult === false) {
-        useChatStore.getState().setDraft(stateSessionId, text);
-        resolve?.(false);
-        return;
-      }
       if (sendResult instanceof Promise) {
         void sendResult.then((accepted) => {
           if (accepted === false) {

@@ -1,6 +1,5 @@
 export const AUTO_COMPACT_THRESHOLD_CONFIG_KEY = "GOOSE_AUTO_COMPACT_THRESHOLD";
-export const AUTO_COMPACT_PREFERENCES_EVENT =
-  "goose:auto-compact-preferences";
+export const AUTO_COMPACT_PREFERENCES_EVENT = "goose:auto-compact-preferences";
 export const DEFAULT_AUTO_COMPACT_THRESHOLD = 0.8;
 export const MIN_AUTO_COMPACT_THRESHOLD_PERCENT = 1;
 export const MAX_AUTO_COMPACT_THRESHOLD_PERCENT = 100;

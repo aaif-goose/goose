@@ -535,6 +535,9 @@ describe("useChatSessionController", () => {
       accumulatedTotal: 8_500,
       contextLimit: 10_000,
     };
+    useChatStore
+      .getState()
+      .replaceTokenState("session-1", mockTokenState, true);
     useChatSessionStore.getState().updateSession("session-1", {
       providerId: "goose",
     });
@@ -548,11 +551,7 @@ describe("useChatSessionController", () => {
     });
 
     expect(mockCompactConversation).toHaveBeenCalledOnce();
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      "hello",
-      undefined,
-      undefined,
-    );
+    expect(mockSendMessage).toHaveBeenCalledWith("hello", undefined, undefined);
     expect(mockCompactConversation.mock.invocationCallOrder[0]).toBeLessThan(
       mockSendMessage.mock.invocationCallOrder[0],
     );

@@ -98,7 +98,7 @@ export function GooseAutoCompactSettings() {
 
     if (
       nextPercent === autoCompactThresholdPercent &&
-      nextEnabled === (autoCompactThresholdPercent < 100)
+      nextEnabled === autoCompactThresholdPercent < 100
     ) {
       return;
     }
@@ -124,9 +124,9 @@ export function GooseAutoCompactSettings() {
     const restorePercentOnError = draftThresholdPercent;
     const restoreEnabledOnError = isAutoCompactEnabled;
     const nextPercent = checked
-      ? (lastEnabledThresholdPercent < 100
-          ? lastEnabledThresholdPercent
-          : defaultEnabledThresholdPercent)
+      ? lastEnabledThresholdPercent < 100
+        ? lastEnabledThresholdPercent
+        : defaultEnabledThresholdPercent
       : 100;
 
     await saveThresholdPercent(nextPercent, {
@@ -174,7 +174,9 @@ export function GooseAutoCompactSettings() {
             {isSavingThreshold ? (
               <Loader2 className="size-3 animate-spin text-muted-foreground" />
             ) : null}
-            <span className="shrink-0 font-medium">{autoCompactValueLabel}</span>
+            <span className="shrink-0 font-medium">
+              {autoCompactValueLabel}
+            </span>
           </div>
         </div>
 

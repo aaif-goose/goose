@@ -104,7 +104,8 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
           <ChatInput
             onSend={controller.handleSend}
             disabled={
-              controller.projectMetadataPending || controller.isCompactingContext
+              controller.projectMetadataPending ||
+              controller.isCompactingContext
             }
             queuedMessage={controller.queue.queuedMessage}
             onDismissQueue={controller.queue.dismiss}
