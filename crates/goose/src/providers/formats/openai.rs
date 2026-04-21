@@ -71,8 +71,19 @@ struct Delta {
     role: Option<String>,
     tool_calls: Option<Vec<DeltaToolCall>>,
     reasoning_details: Option<Vec<Value>>,
-    #[serde(alias = "reasoning")]
+    reasoning: Option<String>,
     reasoning_content: Option<String>,
+}
+
+impl Delta {
+    /// Prefer `reasoning_content` (DeepSeek/OpenRouter) over `reasoning`
+    /// (vLLM); some servers (gpt-oss via vLLM) emit both. Skip empty values.
+    fn reasoning_text(&self) -> Option<&str> {
+        self.reasoning_content
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.reasoning.as_deref().filter(|s| !s.is_empty()))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -768,7 +779,7 @@ where
                 if let Some(details) = &chunk.choices[0].delta.reasoning_details {
                     accumulated_reasoning.extend(details.iter().cloned());
                 }
-                if let Some(rc) = &chunk.choices[0].delta.reasoning_content {
+                if let Some(rc) = chunk.choices[0].delta.reasoning_text() {
                     accumulated_reasoning_content.push_str(rc);
                 }
             }
@@ -810,7 +821,7 @@ where
                                     if let Some(details) = &tool_chunk.choices[0].delta.reasoning_details {
                                         accumulated_reasoning.extend(details.iter().cloned());
                                     }
-                                    if let Some(rc) = &tool_chunk.choices[0].delta.reasoning_content {
+                                    if let Some(rc) = tool_chunk.choices[0].delta.reasoning_text() {
                                         accumulated_reasoning_content.push_str(rc);
                                     }
                                     if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
@@ -918,14 +929,12 @@ where
                     Some(msg),
                     usage,
                 )
-            } else if chunk.choices[0].delta.content.is_some() || chunk.choices[0].delta.reasoning_content.is_some() {
+            } else if chunk.choices[0].delta.content.is_some() || chunk.choices[0].delta.reasoning_text().is_some() {
                 let mut content = Vec::new();
 
-                if let Some(reasoning) = &chunk.choices[0].delta.reasoning_content {
-                    if !reasoning.is_empty() {
-                        let signature = last_signature.as_deref().unwrap_or("");
-                        content.push(MessageContent::thinking(reasoning, signature));
-                    }
+                if let Some(reasoning) = chunk.choices[0].delta.reasoning_text() {
+                    let signature = last_signature.as_deref().unwrap_or("");
+                    content.push(MessageContent::thinking(reasoning, signature));
                 }
 
                 let (text_content, thought_signature) = extract_content_and_signature(chunk.choices[0].delta.content.as_ref());
