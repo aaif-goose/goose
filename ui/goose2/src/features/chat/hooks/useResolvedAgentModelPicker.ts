@@ -64,6 +64,47 @@ export function useResolvedAgentModelPicker({
     [selectedAgentId],
   );
 
+  const getPreferredSelectionForAgent = useMemo(
+    () => (agentId: string, fallbackProviderId?: string) => {
+      const preferredModel = getStoredModelPreference(agentId);
+      if (preferredModel) {
+        return {
+          id: preferredModel.modelId,
+          name: preferredModel.modelName,
+          providerId: preferredModel.providerId ?? fallbackProviderId,
+          source: "explicit" as const,
+        };
+      }
+
+      if (agentId === "goose") {
+        if (!gooseDefaultSelection) {
+          return null;
+        }
+
+        return {
+          ...gooseDefaultSelection,
+          providerId: gooseDefaultSelection.providerId ?? fallbackProviderId,
+        };
+      }
+
+      const inventoryEntry = getProviderInventoryEntry(agentId);
+      if (!inventoryEntry?.defaultModel) {
+        return null;
+      }
+
+      return {
+        id: inventoryEntry.defaultModel,
+        name: inventoryEntry.defaultModel,
+        providerId:
+          inventoryEntry.providerId === agentId
+            ? inventoryEntry.providerId
+            : fallbackProviderId,
+        source: "default" as const,
+      };
+    },
+    [getProviderInventoryEntry, gooseDefaultSelection],
+  );
+
   useEffect(() => {
     if (selectedAgentId !== "goose") {
       setGooseDefaultSelection(null);
@@ -131,22 +172,16 @@ export function useResolvedAgentModelPicker({
     onProviderSelected: (providerId) => {
       const nextAgentId =
         resolveAgentProviderCatalogIdStrict(providerId) ?? "goose";
-      const preferredModel = getStoredModelPreference(nextAgentId);
-      const nextProviderId = preferredModel?.providerId ?? providerId;
+      const preferredModelSelection = getPreferredSelectionForAgent(
+        nextAgentId,
+        providerId,
+      );
+      const nextProviderId = preferredModelSelection?.providerId ?? providerId;
 
       if (!sessionId) {
         setGlobalSelectedProvider(nextProviderId);
         setPendingProviderId(nextProviderId);
-        setPendingModelSelection(
-          preferredModel
-            ? {
-                id: preferredModel.modelId,
-                name: preferredModel.modelName,
-                providerId: preferredModel.providerId,
-                source: "explicit",
-              }
-            : undefined,
-        );
+        setPendingModelSelection(preferredModelSelection ?? undefined);
         return;
       }
 
@@ -156,14 +191,7 @@ export function useResolvedAgentModelPicker({
       setGlobalSelectedProvider(nextProviderId);
       void prepareSelectedProvider(
         nextProviderId,
-        preferredModel
-          ? {
-              id: preferredModel.modelId,
-              name: preferredModel.modelName,
-              providerId: preferredModel.providerId,
-              source: "explicit",
-            }
-          : null,
+        preferredModelSelection,
       ).catch((error) => {
         console.error("Failed to update ACP session provider:", error);
       });
@@ -296,25 +324,10 @@ export function useResolvedAgentModelPicker({
         }
       }
 
-      const inventoryDefaultSelection =
-        selectedAgentId === "goose"
-          ? gooseDefaultSelection
-          : (() => {
-              const inventoryEntry = getProviderInventoryEntry(selectedAgentId);
-              if (!inventoryEntry?.defaultModel) {
-                return null;
-              }
-
-              return {
-                id: inventoryEntry.defaultModel,
-                name: inventoryEntry.defaultModel,
-                providerId:
-                  inventoryEntry.providerId === selectedAgentId
-                    ? inventoryEntry.providerId
-                    : undefined,
-                source: "default" as const,
-              };
-            })();
+      const inventoryDefaultSelection = getPreferredSelectionForAgent(
+        selectedAgentId,
+        selectedProvider,
+      );
 
       if (!inventoryDefaultSelection) {
         return null;
@@ -342,9 +355,9 @@ export function useResolvedAgentModelPicker({
       };
     }, [
       availableModels,
-      getProviderInventoryEntry,
-      gooseDefaultSelection,
+      getPreferredSelectionForAgent,
       modelsLoading,
+      selectedProvider,
       selectedAgentId,
       storedModelPreference,
     ]);

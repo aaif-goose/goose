@@ -214,8 +214,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             personaId: homeSession.personaId,
           },
         );
+        const shouldClearHomeModel =
+          sessionModelPreference.providerId !== homeSession.providerId ||
+          !sessionModelPreference.modelId;
         sessionStore.updateSession(homeSession.id, {
           providerId: sessionModelPreference.providerId,
+          modelId: shouldClearHomeModel ? undefined : homeSession.modelId,
+          modelName: shouldClearHomeModel ? undefined : homeSession.modelName,
         });
         if (sessionModelPreference.modelId) {
           await acpSetModel(homeSession.id, sessionModelPreference.modelId);
