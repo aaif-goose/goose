@@ -278,10 +278,7 @@ mod tests {
 
     #[test]
     fn validate_import_persona_path_rejects_directories() {
-        let dir = std::env::temp_dir().join(format!(
-            "persona-import-dir-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("persona-import-dir-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
         let result = validate_import_persona_path(dir.to_str().unwrap());
@@ -292,10 +289,7 @@ mod tests {
 
     #[test]
     fn validate_import_persona_path_accepts_json_files() {
-        let path = std::env::temp_dir().join(format!(
-            "persona-import-{}.json",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("persona-import-{}.json", std::process::id()));
         std::fs::write(&path, b"{}").unwrap();
 
         let validated = validate_import_persona_path(path.to_str().unwrap()).unwrap();
