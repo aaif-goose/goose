@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { resolveSessionModelPreference } from "./sessionModelPreference";
+import {
+  resolveSessionModelPreference,
+  sanitizeSessionModelPreference,
+} from "./sessionModelPreference";
 
 describe("resolveSessionModelPreference", () => {
   beforeEach(() => {
@@ -70,6 +73,42 @@ describe("resolveSessionModelPreference", () => {
       providerId: "anthropic",
       modelId: "claude-sonnet-4",
       modelName: "Claude Sonnet 4",
+    });
+  });
+
+  it("keeps a stored model when the provider inventory still contains it", () => {
+    expect(
+      sanitizeSessionModelPreference(
+        {
+          providerId: "openai",
+          modelId: "gpt-5.4",
+          modelName: "GPT-5.4",
+        },
+        {
+          models: [{ id: "gpt-5.4" }, { id: "gpt-5.4-mini" }],
+        },
+      ),
+    ).toEqual({
+      providerId: "openai",
+      modelId: "gpt-5.4",
+      modelName: "GPT-5.4",
+    });
+  });
+
+  it("drops a stored model when the provider inventory no longer contains it", () => {
+    expect(
+      sanitizeSessionModelPreference(
+        {
+          providerId: "openai",
+          modelId: "gpt-4.1",
+          modelName: "GPT-4.1",
+        },
+        {
+          models: [{ id: "gpt-5.4" }, { id: "gpt-5.4-mini" }],
+        },
+      ),
+    ).toEqual({
+      providerId: "openai",
     });
   });
 });

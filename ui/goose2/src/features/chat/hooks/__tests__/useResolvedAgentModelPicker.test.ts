@@ -150,6 +150,48 @@ describe("useResolvedAgentModelPicker", () => {
     });
   });
 
+  it("keeps explicit concrete provider requests authoritative", () => {
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        goose: {
+          modelId: "claude-sonnet-4",
+          modelName: "Claude Sonnet 4",
+          providerId: "anthropic",
+        },
+      }),
+    );
+
+    const setPendingProviderId = vi.fn();
+    const setPendingModelSelection = vi.fn();
+    const setGlobalSelectedProvider = vi.fn();
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "openai", label: "OpenAI" },
+        ],
+        selectedProvider: "anthropic",
+        sessionId: null,
+        session: undefined,
+        pendingModelSelection: undefined,
+        setPendingProviderId,
+        setPendingModelSelection,
+        setGlobalSelectedProvider,
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      result.current.handleProviderChange("openai");
+    });
+
+    expect(setGlobalSelectedProvider).toHaveBeenCalledWith("openai");
+    expect(setPendingProviderId).toHaveBeenCalledWith("openai");
+    expect(setPendingModelSelection).toHaveBeenCalledWith(undefined);
+  });
+
   it("resolves ACP alias defaults to a concrete model when switching agents", () => {
     mockUseProviderInventory.mockReturnValue({
       getEntry: (providerId: string) =>

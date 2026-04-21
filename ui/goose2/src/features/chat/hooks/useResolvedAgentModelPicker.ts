@@ -199,18 +199,33 @@ export function useResolvedAgentModelPicker({
     providers,
     selectedProvider,
     onProviderSelected: (providerId) => {
-      const nextAgentId =
-        resolveAgentProviderCatalogIdStrict(providerId) ?? "goose";
+      const requestedAgentId = resolveAgentProviderCatalogIdStrict(providerId);
       const preferredModelSelection = getPreferredSelectionForAgent(
-        nextAgentId,
+        requestedAgentId ?? "goose",
         providerId,
       );
-      const nextProviderId = preferredModelSelection?.providerId ?? providerId;
+      const nextProviderId = requestedAgentId
+        ? (preferredModelSelection?.providerId ?? providerId)
+        : providerId;
+      const nextModelSelection =
+        !requestedAgentId &&
+        preferredModelSelection?.providerId &&
+        preferredModelSelection.providerId !== providerId
+          ? undefined
+          : preferredModelSelection
+            ? {
+                ...preferredModelSelection,
+                providerId:
+                  requestedAgentId == null
+                    ? providerId
+                    : preferredModelSelection.providerId,
+              }
+            : undefined;
 
       if (!sessionId) {
         setGlobalSelectedProvider(nextProviderId);
         setPendingProviderId(nextProviderId);
-        setPendingModelSelection(preferredModelSelection ?? undefined);
+        setPendingModelSelection(nextModelSelection);
         return;
       }
 
@@ -218,12 +233,11 @@ export function useResolvedAgentModelPicker({
         .getState()
         .switchSessionProvider(sessionId, nextProviderId);
       setGlobalSelectedProvider(nextProviderId);
-      void prepareSelectedProvider(
-        nextProviderId,
-        preferredModelSelection,
-      ).catch((error) => {
-        console.error("Failed to update ACP session provider:", error);
-      });
+      void prepareSelectedProvider(nextProviderId, nextModelSelection).catch(
+        (error) => {
+          console.error("Failed to update ACP session provider:", error);
+        },
+      );
     },
     onModelSelected: (model) => {
       const modelId = model.id;
