@@ -53,6 +53,13 @@ impl InteractiveStyle {
             Self::Minimal => [">", "", ""],
         }
     }
+
+    fn title_prefix(self) -> &'static str {
+        match self {
+            Self::Goose => "🪿",
+            Self::Minimal => "",
+        }
+    }
 }
 
 pub struct Brand {
@@ -154,6 +161,15 @@ impl Brand {
 
     pub fn session_banner_lines(&self) -> [&'static str; 3] {
         self.interactive_style_kind().session_banner_lines()
+    }
+
+    pub fn terminal_title_prefix(&self) -> String {
+        let prefix = self.interactive_style_kind().title_prefix();
+        if prefix.is_empty() {
+            self.product_name_cap()
+        } else {
+            prefix.to_string()
+        }
     }
 }
 
@@ -391,6 +407,7 @@ mod tests {
             interactive_style: "goose",
         };
         assert_eq!(goose.interactive_prefix(), "🪿 ");
+        assert_eq!(goose.terminal_title_prefix(), "🪿");
         assert_eq!(
             goose.session_banner_lines(),
             ["  __( O)>", r" \____)", "   L L"]
@@ -409,6 +426,7 @@ mod tests {
             interactive_style: "minimal",
         };
         assert_eq!(minimal.interactive_prefix(), "> ");
+        assert_eq!(minimal.terminal_title_prefix(), "Foobar");
         assert_eq!(minimal.session_banner_lines(), [">", "", ""]);
     }
 
@@ -427,6 +445,7 @@ mod tests {
             interactive_style: "mystery",
         };
         assert_eq!(b.interactive_prefix(), "🪿 ");
+        assert_eq!(b.terminal_title_prefix(), "🪿");
         assert_eq!(
             b.session_banner_lines(),
             ["  __( O)>", r" \____)", "   L L"]

@@ -1368,7 +1368,7 @@ fn set_terminal_title() {
     // Sanitize: strip control characters (ESC, BEL, etc.) to prevent terminal escape injection
     let sanitized: String = dir_name.chars().filter(|c| !c.is_control()).collect();
     // OSC 0 sets the terminal window/tab title
-    print!("\x1b]0;{} {}\x07", brand.product_name_cap(), sanitized);
+    print!("\x1b]0;{} {}\x07", brand.terminal_title_prefix(), sanitized);
     let _ = std::io::stdout().flush();
 }
 
