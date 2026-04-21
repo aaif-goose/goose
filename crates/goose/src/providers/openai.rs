@@ -92,14 +92,7 @@ impl OpenAiProvider {
         // Only apply the default fast model when talking to OpenAI directly.
         // Custom/compatible endpoints likely don't serve gpt-4o-mini, so
         // leave fast_model unset (complete_fast will fall back to the main model).
-        // Parse the URL and compare the hostname exactly to avoid false positives
-        // (e.g. https://api.openai.com.local:8000 or proxy paths containing api.openai.com).
-        let is_openai = url::Url::parse(&host)
-            .ok()
-            .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
-            .map(|h| h == "api.openai.com" || h.ends_with(".api.openai.com"))
-            .unwrap_or(false);
-        let model = if is_openai {
+        let model = if Self::uses_openai_default_host(&host) {
             model.with_fast(OPEN_AI_DEFAULT_FAST_MODEL, OPEN_AI_PROVIDER_NAME)?
         } else {
             model
@@ -312,6 +305,16 @@ impl OpenAiProvider {
         }
 
         Self::is_responses_model(model_name)
+    }
+
+    fn uses_openai_default_host(host: &str) -> bool {
+        url::Url::parse(host)
+            .ok()
+            .and_then(|url| {
+                url.host_str()
+                    .map(|host_name| host_name.eq_ignore_ascii_case("api.openai.com"))
+            })
+            .unwrap_or(false)
     }
 
     /// Providers known to reject `max_completion_tokens` and require
@@ -857,6 +860,27 @@ mod tests {
                 "unexpected routing for {model_name} via {base_path}"
             );
         }
+    }
+
+    #[test]
+    fn uses_openai_default_host_matches_exact_hostname_case_insensitively() {
+        assert!(OpenAiProvider::uses_openai_default_host(
+            "https://API.OPENAI.COM/v1"
+        ));
+    }
+
+    #[test]
+    fn uses_openai_default_host_rejects_custom_hostname_with_openai_suffix() {
+        assert!(!OpenAiProvider::uses_openai_default_host(
+            "https://api.openai.com.example.com/v1"
+        ));
+    }
+
+    #[test]
+    fn uses_openai_default_host_rejects_openai_string_in_path() {
+        assert!(!OpenAiProvider::uses_openai_default_host(
+            "https://proxy.example.com/api.openai.com/v1"
+        ));
     }
 
     #[test]
