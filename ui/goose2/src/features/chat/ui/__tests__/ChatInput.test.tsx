@@ -149,7 +149,7 @@ describe("ChatInput", () => {
     ).toHaveTextContent("GPT-4o");
   });
 
-  it("shows default model name in model picker", () => {
+  it("shows provider label when no current model is selected", () => {
     render(
       <ChatInput
         onSend={vi.fn()}
@@ -159,7 +159,7 @@ describe("ChatInput", () => {
     );
     expect(
       screen.getByRole("button", { name: /choose agent and model/i }),
-    ).toHaveTextContent("Claude Sonnet 4");
+    ).toHaveTextContent("Goose");
   });
 
   it("shows default provider label", () => {
@@ -174,6 +174,18 @@ describe("ChatInput", () => {
       name: /choose agent and model/i,
     });
     expect(providerButton).toHaveTextContent("Goose");
+  });
+
+  it("resets the textarea when initialValue changes", () => {
+    const { rerender } = render(
+      <ChatInput onSend={vi.fn()} initialValue="alpha draft" />,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveValue("alpha draft");
+
+    rerender(<ChatInput onSend={vi.fn()} initialValue="" />);
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
   });
 
   it("opens the agent and model picker", async () => {

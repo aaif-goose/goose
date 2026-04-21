@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 10;
+pub const CURRENT_SCHEMA_VERSION: i32 = 11;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -717,6 +717,8 @@ impl SessionStorage {
             .execute(pool)
             .await?;
 
+        crate::providers::inventory::create_tables(pool).await?;
+
         Ok(())
     }
 
@@ -1059,6 +1061,9 @@ impl SessionStorage {
                 sqlx::query("CREATE INDEX IF NOT EXISTS idx_thread_messages_message_id ON thread_messages(message_id)")
                     .execute(&mut **tx)
                     .await?;
+            }
+            11 => {
+                crate::providers::inventory::create_tables_in_tx(tx).await?;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);

@@ -51,9 +51,14 @@
       "responseType": "GetProviderDetailsResponse"
     },
     {
-      "method": "_goose/providers/models",
-      "requestType": "GetProviderModelsRequest",
-      "responseType": "GetProviderModelsResponse"
+      "method": "_goose/providers/inventory",
+      "requestType": "GetProviderInventoryRequest",
+      "responseType": "GetProviderInventoryResponse"
+    },
+    {
+      "method": "_goose/providers/inventory/refresh",
+      "requestType": "RefreshProviderInventoryRequest",
+      "responseType": "RefreshProviderInventoryResponse"
     },
     {
       "method": "_goose/config/read",

@@ -165,18 +165,132 @@ export type ModelEntry = {
 };
 
 /**
- * Fetch the full list of models available for a specific provider.
+ * Read per-provider inventory. Always returns immediately from stored state.
  */
-export type GetProviderModelsRequest = {
-    providerName: string;
+export type GetProviderInventoryRequest = {
+    /**
+     * Only return entries for these providers. Empty means all.
+     */
+    providerIds?: Array<string>;
 };
 
 /**
- * Provider models response.
+ * Provider inventory response.
  */
-export type GetProviderModelsResponse = {
-    models: Array<string>;
+export type GetProviderInventoryResponse = {
+    entries: Array<ProviderInventoryEntryDto>;
 };
+
+/**
+ * Provider inventory entry.
+ */
+export type ProviderInventoryEntryDto = {
+    /**
+     * Provider identifier.
+     */
+    providerId: string;
+    /**
+     * Human-readable provider name.
+     */
+    providerName: string;
+    /**
+     * Whether Goose has enough configuration to use this provider.
+     */
+    configured: boolean;
+    /**
+     * Whether this provider supports background inventory refresh.
+     */
+    supportsRefresh: boolean;
+    /**
+     * Whether a refresh is currently in flight.
+     */
+    refreshing: boolean;
+    /**
+     * The list of available models.
+     */
+    models: Array<ProviderInventoryModelDto>;
+    /**
+     * When this entry was last successfully refreshed (ISO 8601).
+     */
+    lastUpdatedAt?: string | null;
+    /**
+     * When a refresh was most recently attempted (ISO 8601).
+     */
+    lastRefreshAttemptAt?: string | null;
+    /**
+     * The last refresh failure message, if any.
+     */
+    lastRefreshError?: string | null;
+    /**
+     * Whether we believe this data may be outdated.
+     */
+    stale: boolean;
+    /**
+     * Guidance message shown when this provider manages its own model selection externally.
+     */
+    modelSelectionHint?: string | null;
+};
+
+/**
+ * A single model in provider inventory.
+ */
+export type ProviderInventoryModelDto = {
+    /**
+     * Model identifier as the provider knows it.
+     */
+    id: string;
+    /**
+     * Human-readable display name.
+     */
+    name: string;
+    /**
+     * Model family for grouping in UI.
+     */
+    family?: string | null;
+    /**
+     * Context window size in tokens.
+     */
+    contextLimit?: number | null;
+    /**
+     * Whether the model supports reasoning/extended thinking.
+     */
+    reasoning?: boolean | null;
+    /**
+     * Whether this model should appear in the compact recommended picker.
+     */
+    recommended?: boolean;
+};
+
+/**
+ * Trigger a background refresh of provider inventories.
+ */
+export type RefreshProviderInventoryRequest = {
+    /**
+     * Which providers to refresh. Empty means all known providers.
+     */
+    providerIds?: Array<string>;
+};
+
+/**
+ * Refresh acknowledgement.
+ */
+export type RefreshProviderInventoryResponse = {
+    /**
+     * Which providers will be refreshed.
+     */
+    started: Array<string>;
+    /**
+     * Which providers were skipped and why.
+     */
+    skipped?: Array<RefreshProviderInventorySkipDto>;
+};
+
+export type RefreshProviderInventorySkipDto = {
+    providerId: string;
+    reason: RefreshProviderInventorySkipReasonDto;
+};
+
+export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_configured' | 'does_not_support_refresh' | 'already_refreshing';
 
 /**
  * Read a single non-secret config value.
@@ -279,119 +393,6 @@ export type ArchiveSessionRequest = {
  */
 export type UnarchiveSessionRequest = {
     sessionId: string;
-};
-
-/**
- * Create a new source (global or project-scoped).
- */
-export type CreateSourceRequest = {
-    type: SourceType;
-    name: string;
-    description: string;
-    content: string;
-    global: boolean;
-    /**
-     * Absolute path to the project root. Required when `global` is false.
-     */
-    projectDir?: string | null;
-};
-
-/**
- * The type of source entity.
- */
-export type SourceType = 'skill';
-
-export type CreateSourceResponse = {
-    source: SourceEntry;
-};
-
-/**
- * A source — a user-editable entity backed by an on-disk directory. Sources
- * may be either `global` (shared across all projects) or project-specific.
- */
-export type SourceEntry = {
-    type: SourceType;
-    name: string;
-    description: string;
-    content: string;
-    /**
-     * Absolute path to the source's directory on disk.
-     */
-    directory: string;
-    /**
-     * True when the source lives in the user's global sources directory; false
-     * when it lives inside a specific project.
-     */
-    global: boolean;
-};
-
-/**
- * List sources. If `type` is omitted, sources of all known types are returned.
- * Both global and project-scoped sources are included when `project_dir` is set.
- */
-export type ListSourcesRequest = {
-    type?: SourceType | null;
-    projectDir?: string | null;
-};
-
-export type ListSourcesResponse = {
-    sources: Array<SourceEntry>;
-};
-
-/**
- * Update an existing source's description and content.
- */
-export type UpdateSourceRequest = {
-    type: SourceType;
-    name: string;
-    description: string;
-    content: string;
-    global: boolean;
-    projectDir?: string | null;
-};
-
-export type UpdateSourceResponse = {
-    source: SourceEntry;
-};
-
-/**
- * Delete a source and its on-disk directory.
- */
-export type DeleteSourceRequest = {
-    type: SourceType;
-    name: string;
-    global: boolean;
-    projectDir?: string | null;
-};
-
-/**
- * Export a source as a portable JSON payload.
- */
-export type ExportSourceRequest = {
-    type: SourceType;
-    name: string;
-    global: boolean;
-    projectDir?: string | null;
-};
-
-export type ExportSourceResponse = {
-    json: string;
-    filename: string;
-};
-
-/**
- * Import a source from a JSON export payload produced by `_goose/sources/export`.
- * The imported source is written under the given scope; on name collisions a
- * `-imported` suffix is appended.
- */
-export type ImportSourcesRequest = {
-    data: string;
-    global: boolean;
-    projectDir?: string | null;
-};
-
-export type ImportSourcesResponse = {
-    sources: Array<SourceEntry>;
 };
 
 /**
@@ -534,14 +535,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderModelsRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderInventoryRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderModelsResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderInventoryResponse | RefreshProviderInventoryResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

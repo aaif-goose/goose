@@ -192,7 +192,8 @@ kill:
     fi
 
     PROC_NAME=$(ps -p "$PID" -o comm= 2>/dev/null) || true
-    if [[ "$PROC_NAME" != "node" ]]; then
+    PROC_BASENAME="${PROC_NAME##*/}"
+    if [[ "$PROC_BASENAME" != "node" ]]; then
         echo "Process on port $VITE_PORT is '$PROC_NAME', not 'node' — refusing to kill"
         exit 1
     fi

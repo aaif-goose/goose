@@ -36,9 +36,19 @@ const EXCEPTIONS = {
       "Search-as-you-type filtering and draft-aware sidebar highlight logic.",
   },
   "src/app/AppShell.tsx": {
-    limit: 660,
+    limit: 730,
     justification:
-      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, and app-level chat routing. Includes gated [perf:load]/[perf:newtab] logging via perfLog (dev-only by default).",
+      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, home-session restoration, app-level chat routing, and restored project-draft reuse. Includes gated [perf:load]/[perf:newtab] logging via perfLog (dev-only by default).",
+  },
+  "src/features/chat/hooks/useChatSessionController.ts": {
+    limit: 690,
+    justification:
+      "Controller now centralizes home-to-chat pending state transfer, workspace/project preparation, provider/model/persona handoff, Goose cross-provider model selection sequencing with rollback, and chat input orchestration pending a later decomposition pass.",
+  },
+  "src/features/chat/ui/AgentModelPicker.tsx": {
+    limit: 570,
+    justification:
+      "Agent-first picker currently keeps the full trigger, recommended-model view, searchable full-model view, and ACP/goose-specific labeling logic in one component pending later extraction.",
   },
   "src/features/chat/stores/__tests__/chatSessionStore.test.ts": {
     limit: 540,
@@ -56,7 +66,7 @@ const EXCEPTIONS = {
       "Voice dictation send/stop guards, attachment handling, and mention/picker coordination still share one chat composer component.",
   },
   "src/features/chat/ui/__tests__/ChatInput.test.tsx": {
-    limit: 510,
+    limit: 520,
     justification:
       "Composer regression coverage spans personas, queueing, attachments, and voice-input edge cases in one interaction-heavy suite.",
   },

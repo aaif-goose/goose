@@ -16,7 +16,7 @@ vi.mock("../acpConnection", () => ({
 }));
 
 describe("dictation SDK wiring", () => {
-  let client: any;
+  let client: { goose: Record<string, ReturnType<typeof vi.fn>> };
   beforeEach(() => {
     client = {
       goose: {
@@ -33,7 +33,9 @@ describe("dictation SDK wiring", () => {
         GooseDictationTranscribe: vi.fn().mockResolvedValue({ text: "hello" }),
       },
     };
-    vi.mocked(getClient).mockResolvedValue(client);
+    vi.mocked(getClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getClient>>,
+    );
   });
 
   it("getDictationConfig calls GooseDictationConfig and returns providers map", async () => {
@@ -46,7 +48,7 @@ describe("dictation SDK wiring", () => {
     const result = await transcribeDictation({
       audio: "base64==",
       mimeType: "audio/webm",
-      provider: "openai" as any,
+      provider: "openai",
     });
     expect(client.goose.GooseDictationTranscribe).toHaveBeenCalledWith({
       audio: "base64==",
@@ -58,7 +60,7 @@ describe("dictation SDK wiring", () => {
 
   it("saveDictationModelSelection calls GooseDictationModelSelect", async () => {
     client.goose.GooseDictationModelSelect = vi.fn().mockResolvedValue({});
-    await saveDictationModelSelection("local" as any, "tiny");
+    await saveDictationModelSelection("local", "tiny");
     expect(client.goose.GooseDictationModelSelect).toHaveBeenCalledWith({
       provider: "local",
       modelId: "tiny",

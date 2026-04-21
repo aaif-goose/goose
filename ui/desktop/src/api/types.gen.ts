@@ -971,6 +971,10 @@ export type ProviderMetadata = {
      */
     model_doc_link: string;
     /**
+     * Hint shown in the model picker when this provider manages its own model selection.
+     */
+    model_selection_hint?: string | null;
+    /**
      * The unique identifier for this provider
      */
     name: string;

@@ -35,13 +35,7 @@ export function buildInitScript(options?: {
       const SKILLS = ${skills};
       const PROJECTS = ${projects};
       const FAKE_ACP_URL = "ws://127.0.0.1:0/mock-acp";
-
-      // ------------------------------------------------------------------
-      // ACP over a fake WebSocket. The frontend opens a ws connection
-      // obtained from invoke("get_goose_serve_url") and then speaks
-      // JSON-RPC 2.0 to the ACP SDK. We intercept that socket here and
-      // respond to the handful of methods the app calls.
-      // ------------------------------------------------------------------
+      const ACP_SESSIONS = [];
 
       const skillToSourceEntry = (s) => ({
         type: "skill",
@@ -52,129 +46,168 @@ export function buildInitScript(options?: {
         global: true,
       });
 
-      function handleAcpRequest(method, params) {
-        switch (method) {
+      function nowIso() {
+        return new Date().toISOString();
+      }
+
+      function buildSession(sessionId, providerId = "goose") {
+        return {
+          sessionId,
+          title: "New Chat",
+          updatedAt: nowIso(),
+          messageCount: 0,
+          providerId,
+          modelId: null,
+        };
+      }
+
+      function findSession(sessionId) {
+        return ACP_SESSIONS.find((session) => session.sessionId === sessionId) ?? null;
+      }
+
+      function jsonRpcResult(id, result) {
+        return { jsonrpc: "2.0", id, result };
+      }
+
+      function handleAcpRequest(message) {
+        switch (message.method) {
           case "initialize":
-            return {
-              protocolVersion: 1,
-              agentCapabilities: {},
+            return jsonRpcResult(message.id, {
+              protocolVersion: "0.1.0",
+              agentCapabilities: {
+                loadSession: {},
+                listSessions: {},
+              },
+              agentInfo: {
+                name: "mock-goose",
+                version: "0.0.0",
+              },
               authMethods: [],
-            };
+            });
+          case "session/list":
+            return jsonRpcResult(message.id, {
+              sessions: ACP_SESSIONS.map((session) => ({
+                sessionId: session.sessionId,
+                title: session.title,
+                updatedAt: session.updatedAt,
+                _meta: {
+                  messageCount: session.messageCount,
+                },
+              })),
+            });
+          case "session/new": {
+            const providerId = message.params?.meta?.provider ?? "goose";
+            const sessionId = "session-" + Math.random().toString(36).slice(2, 10);
+            ACP_SESSIONS.unshift(buildSession(sessionId, providerId));
+            return jsonRpcResult(message.id, { sessionId });
+          }
+          case "session/load":
+            return jsonRpcResult(message.id, {});
+          case "session/set_config_option": {
+            const session = findSession(message.params?.sessionId);
+            if (session) {
+              if (message.params?.configId === "provider") {
+                session.providerId = message.params?.value ?? session.providerId;
+                session.modelId = null;
+              }
+              if (message.params?.configId === "model") {
+                session.modelId = message.params?.value ?? null;
+              }
+              session.updatedAt = nowIso();
+            }
+            return jsonRpcResult(message.id, {});
+          }
+          case "session/prompt": {
+            const session = findSession(message.params?.sessionId);
+            if (session) {
+              session.messageCount += 1;
+              session.updatedAt = nowIso();
+            }
+            return jsonRpcResult(message.id, { stopReason: "end_turn" });
+          }
+          case "_goose/providers/list":
+            return jsonRpcResult(message.id, { providers: [] });
+          case "_goose/providers/inventory":
+            return jsonRpcResult(message.id, { entries: [] });
+          case "_goose/providers/inventory/refresh":
+            return jsonRpcResult(message.id, { started: [], skipped: [] });
+          case "_goose/working_dir/update":
+          case "goose/working_dir/update":
+            return jsonRpcResult(message.id, {});
           case "_goose/sources/list":
-            return { sources: SKILLS.map(skillToSourceEntry) };
+            return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
           case "_goose/sources/create":
-            return {
+            return jsonRpcResult(message.id, {
               source: {
+                name: message.params?.name ?? "new-skill",
                 type: "skill",
-                name: params?.name ?? "new-skill",
-                description: params?.description ?? "",
-                content: params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (params?.name ?? "new-skill"),
-                global: params?.global ?? true,
+                description: message.params?.description ?? "",
+                content: message.params?.content ?? "",
+                directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
+                global: message.params?.global ?? true,
               },
-            };
+            });
           case "_goose/sources/update":
-            return {
+            return jsonRpcResult(message.id, {
               source: {
+                name: message.params?.name ?? "updated-skill",
                 type: "skill",
-                name: params?.name ?? "updated-skill",
-                description: params?.description ?? "",
-                content: params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (params?.name ?? "updated-skill"),
-                global: params?.global ?? true,
+                description: message.params?.description ?? "",
+                content: message.params?.content ?? "",
+                directory: "/mock/.agents/skills/" + (message.params?.name ?? "updated-skill"),
+                global: message.params?.global ?? true,
               },
-            };
+            });
           case "_goose/sources/delete":
-            return {};
+            return jsonRpcResult(message.id, {});
           case "_goose/sources/export":
-            return {
+            return jsonRpcResult(message.id, {
               json: "{}",
-              filename: (params?.name ?? "skill") + ".skill.json",
-            };
+              filename: (message.params?.name ?? "skill") + ".skill.json",
+            });
           case "_goose/sources/import":
-            return { sources: SKILLS.map(skillToSourceEntry) };
+            return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
           default:
-            // Unknown extension method — return empty object so callers
-            // don't crash on unmocked fields.
-            return {};
+            return jsonRpcResult(message.id, {});
         }
       }
 
-      class MockAcpWebSocket extends EventTarget {
-        static CONNECTING = 0;
-        static OPEN = 1;
-        static CLOSING = 2;
-        static CLOSED = 3;
-
+      class MockWebSocket extends EventTarget {
         constructor(url) {
           super();
           this.url = url;
           this.readyState = 0;
-          this.binaryType = "blob";
-          // Dispatch open in a microtask so listeners can be registered.
           queueMicrotask(() => {
             this.readyState = 1;
             this.dispatchEvent(new Event("open"));
           });
         }
 
-        send(data) {
-          if (this.readyState !== 1) return;
-          let msg;
-          try {
-            msg = typeof data === "string" ? JSON.parse(data) : null;
-          } catch {
+        send(raw) {
+          const message = JSON.parse(raw);
+          const response =
+            message && typeof message === "object" && "id" in message
+              ? handleAcpRequest(message)
+              : null;
+          if (!response) {
             return;
           }
-          if (!msg || typeof msg !== "object") return;
-
-          // Requests have both method and id; notifications have method
-          // but no id; responses have id but no method. Only requests need
-          // a reply.
-          if (msg.method !== undefined && msg.id !== undefined) {
-            let response;
-            try {
-              response = {
-                jsonrpc: "2.0",
-                id: msg.id,
-                result: handleAcpRequest(msg.method, msg.params),
-              };
-            } catch (e) {
-              response = {
-                jsonrpc: "2.0",
-                id: msg.id,
-                error: { code: -32603, message: String(e) },
-              };
-            }
-            queueMicrotask(() => {
-              this.dispatchEvent(
-                new MessageEvent("message", { data: JSON.stringify(response) }),
-              );
-            });
-          }
+          queueMicrotask(() => {
+            this.dispatchEvent(
+              new MessageEvent("message", {
+                data: JSON.stringify(response),
+              }),
+            );
+          });
         }
 
         close() {
-          if (this.readyState === 3) return;
           this.readyState = 3;
-          queueMicrotask(() => {
-            this.dispatchEvent(new CloseEvent("close"));
-          });
+          this.dispatchEvent(new CloseEvent("close"));
         }
       }
 
-      const RealWebSocket = window.WebSocket;
-      const PatchedWebSocket = function (url, protocols) {
-        if (url === FAKE_ACP_URL) {
-          return new MockAcpWebSocket(url);
-        }
-        return new RealWebSocket(url, protocols);
-      };
-      PatchedWebSocket.CONNECTING = 0;
-      PatchedWebSocket.OPEN = 1;
-      PatchedWebSocket.CLOSING = 2;
-      PatchedWebSocket.CLOSED = 3;
-      window.WebSocket = PatchedWebSocket;
+      window.WebSocket = MockWebSocket;
 
       window.__TAURI_INTERNALS__ = {
         invoke(cmd, args) {
@@ -222,7 +255,14 @@ export function buildInitScript(options?: {
 
             // ---- Sessions / Misc ----
             case "list_sessions":
-              return Promise.resolve([]);
+              return Promise.resolve(
+                ACP_SESSIONS.map((session) => ({
+                  sessionId: session.sessionId,
+                  title: session.title,
+                  updatedAt: session.updatedAt,
+                  messageCount: session.messageCount,
+                })),
+              );
             case "create_session":
               return Promise.resolve({
                 id: "session-" + Math.random().toString(36).slice(2, 10),
@@ -257,6 +297,16 @@ export function buildInitScript(options?: {
               return Promise.resolve("/tmp/home");
             case "path_exists":
               return Promise.resolve(false);
+            case "resolve_path": {
+              const parts = args?.request?.parts ?? [];
+              const path = parts
+                .filter((part) => typeof part === "string" && part.length > 0)
+                .join("/");
+              const normalizedPath = path.startsWith("~/")
+                ? "/tmp/home/" + path.slice(2)
+                : path;
+              return Promise.resolve({ path: normalizedPath });
+            }
 
             // ---- Fallback ----
             default:

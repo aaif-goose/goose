@@ -6864,6 +6864,11 @@
             "type": "string",
             "description": "Link to the docs where models can be found"
           },
+          "model_selection_hint": {
+            "type": "string",
+            "description": "Hint shown in the model picker when this provider manages its own model selection.",
+            "nullable": true
+          },
           "name": {
             "type": "string",
             "description": "The unique identifier for this provider"

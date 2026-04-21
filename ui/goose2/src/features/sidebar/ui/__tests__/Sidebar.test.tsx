@@ -9,12 +9,12 @@ const mockSessions: Array<{
   updatedAt: string;
   messageCount: number;
   projectId?: string;
-  draft?: boolean;
   archivedAt?: string;
 }> = [];
 
 vi.mock("@/features/chat/stores/chatStore", () => ({
   useChatStore: () => ({
+    messagesBySession: {},
     getSessionRuntime: () => ({
       chatState: "idle",
       hasUnread: false,
@@ -23,6 +23,8 @@ vi.mock("@/features/chat/stores/chatStore", () => ({
 }));
 
 vi.mock("@/features/chat/stores/chatSessionStore", () => ({
+  getVisibleSessions: (sessions: typeof mockSessions) =>
+    sessions.filter((session) => session.messageCount > 0),
   useChatSessionStore: () => ({
     sessions: mockSessions,
   }),
@@ -60,6 +62,40 @@ describe("Sidebar", () => {
       />,
     );
 
+    expect(screen.getByText("Recovered Session")).toBeInTheDocument();
+
+    mockSessions.splice(0, mockSessions.length);
+  });
+
+  it("hides zero-message sessions from recents", () => {
+    mockSessions.splice(
+      0,
+      mockSessions.length,
+      {
+        id: "home-session",
+        title: "New Chat",
+        updatedAt: "2026-04-09T12:00:00.000Z",
+        messageCount: 0,
+      },
+      {
+        id: "session-1",
+        title: "Recovered Session",
+        updatedAt: "2026-04-09T12:01:00.000Z",
+        messageCount: 3,
+      },
+    );
+
+    render(
+      <Sidebar
+        collapsed={false}
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectSession={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    expect(screen.queryByText("New Chat")).not.toBeInTheDocument();
     expect(screen.getByText("Recovered Session")).toBeInTheDocument();
 
     mockSessions.splice(0, mockSessions.length);
