@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
@@ -156,12 +156,14 @@ describe("MessageBubble", () => {
     );
 
     expect(
-      Array.from(assistantActions?.children ?? []).map(
+      Array.from(assistantActions?.firstElementChild?.children ?? []).map(
         (element) => element.tagName,
       ),
     ).toEqual(["BUTTON", "BUTTON", "SPAN"]);
     expect(
-      Array.from(userActions?.children ?? []).map((element) => element.tagName),
+      Array.from(userActions?.firstElementChild?.children ?? []).map(
+        (element) => element.tagName,
+      ),
     ).toEqual(["SPAN", "BUTTON", "BUTTON"]);
   });
 

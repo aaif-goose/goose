@@ -65,6 +65,11 @@ const EXCEPTIONS = {
     justification:
       "Voice dictation send/stop guards, attachment handling, and mention/picker coordination still share one chat composer component.",
   },
+  "src/features/chat/ui/MessageBubble.tsx": {
+    limit: 520,
+    justification:
+      "Bubble rendering still owns assistant identity, grouped tool output, attachments, and the inline actions tray pending a later extraction pass.",
+  },
   "src/features/chat/ui/__tests__/ChatInput.test.tsx": {
     limit: 520,
     justification:
