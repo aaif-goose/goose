@@ -42,11 +42,9 @@ export function useAutoCompactPreferences() {
 
   const syncFromConfig = useCallback(async () => {
     const result = await readConfigValue(AUTO_COMPACT_THRESHOLD_CONFIG_KEY);
-    if (!result.ok) {
-      return;
+    if (result.ok) {
+      setAutoCompactThresholdState(normalizeAutoCompactThreshold(result.value));
     }
-
-    setAutoCompactThresholdState(normalizeAutoCompactThreshold(result.value));
     setIsHydrated(true);
   }, []);
 

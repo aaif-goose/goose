@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_COMPACT_PREFERENCES_EVENT,
   AUTO_COMPACT_THRESHOLD_CONFIG_KEY,
+  DEFAULT_AUTO_COMPACT_THRESHOLD,
 } from "../../lib/autoCompact";
 
 const mockGetClient = vi.fn();
@@ -66,5 +67,17 @@ describe("useAutoCompactPreferences", () => {
     expect(result.current.autoCompactThreshold).toBe(0.9);
 
     window.removeEventListener(AUTO_COMPACT_PREFERENCES_EVENT, eventListener);
+  });
+
+  it("marks the preferences hydrated even when the initial read fails", async () => {
+    mockGetClient.mockRejectedValue(new Error("ACP not ready"));
+
+    const { result } = renderHook(() => useAutoCompactPreferences());
+
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+
+    expect(result.current.autoCompactThreshold).toBe(
+      DEFAULT_AUTO_COMPACT_THRESHOLD,
+    );
   });
 });
