@@ -84,7 +84,7 @@ impl OpenAiProvider {
         let is_openai = url::Url::parse(&host)
             .ok()
             .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
-            .map(|h| h == "api.openai.com")
+            .map(|h| h == "api.openai.com" || h.ends_with(".api.openai.com"))
             .unwrap_or(false);
         let model = if is_openai {
             model.with_fast(OPEN_AI_DEFAULT_FAST_MODEL, OPEN_AI_PROVIDER_NAME)?
