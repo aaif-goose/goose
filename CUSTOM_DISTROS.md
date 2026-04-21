@@ -292,11 +292,51 @@ export GOOSE_BUNDLE_NAME="InsightStream-goose"
    - Release artifact names and updater lookup names are consistent
    - Desktop launchers (Linux `.desktop` templates) point to the same executable name produced by packaging
 
+### CLI branding (build-time env vars)
+
+The `goose-cli` crate routes every user-visible `goose` / `Goose` string through `crates/goose-cli/src/branding.rs`. Set these env vars at `cargo build` time to rebrand the CLI's `--help`, subcommand about text, runtime messages, shell integration templates (`goose term init`), recipe deeplink scheme, GitHub update URLs, and the provider-config test system prompt without editing source. Unset variables fall back to today's goose defaults — a default build is byte-identical to upstream.
+
+| Env var | Default | Affects |
+|---|---|---|
+| `GOOSE_BRAND_PRODUCT_NAME` | `goose` | Display noun in user-facing messages ("goose Version:", "goose mode", "Asking goose...") |
+| `GOOSE_BRAND_BINARY_NAME` | `goose` | Clap root name, invocation examples, `Command::new("goose")` spawns, update asset filenames |
+| `GOOSE_BRAND_SHELL_ALIAS_PRIMARY` | `goose` | `@goose` alias emitted by `term init` |
+| `GOOSE_BRAND_SHELL_ALIAS_SHORT` | `g` | `@g` short alias emitted by `term init` |
+| `GOOSE_BRAND_SHELL_FN_PREFIX` | `goose` | `goose_preexec` / `goose_preexec_installed` function names in shell templates |
+| `GOOSE_BRAND_DEEPLINK_SCHEME` | `goose` | Scheme in `goose://recipe?...` deeplinks |
+| `GOOSE_BRAND_GITHUB_OWNER` | `aaif-goose` | Owner half of update + attestation URLs |
+| `GOOSE_BRAND_GITHUB_REPO` | `goose` | Repo half of update + attestation URLs |
+| `GOOSE_BRAND_AGENT_IDENTITY` | `You are goose, an AI assistant.` | System prompt for the provider-configuration smoke test |
+
+Example build invocation:
+
+```bash
+GOOSE_BRAND_PRODUCT_NAME=InsightStream \
+GOOSE_BRAND_BINARY_NAME=insightstream \
+GOOSE_BRAND_SHELL_ALIAS_PRIMARY=insightstream \
+GOOSE_BRAND_SHELL_ALIAS_SHORT=is \
+GOOSE_BRAND_SHELL_FN_PREFIX=insightstream \
+GOOSE_BRAND_DEEPLINK_SCHEME=insightstream \
+GOOSE_BRAND_GITHUB_OWNER=your-org \
+GOOSE_BRAND_GITHUB_REPO=your-goose-fork \
+GOOSE_BRAND_AGENT_IDENTITY="You are InsightStream, an AI assistant." \
+  cargo build --release -p goose-cli
+```
+
+**One caveat** — the compiled binary filename is set by `[[bin]] name = "goose"` in `crates/goose-cli/Cargo.toml`, and Cargo.toml values cannot be parameterized by env vars. Downstream distros either:
+
+1. Accept the `goose` filename and rename post-build (`mv target/release/goose target/release/insightstream`), or
+2. Patch the one line in `Cargo.toml` so `cargo build` emits the renamed binary directly.
+
+Whichever you choose, set `GOOSE_BRAND_BINARY_NAME` to the final filename so invocation examples in `--help`, update asset URLs, and shell templates all reference the correct binary.
+
 ### Technical Details
 
 - Electron config: `ui/desktop/forge.config.ts`
 - UI entry point: `ui/desktop/src/renderer.tsx`
 - System prompts: `crates/goose/src/prompts/`
+- CLI branding module: `crates/goose-cli/src/branding.rs`
+- Shell-template fixture tests: `crates/goose-cli/tests/shell_templates.rs` (run `UPDATE_SHELL_FIXTURES=1 cargo test --test shell_templates` to regenerate after intentional template edits)
 
 ---
 

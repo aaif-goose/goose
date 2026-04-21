@@ -1,0 +1,8 @@
+function @goose; /Users/smor/Projects/vendor/goose/target/debug/goose term run $argv; end
+function @g; /Users/smor/Projects/vendor/goose/target/debug/goose term run $argv; end
+
+function goose_preexec --on-event fish_preexec
+    string match -q -r '^goose term' -- $argv[1]; and return
+    string match -q -r '^(@goose|@g)($|\s)' -- $argv[1]; and return
+    /Users/smor/Projects/vendor/goose/target/debug/goose term log "$argv[1]" 2>/dev/null &
+end

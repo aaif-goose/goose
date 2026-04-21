@@ -83,8 +83,9 @@ fn truncate_code_blocks(content: &str) -> String {
 }
 
 fn save_to_temp_file(content: &str) -> Option<String> {
+    let prefix = format!("{}-", crate::branding::Brand::get().binary_name);
     let mut file = tempfile::Builder::new()
-        .prefix("goose-")
+        .prefix(&prefix)
         .suffix(".txt")
         .tempfile()
         .ok()?;

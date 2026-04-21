@@ -62,8 +62,9 @@ fn build_template(messages: &[&str], prefill: Option<&str>) -> String {
 
 /// Create temporary markdown file with conversation history and optional prefill text
 fn create_temp_file(messages: &[&str], prefill: Option<&str>) -> Result<NamedTempFile> {
+    let prefix = format!("{}_prompt_", crate::branding::Brand::get().binary_name);
     let temp_file = Builder::new()
-        .prefix("goose_prompt_")
+        .prefix(&prefix)
         .suffix(".md")
         .tempfile()?;
 

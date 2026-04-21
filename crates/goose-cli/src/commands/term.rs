@@ -5,6 +5,7 @@ use goose::conversation::message::{Message, MessageContent, MessageMetadata};
 use goose::session::{SessionManager, SessionType};
 use rmcp::model::Role;
 
+use crate::branding::Brand;
 use crate::session::{build_session, SessionBuilderConfig};
 
 use clap::ValueEnum;
@@ -36,24 +37,24 @@ impl Shell {
 
 static BASH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"export AGENT_SESSION_ID="{session_id}"
-alias @goose='{goose_bin} term run'
-alias @g='{goose_bin} term run'
+alias @{alias_primary}='{goose_bin} term run'
+alias @{alias_short}='{goose_bin} term run'
 
-goose_preexec() {
-    [[ "$1" =~ ^goose\ term ]] && return
-    [[ "$1" =~ ^(@goose|@g)($|[[:space:]]) ]] && return
+{fn_prefix}_preexec() {
+    [[ "$1" =~ ^{binary_name}\ term ]] && return
+    [[ "$1" =~ ^(@{alias_primary}|@{alias_short})($|[[:space:]]) ]] && return
     ('{goose_bin}' term log "$1" &) 2>/dev/null
 }
 
-if [[ -z "$goose_preexec_installed" ]]; then
-    goose_preexec_installed=1
-    trap 'goose_preexec "$BASH_COMMAND"' DEBUG
+if [[ -z "${fn_prefix}_preexec_installed" ]]; then
+    {fn_prefix}_preexec_installed=1
+    trap '{fn_prefix}_preexec "$BASH_COMMAND"' DEBUG
 fi{command_not_found_handler}"#,
     command_not_found: Some(
         r#"
 
 command_not_found_handle() {
-    echo "🪿 Command '$1' not found. Asking goose..."
+    echo "🪿 Command '$1' not found. Asking {product_name}..."
     '{goose_bin}' term run "$@"
     return 0
 }"#,
@@ -62,22 +63,22 @@ command_not_found_handle() {
 
 static ZSH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"export AGENT_SESSION_ID="{session_id}"
-alias @goose='{goose_bin} term run'
-alias @g='{goose_bin} term run'
+alias @{alias_primary}='{goose_bin} term run'
+alias @{alias_short}='{goose_bin} term run'
 
-goose_preexec() {
-    [[ "$1" =~ ^goose\ term ]] && return
-    [[ "$1" =~ ^(@goose|@g)($|[[:space:]]) ]] && return
+{fn_prefix}_preexec() {
+    [[ "$1" =~ ^{binary_name}\ term ]] && return
+    [[ "$1" =~ ^(@{alias_primary}|@{alias_short})($|[[:space:]]) ]] && return
     ('{goose_bin}' term log "$1" &) 2>/dev/null
 }
 
 autoload -Uz add-zsh-hook
-add-zsh-hook preexec goose_preexec{command_not_found_handler}"#,
+add-zsh-hook preexec {fn_prefix}_preexec{command_not_found_handler}"#,
     command_not_found: Some(
         r#"
 
 command_not_found_handler() {
-    echo "🪿 Command '$1' not found. Asking goose..."
+    echo "🪿 Command '$1' not found. Asking {product_name}..."
     '{goose_bin}' term run "$@"
     return 0
 }"#,
@@ -86,12 +87,12 @@ command_not_found_handler() {
 
 static FISH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"set -gx AGENT_SESSION_ID "{session_id}"
-function @goose; {goose_bin} term run $argv; end
-function @g; {goose_bin} term run $argv; end
+function @{alias_primary}; {goose_bin} term run $argv; end
+function @{alias_short}; {goose_bin} term run $argv; end
 
-function goose_preexec --on-event fish_preexec
-    string match -q -r '^goose term' -- $argv[1]; and return
-    string match -q -r '^(@goose|@g)($|\s)' -- $argv[1]; and return
+function {fn_prefix}_preexec --on-event fish_preexec
+    string match -q -r '^{binary_name} term' -- $argv[1]; and return
+    string match -q -r '^(@{alias_primary}|@{alias_short})($|\s)' -- $argv[1]; and return
     {goose_bin} term log "$argv[1]" 2>/dev/null &
 end"#,
     command_not_found: None,
@@ -99,13 +100,13 @@ end"#,
 
 static POWERSHELL_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"$env:AGENT_SESSION_ID = "{session_id}"
-function @goose {{ & '{goose_bin}' term run @args }}
-function @g {{ & '{goose_bin}' term run @args }}
+function @{alias_primary} {{ & '{goose_bin}' term run @args }}
+function @{alias_short} {{ & '{goose_bin}' term run @args }}
 
 Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {{
     $line = $null
     [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$null)
-    if ($line -notmatch '^goose term' -and $line -notmatch '^(@goose|@g)($|\s)') {{
+    if ($line -notmatch '^{binary_name} term' -and $line -notmatch '^(@{alias_primary}|@{alias_short})($|\s)') {{
         Start-Job -ScriptBlock {{ & '{goose_bin}' term log $using:line }} | Out-Null
     }}
     [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
@@ -118,7 +119,6 @@ pub async fn handle_term_init(
     name: Option<String>,
     with_command_not_found: bool,
 ) -> Result<()> {
-    let config = shell.config();
     let session_manager = SessionManager::instance();
 
     let working_dir = std::env::current_dir()?;
@@ -137,7 +137,7 @@ pub async fn handle_term_init(
             let session = session_manager
                 .create_session(
                     working_dir,
-                    "Goose Term Session".to_string(),
+                    format!("{} Term Session", Brand::get().product_name_cap()),
                     SessionType::Terminal,
                     Config::global().get_goose_mode().unwrap_or_default(),
                 )
@@ -155,32 +155,63 @@ pub async fn handle_term_init(
         }
     };
 
+    let brand = Brand::get();
     let goose_bin = std::env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "goose".to_string());
+        .unwrap_or_else(|_| brand.binary_name.to_string());
 
-    let command_not_found_handler = if with_command_not_found {
-        config
-            .command_not_found
-            .map(|s| s.replace("{goose_bin}", &goose_bin))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let script = config
-        .script_template
-        .replace("{session_id}", &session.id)
-        .replace("{goose_bin}", &goose_bin)
-        .replace("{command_not_found_handler}", &command_not_found_handler);
+    let script = render_shell_script(
+        shell.config(),
+        &session.id,
+        &goose_bin,
+        with_command_not_found,
+        brand,
+    );
 
     println!("{}", script);
     Ok(())
 }
 
+/// Render a shell integration script from a template and the active branding.
+///
+/// Extracted from [`handle_term_init`] so downstream tests can exercise the
+/// placeholder substitution without creating a real session.
+fn render_shell_script(
+    config: &ShellConfig,
+    session_id: &str,
+    goose_bin: &str,
+    with_command_not_found: bool,
+    brand: &Brand,
+) -> String {
+    let apply_brand_placeholders = |s: &str| -> String {
+        s.replace("{goose_bin}", goose_bin)
+            .replace("{binary_name}", brand.binary_name)
+            .replace("{product_name}", brand.product_name)
+            .replace("{alias_primary}", brand.shell_alias_primary)
+            .replace("{alias_short}", brand.shell_alias_short)
+            .replace("{fn_prefix}", brand.shell_fn_prefix)
+    };
+
+    let command_not_found_handler = if with_command_not_found {
+        config
+            .command_not_found
+            .map(apply_brand_placeholders)
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    apply_brand_placeholders(config.script_template)
+        .replace("{session_id}", session_id)
+        .replace("{command_not_found_handler}", &command_not_found_handler)
+}
+
 pub async fn handle_term_log(command: String) -> Result<()> {
     let session_id = std::env::var("AGENT_SESSION_ID").map_err(|_| {
-        anyhow!("AGENT_SESSION_ID not set. Run 'eval \"$(goose term init <shell>)\"' first.")
+        anyhow!(
+            "AGENT_SESSION_ID not set. Run 'eval \"$({} term init <shell>)\"' first.",
+            Brand::get().binary_name
+        )
     })?;
 
     let message = Message::new(
@@ -203,8 +234,9 @@ pub async fn handle_term_run(prompt: Vec<String>) -> Result<()> {
         anyhow!(
             "AGENT_SESSION_ID not set.\n\n\
              Add to your shell config (~/.zshrc or ~/.bashrc):\n    \
-             eval \"$(goose term init zsh)\"\n\n\
-             Then restart your terminal or run: source ~/.zshrc"
+             eval \"$({} term init zsh)\"\n\n\
+             Then restart your terminal or run: source ~/.zshrc",
+            Brand::get().binary_name
         )
     })?;
 

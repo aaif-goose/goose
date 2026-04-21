@@ -1,3 +1,4 @@
+use crate::branding::Brand;
 use crate::cli::StreamableHttpOptions;
 
 use super::output;
@@ -360,7 +361,10 @@ fn resolve_provider_and_model(
         .or_else(|| recipe_settings.and_then(|s| s.goose_provider.clone()))
         .or_else(|| config.get_goose_provider().ok())
         .unwrap_or_else(|| {
-            output::render_error("No provider configured. Run 'goose configure' first.");
+            output::render_error(&format!(
+                "No provider configured. Run '{} configure' first.",
+                Brand::get().binary_name
+            ));
             process::exit(1);
         });
 
@@ -371,7 +375,10 @@ fn resolve_provider_and_model(
         .or_else(|| recipe_settings.and_then(|s| s.goose_model.clone()))
         .or_else(|| config.get_goose_model().ok())
         .unwrap_or_else(|| {
-            output::render_error("No model configured. Run 'goose configure' first.");
+            output::render_error(&format!(
+                "No model configured. Run '{} configure' first.",
+                Brand::get().binary_name
+            ));
             process::exit(1);
         });
 

@@ -8,39 +8,43 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Asset name for this platform (compile-time).
-fn asset_name() -> &'static str {
+use crate::branding::Brand;
+
+/// Asset name for this platform.
+fn asset_name() -> String {
+    let bin = Brand::get().binary_name;
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
-        "goose-aarch64-apple-darwin.tar.bz2"
+        format!("{bin}-aarch64-apple-darwin.tar.bz2")
     }
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
     {
-        "goose-x86_64-apple-darwin.tar.bz2"
+        format!("{bin}-x86_64-apple-darwin.tar.bz2")
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        "goose-x86_64-unknown-linux-gnu.tar.bz2"
+        format!("{bin}-x86_64-unknown-linux-gnu.tar.bz2")
     }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     {
-        "goose-aarch64-unknown-linux-gnu.tar.bz2"
+        format!("{bin}-aarch64-unknown-linux-gnu.tar.bz2")
     }
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     {
-        "goose-x86_64-pc-windows-msvc.zip"
+        format!("{bin}-x86_64-pc-windows-msvc.zip")
     }
 }
 
 /// Binary name for this platform.
-fn binary_name() -> &'static str {
+fn binary_name() -> String {
+    let bin = Brand::get().binary_name;
     #[cfg(target_os = "windows")]
     {
-        "goose.exe"
+        format!("{bin}.exe")
     }
     #[cfg(not(target_os = "windows"))]
     {
-        "goose"
+        bin.to_string()
     }
 }
 
@@ -68,9 +72,11 @@ struct AttestationEntry {
 const GITHUB_ACTIONS_ISSUER: &str = "https://token.actions.githubusercontent.com";
 
 async fn fetch_attestations(digest: &str, token: Option<&str>) -> Result<Vec<serde_json::Value>> {
+    let brand = Brand::get();
     let url = format!(
-        "https://api.github.com/repos/aaif-goose/goose/attestations/sha256:{digest}\
-         ?per_page=30&predicate_type=https://slsa.dev/provenance/v1"
+        "https://api.github.com/repos/{}/{}/attestations/sha256:{digest}\
+         ?per_page=30&predicate_type=https://slsa.dev/provenance/v1",
+        brand.github_owner, brand.github_repo
     );
 
     let client = reqwest::Client::new();
@@ -207,9 +213,13 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
 
     #[cfg(not(feature = "disable-update"))]
     {
+        let brand = Brand::get();
         let tag = if canary { "canary" } else { "stable" };
         let asset = asset_name();
-        let url = format!("https://github.com/aaif-goose/goose/releases/download/{tag}/{asset}");
+        let url = format!(
+            "https://github.com/{}/{}/releases/download/{tag}/{asset}",
+            brand.github_owner, brand.github_repo
+        );
 
         println!("Downloading {asset} from {tag} release...");
 
@@ -247,7 +257,7 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
 
         // --- Locate the binary in the extracted archive -------------------------
         let binary = binary_name();
-        let extracted_binary = find_binary(tmp_dir.path(), binary)
+        let extracted_binary = find_binary(tmp_dir.path(), &binary)
             .with_context(|| format!("Could not find {binary} in extracted archive"))?;
 
         // --- Replace the current binary -----------------------------------------
@@ -261,21 +271,25 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
         #[cfg(target_os = "windows")]
         copy_dlls(&extracted_binary, &current_exe)?;
 
+        let product_name = brand.product_name;
+        let binary_name_str = brand.binary_name;
         if provenance_verified {
-            println!("goose updated successfully (verified with Sigstore SLSA provenance).");
+            println!(
+                "{product_name} updated successfully (verified with Sigstore SLSA provenance)."
+            );
         } else {
-            println!("goose updated successfully.");
+            println!("{product_name} updated successfully.");
         }
 
         // --- Reconfigure if requested -------------------------------------------
         if reconfigure {
-            println!("Running goose configure...");
+            println!("Running {binary_name_str} configure...");
             let status = Command::new(current_exe)
                 .arg("configure")
                 .status()
-                .context("Failed to run goose configure")?;
+                .with_context(|| format!("Failed to run {binary_name_str} configure"))?;
             if !status.success() {
-                eprintln!("Warning: goose configure exited with {status}");
+                eprintln!("Warning: {binary_name_str} configure exited with {status}");
             }
         }
 
@@ -434,12 +448,15 @@ fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
     {
         let old_exe = current_exe.with_extension("exe.old");
 
+        let brand = Brand::get();
+
         // Clean up leftover from a previous update
         if old_exe.exists() {
             fs::remove_file(&old_exe).with_context(|| {
                 format!(
-                    "Failed to remove old backup {}. Is another goose process running?",
-                    old_exe.display()
+                    "Failed to remove old backup {}. Is another {} process running?",
+                    old_exe.display(),
+                    brand.product_name
                 )
             })?;
         }
@@ -447,8 +464,9 @@ fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
         // Rename the running binary out of the way
         fs::rename(current_exe, &old_exe).with_context(|| {
             format!(
-                "Failed to rename running binary to {}. Try closing Goose Desktop if it's open.",
-                old_exe.display()
+                "Failed to rename running binary to {}. Try closing {} Desktop if it's open.",
+                old_exe.display(),
+                brand.product_name_cap()
             )
         })?;
 
@@ -567,21 +585,23 @@ mod tests {
         let tmp = tempdir().unwrap();
         let pkg = tmp.path().join("goose-package");
         fs::create_dir_all(&pkg).unwrap();
-        fs::write(pkg.join(binary_name()), b"fake").unwrap();
+        let bin = binary_name();
+        fs::write(pkg.join(&bin), b"fake").unwrap();
 
-        let found = find_binary(tmp.path(), binary_name());
+        let found = find_binary(tmp.path(), &bin);
         assert!(found.is_some());
-        assert!(found.unwrap().ends_with(binary_name()));
+        assert!(found.unwrap().ends_with(&bin));
     }
 
     #[test]
     fn test_find_binary_top_level() {
         let tmp = tempdir().unwrap();
-        fs::write(tmp.path().join(binary_name()), b"fake").unwrap();
+        let bin = binary_name();
+        fs::write(tmp.path().join(&bin), b"fake").unwrap();
 
-        let found = find_binary(tmp.path(), binary_name());
+        let found = find_binary(tmp.path(), &bin);
         assert!(found.is_some());
-        assert_eq!(found.unwrap(), tmp.path().join(binary_name()));
+        assert_eq!(found.unwrap(), tmp.path().join(&bin));
     }
 
     #[test]
@@ -589,16 +609,17 @@ mod tests {
         let tmp = tempdir().unwrap();
         let nested = tmp.path().join("some-dir");
         fs::create_dir_all(&nested).unwrap();
-        fs::write(nested.join(binary_name()), b"fake").unwrap();
+        let bin = binary_name();
+        fs::write(nested.join(&bin), b"fake").unwrap();
 
-        let found = find_binary(tmp.path(), binary_name());
+        let found = find_binary(tmp.path(), &bin);
         assert!(found.is_some());
     }
 
     #[test]
     fn test_find_binary_not_found() {
         let tmp = tempdir().unwrap();
-        let found = find_binary(tmp.path(), binary_name());
+        let found = find_binary(tmp.path(), &binary_name());
         assert!(found.is_none());
     }
 

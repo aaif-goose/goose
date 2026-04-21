@@ -1,3 +1,4 @@
+use crate::branding::Brand;
 use anyhow::{bail, Context, Result};
 use goose::scheduler::{
     get_default_scheduled_recipes_dir, get_default_scheduler_storage_path, ScheduledJob, Scheduler,
@@ -265,7 +266,8 @@ pub async fn handle_schedule_run_now(schedule_id: String) -> Result<()> {
 pub async fn handle_schedule_services_status() -> Result<()> {
     println!("Service management has been removed as Temporal scheduler is no longer supported.");
     println!(
-        "The built-in scheduler runs within the goose process and requires no external services."
+        "The built-in scheduler runs within the {} process and requires no external services.",
+        Brand::get().product_name
     );
     Ok(())
 }
@@ -273,13 +275,18 @@ pub async fn handle_schedule_services_status() -> Result<()> {
 pub async fn handle_schedule_services_stop() -> Result<()> {
     println!("Service management has been removed as Temporal scheduler is no longer supported.");
     println!(
-        "The built-in scheduler runs within the goose process and requires no external services."
+        "The built-in scheduler runs within the {} process and requires no external services.",
+        Brand::get().product_name
     );
     Ok(())
 }
 
 pub async fn handle_schedule_cron_help() -> Result<()> {
-    println!("📅 Cron Expression Guide for goose Scheduler");
+    let brand = Brand::get();
+    println!(
+        "📅 Cron Expression Guide for {} Scheduler",
+        brand.product_name
+    );
     println!("===========================================\\n");
 
     println!("🕐 HOURLY SCHEDULES (Most Common Request):");
@@ -330,13 +337,14 @@ pub async fn handle_schedule_cron_help() -> Result<()> {
     println!("  @hourly   - Once an hour (0 * * * *)\\n");
 
     println!("💡 EXAMPLES:");
+    let bin = brand.binary_name;
     println!(
-        "  goose schedule add --schedule-id hourly-report --cron \"0 * * * *\" --recipe-source report.yaml"
+        "  {bin} schedule add --schedule-id hourly-report --cron \"0 * * * *\" --recipe-source report.yaml"
     );
     println!(
-        "  goose schedule add --schedule-id daily-backup --cron \"@daily\" --recipe-source backup.yaml"
+        "  {bin} schedule add --schedule-id daily-backup --cron \"@daily\" --recipe-source backup.yaml"
     );
-    println!("  goose schedule add --schedule-id weekly-summary --cron \"0 9 * * 1\" --recipe-source summary.yaml");
+    println!("  {bin} schedule add --schedule-id weekly-summary --cron \"0 9 * * 1\" --recipe-source summary.yaml");
 
     Ok(())
 }

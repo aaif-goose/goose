@@ -1,5 +1,6 @@
 use super::completion::GooseCompleter;
 use super::{CompletionCache, HintStatus};
+use crate::branding::Brand;
 use anyhow::Result;
 use goose::config::{Config, GooseMode};
 use rustyline::Editor;
@@ -395,6 +396,7 @@ fn is_vte_with_broken_emoji_width() -> bool {
 fn print_help() {
     let newline_key = get_newline_key().to_ascii_uppercase();
     let modes = GooseMode::VARIANTS.join(", ");
+    let product_name = Brand::get().product_name;
     println!(
         "Available commands:
 /exit or /quit - Exit the session
@@ -405,13 +407,13 @@ fn print_help() {
 /builtin <names> - Add builtin extensions by name (comma-separated)
 /prompts [--extension <name>] - List all available prompts, optionally filtered by extension
 /prompt <n> [--info] [key=value...] - Get prompt info or execute a prompt
-/mode <name> - Set the goose mode to use ({modes})
+/mode <name> - Set the {product_name} mode to use ({modes})
 /plan <message_text> -  Enters 'plan' mode with optional message. Create a plan based on the current messages and asks user if they want to act on it.
-                        If user acts on the plan, goose mode is set to 'auto' and returns to 'normal' goose mode.
-                        To warm up goose before using '/plan', we recommend setting '/mode approve' & putting appropriate context into goose.
+                        If user acts on the plan, {product_name} mode is set to 'auto' and returns to 'normal' {product_name} mode.
+                        To warm up {product_name} before using '/plan', we recommend setting '/mode approve' & putting appropriate context into {product_name}.
                         The model is used based on $GOOSE_PLANNER_PROVIDER and $GOOSE_PLANNER_MODEL environment variables.
                         If no model is set, the default model is used.
-/endplan - Exit plan mode and return to 'normal' goose mode.
+/endplan - Exit plan mode and return to 'normal' {product_name} mode.
 /recipe [filepath] - Generate a recipe from the current conversation and save it to the specified filepath (must end with .yaml).
                        If no filepath is provided, it will be saved to ./recipe.yaml.
 /compact - Compact the current conversation to reduce context length while preserving key information.
@@ -440,15 +442,16 @@ pub(super) fn extract_recent_messages(conversation_messages: Option<&Vec<String>
 
 /// Print help information about editor input
 fn print_editor_help() {
+    let bin = Brand::get().binary_name;
     println!(
         "Editor Input:
   /edit opens your configured editor for composing prompts.
   Use '/edit some text' to pre-fill the editor with initial text.
   Previous conversation is included as markdown headings for context.
-  Configure editor: goose configure set goose_prompt_editor \"vim\"
+  Configure editor: {bin} configure set goose_prompt_editor \"vim\"
   Falls back to $VISUAL or $EDITOR if goose_prompt_editor is not set.
   When goose_prompt_editor is set, the editor is used for every prompt by default.
-  To use inline prompts with on-demand /edit: goose configure set goose_prompt_editor_always false"
+  To use inline prompts with on-demand /edit: {bin} configure set goose_prompt_editor_always false"
     );
 }
 

@@ -5,6 +5,8 @@ use goose::config::Config;
 use goose::session::session_manager::{DB_NAME, SESSIONS_FOLDER};
 use serde_yaml;
 
+use crate::branding::Brand;
+
 fn print_aligned(label: &str, value: &str, width: usize) {
     println!("  {:<width$} {}", label, value, width = width);
 }
@@ -55,7 +57,11 @@ pub fn handle_info(verbose: bool) -> Result<()> {
         .unwrap_or(0)
         + 4;
 
-    println!("{}", style("goose Version:").cyan().bold());
+    let brand = Brand::get();
+    println!(
+        "{}",
+        style(format!("{} Version:", brand.product_name)).cyan().bold()
+    );
     print_aligned("Version:", env!("CARGO_PKG_VERSION"), label_padding);
     println!();
 
@@ -70,13 +76,19 @@ pub fn handle_info(verbose: bool) -> Result<()> {
     }
 
     if verbose {
-        println!("\n{}", style("goose Configuration:").cyan().bold());
+        println!(
+            "\n{}",
+            style(format!("{} Configuration:", brand.product_name))
+                .cyan()
+                .bold()
+        );
         let values = config.all_values()?;
         if values.is_empty() {
             println!("  No configuration values set");
             println!(
-                "  Run '{}' to configure goose",
-                style("goose configure").cyan()
+                "  Run '{}' to configure {}",
+                style(format!("{} configure", brand.binary_name)).cyan(),
+                brand.product_name
             );
         } else {
             let sorted_values: std::collections::BTreeMap<_, _> =

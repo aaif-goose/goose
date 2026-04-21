@@ -1,0 +1,13 @@
+alias @goose='/Users/smor/Projects/vendor/goose/target/debug/goose term run'
+alias @g='/Users/smor/Projects/vendor/goose/target/debug/goose term run'
+
+goose_preexec() {
+    [[ "$1" =~ ^goose\ term ]] && return
+    [[ "$1" =~ ^(@goose|@g)($|[[:space:]]) ]] && return
+    ('/Users/smor/Projects/vendor/goose/target/debug/goose' term log "$1" &) 2>/dev/null
+}
+
+if [[ -z "$goose_preexec_installed" ]]; then
+    goose_preexec_installed=1
+    trap 'goose_preexec "$BASH_COMMAND"' DEBUG
+fi

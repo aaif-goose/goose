@@ -1,3 +1,4 @@
+use crate::branding::Brand;
 use crate::recipes::github_recipe::GOOSE_RECIPE_GITHUB_REPO_CONFIG_KEY;
 use cliclack::spinner;
 use console::style;
@@ -49,17 +50,25 @@ pub async fn handle_configure() -> anyhow::Result<()> {
 pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
     let config = Config::global();
 
+    let brand = Brand::get();
+    let product_name = brand.product_name;
+    let binary_name = brand.binary_name;
     println!();
-    println!("{}", style("Help improve goose").bold());
+    println!("{}", style(format!("Help improve {product_name}")).bold());
     println!();
     println!(
         "{}",
-        style("Would you like to help improve goose by sharing anonymous usage data?").dim()
+        style(format!(
+            "Would you like to help improve {product_name} by sharing anonymous usage data?"
+        ))
+        .dim()
     );
     println!(
         "{}",
-        style("This helps us understand how goose is used and identify areas for improvement.")
-            .dim()
+        style(format!(
+            "This helps us understand how {product_name} is used and identify areas for improvement."
+        ))
+        .dim()
     );
     println!();
     println!("{}", style("What we collect:").dim());
@@ -67,7 +76,10 @@ pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
         "{}",
         style("  • Operating system, version, and architecture").dim()
     );
-    println!("{}", style("  • goose version and install method").dim());
+    println!(
+        "{}",
+        style(format!("  • {product_name} version and install method")).dim()
+    );
     println!("{}", style("  • Provider and model used").dim());
     println!(
         "{}",
@@ -88,18 +100,23 @@ pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
     );
     println!(
         "{}",
-        style("or any personal data. You can change this anytime with 'goose configure'.").dim()
+        style(format!(
+            "or any personal data. You can change this anytime with '{binary_name} configure'."
+        ))
+        .dim()
     );
     println!();
 
-    let enabled = cliclack::confirm("Share anonymous usage data to help improve goose?")
-        .initial_value(true)
-        .interact()?;
+    let enabled = cliclack::confirm(format!(
+        "Share anonymous usage data to help improve {product_name}?"
+    ))
+    .initial_value(true)
+    .interact()?;
 
     config.set_param(TELEMETRY_ENABLED_KEY, enabled)?;
 
     if enabled {
-        let _ = cliclack::log::success("Thank you for helping improve goose!");
+        let _ = cliclack::log::success(format!("Thank you for helping improve {product_name}!"));
     } else {
         let _ = cliclack::log::info("Telemetry disabled. You can enable it anytime in settings.");
     }
@@ -108,8 +125,16 @@ pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
 }
 
 async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
+    let brand = Brand::get();
     println!();
-    println!("{}", style("Welcome to goose! Let's get you set up.").dim());
+    println!(
+        "{}",
+        style(format!(
+            "Welcome to {}! Let's get you set up.",
+            brand.product_name
+        ))
+        .dim()
+    );
     println!(
         "{}",
         style("  you can rerun this command later to update your configuration").dim()
@@ -120,7 +145,11 @@ async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
     configure_telemetry_consent_dialog()?;
 
     println!();
-    cliclack::intro(style(" goose-configure ").on_cyan().black())?;
+    cliclack::intro(
+        style(format!(" {}-configure ", brand.binary_name))
+            .on_cyan()
+            .black(),
+    )?;
 
     let setup_method = cliclack::select("How would you like to set up your provider?")
         .item(
@@ -168,12 +197,14 @@ async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
 }
 
 async fn handle_manual_provider_setup(config: &Config) {
+    let brand = Brand::get();
+    let product_name = brand.product_name;
     match configure_provider_dialog().await {
         Ok(true) => {
             println!(
                 "\n  {}: Run '{}' again to adjust your config or add extensions",
                 style("Tip").green().italic(),
-                style("goose configure").cyan()
+                style(format!("{} configure", brand.binary_name)).cyan()
             );
             set_extension(ExtensionEntry {
                 enabled: true,
@@ -183,9 +214,9 @@ async fn handle_manual_provider_setup(config: &Config) {
         Ok(false) => {
             let _ = config.clear();
             println!(
-                "\n  {}: We did not save your config, inspect your credentials\n   and run '{}' again to ensure goose can connect",
+                "\n  {}: We did not save your config, inspect your credentials\n   and run '{}' again to ensure {product_name} can connect",
                 style("Warning").yellow().italic(),
-                style("goose configure").cyan()
+                style(format!("{} configure", brand.binary_name)).cyan()
             );
         }
         Err(e) => {
@@ -202,7 +233,7 @@ fn print_manual_config_error(e: &anyhow::Error) {
                 "\n  {} Required configuration key '{}' not found \n  Please provide this value and run '{}' again",
                 style("Error").red().italic(),
                 key,
-                style("goose configure").cyan()
+                style(format!("{} configure", Brand::get().binary_name)).cyan()
             );
         }
         Some(ConfigError::KeyringError(msg)) => {
@@ -213,7 +244,7 @@ fn print_manual_config_error(e: &anyhow::Error) {
                 "\n  {} Invalid configuration value: {} \n  Please check your input and run '{}' again",
                 style("Error").red().italic(),
                 msg,
-                style("goose configure").cyan()
+                style(format!("{} configure", Brand::get().binary_name)).cyan()
             );
         }
         Some(ConfigError::FileError(err)) => {
@@ -221,7 +252,7 @@ fn print_manual_config_error(e: &anyhow::Error) {
                 "\n  {} Failed to access config file: {} \n  Please check file permissions and run '{}' again",
                 style("Error").red().italic(),
                 err,
-                style("goose configure").cyan()
+                style(format!("{} configure", Brand::get().binary_name)).cyan()
             );
         }
         Some(ConfigError::DirectoryError(msg)) => {
@@ -229,15 +260,16 @@ fn print_manual_config_error(e: &anyhow::Error) {
                 "\n  {} Failed to access config directory: {} \n  Please check directory permissions and run '{}' again",
                 style("Error").red().italic(),
                 msg,
-                style("goose configure").cyan()
+                style(format!("{} configure", Brand::get().binary_name)).cyan()
             );
         }
         _ => {
+            let product_name = Brand::get().product_name;
             println!(
-                "\n  {} {} \n  We did not save your config, inspect your credentials\n   and run '{}' again to ensure goose can connect",
+                "\n  {} {} \n  We did not save your config, inspect your credentials\n   and run '{}' again to ensure {product_name} can connect",
                 style("Error").red().italic(),
                 e,
-                style("goose configure").cyan()
+                style(format!("{} configure", Brand::get().binary_name)).cyan()
             );
         }
     }
@@ -249,7 +281,7 @@ fn print_keyring_error(msg: &str) {
         "\n  {} Failed to access secure storage (keyring): {} \n  Please check your system keychain and run '{}' again. \n  If your system is unable to use the keyring, please try setting secret key(s) via environment variables.",
         style("Error").red().italic(),
         msg,
-        style("goose configure").cyan()
+        style(format!("{} configure", Brand::get().binary_name)).cyan()
     );
 }
 
@@ -259,7 +291,7 @@ fn print_keyring_error(msg: &str) {
         "\n  {} Failed to access Windows Credential Manager: {} \n  Please check Windows Credential Manager and run '{}' again. \n  If your system is unable to use the Credential Manager, please try setting secret key(s) via environment variables.",
         style("Error").red().italic(),
         msg,
-        style("goose configure").cyan()
+        style(format!("{} configure", Brand::get().binary_name)).cyan()
     );
 }
 
@@ -269,7 +301,7 @@ fn print_keyring_error(msg: &str) {
         "\n  {} Failed to access secure storage: {} \n  Please check your system's secure storage and run '{}' again. \n  If your system is unable to use secure storage, please try setting secret key(s) via environment variables.",
         style("Error").red().italic(),
         msg,
-        style("goose configure").cyan()
+        style(format!("{} configure", Brand::get().binary_name)).cyan()
     );
 }
 
@@ -288,7 +320,11 @@ async fn handle_existing_config() -> anyhow::Result<()> {
     );
     println!();
 
-    cliclack::intro(style(" goose-configure ").on_cyan().black())?;
+    cliclack::intro(
+        style(format!(" {}-configure ", Brand::get().binary_name))
+            .on_cyan()
+            .black(),
+    )?;
     let action = cliclack::select("What would you like to configure?")
         .item(
             "providers",
@@ -309,8 +345,11 @@ async fn handle_existing_config() -> anyhow::Result<()> {
         .item("remove", "Remove Extension", "Remove an extension")
         .item(
             "settings",
-            "goose settings",
-            "Set the goose mode, Tool Output, Tool Permissions, Experiment, goose recipe github repo and more",
+            format!("{} settings", Brand::get().product_name),
+            format!(
+                "Set the {0} mode, Tool Output, Tool Permissions, Experiment, {0} recipe github repo and more",
+                Brand::get().product_name
+            ),
         )
         .interact()?;
 
@@ -1189,7 +1228,7 @@ pub fn configure_extensions_dialog() -> anyhow::Result<()> {
         .item(
             "built-in",
             "Built-in Extension",
-            "Use an extension that comes with goose",
+            format!("Use an extension that comes with {}", Brand::get().product_name),
         )
         .item(
             "stdio",
@@ -1276,11 +1315,12 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
 }
 
 pub async fn configure_settings_dialog() -> anyhow::Result<()> {
+    let product_name = Brand::get().product_name;
     #[allow(unused_mut)]
     let mut setting_select = cliclack::select("What setting would you like to configure?").item(
         "goose_mode",
-        "goose mode",
-        "Configure goose mode",
+        format!("{product_name} mode"),
+        format!("Configure {product_name} mode"),
     );
     #[cfg(feature = "telemetry")]
     {
@@ -1318,8 +1358,10 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         )
         .item(
             "recipe",
-            "goose recipe github repo",
-            "goose will pull recipes from this repo if not found locally.",
+            format!("{product_name} recipe github repo"),
+            format!(
+                "{product_name} will pull recipes from this repo if not found locally."
+            ),
         )
         .interact()?;
 
@@ -1372,7 +1414,10 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
         );
     }
 
-    let mode = cliclack::select("Which goose mode would you like to configure?")
+    let mode = cliclack::select(format!(
+        "Which {} mode would you like to configure?",
+        Brand::get().product_name
+    ))
         .item(
             GooseMode::Auto,
             "Auto Mode",
@@ -1425,14 +1470,19 @@ pub fn configure_telemetry_dialog() -> anyhow::Result<()> {
 
     let _ = cliclack::log::info(format!("Current telemetry status: {}", current_status));
 
-    let enabled = cliclack::confirm("Share anonymous usage data to help improve goose?")
-        .initial_value(current_choice.unwrap_or(true))
-        .interact()?;
+    let product_name = Brand::get().product_name;
+    let enabled = cliclack::confirm(format!(
+        "Share anonymous usage data to help improve {product_name}?"
+    ))
+    .initial_value(current_choice.unwrap_or(true))
+    .interact()?;
 
     config.set_param(TELEMETRY_ENABLED_KEY, enabled)?;
 
     if enabled {
-        cliclack::outro("Telemetry enabled - thank you for helping improve goose!")?;
+        cliclack::outro(format!(
+            "Telemetry enabled - thank you for helping improve {product_name}!"
+        ))?;
     } else {
         cliclack::outro("Telemetry disabled")?;
     }
@@ -1516,7 +1566,10 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
             config.set_param("GOOSE_DISABLE_KEYRING", Value::String("".to_string()))?;
             cliclack::outro("Secret storage set to system keyring (secure)")?;
             let _ =
-                cliclack::log::info("You may need to restart goose for this change to take effect");
+                cliclack::log::info(format!(
+                    "You may need to restart {} for this change to take effect",
+                    Brand::get().product_name
+                ));
         }
         "file" => {
             // Set the disable flag to use file storage
@@ -1526,7 +1579,10 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
                 secrets_path.display(),
             ))?;
             let _ =
-                cliclack::log::info("You may need to restart goose for this change to take effect");
+                cliclack::log::info(format!(
+                    "You may need to restart {} for this change to take effect",
+                    Brand::get().product_name
+                ));
         }
         _ => unreachable!(),
     };
@@ -1750,9 +1806,11 @@ fn configure_recipe_dialog() -> anyhow::Result<()> {
     let default_recipe_repo = std::env::var(key_name)
         .ok()
         .or_else(|| config.get_param(key_name).unwrap_or(None));
-    let mut recipe_repo_input = cliclack::input(
-        "Enter your goose recipe GitHub repo (owner/repo): eg: my_org/goose-recipes",
-    )
+    let mut recipe_repo_input = cliclack::input(format!(
+        "Enter your {} recipe GitHub repo (owner/repo): eg: my_org/{}-recipes",
+        Brand::get().product_name,
+        Brand::get().binary_name
+    ))
     .required(false);
     if let Some(recipe_repo) = default_recipe_repo {
         recipe_repo_input = recipe_repo_input.default_input(&recipe_repo);
@@ -1791,8 +1849,10 @@ pub fn configure_max_turns_dialog() -> anyhow::Result<()> {
     config.set_param("GOOSE_MAX_TURNS", max_turns)?;
 
     cliclack::outro(format!(
-        "Set maximum turns to {} - goose will ask for input after {} consecutive actions",
-        max_turns, max_turns
+        "Set maximum turns to {} - {} will ask for input after {} consecutive actions",
+        max_turns,
+        Brand::get().product_name,
+        max_turns
     ))?;
 
     Ok(())
@@ -1838,7 +1898,7 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                 .complete(
                     &provider_model_config,
                     "",
-                    "You are goose, an AI assistant.",
+                    Brand::get().agent_identity_sentence,
                     &[Message::user().with_text("Say 'Configuration test successful!'")],
                     &[],
                 )

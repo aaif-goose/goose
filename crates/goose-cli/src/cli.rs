@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, FromArgMatches, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
@@ -1743,7 +1743,8 @@ async fn handle_default_session() -> Result<()> {
 pub async fn cli() -> anyhow::Result<()> {
     register_builtin_extensions(goose_mcp::BUILTIN_EXTENSIONS.clone());
 
-    let cli = Cli::parse();
+    let matches = crate::branding::branded_command().get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
 
     if let Err(e) = crate::project_tracker::update_project_tracker(None, None) {
         warn!("Warning: Failed to update project tracker: {}", e);
@@ -1758,7 +1759,7 @@ pub async fn cli() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Command::Completion { shell, bin_name }) => {
-            let mut cmd = Cli::command();
+            let mut cmd = crate::branding::branded_command();
             generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
             Ok(())
         }

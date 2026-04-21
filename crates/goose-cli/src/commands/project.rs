@@ -3,6 +3,7 @@ use chrono::DateTime;
 use cliclack::{self, intro, outro};
 use std::path::Path;
 
+use crate::branding::Brand;
 use crate::project_tracker::ProjectTracker;
 use goose::utils::safe_truncate;
 
@@ -22,12 +23,16 @@ pub fn handle_project_default() -> Result<()> {
     if projects.is_empty() {
         // If no projects exist, just start a new one in the current directory
         println!("No previous projects found. Starting a new session in the current directory.");
-        let mut command = std::process::Command::new("goose");
+        let mut command = std::process::Command::new(Brand::get().binary_name);
         command.arg("session");
         let status = command.status()?;
 
         if !status.success() {
-            println!("Failed to run goose. Exit code: {:?}", status.code());
+            println!(
+                "Failed to run {}. Exit code: {:?}",
+                Brand::get().binary_name,
+                status.code()
+            );
         }
         return Ok(());
     }
@@ -65,7 +70,7 @@ pub fn handle_project_default() -> Result<()> {
     };
 
     // Ask the user what they want to do
-    let _ = intro("goose Project Manager");
+    let _ = intro(format!("{} Project Manager", Brand::get().product_name));
 
     let current_dir = std::env::current_dir()?;
     let current_dir_display = current_dir.display();
@@ -102,7 +107,7 @@ pub fn handle_project_default() -> Result<()> {
             std::env::set_current_dir(project_dir)?;
 
             // Build the command to run goose
-            let mut command = std::process::Command::new("goose");
+            let mut command = std::process::Command::new(Brand::get().binary_name);
             command.arg("session");
 
             if let Some(id) = session_id {
@@ -114,7 +119,11 @@ pub fn handle_project_default() -> Result<()> {
             let status = command.status()?;
 
             if !status.success() {
-                println!("Failed to run goose. Exit code: {:?}", status.code());
+                println!(
+                "Failed to run {}. Exit code: {:?}",
+                Brand::get().binary_name,
+                status.code()
+            );
             }
         }
         "fresh" => {
@@ -127,28 +136,36 @@ pub fn handle_project_default() -> Result<()> {
             std::env::set_current_dir(project_dir)?;
 
             // Build the command to run goose with a fresh session
-            let mut command = std::process::Command::new("goose");
+            let mut command = std::process::Command::new(Brand::get().binary_name);
             command.arg("session");
 
             // Execute the command
             let status = command.status()?;
 
             if !status.success() {
-                println!("Failed to run goose. Exit code: {:?}", status.code());
+                println!(
+                "Failed to run {}. Exit code: {:?}",
+                Brand::get().binary_name,
+                status.code()
+            );
             }
         }
         "new" => {
             let _ = outro("Starting a new session in the current directory");
 
             // Build the command to run goose
-            let mut command = std::process::Command::new("goose");
+            let mut command = std::process::Command::new(Brand::get().binary_name);
             command.arg("session");
 
             // Execute the command
             let status = command.status()?;
 
             if !status.success() {
-                println!("Failed to run goose. Exit code: {:?}", status.code());
+                println!(
+                "Failed to run {}. Exit code: {:?}",
+                Brand::get().binary_name,
+                status.code()
+            );
             }
         }
         _ => {
@@ -213,7 +230,7 @@ pub fn handle_projects_interactive() -> Result<()> {
         .collect();
 
     // Let the user select a project
-    let _ = intro("goose Project Manager");
+    let _ = intro(format!("{} Project Manager", Brand::get().product_name));
     let mut select = cliclack::select("Select a project:");
 
     // Add each project as an option
@@ -281,7 +298,7 @@ pub fn handle_projects_interactive() -> Result<()> {
     };
 
     // Build the command to run goose
-    let mut command = std::process::Command::new("goose");
+    let mut command = std::process::Command::new(Brand::get().binary_name);
     command.arg("session");
 
     if resume_session {
@@ -297,7 +314,11 @@ pub fn handle_projects_interactive() -> Result<()> {
     let status = command.status()?;
 
     if !status.success() {
-        println!("Failed to run goose. Exit code: {:?}", status.code());
+        println!(
+            "Failed to run {}. Exit code: {:?}",
+            Brand::get().binary_name,
+            status.code()
+        );
     }
 
     Ok(())
