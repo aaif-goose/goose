@@ -23,6 +23,7 @@ import {
   supportsContextCompactionControls,
 } from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
+import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
   useResolvedAgentModelPicker,
@@ -418,37 +419,60 @@ export function useChatSessionController({
   const supportsCompactionControls =
     supportsContextCompactionControls(selectedAgentId);
   const isCompactingContext = chatState === "compacting";
-  const canAutoCompactBeforeSend = useCallback(() => {
-    if (
-      !sessionId ||
-      !supportsAutoCompactContext ||
-      !isAutoCompactThresholdHydrated
-    ) {
-      return false;
-    }
+  const resolveAutoCompactAgentId = useCallback(
+    (overridePersona?: { id: string; name?: string }) => {
+      if (!overridePersona?.id) {
+        return selectedAgentId;
+      }
 
-    const liveRuntime = useChatStore
-      .getState()
-      .getSessionRuntime(stateSessionId);
-    return shouldAutoCompactContext(
-      liveRuntime.tokenState.accumulatedTotal,
-      liveRuntime.tokenState.contextLimit,
+      const targetPersona = personas.find(
+        (persona) => persona.id === overridePersona.id,
+      );
+      if (!targetPersona?.provider) {
+        return selectedAgentId;
+      }
+
+      return (
+        resolveAgentProviderCatalogIdStrict(targetPersona.provider) ?? "goose"
+      );
+    },
+    [personas, selectedAgentId],
+  );
+  const canAutoCompactBeforeSend = useCallback(
+    (overridePersona?: { id: string; name?: string }) => {
+      const targetAgentId = resolveAutoCompactAgentId(overridePersona);
+      if (
+        !sessionId ||
+        !supportsContextAutoCompaction(targetAgentId) ||
+        !isAutoCompactThresholdHydrated
+      ) {
+        return false;
+      }
+
+      const liveRuntime = useChatStore
+        .getState()
+        .getSessionRuntime(stateSessionId);
+      return shouldAutoCompactContext(
+        liveRuntime.tokenState.accumulatedTotal,
+        liveRuntime.tokenState.contextLimit,
+        autoCompactThreshold,
+      );
+    },
+    [
       autoCompactThreshold,
-    );
-  }, [
-    autoCompactThreshold,
-    isAutoCompactThresholdHydrated,
-    sessionId,
-    stateSessionId,
-    supportsAutoCompactContext,
-  ]);
+      isAutoCompactThresholdHydrated,
+      resolveAutoCompactAgentId,
+      sessionId,
+      stateSessionId,
+    ],
+  );
   const sendWithAutoCompact = useCallback(
     (
       text: string,
       overridePersona?: { id: string; name?: string },
       attachments?: ChatAttachmentDraft[],
     ) => {
-      if (!canAutoCompactBeforeSend()) {
+      if (!canAutoCompactBeforeSend(overridePersona)) {
         void sendMessage(text, overridePersona, attachments);
         return true;
       }
