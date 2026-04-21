@@ -136,6 +136,7 @@ describe("useChatSessionController", () => {
       isLoading: false,
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     });
 
     useProjectStore.setState({

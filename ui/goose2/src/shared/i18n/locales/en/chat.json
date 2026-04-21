@@ -108,7 +108,7 @@
   },
   "input": {
     "ariaLabel": "Chat message input",
-    "placeholder": "Message {{agent}}, @ to mention personas"
+    "placeholder": "Message {{agent}}, @ to mention agents"
   },
   "loading": {
     "compacting": "Compacting conversation...",
@@ -117,7 +117,7 @@
   },
   "mention": {
     "ariaLabel": "Mention suggestions",
-    "title": "Mention a persona",
+    "title": "Mention an agent",
     "filesTitle": "Files"
   },
   "message": {
@@ -127,9 +127,9 @@
   },
   "persona": {
     "chooseAssistant": "Choose assistant",
-    "create": "Create persona...",
+    "create": "Create agent...",
     "clearActive": "Clear active assistant",
-    "defaultDescription": "No persona - chat directly with the agent"
+    "defaultDescription": "No agent selected - chat directly with Goose"
   },
   "queue": {
     "dismiss": "Dismiss queued message",

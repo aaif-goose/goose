@@ -40,6 +40,7 @@ pub fn run() {
             commands::agents::refresh_personas,
             commands::agents::export_persona,
             commands::agents::import_personas,
+            commands::agents::read_import_persona_file,
             commands::agents::save_persona_avatar,
             commands::agents::save_persona_avatar_bytes,
             commands::agents::get_avatars_dir,

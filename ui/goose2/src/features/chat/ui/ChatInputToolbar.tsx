@@ -220,6 +220,7 @@ export function ChatInputToolbar({
             onModelChange={onModelChange}
             loading={providersLoading}
             isCompact={isCompact}
+            showSelectedModelInTrigger={selectedPersonaId === null}
           />
         )}
 

@@ -20,6 +20,7 @@ import { useAppStartup } from "./hooks/useAppStartup";
 import { useHomeSessionStateSync } from "./hooks/useHomeSessionStateSync";
 import { loadStoredHomeSessionId } from "./lib/homeSessionStorage";
 import { resolveSupportedSessionModelPreference } from "./lib/resolveSupportedSessionModelPreference";
+import { useCreatePersonaNavigation } from "./hooks/useCreatePersonaNavigation";
 import { AppShellContent } from "./ui/AppShellContent";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
@@ -66,14 +67,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const agentStore = useAgentStore();
   const projectStore = useProjectStore();
   const providerInventoryEntries = useProviderInventoryStore((s) => s.entries);
-
   const pendingProjectCreatedRef = useRef<((projectId: string) => void) | null>(
     null,
   );
   const homeSessionRequestRef = useRef<Promise<ChatSession | null> | null>(
     null,
   );
-
   const loadSessionMessages = useCallback(async (sessionId: string) => {
     const sid = sessionId.slice(0, 8);
     const existingMsgs = useChatStore.getState().messagesBySession[sessionId];
@@ -502,6 +501,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     [sessionStore],
   );
 
+  const handleCreatePersona = useCreatePersonaNavigation(() =>
+    handleNavigate("agents"),
+  );
+
   const toggleSidebar = () => setSidebarCollapsed((prev) => !prev);
 
   const handleResizeStart = useCallback(
@@ -659,6 +662,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
               activeView={activeView}
               activeSession={activeSession}
               homeSessionId={homeSessionId}
+              onCreatePersona={handleCreatePersona}
               onArchiveChat={handleArchiveChat}
               onCreateProject={openCreateProjectDialog}
               onActivateHomeSession={activateHomeSession}

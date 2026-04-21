@@ -31,11 +31,11 @@ export async function listProviders(): Promise<AcpProvider[]> {
     providerIds: [],
   });
 
-  const providers = result.entries
-    .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+  const providers = result.providers
+    .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.id))
     .map((entry) => ({
-      id: entry.providerId,
-      label: entry.providerName,
+      id: entry.id,
+      label: entry.label,
     }));
 
   return [DEFAULT_PROVIDER, ...providers];

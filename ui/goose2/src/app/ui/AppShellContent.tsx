@@ -12,6 +12,7 @@ interface AppShellContentProps {
   activeView: AppView;
   activeSession?: ChatSession;
   homeSessionId: string | null;
+  onCreatePersona: () => void;
   onArchiveChat: (sessionId: string) => Promise<void>;
   onCreateProject: (options?: {
     initialWorkingDir?: string | null;
@@ -32,6 +33,7 @@ export function AppShellContent({
   activeView,
   activeSession,
   homeSessionId,
+  onCreatePersona,
   onArchiveChat,
   onCreateProject,
   onActivateHomeSession,
@@ -61,12 +63,14 @@ export function AppShellContent({
         <ChatView
           key={activeSession.id}
           sessionId={activeSession.id}
+          onCreatePersona={onCreatePersona}
           onCreateProject={onCreateProject}
         />
       ) : (
         <HomeScreen
           sessionId={homeSessionId}
           onActivateSession={onActivateHomeSession}
+          onCreatePersona={onCreatePersona}
           onCreateProject={onCreateProject}
         />
       );
@@ -75,6 +79,7 @@ export function AppShellContent({
         <HomeScreen
           sessionId={homeSessionId}
           onActivateSession={onActivateHomeSession}
+          onCreatePersona={onCreatePersona}
           onCreateProject={onCreateProject}
         />
       );

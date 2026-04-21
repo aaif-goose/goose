@@ -25,6 +25,7 @@ import {
 interface UseChatSessionControllerOptions {
   sessionId: string | null;
   onMessageAccepted?: (sessionId: string) => void;
+  onCreatePersonaRequested?: () => void;
 }
 
 const PENDING_HOME_SESSION_ID = "__home_pending__";
@@ -32,6 +33,7 @@ const PENDING_HOME_SESSION_ID = "__home_pending__";
 export function useChatSessionController({
   sessionId,
   onMessageAccepted,
+  onCreatePersonaRequested,
 }: UseChatSessionControllerOptions) {
   const stateSessionId = sessionId ?? PENDING_HOME_SESSION_ID;
   const {
@@ -291,7 +293,12 @@ export function useChatSessionController({
 
   const handlePersonaChange = useCallback(
     (personaId: string | null) => {
+      if (personaId === selectedPersonaId) {
+        return;
+      }
+
       const persona = personas.find((candidate) => candidate.id === personaId);
+
       if (persona?.provider) {
         const matchingProvider = providers.find(
           (provider) =>
@@ -328,6 +335,7 @@ export function useChatSessionController({
       personas,
       providers,
       sessionId,
+      selectedPersonaId,
       setGlobalSelectedProvider,
     ],
   );
@@ -386,7 +394,6 @@ export function useChatSessionController({
     sessionId ? chatState : "thinking",
     sendMessage,
   );
-  const chatStore = useChatStore();
 
   const handleSend = useCallback(
     (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {
@@ -398,24 +405,6 @@ export function useChatSessionController({
       }
 
       if (personaId && personaId !== selectedPersonaId) {
-        const nextPersona = personas.find(
-          (persona) => persona.id === personaId,
-        );
-        if (nextPersona) {
-          chatStore.addMessage(sessionId, {
-            id: crypto.randomUUID(),
-            role: "system",
-            created: Date.now(),
-            content: [
-              {
-                type: "systemNotification",
-                notificationType: "info",
-                text: `Switched to ${nextPersona.displayName}`,
-              },
-            ],
-            metadata: { userVisible: true, agentVisible: false },
-          });
-        }
         handlePersonaChange(personaId);
         deferredSend.current = { text, attachments };
         return;
@@ -430,9 +419,7 @@ export function useChatSessionController({
     },
     [
       chatState,
-      chatStore,
       handlePersonaChange,
-      personas,
       queue,
       sessionId,
       selectedPersonaId,
@@ -449,8 +436,12 @@ export function useChatSessionController({
   }, [selectedPersona, sendMessage]);
 
   const handleCreatePersona = useCallback(() => {
+    if (onCreatePersonaRequested) {
+      onCreatePersonaRequested();
+      return;
+    }
     useAgentStore.getState().openPersonaEditor();
-  }, []);
+  }, [onCreatePersonaRequested]);
 
   const sessionDraftValue = useChatStore((s) =>
     sessionId ? (s.draftsBySession[sessionId] ?? "") : "",

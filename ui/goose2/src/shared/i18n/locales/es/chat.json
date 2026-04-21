@@ -108,7 +108,7 @@
   },
   "input": {
     "ariaLabel": "Entrada de mensaje del chat",
-    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar personas"
+    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar agentes"
   },
   "loading": {
     "compacting": "Compactando conversación...",
@@ -117,7 +117,7 @@
   },
   "mention": {
     "ariaLabel": "Sugerencias de menciones",
-    "title": "Menciona una persona",
+    "title": "Menciona un agente",
     "filesTitle": "Archivos"
   },
   "message": {
@@ -127,9 +127,9 @@
   },
   "persona": {
     "chooseAssistant": "Elegir asistente",
-    "create": "Crear persona...",
+    "create": "Crear agente...",
     "clearActive": "Quitar asistente activo",
-    "defaultDescription": "Sin persona - chatea directamente con el agente"
+    "defaultDescription": "Sin agente seleccionado: chatea directamente con Goose"
   },
   "queue": {
     "dismiss": "Descartar mensaje en cola",

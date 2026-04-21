@@ -18,7 +18,7 @@
     "emptyNoMatchesHint": "Prueba con otro término de búsqueda.",
     "emptyTitle": "Aún no hay sesiones",
     "searchArchivedPlaceholder": "Buscar sesiones archivadas...",
-    "searchError": "La búsqueda de mensajes falló. Mostrando solo coincidencias por título, persona y proyecto.",
+    "searchError": "La búsqueda de mensajes falló. Mostrando solo coincidencias por título, agente y proyecto.",
     "searchPlaceholder": "Buscar conversaciones",
     "searching": "Buscando sesiones...",
     "subtitle": "Explora y busca sesiones anteriores",

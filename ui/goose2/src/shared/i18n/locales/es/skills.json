@@ -16,7 +16,7 @@
   "view": {
     "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
     "deleteTitle": "¿Eliminar skill?",
-    "description": "Instrucciones reutilizables para tus personas de IA",
+    "description": "Instrucciones reutilizables para tus agentes de IA",
     "dropFile": "o suelta un archivo",
     "emptyDescription": "Crea una skill o suelta aquí un archivo .skill.json.",
     "emptyTitle": "Aún no hay skills",

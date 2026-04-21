@@ -197,6 +197,13 @@ impl PersonaStore {
         })
     }
 
+    fn markdown_persona_path(id: &str) -> Result<PathBuf, String> {
+        let slug = id
+            .strip_prefix("md-")
+            .ok_or_else(|| format!("Persona '{}' is not a file-backed persona", id))?;
+        Ok(Self::agents_dir().join(format!("{}.md", slug)))
+    }
+
     /// Re-scan markdown personas and update the in-memory list.
     /// Returns the full updated persona list.
     pub fn refresh_markdown(&self) -> Vec<Persona> {
@@ -298,13 +305,29 @@ impl PersonaStore {
         let persona = personas
             .iter()
             .find(|p| p.id == id)
+            .cloned()
             .ok_or_else(|| format!("Persona '{}' not found", id))?;
 
         if persona.is_builtin {
             return Err("Cannot delete a built-in persona".to_string());
         }
         if persona.is_from_disk {
-            return Err("Cannot delete a markdown persona — delete the file directly".to_string());
+            let path = Self::markdown_persona_path(id)?;
+            match std::fs::remove_file(&path) {
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    return Err(format!(
+                        "Failed to delete file-backed persona '{}': {}",
+                        path.display(),
+                        err
+                    ));
+                }
+            }
+
+            personas.retain(|p| p.id != id);
+            self.save_to_disk(&personas);
+            return Ok(());
         }
 
         // Clean up local avatar file if present

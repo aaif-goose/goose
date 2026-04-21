@@ -1,6 +1,7 @@
 use crate::services::personas::PersonaStore;
 use crate::types::agents::*;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use tauri::State;
 
 #[tauri::command]
@@ -57,6 +58,30 @@ pub fn save_persona_avatar_bytes(
 #[tauri::command]
 pub fn get_avatars_dir() -> String {
     PersonaStore::avatars_dir().to_string_lossy().to_string()
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportFileReadResult {
+    pub file_bytes: Vec<u8>,
+    pub file_name: String,
+}
+
+#[tauri::command]
+pub fn read_import_persona_file(source_path: String) -> Result<ImportFileReadResult, String> {
+    let path = PathBuf::from(source_path);
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Selected file is missing a valid filename".to_string())?
+        .to_string();
+    let file_bytes = std::fs::read(&path)
+        .map_err(|err| format!("Failed to read import file '{}': {}", path.display(), err))?;
+
+    Ok(ImportFileReadResult {
+        file_bytes,
+        file_name,
+    })
 }
 
 // --- Sprout-compatible persona import/export ---

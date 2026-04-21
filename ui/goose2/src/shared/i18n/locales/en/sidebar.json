@@ -11,7 +11,7 @@
     "optionsFor": "Options for {{label}}"
   },
   "navigation": {
-    "agents": "Personas",
+    "agents": "Agents",
     "home": "Home",
     "sessionHistory": "Session History",
     "skills": "Skills"

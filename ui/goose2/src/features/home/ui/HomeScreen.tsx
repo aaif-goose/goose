@@ -41,6 +41,7 @@ function getGreetingKey(hour: number): "morning" | "afternoon" | "evening" {
 interface HomeScreenProps {
   sessionId: string | null;
   onActivateSession: (sessionId: string) => void;
+  onCreatePersona?: () => void;
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
   }) => void;
@@ -49,15 +50,18 @@ interface HomeScreenProps {
 function HomeComposer({
   sessionId,
   onActivateSession,
+  onCreatePersona,
   onCreateProject,
 }: {
   sessionId: string | null;
   onActivateSession: (sessionId: string) => void;
+  onCreatePersona?: () => void;
   onCreateProject?: HomeScreenProps["onCreateProject"];
 }) {
   const controller = useChatSessionController({
     sessionId,
     onMessageAccepted: onActivateSession,
+    onCreatePersonaRequested: onCreatePersona,
   });
 
   return (
@@ -107,6 +111,7 @@ function HomeComposer({
 export function HomeScreen({
   sessionId,
   onActivateSession,
+  onCreatePersona,
   onCreateProject,
 }: HomeScreenProps) {
   const { t } = useTranslation("home");
@@ -126,6 +131,7 @@ export function HomeScreen({
           <HomeComposer
             sessionId={sessionId}
             onActivateSession={onActivateSession}
+            onCreatePersona={onCreatePersona}
             onCreateProject={onCreateProject}
           />
         </div>
