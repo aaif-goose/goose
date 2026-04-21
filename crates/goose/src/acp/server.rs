@@ -1208,15 +1208,17 @@ impl GooseAcpAgent {
             .map(|a| serde_json::Value::Object(a.clone()));
         let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
 
+        let mut initial_tool_call = ToolCall::new(
+            ToolCallId::new(tool_request.id.clone()),
+            fallback_title.clone(),
+        )
+        .status(ToolCallStatus::Pending);
+        if let Some(args) = args_value.clone() {
+            initial_tool_call = initial_tool_call.raw_input(args);
+        }
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
-            SessionUpdate::ToolCall(
-                ToolCall::new(
-                    ToolCallId::new(tool_request.id.clone()),
-                    fallback_title.clone(),
-                )
-                .status(ToolCallStatus::Pending),
-            ),
+            SessionUpdate::ToolCall(initial_tool_call),
         ))?;
 
         if let Ok(tool_call) = &tool_request.tool_call {

@@ -30,6 +30,8 @@ import {
 } from "./components/ContentRenderers.js";
 import { Header } from "./components/Header.js";
 import { Rule } from "./components/Rule.js";
+import { ToolCallExpanded } from "./components/ToolCallExpanded.js";
+import type { ToolCallInfo } from "./toolcall.js";
 import { isErrorStatus, formatError } from "./utils.js";
 import {
   CRANBERRY,
@@ -216,6 +218,17 @@ const InputBar = React.memo(function InputBar({
   );
 });
 
+export interface ToolCallRange {
+  responseItemIndex: number;
+  startLine: number;
+  endLine: number;
+}
+
+export interface ContentLayout {
+  lines: React.ReactElement[];
+  toolCallRanges: ToolCallRange[];
+}
+
 function buildContentLines({
   turn,
   turnIndex,
@@ -223,7 +236,7 @@ function buildContentLines({
   loading,
   status,
   spinIdx,
-  toolCallsExpanded,
+  selectedToolCallIdx,
   queuedMessages,
 }: {
   turn: Turn | undefined;
@@ -232,11 +245,12 @@ function buildContentLines({
   loading: boolean;
   status: string;
   spinIdx: number;
-  toolCallsExpanded: boolean;
+  selectedToolCallIdx: number | null;
   queuedMessages: string[];
-}): React.ReactElement[] {
+}): ContentLayout {
   const lines: React.ReactElement[] = [];
-  if (!turn) return lines;
+  const toolCallRanges: ToolCallRange[] = [];
+  if (!turn) return { lines, toolCallRanges };
 
   const safeWidth = Math.max(width, 20);
 
@@ -279,26 +293,21 @@ function buildContentLines({
     ),
   );
 
-  // Process response items
-  const hasToolCalls = turn.responseItems.some(
-    (it) => it.itemType === "tool_call",
-  );
   let tcIdx = 0;
 
   for (let i = 0; i < turn.responseItems.length; i++) {
     const item = turn.responseItems[i]!;
 
     if (item.itemType === "tool_call") {
-      lines.push(
-        ...renderToolCallItem(
-          item,
-          i,
-          safeWidth,
-          toolCallsExpanded,
-          tcIdx === 0,
-          hasToolCalls,
-        ),
-      );
+      const isSelected = selectedToolCallIdx === tcIdx;
+      const rendered = renderToolCallItem(item, i, safeWidth, isSelected);
+      const startLine = lines.length;
+      lines.push(...rendered);
+      toolCallRanges.push({
+        responseItemIndex: i,
+        startLine,
+        endLine: lines.length - 1,
+      });
       tcIdx++;
     } else if (item.itemType === "error") {
       lines.push(...renderErrorItem(item, i, safeWidth));
@@ -311,10 +320,9 @@ function buildContentLines({
     lines.push(...renderLoadingIndicator(status, spinIdx, safeWidth));
   }
 
-  // Queued messages
   lines.push(...renderQueuedMessages(queuedMessages, safeWidth));
 
-  return lines;
+  return { lines, toolCallRanges };
 }
 
 const Viewport = React.memo(function Viewport({
@@ -491,7 +499,11 @@ function App({
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
   const [viewTurnIdx, setViewTurnIdx] = useState(-1);
-  const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
+  const [selectedToolCallIdx, setSelectedToolCallIdx] = useState<number | null>(
+    null,
+  );
+  const [toolCallExpanded, setToolCallExpanded] = useState(false);
+  const [toolCallExpandedScroll, setToolCallExpandedScroll] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [pastedFull, setPastedFull] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
@@ -525,7 +537,9 @@ function App({
   }, [turns]);
 
   useEffect(() => {
-    setToolCallsExpanded(false);
+    setSelectedToolCallIdx(null);
+    setToolCallExpanded(false);
+    setToolCallExpandedScroll(0);
     setScrollOffset(0);
   }, [viewTurnIdx, turns.length]);
 
@@ -627,7 +641,9 @@ function App({
       { userText: text, responseItems: [], toolCallsById: new Map() },
     ]);
     setViewTurnIdx(-1);
-    setToolCallsExpanded(false);
+    setSelectedToolCallIdx(null);
+    setToolCallExpanded(false);
+    setToolCallExpandedScroll(0);
     setScrollOffset(0);
   }, []);
 
@@ -802,7 +818,9 @@ function App({
       setInput("");
       setPastedFull(null);
       setViewTurnIdx(-1);
-      setToolCallsExpanded(false);
+      setSelectedToolCallIdx(null);
+      setToolCallExpanded(false);
+      setToolCallExpandedScroll(0);
       setScrollOffset(0);
 
       if (loading || isProcessingRef.current) {
@@ -815,8 +833,135 @@ function App({
     [loading, sendPrompt],
   );
 
+  const PAD_X = 2;
+  const PAD_Y = 1;
+  const safeTermWidth = Math.max(termWidth, 40);
+  const safeTermHeight = Math.max(termHeight, 10);
+  const contentWidth = Math.max(safeTermWidth - PAD_X * 2, 20);
+
+  const effectiveTurnIdx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
+  const currentTurn = turns[effectiveTurnIdx];
+  const isViewingHistory = viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
+  const isLatest = !isViewingHistory;
+  const showInputBar = !initialPrompt && !isViewingHistory;
+
+  const headerH = 2;
+  const isPasteMode = pastedFull !== null;
+  const inputContentRows = showInputBar
+    ? isPasteMode
+      ? 1
+      : Math.min(Math.max(input.split("\n").length, 1), INPUT_MAX_ROWS)
+    : 0;
+  const inputExtraLines =
+    (isPasteMode ? 1 : 0) + (queuedMessages.length > 0 ? 1 : 0);
+  const inputBarH = showInputBar ? 2 + inputContentRows + inputExtraLines : 0;
+  const historyBarH = isViewingHistory ? 2 : 0;
+  const viewportHeight = Math.max(
+    safeTermHeight - PAD_Y * 2 - headerH - inputBarH - historyBarH,
+    3,
+  );
+
+  const contentLayout = useMemo(
+    () =>
+      buildContentLines({
+        turn: currentTurn,
+        turnIndex: effectiveTurnIdx,
+        width: contentWidth,
+        loading: isLatest && loading,
+        status,
+        spinIdx,
+        selectedToolCallIdx,
+        queuedMessages: isLatest ? queuedMessages : [],
+      }),
+    [
+      currentTurn,
+      effectiveTurnIdx,
+      contentWidth,
+      isLatest,
+      loading,
+      status,
+      spinIdx,
+      selectedToolCallIdx,
+      queuedMessages,
+    ],
+  );
+  const contentLines = contentLayout.lines;
+  const toolCallRanges = contentLayout.toolCallRanges;
+
+  useEffect(() => {
+    if (
+      selectedToolCallIdx !== null &&
+      selectedToolCallIdx >= toolCallRanges.length
+    ) {
+      setSelectedToolCallIdx(
+        toolCallRanges.length === 0 ? null : toolCallRanges.length - 1,
+      );
+    }
+  }, [toolCallRanges.length, selectedToolCallIdx]);
+
+  const selectedToolCallInfo = useMemo<ToolCallInfo | null>(() => {
+    if (selectedToolCallIdx === null || !currentTurn) return null;
+    const range = toolCallRanges[selectedToolCallIdx];
+    if (!range) return null;
+    const item = currentTurn.responseItems[range.responseItemIndex];
+    if (!item || item.itemType !== "tool_call") return null;
+    return {
+      toolCallId: item.toolCallId,
+      title: item.title,
+      status: item.status ?? "pending",
+      kind: item.kind,
+      rawInput: item.rawInput,
+      rawOutput: item.rawOutput,
+      content: item.content,
+      locations: item.locations,
+    };
+  }, [selectedToolCallIdx, toolCallRanges, currentTurn]);
+
+  // Compute a scroll offset that keeps the given tool-call range fully
+  // visible, moving just enough from the current offset. scrollOffset is
+  // measured in lines-from-bottom, matching Viewport's math.
+  const scrollOffsetForRange = useCallback(
+    (range: ToolCallRange, current: number): number => {
+      const total = contentLines.length;
+      const overflows = total > viewportHeight;
+      const contentHeight = overflows
+        ? Math.max(viewportHeight - 2, 1)
+        : viewportHeight;
+      if (!overflows) return 0;
+      const maxOffset = total - contentHeight;
+      const minForTop = total - range.startLine - contentHeight;
+      const maxForBottom = total - range.endLine - 1;
+      const lo = Math.max(0, minForTop);
+      const hi = Math.max(lo, Math.min(maxOffset, maxForBottom));
+      if (current < lo) return lo;
+      if (current > hi) return hi;
+      return current;
+    },
+    [contentLines.length, viewportHeight],
+  );
+
+  const moveSelection = useCallback(
+    (direction: -1 | 1) => {
+      if (toolCallRanges.length === 0) return false;
+      let nextIdx: number;
+      if (selectedToolCallIdx === null) {
+        nextIdx = direction === -1 ? toolCallRanges.length - 1 : 0;
+      } else {
+        nextIdx = selectedToolCallIdx + direction;
+        if (nextIdx < 0 || nextIdx >= toolCallRanges.length) return false;
+      }
+      setSelectedToolCallIdx(nextIdx);
+      const range = toolCallRanges[nextIdx]!;
+      setScrollOffset((prev) => scrollOffsetForRange(range, prev));
+      return true;
+    },
+    [toolCallRanges, selectedToolCallIdx, scrollOffsetForRange],
+  );
+
   useInput(
     (ch, key) => {
+      if (toolCallExpanded) return;
+
       if (key.escape || (ch === "c" && key.ctrl)) {
         if (key.escape && pastedFull !== null) return;
         exit();
@@ -843,26 +988,40 @@ function App({
 
       const viewingHistory =
         viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
-      // Only let the multiline input own arrow keys when it actually has
-      // multiple lines of content — otherwise arrows should scroll the viewport.
       const multilineOwnsArrows =
         !initialPrompt &&
         !viewingHistory &&
         pastedFull === null &&
         input.includes("\n");
 
-      if (key.tab) {
-        const idx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
-        const t = turns[idx];
-        if (t && t.responseItems.some((it) => it.itemType === "tool_call")) {
-          setToolCallsExpanded((prev) => !prev);
-        }
+      if (ch === " " && selectedToolCallIdx !== null) {
+        setToolCallExpandedScroll(0);
+        setToolCallExpanded(true);
         return;
       }
 
       if ((key.upArrow || key.downArrow) && !key.shift) {
         if (multilineOwnsArrows) return;
-        const step = key.meta ? SCROLL_STEP * SCROLL_FAST_MULTIPLIER : SCROLL_STEP;
+
+        if (key.meta) {
+          const step = SCROLL_STEP * SCROLL_FAST_MULTIPLIER;
+          if (key.upArrow) {
+            setScrollOffset((prev) => prev + step);
+          } else {
+            setScrollOffset((prev) => Math.max(prev - step, 0));
+          }
+          return;
+        }
+
+        if (toolCallRanges.length > 0) {
+          const direction: -1 | 1 = key.upArrow ? -1 : 1;
+          if (moveSelection(direction)) return;
+          if (selectedToolCallIdx !== null) {
+            setSelectedToolCallIdx(null);
+          }
+        }
+
+        const step = SCROLL_STEP;
         if (key.upArrow) {
           setScrollOffset((prev) => prev + step);
         } else {
@@ -896,59 +1055,6 @@ function App({
       }
     },
     { isActive: !needsOnboarding && !overlay },
-  );
-
-  const PAD_X = 2;
-  const PAD_Y = 1;
-  const safeTermWidth = Math.max(termWidth, 40);
-  const safeTermHeight = Math.max(termHeight, 10);
-  const contentWidth = Math.max(safeTermWidth - PAD_X * 2, 20);
-
-  const effectiveTurnIdx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
-  const currentTurn = turns[effectiveTurnIdx];
-  const isViewingHistory = viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
-  const isLatest = !isViewingHistory;
-  const showInputBar = !initialPrompt && !isViewingHistory;
-
-  const headerH = 2;
-  const isPasteMode = pastedFull !== null;
-  const inputContentRows = showInputBar
-    ? isPasteMode
-      ? 1
-      : Math.min(Math.max(input.split("\n").length, 1), INPUT_MAX_ROWS)
-    : 0;
-  const inputExtraLines =
-    (isPasteMode ? 1 : 0) + (queuedMessages.length > 0 ? 1 : 0);
-  const inputBarH = showInputBar ? 2 + inputContentRows + inputExtraLines : 0;
-  const historyBarH = isViewingHistory ? 2 : 0;
-  const viewportHeight = Math.max(
-    safeTermHeight - PAD_Y * 2 - headerH - inputBarH - historyBarH,
-    3,
-  );
-
-  const contentLines = useMemo(
-    () =>
-      buildContentLines({
-        turn: currentTurn,
-        turnIndex: effectiveTurnIdx,
-        width: contentWidth,
-        loading: isLatest && loading,
-        status,
-        spinIdx,
-        toolCallsExpanded,
-        queuedMessages: isLatest ? queuedMessages : [],
-      }),
-    [
-      currentTurn,
-      effectiveTurnIdx,
-      contentWidth,
-      isLatest,
-      loading,
-      status,
-      spinIdx,
-      toolCallsExpanded,
-      queuedMessages,
-    ],
   );
 
   if (needsOnboarding && clientRef.current) {
@@ -1036,12 +1142,26 @@ function App({
             }
           />
 
-          <Viewport
-            lines={contentLines}
-            height={viewportHeight}
-            width={contentWidth}
-            scrollOffset={scrollOffset}
-          />
+          {toolCallExpanded && selectedToolCallInfo ? (
+            <ToolCallExpanded
+              info={selectedToolCallInfo}
+              width={contentWidth}
+              height={viewportHeight}
+              scrollOffset={toolCallExpandedScroll}
+              onScroll={setToolCallExpandedScroll}
+              onClose={() => {
+                setToolCallExpanded(false);
+                setToolCallExpandedScroll(0);
+              }}
+            />
+          ) : (
+            <Viewport
+              lines={contentLines}
+              height={viewportHeight}
+              width={contentWidth}
+              scrollOffset={scrollOffset}
+            />
+          )}
 
           {isViewingHistory && (
             <Box flexDirection="column" width={contentWidth} flexShrink={0}>
