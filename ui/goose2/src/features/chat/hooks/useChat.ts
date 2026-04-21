@@ -378,7 +378,10 @@ export function useChat(
         overridePersona?.id,
         overridePersona?.name,
       );
-      let gooseSessionId = getGooseSessionId(sessionId, effectivePersonaInfo?.id);
+      let gooseSessionId = getGooseSessionId(
+        sessionId,
+        effectivePersonaInfo?.id,
+      );
 
       if (!gooseSessionId) {
         try {
