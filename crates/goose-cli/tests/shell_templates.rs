@@ -38,40 +38,36 @@ fn resolve_cli_bin() -> PathBuf {
         .and_then(Path::parent)
         .expect("failed to resolve target dir from test binary")
         .to_path_buf();
-    let branded_name = format!(
-        "{}{}",
-        Brand::get().binary_name,
-        std::env::consts::EXE_SUFFIX
-    );
+    let cli_bin_names = declared_cli_bin_names();
+    resolve_cli_bin_from_target_dir(&target_dir, &cli_bin_names, Brand::get().binary_name)
+}
+
+fn resolve_cli_bin_from_target_dir(
+    target_dir: &Path,
+    cli_bin_names: &[String],
+    brand_binary_name: &str,
+) -> PathBuf {
+    let branded_name = format!("{brand_binary_name}{}", std::env::consts::EXE_SUFFIX);
     let branded_path = target_dir.join(&branded_name);
     if branded_path.is_file() {
         return branded_path;
     }
 
-    let bins: Vec<PathBuf> = fs::read_dir(&target_dir)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", target_dir.display()))
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            entry.file_type().ok()?.is_file().then_some(entry.path())
-        })
-        .filter(|path| {
-            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-                return false;
-            };
-            !name.starts_with('.')
-                && name != format!("generate_manpages{}", std::env::consts::EXE_SUFFIX)
-                && !name.ends_with(".d")
-        })
+    let bins: Vec<PathBuf> = cli_bin_names
+        .iter()
+        .map(|name| target_dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX)))
+        .filter(|path| path.is_file())
         .collect();
 
     match bins.as_slice() {
         [path] => path.clone(),
         [] => panic!(
-            "no CLI test binary found next to test artifacts in {}",
-            target_dir.display()
+            "no declared CLI test binary found in {} for declared bins: {}",
+            target_dir.display(),
+            cli_bin_names.join(", ")
         ),
         _ => panic!(
-            "expected exactly one CLI test binary in {}, found: {}",
+            "expected exactly one declared CLI test binary in {}, found: {}",
             target_dir.display(),
             bins.iter()
                 .map(|path| path.display().to_string())
@@ -79,6 +75,64 @@ fn resolve_cli_bin() -> PathBuf {
                 .join(", ")
         ),
     }
+}
+
+fn declared_cli_bin_names() -> Vec<String> {
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let manifest = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", manifest_path.display()));
+    let bins = parse_bin_names(&manifest)
+        .into_iter()
+        .filter(|name| name != "generate_manpages")
+        .collect::<Vec<_>>();
+
+    assert!(
+        !bins.is_empty(),
+        "expected at least one non-manpage [[bin]] entry in {}",
+        manifest_path.display()
+    );
+
+    bins
+}
+
+fn parse_bin_names(manifest: &str) -> Vec<String> {
+    let mut in_bin = false;
+    let mut names = Vec::new();
+
+    for line in manifest.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line == "[[bin]]" {
+            in_bin = true;
+            continue;
+        }
+
+        if line.starts_with('[') {
+            in_bin = false;
+            continue;
+        }
+
+        if !in_bin || !line.starts_with("name") {
+            continue;
+        }
+
+        let Some((_, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        let Some(name) = value
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+        else {
+            continue;
+        };
+        names.push(name.to_string());
+    }
+
+    names
 }
 
 fn shell_brand_matches_default() -> bool {
@@ -289,4 +343,58 @@ fn powershell_default_brand() {
         false,
         render_shell("powershell", false, scratch.path()),
     );
+}
+
+#[test]
+fn parse_bin_names_ignores_non_bin_sections() {
+    let manifest = r#"
+[package]
+name = "goose-cli"
+
+[[bin]]
+name = "goose"
+path = "src/main.rs"
+
+[[bin]]
+name = "generate_manpages"
+path = "src/bin/generate_manpages.rs"
+"#;
+
+    assert_eq!(
+        parse_bin_names(manifest),
+        vec!["goose", "generate_manpages"]
+    );
+}
+
+#[test]
+fn parse_bin_names_preserves_downstream_renames() {
+    let manifest = r#"
+[[bin]]
+name = "hoarde"
+path = "src/main.rs"
+
+[[bin]]
+name = "generate_manpages"
+path = "src/bin/generate_manpages.rs"
+"#;
+
+    assert_eq!(
+        parse_bin_names(manifest),
+        vec!["hoarde", "generate_manpages"]
+    );
+}
+
+#[test]
+fn resolve_cli_bin_ignores_extra_sibling_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target_dir = dir.path();
+    let goose = target_dir.join(format!("goose{}", std::env::consts::EXE_SUFFIX));
+    let extra = target_dir.join(format!("other-tool{}", std::env::consts::EXE_SUFFIX));
+
+    fs::write(&goose, "").expect("write goose bin");
+    fs::write(&extra, "").expect("write extra sibling bin");
+
+    let resolved = resolve_cli_bin_from_target_dir(target_dir, &[String::from("goose")], "hoarde");
+
+    assert_eq!(resolved, goose);
 }
