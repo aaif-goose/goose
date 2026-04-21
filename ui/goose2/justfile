@@ -34,7 +34,7 @@ fmt-check:
 
 # Run clippy on Tauri backend
 clippy:
-    cd src-tauri && cargo clippy -- -D warnings
+    cd src-tauri && TAURI_CONFIG='{"bundle":{"externalBin":[]}}' cargo clippy -- -D warnings
 
 # Build the frontend
 build:
@@ -46,7 +46,7 @@ tauri-fmt-check:
 
 # Check Tauri Rust types
 tauri-check:
-    cd src-tauri && cargo check
+    cd src-tauri && TAURI_CONFIG='{"bundle":{"externalBin":[]}}' cargo check
 
 # Full CI gate
 ci: check clippy test build tauri-check
