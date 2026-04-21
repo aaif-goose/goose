@@ -1,12 +1,11 @@
-$env:AGENT_SESSION_ID = "20260421_1"
-function @goose {{ & '/Users/smor/Projects/vendor/goose/target/debug/goose' term run @args }}
-function @g {{ & '/Users/smor/Projects/vendor/goose/target/debug/goose' term run @args }}
+function @goose {{ & '{GOOSE_BIN}' term run @args }}
+function @g {{ & '{GOOSE_BIN}' term run @args }}
 
 Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {{
     $line = $null
     [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$null)
     if ($line -notmatch '^goose term' -and $line -notmatch '^(@goose|@g)($|\s)') {{
-        Start-Job -ScriptBlock {{ & '/Users/smor/Projects/vendor/goose/target/debug/goose' term log $using:line }} | Out-Null
+        Start-Job -ScriptBlock {{ & '{GOOSE_BIN}' term log $using:line }} | Out-Null
     }}
     [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
 }}

@@ -1,12 +1,15 @@
 //! Fixture tests for the shell integration templates emitted by `goose term init`.
 //!
-//! These tests render the Bash, Zsh, Fish, and PowerShell templates with known
-//! session id / binary path values and compare against checked-in fixtures. The
-//! fixtures were captured from `main@HEAD` and freeze the default-brand output.
+//! These tests run the `goose term init <shell>` binary (built via the
+//! `CARGO_BIN_EXE_goose` env var cargo sets for integration tests), normalize
+//! the output for host-portable comparison, and diff against checked-in
+//! fixtures. The fixtures freeze the default-brand output of `main@HEAD`.
 //!
-//! The module under test (`commands::term`) is crate-private, so each fixture
-//! is compared against the output of the public `goose term init <shell>` binary
-//! with the branding module's default values baked in.
+//! Two sources of per-machine variability are normalized before compare:
+//!
+//! - `AGENT_SESSION_ID=<timestamp>` — generated per invocation; stripped.
+//! - The absolute `current_exe()` path embedded by `term init` — differs by
+//!   checkout location; replaced with the placeholder `{GOOSE_BIN}`.
 //!
 //! To regenerate fixtures after an intentional template change, run
 //! `UPDATE_SHELL_FIXTURES=1 cargo test --test shell_templates` once and commit
@@ -52,23 +55,30 @@ fn render_shell(shell: &str, with_default: bool, scratch: &Path) -> String {
     String::from_utf8(output.stdout).expect("non-utf8 shell template output")
 }
 
-/// Strip the `AGENT_SESSION_ID=...` line so fixtures are stable across runs.
-fn strip_session_id(s: &str) -> String {
+/// Normalize host-specific output so fixtures are stable across machines:
+///
+/// - Strip any line that references `AGENT_SESSION_ID` — each of the four
+///   shells uses a slightly different assignment syntax (`export X="…"`,
+///   `set -gx X "…"`, `$env:X = "…"`), and the value itself is a per-
+///   invocation timestamp.
+/// - Replace the absolute `current_exe()` path embedded by `term init` with
+///   the stable placeholder `{GOOSE_BIN}` (differs by checkout location).
+fn normalize(s: &str) -> String {
+    let bin = env!("CARGO_BIN_EXE_goose");
     s.lines()
-        .filter(|line| {
-            !line.contains("AGENT_SESSION_ID=") && !line.contains("AGENT_SESSION_ID \"")
-        })
+        .filter(|line| !line.contains("AGENT_SESSION_ID"))
+        .map(|line| line.replace(bin, "{GOOSE_BIN}"))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 fn check_or_update(name: &str, actual: String) {
     let path = fixtures_dir().join(name);
-    let actual_stripped = strip_session_id(&actual);
+    let actual_normalized = normalize(&actual);
 
     if std::env::var_os("UPDATE_SHELL_FIXTURES").is_some() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, &actual_stripped).unwrap();
+        fs::write(&path, &actual_normalized).unwrap();
         eprintln!("wrote fixture {}", path.display());
         return;
     }
@@ -81,8 +91,8 @@ fn check_or_update(name: &str, actual: String) {
         )
     });
     assert_eq!(
-        expected, actual_stripped,
-        "fixture {} drift (session_id line stripped)",
+        expected, actual_normalized,
+        "fixture {} drift (session_id line stripped, binary path normalized to {{GOOSE_BIN}})",
         name
     );
 }
@@ -115,10 +125,7 @@ fn zsh_default_brand() {
 #[test]
 fn zsh_with_command_not_found() {
     let scratch = scratch_home();
-    check_or_update(
-        "zsh_default.txt",
-        render_shell("zsh", true, scratch.path()),
-    );
+    check_or_update("zsh_default.txt", render_shell("zsh", true, scratch.path()));
 }
 
 #[test]

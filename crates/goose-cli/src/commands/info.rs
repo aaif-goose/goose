@@ -60,7 +60,9 @@ pub fn handle_info(verbose: bool) -> Result<()> {
     let brand = Brand::get();
     println!(
         "{}",
-        style(format!("{} Version:", brand.product_name)).cyan().bold()
+        style(format!("{} Version:", brand.product_name))
+            .cyan()
+            .bold()
     );
     print_aligned("Version:", env!("CARGO_PKG_VERSION"), label_padding);
     println!();

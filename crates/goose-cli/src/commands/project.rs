@@ -120,10 +120,10 @@ pub fn handle_project_default() -> Result<()> {
 
             if !status.success() {
                 println!(
-                "Failed to run {}. Exit code: {:?}",
-                Brand::get().binary_name,
-                status.code()
-            );
+                    "Failed to run {}. Exit code: {:?}",
+                    Brand::get().binary_name,
+                    status.code()
+                );
             }
         }
         "fresh" => {
@@ -144,10 +144,10 @@ pub fn handle_project_default() -> Result<()> {
 
             if !status.success() {
                 println!(
-                "Failed to run {}. Exit code: {:?}",
-                Brand::get().binary_name,
-                status.code()
-            );
+                    "Failed to run {}. Exit code: {:?}",
+                    Brand::get().binary_name,
+                    status.code()
+                );
             }
         }
         "new" => {
@@ -162,10 +162,10 @@ pub fn handle_project_default() -> Result<()> {
 
             if !status.success() {
                 println!(
-                "Failed to run {}. Exit code: {:?}",
-                Brand::get().binary_name,
-                status.code()
-            );
+                    "Failed to run {}. Exit code: {:?}",
+                    Brand::get().binary_name,
+                    status.code()
+                );
             }
         }
         _ => {

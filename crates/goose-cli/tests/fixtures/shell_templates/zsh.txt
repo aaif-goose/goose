@@ -1,10 +1,10 @@
-alias @goose='/Users/smor/Projects/vendor/goose/target/debug/goose term run'
-alias @g='/Users/smor/Projects/vendor/goose/target/debug/goose term run'
+alias @goose='{GOOSE_BIN} term run'
+alias @g='{GOOSE_BIN} term run'
 
 goose_preexec() {
     [[ "$1" =~ ^goose\ term ]] && return
     [[ "$1" =~ ^(@goose|@g)($|[[:space:]]) ]] && return
-    ('/Users/smor/Projects/vendor/goose/target/debug/goose' term log "$1" &) 2>/dev/null
+    ('{GOOSE_BIN}' term log "$1" &) 2>/dev/null
 }
 
 autoload -Uz add-zsh-hook

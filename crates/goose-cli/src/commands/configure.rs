@@ -1228,7 +1228,10 @@ pub fn configure_extensions_dialog() -> anyhow::Result<()> {
         .item(
             "built-in",
             "Built-in Extension",
-            format!("Use an extension that comes with {}", Brand::get().product_name),
+            format!(
+                "Use an extension that comes with {}",
+                Brand::get().product_name
+            ),
         )
         .item(
             "stdio",
@@ -1359,9 +1362,7 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         .item(
             "recipe",
             format!("{product_name} recipe github repo"),
-            format!(
-                "{product_name} will pull recipes from this repo if not found locally."
-            ),
+            format!("{product_name} will pull recipes from this repo if not found locally."),
         )
         .interact()?;
 
@@ -1418,27 +1419,27 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
         "Which {} mode would you like to configure?",
         Brand::get().product_name
     ))
-        .item(
-            GooseMode::Auto,
-            "Auto Mode",
-            "Full file modification, extension usage, edit, create and delete files freely"
-        )
-        .item(
-            GooseMode::Approve,
-            "Approve Mode",
-            "All tools, extensions and file modifications will require human approval"
-        )
-        .item(
-            GooseMode::SmartApprove,
-            "Smart Approve Mode",
-            "Editing, creating, deleting files and using extensions will require human approval"
-        )
-        .item(
-            GooseMode::Chat,
-            "Chat Mode",
-            "Engage with the selected provider without using tools, extensions, or file modification"
-        )
-        .interact()?;
+    .item(
+        GooseMode::Auto,
+        "Auto Mode",
+        "Full file modification, extension usage, edit, create and delete files freely",
+    )
+    .item(
+        GooseMode::Approve,
+        "Approve Mode",
+        "All tools, extensions and file modifications will require human approval",
+    )
+    .item(
+        GooseMode::SmartApprove,
+        "Smart Approve Mode",
+        "Editing, creating, deleting files and using extensions will require human approval",
+    )
+    .item(
+        GooseMode::Chat,
+        "Chat Mode",
+        "Engage with the selected provider without using tools, extensions, or file modification",
+    )
+    .interact()?;
 
     config.set_goose_mode(mode)?;
     let msg = match mode {
@@ -1565,11 +1566,10 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
             // Set to empty string to enable keyring (absence or empty = enabled)
             config.set_param("GOOSE_DISABLE_KEYRING", Value::String("".to_string()))?;
             cliclack::outro("Secret storage set to system keyring (secure)")?;
-            let _ =
-                cliclack::log::info(format!(
-                    "You may need to restart {} for this change to take effect",
-                    Brand::get().product_name
-                ));
+            let _ = cliclack::log::info(format!(
+                "You may need to restart {} for this change to take effect",
+                Brand::get().product_name
+            ));
         }
         "file" => {
             // Set the disable flag to use file storage
@@ -1578,11 +1578,10 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
                 "Secret storage set to file ({}). Keep this file secure!",
                 secrets_path.display(),
             ))?;
-            let _ =
-                cliclack::log::info(format!(
-                    "You may need to restart {} for this change to take effect",
-                    Brand::get().product_name
-                ));
+            let _ = cliclack::log::info(format!(
+                "You may need to restart {} for this change to take effect",
+                Brand::get().product_name
+            ));
         }
         _ => unreachable!(),
     };

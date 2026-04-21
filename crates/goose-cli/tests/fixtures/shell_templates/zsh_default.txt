@@ -1,10 +1,10 @@
-alias @goose='/Users/smor/Projects/vendor/goose/target/debug/goose term run'
-alias @g='/Users/smor/Projects/vendor/goose/target/debug/goose term run'
+alias @goose='{GOOSE_BIN} term run'
+alias @g='{GOOSE_BIN} term run'
 
 goose_preexec() {
     [[ "$1" =~ ^goose\ term ]] && return
     [[ "$1" =~ ^(@goose|@g)($|[[:space:]]) ]] && return
-    ('/Users/smor/Projects/vendor/goose/target/debug/goose' term log "$1" &) 2>/dev/null
+    ('{GOOSE_BIN}' term log "$1" &) 2>/dev/null
 }
 
 autoload -Uz add-zsh-hook
@@ -12,6 +12,6 @@ add-zsh-hook preexec goose_preexec
 
 command_not_found_handler() {
     echo "🪿 Command '$1' not found. Asking goose..."
-    '/Users/smor/Projects/vendor/goose/target/debug/goose' term run "$@"
+    '{GOOSE_BIN}' term run "$@"
     return 0
 }
