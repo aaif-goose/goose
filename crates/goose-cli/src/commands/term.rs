@@ -54,7 +54,7 @@ fi{command_not_found_handler}"#,
         r#"
 
 command_not_found_handle() {
-    echo "🪿 Command '$1' not found. Asking {product_name}..."
+    echo "{interactive_prefix}Command '$1' not found. Asking {product_name}..."
     '{goose_bin}' term run "$@"
     return 0
 }"#,
@@ -78,7 +78,7 @@ add-zsh-hook preexec {fn_prefix}_preexec{command_not_found_handler}"#,
         r#"
 
 command_not_found_handler() {
-    echo "🪿 Command '$1' not found. Asking {product_name}..."
+    echo "{interactive_prefix}Command '$1' not found. Asking {product_name}..."
     '{goose_bin}' term run "$@"
     return 0
 }"#,
@@ -187,6 +187,7 @@ fn render_shell_script(
         s.replace("{goose_bin}", goose_bin)
             .replace("{binary_name}", brand.binary_name)
             .replace("{product_name}", brand.product_name)
+            .replace("{interactive_prefix}", brand.interactive_prefix())
             .replace("{alias_primary}", brand.shell_alias_primary)
             .replace("{alias_short}", brand.shell_alias_short)
             .replace("{fn_prefix}", brand.shell_fn_prefix)

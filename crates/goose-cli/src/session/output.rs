@@ -1,3 +1,4 @@
+use crate::branding::Brand;
 use anstream::println;
 use bat::WrappingMode;
 use console::{measure_text_width, style, Color, Term};
@@ -1298,6 +1299,8 @@ pub fn display_session_info(
     session_id: &Option<String>,
 ) {
     set_terminal_title();
+    let brand = Brand::get();
+    let banner = brand.session_banner_lines();
 
     let status = if resume {
         "resuming"
@@ -1318,7 +1321,7 @@ pub fn display_session_info(
     println!();
     println!(
         "  {}  {} {} {} {} {}",
-        style("  __( O)>").white(),
+        style(banner[0]).white(),
         style("●").green(),
         style(status).dim(),
         style("·").dim(),
@@ -1329,7 +1332,7 @@ pub fn display_session_info(
     if let Some(id) = session_id {
         println!(
             "  {}  {} {} {}",
-            style(r" \____)").white(),
+            style(banner[1]).white(),
             style(" ").dim(),
             style(id).dim(),
             style(format!("· {}", cwd_display)).dim(),
@@ -1337,22 +1340,27 @@ pub fn display_session_info(
     } else {
         println!(
             "  {}  {} {}",
-            style(r" \____)").white(),
+            style(banner[1]).white(),
             style(" ").dim(),
             style(format!("  {}", cwd_display)).dim(),
         );
     }
     println!(
         "  {}  {}",
-        style("   L L").white(),
-        style("   goose is ready").white()
+        style(banner[2]).white(),
+        style(session_ready_text()).white()
     );
+}
+
+fn session_ready_text() -> String {
+    format!("   {} is ready", Brand::get().binary_name)
 }
 
 fn set_terminal_title() {
     if !std::io::stdout().is_terminal() {
         return;
     }
+    let brand = Brand::get();
     let dir_name = std::env::current_dir()
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
@@ -1360,7 +1368,7 @@ fn set_terminal_title() {
     // Sanitize: strip control characters (ESC, BEL, etc.) to prevent terminal escape injection
     let sanitized: String = dir_name.chars().filter(|c| !c.is_control()).collect();
     // OSC 0 sets the terminal window/tab title
-    print!("\x1b]0;🪿 {}\x07", sanitized);
+    print!("\x1b]0;{} {}\x07", brand.product_name_cap(), sanitized);
     let _ = std::io::stdout().flush();
 }
 
@@ -1567,6 +1575,14 @@ mod tests {
         let after_second_toggle = toggle_full_tool_output();
         assert_eq!(after_second_toggle, initial);
         assert_eq!(get_show_full_tool_output(), initial);
+    }
+
+    #[test]
+    fn test_session_ready_text_uses_active_brand() {
+        assert_eq!(
+            session_ready_text(),
+            format!("   {} is ready", Brand::get().binary_name)
+        );
     }
 
     #[test]

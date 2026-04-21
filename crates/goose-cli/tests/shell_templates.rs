@@ -88,6 +88,7 @@ fn shell_brand_matches_default() -> bool {
         && brand.shell_alias_primary == "goose"
         && brand.shell_alias_short == "g"
         && brand.shell_fn_prefix == "goose"
+        && brand.interactive_style == "goose"
 }
 
 /// Run `goose term init <shell>` (optionally with `--default`) in an isolated
@@ -142,6 +143,7 @@ fn assert_branded_output(name: &str, shell: &str, with_default: bool, actual_nor
         "{goose_bin}",
         "{binary_name}",
         "{product_name}",
+        "{interactive_prefix}",
         "{alias_primary}",
         "{alias_short}",
         "{fn_prefix}",
@@ -167,8 +169,13 @@ fn assert_branded_output(name: &str, shell: &str, with_default: bool, actual_nor
     }
 
     if with_default {
+        let expected_handler = format!(
+            "{}Command '$1' not found. Asking {}...",
+            brand.interactive_prefix(),
+            brand.product_name
+        );
         assert!(
-            actual_normalized.contains(&format!("Asking {}", brand.product_name)),
+            actual_normalized.contains(&expected_handler),
             "{name} missing branded command-not-found message:\n{actual_normalized}"
         );
     } else {

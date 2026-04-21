@@ -670,10 +670,11 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         Err(e) => {
             output::render_error(&format!(
                 "Error {}.\n\
-                Please check your system keychain and run 'goose configure' again.\n\
+                Please check your system keychain and run '{} configure' again.\n\
                 If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
                 For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                e
+                e,
+                Brand::get().binary_name
             ));
             process::exit(1);
         }

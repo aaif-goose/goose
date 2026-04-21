@@ -659,11 +659,12 @@ impl CliSession {
                         }
                     }
                     None => {
-                        output::render_error(
+                        output::render_error(&format!(
                             "No editor found. Set one with:\n  \
-                                 goose configure set goose_prompt_editor \"vim\"\n  \
+                                 {} configure set goose_prompt_editor \"vim\"\n  \
                                  or set $VISUAL or $EDITOR in your shell.",
-                        );
+                            Brand::get().binary_name
+                        ));
                     }
                 }
             }

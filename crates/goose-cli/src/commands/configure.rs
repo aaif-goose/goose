@@ -1927,7 +1927,10 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                         println!("✓ Developer extension enabled");
                     }
 
-                    cliclack::outro("OpenRouter setup complete! You can now use goose.")?;
+                    cliclack::outro(format!(
+                        "OpenRouter setup complete! You can now use {}.",
+                        Brand::get().binary_name
+                    ))?;
                 }
                 Err(e) => {
                     eprintln!("⚠️  Configuration test failed: {}", e);
@@ -1998,9 +2001,10 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                         println!("✓ Developer extension enabled");
                     }
 
-                    cliclack::outro(
-                        "Tetrate Agent Router Service setup complete! You can now use goose.",
-                    )?;
+                    cliclack::outro(format!(
+                        "Tetrate Agent Router Service setup complete! You can now use {}.",
+                        Brand::get().binary_name
+                    ))?;
                 }
                 Err(e) => {
                     eprintln!("⚠️  Configuration test failed: {}", e);

@@ -9,6 +9,7 @@ use goose::recipe::Recipe;
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
+use crate::branding::Brand;
 #[cfg(feature = "telemetry")]
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
@@ -1307,8 +1308,9 @@ fn parse_run_input(
         (Some(file), _, _) => {
             let contents = std::fs::read_to_string(file).unwrap_or_else(|err| {
                 eprintln!(
-                    "Instruction file not found — did you mean to use goose run --text?\n{}",
-                    err
+                    "Instruction file not found — did you mean to use {} run --text?\n{}",
+                    Brand::get().binary_name,
+                    err,
                 );
                 std::process::exit(1);
             });

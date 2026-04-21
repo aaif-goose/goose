@@ -23,6 +23,37 @@ const DEFAULT_DEEPLINK_SCHEME: &str = "goose";
 const DEFAULT_GITHUB_OWNER: &str = "aaif-goose";
 const DEFAULT_GITHUB_REPO: &str = "goose";
 const DEFAULT_AGENT_IDENTITY: &str = "You are goose, an AI assistant.";
+const DEFAULT_INTERACTIVE_STYLE: &str = "goose";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InteractiveStyle {
+    Goose,
+    Minimal,
+}
+
+impl InteractiveStyle {
+    fn from_env(value: &str) -> Self {
+        if value.eq_ignore_ascii_case("minimal") {
+            Self::Minimal
+        } else {
+            Self::Goose
+        }
+    }
+
+    fn prompt_prefix(self) -> &'static str {
+        match self {
+            Self::Goose => "🪿 ",
+            Self::Minimal => "> ",
+        }
+    }
+
+    fn session_banner_lines(self) -> [&'static str; 3] {
+        match self {
+            Self::Goose => ["  __( O)>", r" \____)", "   L L"],
+            Self::Minimal => [">", "", ""],
+        }
+    }
+}
 
 pub struct Brand {
     /// Display noun used in user-facing messages (e.g. "goose Version:").
@@ -44,6 +75,8 @@ pub struct Brand {
     pub github_repo: &'static str,
     /// System prompt used by the provider-configuration smoke test.
     pub agent_identity_sentence: &'static str,
+    /// Interactive CLI presentation style (prompt prefix, session banner).
+    pub interactive_style: &'static str,
 }
 
 pub const BRAND: Brand = Brand {
@@ -83,6 +116,10 @@ pub const BRAND: Brand = Brand {
         Some(v) => v,
         None => DEFAULT_AGENT_IDENTITY,
     },
+    interactive_style: match option_env!("GOOSE_BRAND_INTERACTIVE_STYLE") {
+        Some(v) => v,
+        None => DEFAULT_INTERACTIVE_STYLE,
+    },
 };
 
 impl Brand {
@@ -100,10 +137,23 @@ impl Brand {
             && self.github_owner == DEFAULT_GITHUB_OWNER
             && self.github_repo == DEFAULT_GITHUB_REPO
             && self.agent_identity_sentence == DEFAULT_AGENT_IDENTITY
+            && self.interactive_style == DEFAULT_INTERACTIVE_STYLE
     }
 
     pub fn product_name_cap(&self) -> String {
         capitalize(self.product_name)
+    }
+
+    pub fn interactive_style_kind(&self) -> InteractiveStyle {
+        InteractiveStyle::from_env(self.interactive_style)
+    }
+
+    pub fn interactive_prefix(&self) -> &'static str {
+        self.interactive_style_kind().prompt_prefix()
+    }
+
+    pub fn session_banner_lines(&self) -> [&'static str; 3] {
+        self.interactive_style_kind().session_banner_lines()
     }
 }
 
@@ -216,6 +266,7 @@ mod tests {
         assert_eq!(b.github_owner, "aaif-goose");
         assert_eq!(b.github_repo, "goose");
         assert_eq!(b.agent_identity_sentence, "You are goose, an AI assistant.");
+        assert_eq!(b.interactive_style, "goose");
     }
 
     #[test]
@@ -250,6 +301,7 @@ mod tests {
             github_owner: "acme",
             github_repo: "foobar",
             agent_identity_sentence: "You are foobar, an AI assistant.",
+            interactive_style: "minimal",
         };
         assert_eq!(
             rebrand_str("Configure goose settings", &b),
@@ -280,6 +332,7 @@ mod tests {
             github_owner: "acme",
             github_repo: "foobar",
             agent_identity_sentence: "You are foobar, an AI assistant.",
+            interactive_style: "minimal",
         };
         let mut cmd = rewrite_command(crate::Cli::command(), &b);
         assert_eq!(cmd.get_name(), "foobar");
@@ -317,9 +370,67 @@ mod tests {
             github_owner: "acme",
             github_repo: "foobar",
             agent_identity_sentence: "You are foobar, an AI assistant.",
+            interactive_style: "minimal",
         };
         let cmd = rewrite_command(crate::Cli::command(), &b);
         assert_no_leaks_recursive(&cmd, "");
+    }
+
+    #[test]
+    fn interactive_style_controls_prompt_and_banner() {
+        let goose = Brand {
+            product_name: "goose",
+            binary_name: "goose",
+            shell_alias_primary: "goose",
+            shell_alias_short: "g",
+            shell_fn_prefix: "goose",
+            deeplink_scheme: "goose",
+            github_owner: "aaif-goose",
+            github_repo: "goose",
+            agent_identity_sentence: "You are goose, an AI assistant.",
+            interactive_style: "goose",
+        };
+        assert_eq!(goose.interactive_prefix(), "🪿 ");
+        assert_eq!(
+            goose.session_banner_lines(),
+            ["  __( O)>", r" \____)", "   L L"]
+        );
+
+        let minimal = Brand {
+            product_name: "Foobar",
+            binary_name: "foobar",
+            shell_alias_primary: "foobar",
+            shell_alias_short: "fb",
+            shell_fn_prefix: "foobar",
+            deeplink_scheme: "foobar",
+            github_owner: "acme",
+            github_repo: "foobar",
+            agent_identity_sentence: "You are foobar, an AI assistant.",
+            interactive_style: "minimal",
+        };
+        assert_eq!(minimal.interactive_prefix(), "> ");
+        assert_eq!(minimal.session_banner_lines(), [">", "", ""]);
+    }
+
+    #[test]
+    fn unknown_interactive_style_falls_back_to_goose() {
+        let b = Brand {
+            product_name: "Foobar",
+            binary_name: "foobar",
+            shell_alias_primary: "foobar",
+            shell_alias_short: "fb",
+            shell_fn_prefix: "foobar",
+            deeplink_scheme: "foobar",
+            github_owner: "acme",
+            github_repo: "foobar",
+            agent_identity_sentence: "You are foobar, an AI assistant.",
+            interactive_style: "mystery",
+        };
+        assert_eq!(b.interactive_prefix(), "🪿 ");
+        assert_eq!(
+            b.session_banner_lines(),
+            ["  __( O)>", r" \____)", "   L L"]
+        );
     }
 
     fn assert_no_leaks_recursive(cmd: &clap::Command, path: &str) {

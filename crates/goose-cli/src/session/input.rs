@@ -379,7 +379,7 @@ fn get_input_prompt_string() -> String {
     if is_vte_with_broken_emoji_width() {
         return "> ".to_string();
     }
-    "🪿 ".to_string()
+    Brand::get().interactive_prefix().to_string()
 }
 
 /// VTE < 0.70 renders 🪿 as 1 cell while unicode-width counts 2, causing cursor offset.

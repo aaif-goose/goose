@@ -307,6 +307,7 @@ The `goose-cli` crate routes every user-visible `goose` / `Goose` string through
 | `GOOSE_BRAND_GITHUB_OWNER` | `aaif-goose` | Owner half of update + attestation URLs |
 | `GOOSE_BRAND_GITHUB_REPO` | `goose` | Repo half of update + attestation URLs |
 | `GOOSE_BRAND_AGENT_IDENTITY` | `You are goose, an AI assistant.` | System prompt for the provider-configuration smoke test |
+| `GOOSE_BRAND_INTERACTIVE_STYLE` | `goose` | Interactive CLI presentation: `goose` keeps the goose prompt/banner, `minimal` uses neutral `>` prompts and a text-only session banner |
 
 Example build invocation:
 
@@ -320,7 +321,7 @@ GOOSE_BRAND_DEEPLINK_SCHEME=insightstream \
 GOOSE_BRAND_GITHUB_OWNER=your-org \
 GOOSE_BRAND_GITHUB_REPO=your-goose-fork \
 GOOSE_BRAND_AGENT_IDENTITY="You are InsightStream, an AI assistant." \
-  cargo build --release -p goose-cli
+cargo build --release -p goose-cli
 ```
 
 **One caveat** — the compiled binary filename is set by `[[bin]] name = "goose"` in `crates/goose-cli/Cargo.toml`, and Cargo.toml values cannot be parameterized by env vars. Downstream distros either:
@@ -329,6 +330,9 @@ GOOSE_BRAND_AGENT_IDENTITY="You are InsightStream, an AI assistant." \
 2. Patch the one line in `Cargo.toml` so `cargo build` emits the renamed binary directly.
 
 Whichever you choose, set `GOOSE_BRAND_BINARY_NAME` to the final filename so invocation examples in `--help`, update asset URLs, and shell templates all reference the correct binary.
+
+Set `GOOSE_BRAND_INTERACTIVE_STYLE=minimal` if your distro wants a neutral CLI prompt
+and session banner instead of the default goose glyphs.
 
 ### Technical Details
 
