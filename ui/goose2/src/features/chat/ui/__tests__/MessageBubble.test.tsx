@@ -4,12 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import type { Message } from "@/shared/types/messages";
-
-const mockOpenPath = vi.fn();
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: (path: string) => mockOpenPath(path),
-  openUrl: vi.fn(),
-}));
+import { openPath } from "@tauri-apps/plugin-opener";
 
 // ── helpers ───────────────────────────────────────────────────────────
 
@@ -41,7 +36,7 @@ function assistantMessage(
 describe("MessageBubble", () => {
   beforeEach(() => {
     useAgentStore.setState({ personas: [] });
-    mockOpenPath.mockClear();
+    vi.mocked(openPath).mockClear();
   });
 
   it("renders user message with correct alignment", () => {
@@ -134,7 +129,7 @@ describe("MessageBubble", () => {
     await user.click(
       screen.getByRole("button", { name: /open attachment report\.pdf/i }),
     );
-    expect(mockOpenPath).toHaveBeenCalledWith("/Users/test/report.pdf");
+    expect(vi.mocked(openPath)).toHaveBeenCalledWith("/Users/test/report.pdf");
     expect(
       screen.getByRole("button", { name: /open attachment screenshots/i }),
     ).toBeInTheDocument();

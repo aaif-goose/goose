@@ -28,9 +28,8 @@ vi.mock("@/shared/hooks/useChangedFiles", () => ({
   }),
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: vi.fn(),
-  openUrl: vi.fn(),
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: () => Promise.resolve(() => {}),
 }));
 
 vi.mock("@/shared/api/system", () => ({
