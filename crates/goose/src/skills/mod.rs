@@ -7,8 +7,8 @@ pub mod client;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
 
-use crate::agents::platform_extensions::parse_frontmatter;
 use crate::config::paths::Paths;
+use crate::sources::parse_frontmatter;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -132,11 +132,7 @@ fn walk_files_recursively<F, G>(
     }
 }
 
-fn scan_skills_from_dir(
-    dir: &Path,
-    global: bool,
-    seen: &mut HashSet<String>,
-) -> Vec<SourceEntry> {
+fn scan_skills_from_dir(dir: &Path, global: bool, seen: &mut HashSet<String>) -> Vec<SourceEntry> {
     let mut skill_files = Vec::new();
     let mut visited_dirs = HashSet::new();
 

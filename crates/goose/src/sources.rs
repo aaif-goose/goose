@@ -3,12 +3,27 @@
 //! directory — `~/.agents/skills` for global sources and `<project>/.goose/skills`
 //! for project-specific sources.
 
-use crate::agents::platform_extensions::parse_frontmatter;
 use crate::skills::{discover_skills, global_skills_dir, project_skills_dir, SkillFrontmatter};
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
+
+pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
+    content: &str,
+) -> Result<Option<(T, String)>, serde_yaml::Error> {
+    let parts: Vec<&str> = content.split("---").collect();
+    if parts.len() < 3 {
+        return Ok(None);
+    }
+
+    let yaml_content = parts[1].trim();
+    let metadata: T = serde_yaml::from_str(yaml_content)?;
+
+    let body = parts[2..].join("---").trim().to_string();
+    Ok(Some((metadata, body)))
+}
 
 fn skills_dir_global_or_err() -> Result<PathBuf, Error> {
     global_skills_dir()
@@ -40,8 +55,10 @@ fn source_base_dir(
                 skills_dir_project_or_err(pd)
             }
         }
-        other => Err(Error::invalid_params()
-            .data(format!("Source type '{}' is not user-editable", other))),
+        other => {
+            Err(Error::invalid_params()
+                .data(format!("Source type '{}' is not user-editable", other)))
+        }
     }
 }
 
@@ -242,8 +259,9 @@ pub fn export_source(
     let type_slug = match source_type {
         SourceType::Skill => "skill",
         other => {
-            return Err(Error::invalid_params()
-                .data(format!("Source type '{}' cannot be exported", other)))
+            return Err(
+                Error::invalid_params().data(format!("Source type '{}' cannot be exported", other))
+            )
         }
     };
     let export = serde_json::json!({

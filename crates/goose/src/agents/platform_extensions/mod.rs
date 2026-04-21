@@ -16,22 +16,6 @@ use std::collections::HashMap;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::session::Session;
 use once_cell::sync::Lazy;
-use serde::Deserialize;
-
-pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
-    content: &str,
-) -> Result<Option<(T, String)>, serde_yaml::Error> {
-    let parts: Vec<&str> = content.split("---").collect();
-    if parts.len() < 3 {
-        return Ok(None);
-    }
-
-    let yaml_content = parts[1].trim();
-    let metadata: T = serde_yaml::from_str(yaml_content)?;
-
-    let body = parts[2..].join("---").trim().to_string();
-    Ok(Some((metadata, body)))
-}
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 

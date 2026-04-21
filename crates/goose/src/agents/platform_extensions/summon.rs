@@ -1,4 +1,3 @@
-use super::parse_frontmatter;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
@@ -13,6 +12,7 @@ use crate::recipe::local_recipes::load_local_recipe_file;
 use crate::recipe::{Recipe, Settings, RECIPE_FILE_EXTENSIONS};
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::SessionType;
+use crate::sources::parse_frontmatter;
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
