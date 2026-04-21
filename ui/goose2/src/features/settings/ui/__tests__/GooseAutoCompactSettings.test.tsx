@@ -51,24 +51,28 @@ describe("GooseAutoCompactSettings", () => {
     );
   });
 
-  it("turns auto-compaction off from the toggle and disables the slider", async () => {
+  it("keeps the slider interactive when auto-compaction is off", async () => {
     const user = userEvent.setup();
+    mockUseAutoCompactPreferences.mockReturnValue({
+      autoCompactThreshold: 1,
+      isHydrated: true,
+      setAutoCompactThreshold: mockSetAutoCompactThreshold,
+    });
 
     render(<GooseAutoCompactSettings />);
 
-    await user.click(
-      screen.getByRole("switch", {
-        name: /toggle auto-compact context/i,
-      }),
-    );
+    const slider = screen.getByRole("slider", {
+      name: /auto-compact context/i,
+    });
+
+    expect(screen.getByText("Off")).toBeInTheDocument();
+    expect(slider).not.toHaveAttribute("aria-disabled", "true");
+
+    slider.focus();
+    await user.keyboard("{ArrowLeft}");
 
     await waitFor(() =>
-      expect(mockSetAutoCompactThreshold).toHaveBeenCalledWith(1),
+      expect(mockSetAutoCompactThreshold).toHaveBeenCalledWith(0.99),
     );
-
-    expect(
-      screen.getByRole("slider", { name: /auto-compact context/i }),
-    ).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getAllByText("Off")).toHaveLength(2);
   });
 });

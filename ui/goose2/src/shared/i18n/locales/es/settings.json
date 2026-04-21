@@ -61,13 +61,11 @@
         "label": "Compactación automática del contexto",
         "loading": "Cargando...",
         "off": "Desactivado",
-        "on": "Activado",
-        "toggleLabel": "Alternar compactación automática del contexto",
         "saveError": "No se pudo guardar la configuración de compactación automática."
       },
       "builtIn": "Integrado",
       "description": "Controles de contexto específicos de Goose para chats largos.",
-      "label": "Goose"
+      "label": "Goose (Agente)"
     },
     "title": "Compactación"
   },

@@ -61,13 +61,11 @@
         "label": "Auto-compact context",
         "loading": "Loading...",
         "off": "Off",
-        "on": "On",
-        "toggleLabel": "Toggle auto-compact context",
         "saveError": "Failed to save auto-compaction setting."
       },
       "builtIn": "Built in",
       "description": "Goose-specific context controls for long-running chats.",
-      "label": "Goose"
+      "label": "Goose (Agent)"
     },
     "title": "Compaction"
   },
