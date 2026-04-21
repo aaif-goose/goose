@@ -4,6 +4,8 @@ import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useChatStore } from "../stores/chatStore";
 
+const MAX_CONSECUTIVE_SEND_FAILURES = 2;
+
 function getQueuedMessageKey(
   queuedMessage: {
     text: string;
@@ -48,27 +50,59 @@ export function useMessageQueue(
   const queuedMessage = useChatStore(
     (s) => s.queuedMessageBySession[sessionId] ?? null,
   );
-  const failedQueueKeyRef = useRef<string | null>(null);
+  const previousChatStateRef = useRef(chatState);
+  const idleCycleRef = useRef(0);
+  const lastAttemptRef = useRef<{
+    key: string;
+    idleCycle: number;
+  } | null>(null);
+  const failureStateRef = useRef<{
+    key: string;
+    count: number;
+  } | null>(null);
   const queuedMessageKey = useMemo(
     () => getQueuedMessageKey(queuedMessage),
     [queuedMessage],
   );
 
   useEffect(() => {
-    if (queuedMessageKey !== failedQueueKeyRef.current) {
-      failedQueueKeyRef.current = null;
+    if (queuedMessageKey !== lastAttemptRef.current?.key) {
+      lastAttemptRef.current = null;
+    }
+    if (queuedMessageKey !== failureStateRef.current?.key) {
+      failureStateRef.current = null;
     }
   }, [queuedMessageKey]);
 
   useEffect(() => {
+    if (chatState === "idle" && previousChatStateRef.current !== "idle") {
+      idleCycleRef.current += 1;
+    }
+    previousChatStateRef.current = chatState;
+  }, [chatState]);
+
+  useEffect(() => {
+    const hasReachedRetryLimit =
+      failureStateRef.current?.key === queuedMessageKey &&
+      failureStateRef.current.count >= MAX_CONSECUTIVE_SEND_FAILURES;
+    const alreadyAttemptedThisIdleCycle =
+      lastAttemptRef.current?.key === queuedMessageKey &&
+      lastAttemptRef.current.idleCycle === idleCycleRef.current;
+
     if (
       chatState !== "idle" ||
       !queuedMessage ||
       !queuedMessageKey ||
-      failedQueueKeyRef.current === queuedMessageKey
+      hasReachedRetryLimit ||
+      alreadyAttemptedThisIdleCycle
     ) {
       return;
     }
+
+    lastAttemptRef.current = {
+      key: queuedMessageKey,
+      idleCycle: idleCycleRef.current,
+    };
 
     const { text, personaId, attachments } = queuedMessage;
     const sendResult = sendMessage(
@@ -85,11 +119,19 @@ export function useMessageQueue(
       }
 
       if (accepted === false) {
-        failedQueueKeyRef.current = queuedMessageKey;
+        const previousFailureCount =
+          failureStateRef.current?.key === queuedMessageKey
+            ? failureStateRef.current.count
+            : 0;
+        failureStateRef.current = {
+          key: queuedMessageKey,
+          count: previousFailureCount + 1,
+        };
         return;
       }
 
-      failedQueueKeyRef.current = null;
+      failureStateRef.current = null;
+      lastAttemptRef.current = null;
       useChatStore.getState().dismissQueuedMessage(sessionId);
     };
 
