@@ -9,6 +9,7 @@ export interface ModelOption {
   provider?: string;
   providerId?: string;
   providerName?: string;
+  contextLimit?: number | null;
   /** Whether this model should appear in the compact recommended picker. */
   recommended?: boolean;
 }
@@ -56,13 +57,9 @@ export interface ChatInputProps {
   }) => void;
   contextTokens?: number;
   contextLimit?: number;
+  isContextUsageReady?: boolean;
   onCompactContext?: () => void | Promise<unknown>;
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
   supportsAutoCompactContext?: boolean;
-  autoCompactThreshold?: number;
-  isAutoCompactThresholdHydrated?: boolean;
-  onAutoCompactThresholdChange?: (
-    threshold: number,
-  ) => void | Promise<void>;
 }

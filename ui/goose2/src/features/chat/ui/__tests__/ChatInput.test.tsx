@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ChatInput } from "../ChatInput";
 import { ChatInputToolbar } from "../ChatInputToolbar";
+import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import type { Persona } from "@/shared/types/agents";
 
 const mockVoiceDictation = {
@@ -69,24 +70,6 @@ function StatefulChatInput({
       personas={TEST_PERSONAS}
       selectedPersonaId={selectedPersonaId}
       onPersonaChange={setSelectedPersonaId}
-    />
-  );
-}
-
-function StatefulAutoCompactChatInput() {
-  const [threshold, setThreshold] = useState(0.8);
-
-  return (
-    <ChatInput
-      onSend={vi.fn()}
-      selectedProvider="goose"
-      contextTokens={1536}
-      contextLimit={8192}
-      autoCompactThreshold={threshold}
-      isAutoCompactThresholdHydrated
-      onAutoCompactThresholdChange={async (value) => {
-        setThreshold(value);
-      }}
     />
   );
 }
@@ -307,37 +290,52 @@ describe("ChatInput", () => {
     expect(onCompactContext).toHaveBeenCalledOnce();
   });
 
-  it("edits the auto-compact threshold from the context usage popover", async () => {
+  it("opens compaction settings from the context usage popover", async () => {
     const user = userEvent.setup();
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
 
-    render(<StatefulAutoCompactChatInput />);
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        selectedProvider="goose"
+        contextTokens={1536}
+        contextLimit={8192}
+        canCompactContext
+      />,
+    );
 
     await user.click(screen.getByRole("button", { name: /context usage/i }));
 
-    expect(screen.getByText("Auto compact at 80%")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /settings/i }));
 
-    await user.click(
-      screen.getByRole("button", {
-        name: /edit auto-compact threshold/i,
-      }),
-    );
-    const thresholdInput = screen.getByRole("spinbutton", {
-      name: /auto compact at/i,
-    });
-    await user.clear(thresholdInput);
-    await user.type(thresholdInput, "90");
-    await user.click(
-      screen.getByRole("button", {
-        name: /save auto-compact threshold/i,
+    expect(dispatchEventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: OPEN_SETTINGS_EVENT,
+        detail: { section: "compaction" },
       }),
     );
 
-    expect(await screen.findByText("Auto compact at 90%")).toBeInTheDocument();
+    dispatchEventSpy.mockRestore();
   });
 
   it("hides the context usage control when the context limit is unavailable", () => {
     render(
       <ChatInput onSend={vi.fn()} contextTokens={1536} contextLimit={0} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /context usage/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the context usage control until usage is ready", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        contextTokens={1536}
+        contextLimit={8192}
+        isContextUsageReady={false}
+      />,
     );
 
     expect(

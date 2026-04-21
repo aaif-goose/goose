@@ -109,6 +109,7 @@ vi.mock("../useAgentModelPickerState", () => ({
       name: string;
       displayName?: string;
       providerId?: string;
+      contextLimit?: number | null;
     }) => void;
   }) => ({
     selectedAgentId: "goose",
@@ -124,6 +125,7 @@ vi.mock("../useAgentModelPickerState", () => ({
           name: modelId,
           displayName: "Claude Sonnet 4",
           providerId: "anthropic",
+          contextLimit: 200_000,
         });
       }
     },
@@ -238,8 +240,6 @@ describe("useChatSessionController", () => {
       modelName: "Claude Sonnet 4",
     });
   });
-<<<<<<< HEAD
-
   it("restores the previous stored model preference when setting a model fails", async () => {
     window.localStorage.setItem(
       "goose:preferredModelsByAgent",
@@ -451,6 +451,82 @@ describe("useChatSessionController", () => {
     expect(
       window.localStorage.getItem("goose:preferredModelsByAgent"),
     ).toBeNull();
+  });
+
+  it("hides context usage until a fresh usage snapshot exists after switching models", () => {
+    const store = useChatStore.getState();
+    store.replaceTokenState(
+      "session-1",
+      {
+        ...INITIAL_TOKEN_STATE,
+        contextLimit: 400_000,
+      },
+      false,
+    );
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: "session-1" }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("claude-sonnet-4");
+    });
+
+    const runtime = useChatStore.getState().getSessionRuntime("session-1");
+    expect(runtime.hasUsageSnapshot).toBe(false);
+    expect(runtime.tokenState).toEqual(INITIAL_TOKEN_STATE);
+  });
+
+  it("hides context usage after switching models even when a snapshot existed", () => {
+    const store = useChatStore.getState();
+    store.replaceTokenState(
+      "session-1",
+      {
+        ...INITIAL_TOKEN_STATE,
+        accumulatedTotal: 12_000,
+        contextLimit: 400_000,
+      },
+      true,
+    );
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: "session-1" }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("claude-sonnet-4");
+    });
+
+    const runtime = useChatStore.getState().getSessionRuntime("session-1");
+    expect(runtime.hasUsageSnapshot).toBe(false);
+    expect(runtime.tokenState).toEqual(INITIAL_TOKEN_STATE);
+  });
+
+  it("hides pending home context usage after switching models", () => {
+    const store = useChatStore.getState();
+    store.replaceTokenState(
+      "__home_pending__",
+      {
+        ...INITIAL_TOKEN_STATE,
+        accumulatedTotal: 12_000,
+        contextLimit: 400_000,
+      },
+      true,
+    );
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: null }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("claude-sonnet-4");
+    });
+
+    const runtime = useChatStore
+      .getState()
+      .getSessionRuntime("__home_pending__");
+    expect(runtime.hasUsageSnapshot).toBe(false);
+    expect(runtime.tokenState).toEqual(INITIAL_TOKEN_STATE);
   });
 
   it("auto-compacts goose sessions before sending when the threshold is exceeded", async () => {

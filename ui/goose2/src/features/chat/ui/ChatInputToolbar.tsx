@@ -6,9 +6,6 @@ import {
   Paperclip,
   File,
   FolderOpen,
-  PencilLine,
-  Check,
-  Loader2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
@@ -21,7 +18,6 @@ import { ContextRing } from "./ContextRing";
 import { PersonaPicker } from "./PersonaPicker";
 import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,12 +31,8 @@ import { AgentModelPicker } from "./AgentModelPicker";
 import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { getCatalogEntry } from "@/features/providers/providerCatalog";
-import {
-  autoCompactPercentToThreshold,
-  autoCompactThresholdToPercent,
-  clampAutoCompactThresholdPercent,
-  supportsGooseAutoCompaction,
-} from "../lib/autoCompact";
+import { supportsGooseAutoCompaction } from "../lib/autoCompact";
+import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
@@ -86,12 +78,8 @@ interface ChatInputToolbarProps {
   // Context
   contextTokens: number;
   contextLimit: number;
+  isContextUsageReady?: boolean;
   supportsAutoCompactContext?: boolean;
-  autoCompactThreshold?: number;
-  isAutoCompactThresholdHydrated?: boolean;
-  onAutoCompactThresholdChange?: (
-    threshold: number,
-  ) => void | Promise<void>;
   // Actions
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
@@ -134,10 +122,8 @@ export function ChatInputToolbar({
   onCreateProject,
   contextTokens,
   contextLimit,
+  isContextUsageReady,
   supportsAutoCompactContext,
-  autoCompactThreshold = 0.8,
-  isAutoCompactThresholdHydrated = false,
-  onAutoCompactThresholdChange,
   canCompactContext = false,
   isCompactingContext = false,
   onCompactContext,
@@ -158,14 +144,8 @@ export function ChatInputToolbar({
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
-  const [isEditingThreshold, setIsEditingThreshold] = useState(false);
-  const [thresholdValue, setThresholdValue] = useState("");
-  const [thresholdError, setThresholdError] = useState<string | null>(null);
-  const [isSavingThreshold, setIsSavingThreshold] = useState(false);
   const autoCompactSupported =
     supportsAutoCompactContext ?? supportsGooseAutoCompaction(selectedProvider);
-  const autoCompactThresholdPercent =
-    autoCompactThresholdToPercent(autoCompactThreshold);
 
   const agentProviders = useMemo(() => {
     const seen = new Set<string>();
@@ -199,6 +179,7 @@ export function ChatInputToolbar({
     : undefined;
   const contextProgress =
     contextLimit > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
+  const showContextUsage = isContextUsageReady ?? contextLimit > 0;
   const contextPercentDigits =
     contextProgress > 0 && contextProgress < 0.1 ? 1 : 0;
   const usedPercentLabel = formatNumber(contextProgress, {
@@ -212,30 +193,6 @@ export function ChatInputToolbar({
       compactDisplay: "short",
       maximumFractionDigits: value < 10_000 ? 1 : 0,
     });
-  const sanitizeThresholdValue = (value: string) => {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed)) {
-      return autoCompactThresholdPercent;
-    }
-
-    return clampAutoCompactThresholdPercent(parsed);
-  };
-
-  useEffect(() => {
-    if (!isEditingThreshold) {
-      setThresholdValue(autoCompactThresholdPercent.toString());
-    }
-  }, [autoCompactThresholdPercent, isEditingThreshold]);
-
-  useEffect(() => {
-    if (isContextPopoverOpen) {
-      return;
-    }
-
-    setIsEditingThreshold(false);
-    setThresholdError(null);
-    setThresholdValue(autoCompactThresholdPercent.toString());
-  }, [autoCompactThresholdPercent, isContextPopoverOpen]);
 
   const handleProjectValueChange = (value: string) => {
     if (value === CREATE_PROJECT_VALUE) {
@@ -255,27 +212,16 @@ export function ChatInputToolbar({
     void onCompactContext();
   };
 
-  const handleSaveAutoCompactThreshold = async () => {
-    if (!onAutoCompactThresholdChange || isSavingThreshold) {
-      return;
-    }
-
-    const nextPercent = sanitizeThresholdValue(thresholdValue);
-    setThresholdValue(nextPercent.toString());
-    setThresholdError(null);
-    setIsSavingThreshold(true);
-
-    try {
-      await onAutoCompactThresholdChange(
-        autoCompactPercentToThreshold(nextPercent),
-      );
-      setIsEditingThreshold(false);
-    } catch {
-      setThresholdError(t("toolbar.autoCompactThresholdSaveError"));
-    } finally {
-      setIsSavingThreshold(false);
-    }
+  const handleOpenAutoCompactSettings = () => {
+    setIsContextPopoverOpen(false);
+    requestOpenSettings("compaction");
   };
+
+  useEffect(() => {
+    if (!showContextUsage && isContextPopoverOpen) {
+      setIsContextPopoverOpen(false);
+    }
+  }, [isContextPopoverOpen, showContextUsage]);
 
   return (
     <div className="flex items-center justify-between gap-2">
@@ -359,7 +305,7 @@ export function ChatInputToolbar({
             />
           )}
 
-          {contextLimit > 0 && (
+          {showContextUsage && (
             <Popover
               open={isContextPopoverOpen}
               onOpenChange={setIsContextPopoverOpen}
@@ -396,115 +342,6 @@ export function ChatInputToolbar({
                   {t("toolbar.contextWindow")}
                 </div>
                 <div className="space-y-2 px-2 pb-1.5">
-                  {autoCompactSupported && isAutoCompactThresholdHydrated ? (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-2 rounded-xl bg-muted/50 px-2 py-1.5">
-                        {isEditingThreshold ? (
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <span className="truncate text-xs text-muted-foreground">
-                              {t("toolbar.autoCompactAt")}
-                            </span>
-                            <div className="ml-auto flex items-center gap-1">
-                              <Input
-                                type="number"
-                                min="1"
-                                max="100"
-                                step="1"
-                                value={thresholdValue}
-                                onChange={(event) => {
-                                  setThresholdValue(event.target.value);
-                                  setThresholdError(null);
-                                }}
-                                onBlur={() => {
-                                  setThresholdValue(
-                                    sanitizeThresholdValue(
-                                      thresholdValue,
-                                    ).toString(),
-                                  );
-                                }}
-                                onFocus={(event) => {
-                                  event.target.select();
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter") {
-                                    event.preventDefault();
-                                    void handleSaveAutoCompactThreshold();
-                                  }
-
-                                  if (event.key === "Escape") {
-                                    event.preventDefault();
-                                    setIsEditingThreshold(false);
-                                    setThresholdError(null);
-                                    setThresholdValue(
-                                      autoCompactThresholdPercent.toString(),
-                                    );
-                                  }
-                                }}
-                                className="h-7 w-14 rounded-lg px-2 py-0 text-center text-xs"
-                                aria-label={t("toolbar.autoCompactAt")}
-                                disabled={isSavingThreshold}
-                                autoFocus
-                              />
-                              <span className="text-xs text-muted-foreground">
-                                %
-                              </span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                className="size-7 rounded-full"
-                                onClick={() => {
-                                  void handleSaveAutoCompactThreshold();
-                                }}
-                                disabled={isSavingThreshold}
-                                aria-label={t(
-                                  "toolbar.saveAutoCompactThreshold",
-                                )}
-                              >
-                                {isSavingThreshold ? (
-                                  <Loader2 className="size-3.5 animate-spin" />
-                                ) : (
-                                  <Check className="size-3.5" />
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="truncate text-xs text-foreground">
-                              {t("toolbar.autoCompactThreshold", {
-                                threshold: autoCompactThresholdPercent,
-                              })}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              className="size-7 rounded-full"
-                              onClick={() => {
-                                setThresholdError(null);
-                                setThresholdValue(
-                                  autoCompactThresholdPercent.toString(),
-                                );
-                                setIsEditingThreshold(true);
-                              }}
-                              disabled={!onAutoCompactThresholdChange}
-                              aria-label={t(
-                                "toolbar.editAutoCompactThreshold",
-                              )}
-                            >
-                              <PencilLine className="size-3.5" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                      {thresholdError ? (
-                        <div className="text-[11px] text-destructive">
-                          {thresholdError}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                   <Progress
                     className="h-1.5 bg-muted"
                     value={contextProgress * 100}
@@ -519,18 +356,29 @@ export function ChatInputToolbar({
                     <div className="shrink-0">{usedPercentLabel}</div>
                   </div>
                   {autoCompactSupported ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="xs"
-                      className="w-full justify-center"
-                      onClick={handleCompactContext}
-                      disabled={!canCompactContext || isCompactingContext}
-                    >
-                      {isCompactingContext
-                        ? t("toolbar.compacting")
-                        : t("toolbar.compactNow")}
-                    </Button>
+                    <div className="space-y-1">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="xs"
+                        className="w-full justify-center"
+                        onClick={handleCompactContext}
+                        disabled={!canCompactContext || isCompactingContext}
+                      >
+                        {isCompactingContext
+                          ? t("toolbar.compacting")
+                          : t("toolbar.compactNow")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        className="w-full justify-center text-muted-foreground"
+                        onClick={handleOpenAutoCompactSettings}
+                      >
+                        {t("toolbar.settings")}
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
               </PopoverContent>

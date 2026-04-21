@@ -52,13 +52,11 @@ export function ChatInput({
   onCreateProject,
   contextTokens = 0,
   contextLimit = 0,
+  isContextUsageReady,
   onCompactContext,
   canCompactContext = false,
   isCompactingContext = false,
   supportsAutoCompactContext,
-  autoCompactThreshold,
-  isAutoCompactThresholdHydrated = false,
-  onAutoCompactThresholdChange,
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
@@ -458,15 +456,11 @@ export function ChatInput({
                 onCreateProject={onCreateProject}
                 contextTokens={contextTokens}
                 contextLimit={contextLimit}
+                isContextUsageReady={isContextUsageReady}
                 onCompactContext={onCompactContext}
                 canCompactContext={canCompactContext}
                 isCompactingContext={isCompactingContext}
                 supportsAutoCompactContext={supportsAutoCompactContext}
-                autoCompactThreshold={autoCompactThreshold}
-                isAutoCompactThresholdHydrated={
-                  isAutoCompactThresholdHydrated
-                }
-                onAutoCompactThresholdChange={onAutoCompactThresholdChange}
                 canSend={canSend}
                 isStreaming={isStreaming}
                 hasQueuedMessage={hasQueuedMessage}

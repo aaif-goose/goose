@@ -84,8 +84,10 @@ export function useChatSessionController({
   const {
     autoCompactThreshold,
     isHydrated: isAutoCompactThresholdHydrated,
-    setAutoCompactThreshold,
   } = useAutoCompactPreferences();
+  const hasContextUsageSnapshot = useChatStore(
+    (s) => s.sessionStateById[stateSessionId]?.hasUsageSnapshot ?? false,
+  );
   const selectedProvider =
     pendingProviderId ??
     session?.providerId ??
@@ -261,6 +263,30 @@ export function useChatSessionController({
     selectedProvider,
     sessionId,
   ]);
+
+  const handleProviderChangeWithContextReset = useCallback(
+    (providerId: string) => {
+      if (providerId === selectedProvider) {
+        return;
+      }
+
+      useChatStore.getState().resetTokenState(stateSessionId);
+      handleProviderChange(providerId);
+    },
+    [handleProviderChange, selectedProvider, stateSessionId],
+  );
+
+  const handleModelChangeWithContextReset = useCallback(
+    (modelId: string) => {
+      if (modelId === effectiveModelSelection?.id) {
+        return;
+      }
+
+      useChatStore.getState().resetTokenState(stateSessionId);
+      handleModelChange(modelId);
+    },
+    [effectiveModelSelection?.id, handleModelChange, stateSessionId],
+  );
 
   const handleProjectChange = useCallback(
     (projectId: string | null) => {
@@ -700,9 +726,8 @@ export function useChatSessionController({
       supportsAutoCompactContext && messages.length > 0 && chatState === "idle",
     isCompactingContext,
     supportsAutoCompactContext,
-    autoCompactThreshold,
-    isAutoCompactThresholdHydrated,
-    handleAutoCompactThresholdChange: setAutoCompactThreshold,
+    isContextUsageReady:
+      hasContextUsageSnapshot && resolvedTokenState.contextLimit > 0,
     isLoadingHistory,
     queue,
     handleSend,
@@ -718,13 +743,13 @@ export function useChatSessionController({
     pickerAgents,
     providersLoading,
     selectedProvider: selectedAgentId,
-    handleProviderChange,
+    handleProviderChange: handleProviderChangeWithContextReset,
     currentModelId: effectiveModelSelection?.id ?? null,
     currentModelName: effectiveModelSelection?.name ?? null,
     availableModels,
     modelsLoading,
     modelStatusMessage,
-    handleModelChange,
+    handleModelChange: handleModelChangeWithContextReset,
     selectedProjectId: effectiveProjectId,
     availableProjects,
     handleProjectChange,

@@ -65,6 +65,7 @@ const mockController = {
   availableProjects: [],
   handleProjectChange: vi.fn(),
   tokenState: { accumulatedTotal: 0, contextLimit: 0 },
+  isContextUsageReady: false,
 };
 
 vi.mock("@/shared/api/acp", () => ({

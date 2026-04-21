@@ -142,17 +142,11 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
             }
             contextTokens={controller.tokenState.accumulatedTotal}
             contextLimit={controller.tokenState.contextLimit}
+            isContextUsageReady={controller.isContextUsageReady}
             onCompactContext={controller.compactConversation}
             canCompactContext={controller.canCompactContext}
             isCompactingContext={controller.isCompactingContext}
             supportsAutoCompactContext={controller.supportsAutoCompactContext}
-            autoCompactThreshold={controller.autoCompactThreshold}
-            isAutoCompactThresholdHydrated={
-              controller.isAutoCompactThresholdHydrated
-            }
-            onAutoCompactThresholdChange={
-              controller.handleAutoCompactThresholdChange
-            }
           />
         </div>
 

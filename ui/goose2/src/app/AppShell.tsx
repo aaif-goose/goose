@@ -6,6 +6,7 @@ import { archiveProject } from "@/features/projects/api/projects";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { SettingsModal } from "@/features/settings/ui/SettingsModal";
 import type { SectionId } from "@/features/settings/ui/SettingsModal";
+import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import { TopBar } from "./ui/TopBar";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import {
@@ -29,6 +30,7 @@ import {
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { perfLog } from "@/shared/lib/perfLog";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
+import { sanitizeReplayMessages } from "@/features/chat/lib/replaySanitizer";
 
 export type AppView =
   | "home"
@@ -43,6 +45,18 @@ const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 380;
 const SIDEBAR_SNAP_COLLAPSE_THRESHOLD = 100;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
+const SETTINGS_SECTIONS = new Set<SectionId>([
+  "appearance",
+  "providers",
+  "compaction",
+  "extensions",
+  "voice",
+  "general",
+  "projects",
+  "chats",
+  "doctor",
+  "about",
+]);
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
@@ -104,14 +118,15 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
+      const replayMessages = buffer ? sanitizeReplayMessages(buffer) : undefined;
       const replayStats = getReplayPerf(sessionId);
       clearReplayPerf(sessionId);
-      if (buffer && buffer.length > 0) {
-        useChatStore.getState().setMessages(sessionId, buffer);
+      if (replayMessages) {
+        useChatStore.getState().setMessages(sessionId, replayMessages);
       }
       const t2 = performance.now();
       perfLog(
-        `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${buffer?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,
+        `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${replayMessages?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,
       );
     } catch (err) {
       console.error("Failed to load session messages:", err);
@@ -360,6 +375,30 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     setSettingsInitialSection(section);
     setSettingsOpen(true);
   }, []);
+
+  useEffect(() => {
+    const handleOpenSettingsEvent = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: string }>).detail
+        ?.section;
+      if (section && SETTINGS_SECTIONS.has(section as SectionId)) {
+        openSettings(section as SectionId);
+        return;
+      }
+
+      openSettings();
+    };
+
+    window.addEventListener(
+      OPEN_SETTINGS_EVENT,
+      handleOpenSettingsEvent as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        OPEN_SETTINGS_EVENT,
+        handleOpenSettingsEvent as EventListener,
+      );
+    };
+  }, [openSettings]);
 
   const handleArchiveChat = useCallback(
     async (sessionId: string) => {

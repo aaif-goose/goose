@@ -59,9 +59,11 @@ describe("chatStore", () => {
     expect(runtime.chatState).toBe("streaming");
     expect(runtime.streamingMessageId).toBe("stream-1");
     expect(runtime.tokenState.totalTokens).toBe(20);
+    expect(runtime.hasUsageSnapshot).toBe(true);
 
     expect(getRuntime("s2").chatState).toBe("idle");
     expect(getRuntime("s2").tokenState).toEqual(INITIAL_TOKEN_STATE);
+    expect(getRuntime("s2").hasUsageSnapshot).toBe(false);
   });
 
   it("appends streamed text only within the targeted session", () => {
