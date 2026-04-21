@@ -10,6 +10,7 @@ import {
 } from "../stores/chatSessionStore";
 import { useAgentModelPickerState } from "./useAgentModelPickerState";
 import {
+  clearStoredModelPreference,
   getStoredModelPreference,
   setStoredModelPreference,
 } from "../lib/modelPreferences";
@@ -171,13 +172,14 @@ export function useResolvedAgentModelPicker({
       const modelId = model.id;
       const modelName = model.displayName ?? model.name ?? model.id;
       const nextProviderId = model.providerId ?? selectedProvider;
-      setStoredModelPreference(selectedAgentId, {
+      const nextStoredModelPreference = {
         modelId,
         modelName,
         providerId: nextProviderId,
-      });
+      };
 
       if (!sessionId) {
+        setStoredModelPreference(selectedAgentId, nextStoredModelPreference);
         if (nextProviderId && nextProviderId !== selectedProvider) {
           setPendingProviderId(nextProviderId);
           setGlobalSelectedProvider(nextProviderId);
@@ -199,6 +201,8 @@ export function useResolvedAgentModelPicker({
         return;
       }
 
+      const previousStoredModelPreference =
+        getStoredModelPreference(selectedAgentId);
       const previousProviderId = session.providerId;
       const previousModelId = session.modelId;
       const previousModelName = session.modelName;
@@ -223,10 +227,19 @@ export function useResolvedAgentModelPicker({
             await prepareSelectedProvider(nextProviderId);
           }
           await acpSetModel(sessionId, modelId);
+          setStoredModelPreference(selectedAgentId, nextStoredModelPreference);
         } catch (error) {
           console.error("Failed to set model:", error);
           if (providerChanged && previousProviderId) {
             setGlobalSelectedProvider(previousProviderId);
+          }
+          if (previousStoredModelPreference) {
+            setStoredModelPreference(
+              selectedAgentId,
+              previousStoredModelPreference,
+            );
+          } else {
+            clearStoredModelPreference(selectedAgentId);
           }
           useChatSessionStore.getState().updateSession(sessionId, {
             providerId: previousProviderId,

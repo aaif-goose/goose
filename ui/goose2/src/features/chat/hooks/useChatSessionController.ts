@@ -535,10 +535,6 @@ export function useChatSessionController({
         if (hasPendingProject) {
           patch.projectId = nextProjectId ?? null;
         }
-        if (hasPendingModel) {
-          patch.modelId = pendingModelSelection?.id;
-          patch.modelName = pendingModelSelection?.name;
-        }
 
         useChatSessionStore.getState().updateSession(sessionId, patch);
 

@@ -24,7 +24,7 @@ import {
   persistHomeSessionId,
 } from "./lib/homeSessionStorage";
 import { AppShellContent } from "./ui/AppShellContent";
-import { acpPrepareSession } from "@/shared/api/acp";
+import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
   clearReplayBuffer,
   getAndDeleteReplayBuffer,
@@ -208,8 +208,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         const workingDir = await resolveSessionCwd(project);
         sessionStore.updateSession(homeSession.id, {
           providerId: sessionModelPreference.providerId,
-          modelId: sessionModelPreference.modelId,
-          modelName: sessionModelPreference.modelName,
         });
         await acpPrepareSession(
           homeSession.id,
@@ -219,6 +217,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             personaId: homeSession.personaId,
           },
         );
+        if (sessionModelPreference.modelId) {
+          await acpSetModel(homeSession.id, sessionModelPreference.modelId);
+          sessionStore.updateSession(homeSession.id, {
+            modelId: sessionModelPreference.modelId,
+            modelName: sessionModelPreference.modelName,
+          });
+        }
         return homeSession;
       }
 

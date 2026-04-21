@@ -213,6 +213,50 @@ describe("useChatSessionController", () => {
     });
   });
 
+  it("restores the previous stored model preference when setting a model fails", async () => {
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        goose: {
+          modelId: "gpt-4o",
+          modelName: "GPT-4o",
+          providerId: "openai",
+        },
+      }),
+    );
+    mockAcpSetModel.mockRejectedValueOnce(new Error("set model failed"));
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: "session-1" }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("claude-sonnet-4");
+    });
+
+    await waitFor(() => {
+      expect(
+        useChatSessionStore.getState().getSession("session-1"),
+      ).toMatchObject({
+        providerId: "openai",
+        modelId: "gpt-4o",
+        modelName: "GPT-4o",
+      });
+    });
+
+    expect(
+      JSON.parse(
+        window.localStorage.getItem("goose:preferredModelsByAgent") ?? "{}",
+      ),
+    ).toEqual({
+      goose: {
+        modelId: "gpt-4o",
+        modelName: "GPT-4o",
+        providerId: "openai",
+      },
+    });
+  });
+
   it("shows the stored explicit model for new chats", async () => {
     window.localStorage.setItem(
       "goose:preferredModelsByAgent",
@@ -263,5 +307,59 @@ describe("useChatSessionController", () => {
       expect(result.current.currentModelId).toBe("goose-claude-4-6-opus");
     });
     expect(result.current.currentModelName).toBe("Claude 4.6 Opus");
+  });
+
+  it("applies the pending Home model to ACP when a real session becomes active", async () => {
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string | null }) =>
+        useChatSessionController({ sessionId }),
+      {
+        initialProps: { sessionId: null as string | null },
+      },
+    );
+
+    act(() => {
+      result.current.handleModelChange("claude-sonnet-4");
+    });
+
+    useChatSessionStore.setState((state) => ({
+      sessions: [
+        {
+          id: "session-2",
+          title: "Chat",
+          providerId: "openai",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        ...state.sessions,
+      ],
+    }));
+
+    rerender({ sessionId: "session-2" });
+
+    await waitFor(() => {
+      expect(mockAcpPrepareSession).toHaveBeenCalledWith(
+        "session-2",
+        "anthropic",
+        "/tmp/project",
+        { personaId: undefined },
+      );
+    });
+
+    await waitFor(() => {
+      expect(mockAcpSetModel).toHaveBeenCalledWith(
+        "session-2",
+        "claude-sonnet-4",
+      );
+    });
+
+    expect(
+      useChatSessionStore.getState().getSession("session-2"),
+    ).toMatchObject({
+      providerId: "anthropic",
+      modelId: "claude-sonnet-4",
+      modelName: "Claude Sonnet 4",
+    });
   });
 });
