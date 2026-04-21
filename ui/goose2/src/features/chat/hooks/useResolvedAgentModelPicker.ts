@@ -17,6 +17,7 @@ import {
 
 const GOOSE_PROVIDER_CONFIG_KEY = "GOOSE_PROVIDER";
 const GOOSE_MODEL_CONFIG_KEY = "GOOSE_MODEL";
+const MODEL_ALIAS_IDS = new Set(["current", "default"]);
 
 export type PreferredModelSelection = {
   id: string;
@@ -40,6 +41,10 @@ interface UseResolvedAgentModelPickerOptions {
     providerId: string,
     modelSelection?: PreferredModelSelection | null,
   ) => Promise<void>;
+}
+
+function isModelAlias(modelId?: string | null): boolean {
+  return modelId != null && MODEL_ALIAS_IDS.has(modelId);
 }
 
 export function useResolvedAgentModelPicker({
@@ -90,6 +95,30 @@ export function useResolvedAgentModelPicker({
       const inventoryEntry = getProviderInventoryEntry(agentId);
       if (!inventoryEntry?.defaultModel) {
         return null;
+      }
+
+      const resolvedInventoryModel =
+        inventoryEntry.models.find(
+          (model) =>
+            model.id === inventoryEntry.defaultModel && !isModelAlias(model.id),
+        ) ??
+        inventoryEntry.models.find((model) => model.recommended) ??
+        inventoryEntry.models.find((model) => !isModelAlias(model.id)) ??
+        inventoryEntry.models.find(
+          (model) => model.id === inventoryEntry.defaultModel,
+        ) ??
+        inventoryEntry.models[0];
+
+      if (resolvedInventoryModel) {
+        return {
+          id: resolvedInventoryModel.id,
+          name: resolvedInventoryModel.name,
+          providerId:
+            inventoryEntry.providerId === agentId
+              ? inventoryEntry.providerId
+              : fallbackProviderId,
+          source: "default" as const,
+        };
       }
 
       return {
@@ -362,17 +391,49 @@ export function useResolvedAgentModelPicker({
       storedModelPreference,
     ]);
 
+  const sessionModelSelection = useMemo<PreferredModelSelection | null>(() => {
+    if (!session?.modelId) {
+      return null;
+    }
+
+    const matchingSessionModel =
+      availableModels.find(
+        (model) =>
+          model.id === session.modelId &&
+          (!session.providerId ||
+            !model.providerId ||
+            model.providerId === session.providerId),
+      ) ?? null;
+
+    if (matchingSessionModel) {
+      return {
+        id: matchingSessionModel.id,
+        name:
+          matchingSessionModel.displayName ??
+          matchingSessionModel.name ??
+          session.modelName ??
+          session.modelId,
+        providerId: matchingSessionModel.providerId ?? session.providerId,
+        source: "explicit",
+      };
+    }
+
+    if (isModelAlias(session.modelId)) {
+      return null;
+    }
+
+    return {
+      id: session.modelId,
+      name: session.modelName ?? session.modelId,
+      providerId: session.providerId,
+      source: "explicit",
+    };
+  }, [availableModels, session]);
+
   const effectiveModelSelection =
     pendingModelSelection !== undefined
       ? pendingModelSelection
-      : session?.modelId
-        ? {
-            id: session.modelId,
-            name: session.modelName ?? session.modelId,
-            providerId: session.providerId,
-            source: "explicit" as const,
-          }
-        : preferredModelSelection;
+      : (sessionModelSelection ?? preferredModelSelection);
 
   return {
     selectedAgentId,
