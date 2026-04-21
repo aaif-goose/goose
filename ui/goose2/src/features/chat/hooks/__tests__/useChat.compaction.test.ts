@@ -123,7 +123,7 @@ describe("useChat compaction", () => {
 
     const { result } = renderHook(() => useChat("session-1"));
 
-    let compactPromise!: Promise<void>;
+    let compactPromise!: Promise<unknown>;
     await act(async () => {
       compactPromise = result.current.compactConversation();
       await Promise.resolve();
@@ -170,8 +170,8 @@ describe("useChat compaction", () => {
 
     const { result } = renderHook(() => useChat("session-1"));
 
-    let firstCompact!: Promise<void>;
-    let secondCompact!: Promise<void>;
+    let firstCompact!: Promise<unknown>;
+    let secondCompact!: Promise<unknown>;
     await act(async () => {
       firstCompact = result.current.compactConversation();
       secondCompact = result.current.compactConversation();

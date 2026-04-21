@@ -57,7 +57,7 @@ const TEST_PERSONAS: Persona[] = [
 function StatefulChatInput({
   onSend = vi.fn(),
 }: {
-  onSend?: (text: string, personaId?: string) => void;
+  onSend?: (text: string, personaId?: string) => boolean | Promise<boolean>;
 }) {
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(
     "builtin-solo",
@@ -69,6 +69,24 @@ function StatefulChatInput({
       personas={TEST_PERSONAS}
       selectedPersonaId={selectedPersonaId}
       onPersonaChange={setSelectedPersonaId}
+    />
+  );
+}
+
+function StatefulAutoCompactChatInput() {
+  const [threshold, setThreshold] = useState(0.8);
+
+  return (
+    <ChatInput
+      onSend={vi.fn()}
+      selectedProvider="goose"
+      contextTokens={1536}
+      contextLimit={8192}
+      autoCompactThreshold={threshold}
+      isAutoCompactThresholdHydrated
+      onAutoCompactThresholdChange={async (value) => {
+        setThreshold(value);
+      }}
     />
   );
 }
@@ -287,6 +305,34 @@ describe("ChatInput", () => {
     await user.click(screen.getByRole("button", { name: "Compact" }));
 
     expect(onCompactContext).toHaveBeenCalledOnce();
+  });
+
+  it("edits the auto-compact threshold from the context usage popover", async () => {
+    const user = userEvent.setup();
+
+    render(<StatefulAutoCompactChatInput />);
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+
+    expect(screen.getByText("Auto compact at 80%")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /edit auto-compact threshold/i,
+      }),
+    );
+    const thresholdInput = screen.getByRole("spinbutton", {
+      name: /auto compact at/i,
+    });
+    await user.clear(thresholdInput);
+    await user.type(thresholdInput, "90");
+    await user.click(
+      screen.getByRole("button", {
+        name: /save auto-compact threshold/i,
+      }),
+    );
+
+    expect(await screen.findByText("Auto compact at 90%")).toBeInTheDocument();
   });
 
   it("hides the context usage control when the context limit is unavailable", () => {

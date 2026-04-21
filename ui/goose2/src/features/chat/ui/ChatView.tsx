@@ -103,7 +103,9 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
 
           <ChatInput
             onSend={controller.handleSend}
-            disabled={controller.projectMetadataPending}
+            disabled={
+              controller.projectMetadataPending || controller.isCompactingContext
+            }
             queuedMessage={controller.queue.queuedMessage}
             onDismissQueue={controller.queue.dismiss}
             initialValue={controller.draftValue}
@@ -140,6 +142,17 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
             }
             contextTokens={controller.tokenState.accumulatedTotal}
             contextLimit={controller.tokenState.contextLimit}
+            onCompactContext={controller.compactConversation}
+            canCompactContext={controller.canCompactContext}
+            isCompactingContext={controller.isCompactingContext}
+            supportsAutoCompactContext={controller.supportsAutoCompactContext}
+            autoCompactThreshold={controller.autoCompactThreshold}
+            isAutoCompactThresholdHydrated={
+              controller.isAutoCompactThresholdHydrated
+            }
+            onAutoCompactThresholdChange={
+              controller.handleAutoCompactThresholdChange
+            }
           />
         </div>
 

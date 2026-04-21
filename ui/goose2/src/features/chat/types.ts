@@ -25,7 +25,7 @@ export interface ChatInputProps {
     text: string,
     personaId?: string,
     attachments?: ChatAttachmentDraft[],
-  ) => void;
+  ) => boolean | Promise<boolean>;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
@@ -56,7 +56,13 @@ export interface ChatInputProps {
   }) => void;
   contextTokens?: number;
   contextLimit?: number;
-  onCompactContext?: () => void | Promise<void>;
+  onCompactContext?: () => void | Promise<unknown>;
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
+  supportsAutoCompactContext?: boolean;
+  autoCompactThreshold?: number;
+  isAutoCompactThresholdHydrated?: boolean;
+  onAutoCompactThresholdChange?: (
+    threshold: number,
+  ) => void | Promise<void>;
 }

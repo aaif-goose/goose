@@ -7,6 +7,8 @@ import { useChatSessionStore } from "../../stores/chatSessionStore";
 
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
+const mockSendMessage = vi.fn();
+const mockCompactConversation = vi.fn();
 const mockSetSelectedProvider = vi.fn();
 const mockResolveSessionCwd = vi.fn();
 const mockGooseConfigRead = vi.fn();
@@ -22,6 +24,17 @@ const mockPickerState = {
   modelsLoading: false,
   modelStatusMessage: null as string | null,
 };
+const mockSetAutoCompactThreshold = vi.fn();
+const INITIAL_TOKEN_STATE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  accumulatedInput: 0,
+  accumulatedOutput: 0,
+  accumulatedTotal: 0,
+  contextLimit: 0,
+};
+let mockTokenState = { ...INITIAL_TOKEN_STATE };
 
 vi.mock("@/shared/api/acp", () => ({
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
@@ -44,8 +57,10 @@ vi.mock("../useChat", () => ({
   useChat: () => ({
     messages: [],
     chatState: "idle",
-    tokenState: null,
-    sendMessage: vi.fn(),
+    tokenState: mockTokenState,
+    sendMessage: (...args: unknown[]) => mockSendMessage(...args),
+    compactConversation: (...args: unknown[]) =>
+      mockCompactConversation(...args),
     stopStreaming: vi.fn(),
     streamingMessageId: null,
   }),
@@ -55,6 +70,15 @@ vi.mock("../useMessageQueue", () => ({
   useMessageQueue: () => ({
     queuedMessage: null,
     enqueue: vi.fn(),
+  }),
+}));
+
+vi.mock("../useAutoCompactPreferences", () => ({
+  useAutoCompactPreferences: () => ({
+    autoCompactThreshold: 0.8,
+    isHydrated: true,
+    setAutoCompactThreshold: (...args: unknown[]) =>
+      mockSetAutoCompactThreshold(...args),
   }),
 }));
 
@@ -114,6 +138,7 @@ describe("useChatSessionController", () => {
     window.localStorage.clear();
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
+    mockCompactConversation.mockResolvedValue("completed");
     mockResolveSessionCwd.mockResolvedValue("/tmp/project");
     mockGooseConfigRead.mockResolvedValue({ value: null });
     mockUseProviderInventory.mockReturnValue({
@@ -123,6 +148,7 @@ describe("useChatSessionController", () => {
     mockPickerState.availableModels = [];
     mockPickerState.modelsLoading = false;
     mockPickerState.modelStatusMessage = null;
+    mockTokenState = { ...INITIAL_TOKEN_STATE };
 
     useAgentStore.setState({
       personas: [],
@@ -212,6 +238,7 @@ describe("useChatSessionController", () => {
       modelName: "Claude Sonnet 4",
     });
   });
+<<<<<<< HEAD
 
   it("restores the previous stored model preference when setting a model fails", async () => {
     window.localStorage.setItem(
@@ -424,5 +451,34 @@ describe("useChatSessionController", () => {
     expect(
       window.localStorage.getItem("goose:preferredModelsByAgent"),
     ).toBeNull();
+  });
+
+  it("auto-compacts goose sessions before sending when the threshold is exceeded", async () => {
+    mockTokenState = {
+      ...INITIAL_TOKEN_STATE,
+      accumulatedTotal: 8_500,
+      contextLimit: 10_000,
+    };
+    useChatSessionStore.getState().updateSession("session-1", {
+      providerId: "goose",
+    });
+
+    const { result } = renderHook(() =>
+      useChatSessionController({ sessionId: "session-1" }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("hello");
+    });
+
+    expect(mockCompactConversation).toHaveBeenCalledOnce();
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "hello",
+      undefined,
+      undefined,
+    );
+    expect(mockCompactConversation.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSendMessage.mock.invocationCallOrder[0],
+    );
   });
 });

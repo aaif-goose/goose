@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
+import { INITIAL_TOKEN_STATE } from "@/shared/types/chat";
 import { useChat } from "./useChat";
+import { useAutoCompactPreferences } from "./useAutoCompactPreferences";
 import { useMessageQueue } from "./useMessageQueue";
 import { useChatStore } from "../stores/chatStore";
 import { useChatSessionStore } from "../stores/chatSessionStore";
@@ -15,6 +17,10 @@ import {
   resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
 import { setStoredModelPreference } from "../lib/modelPreferences";
+import {
+  shouldAutoCompactContext,
+  supportsGooseAutoCompaction,
+} from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
@@ -75,6 +81,11 @@ export function useChatSessionController({
       : undefined,
   );
   const project = storedProject ?? null;
+  const {
+    autoCompactThreshold,
+    isHydrated: isAutoCompactThresholdHydrated,
+    setAutoCompactThreshold,
+  } = useAutoCompactPreferences();
   const selectedProvider =
     pendingProviderId ??
     session?.providerId ??
@@ -356,6 +367,7 @@ export function useChatSessionController({
     chatState,
     tokenState,
     sendMessage,
+    compactConversation,
     stopStreaming,
     streamingMessageId,
   } = useChat(
@@ -371,6 +383,55 @@ export function useChatSessionController({
         : undefined,
     },
   );
+  const resolvedTokenState = tokenState ?? INITIAL_TOKEN_STATE;
+  const supportsAutoCompactContext =
+    supportsGooseAutoCompaction(selectedProvider);
+  const isCompactingContext = chatState === "compacting";
+  const canAutoCompactBeforeSend = useCallback(() => {
+    if (
+      !sessionId ||
+      !supportsAutoCompactContext ||
+      !isAutoCompactThresholdHydrated
+    ) {
+      return false;
+    }
+
+    const liveRuntime = useChatStore.getState().getSessionRuntime(stateSessionId);
+    return shouldAutoCompactContext(
+      liveRuntime.tokenState.accumulatedTotal,
+      liveRuntime.tokenState.contextLimit,
+      autoCompactThreshold,
+    );
+  }, [
+    autoCompactThreshold,
+    isAutoCompactThresholdHydrated,
+    sessionId,
+    stateSessionId,
+    supportsAutoCompactContext,
+  ]);
+  const sendWithAutoCompact = useCallback(
+    (
+      text: string,
+      overridePersona?: { id: string; name?: string },
+      attachments?: ChatAttachmentDraft[],
+    ) => {
+      if (!canAutoCompactBeforeSend()) {
+        void sendMessage(text, overridePersona, attachments);
+        return true;
+      }
+
+      return (async () => {
+        const compactionResult = await compactConversation();
+        if (compactionResult !== "completed") {
+          return false;
+        }
+
+        void sendMessage(text, overridePersona, attachments);
+        return true;
+      })();
+    },
+    [canAutoCompactBeforeSend, compactConversation, sendMessage],
+  );
   const isLoadingHistory = useChatStore((s) =>
     sessionId
       ? s.loadingSessionIds.has(sessionId) &&
@@ -380,11 +441,12 @@ export function useChatSessionController({
   const deferredSend = useRef<{
     text: string;
     attachments?: ChatAttachmentDraft[];
+    resolve?: (accepted: boolean) => void;
   } | null>(null);
   const queue = useMessageQueue(
     stateSessionId,
     sessionId ? chatState : "thinking",
-    sendMessage,
+    sendWithAutoCompact,
   );
   const chatStore = useChatStore();
 
@@ -394,7 +456,7 @@ export function useChatSessionController({
         if (!queue.queuedMessage) {
           queue.enqueue(text, personaId, attachments);
         }
-        return;
+        return true;
       }
 
       if (personaId && personaId !== selectedPersonaId) {
@@ -417,16 +479,17 @@ export function useChatSessionController({
           });
         }
         handlePersonaChange(personaId);
-        deferredSend.current = { text, attachments };
-        return;
+        return new Promise<boolean>((resolve) => {
+          deferredSend.current = { text, attachments, resolve };
+        });
       }
 
       if (chatState !== "idle" && !queue.queuedMessage) {
         queue.enqueue(text, personaId, attachments);
-        return;
+        return true;
       }
 
-      sendMessage(text, undefined, attachments);
+      return sendWithAutoCompact(text, undefined, attachments);
     },
     [
       chatState,
@@ -436,17 +499,32 @@ export function useChatSessionController({
       queue,
       sessionId,
       selectedPersonaId,
-      sendMessage,
+      sendWithAutoCompact,
     ],
   );
 
   useEffect(() => {
     if (deferredSend.current && selectedPersona) {
-      const { text, attachments } = deferredSend.current;
+      const { text, attachments, resolve } = deferredSend.current;
       deferredSend.current = null;
-      sendMessage(text, undefined, attachments);
+      const sendResult = sendWithAutoCompact(text, undefined, attachments);
+      if (sendResult === false) {
+        useChatStore.getState().setDraft(stateSessionId, text);
+        resolve?.(false);
+        return;
+      }
+      if (sendResult instanceof Promise) {
+        void sendResult.then((accepted) => {
+          if (accepted === false) {
+            useChatStore.getState().setDraft(stateSessionId, text);
+          }
+          resolve?.(accepted !== false);
+        });
+        return;
+      }
+      resolve?.(true);
     }
-  }, [selectedPersona, sendMessage]);
+  }, [selectedPersona, sendWithAutoCompact, stateSessionId]);
 
   const handleCreatePersona = useCallback(() => {
     useAgentStore.getState().openPersonaEditor();
@@ -614,9 +692,17 @@ export function useChatSessionController({
     allowedArtifactRoots,
     messages,
     chatState,
-    tokenState,
+    tokenState: resolvedTokenState,
     stopStreaming,
     streamingMessageId,
+    compactConversation,
+    canCompactContext:
+      supportsAutoCompactContext && messages.length > 0 && chatState === "idle",
+    isCompactingContext,
+    supportsAutoCompactContext,
+    autoCompactThreshold,
+    isAutoCompactThresholdHydrated,
+    handleAutoCompactThresholdChange: setAutoCompactThreshold,
     isLoadingHistory,
     queue,
     handleSend,

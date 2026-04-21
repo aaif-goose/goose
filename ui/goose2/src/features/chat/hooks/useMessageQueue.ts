@@ -1,7 +1,32 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useMemo, useRef } from "react";
 import type { ChatState } from "@/shared/types/chat";
+import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useChatStore } from "../stores/chatStore";
+
+function getQueuedMessageKey(
+  queuedMessage: {
+    text: string;
+    personaId?: string;
+    attachments?: ChatAttachmentDraft[];
+  } | null,
+): string | null {
+  if (!queuedMessage) {
+    return null;
+  }
+
+  return JSON.stringify({
+    text: queuedMessage.text,
+    personaId: queuedMessage.personaId ?? null,
+    attachments:
+      queuedMessage.attachments?.map((attachment) => ({
+        id: attachment.id,
+        kind: attachment.kind,
+        name: attachment.name,
+        path: "path" in attachment ? attachment.path ?? null : null,
+      })) ?? [],
+  });
+}
 
 /**
  * Single-slot message queue that holds one pending message while the agent is
@@ -18,19 +43,65 @@ export function useMessageQueue(
     text: string,
     overridePersona?: { id: string; name?: string },
     attachments?: ChatAttachmentDraft[],
-  ) => void,
+  ) => boolean | Promise<boolean>,
 ) {
   const queuedMessage = useChatStore(
     (s) => s.queuedMessageBySession[sessionId] ?? null,
   );
+  const failedQueueKeyRef = useRef<string | null>(null);
+  const queuedMessageKey = useMemo(
+    () => getQueuedMessageKey(queuedMessage),
+    [queuedMessage],
+  );
 
   useEffect(() => {
-    if (chatState === "idle" && queuedMessage) {
-      const { text, personaId, attachments } = queuedMessage;
-      useChatStore.getState().dismissQueuedMessage(sessionId);
-      sendMessage(text, personaId ? { id: personaId } : undefined, attachments);
+    if (queuedMessageKey !== failedQueueKeyRef.current) {
+      failedQueueKeyRef.current = null;
     }
-  }, [chatState, queuedMessage, sendMessage, sessionId]);
+  }, [queuedMessageKey]);
+
+  useEffect(() => {
+    if (
+      chatState !== "idle" ||
+      !queuedMessage ||
+      !queuedMessageKey ||
+      failedQueueKeyRef.current === queuedMessageKey
+    ) {
+      return;
+    }
+
+    const { text, personaId, attachments } = queuedMessage;
+    const sendResult = sendMessage(
+      text,
+      personaId ? { id: personaId } : undefined,
+      attachments,
+    );
+
+    const finalize = (accepted: boolean | undefined) => {
+      const latestQueuedMessage = useChatStore.getState().queuedMessageBySession[
+        sessionId
+      ] ?? null;
+      if (getQueuedMessageKey(latestQueuedMessage) !== queuedMessageKey) {
+        return;
+      }
+
+      if (accepted === false) {
+        failedQueueKeyRef.current = queuedMessageKey;
+        return;
+      }
+
+      failedQueueKeyRef.current = null;
+      useChatStore.getState().dismissQueuedMessage(sessionId);
+    };
+
+    if (isPromiseLike<boolean>(sendResult)) {
+      void sendResult
+        .then((accepted) => finalize(accepted))
+        .catch(() => finalize(false));
+    } else {
+      finalize(sendResult);
+    }
+  }, [chatState, queuedMessage, queuedMessageKey, sendMessage, sessionId]);
 
   const enqueue = useCallback(
     (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {

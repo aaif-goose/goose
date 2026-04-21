@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getDictationConfig } from "@/shared/api/dictation";
+import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import type { DictationProviderStatus } from "@/shared/types/dictation";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useDictationRecorder } from "./useDictationRecorder";
@@ -21,7 +22,7 @@ interface UseVoiceDictationOptions {
     text: string,
     personaId?: string,
     attachments?: ChatAttachmentDraft[],
-  ) => void;
+  ) => boolean | Promise<boolean>;
   resetTextarea: () => void;
   /**
    * When true, auto-submit on trigger phrase will NOT call `onSend`.
@@ -139,11 +140,35 @@ export function useVoiceDictation({
           textRef.current = merged;
           return;
         }
-        onSend(
+        const sendResult = onSend(
           merged.trim(),
           selectedPersonaId ?? undefined,
           attachments.length > 0 ? attachments : undefined,
         );
+        if (isPromiseLike<boolean>(sendResult)) {
+          void sendResult
+            .then((accepted) => {
+              if (accepted === false) {
+                setText(merged);
+                textRef.current = merged;
+                return;
+              }
+              setText("");
+              textRef.current = "";
+              clearAttachments();
+              resetTextarea();
+            })
+            .catch(() => {
+              setText(merged);
+              textRef.current = merged;
+            });
+          return;
+        }
+        if (sendResult === false) {
+          setText(merged);
+          textRef.current = merged;
+          return;
+        }
         setText("");
         textRef.current = "";
         clearAttachments();

@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/cn";
+import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
@@ -54,6 +55,10 @@ export function ChatInput({
   onCompactContext,
   canCompactContext = false,
   isCompactingContext = false,
+  supportsAutoCompactContext,
+  autoCompactThreshold,
+  isAutoCompactThresholdHydrated = false,
+  onAutoCompactThresholdChange,
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
@@ -152,7 +157,7 @@ export function ChatInput({
 
   useEffect(() => textareaRef.current?.focus(), []);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!canSend) {
       return;
     }
@@ -175,11 +180,17 @@ export function ChatInput({
       dictation.stopRecording({ flushPending: false });
     }
 
-    onSend(
+    const sendResult = onSend(
       text.trim(),
       selectedPersonaId ?? undefined,
       attachments.length > 0 ? attachments : undefined,
     );
+    const accepted = isPromiseLike<boolean>(sendResult)
+      ? await sendResult
+      : sendResult;
+    if (accepted === false) {
+      return;
+    }
     setText("");
     clearAttachments();
     if (textareaRef.current) {
@@ -219,7 +230,7 @@ export function ChatInput({
     }
     if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
       event.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
@@ -450,6 +461,12 @@ export function ChatInput({
                 onCompactContext={onCompactContext}
                 canCompactContext={canCompactContext}
                 isCompactingContext={isCompactingContext}
+                supportsAutoCompactContext={supportsAutoCompactContext}
+                autoCompactThreshold={autoCompactThreshold}
+                isAutoCompactThresholdHydrated={
+                  isAutoCompactThresholdHydrated
+                }
+                onAutoCompactThresholdChange={onAutoCompactThresholdChange}
                 canSend={canSend}
                 isStreaming={isStreaming}
                 hasQueuedMessage={hasQueuedMessage}

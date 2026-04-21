@@ -31,6 +31,7 @@ import {
 
 // TODO: Remove this fallback once goose2 has first-class /-commands.
 const MANUAL_COMPACT_TRIGGER = "/compact";
+type CompactConversationResult = "completed" | "failed" | "skipped";
 
 function isManualCompactCommandMessage(message: Message): boolean {
   if (message.role !== "user") {
@@ -387,14 +388,26 @@ export function useChat(
       .getState()
       .getSessionRuntime(sessionId).chatState;
     if (currentChatState !== "idle") {
-      return;
+      return "skipped" as CompactConversationResult;
     }
 
     const effectivePersonaInfo = resolvePersonaInfo();
-    const gooseSessionId = getGooseSessionId(
-      sessionId,
-      effectivePersonaInfo?.id,
-    );
+    let gooseSessionId = getGooseSessionId(sessionId, effectivePersonaInfo?.id);
+
+    if (!gooseSessionId) {
+      try {
+        await options?.ensurePrepared?.();
+      } catch (err) {
+        const errorMessage = getErrorMessage(err);
+        store.addMessage(
+          sessionId,
+          createSystemNotificationMessage(errorMessage, "error"),
+        );
+        store.setError(sessionId, errorMessage);
+        return "failed" as CompactConversationResult;
+      }
+      gooseSessionId = getGooseSessionId(sessionId, effectivePersonaInfo?.id);
+    }
 
     if (!gooseSessionId) {
       const errorMessage =
@@ -404,7 +417,7 @@ export function useChat(
         createSystemNotificationMessage(errorMessage, "error"),
       );
       store.setError(sessionId, errorMessage);
-      return;
+      return "failed" as CompactConversationResult;
     }
 
     store.setActiveSession(sessionId);
@@ -436,6 +449,7 @@ export function useChat(
           removeManualCompactCommandMessages(buffer),
         );
       }
+      return "completed" as CompactConversationResult;
     } catch (err) {
       clearReplayBuffer(sessionId);
       store.setSessionLoading(sessionId, false);
@@ -446,13 +460,14 @@ export function useChat(
         createSystemNotificationMessage(errorMessage, "error"),
       );
       store.setError(sessionId, errorMessage);
+      return "failed" as CompactConversationResult;
     } finally {
       store.setChatState(sessionId, "idle");
       store.setStreamingMessageId(sessionId, null);
       store.setPendingAssistantProvider(sessionId, null);
       store.setSessionLoading(sessionId, false);
     }
-  }, [getWorkingDir, resolvePersonaInfo, sessionId, store]);
+  }, [getWorkingDir, options, resolvePersonaInfo, sessionId, store]);
 
   const stopStreaming = stopGeneration;
 
