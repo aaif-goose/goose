@@ -66,17 +66,3 @@ export const GREETING_MESSAGES = [
 
 export const INITIAL_GREETING =
   GREETING_MESSAGES[Math.floor(Math.random() * GREETING_MESSAGES.length)]!;
-
-export const PERMISSION_LABELS: Record<string, string> = {
-  allow_once: "Allow once",
-  allow_always: "Always allow",
-  reject_once: "Reject once",
-  reject_always: "Always reject",
-};
-
-export const PERMISSION_KEYS: Record<string, string> = {
-  allow_once: "y",
-  allow_always: "a",
-  reject_once: "n",
-  reject_always: "r",
-};

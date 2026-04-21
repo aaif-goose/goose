@@ -7,8 +7,6 @@ import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import type {
   SessionNotification,
-  RequestPermissionRequest,
-  RequestPermissionResponse,
   Stream,
   ContentChunk,
   ToolCall,
@@ -20,7 +18,7 @@ import { resolveGooseBinary } from "@aaif/goose-sdk/node";
 import Onboarding from "./onboarding.js";
 import ConfigureScreen, { ConfigureIntent } from "./configure.js";
 import ExtensionsManager from "./extensions.js";
-import type { PendingPermission, ResponseItem, Turn } from "./types.js";
+import type { Turn } from "./types.js";
 import {
   emptyLine,
   renderUserPrompt,
@@ -38,7 +36,6 @@ import {
   TEAL,
   GOLD,
   TEXT_PRIMARY,
-  TEXT_SECONDARY,
   TEXT_DIM,
   RULE_COLOR,
 } from "./colors.js";
@@ -49,8 +46,6 @@ import {
   SENT_PREVIEW_LEN,
   GOOSE_FRAMES,
   INITIAL_GREETING,
-  PERMISSION_LABELS,
-  PERMISSION_KEYS,
 } from "./constants.js";
 
 const InputBar = React.memo(function InputBar({
@@ -222,8 +217,6 @@ function buildContentLines({
   loading,
   status,
   spinIdx,
-  pendingPermission,
-  permissionIdx,
   toolCallsExpanded,
   queuedMessages,
 }: {
@@ -233,8 +226,6 @@ function buildContentLines({
   loading: boolean;
   status: string;
   spinIdx: number;
-  pendingPermission: PendingPermission | null;
-  permissionIdx: number;
   toolCallsExpanded: boolean;
   queuedMessages: string[];
 }): React.ReactElement[] {
@@ -310,90 +301,8 @@ function buildContentLines({
     }
   }
 
-  // Loading indicator
-  if (loading && !pendingPermission) {
+  if (loading) {
     lines.push(...renderLoadingIndicator(status, spinIdx, safeWidth));
-  }
-
-  // Permission dialog
-  if (pendingPermission) {
-    const perm = pendingPermission;
-    const selectedIdx = permissionIdx;
-    const fullWidth = safeWidth;
-    const dialogWidth = Math.min(fullWidth - 2, 58);
-    const innerWidth = Math.max(dialogWidth - 4, 10);
-    const hRule = "─".repeat(Math.max(dialogWidth - 2, 0));
-    const permissionLines: React.ReactElement[] = [];
-
-    permissionLines.push(
-      emptyLine(
-        `pm-gap-${perm.toolTitle.slice(0, 10).replace(/[^a-zA-Z0-9]/g, "")}`,
-        fullWidth,
-      ),
-    );
-
-    permissionLines.push(
-      <Box key="pm-t" width={fullWidth} height={1}>
-        <Text color={GOLD}>╭{hRule}╮</Text>
-      </Box>,
-    );
-
-    const row = (key: string, content: React.ReactNode) => {
-      permissionLines.push(
-        <Box key={key} width={fullWidth} height={1}>
-          <Text color={GOLD}>│ </Text>
-          <Box width={innerWidth} height={1}>
-            {content}
-          </Box>
-          <Text color={GOLD}> │</Text>
-        </Box>,
-      );
-    };
-
-    row(
-      "pm-title",
-      <Text color={GOLD} bold>
-        🔒 Permission required
-      </Text>,
-    );
-    row("pm-g1", <Text> </Text>);
-    row(
-      "pm-tool",
-      <Text wrap="truncate-end" color={TEXT_PRIMARY}>
-        {perm.toolTitle}
-      </Text>,
-    );
-    row("pm-g2", <Text> </Text>);
-
-    for (let i = 0; i < perm.options.length; i++) {
-      const opt = perm.options[i]!;
-      const k = PERMISSION_KEYS[opt.kind] ?? String(i + 1);
-      const label = PERMISSION_LABELS[opt.kind] ?? opt.name;
-      const active = i === selectedIdx;
-      row(
-        `pm-o${i}`,
-        <>
-          <Text color={active ? GOLD : RULE_COLOR}>{active ? "▸ " : "  "}</Text>
-          <Text color={active ? TEXT_PRIMARY : TEXT_SECONDARY} bold={active}>
-            [{k}] {label}
-          </Text>
-        </>,
-      );
-    }
-
-    row("pm-g3", <Text> </Text>);
-    row(
-      "pm-help",
-      <Text color={TEXT_DIM}>↑↓ select · enter confirm · esc cancel</Text>,
-    );
-
-    permissionLines.push(
-      <Box key="pm-b" width={fullWidth} height={1}>
-        <Text color={GOLD}>╰{hRule}╯</Text>
-      </Box>,
-    );
-
-    lines.push(...permissionLines);
   }
 
   // Queued messages
@@ -552,9 +461,6 @@ function App({
   const [spinIdx, setSpinIdx] = useState(0);
   const [gooseFrame, setGooseFrame] = useState(0);
   const [bannerVisible, setBannerVisible] = useState(true);
-  const [pendingPermission, setPendingPermission] =
-    useState<PendingPermission | null>(null);
-  const [permissionIdx, setPermissionIdx] = useState(0);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
   const [viewTurnIdx, setViewTurnIdx] = useState(-1);
@@ -692,23 +598,6 @@ function App({
     setScrollOffset(0);
   }, []);
 
-  const resolvePermission = useCallback(
-    (option: { optionId: string } | "cancelled") => {
-      if (!pendingPermission) return;
-      const { resolve } = pendingPermission;
-      if (option === "cancelled") {
-        resolve({ outcome: { outcome: "cancelled" } });
-      } else {
-        resolve({
-          outcome: { outcome: "selected", optionId: option.optionId },
-        });
-      }
-      setPendingPermission(null);
-      setPermissionIdx(0);
-    },
-    [pendingPermission],
-  );
-
   const executePrompt = useCallback(
     async (text: string) => {
       const client = clientRef.current;
@@ -816,22 +705,6 @@ function App({
                 handleToolCallUpdate(update);
               }
             },
-            requestPermission: async (
-              params: RequestPermissionRequest,
-            ): Promise<RequestPermissionResponse> => {
-              return new Promise<RequestPermissionResponse>((resolve) => {
-                setPendingPermission({
-                  toolTitle: params.toolCall.title ?? "unknown tool",
-                  options: params.options.map((o) => ({
-                    optionId: o.optionId,
-                    name: o.name,
-                    kind: o.kind,
-                  })),
-                  resolve,
-                });
-                setPermissionIdx(0);
-              });
-            },
           }),
           serverConnection,
         );
@@ -912,15 +785,11 @@ function App({
   useInput(
     (ch, key) => {
       if (key.escape || (ch === "c" && key.ctrl)) {
-        if (pendingPermission) {
-          resolvePermission("cancelled");
-          return;
-        }
         if (key.escape && pastedFull !== null) return;
         exit();
       }
 
-      if (!loading && !pendingPermission && sessionIdRef.current) {
+      if (!loading && sessionIdRef.current) {
         if (key.ctrl && (ch === "p" || ch === "P")) {
           setOverlay({ screen: "configure", intent: "provider" });
           return;
@@ -939,42 +808,10 @@ function App({
         }
       }
 
-      if (pendingPermission) {
-        const opts = pendingPermission.options;
-        if (key.upArrow) {
-          setPermissionIdx((i) => (i - 1 + opts.length) % opts.length);
-          return;
-        }
-        if (key.downArrow) {
-          setPermissionIdx((i) => (i + 1) % opts.length);
-          return;
-        }
-        if (key.return) {
-          const sel = opts[permissionIdx];
-          if (sel) resolvePermission({ optionId: sel.optionId });
-          return;
-        }
-        const keyMap: Record<string, string> = {
-          y: "allow_once",
-          a: "allow_always",
-          n: "reject_once",
-          N: "reject_always",
-        };
-        const kind = keyMap[ch];
-        if (kind) {
-          const m = opts.find((o) => o.kind === kind);
-          if (m) resolvePermission({ optionId: m.optionId });
-        }
-        return;
-      }
-
       const viewingHistory =
         viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
       const multilineOwnsArrows =
-        !pendingPermission &&
-        !initialPrompt &&
-        !viewingHistory &&
-        pastedFull === null;
+        !initialPrompt && !viewingHistory && pastedFull === null;
 
       if (key.tab) {
         const idx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
@@ -1032,8 +869,7 @@ function App({
   const currentTurn = turns[effectiveTurnIdx];
   const isViewingHistory = viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
   const isLatest = !isViewingHistory;
-  const showInputBar =
-    !pendingPermission && !initialPrompt && !isViewingHistory;
+  const showInputBar = !initialPrompt && !isViewingHistory;
 
   const headerH = 2;
   const isPasteMode = pastedFull !== null;
@@ -1060,8 +896,6 @@ function App({
         loading: isLatest && loading,
         status,
         spinIdx,
-        pendingPermission: isLatest ? pendingPermission : null,
-        permissionIdx,
         toolCallsExpanded,
         queuedMessages: isLatest ? queuedMessages : [],
       }),
@@ -1073,8 +907,6 @@ function App({
       loading,
       status,
       spinIdx,
-      pendingPermission,
-      permissionIdx,
       toolCallsExpanded,
       queuedMessages,
     ],
@@ -1158,7 +990,6 @@ function App({
             status={status}
             loading={loading}
             spinIdx={spinIdx}
-            hasPendingPermission={!!pendingPermission}
             turnInfo={
               turns.length > 1
                 ? { current: effectiveTurnIdx + 1, total: turns.length }
@@ -1235,20 +1066,6 @@ async function runTextMode(serverConnection: Stream | string, prompt: string) {
               process.stdout.write(update.content.text);
             }
           }
-        },
-        requestPermission: async (
-          params: RequestPermissionRequest,
-        ): Promise<RequestPermissionResponse> => {
-          // Auto-reject in text mode
-          const rejectOption = params.options.find(
-            (o) => o.kind === "reject_once",
-          );
-          if (rejectOption) {
-            return {
-              outcome: { outcome: "selected", optionId: rejectOption.optionId },
-            };
-          }
-          return { outcome: { outcome: "cancelled" } };
         },
       }),
       serverConnection,
