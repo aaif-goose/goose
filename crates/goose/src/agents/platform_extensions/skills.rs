@@ -79,7 +79,10 @@ fn walk_files_recursively<F, G>(
         Err(_) => return,
     };
 
-    for entry in entries.flatten() {
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
         let path = entry.path();
         if path.is_dir() {
             if should_descend(&path) {

@@ -607,7 +607,7 @@ pub fn render_prompt_info(info: &PromptInfo) {
     println!();
 }
 
-pub fn render_skills(skills: &[goose::agents::platform_extensions::skills::Source]) {
+pub fn render_skills(skills: &[goose::agents::platform_extensions::Source]) {
     println!();
     if skills.is_empty() {
         println!("  {}", style("No skills found.").dim());
@@ -615,8 +615,8 @@ pub fn render_skills(skills: &[goose::agents::platform_extensions::skills::Sourc
         println!("  {}", style("Available skills:").green().bold());
         for skill in skills {
             println!("  - {}", style(&skill.name).cyan());
-            if let Some(desc) = &skill.description {
-                println!("    {}", style(desc).dim());
+            if !skill.description.is_empty() {
+                println!("    {}", style(&skill.description).dim());
             }
         }
     }

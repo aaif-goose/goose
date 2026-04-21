@@ -798,9 +798,10 @@ impl CliSession {
     }
 
     async fn handle_skills(&mut self) -> Result<()> {
-        let skills = goose::agents::platform_extensions::skills::list_installed_skills(
+        let mut skills = goose::agents::platform_extensions::skills::list_installed_skills(
             std::env::current_dir().ok().as_deref(),
         );
+        skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
         output::render_skills(&skills);
         Ok(())
     }
