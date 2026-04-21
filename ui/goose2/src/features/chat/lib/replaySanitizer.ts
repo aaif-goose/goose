@@ -2,10 +2,7 @@ import type { Message } from "@/shared/types/messages";
 import { getTextContent } from "@/shared/types/messages";
 
 const MANUAL_COMPACT_TRIGGER = "/compact";
-const ALTERNATE_COMPACT_TRIGGERS = new Set([
-  "/summarize",
-  "please compact this conversation",
-]);
+const ALTERNATE_COMPACT_TRIGGERS = new Set(["/summarize"]);
 
 export function isManualCompactReplayArtifact(message: Message): boolean {
   if (message.role !== "user") {

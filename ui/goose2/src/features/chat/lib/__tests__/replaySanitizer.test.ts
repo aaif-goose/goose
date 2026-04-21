@@ -26,17 +26,22 @@ describe("sanitizeReplayMessages", () => {
         createTextMessage("user-1", "user", "Before compact"),
         createTextMessage("compact-1", "user", "/compact"),
         createTextMessage("compact-2", "user", "/compact/compact"),
-        createTextMessage(
-          "compact-3",
-          "user",
-          "Please compact this conversation",
-        ),
         createTextMessage("compact-4", "user", "/summarize"),
         createTextMessage("assistant-1", "assistant", "After compact"),
       ]),
     ).toEqual([
       createTextMessage("user-1", "user", "Before compact"),
       createTextMessage("assistant-1", "assistant", "After compact"),
+    ]);
+  });
+
+  it("keeps natural-language requests to compact the conversation", () => {
+    expect(
+      sanitizeReplayMessages([
+        createTextMessage("user-1", "user", "Please compact this conversation"),
+      ]),
+    ).toEqual([
+      createTextMessage("user-1", "user", "Please compact this conversation"),
     ]);
   });
 
