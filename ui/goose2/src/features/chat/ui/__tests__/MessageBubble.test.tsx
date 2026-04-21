@@ -113,7 +113,7 @@ describe("MessageBubble", () => {
     );
 
     expect(
-      container.querySelector('[data-role="assistant-message"] .pb-9'),
+      container.querySelector('[data-role="assistant-message"] .pb-8'),
     ).toBeInTheDocument();
     expect(
       container.querySelector(
@@ -121,6 +121,48 @@ describe("MessageBubble", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("keeps the action tray timestamp on one line", () => {
+    const { container } = render(
+      <MessageBubble
+        message={assistantMessage([{ type: "text", text: "response" }])}
+      />,
+    );
+
+    const timestamp = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-timestamp"]',
+    );
+    expect(timestamp).toHaveClass("whitespace-nowrap");
+    expect(timestamp).toHaveClass("shrink-0");
+  });
+
+  it("anchors assistant and user actions on opposite sides of the timestamp", () => {
+    const { container } = render(
+      <>
+        <MessageBubble
+          message={assistantMessage([{ type: "text", text: "response" }])}
+          onRetryMessage={vi.fn()}
+        />
+        <MessageBubble message={userMessage("draft")} onEditMessage={vi.fn()} />
+      </>,
+    );
+
+    const assistantActions = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-actions"]',
+    );
+    const userActions = container.querySelector(
+      '[data-role="user-message"] [data-role="message-actions"]',
+    );
+
+    expect(
+      Array.from(assistantActions?.children ?? []).map(
+        (element) => element.tagName,
+      ),
+    ).toEqual(["BUTTON", "BUTTON", "SPAN"]);
+    expect(
+      Array.from(userActions?.children ?? []).map((element) => element.tagName),
+    ).toEqual(["SPAN", "BUTTON", "BUTTON"]);
   });
 
   it("keeps copy confirmation visible until it resets", async () => {
@@ -135,24 +177,29 @@ describe("MessageBubble", () => {
       '[data-role="assistant-message"] [data-role="message-actions"]',
     );
     expect(actions).toHaveAttribute("data-copy-confirmed", "false");
+    const copyButton = screen.getByRole("button", { name: /copy/i });
+    expect(copyButton).not.toHaveClass("bg-accent");
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+      fireEvent.click(copyButton);
       await Promise.resolve();
     });
 
     expect(mockWriteText).toHaveBeenCalledWith("response");
     expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+    expect(copyButton).toHaveClass("bg-accent");
 
     await act(async () => {
       vi.advanceTimersByTime(1999);
     });
     expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+    expect(copyButton).toHaveClass("bg-accent");
 
     await act(async () => {
       vi.advanceTimersByTime(1);
     });
     expect(actions).toHaveAttribute("data-copy-confirmed", "false");
+    expect(copyButton).not.toHaveClass("bg-accent");
   });
 
   it("renders tool request content as ToolCallCard", () => {

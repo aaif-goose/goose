@@ -292,6 +292,12 @@ function CopyAction({
 
   return (
     <MessageAction
+      size="xs"
+      variant="ghost-light"
+      className={cn(
+        "text-muted-foreground",
+        copied && "bg-accent text-foreground hover:bg-accent active:bg-accent",
+      )}
       tooltip={copied ? t("message.copied") : t("common:actions.copy")}
       onClick={onCopy}
     >
@@ -356,6 +362,17 @@ export const MessageBubble = memo(function MessageBubble({
       (assistantDisplayName || personaAvatarUrl || assistantProviderIcon),
   );
   const messageAttachments = message.metadata?.attachments ?? [];
+  const timestamp = (
+    <span
+      data-role="message-timestamp"
+      className="shrink-0 whitespace-nowrap px-1 text-[10px] text-muted-foreground"
+    >
+      {formatDate(created, {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}
+    </span>
+  );
 
   return (
     <div
@@ -368,7 +385,7 @@ export const MessageBubble = memo(function MessageBubble({
     >
       <div
         className={cn(
-          "group relative min-w-0 flex flex-col gap-1 pb-9",
+          "group relative min-w-0 flex flex-col gap-1 pb-8",
           isUser ? "max-w-[640px] items-end" : "max-w-[85%] items-start",
         )}
       >
@@ -456,7 +473,8 @@ export const MessageBubble = memo(function MessageBubble({
             isUser ? "right-0" : "left-0",
           )}
         >
-          <MessageActions className="pt-1">
+          <MessageActions className="pt-0">
+            {isUser && timestamp}
             {textContent && (
               <CopyAction
                 copied={isCopyConfirmed}
@@ -465,6 +483,9 @@ export const MessageBubble = memo(function MessageBubble({
             )}
             {!isUser && onRetryMessage && (
               <MessageAction
+                size="xs"
+                variant="ghost-light"
+                className="text-muted-foreground"
                 tooltip={t("common:actions.retry")}
                 onClick={() => onRetryMessage(message.id)}
               >
@@ -473,18 +494,16 @@ export const MessageBubble = memo(function MessageBubble({
             )}
             {isUser && onEditMessage && (
               <MessageAction
+                size="xs"
+                variant="ghost-light"
+                className="text-muted-foreground"
                 tooltip={t("common:actions.edit")}
                 onClick={() => onEditMessage(message.id)}
               >
                 <Pencil className="size-3.5" />
               </MessageAction>
             )}
-            <span className="px-1 text-[10px] text-muted-foreground">
-              {formatDate(created, {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </span>
+            {!isUser && timestamp}
           </MessageActions>
         </div>
       </div>
