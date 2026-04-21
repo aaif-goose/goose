@@ -19,7 +19,7 @@ push_touches() {
       range="$remote_oid...$local_oid"
     fi
 
-    if git diff --name-only "$range" -- 2>/dev/null | grep -q "^${prefix}"; then
+    if git diff --no-renames --name-only "$range" -- 2>/dev/null | grep -q "^${prefix}"; then
       return 0
     fi
   done
