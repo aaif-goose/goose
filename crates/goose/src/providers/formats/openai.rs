@@ -2338,4 +2338,69 @@ data: [DONE]"#;
         assert_eq!(result.output_tokens, Some(128));
         assert_eq!(result.total_tokens, Some(170));
     }
+
+    // vLLM serving gpt-oss emits both `reasoning` and `reasoning_content`
+    // in the same payload; the non-streaming path handles it fine today.
+    #[test]
+    fn test_response_to_message_with_both_reasoning_fields() -> anyhow::Result<()> {
+        let response = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "answer",
+                    "reasoning": "thinking...",
+                    "reasoning_content": "thinking..."
+                }
+            }]
+        });
+
+        let message = response_to_message(&response)?;
+        assert_eq!(message.content.len(), 2);
+        if let MessageContent::Thinking(t) = &message.content[0] {
+            assert_eq!(t.thinking, "thinking...");
+        } else {
+            panic!("Expected Thinking content, got {:?}", message.content[0]);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_chunk_with_only_reasoning_content() -> anyhow::Result<()> {
+        let response_lines = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"hi\"},\"finish_reason\":null}]}\ndata: [DONE]";
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        while let Some(result) = messages.next().await {
+            result?;
+        }
+        Ok(())
+    }
+
+    // Streaming counterpart: both fields in one delta must parse and yield
+    // thinking content, not fail with "duplicate field `reasoning_content`".
+    #[tokio::test]
+    async fn test_streaming_chunk_with_both_reasoning_fields() -> anyhow::Result<()> {
+        let response_lines = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"thinking...\",\"reasoning_content\":\"thinking...\"},\"finish_reason\":null}]}\ndata: [DONE]";
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut saw_thinking = false;
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for c in &msg.content {
+                    if let MessageContent::Thinking(t) = c {
+                        assert_eq!(t.thinking, "thinking...");
+                        saw_thinking = true;
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_thinking,
+            "expected thinking content from merged reasoning fields"
+        );
+        Ok(())
+    }
 }
