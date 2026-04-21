@@ -2,16 +2,16 @@
 #![recursion_limit = "256"]
 #![allow(unused_attributes)]
 
-#[path = "../fixtures/mod.rs"]
+#[path = "../acp_fixtures/mod.rs"]
 pub mod fixtures;
 use fixtures::{
     assert_notifications, Connection, FsFixture, Notification, OpenAiFixture, PermissionDecision,
     Session, SessionData, TerminalCall, TerminalFixture, TestConnectionConfig,
 };
 use fs_err as fs;
+use goose::acp::server::AcpProviderFactory;
 use goose::config::base::CONFIG_YAML_NAME;
 use goose::config::GooseMode;
-use goose_acp::server::AcpProviderFactory;
 use goose_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
 use sacp::schema::{
     ListSessionsResponse, McpServer, McpServerHttp, ModelId, SessionInfo, SessionModeId,
@@ -32,7 +32,7 @@ async fn new_basic_session<C: Connection>(config: TestConnectionConfig) -> Basic
     let openai = OpenAiFixture::new(
         vec![(
             r#"</info-msg>\nwhat is 1+1""#.into(),
-            include_str!("../test_data/openai_basic.txt"),
+            include_str!("../acp_test_data/openai_basic.txt"),
         )],
         expected_session_id.clone(),
     )
@@ -147,11 +147,11 @@ pub async fn run_config_mcp<C: Connection>() {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_tool_call.txt"),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
                 format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../test_data/openai_tool_result.txt"),
+                include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -198,11 +198,11 @@ pub async fn run_fs_read_text_file_true<C: Connection>() {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_fs_read_tool_call.txt"),
+                include_str!("../acp_test_data/openai_fs_read_tool_call.txt"),
             ),
             (
                 r#""content":"test-read-content-12345""#.into(),
-                include_str!("../test_data/openai_fs_read_tool_result.txt"),
+                include_str!("../acp_test_data/openai_fs_read_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -247,11 +247,11 @@ pub async fn run_fs_write_text_file_false<C: Connection>() {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_fs_write_tool_call.txt"),
+                include_str!("../acp_test_data/openai_fs_write_tool_call.txt"),
             ),
             (
                 r#"Created /tmp/test_acp_write.txt"#.into(),
-                include_str!("../test_data/openai_fs_write_tool_result.txt"),
+                include_str!("../acp_test_data/openai_fs_write_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -295,11 +295,11 @@ pub async fn run_fs_write_text_file_true<C: Connection>() {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_fs_write_tool_call.txt"),
+                include_str!("../acp_test_data/openai_fs_write_tool_call.txt"),
             ),
             (
                 r#"Created /tmp/test_acp_write.txt"#.into(),
-                include_str!("../test_data/openai_fs_write_tool_result.txt"),
+                include_str!("../acp_test_data/openai_fs_write_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -366,11 +366,11 @@ pub async fn run_load_mode<C: Connection>() {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_tool_call.txt"),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
                 format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../test_data/openai_tool_result.txt"),
+                include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -426,7 +426,7 @@ pub async fn run_load_model<C: Connection>() {
     let openai = OpenAiFixture::new(
         vec![(
             r#""model":"o4-mini""#.into(),
-            include_str!("../test_data/openai_basic.txt"),
+            include_str!("../acp_test_data/openai_basic.txt"),
         )],
         expected_session_id.clone(),
     )
@@ -460,19 +460,19 @@ pub async fn run_load_session_mcp<C: Connection>() {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_tool_call.txt"),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
                 format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../test_data/openai_tool_result.txt"),
+                include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_tool_call.txt"),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
                 format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../test_data/openai_tool_result.txt"),
+                include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -602,11 +602,11 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_tool_call.txt"),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
                 format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../test_data/openai_tool_result.txt"),
+                include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -779,12 +779,12 @@ async fn run_model_set_impl<C: Connection>(via: SetModelVia) {
             // Session B prompt with switched model
             (
                 r#""model":"o4-mini""#.into(),
-                include_str!("../test_data/openai_basic.txt"),
+                include_str!("../acp_test_data/openai_basic.txt"),
             ),
             // Session A prompt with default model
             (
                 format!(r#""model":"{TEST_MODEL}""#),
-                include_str!("../test_data/openai_basic.txt"),
+                include_str!("../acp_test_data/openai_basic.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -919,11 +919,11 @@ pub async fn run_permission_persistence<C: Connection>() {
         vec![
             (
                 prompt.to_string(),
-                include_str!("../test_data/openai_tool_call.txt"),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
                 format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../test_data/openai_tool_result.txt"),
+                include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -961,7 +961,7 @@ pub async fn run_prompt_basic<C: Connection>() {
     let openai = OpenAiFixture::new(
         vec![(
             r#"</info-msg>\nwhat is 1+1""#.into(),
-            include_str!("../test_data/openai_basic.txt"),
+            include_str!("../acp_test_data/openai_basic.txt"),
         )],
         expected_session_id.clone(),
     )
@@ -989,15 +989,15 @@ pub async fn run_prompt_codemode<C: Connection>() {
         vec![
             (
                 format!(r#"</info-msg>\n{prompt}""#),
-                include_str!("../test_data/openai_builtin_search.txt"),
+                include_str!("../acp_test_data/openai_builtin_search.txt"),
             ),
             (
                 r#"export async function getCode"#.into(),
-                include_str!("../test_data/openai_builtin_execute.txt"),
+                include_str!("../acp_test_data/openai_builtin_execute.txt"),
             ),
             (
                 r#"Created /tmp/result.txt"#.into(),
-                include_str!("../test_data/openai_builtin_final.txt"),
+                include_str!("../acp_test_data/openai_builtin_final.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -1037,11 +1037,11 @@ pub async fn run_prompt_image<C: Connection>() {
             (
                 r#"</info-msg>\nUse the get_image tool and describe what you see in its result.""#
                     .into(),
-                include_str!("../test_data/openai_image_tool_call.txt"),
+                include_str!("../acp_test_data/openai_image_tool_call.txt"),
             ),
             (
                 r#""type":"image_url""#.into(),
-                include_str!("../test_data/openai_image_tool_result.txt"),
+                include_str!("../acp_test_data/openai_image_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -1081,7 +1081,7 @@ pub async fn run_prompt_image_attachment<C: Connection>() {
     let openai = OpenAiFixture::new(
         vec![(
             r#""type":"image_url""#.into(),
-            include_str!("../test_data/openai_image_attachment.txt"),
+            include_str!("../acp_test_data/openai_image_attachment.txt"),
         )],
         expected_session_id.clone(),
     )
@@ -1112,11 +1112,11 @@ pub async fn run_prompt_mcp<C: Connection>() {
         vec![
             (
                 r#"</info-msg>\nUse the get_code tool and output only its result.""#.into(),
-                include_str!("../test_data/openai_tool_call.txt"),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
                 format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../test_data/openai_tool_result.txt"),
+                include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -1178,7 +1178,7 @@ pub async fn run_prompt_skill<C: Connection>() {
     let openai = OpenAiFixture::new(
         vec![(
             "skill-loaded-in-acp-session".to_string(),
-            include_str!("../test_data/openai_basic.txt"),
+            include_str!("../acp_test_data/openai_basic.txt"),
         )],
         expected_session_id.clone(),
     )
@@ -1209,11 +1209,11 @@ pub async fn run_shell_terminal_false<C: Connection>() {
         vec![
             (
                 prompt.clone(),
-                include_str!("../test_data/openai_shell_tool_call.txt"),
+                include_str!("../acp_test_data/openai_shell_tool_call.txt"),
             ),
             (
                 SHELL_TEST_CONTENT.into(),
-                include_str!("../test_data/openai_shell_tool_result.txt"),
+                include_str!("../acp_test_data/openai_shell_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -1252,11 +1252,11 @@ pub async fn run_shell_terminal_true<C: Connection>() {
         vec![
             (
                 prompt.clone(),
-                include_str!("../test_data/openai_shell_tool_call.txt"),
+                include_str!("../acp_test_data/openai_shell_tool_call.txt"),
             ),
             (
                 SHELL_TEST_CONTENT.into(),
-                include_str!("../test_data/openai_shell_tool_result.txt"),
+                include_str!("../acp_test_data/openai_shell_tool_result.txt"),
             ),
         ],
         expected_session_id.clone(),

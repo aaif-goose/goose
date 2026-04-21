@@ -13,8 +13,8 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{error, info};
 
 use super::*;
-use crate::adapters::{ReceiverToAsyncRead, SenderToAsyncWrite};
-use crate::server_factory::AcpServer;
+use crate::acp::adapters::{ReceiverToAsyncRead, SenderToAsyncWrite};
+use crate::acp::server_factory::AcpServer;
 
 pub(crate) struct HttpState {
     server: Arc<AcpServer>,
@@ -43,7 +43,8 @@ impl HttpState {
 
         let read_stream = ReceiverToAsyncRead::new(to_agent_rx);
         let write_stream = SenderToAsyncWrite::new(from_agent_tx);
-        let fut = crate::server::serve(agent, read_stream.compat(), write_stream.compat_write());
+        let fut =
+            crate::acp::server::serve(agent, read_stream.compat(), write_stream.compat_write());
         let handle = tokio::spawn(async move {
             if let Err(e) = fut.await {
                 error!("ACP session error: {}", e);

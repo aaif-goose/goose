@@ -18,7 +18,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::server_factory::AcpServer;
+use crate::acp::server_factory::AcpServer;
 
 pub(crate) const HEADER_SESSION_ID: &str = "Acp-Session-Id";
 pub(crate) const EVENT_STREAM_MIME_TYPE: &str = "text/event-stream";

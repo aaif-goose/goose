@@ -3,6 +3,7 @@
 
 use async_trait::async_trait;
 use fs_err as fs;
+use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
 pub use goose::acp::{map_permission_response, PermissionDecision};
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::paths::Paths;
@@ -11,7 +12,6 @@ use goose::providers::api_client::{ApiClient, AuthMethod as ApiAuthMethod};
 use goose::providers::base::Provider;
 use goose::providers::openai::OpenAiProvider;
 use goose::session_context::SESSION_ID_HEADER;
-use goose_acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
 use goose_test_support::{ExpectedSessionId, TEST_MODEL};
 use sacp::schema::{
     CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
@@ -52,7 +52,7 @@ impl OpenAiFixture {
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header("content-type", "application/json")
-                    .set_body_string(include_str!("../test_data/openai_models.json")),
+                    .set_body_string(include_str!("../acp_test_data/openai_models.json")),
             )
             .mount(&mock_server)
             .await;

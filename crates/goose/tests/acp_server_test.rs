@@ -1,4 +1,5 @@
 #[allow(dead_code)]
+#[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use common_tests::fixtures::run_test;
 use common_tests::fixtures::server::AcpServerConnection;

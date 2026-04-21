@@ -1,13 +1,13 @@
-use crate::tools::AcpAwareToolMeta;
+use crate::acp::tools::AcpAwareToolMeta;
+use crate::agents::mcp_client::{Error as McpError, McpClientTrait};
+use crate::agents::platform_extensions::developer::edit::{
+    resolve_path, string_replace, FileEditParams, FileReadParams, FileWriteParams,
+};
+use crate::agents::platform_extensions::developer::shell::{ShellParams, OUTPUT_LIMIT_BYTES};
+use crate::agents::platform_extensions::developer::DeveloperClient;
 use agent_client_protocol_schema::TerminalId;
 use async_trait::async_trait;
 use fs_err as fs;
-use goose::agents::mcp_client::{Error as McpError, McpClientTrait};
-use goose::agents::platform_extensions::developer::edit::{
-    resolve_path, string_replace, FileEditParams, FileReadParams, FileWriteParams,
-};
-use goose::agents::platform_extensions::developer::shell::{ShellParams, OUTPUT_LIMIT_BYTES};
-use goose::agents::platform_extensions::developer::DeveloperClient;
 use rmcp::model::{CallToolResult, Content as RmcpContent, Tool, ToolAnnotations};
 use sacp::schema::{
     CreateTerminalRequest, Diff, KillTerminalRequest, ReadTextFileRequest, ReleaseTerminalRequest,
@@ -93,7 +93,7 @@ fn read_tool() -> Tool {
 }
 
 impl AcpTools {
-    fn update_tool_call(&self, ctx: &goose::agents::ToolCallContext, fields: ToolCallUpdateFields) {
+    fn update_tool_call(&self, ctx: &crate::agents::ToolCallContext, fields: ToolCallUpdateFields) {
         if let Some(ref req_id) = ctx.tool_call_request_id {
             let _ = self
                 .cx
@@ -125,7 +125,7 @@ impl AcpTools {
     async fn acp_read(
         &self,
         arguments: Option<rmcp::model::JsonObject>,
-        ctx: &goose::agents::ToolCallContext,
+        ctx: &crate::agents::ToolCallContext,
     ) -> Result<CallToolResult, McpError> {
         let params: FileReadParams = match Self::parse_args(arguments) {
             Ok(p) => p,
@@ -150,7 +150,7 @@ impl AcpTools {
     async fn acp_write(
         &self,
         arguments: Option<rmcp::model::JsonObject>,
-        ctx: &goose::agents::ToolCallContext,
+        ctx: &crate::agents::ToolCallContext,
     ) -> Result<CallToolResult, McpError> {
         let params: FileWriteParams = match Self::parse_args(arguments) {
             Ok(p) => p,
@@ -187,7 +187,7 @@ impl AcpTools {
     async fn acp_edit(
         &self,
         arguments: Option<rmcp::model::JsonObject>,
-        ctx: &goose::agents::ToolCallContext,
+        ctx: &crate::agents::ToolCallContext,
     ) -> Result<CallToolResult, McpError> {
         let params: FileEditParams = match Self::parse_args(arguments) {
             Ok(p) => p,
@@ -240,7 +240,7 @@ impl AcpTools {
     async fn acp_shell(
         &self,
         arguments: Option<rmcp::model::JsonObject>,
-        ctx: &goose::agents::ToolCallContext,
+        ctx: &crate::agents::ToolCallContext,
     ) -> Result<CallToolResult, McpError> {
         let params: ShellParams = match Self::parse_args(arguments) {
             Ok(p) => p,
@@ -404,7 +404,7 @@ impl McpClientTrait for AcpTools {
 
     async fn call_tool(
         &self,
-        ctx: &goose::agents::ToolCallContext,
+        ctx: &crate::agents::ToolCallContext,
         name: &str,
         arguments: Option<rmcp::model::JsonObject>,
         cancellation_token: CancellationToken,

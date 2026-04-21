@@ -21,7 +21,6 @@ path = "src/bin/generate_manpages.rs"
 [dependencies]
 clap_mangen = "0.2.31"
 goose = { path = "../goose", default-features = false }
-goose-acp = { path = "../goose-acp", default-features = false }
 goose-mcp = { path = "../goose-mcp" }
 rmcp = { workspace = true }
 clap = { workspace = true }
@@ -70,8 +69,8 @@ winapi = { workspace = true }
 
 [features]
 default = ["code-mode", "local-inference", "aws-providers", "telemetry", "otel", "rustls-tls"]
-code-mode = ["goose/code-mode", "goose-acp/code-mode"]
-local-inference = ["goose/local-inference", "goose-acp/local-inference"]
+code-mode = ["goose/code-mode"]
+local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]
 telemetry = ["goose/telemetry"]

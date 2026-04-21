@@ -1,8 +1,7 @@
+use crate::acp::server::{AcpProviderFactory, GooseAcpAgent};
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::info;
-
-use crate::server::{AcpProviderFactory, GooseAcpAgent};
 
 pub struct AcpServerFactoryConfig {
     pub builtins: Vec<String>,
@@ -23,18 +22,18 @@ impl AcpServer {
         let config_path = self
             .config
             .config_dir
-            .join(goose::config::base::CONFIG_YAML_NAME);
-        let config = goose::config::Config::new(&config_path, "goose")?;
+            .join(crate::config::base::CONFIG_YAML_NAME);
+        let config = crate::config::Config::new(&config_path, "goose")?;
 
         let goose_mode = config
             .get_goose_mode()
-            .unwrap_or(goose::config::GooseMode::Auto);
+            .unwrap_or(crate::config::GooseMode::Auto);
         let disable_session_naming = config.get_goose_disable_session_naming().unwrap_or(false);
 
         let provider_factory: AcpProviderFactory =
             Arc::new(move |provider_name, model_config, extensions| {
                 Box::pin(async move {
-                    goose::providers::create(&provider_name, model_config, extensions).await
+                    crate::providers::create(&provider_name, model_config, extensions).await
                 })
             });
 

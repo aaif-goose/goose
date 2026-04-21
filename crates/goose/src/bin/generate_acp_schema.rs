@@ -1,4 +1,4 @@
-use goose_acp::server::GooseAcpAgent;
+use goose::acp::server::GooseAcpAgent;
 use schemars::SchemaGenerator;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeSet, HashMap};
