@@ -27,10 +27,18 @@ import {
   buildMessageAttachments,
 } from "../lib/attachments";
 import { sanitizeReplayMessages } from "../lib/replaySanitizer";
+import { i18n } from "@/shared/i18n";
 
 // TODO: Remove this fallback once goose2 has first-class /-commands.
 const MANUAL_COMPACT_TRIGGER = "/compact";
 type CompactConversationResult = "completed" | "failed" | "skipped";
+
+function createCompactionConfirmationMessage() {
+  return createSystemNotificationMessage(
+    i18n.t("chat:notifications.compactionComplete"),
+    "compaction",
+  );
+}
 
 function getErrorMessage(error: unknown): string {
   // Tauri command rejections typically arrive as plain strings, so handle
@@ -433,7 +441,12 @@ export function useChat(
 
         const buffer = getAndDeleteReplayBuffer(sessionId);
         if (buffer) {
-          store.setMessages(sessionId, sanitizeReplayMessages(buffer));
+          store.setMessages(sessionId, [
+            ...sanitizeReplayMessages(buffer),
+            createCompactionConfirmationMessage(),
+          ]);
+        } else {
+          store.addMessage(sessionId, createCompactionConfirmationMessage());
         }
         return "completed" as CompactConversationResult;
       } catch (err) {

@@ -120,6 +120,9 @@
     "title": "Menciona una persona",
     "filesTitle": "Archivos"
   },
+  "notifications": {
+    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio."
+  },
   "message": {
     "copied": "Copiado",
     "defaultImageAlt": "Adjunto",

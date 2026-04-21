@@ -120,6 +120,9 @@
     "title": "Mention a persona",
     "filesTitle": "Files"
   },
+  "notifications": {
+    "compactionComplete": "Conversation compacted. Older context was summarized."
+  },
   "message": {
     "copied": "Copied",
     "defaultImageAlt": "Attached",

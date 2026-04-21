@@ -262,6 +262,7 @@ function renderContentBlock(
     case "systemNotification": {
       const sn = content as SystemNotificationContent;
       const isError = sn.notificationType === "error";
+      const isCompaction = sn.notificationType === "compaction";
       return (
         <div
           key={`notification-${index}`}
@@ -269,10 +270,13 @@ function renderContentBlock(
             "rounded-md border p-2 text-xs",
             isError
               ? "border-danger/30 bg-danger/10 text-danger"
-              : "border-border bg-accent text-muted-foreground",
+              : isCompaction
+                ? "inline-flex items-center justify-center gap-2 border-success/30 bg-success/10 font-medium text-success"
+                : "border-border bg-accent text-muted-foreground",
           )}
         >
-          {sn.text}
+          {isCompaction ? <Check className="size-3.5 shrink-0" /> : null}
+          <span>{sn.text}</span>
         </div>
       );
     }

@@ -102,10 +102,27 @@ describe("useChat compaction", () => {
     const messages = useChatStore.getState().messagesBySession["session-1"];
     const runtime = useChatStore.getState().getSessionRuntime("session-1");
 
-    expect(messages).toEqual([
+    expect(messages).toHaveLength(3);
+    expect(messages[0]).toEqual(
       createTextMessage("user-1", "user", "Before compact"),
+    );
+    expect(messages[1]).toEqual(
       createTextMessage("assistant-1", "assistant", "After compact"),
-    ]);
+    );
+    expect(messages[2]).toMatchObject({
+      role: "system",
+      content: [
+        {
+          type: "systemNotification",
+          notificationType: "compaction",
+          text: "Conversation compacted. Older context was summarized.",
+        },
+      ],
+      metadata: {
+        userVisible: true,
+        agentVisible: false,
+      },
+    });
     expect(runtime.chatState).toBe("idle");
     expect(runtime.error).toBeNull();
     expect(useChatStore.getState().loadingSessionIds.has("session-1")).toBe(

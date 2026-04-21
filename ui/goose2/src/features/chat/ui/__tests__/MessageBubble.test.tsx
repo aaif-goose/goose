@@ -10,8 +10,6 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openPath: vi.fn(),
 }));
 
-// ── helpers ───────────────────────────────────────────────────────────
-
 function userMessage(text: string, overrides: Partial<Message> = {}): Message {
   return {
     id: "u1",
@@ -34,8 +32,6 @@ function assistantMessage(
     ...overrides,
   };
 }
-
-// ── tests ─────────────────────────────────────────────────────────────
 
 describe("MessageBubble", () => {
   beforeEach(() => {
@@ -79,6 +75,32 @@ describe("MessageBubble", () => {
   it("renders text content", () => {
     render(<MessageBubble message={userMessage("hello world")} />);
     expect(screen.getByText("hello world")).toBeInTheDocument();
+  });
+
+  it("renders compaction notifications as centered success messages", () => {
+    const { container } = render(
+      <MessageBubble
+        message={{
+          id: "s1",
+          role: "system",
+          created: Date.now(),
+          content: [
+            {
+              type: "systemNotification",
+              notificationType: "compaction",
+              text: "Conversation compacted.",
+            },
+          ],
+          metadata: {
+            userVisible: true,
+            agentVisible: false,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Conversation compacted.")).toBeInTheDocument();
+    expect(container.querySelector(".text-success")).toBeInTheDocument();
   });
 
   it("renders user text inside a muted bubble shell", () => {
