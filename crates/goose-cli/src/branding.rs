@@ -190,8 +190,17 @@ fn capitalize(s: &str) -> String {
 /// ("goose term init zsh").
 fn rebrand_str(s: &str, b: &Brand) -> String {
     let product_cap = b.product_name_cap();
-    s.replace("Goose", &product_cap)
+    let alias_primary_placeholder = "__BRAND_ALIAS_PRIMARY__";
+    let alias_short_placeholder = "__BRAND_ALIAS_SHORT__";
+    let alias_primary = format!("@{}", b.shell_alias_primary);
+    let alias_short = format!("@{}", b.shell_alias_short);
+
+    s.replace("@goose", alias_primary_placeholder)
+        .replace("@g", alias_short_placeholder)
+        .replace("Goose", &product_cap)
         .replace(DEFAULT_BINARY_NAME, b.binary_name)
+        .replace(alias_primary_placeholder, &alias_primary)
+        .replace(alias_short_placeholder, &alias_short)
 }
 
 /// Walk the clap command tree and rewrite branding-sensitive strings.
@@ -310,8 +319,8 @@ mod tests {
         let b = Brand {
             product_name: "Foobar",
             binary_name: "foobar",
-            shell_alias_primary: "foobar",
-            shell_alias_short: "fb",
+            shell_alias_primary: "chat",
+            shell_alias_short: "c",
             shell_fn_prefix: "foobar",
             deeplink_scheme: "foobar",
             github_owner: "acme",
@@ -331,6 +340,57 @@ mod tests {
             rebrand_str("eval \"$(goose term init zsh)\"", &b),
             "eval \"$(foobar term init zsh)\""
         );
+        assert_eq!(
+            rebrand_str("@goose \"create a python script\"", &b),
+            "@chat \"create a python script\""
+        );
+        assert_eq!(
+            rebrand_str("@g \"quick question\"", &b),
+            "@c \"quick question\""
+        );
+    }
+
+    #[test]
+    fn synthetic_non_default_brand_rewrites_alias_examples() {
+        use clap::CommandFactory;
+        let b = Brand {
+            product_name: "Foobar",
+            binary_name: "foobar",
+            shell_alias_primary: "chat",
+            shell_alias_short: "c",
+            shell_fn_prefix: "foobar",
+            deeplink_scheme: "foobar",
+            github_owner: "acme",
+            github_repo: "foobar",
+            agent_identity_sentence: "You are foobar, an AI assistant.",
+            interactive_style: "minimal",
+        };
+        let mut cmd = rewrite_command(crate::Cli::command(), &b);
+        let term_help = cmd
+            .find_subcommand_mut("term")
+            .unwrap()
+            .render_long_help()
+            .to_string();
+        assert!(
+            term_help.contains("@chat \"create a python script\""),
+            "{term_help}"
+        );
+        assert!(term_help.contains("@c \"quick question\""), "{term_help}");
+        assert!(
+            !term_help.contains("@foobar \"create a python script\""),
+            "{term_help}"
+        );
+
+        let run_help = cmd
+            .find_subcommand_mut("term")
+            .unwrap()
+            .find_subcommand_mut("run")
+            .unwrap()
+            .render_long_help()
+            .to_string();
+        assert!(run_help.contains("@chat list files"), "{run_help}");
+        assert!(run_help.contains("@c why did that fail"), "{run_help}");
+        assert!(!run_help.contains("@foobar list files"), "{run_help}");
     }
 
     #[test]
