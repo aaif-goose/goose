@@ -46,6 +46,8 @@ import {
   SENT_PREVIEW_LEN,
   GOOSE_FRAMES,
   INITIAL_GREETING,
+  SCROLL_STEP,
+  SCROLL_FAST_MULTIPLIER,
 } from "./constants.js";
 
 const InputBar = React.memo(function InputBar({
@@ -162,7 +164,9 @@ const InputBar = React.memo(function InputBar({
                 })()}
               </Text>
             </Box>
-            {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
+            {scrollHint && (
+              <Text color={TEXT_DIM}>↑↓ scroll · ⌥↑↓ fast · shift+↑↓ history</Text>
+            )}
           </Box>
         ) : (
           <Box flexGrow={1} justifyContent="space-between">
@@ -188,7 +192,9 @@ const InputBar = React.memo(function InputBar({
                 );
               }}
             />
-            {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
+            {scrollHint && (
+              <Text color={TEXT_DIM}>↑↓ scroll · ⌥↑↓ fast · shift+↑↓ history</Text>
+            )}
           </Box>
         )}
       </Box>
@@ -451,8 +457,29 @@ function App({
 }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const termWidth = stdout?.columns ?? 80;
-  const termHeight = stdout?.rows ?? 24;
+  // `useStdout()` returns the live stream but does not trigger a React
+  // re-render when the terminal is resized. Without this subscription the
+  // outer Box keeps its old width/height after SIGWINCH, producing a
+  // misaligned frame until some other state change forces a render.
+  const [termSize, setTermSize] = useState(() => ({
+    width: stdout?.columns ?? 80,
+    height: stdout?.rows ?? 24,
+  }));
+  useEffect(() => {
+    if (!stdout) return;
+    const onResize = () => {
+      setTermSize({
+        width: stdout.columns ?? 80,
+        height: stdout.rows ?? 24,
+      });
+    };
+    stdout.on("resize", onResize);
+    return () => {
+      stdout.off("resize", onResize);
+    };
+  }, [stdout]);
+  const termWidth = termSize.width;
+  const termHeight = termSize.height;
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -501,6 +528,12 @@ function App({
     setToolCallsExpanded(false);
     setScrollOffset(0);
   }, [viewTurnIdx, turns.length]);
+
+  // Re-layout invalidates any scroll offset we were holding (line counts
+  // change with width), so snap back to the latest content on resize.
+  useEffect(() => {
+    setScrollOffset(0);
+  }, [termWidth, termHeight]);
 
   const appendAgent = useCallback((text: string) => {
     setTurns((prev) => {
@@ -810,8 +843,13 @@ function App({
 
       const viewingHistory =
         viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
+      // Only let the multiline input own arrow keys when it actually has
+      // multiple lines of content — otherwise arrows should scroll the viewport.
       const multilineOwnsArrows =
-        !initialPrompt && !viewingHistory && pastedFull === null;
+        !initialPrompt &&
+        !viewingHistory &&
+        pastedFull === null &&
+        input.includes("\n");
 
       if (key.tab) {
         const idx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
@@ -822,13 +860,14 @@ function App({
         return;
       }
 
-      if (key.upArrow && !key.shift) {
-        if (!multilineOwnsArrows) setScrollOffset((prev) => prev + 3);
-        return;
-      }
-      if (key.downArrow && !key.shift) {
-        if (!multilineOwnsArrows)
-          setScrollOffset((prev) => Math.max(prev - 3, 0));
+      if ((key.upArrow || key.downArrow) && !key.shift) {
+        if (multilineOwnsArrows) return;
+        const step = key.meta ? SCROLL_STEP * SCROLL_FAST_MULTIPLIER : SCROLL_STEP;
+        if (key.upArrow) {
+          setScrollOffset((prev) => prev + step);
+        } else {
+          setScrollOffset((prev) => Math.max(prev - step, 0));
+        }
         return;
       }
 

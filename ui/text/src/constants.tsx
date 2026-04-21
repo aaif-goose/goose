@@ -4,6 +4,10 @@ export const PASTE_PREVIEW_LEN = 40;
 export const INPUT_MAX_ROWS = 8;
 export const SENT_PREVIEW_LEN = 60;
 
+// Viewport scroll step (lines per arrow press). Option/Alt applies the multiplier.
+export const SCROLL_STEP = 3;
+export const SCROLL_FAST_MULTIPLIER = 10;
+
 export const GOOSE_FRAMES = [
   [
     "    ,_",
