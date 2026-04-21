@@ -20,7 +20,18 @@ import {
 } from "../hooks/useChatInputAttachments";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import type { ChatInputProps } from "../types";
+
+function attachmentSnapshotsMatch(
+  current: ChatAttachmentDraft[],
+  snapshot: ChatAttachmentDraft[],
+) {
+  return (
+    current.length === snapshot.length &&
+    current.every((attachment, index) => attachment.id === snapshot[index]?.id)
+  );
+}
 
 export function ChatInput({
   onSend,
@@ -60,11 +71,14 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
+  const textRef = useRef(initialValue);
   useEffect(() => {
     setTextRaw(initialValue);
+    textRef.current = initialValue;
   }, [initialValue]);
   const setText = useCallback(
     (value: string) => {
+      textRef.current = value;
       setTextRaw(value);
       onDraftChange?.(value);
     },
@@ -80,6 +94,8 @@ export function ChatInput({
     removeAttachment,
     clearAttachments,
   } = useChatInputAttachments();
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
 
   const resetTextarea = useCallback(() => {
     if (textareaRef.current) {
@@ -178,15 +194,23 @@ export function ChatInput({
       dictation.stopRecording({ flushPending: false });
     }
 
+    const submittedText = text;
+    const submittedAttachments = attachments;
     const sendResult = onSend(
-      text.trim(),
+      submittedText.trim(),
       selectedPersonaId ?? undefined,
-      attachments.length > 0 ? attachments : undefined,
+      submittedAttachments.length > 0 ? submittedAttachments : undefined,
     );
     const accepted = isPromiseLike<boolean>(sendResult)
       ? await sendResult
       : sendResult;
     if (accepted === false) {
+      return;
+    }
+    const draftStillMatchesSubmission =
+      textRef.current === submittedText &&
+      attachmentSnapshotsMatch(attachmentsRef.current, submittedAttachments);
+    if (!draftStillMatchesSubmission) {
       return;
     }
     setText("");

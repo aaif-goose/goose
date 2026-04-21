@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ChatInput } from "../ChatInput";
@@ -104,6 +104,51 @@ describe("ChatInput", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).toHaveBeenCalledWith("hello", undefined, undefined);
+  });
+
+  it("clears the composer after an accepted async send when the draft is unchanged", async () => {
+    let resolveSend!: (accepted: boolean) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<ChatInput onSend={onSend} />);
+
+    const input = screen.getByRole("textbox");
+    await user.type(input, "hello");
+    await user.keyboard("{Enter}");
+
+    resolveSend(true);
+
+    await waitFor(() => {
+      expect(input).toHaveValue("");
+    });
+  });
+
+  it("preserves newer draft text when an async send resolves later", async () => {
+    let resolveSend!: (accepted: boolean) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<ChatInput onSend={onSend} />);
+
+    const input = screen.getByRole("textbox");
+    await user.type(input, "hello");
+    await user.keyboard("{Enter}");
+    await user.type(input, " world");
+
+    resolveSend(true);
+
+    await waitFor(() => {
+      expect(input).toHaveValue("hello world");
+    });
   });
 
   it("does not call onSend on Shift+Enter (newline)", async () => {
