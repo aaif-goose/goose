@@ -1,3 +1,4 @@
+import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
 import { getStoredModelPreferenceForProvider } from "./modelPreferences";
 
 interface SessionModelPreferenceOptions {
@@ -24,9 +25,28 @@ export function resolveSessionModelPreference({
   }
 
   const storedModelPreference = getStoredModelPreferenceForProvider(providerId);
+  if (!storedModelPreference) {
+    return { providerId };
+  }
+
+  if (resolveAgentProviderCatalogIdStrict(providerId)) {
+    return {
+      providerId: storedModelPreference.providerId ?? providerId,
+      modelId: storedModelPreference.modelId,
+      modelName: storedModelPreference.modelName,
+    };
+  }
+
+  if (
+    storedModelPreference.providerId &&
+    storedModelPreference.providerId !== providerId
+  ) {
+    return { providerId };
+  }
+
   return {
-    providerId: storedModelPreference?.providerId ?? providerId,
-    modelId: storedModelPreference?.modelId,
-    modelName: storedModelPreference?.modelName,
+    providerId,
+    modelId: storedModelPreference.modelId,
+    modelName: storedModelPreference.modelName,
   };
 }

@@ -206,9 +206,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             ) ?? null)
           : null;
         const workingDir = await resolveSessionCwd(project);
-        sessionStore.updateSession(homeSession.id, {
-          providerId: sessionModelPreference.providerId,
-        });
         await acpPrepareSession(
           homeSession.id,
           sessionModelPreference.providerId,
@@ -217,6 +214,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             personaId: homeSession.personaId,
           },
         );
+        sessionStore.updateSession(homeSession.id, {
+          providerId: sessionModelPreference.providerId,
+        });
         if (sessionModelPreference.modelId) {
           await acpSetModel(homeSession.id, sessionModelPreference.modelId);
           sessionStore.updateSession(homeSession.id, {
