@@ -68,7 +68,7 @@ describe("GooseAutoCompactSettings", () => {
 
     expect(
       screen.getByRole("slider", { name: /auto-compact context/i }),
-    ).toBeDisabled();
-    expect(screen.getByText("Off")).toBeInTheDocument();
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getAllByText("Off")).toHaveLength(2);
   });
 });
