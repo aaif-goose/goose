@@ -36,14 +36,12 @@ export async function listProviders(): Promise<AcpProvider[]> {
 export async function listSessions(): Promise<AcpSessionInfo[]> {
   const client = await getClient();
   const response = await client.listSessions({});
-  return response.sessions.map(
-    (info: SessionInfo) => ({
-      sessionId: info.sessionId,
-      title: info.title ?? null,
-      updatedAt: info.updatedAt ?? null,
-      messageCount: (info._meta?.messageCount as number) ?? 0,
-    }),
-  );
+  return response.sessions.map((info: SessionInfo) => ({
+    sessionId: info.sessionId,
+    title: info.title ?? null,
+    updatedAt: info.updatedAt ?? null,
+    messageCount: (info._meta?.messageCount as number) ?? 0,
+  }));
 }
 
 export async function exportSession(sessionId: string): Promise<string> {
