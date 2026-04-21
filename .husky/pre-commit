@@ -3,7 +3,7 @@ set -e
 # Only auto-format desktop TS code if relevant files are modified
 if git diff --cached --name-only | grep -q "^ui/desktop/"; then
   if [ -d "ui/desktop" ]; then
-    cd ui/desktop && pnpm exec lint-staged
+    (cd ui/desktop && pnpm exec lint-staged)
   else
     echo "Warning: ui/desktop directory does not exist, skipping lint-staged"
   fi
