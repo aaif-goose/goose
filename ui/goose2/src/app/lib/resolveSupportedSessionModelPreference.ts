@@ -22,7 +22,15 @@ export async function resolveSupportedSessionModelPreference(
 
   const inventoryEntry =
     inventoryEntries.get(sessionModelPreference.providerId) ??
-    (await getProviderInventory([sessionModelPreference.providerId]))[0];
+    (await getProviderInventory([sessionModelPreference.providerId])
+      .then(([entry]) => entry)
+      .catch(() => undefined));
+
+  if (!inventoryEntry) {
+    return {
+      providerId: sessionModelPreference.providerId,
+    };
+  }
 
   return sanitizeSessionModelPreference(sessionModelPreference, inventoryEntry);
 }
