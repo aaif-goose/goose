@@ -179,7 +179,6 @@ export function useResolvedAgentModelPicker({
       };
 
       if (!sessionId) {
-        setStoredModelPreference(selectedAgentId, nextStoredModelPreference);
         if (nextProviderId && nextProviderId !== selectedProvider) {
           setPendingProviderId(nextProviderId);
           setGlobalSelectedProvider(nextProviderId);

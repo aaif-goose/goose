@@ -362,4 +362,65 @@ describe("useChatSessionController", () => {
       modelName: "Claude Sonnet 4",
     });
   });
+
+  it("does not persist or record a pending Home model when ACP rejects it", async () => {
+    mockAcpSetModel.mockRejectedValueOnce(new Error("set model failed"));
+
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string | null }) =>
+        useChatSessionController({ sessionId }),
+      {
+        initialProps: { sessionId: null as string | null },
+      },
+    );
+
+    act(() => {
+      result.current.handleModelChange("claude-sonnet-4");
+    });
+
+    expect(
+      window.localStorage.getItem("goose:preferredModelsByAgent"),
+    ).toBeNull();
+
+    useChatSessionStore.setState((state) => ({
+      sessions: [
+        {
+          id: "session-3",
+          title: "Chat",
+          providerId: "openai",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        ...state.sessions,
+      ],
+    }));
+
+    rerender({ sessionId: "session-3" });
+
+    await waitFor(() => {
+      expect(mockAcpSetModel).toHaveBeenCalledWith(
+        "session-3",
+        "claude-sonnet-4",
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        useChatSessionStore.getState().getSession("session-3"),
+      ).toMatchObject({
+        providerId: "anthropic",
+      });
+    });
+
+    expect(
+      useChatSessionStore.getState().getSession("session-3"),
+    ).not.toMatchObject({
+      modelId: "claude-sonnet-4",
+      modelName: "Claude Sonnet 4",
+    });
+    expect(
+      window.localStorage.getItem("goose:preferredModelsByAgent"),
+    ).toBeNull();
+  });
 });

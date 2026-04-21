@@ -7,12 +7,14 @@ import { useChatSessionStore } from "../stores/chatSessionStore";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProviderSelection } from "@/features/agents/hooks/useProviderSelection";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
   getProjectArtifactRoots,
   resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
+import { setStoredModelPreference } from "../lib/modelPreferences";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
@@ -164,11 +166,11 @@ export function useChatSessionController({
         return;
       }
 
+      await acpSetModel(sessionId, modelSelection.id);
       sessionStore.updateSession(sessionId, {
         modelId: modelSelection.id,
         modelName: modelSelection.name,
       });
-      await acpSetModel(sessionId, modelSelection.id);
     },
     [activeWorkspace?.path, project, selectedPersonaId, sessionId],
   );
@@ -548,6 +550,17 @@ export function useChatSessionController({
           );
           if (cancelled) {
             return;
+          }
+          if (pendingModelSelection?.source === "explicit") {
+            const agentId =
+              resolveAgentProviderCatalogIdStrict(
+                pendingModelSelection.providerId ?? nextProviderId,
+              ) ?? "goose";
+            setStoredModelPreference(agentId, {
+              modelId: pendingModelSelection.id,
+              modelName: pendingModelSelection.name,
+              providerId: pendingModelSelection.providerId ?? nextProviderId,
+            });
           }
         } catch (error) {
           console.error("Failed to sync pending Home state:", error);
