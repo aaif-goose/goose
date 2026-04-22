@@ -28,3 +28,6 @@ log = "0.4"
 tokio = { version = "1", features = ["full"] }
 dirs = "6"
 serde_yaml = "0.9"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+chrono = { version = "0.4", features = ["serde"] }
+os_info = "3"

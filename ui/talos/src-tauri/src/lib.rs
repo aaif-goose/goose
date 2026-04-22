@@ -18,6 +18,8 @@ pub fn run() {
             commands::folders::list_project_notes,
             commands::recipes::list_recipes,
             commands::recipes::load_recipe_prompt,
+            commands::diagnostics::get_system_info,
+            commands::diagnostics::write_diagnostics_zip,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

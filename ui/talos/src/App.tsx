@@ -18,6 +18,7 @@ import { CommandPalette } from "./components/palette/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
 import { ToastStack } from "./components/Toast";
 import { SettingsModal } from "./components/settings/SettingsModal";
+import { DiagnosticsModal } from "./components/diagnostics/DiagnosticsModal";
 import { CHATS, MCP_SERVERS, MODELS, SECTIONS, SKILLS, USER } from "./data";
 import type { ChatTab, Command, McpServer, Message, SectionId, Skill, Toast, ToolEvent } from "./types";
 import { generateFakeConversation, truncate } from "./mockReply";
@@ -56,6 +57,7 @@ export function App() {
   // Phase 3 state: settings + folder-backed data + recipes.
   const [settings, setSettings] = useState<Settings>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [memoryNotes, setMemoryNotes] = useState<FolderNote[]>([]);
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [projects, setProjects] = useState<FolderProject[]>([]);
@@ -520,6 +522,7 @@ export function App() {
     setMcpServers,
     contextFolder,
     setContextFolder,
+    onReportBug: () => setDiagnosticsOpen(true),
   };
 
   const commands: Command[] = [
@@ -535,7 +538,7 @@ export function App() {
     { label: "Switch to Skills", icon: "sparkles", kbd: "⌘5", section: "Navigation", run: () => setSection("skills") },
     { label: "Compact context now", icon: "scroll", section: "Chat", run: () => addToast("Context compacted — 8.2k → 3.1k tokens") },
     { label: "Open settings", icon: "settings", kbd: "⌘,", section: "App", run: () => setSettingsOpen(true) },
-    { label: "Report a bug", icon: "bug", section: "App" },
+    { label: "Report a bug", icon: "bug", section: "App", run: () => setDiagnosticsOpen(true) },
   ];
 
   return (
@@ -636,6 +639,15 @@ export function App() {
         initial={settings}
         onClose={() => setSettingsOpen(false)}
         onSave={saveSettings}
+      />
+
+      <DiagnosticsModal
+        open={diagnosticsOpen}
+        onClose={() => setDiagnosticsOpen(false)}
+        currentTab={currentTab}
+        model={model}
+        mcpServers={mcpServers}
+        onToast={addToast}
       />
 
       <ToastStack toasts={toasts} />

@@ -18,6 +18,7 @@ export interface ComposerProps {
   setMcpServers: (next: McpServer[]) => void;
   contextFolder: string;
   setContextFolder: (id: string) => void;
+  onReportBug: () => void;
 }
 
 export function Composer({
@@ -32,6 +33,7 @@ export function Composer({
   setMcpServers,
   contextFolder,
   setContextFolder,
+  onReportBug,
 }: ComposerProps) {
   const [open, setOpen] = useState<PopoverKind>(null);
   const [autoCompactPct, setAutoCompactPct] = useState(80);
@@ -191,7 +193,7 @@ export function Composer({
           </div>
 
           {/* Bug report */}
-          <button className="footer-btn" title="Report a bug">
+          <button className="footer-btn" title="Report a bug" onClick={onReportBug}>
             <Icon name="bug" size={13} />
           </button>
         </div>
