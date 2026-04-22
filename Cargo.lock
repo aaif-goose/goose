@@ -4477,6 +4477,7 @@ dependencies = [
  "comfy-table",
  "console 0.16.3",
  "dotenvy",
+ "env-lock",
  "etcetera 0.11.0",
  "futures",
  "goose",

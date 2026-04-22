@@ -92,6 +92,7 @@ native-tls = [
 ]
 
 [dev-dependencies]
+env-lock.workspace = true
 tempfile = { workspace = true }
 test-case = { workspace = true }
 tokio = { workspace = true }
