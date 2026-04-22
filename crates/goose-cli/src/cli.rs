@@ -562,6 +562,14 @@ enum SchedulerCommand {
             help = "Recipe source (path to file, or base64 encoded recipe string)"
         )]
         recipe_source: String,
+        #[arg(
+            long,
+            value_name = "KEY=VALUE",
+            help = "Recipe parameter in KEY=VALUE format (can be specified multiple times)",
+            action = clap::ArgAction::Append,
+            value_parser = parse_key_val,
+        )]
+        params: Vec<(String, String)>,
     },
     #[command(about = "List all scheduled jobs")]
     List {},
@@ -1492,7 +1500,8 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
             schedule_id,
             cron,
             recipe_source,
-        } => handle_schedule_add(schedule_id, cron, recipe_source).await,
+            params,
+        } => handle_schedule_add(schedule_id, cron, recipe_source, params).await,
         SchedulerCommand::List {} => handle_schedule_list().await,
         SchedulerCommand::Remove { schedule_id } => handle_schedule_remove(schedule_id).await,
         SchedulerCommand::Sessions { schedule_id, limit } => {
