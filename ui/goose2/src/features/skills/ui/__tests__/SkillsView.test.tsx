@@ -47,7 +47,7 @@ describe("SkillsView", () => {
       render(<SkillsView />);
       expect(screen.getByText("Skills")).toBeInTheDocument();
       expect(
-        screen.getByText("Reusable instructions for your AI personas"),
+        screen.getByText("Reusable instructions for your AI agents"),
       ).toBeInTheDocument();
     });
 

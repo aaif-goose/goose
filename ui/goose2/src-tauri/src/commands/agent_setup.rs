@@ -15,7 +15,7 @@ const AGENT_COMMAND_DEFS: &[AgentCommandDef] = &[
         id: "claude-acp",
         binary_name: "claude-agent-acp",
         install_command: Some(
-            "npm install -g @anthropic-ai/claude-code @zed-industries/claude-agent-acp",
+            "npm install -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp",
         ),
         auth_command: Some("claude auth login"),
         auth_status_command: Some("claude auth status"),

@@ -103,6 +103,11 @@ interface ChatStoreActions {
   markSessionRead: (sessionId: string) => void;
   markSessionUnread: (sessionId: string) => void;
   updateTokenState: (sessionId: string, state: Partial<TokenState>) => void;
+  replaceTokenState: (
+    sessionId: string,
+    tokenState: TokenState,
+    hasUsageSnapshot?: boolean,
+  ) => void;
   resetTokenState: (sessionId: string) => void;
   enqueueMessage: (sessionId: string, message: QueuedMessage) => void;
   dismissQueuedMessage: (sessionId: string) => void;
@@ -382,10 +387,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               accumulatedTotal,
               contextLimit: partial.contextLimit ?? current.contextLimit,
             },
+            hasUsageSnapshot: true,
           },
         },
       };
     }),
+
+  replaceTokenState: (sessionId, tokenState, hasUsageSnapshot = true) =>
+    set((state) => ({
+      sessionStateById: {
+        ...state.sessionStateById,
+        [sessionId]: {
+          ...(state.sessionStateById[sessionId] ??
+            createInitialSessionRuntime()),
+          tokenState: { ...tokenState },
+          hasUsageSnapshot,
+        },
+      },
+    })),
 
   resetTokenState: (sessionId) =>
     set((state) => ({
@@ -395,6 +414,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ...(state.sessionStateById[sessionId] ??
             createInitialSessionRuntime()),
           tokenState: { ...INITIAL_TOKEN_STATE },
+          hasUsageSnapshot: false,
         },
       },
     })),

@@ -10,43 +10,54 @@
     "uploadAria": "Suelta una imagen o haz clic para subir un avatar"
   },
   "card": {
-    "ariaLabel": "Persona: {{name}}",
-    "options": "Opciones de la persona"
+    "ariaLabel": "Agente: {{name}}",
+    "fileBacked": "Desde archivo",
+    "options": "Opciones del agente"
   },
   "config": {
     "ariaLabel": "Configuración del agente",
     "createAgent": "Crear agente",
-    "fromPersona": "(desde la persona: {{value}})",
+    "fromPersona": "(desde el agente: {{value}})",
     "model": "Modelo",
     "modelPlaceholder": "p. ej. claude-sonnet-4-20250514",
     "name": "Nombre",
     "namePlaceholder": "Mi agente",
-    "persona": "Persona",
+    "persona": "Agente",
     "provider": "Proveedor",
     "systemPromptOverrideCollapsed": "Sobrescribir prompt del sistema [+]",
     "systemPromptOverrideExpanded": "Sobrescribir prompt del sistema [-]",
-    "systemPromptPlaceholder": "Sobrescribe el prompt del sistema de la persona...",
+    "systemPromptPlaceholder": "Sobrescribe el prompt del sistema del agente...",
     "updateAgent": "Actualizar agente"
   },
   "editor": {
     "create": "Crear",
+    "created": "Agente creado.",
     "displayName": "Nombre para mostrar",
     "displayNamePlaceholder": "p. ej. Revisor de código",
     "duplicate": "Duplicar",
-    "editTitle": "Editar persona",
+    "duplicated": "Agente duplicado.",
+    "chooseProviderFirst": "Selecciona un proveedor para elegir un modelo.",
+    "editTitle": "Editar agente",
     "model": "Modelo",
-    "modelPlaceholder": "p. ej. claude-sonnet-4-20250514",
-    "newTitle": "Nueva persona",
+    "modelPlaceholder": "Selecciona un modelo",
+    "newTitle": "Nuevo agente",
+    "noModelsAvailable": "Todavía no hay modelos disponibles para este proveedor.",
     "provider": "Proveedor",
+    "readOnlyBuiltIn": "Los agentes integrados son de solo lectura. Duplícalo para personalizarlo.",
+    "readOnlyFile": "Este agente se cargó desde un archivo. Puedes revisarlo aquí, pero la edición está deshabilitada.",
+    "saveFailed": "No se pudo guardar el agente.",
+    "savedModelUnavailable": "{{model}} (guardado, no disponible)",
+    "savedModelUnavailableHelp": "Este agente usa un modelo guardado que no está en el inventario actual del proveedor.",
     "saving": "Guardando...",
     "systemPrompt": "Prompt del sistema",
-    "systemPromptPlaceholder": "Eres un asistente útil que..."
+    "systemPromptPlaceholder": "Eres un asistente útil que...",
+    "updated": "Agente actualizado."
   },
   "gallery": {
-    "createAria": "Crear nueva persona",
+    "createAria": "Crear nuevo agente",
     "dropFile": "o suelta un archivo",
-    "loading": "Cargando personas",
-    "new": "Nueva persona"
+    "loading": "Cargando agentes",
+    "new": "Nuevo agente"
   },
   "statuses": {
     "error": "Error",
@@ -55,18 +66,24 @@
     "starting": "Iniciando"
   },
   "view": {
-    "activeAgents": "Agentes activos",
-    "activeAgentsAria": "Agentes activos",
     "copyName": "{{name}} (Copia)",
+    "deleteFailed": "No se pudo eliminar el agente.",
     "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
-    "deleteTitle": "¿Eliminar persona?",
-    "description": "Configuraciones de persona personalizadas para flujos de trabajo específicos",
-    "emptyAgentsDescription": "Crea un agente desde una persona para empezar.",
-    "emptyAgentsTitle": "No hay agentes activos",
+    "deleteTitle": "¿Eliminar agente?",
+    "deleted": "Se eliminó \"{{name}}\".",
+    "description": "Configuraciones de agente personalizadas para flujos de trabajo específicos",
+    "emptyAgentsDescription": "Crea un agente para empezar.",
+    "emptyAgentsTitle": "Aún no hay agentes",
+    "exportFailed": "No se pudo exportar el agente.",
     "exportedTo": "Exportado a {{filename}}",
-    "newPersona": "Nueva persona",
+    "importInvalidExtension": "Tipo de archivo no compatible. Elige un archivo .json.",
+    "importInvalidMimeType": "Tipo de archivo no compatible. Elige un archivo JSON.",
+    "importFailed": "No se pudo importar el agente.",
+    "imported_one": "Se importó {{count}} agente.",
+    "imported_other": "Se importaron {{count}} agentes.",
+    "newPersona": "Nuevo agente",
     "optionsAria": "Opciones de {{name}}",
-    "searchPlaceholder": "Buscar personas...",
-    "title": "Personas"
+    "searchPlaceholder": "Buscar agentes...",
+    "title": "Agentes"
   }
 }

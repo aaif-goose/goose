@@ -5,8 +5,8 @@ const LEGACY_SESSION_CACHE_STORAGE_KEY = "goose:chat-sessions";
 
 export interface SessionMetadataOverlayRecord {
   sessionId: string;
-  projectId?: string | null;
   userSetTitle?: string | null;
+  projectId?: string | null;
   providerId?: string | null;
   personaId?: string | null;
   modelId?: string | null;
@@ -74,8 +74,8 @@ function recordFromLegacySession(
 ): SessionMetadataOverlayRecord {
   return {
     sessionId: session.acpSessionId ?? session.id,
-    projectId: session.projectId,
     userSetTitle: session.userSetName ? session.title : null,
+    projectId: session.projectId ?? null,
     providerId: session.providerId,
     personaId: session.personaId,
     modelId: session.modelId,

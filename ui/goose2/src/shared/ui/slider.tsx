@@ -11,6 +11,9 @@ function Slider({
   max = 100,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
+  const thumbAriaLabel = props["aria-label"];
+  const thumbAriaLabelledBy = props["aria-labelledby"];
+  const isDisabled = props.disabled === true;
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -51,6 +54,9 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
+          aria-label={thumbAriaLabel}
+          aria-labelledby={thumbAriaLabelledBy}
+          aria-disabled={isDisabled || undefined}
           className="border-primary bg-background ring-ring/50 block size-4 shrink-0 rounded-full border transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
         />
       ))}

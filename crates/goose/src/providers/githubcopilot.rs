@@ -1,7 +1,7 @@
 use crate::config::paths::Paths;
 use crate::providers::api_client::{ApiClient, AuthMethod};
 use crate::providers::oauth_device_flow::{run_device_flow, DeviceFlowConfig, RequestEncoding};
-use crate::providers::openai_compatible::{handle_status_openai_compat, stream_openai_compat};
+use crate::providers::openai_compatible::{handle_status, stream_openai_compat};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use axum::http;
@@ -434,7 +434,7 @@ impl Provider for GithubCopilotProvider {
                 .with_retry(|| async {
                     let mut payload_clone = payload.clone();
                     let resp = self.post(Some(session_id), &mut payload_clone).await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {

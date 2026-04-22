@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/cn";
+import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
@@ -19,7 +20,18 @@ import {
 } from "../hooks/useChatInputAttachments";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
+import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import type { ChatInputProps } from "../types";
+
+function attachmentSnapshotsMatch(
+  current: ChatAttachmentDraft[],
+  snapshot: ChatAttachmentDraft[],
+) {
+  return (
+    current.length === snapshot.length &&
+    current.every((attachment, index) => attachment.id === snapshot[index]?.id)
+  );
+}
 
 export function ChatInput({
   onSend,
@@ -51,17 +63,22 @@ export function ChatInput({
   onCreateProject,
   contextTokens = 0,
   contextLimit = 0,
+  isContextUsageReady,
   onCompactContext,
   canCompactContext = false,
   isCompactingContext = false,
+  supportsCompactionControls,
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
+  const textRef = useRef(initialValue);
   useEffect(() => {
     setTextRaw(initialValue);
+    textRef.current = initialValue;
   }, [initialValue]);
   const setText = useCallback(
     (value: string) => {
+      textRef.current = value;
       setTextRaw(value);
       onDraftChange?.(value);
     },
@@ -77,6 +94,8 @@ export function ChatInput({
     removeAttachment,
     clearAttachments,
   } = useChatInputAttachments();
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
 
   const resetTextarea = useCallback(() => {
     if (textareaRef.current) {
@@ -152,7 +171,7 @@ export function ChatInput({
 
   useEffect(() => textareaRef.current?.focus(), []);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!canSend) {
       return;
     }
@@ -175,11 +194,25 @@ export function ChatInput({
       dictation.stopRecording({ flushPending: false });
     }
 
-    onSend(
-      text.trim(),
+    const submittedText = text;
+    const submittedAttachments = attachments;
+    const sendResult = onSend(
+      submittedText.trim(),
       selectedPersonaId ?? undefined,
-      attachments.length > 0 ? attachments : undefined,
+      submittedAttachments.length > 0 ? submittedAttachments : undefined,
     );
+    const accepted = isPromiseLike<boolean>(sendResult)
+      ? await sendResult
+      : sendResult;
+    if (accepted === false) {
+      return;
+    }
+    const draftStillMatchesSubmission =
+      textRef.current === submittedText &&
+      attachmentSnapshotsMatch(attachmentsRef.current, submittedAttachments);
+    if (!draftStillMatchesSubmission) {
+      return;
+    }
     setText("");
     clearAttachments();
     if (textareaRef.current) {
@@ -219,7 +252,7 @@ export function ChatInput({
     }
     if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
       event.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
@@ -447,9 +480,11 @@ export function ChatInput({
                 onCreateProject={onCreateProject}
                 contextTokens={contextTokens}
                 contextLimit={contextLimit}
+                isContextUsageReady={isContextUsageReady}
                 onCompactContext={onCompactContext}
                 canCompactContext={canCompactContext}
                 isCompactingContext={isCompactingContext}
+                supportsCompactionControls={supportsCompactionControls}
                 canSend={canSend}
                 isStreaming={isStreaming}
                 hasQueuedMessage={hasQueuedMessage}

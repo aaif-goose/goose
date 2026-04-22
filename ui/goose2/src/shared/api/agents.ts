@@ -46,6 +46,17 @@ export async function importPersonas(
   return invoke("import_personas", { fileBytes, fileName });
 }
 
+export interface ImportFileReadResult {
+  fileBytes: number[];
+  fileName: string;
+}
+
+export async function readImportPersonaFile(
+  sourcePath: string,
+): Promise<ImportFileReadResult> {
+  return invoke("read_import_persona_file", { sourcePath });
+}
+
 export async function savePersonaAvatar(
   personaId: string,
   sourcePath: string,

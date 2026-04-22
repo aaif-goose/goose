@@ -20,6 +20,7 @@ function inventoryModelToOption(
     provider: model.family ?? undefined,
     providerId: provider?.providerId,
     providerName: provider?.providerName,
+    contextLimit: model.contextLimit ?? undefined,
     recommended: model.recommended ?? false,
   };
 }

@@ -43,6 +43,7 @@ describe("useChat attachments", () => {
       isLoading: false,
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     });
     mockAcpCancelSession.mockResolvedValue(true);
     mockAcpPrepareSession.mockResolvedValue(undefined);

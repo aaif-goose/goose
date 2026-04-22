@@ -100,6 +100,43 @@ jobs:
         env:
           CARGO_INCREMENTAL: "0"
 
+  rust-msrv:
+    name: Check MSRV
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ -z "$msrv" ]; then
+            echo "Could not find rust-version in workspace Cargo.toml" >&2
+            exit 1
+          fi
+          echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+          echo "MSRV: $msrv"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606  # v1
+        with:
+          toolchain: ${{ steps.msrv.outputs.msrv }}
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y libdbus-1-dev libxcb1-dev
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae  # v2
+        with:
+          key: msrv
+
+      - name: Check with MSRV toolchain
+        run: cargo check --workspace --locked --all-targets
+        env:
+          CARGO_INCREMENTAL: "0"
+
   rust-lint:
     name: Lint Rust Code
     runs-on: ubuntu-latest

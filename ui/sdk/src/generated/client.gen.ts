@@ -34,10 +34,6 @@ import type {
   ExportSourceResponse,
   GetExtensionsRequest,
   GetExtensionsResponse,
-  GetProviderDetailsRequest,
-  GetProviderDetailsResponse,
-  GetProviderInventoryRequest,
-  GetProviderInventoryResponse,
   GetSessionExtensionsRequest,
   GetSessionExtensionsResponse,
   GetToolsRequest,
@@ -60,6 +56,7 @@ import type {
   RemoveExtensionRequest,
   RemoveSecretRequest,
   UnarchiveSessionRequest,
+  UpdateSessionProjectRequest,
   UpdateSourceRequest,
   UpdateSourceResponse,
   UpdateWorkingDirRequest,
@@ -76,8 +73,6 @@ import {
   zExportSessionResponse,
   zExportSourceResponse,
   zGetExtensionsResponse,
-  zGetProviderDetailsResponse,
-  zGetProviderInventoryResponse,
   zGetSessionExtensionsResponse,
   zGetToolsResponse,
   zImportSessionResponse,
@@ -144,22 +139,6 @@ export class GooseExtClient {
     return zListProvidersResponse.parse(raw) as ListProvidersResponse;
   }
 
-  async GooseProvidersDetails(
-    params: GetProviderDetailsRequest,
-  ): Promise<GetProviderDetailsResponse> {
-    const raw = await this.conn.extMethod("_goose/providers/details", params);
-    return zGetProviderDetailsResponse.parse(raw) as GetProviderDetailsResponse;
-  }
-
-  async GooseProvidersInventory(
-    params: GetProviderInventoryRequest,
-  ): Promise<GetProviderInventoryResponse> {
-    const raw = await this.conn.extMethod("_goose/providers/inventory", params);
-    return zGetProviderInventoryResponse.parse(
-      raw,
-    ) as GetProviderInventoryResponse;
-  }
-
   async GooseProvidersInventoryRefresh(
     params: RefreshProviderInventoryRequest,
   ): Promise<RefreshProviderInventoryResponse> {
@@ -214,6 +193,12 @@ export class GooseExtClient {
   ): Promise<ImportSessionResponse> {
     const raw = await this.conn.extMethod("_goose/session/import", params);
     return zImportSessionResponse.parse(raw) as ImportSessionResponse;
+  }
+
+  async GooseSessionUpdateProject(
+    params: UpdateSessionProjectRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/session/update_project", params);
   }
 
   async GooseSessionArchive(params: ArchiveSessionRequest): Promise<void> {

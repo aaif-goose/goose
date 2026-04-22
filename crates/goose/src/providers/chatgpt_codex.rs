@@ -5,7 +5,7 @@ use crate::providers::api_client::AuthProvider;
 use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use crate::providers::errors::ProviderError;
 use crate::providers::formats::openai_responses::responses_api_to_streaming_message;
-use crate::providers::openai_compatible::handle_status_openai_compat;
+use crate::providers::openai_compatible::handle_status;
 use crate::providers::retry::ProviderRetry;
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::{anyhow, Result};
@@ -928,7 +928,7 @@ impl ChatGptCodexProvider {
             .await
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
 
-        handle_status_openai_compat(response).await
+        handle_status(response).await
     }
 }
 

@@ -56,6 +56,7 @@ interface AgentStoreState {
   // UI state
   personaEditorOpen: boolean;
   editingPersona: Persona | null;
+  personaEditorMode: "create" | "edit" | "details";
 }
 
 interface AgentStoreActions {
@@ -83,7 +84,10 @@ interface AgentStoreActions {
   getActiveAgent: () => Agent | null;
 
   // Persona editor
-  openPersonaEditor: (persona?: Persona) => void;
+  openPersonaEditor: (
+    persona?: Persona,
+    mode?: "create" | "edit" | "details",
+  ) => void;
   closePersonaEditor: () => void;
 
   // Loading
@@ -112,6 +116,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   isLoading: false,
   personaEditorOpen: false,
   editingPersona: null,
+  personaEditorMode: "create",
 
   // Persona CRUD
   setPersonas: (personas) => set({ personas }),
@@ -187,16 +192,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   },
 
   // Persona editor
-  openPersonaEditor: (persona) =>
+  openPersonaEditor: (persona, mode) =>
     set({
       personaEditorOpen: true,
       editingPersona: persona ?? null,
+      personaEditorMode: mode ?? (persona ? "edit" : "create"),
     }),
 
   closePersonaEditor: () =>
     set({
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     }),
 
   // Loading
