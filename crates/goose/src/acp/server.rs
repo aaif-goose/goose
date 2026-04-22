@@ -1,7 +1,7 @@
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
 use crate::acp::tools::AcpAwareToolMeta;
-use crate::acp::{ACP_CURRENT_MODEL, PermissionDecision};
+use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::platform_extensions::developer::DeveloperClient;
@@ -15,7 +15,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 #[cfg(feature = "local-inference")]
 use crate::dictation::providers::transcribe_local;
 use crate::dictation::providers::{
-    DictationProvider, all_providers, is_configured, transcribe_with_provider,
+    all_providers, is_configured, transcribe_with_provider, DictationProvider,
 };
 #[cfg(feature = "local-inference")]
 use crate::dictation::whisper;
@@ -3187,7 +3187,7 @@ impl GooseAcpAgent {
         &self,
         req: DictationTranscribeRequest,
     ) -> Result<DictationTranscribeResponse, sacp::Error> {
-        use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+        use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
         let config = crate::config::Config::global();
 
         #[cfg(not(feature = "local-inference"))]
@@ -3326,7 +3326,7 @@ impl GooseAcpAgent {
     ) -> Result<DictationModelsListResponse, sacp::Error> {
         #[cfg(feature = "local-inference")]
         {
-            use crate::download_manager::{DownloadStatus, get_download_manager};
+            use crate::download_manager::{get_download_manager, DownloadStatus};
 
             let manager = get_download_manager();
             let models = whisper::available_models()
