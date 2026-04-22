@@ -43,6 +43,9 @@ impl EditTools {
         params: FileReadParams,
         working_dir: Option<&Path>,
     ) -> CallToolResult {
+        if let Some(err) = reject_uri_path(&params.path) {
+            return err;
+        }
         let path = resolve_path(&params.path, working_dir);
 
         match fs::read_to_string(&path) {
@@ -67,6 +70,9 @@ impl EditTools {
         params: FileWriteParams,
         working_dir: Option<&Path>,
     ) -> CallToolResult {
+        if let Some(err) = reject_uri_path(&params.path) {
+            return err;
+        }
         let path = resolve_path(&params.path, working_dir);
 
         if let Some(parent) = path.parent() {
@@ -111,6 +117,9 @@ impl EditTools {
         params: FileEditParams,
         working_dir: Option<&Path>,
     ) -> CallToolResult {
+        if let Some(err) = reject_uri_path(&params.path) {
+            return err;
+        }
         let path = resolve_path(&params.path, working_dir);
 
         let content = match fs::read_to_string(&path) {
@@ -225,6 +234,27 @@ pub fn resolve_path(path: &str, working_dir: Option<&Path>) -> PathBuf {
     }
 }
 
+/// Guards file-reading / editing paths against URIs being passed in.
+///
+/// Hosts that expose both a filesystem reader and an MCP resource reader
+/// can trip over `skill://…`, `github://…`, and other scheme-prefixed
+/// strings: the model sometimes tries the filesystem reader on them, and
+/// `PathBuf::from` silently produces a bogus relative path under cwd.
+/// See `Skills SEP host implementation guidelines.md` for the recorded
+/// pitfall. Detect the `<scheme>://` shape and redirect the model toward
+/// `read_resource` / `load_skill` with a clear error.
+pub fn reject_uri_path(path: &str) -> Option<CallToolResult> {
+    if !crate::agents::platform_extensions::looks_like_uri(path) {
+        return None;
+    }
+
+    Some(CallToolResult::error(vec![Content::text(format!(
+        "'{}' is an MCP resource URI, not a filesystem path. Use the read_resource tool (it takes server + uri) for raw URIs, or load_skill for named skills.",
+        path
+    ))
+    .with_priority(0.0)]))
+}
+
 fn count_lines_before(content: &str, byte_pos: usize) -> usize {
     content
         .char_indices()
@@ -295,6 +325,30 @@ mod tests {
             RawContent::Text(text) => &text.text,
             _ => panic!("expected text"),
         }
+    }
+
+    #[test]
+    fn test_reject_uri_path_rejects_schemed_inputs() {
+        // Recognizes the canonical `skill://` scheme as well as domain-
+        // native schemes that the SEP explicitly permits.
+        assert!(reject_uri_path("skill://pull-requests/SKILL.md").is_some());
+        assert!(reject_uri_path("github://owner/repo/skills/x/SKILL.md").is_some());
+        assert!(reject_uri_path("repo://foo").is_some());
+        assert!(reject_uri_path("https://example.com/a").is_some());
+        // RFC 3986 allows +, -, . in scheme; all should be recognized.
+        assert!(reject_uri_path("svn+ssh://host/path").is_some());
+    }
+
+    #[test]
+    fn test_reject_uri_path_passes_through_filesystem_paths() {
+        assert!(reject_uri_path("/absolute/path").is_none());
+        assert!(reject_uri_path("C:\\Users\\me\\file.txt").is_none());
+        assert!(reject_uri_path("relative/path.md").is_none());
+        // A literal colon in the name is not enough — we require `://`.
+        assert!(reject_uri_path("my:file").is_none());
+        // `://` without a valid scheme prefix is passed through.
+        assert!(reject_uri_path("://foo").is_none());
+        assert!(reject_uri_path("1bad://foo").is_none());
     }
 
     #[test_case(None, None, "line1\nline2\nline3" ; "full content")]

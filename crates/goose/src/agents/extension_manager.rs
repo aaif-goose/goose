@@ -79,6 +79,12 @@ struct Extension {
     client: McpClientBox,
     server_info: Option<ServerInfo>,
     _temp_dir: Option<tempfile::TempDir>,
+    /// Cache of MCP-served skills discovered from this extension's
+    /// `skill://index.json` at connect time. Populated synchronously
+    /// during extension registration (see `populate_mcp_skills_cache`).
+    /// Empty for extensions that don't serve a parseable index.
+    /// TODO: invalidate on `notifications/resources/list_changed`.
+    mcp_skills: Vec<crate::skills::mcp_client::McpSkillEntry>,
 }
 
 impl Extension {
@@ -88,6 +94,7 @@ impl Extension {
         client: McpClientBox,
         server_info: Option<ServerInfo>,
         temp_dir: Option<tempfile::TempDir>,
+        mcp_skills: Vec<crate::skills::mcp_client::McpSkillEntry>,
     ) -> Self {
         Self {
             client,
@@ -95,6 +102,7 @@ impl Extension {
             resolved_config,
             server_info,
             _temp_dir: temp_dir,
+            mcp_skills,
         }
     }
 
@@ -674,6 +682,38 @@ async fn create_unix_socket_http_client(
     Ok(Box::new(client_res?))
 }
 
+/// Fetches the MCP skills cache for a newly-connected extension, bounded by
+/// `INDEX_FETCH_TIMEOUT`. On timeout or error the cache is empty and
+/// extension registration still succeeds.
+///
+/// Requires a real session id: `McpClient::set_session_id` asserts a single
+/// session per client lifetime, so passing `""` would lock the client and
+/// panic on the first real-session request. Callers without a session (ACP
+/// bootstrap, CLI scenario tests) pass `None` and get an empty cache; a
+/// later reconnect with a real session populates it.
+async fn populate_mcp_skills_cache(
+    server_name: &str,
+    client: &dyn McpClientTrait,
+    session_id: Option<&str>,
+) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
+    match session_id {
+        Some(sid) => crate::skills::mcp_client::fetch_server_skills(
+            server_name,
+            client,
+            sid,
+            CancellationToken::new(),
+        )
+        .await,
+        None => {
+            tracing::debug!(
+                server = %server_name,
+                "skipping skill index fetch: no session id at registration time"
+            );
+            Vec::new()
+        }
+    }
+}
+
 impl ExtensionManager {
     fn mcp_client_capabilities(&self) -> GooseMcpClientCapabilities {
         GooseMcpClientCapabilities {
@@ -750,14 +790,50 @@ impl ExtensionManager {
         // restart if both match.
         let resolved_config = config.clone().resolve(Config::global()).await?;
 
-        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
-            if existing.config == config && existing.resolved_config == resolved_config {
-                return Ok(());
+        // Fast path: if the extension is already registered with an identical
+        // config, skip the restart. Two wrinkles:
+        //  1. If the skill cache is empty and we now have a session id, the
+        //     earlier registration likely passed `session_id=None` (e.g. the
+        //     `extensionmanager.add_extension` tool path) and never fetched
+        //     `skill://index.json`. Repopulate in place rather than forcing
+        //     the user to reconnect.
+        //  2. Otherwise it's a true no-op.
+        let repopulate_client: Option<McpClientBox> = {
+            let extensions = self.extensions.lock().await;
+            match extensions.get(&sanitized_name) {
+                Some(existing)
+                    if existing.config == config
+                        && existing.resolved_config == resolved_config =>
+                {
+                    if existing.mcp_skills.is_empty() && session_id.is_some() {
+                        Some(existing.client.clone())
+                    } else {
+                        return Ok(());
+                    }
+                }
+                Some(_) => {
+                    tracing::debug!(
+                        name = sanitized_name,
+                        "extension config changed, restarting with updated config"
+                    );
+                    None
+                }
+                None => None,
             }
-            tracing::debug!(
-                name = sanitized_name,
-                "extension config changed, restarting with updated config"
-            );
+        };
+
+        if let Some(client) = repopulate_client {
+            let refreshed =
+                populate_mcp_skills_cache(&sanitized_name, client.as_ref(), session_id).await;
+            let mut extensions = self.extensions.lock().await;
+            if let Some(existing) = extensions.get_mut(&sanitized_name) {
+                // Guard against a concurrent restart having replaced the
+                // extension between the drop and reacquire.
+                if existing.config == config && existing.resolved_config == resolved_config {
+                    existing.mcp_skills = refreshed;
+                }
+            }
+            return Ok(());
         }
 
         let mut temp_dir = None;
@@ -975,6 +1051,10 @@ impl ExtensionManager {
         };
 
         let server_info = client.get_info().cloned();
+        let client_arc: McpClientBox = Arc::from(client);
+
+        let mcp_skills =
+            populate_mcp_skills_cache(&sanitized_name, client_arc.as_ref(), session_id).await;
 
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
@@ -982,9 +1062,10 @@ impl ExtensionManager {
             Extension::new(
                 config,
                 resolved_config,
-                Arc::from(client),
+                client_arc,
                 server_info,
                 temp_dir,
+                mcp_skills,
             ),
         );
         drop(extensions);
@@ -1000,28 +1081,70 @@ impl ExtensionManager {
         client: McpClientBox,
         info: Option<ServerInfo>,
         temp_dir: Option<TempDir>,
+        session_id: Option<&str>,
     ) {
         let normalized = name_to_key(&name);
+
+        let mcp_skills = populate_mcp_skills_cache(&normalized, client.as_ref(), session_id).await;
+
         self.extensions.lock().await.insert(
             normalized,
-            Extension::new(config.clone(), config.clone(), client, info, temp_dir),
+            Extension::new(
+                config.clone(),
+                config.clone(),
+                client,
+                info,
+                temp_dir,
+                mcp_skills,
+            ),
         );
         self.invalidate_tools_cache_and_bump_version().await;
     }
 
-    /// Get extensions info for building the system prompt
-    pub async fn get_extensions_info(&self, working_dir: &std::path::Path) -> Vec<ExtensionInfo> {
+    /// Get extensions info for building the system prompt. Combines each
+    /// extension's static `InitializeResult.instructions` with any per-turn
+    /// dynamic contribution via `McpClientTrait::get_dynamic_instructions`.
+    pub async fn get_extensions_info(
+        &self,
+        session_id: &str,
+        working_dir: &std::path::Path,
+    ) -> Vec<ExtensionInfo> {
         let working_dir_str = working_dir.to_string_lossy();
-        self.extensions
-            .lock()
-            .await
-            .iter()
-            .map(|(name, ext)| {
-                let instructions = ext.get_instructions().unwrap_or_default();
-                let instructions = instructions.replace("{{WORKING_DIR}}", &working_dir_str);
-                ExtensionInfo::new(name, &instructions, ext.supports_resources())
-            })
-            .collect()
+
+        let snapshots: Vec<(String, String, McpClientBox, bool)> = {
+            let extensions = self.extensions.lock().await;
+            extensions
+                .iter()
+                .map(|(name, ext)| {
+                    (
+                        name.clone(),
+                        ext.get_instructions().unwrap_or_default(),
+                        ext.client.clone(),
+                        ext.supports_resources(),
+                    )
+                })
+                .collect()
+        };
+
+        let mut infos = Vec::with_capacity(snapshots.len());
+        for (name, static_instructions, client, supports_resources) in snapshots {
+            let dynamic = client
+                .get_dynamic_instructions(session_id)
+                .await
+                .unwrap_or_default();
+
+            let combined = if dynamic.is_empty() {
+                static_instructions
+            } else if static_instructions.is_empty() {
+                dynamic
+            } else {
+                format!("{}\n{}", static_instructions, dynamic)
+            };
+
+            let combined = combined.replace("{{WORKING_DIR}}", &working_dir_str);
+            infos.push(ExtensionInfo::new(&name, &combined, supports_resources));
+        }
+        infos
     }
 
     /// Get aggregated usage statistics
@@ -1055,6 +1178,19 @@ impl ExtensionManager {
 
     pub async fn list_extensions(&self) -> ExtensionResult<Vec<String>> {
         Ok(self.extensions.lock().await.keys().cloned().collect())
+    }
+
+    /// Snapshot every connected extension's cached MCP skill entries. Read
+    /// path for the skills platform extension's per-turn system-prompt
+    /// assembly — no network I/O.
+    pub async fn aggregated_mcp_skills(
+        &self,
+    ) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
+        let mut out = Vec::new();
+        for ext in self.extensions.lock().await.values() {
+            out.extend(ext.mcp_skills.iter().cloned());
+        }
+        out
     }
 
     pub async fn is_extension_enabled(&self, name: &str) -> bool {
@@ -1936,7 +2072,8 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            let extension = Extension::new(config.clone(), config.clone(), client, None, None);
+            let extension =
+                Extension::new(config.clone(), config.clone(), client, None, None, Vec::new());
             self.extensions
                 .lock()
                 .await
@@ -2516,6 +2653,7 @@ mod tests {
             Arc::new(MockClient {}),
             None,
             None,
+            None,
         )
         .await;
         assert_eq!(em.extensions.lock().await.len(), 1);
@@ -2560,6 +2698,7 @@ mod tests {
             "test-ext".to_string(),
             config_a,
             Arc::new(MockClient {}),
+            None,
             None,
             None,
         )

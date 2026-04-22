@@ -2143,7 +2143,7 @@ impl Agent {
             .await?;
         let extensions_info = self
             .extension_manager
-            .get_extensions_info(&session.working_dir)
+            .get_extensions_info(session_id, &session.working_dir)
             .await;
         tracing::debug!("Retrieved {} extensions info", extensions_info.len());
         let (extension_count, tool_count) = self

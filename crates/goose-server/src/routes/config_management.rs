@@ -150,6 +150,10 @@ pub struct SlashCommand {
     pub command: String,
     pub help: String,
     pub command_type: CommandType,
+    /// For MCP-sourced skills, the name of the originating MCP extension
+    /// (e.g. "github"). `None` for filesystem skills and non-skill commands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 #[derive(Serialize, ToSchema)]
 pub struct SlashCommandsResponse {
@@ -402,6 +406,9 @@ pub async fn get_provider_models(
 pub struct SlashCommandsQuery {
     /// Optional working directory to discover local skills from
     pub working_dir: Option<String>,
+    /// Optional session id; when provided, the endpoint also includes
+    /// MCP-served skills from the corresponding agent's connected extensions.
+    pub session_id: Option<String>,
 }
 
 #[utoipa::path(
@@ -413,6 +420,7 @@ pub struct SlashCommandsQuery {
     )
 )]
 pub async fn get_slash_commands(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Query(query): axum::extract::Query<SlashCommandsQuery>,
 ) -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
     let mut commands: Vec<_> = slash_commands::list_commands()
@@ -421,6 +429,7 @@ pub async fn get_slash_commands(
             command: command.command.clone(),
             help: command.recipe_path.clone(),
             command_type: CommandType::Recipe,
+            origin: None,
         })
         .collect();
 
@@ -429,6 +438,7 @@ pub async fn get_slash_commands(
             command: cmd_def.name.to_string(),
             help: cmd_def.description.to_string(),
             command_type: CommandType::Builtin,
+            origin: None,
         });
     }
 
@@ -438,6 +448,7 @@ pub async fn get_slash_commands(
             command: source.name,
             help: source.description,
             command_type: CommandType::Skill,
+            origin: None,
         });
     }
 
@@ -456,7 +467,21 @@ pub async fn get_slash_commands(
                 command: source.name,
                 help: source.description,
                 command_type: CommandType::Agent,
+                origin: None,
             });
+        }
+    }
+
+    if let Some(session_id) = query.session_id.as_deref() {
+        if let Ok(agent) = state.get_agent(session_id.to_string()).await {
+            for entry in agent.extension_manager.aggregated_mcp_skills().await {
+                commands.push(SlashCommand {
+                    command: entry.name,
+                    help: entry.description,
+                    command_type: CommandType::Skill,
+                    origin: Some(entry.server),
+                });
+            }
         }
     }
 

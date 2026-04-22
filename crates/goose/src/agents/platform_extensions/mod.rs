@@ -17,6 +17,27 @@ use crate::agents::mcp_client::McpClientTrait;
 use crate::session::Session;
 use once_cell::sync::Lazy;
 
+/// Returns true if `s` starts with an RFC 3986 scheme followed by `://`
+/// (e.g. `skill://foo`, `github://owner/repo`, `https://example.com`).
+/// Narrow on purpose: POSIX paths can't match (no `://`) and well-formed
+/// Windows absolute paths can't either (drive letter + `:\`). Shared by
+/// `developer::edit::reject_uri_path` and the `load_skill` tool so the
+/// two guardrails can't drift apart.
+pub fn looks_like_uri(s: &str) -> bool {
+    let Some(colon_idx) = s.find("://") else {
+        return false;
+    };
+    let scheme = &s[..colon_idx];
+    let mut chars = scheme.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_alphabetic() {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+}
+
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 
 // These are used by integration tests in crates/goose/tests/
