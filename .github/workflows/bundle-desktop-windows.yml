@@ -86,20 +86,25 @@ jobs:
         if: ${{ inputs.windows_variant == 'cuda' }}
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '12.5.0'
+          cuda: '12.9.1'
           method: 'local'
           log-file-suffix: 'bundle-desktop-windows-cuda.txt'
 
       - name: Verify CUDA toolchain (Windows CUDA)
         if: ${{ inputs.windows_variant == 'cuda' }}
         shell: bash
+        env:
+          CUDA_COMPUTE_CAP: "75"
         run: |
           echo "CUDA_PATH=${CUDA_PATH}"
+          echo "CUDA_COMPUTE_CAP=${CUDA_COMPUTE_CAP}"
           where nvcc
           nvcc -V
 
       - name: Build Windows executable
         shell: bash
+        env:
+          CUDA_COMPUTE_CAP: ${{ inputs.windows_variant == 'cuda' && '75' || '' }}
         run: |
           echo "🚀 Building Windows executable..."
           if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
