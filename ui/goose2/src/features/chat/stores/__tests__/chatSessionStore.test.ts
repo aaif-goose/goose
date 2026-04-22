@@ -97,12 +97,16 @@ describe("chatSessionStore", () => {
           title: "ACP Session 1",
           updatedAt: "2026-04-01",
           messageCount: 4,
+          providerId: "openai",
+          modelName: "gpt-4.1",
         },
         {
           sessionId: "acp-2",
           title: null,
           updatedAt: "2026-04-02",
           messageCount: 7,
+          providerId: null,
+          modelName: null,
         },
       ]);
 
@@ -116,6 +120,9 @@ describe("chatSessionStore", () => {
       expect(sessions[1].id).toBe("acp-1");
       expect(sessions[1].title).toBe("ACP Session 1");
       expect(sessions[1].messageCount).toBe(4);
+      expect(sessions[1].providerId).toBe("openai");
+      expect(sessions[1].modelId).toBe("gpt-4.1");
+      expect(sessions[1].modelName).toBe("gpt-4.1");
     });
 
     it("rehydrates cached project metadata for ACP sessions", async () => {
@@ -143,6 +150,8 @@ describe("chatSessionStore", () => {
           updatedAt: "2026-04-02",
           messageCount: 7,
           projectId: "project-123",
+          providerId: "anthropic",
+          modelName: "claude-sonnet-4",
         },
       ]);
 
@@ -151,12 +160,15 @@ describe("chatSessionStore", () => {
       const session = useChatSessionStore.getState().sessions[0];
       expect(session.title).toBe("Renamed Project Chat");
       expect(session.projectId).toBe("project-123");
-      expect(session.providerId).toBe("openai");
+      // Backend-provided providerId takes precedence over overlay
+      expect(session.providerId).toBe("anthropic");
       expect(session.personaId).toBe("persona-1");
       expect(session.createdAt).toBe("2026-03-31");
       expect(session.updatedAt).toBe("2026-04-02");
       expect(session.messageCount).toBe(7);
       expect(session.userSetName).toBe(true);
+      // Backend-provided modelName takes precedence over overlay
+      expect(session.modelName).toBe("claude-sonnet-4");
     });
 
     it("ignores legacy draft records while hydrating overlays", async () => {
@@ -195,6 +207,8 @@ describe("chatSessionStore", () => {
           title: "ACP Session",
           updatedAt: "2026-04-02",
           messageCount: 1,
+          providerId: null,
+          modelName: null,
         },
       ]);
 

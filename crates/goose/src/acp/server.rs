@@ -185,6 +185,18 @@ fn thread_session_meta(
             serde_json::Value::String(pid.clone()),
         );
     }
+    if let Some(ref provider_id) = metadata.provider_id {
+        meta.insert(
+            "providerId".to_string(),
+            serde_json::Value::String(provider_id.clone()),
+        );
+    }
+    if let Some(ref model_name) = metadata.model_name {
+        meta.insert(
+            "modelName".to_string(),
+            serde_json::Value::String(model_name.clone()),
+        );
+    }
     meta
 }
 
