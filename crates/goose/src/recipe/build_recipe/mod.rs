@@ -169,7 +169,11 @@ pub fn resolve_sub_recipe_path(
     }
 
     let canonical = path.canonicalize().map_err(|e| RecipeError::Invalid {
-        source: anyhow::anyhow!("Failed to resolve sub-recipe path {}: {}", path.display(), e),
+        source: anyhow::anyhow!(
+            "Failed to resolve sub-recipe path {}: {}",
+            path.display(),
+            e
+        ),
     })?;
     Ok(canonical.display().to_string())
 }
