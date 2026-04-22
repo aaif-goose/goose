@@ -10,14 +10,12 @@ pub use client::{SkillsClient, EXTENSION_NAME};
 use crate::config::paths::Paths;
 use crate::sources::parse_frontmatter;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
+use sacp::Error;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
-/// Shared YAML frontmatter shape for `SKILL.md` files. `name` is optional at
-/// the parser level so callers can decide whether to require it (runtime
-/// discovery does; source CRUD uses the directory name instead).
 #[derive(Debug, Deserialize)]
 pub struct SkillFrontmatter {
     #[serde(default)]
@@ -35,6 +33,110 @@ pub fn global_skills_dir() -> Option<PathBuf> {
 /// `<project>/.goose/skills`.
 pub fn project_skills_dir(project_dir: &Path) -> PathBuf {
     project_dir.join(".goose").join("skills")
+}
+
+pub(crate) fn skills_dir_global_or_err() -> Result<PathBuf, Error> {
+    global_skills_dir()
+        .ok_or_else(|| Error::internal_error().data("Could not determine home directory"))
+}
+
+pub(crate) fn skills_dir_project_or_err(project_dir: &str) -> Result<PathBuf, Error> {
+    if project_dir.trim().is_empty() {
+        return Err(
+            Error::invalid_params().data("projectDir must not be empty when global is false")
+        );
+    }
+    Ok(project_skills_dir(Path::new(project_dir)))
+}
+
+pub(crate) fn skill_base_dir(global: bool, project_dir: Option<&str>) -> Result<PathBuf, Error> {
+    if global {
+        skills_dir_global_or_err()
+    } else {
+        let pd = project_dir.ok_or_else(|| {
+            Error::invalid_params().data("projectDir is required when global is false")
+        })?;
+        skills_dir_project_or_err(pd)
+    }
+}
+
+pub(crate) fn validate_skill_name(name: &str) -> Result<(), Error> {
+    if name.is_empty() {
+        return Err(Error::invalid_params().data("Skill name must not be empty"));
+    }
+    if name.len() > 64 {
+        return Err(Error::invalid_params().data(format!(
+            "Invalid skill name \"{}\". Names must be at most 64 characters.",
+            name
+        )));
+    }
+    if !name
+        .chars()
+        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
+    {
+        return Err(Error::invalid_params().data(format!(
+            "Invalid skill name \"{}\". Names may only contain lowercase letters, digits, and hyphens.",
+            name
+        )));
+    }
+    if name.starts_with('-') || name.ends_with('-') {
+        return Err(Error::invalid_params().data(format!(
+            "Invalid skill name \"{}\". Names must not start or end with a hyphen.",
+            name
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn resolve_skill_dir(
+    path: &str,
+    global: bool,
+    project_dir: Option<&str>,
+) -> Result<PathBuf, Error> {
+    if path.is_empty() {
+        return Err(Error::invalid_params().data("Source path must not be empty"));
+    }
+    let dir = skill_base_dir(global, project_dir)?.join(path);
+    if !dir.exists() {
+        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
+    }
+    Ok(dir)
+}
+
+pub(crate) fn infer_skill_name(dir: &Path) -> String {
+    let md = dir.join("SKILL.md");
+    if let Ok(raw) = std::fs::read_to_string(&md) {
+        if let Ok(Some((meta, _))) = parse_frontmatter::<SkillFrontmatter>(&raw) {
+            if let Some(n) = meta.name.filter(|n| !n.is_empty()) {
+                return n;
+            }
+        }
+    }
+    dir.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unnamed")
+        .to_string()
+}
+
+pub(crate) fn build_skill_md(name: &str, description: &str, content: &str) -> String {
+    let safe_desc = description.replace('\'', "''");
+    let mut md = format!("---\nname: {}\ndescription: '{}'\n---\n", name, safe_desc);
+    if !content.is_empty() {
+        md.push('\n');
+        md.push_str(content);
+        md.push('\n');
+    }
+    md
+}
+
+pub(crate) fn parse_skill_frontmatter(raw: &str) -> (String, String) {
+    if !raw.trim_start().starts_with("---") {
+        return (String::new(), raw.to_string());
+    }
+    match parse_frontmatter::<SkillFrontmatter>(raw) {
+        Ok(Some((meta, body))) => (meta.description, body),
+        _ => (String::new(), raw.to_string()),
+    }
 }
 
 /// Every directory the agent reads skills from, paired with whether each is a
@@ -72,7 +174,16 @@ fn parse_skill_content(content: &str, path: &Path, global: bool) -> Option<Sourc
         }
     };
 
-    let name = metadata.name.filter(|n| !n.is_empty())?;
+    let name = match metadata.name.filter(|n| !n.is_empty()) {
+        Some(n) => n,
+        None => {
+            warn!(
+                "Skill at '{}' is missing a required 'name' in frontmatter, skipping",
+                path.display()
+            );
+            return None;
+        }
+    };
 
     if name.contains('/') {
         warn!("Skill name '{}' contains '/', skipping", name);

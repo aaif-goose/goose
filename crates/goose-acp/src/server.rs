@@ -3147,7 +3147,7 @@ impl GooseAcpAgent {
     ) -> Result<UpdateSourceResponse, sacp::Error> {
         let source = goose::sources::update_source(
             req.source_type,
-            &req.name,
+            &req.path,
             &req.description,
             &req.content,
             req.global,
@@ -3163,7 +3163,7 @@ impl GooseAcpAgent {
     ) -> Result<EmptyResponse, sacp::Error> {
         goose::sources::delete_source(
             req.source_type,
-            &req.name,
+            &req.path,
             req.global,
             req.project_dir.as_deref(),
         )?;
@@ -3177,7 +3177,7 @@ impl GooseAcpAgent {
     ) -> Result<ExportSourceResponse, sacp::Error> {
         let (json, filename) = goose::sources::export_source(
             req.source_type,
-            &req.name,
+            &req.path,
             req.global,
             req.project_dir.as_deref(),
         )?;

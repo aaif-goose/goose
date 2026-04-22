@@ -403,7 +403,7 @@ pub struct ListSourcesResponse {
 pub struct UpdateSourceRequest {
     #[serde(rename = "type")]
     pub source_type: SourceType,
-    pub name: String,
+    pub path: String,
     pub description: String,
     pub content: String,
     pub global: bool,
@@ -424,7 +424,7 @@ pub struct UpdateSourceResponse {
 pub struct DeleteSourceRequest {
     #[serde(rename = "type")]
     pub source_type: SourceType,
-    pub name: String,
+    pub path: String,
     pub global: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
@@ -437,7 +437,7 @@ pub struct DeleteSourceRequest {
 pub struct ExportSourceRequest {
     #[serde(rename = "type")]
     pub source_type: SourceType,
-    pub name: String,
+    pub path: String,
     pub global: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,

@@ -33,8 +33,7 @@ impl SkillsClient {
             let mut skills: Vec<&SourceEntry> = sources
                 .iter()
                 .filter(|s| {
-                    s.source_type == SourceType::Skill
-                        || s.source_type == SourceType::BuiltinSkill
+                    s.source_type == SourceType::Skill || s.source_type == SourceType::BuiltinSkill
                 })
                 .collect();
             skills.sort_by(|a, b| (&a.name, &a.directory).cmp(&(&b.name, &b.directory)));
@@ -156,14 +155,12 @@ impl McpClientTrait for SkillsClient {
             let relative_path = raw_relative_path.replace('\\', "/");
             if let Some(skill) = skills.iter().find(|s| {
                 s.name == parent_skill_name
-                    && matches!(
-                        s.source_type,
-                        SourceType::Skill | SourceType::BuiltinSkill
-                    )
+                    && matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill)
             }) {
                 let skill_dir = PathBuf::from(&skill.directory);
-                let canonical_skill_dir =
-                    skill_dir.canonicalize().unwrap_or_else(|_| skill_dir.clone());
+                let canonical_skill_dir = skill_dir
+                    .canonicalize()
+                    .unwrap_or_else(|_| skill_dir.clone());
 
                 for file_path in &skill.supporting_files {
                     let file_path_buf = Path::new(file_path);
