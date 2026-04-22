@@ -321,7 +321,13 @@ export const zUnarchiveSessionRequest = z.object({
 /**
  * The type of source entity.
  */
-export const zSourceType = z.enum(['skill']);
+export const zSourceType = z.enum([
+    'skill',
+    'builtinSkill',
+    'recipe',
+    'subrecipe',
+    'agent'
+]);
 
 /**
  * Create a new source (global or project-scoped).
@@ -339,8 +345,8 @@ export const zCreateSourceRequest = z.object({
 });
 
 /**
- * A source — a user-editable entity backed by an on-disk directory. Sources
- * may be either `global` (shared across all projects) or project-specific.
+ * A source discovered by Goose and backed by an on-disk path. Sources may be
+ * either `global` (shared across all projects) or project-specific.
  */
 export const zSourceEntry = z.object({
     type: zSourceType,
@@ -348,7 +354,9 @@ export const zSourceEntry = z.object({
     description: z.string(),
     content: z.string(),
     directory: z.string(),
-    global: z.boolean()
+    global: z.boolean(),
+    editable: z.boolean().optional().default(false),
+    supportingFiles: z.array(z.string()).optional()
 });
 
 export const zCreateSourceResponse = z.object({
@@ -379,7 +387,7 @@ export const zListSourcesResponse = z.object({
  */
 export const zUpdateSourceRequest = z.object({
     type: zSourceType,
-    name: z.string(),
+    path: z.string(),
     description: z.string(),
     content: z.string(),
     global: z.boolean(),
@@ -398,7 +406,7 @@ export const zUpdateSourceResponse = z.object({
  */
 export const zDeleteSourceRequest = z.object({
     type: zSourceType,
-    name: z.string(),
+    path: z.string(),
     global: z.boolean(),
     projectDir: z.union([
         z.string(),
@@ -411,7 +419,7 @@ export const zDeleteSourceRequest = z.object({
  */
 export const zExportSourceRequest = z.object({
     type: zSourceType,
-    name: z.string(),
+    path: z.string(),
     global: z.boolean(),
     projectDir: z.union([
         z.string(),

@@ -391,15 +391,15 @@ export type CreateSourceRequest = {
 /**
  * The type of source entity.
  */
-export type SourceType = 'skill';
+export type SourceType = 'skill' | 'builtinSkill' | 'recipe' | 'subrecipe' | 'agent';
 
 export type CreateSourceResponse = {
     source: SourceEntry;
 };
 
 /**
- * A source — a user-editable entity backed by an on-disk directory. Sources
- * may be either `global` (shared across all projects) or project-specific.
+ * A source discovered by Goose and backed by an on-disk path. Sources may be
+ * either `global` (shared across all projects) or project-specific.
  */
 export type SourceEntry = {
     type: SourceType;
@@ -407,7 +407,8 @@ export type SourceEntry = {
     description: string;
     content: string;
     /**
-     * Absolute path to the source's directory on disk.
+     * Absolute path to the source on disk. A directory for skills, a file for
+     * recipes and agents.
      */
     directory: string;
     /**
@@ -415,6 +416,15 @@ export type SourceEntry = {
      * when it lives inside a specific project.
      */
     global: boolean;
+    /**
+     * Whether this source can be modified through Goose's source CRUD APIs.
+     */
+    editable?: boolean;
+    /**
+     * Paths (absolute) of additional files that live alongside the source.
+     * Only skills currently populate this; empty for other source types.
+     */
+    supportingFiles?: Array<string>;
 };
 
 /**
@@ -435,7 +445,7 @@ export type ListSourcesResponse = {
  */
 export type UpdateSourceRequest = {
     type: SourceType;
-    name: string;
+    path: string;
     description: string;
     content: string;
     global: boolean;
@@ -451,7 +461,7 @@ export type UpdateSourceResponse = {
  */
 export type DeleteSourceRequest = {
     type: SourceType;
-    name: string;
+    path: string;
     global: boolean;
     projectDir?: string | null;
 };
@@ -461,7 +471,7 @@ export type DeleteSourceRequest = {
  */
 export type ExportSourceRequest = {
     type: SourceType;
-    name: string;
+    path: string;
     global: boolean;
     projectDir?: string | null;
 };

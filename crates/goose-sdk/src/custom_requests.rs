@@ -279,8 +279,8 @@ impl std::fmt::Display for SourceType {
     }
 }
 
-/// A source — a user-editable entity backed by an on-disk path. Sources may
-/// be either `global` (shared across all projects) or project-specific.
+/// A source discovered by Goose and backed by an on-disk path. Sources may be
+/// either `global` (shared across all projects) or project-specific.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceEntry {
@@ -295,6 +295,9 @@ pub struct SourceEntry {
     /// True when the source lives in the user's global sources directory; false
     /// when it lives inside a specific project.
     pub global: bool,
+    /// Whether this source can be modified through Goose's source CRUD APIs.
+    #[serde(default)]
+    pub editable: bool,
     /// Paths (absolute) of additional files that live alongside the source.
     /// Only skills currently populate this; empty for other source types.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

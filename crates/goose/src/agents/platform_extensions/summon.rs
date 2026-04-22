@@ -127,6 +127,7 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
         content: body,
         directory: path.to_string_lossy().into_owned(),
         global: false,
+        editable: false,
         supporting_files: Vec::new(),
     })
 }
@@ -173,6 +174,7 @@ fn scan_recipes_from_dir(
                     content: recipe.instructions.clone().unwrap_or_default(),
                     directory: path.to_string_lossy().into_owned(),
                     global: false,
+                    editable: false,
                     supporting_files: Vec::new(),
                 });
             }
@@ -598,6 +600,7 @@ impl SummonClient {
                 content: String::new(),
                 directory: sr.path.clone(),
                 global: false,
+                editable: false,
                 supporting_files: Vec::new(),
             });
         }

@@ -96,11 +96,34 @@ pub(crate) fn resolve_skill_dir(
     if path.is_empty() {
         return Err(Error::invalid_params().data("Source path must not be empty"));
     }
-    let dir = skill_base_dir(global, project_dir)?.join(path);
-    if !dir.exists() {
+
+    let base_dir = skill_base_dir(global, project_dir)?;
+    let joined_dir = base_dir.join(path);
+    let canonical_dir = joined_dir
+        .canonicalize()
+        .map_err(|_| Error::invalid_params().data(format!("Source \"{}\" not found", path)))?;
+    let canonical_base_dir = base_dir.canonicalize().unwrap_or_else(|_| base_dir.clone());
+
+    if !canonical_dir.starts_with(&canonical_base_dir) {
         return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
     }
-    Ok(dir)
+
+    if !canonical_dir.is_dir() || !canonical_dir.join("SKILL.md").is_file() {
+        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
+    }
+
+    Ok(canonical_dir)
+}
+
+pub(crate) fn is_editable_skill_dir(path: &Path, working_dir: Option<&Path>) -> bool {
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+    editable_skill_dirs(working_dir)
+        .into_iter()
+        .any(|(dir, _)| {
+            let editable_dir = dir.canonicalize().unwrap_or(dir);
+            canonical_path.starts_with(editable_dir)
+        })
 }
 
 pub(crate) fn infer_skill_name(dir: &Path) -> String {
@@ -137,6 +160,23 @@ pub(crate) fn parse_skill_frontmatter(raw: &str) -> (String, String) {
         Ok(Some((meta, body))) => (meta.description, body),
         _ => (String::new(), raw.to_string()),
     }
+}
+
+/// Every directory the agent reads skills from, paired with whether each is a
+/// global (home-rooted) location. Order matches discovery precedence: project
+/// dirs first, then global dirs.
+pub fn editable_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
+    let mut dirs: Vec<(PathBuf, bool)> = Vec::new();
+
+    if let Some(wd) = working_dir {
+        dirs.push((wd.join(".goose").join("skills"), false));
+    }
+
+    if let Some(h) = dirs::home_dir() {
+        dirs.push((h.join(".agents").join("skills"), true));
+    }
+
+    dirs
 }
 
 /// Every directory the agent reads skills from, paired with whether each is a
@@ -197,6 +237,7 @@ fn parse_skill_content(content: &str, path: &Path, global: bool) -> Option<Sourc
         content: body,
         directory: path.to_string_lossy().into_owned(),
         global,
+        editable: false,
         supporting_files: Vec::new(),
     })
 }

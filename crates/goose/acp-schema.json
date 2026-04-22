@@ -757,7 +757,11 @@
     "SourceType": {
       "type": "string",
       "enum": [
-        "skill"
+        "skill",
+        "builtinSkill",
+        "recipe",
+        "subrecipe",
+        "agent"
       ],
       "description": "The type of source entity."
     },
@@ -791,11 +795,23 @@
         },
         "directory": {
           "type": "string",
-          "description": "Absolute path to the source's directory on disk."
+          "description": "Absolute path to the source on disk. A directory for skills, a file for\nrecipes and agents."
         },
         "global": {
           "type": "boolean",
           "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
+        },
+        "editable": {
+          "type": "boolean",
+          "description": "Whether this source can be modified through Goose's source CRUD APIs.",
+          "default": false
+        },
+        "supportingFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Paths (absolute) of additional files that live alongside the source.\nOnly skills currently populate this; empty for other source types."
         }
       },
       "required": [
@@ -806,7 +822,7 @@
         "directory",
         "global"
       ],
-      "description": "A source — a user-editable entity backed by an on-disk directory. Sources\nmay be either `global` (shared across all projects) or project-specific."
+      "description": "A source discovered by Goose and backed by an on-disk path. Sources may be\neither `global` (shared across all projects) or project-specific."
     },
     "ListSourcesRequest": {
       "type": "object",
@@ -854,7 +870,7 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
-        "name": {
+        "path": {
           "type": "string"
         },
         "description": {
@@ -875,7 +891,7 @@
       },
       "required": [
         "type",
-        "name",
+        "path",
         "description",
         "content",
         "global"
@@ -903,7 +919,7 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
-        "name": {
+        "path": {
           "type": "string"
         },
         "global": {
@@ -918,7 +934,7 @@
       },
       "required": [
         "type",
-        "name",
+        "path",
         "global"
       ],
       "description": "Delete a source and its on-disk directory.",
@@ -931,7 +947,7 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
-        "name": {
+        "path": {
           "type": "string"
         },
         "global": {
@@ -946,7 +962,7 @@
       },
       "required": [
         "type",
-        "name",
+        "path",
         "global"
       ],
       "description": "Export a source as a portable JSON payload.",
