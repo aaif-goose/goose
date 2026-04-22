@@ -92,10 +92,6 @@ async function initializeConnection(): Promise<GooseClient> {
           mcpHostCapabilities: DEFAULT_GOOSE_MCP_HOST_CAPABILITIES,
         },
       },
-      clientInfo: {
-        name: packageJson.name,
-        version: packageJson.version,
-      },
     },
     clientInfo: {
       name: packageJson.name,
