@@ -909,6 +909,17 @@ impl GooseAcpAgent {
             let t_setup = std::time::Instant::now();
             debug!(target: "perf", sid = %sid, "perf: agent_setup start (background)");
 
+            // Shared config — read once, used by both phases.
+            let config = match Config::new(config_dir.join(CONFIG_YAML_NAME), "goose") {
+                Ok(c) => c,
+                Err(e) => {
+                    let msg = e.to_string();
+                    error!(error = %msg, "Background agent setup failed (config)");
+                    let _ = agent_tx.send(Some(Err(msg)));
+                    return;
+                }
+            };
+
             // ── Phase 1: create agent + init provider (fast, ~55ms) ──────
             let phase1: Result<Arc<Agent>, String> = async {
                 let agent = Arc::new(Agent::with_config(AgentConfig::new(
@@ -924,8 +935,6 @@ impl GooseAcpAgent {
                 // available (already computed in on_new_session), otherwise
                 // fall back to reading config (e.g. load_session path).
                 let t_prov = std::time::Instant::now();
-                let config = Config::new(config_dir.join(CONFIG_YAML_NAME), "goose")
-                    .map_err(|e| e.to_string())?;
                 let (provider_name, model_config) = match resolved_provider {
                     Some(resolved) => resolved,
                     None => resolve_provider_and_model_from_config(&config, &goose_session).await?,
@@ -959,7 +968,8 @@ impl GooseAcpAgent {
                 Ok(agent) => {
                     // Signal ProviderReady — unblocks setProvider / update_provider
                     // while extensions continue loading below.
-                    let _ = agent_tx.send(Some(Ok(AgentSetupProgress::ProviderReady(agent.clone()))));
+                    let _ =
+                        agent_tx.send(Some(Ok(AgentSetupProgress::ProviderReady(agent.clone()))));
                     debug!(target: "perf", sid = %sid, ms = t_setup.elapsed().as_millis() as u64, "perf: agent_setup provider_ready (signalled)");
                     agent
                 }
@@ -972,12 +982,8 @@ impl GooseAcpAgent {
             };
 
             // ── Phase 2: load extensions (slow, may take seconds) ────────
-            let result: Result<(), String> = async {
-                let config_path = config_dir.join(CONFIG_YAML_NAME);
-                let mut extensions = Config::new(&config_path, "goose")
-                    .ok()
-                    .map(|c| get_enabled_extensions_with_config(&c))
-                    .unwrap_or_default();
+            let phase2: Result<(), String> = async {
+                let mut extensions = get_enabled_extensions_with_config(&config);
                 extensions.extend(builtins.iter().map(|b| builtin_to_extension_config(b)));
 
                 let acp_developer = if (client_fs_capabilities.read_text_file
@@ -1091,44 +1097,39 @@ impl GooseAcpAgent {
                     "perf: agent_setup mcp_extensions"
                 );
 
-                // Apply any working directory that was set while we were loading.
-                {
-                    let mut locked = sessions.lock().await;
-                    if let Some(session) = locked.get_mut(session_id.0.as_ref()) {
-                        if let Some(dir) = session.pending_working_dir.take() {
-                            agent.extension_manager.update_working_dir(&dir).await;
-                        }
-                        session.agent = AgentHandle::Ready(agent.clone());
-                    }
-                }
-
                 Ok(())
             }
             .await;
 
-            match &result {
-                Ok(()) => {
-                    let _ = agent_tx.send(Some(Ok(AgentSetupProgress::FullyReady(agent))));
-                    debug!(
-                        target: "perf",
-                        sid = %sid,
-                        ms = t_setup.elapsed().as_millis() as u64,
-                        "perf: agent_setup done"
-                    );
-                }
-                Err(e) => {
-                    error!(error = %e, "Background agent setup failed (extensions)");
-                    debug!(
-                        target: "perf",
-                        sid = %sid,
-                        ms = t_setup.elapsed().as_millis() as u64,
-                        "perf: agent_setup failed (extensions)"
-                    );
-                    // ProviderReady was already signalled — send the error so
-                    // callers waiting for FullyReady see the failure.
-                    let _ = agent_tx.send(Some(Err(e.clone())));
+            if let Err(e) = &phase2 {
+                // Extension failures are non-fatal — individual failures are
+                // already logged as warnings.  Log the top-level error but
+                // don't block the session: the provider is ready and the agent
+                // is usable.
+                error!(error = %e, "Background agent setup: extension phase had errors");
+            }
+
+            // Promote the handle to Ready and apply any working directory that
+            // was set while we were loading — regardless of phase-2 outcome,
+            // since the agent (with its provider) is fully usable.
+            {
+                let mut locked = sessions.lock().await;
+                if let Some(session) = locked.get_mut(session_id.0.as_ref()) {
+                    if let Some(dir) = session.pending_working_dir.take() {
+                        agent.extension_manager.update_working_dir(&dir).await;
+                    }
+                    session.agent = AgentHandle::Ready(agent.clone());
                 }
             }
+
+            let _ = agent_tx.send(Some(Ok(AgentSetupProgress::FullyReady(agent))));
+            debug!(
+                target: "perf",
+                sid = %sid,
+                ms = t_setup.elapsed().as_millis() as u64,
+                "perf: agent_setup done{}",
+                if phase2.is_err() { " (with extension errors)" } else { "" }
+            );
         });
     }
 
@@ -1614,8 +1615,7 @@ impl GooseAcpAgent {
 
         let internal_session_id = goose_session.id.clone();
 
-        let (agent_tx, agent_rx) =
-            tokio::sync::watch::channel::<AgentSetupSignal>(None);
+        let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
         let session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
@@ -1754,8 +1754,7 @@ impl GooseAcpAgent {
                 })
                 .await
                 .map_err(|_| {
-                    sacp::Error::internal_error()
-                        .data("Agent setup task was dropped".to_string())
+                    sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
                 })?;
             match guard.as_ref().unwrap() {
                 Ok(AgentSetupProgress::FullyReady(agent)) => agent.clone(),
@@ -1788,8 +1787,7 @@ impl GooseAcpAgent {
         // Any signal (ProviderReady, FullyReady, or Err) unblocks us.
         let agent = {
             let guard = rx.wait_for(|v| v.is_some()).await.map_err(|_| {
-                sacp::Error::internal_error()
-                    .data("Agent setup task was dropped".to_string())
+                sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
             })?;
             match guard.as_ref().unwrap() {
                 Ok(progress) => match progress {
@@ -2040,8 +2038,7 @@ impl GooseAcpAgent {
         debug!(target: "perf", sid = %sid, ms = t_db.elapsed().as_millis() as u64, "perf: load_session db_updates");
 
         // ── Register the session immediately with a Loading handle ──
-        let (agent_tx, agent_rx) =
-            tokio::sync::watch::channel::<AgentSetupSignal>(None);
+        let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
         let session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
@@ -2293,8 +2290,8 @@ impl GooseAcpAgent {
         debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model load_config");
 
         let t_step = std::time::Instant::now();
-        let agent = self.get_session_agent(thread_id, None).await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model get_session_agent (waits for agent setup)");
+        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model get_session_agent_provider_ready");
 
         let t_step = std::time::Instant::now();
         let current_provider = agent.provider().await.map_err(|e| {
@@ -2426,7 +2423,7 @@ impl GooseAcpAgent {
             sacp::Error::invalid_params().data(format!("Invalid mode: {}", mode_id))
         })?;
 
-        let agent = self.get_session_agent(thread_id, None).await?;
+        let agent = self.get_session_agent_provider_ready(thread_id).await?;
         agent
             .update_goose_mode(mode, &internal_id)
             .await
@@ -2665,8 +2662,7 @@ impl GooseAcpAgent {
 
         let internal_session_id = goose_session.id.clone();
 
-        let (agent_tx, agent_rx) =
-            tokio::sync::watch::channel::<AgentSetupSignal>(None);
+        let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
         let session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
