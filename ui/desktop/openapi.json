@@ -7738,12 +7738,33 @@
             "format": "date-time",
             "nullable": true
           },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
           "paused": {
             "type": "boolean"
           },
           "process_start_time": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "recipe_base_dir": {
+            "type": "string",
+            "description": "Original directory of the recipe file before it was copied to scheduled_recipes/.\nPreserved so that relative paths (sub-recipes, template includes) resolve correctly\nagainst the source tree rather than the scheduler's internal storage directory.",
             "nullable": true
           },
           "source": {

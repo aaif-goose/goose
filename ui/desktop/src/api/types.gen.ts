@@ -1245,8 +1245,15 @@ export type ScheduledJob = {
     currently_running?: boolean;
     id: string;
     last_run?: string | null;
+    parameters?: Array<Array<string>>;
     paused?: boolean;
     process_start_time?: string | null;
+    /**
+     * Original directory of the recipe file before it was copied to scheduled_recipes/.
+     * Preserved so that relative paths (sub-recipes, template includes) resolve correctly
+     * against the source tree rather than the scheduler's internal storage directory.
+     */
+    recipe_base_dir?: string | null;
     source: string;
 };
 
