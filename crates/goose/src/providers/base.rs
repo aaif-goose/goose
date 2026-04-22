@@ -500,6 +500,27 @@ pub enum PermissionRouting {
     Noop,
 }
 
+/// Check if a model name matches known non-chat patterns (embedding, TTS,
+/// image generation, speech recognition). Used as a heuristic for models
+/// that aren't in the canonical registry.
+fn is_likely_non_chat_model(model_name: &str) -> bool {
+    let lower = model_name.to_lowercase();
+    const NON_CHAT_PATTERNS: &[&str] = &[
+        "embed",            // embedding models (text-embedding-*, cohere-embed-*)
+        "tts",              // text-to-speech models
+        "dall",             // DALL-E image generation
+        "whisper",          // speech recognition
+        "-asr",             // automatic speech recognition (qwen3-asr-*)
+        "asr-",             // prefix variant
+        "imagen",           // Google Imagen image generation
+        "stable-diffusion", // Stable Diffusion image generation
+        "image-generation", // Gemini image generation variant
+    ];
+    NON_CHAT_PATTERNS
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+}
+
 /// Base trait for AI providers (OpenAI, Anthropic, etc)
 #[async_trait]
 pub trait Provider: Send + Sync {
@@ -611,8 +632,11 @@ pub trait Provider: Send + Sync {
                 let canonical_id = match map_to_canonical_model(provider_name, model, registry) {
                     Some(id) => id,
                     None => {
-                        // Unmapped model — include it anyway so new/unknown models
-                        // are available in the UI dropdown.
+                        // Unmapped model — include it only if it looks like a
+                        // chat-capable model, filtering out embedding/TTS/image-gen/etc.
+                        if is_likely_non_chat_model(model) {
+                            return None;
+                        }
                         return Some((model.clone(), None));
                     }
                 };
@@ -1165,5 +1189,31 @@ mod tests {
         assert_eq!(combined.total_tokens, Some(178));
         assert_eq!(combined.cache_read_input_tokens, Some(14));
         assert_eq!(combined.cache_write_input_tokens, Some(6));
+    }
+
+    #[test]
+    fn test_is_likely_non_chat_model() {
+        use super::is_likely_non_chat_model;
+
+        // Should be filtered out
+        assert!(is_likely_non_chat_model("text-embedding-3-small"));
+        assert!(is_likely_non_chat_model("text-embedding-3-large"));
+        assert!(is_likely_non_chat_model("cohere-embed-v3-english"));
+        assert!(is_likely_non_chat_model("gemini-2.5-flash-preview-tts"));
+        assert!(is_likely_non_chat_model("dall-e-3"));
+        assert!(is_likely_non_chat_model("whisper-large-v3"));
+        assert!(is_likely_non_chat_model("qwen3-asr-flash"));
+        assert!(is_likely_non_chat_model("imagen-4.0-generate-001"));
+        assert!(is_likely_non_chat_model("stable-diffusion-xl"));
+        assert!(is_likely_non_chat_model("gemini-2.0-flash-exp-image-generation"));
+
+        // Should NOT be filtered — these are chat models
+        assert!(!is_likely_non_chat_model("gpt-4o"));
+        assert!(!is_likely_non_chat_model("claude-sonnet-4-20250514"));
+        assert!(!is_likely_non_chat_model("gemini-2.5-flash"));
+        assert!(!is_likely_non_chat_model("deepseek-r1"));
+        assert!(!is_likely_non_chat_model("llama-3.2-11b-vision-instruct"));
+        assert!(!is_likely_non_chat_model("gpt-4-turbo"));
+        assert!(!is_likely_non_chat_model("my-custom-finetune-v1"));
     }
 }
