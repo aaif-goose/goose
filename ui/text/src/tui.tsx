@@ -11,6 +11,8 @@ import type {
   ContentChunk,
   ToolCall,
   ToolCallUpdate,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import { PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
 import { GooseClient } from "@aaif/goose-sdk";
@@ -741,6 +743,17 @@ function App({
 
         const client = new GooseClient(
           () => ({
+            requestPermission: async (
+              params: RequestPermissionRequest,
+            ): Promise<RequestPermissionResponse> => {
+              const optionId = params.options?.[0]?.optionId ?? "approve";
+              return {
+                outcome: {
+                  outcome: "selected",
+                  optionId,
+                },
+              };
+            },
             sessionUpdate: async (params: SessionNotification) => {
               const update = params.update;
               if (update.sessionUpdate === "agent_message_chunk") {
@@ -1218,6 +1231,17 @@ async function runTextMode(serverConnection: Stream | string, prompt: string) {
   try {
     const client = new GooseClient(
       () => ({
+        requestPermission: async (
+          params: RequestPermissionRequest,
+        ): Promise<RequestPermissionResponse> => {
+          const optionId = params.options?.[0]?.optionId ?? "approve";
+          return {
+            outcome: {
+              outcome: "selected",
+              optionId,
+            },
+          };
+        },
         sessionUpdate: async (params: SessionNotification) => {
           const update = params.update;
           if (update.sessionUpdate === "agent_message_chunk") {
