@@ -181,6 +181,15 @@ pub struct RemoveSecretRequest {
     pub key: String,
 }
 
+/// Update the project association for a session.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/session/update_project", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSessionProjectRequest {
+    pub session_id: String,
+    pub project_id: Option<String>,
+}
+
 /// Archive a session (soft delete).
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/session/archive", response = EmptyResponse)]

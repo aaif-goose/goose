@@ -18,6 +18,7 @@ export interface AcpSessionInfo {
   title: string | null;
   updatedAt: string | null;
   messageCount: number;
+  projectId?: string | null;
 }
 
 const DEPRECATED_PROVIDER_IDS = new Set(["claude-code", "codex", "gemini-cli"]);
@@ -50,6 +51,7 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
     title: info.title ?? null,
     updatedAt: info.updatedAt ?? null,
     messageCount: (info._meta?.messageCount as number) ?? 0,
+    projectId: (info._meta?.projectId as string) ?? null,
   }));
 }
 
@@ -124,6 +126,17 @@ export async function updateWorkingDir(
   await client.extMethod("goose/working_dir/update", { sessionId, workingDir });
 }
 
+export async function updateSessionProject(
+  sessionId: string,
+  projectId: string | null,
+): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/update_project", {
+    sessionId,
+    projectId,
+  });
+}
+
 export async function cancelSession(sessionId: string): Promise<void> {
   const client = await getClient();
   await client.cancel({ sessionId });
@@ -132,6 +145,7 @@ export async function cancelSession(sessionId: string): Promise<void> {
 export async function newSession(
   workingDir: string,
   providerId?: string,
+  projectId?: string,
 ): Promise<NewSessionResponse> {
   const tClient = performance.now();
   const client = await getClient();
@@ -142,9 +156,10 @@ export async function newSession(
     mcpServers: [],
   };
 
-  if (providerId) {
-    request.meta = { provider: providerId };
-  }
+  const meta: Record<string, string> = {};
+  if (providerId) meta.provider = providerId;
+  if (projectId) meta.projectId = projectId;
+  if (Object.keys(meta).length > 0) request.meta = meta;
 
   const tCall = performance.now();
   const response = await client.newSession(request);

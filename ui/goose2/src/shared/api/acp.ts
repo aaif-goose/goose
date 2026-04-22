@@ -1,5 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
+import type { AcpSessionInfo } from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
 import {
   getCatalogEntry,
@@ -27,6 +28,7 @@ export interface AcpSendMessageOptions {
 
 export interface AcpPrepareSessionOptions {
   personaId?: string;
+  projectId?: string;
 }
 
 export interface AcpCreateSessionOptions extends AcpPrepareSessionOptions {
@@ -116,6 +118,7 @@ export async function acpPrepareSession(
     providerId,
     workingDir,
     options.personaId,
+    options.projectId,
   );
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession done in ${(performance.now() - t0).toFixed(1)}ms`,
@@ -155,13 +158,7 @@ export async function acpSetModel(
   return directAcp.setModel(gooseSessionId ?? sessionId, modelId);
 }
 
-/** Session info returned by the goose binary's list_sessions. */
-export interface AcpSessionInfo {
-  sessionId: string;
-  title: string | null;
-  updatedAt: string | null;
-  messageCount: number;
-}
+export type { AcpSessionInfo };
 
 export interface AcpSessionSearchResult {
   sessionId: string;

@@ -1,7 +1,7 @@
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
 use crate::acp::tools::AcpAwareToolMeta;
-use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
+use crate::acp::{ACP_CURRENT_MODEL, PermissionDecision};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::platform_extensions::developer::DeveloperClient;
@@ -15,7 +15,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 #[cfg(feature = "local-inference")]
 use crate::dictation::providers::transcribe_local;
 use crate::dictation::providers::{
-    all_providers, is_configured, transcribe_with_provider, DictationProvider,
+    DictationProvider, all_providers, is_configured, transcribe_with_provider,
 };
 #[cfg(feature = "local-inference")]
 use crate::dictation::whisper;
@@ -151,6 +151,24 @@ pub struct GooseAcpAgent {
 /// can be extracted with `grep 'perf:' <log> | grep 'sid=abc12345'`.
 fn sid_short(id: &str) -> String {
     id.chars().take(8).collect()
+}
+
+fn thread_session_meta(
+    message_count: i64,
+    metadata: &crate::session::ThreadMetadata,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "messageCount".to_string(),
+        serde_json::Value::Number(message_count.into()),
+    );
+    if let Some(ref pid) = metadata.project_id {
+        meta.insert(
+            "projectId".to_string(),
+            serde_json::Value::String(pid.clone()),
+        );
+    }
+    meta
 }
 
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
@@ -1539,9 +1557,17 @@ impl GooseAcpAgent {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
+        let project_id = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("projectId"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         // Create the Thread — this IS the ACP session from the client's perspective.
         let thread_metadata = crate::session::ThreadMetadata {
             provider_id: requested_provider.clone(),
+            project_id,
             mode: Some(self.goose_mode.to_string()),
             ..Default::default()
         };
@@ -2544,11 +2570,7 @@ impl GooseAcpAgent {
                     .as_deref()
                     .map(std::path::PathBuf::from)
                     .unwrap_or_default();
-                let mut meta = serde_json::Map::new();
-                meta.insert(
-                    "messageCount".to_string(),
-                    serde_json::Value::Number(t.message_count.into()),
-                );
+                let meta = thread_session_meta(t.message_count, &t.metadata);
                 SessionInfo::new(SessionId::new(t.id), cwd)
                     .title(t.name)
                     .updated_at(t.updated_at.to_rfc3339())
@@ -2613,11 +2635,7 @@ impl GooseAcpAgent {
             },
         );
 
-        let mut meta = serde_json::Map::new();
-        meta.insert(
-            "messageCount".to_string(),
-            serde_json::Value::Number(new_thread.message_count.into()),
-        );
+        let meta = thread_session_meta(new_thread.message_count, &new_thread.metadata);
 
         let mut response = ForkSessionResponse::new(SessionId::new(new_thread_id))
             .modes(mode_state)
@@ -3047,6 +3065,19 @@ impl GooseAcpAgent {
         })
     }
 
+    #[custom_method(UpdateSessionProjectRequest)]
+    async fn on_update_session_project(
+        &self,
+        req: UpdateSessionProjectRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let project_id = req.project_id;
+        self.update_thread_metadata(&req.session_id, move |meta| {
+            meta.project_id = project_id;
+        })
+        .await?;
+        Ok(EmptyResponse {})
+    }
+
     #[custom_method(ArchiveSessionRequest)]
     async fn on_archive_session(
         &self,
@@ -3156,7 +3187,7 @@ impl GooseAcpAgent {
         &self,
         req: DictationTranscribeRequest,
     ) -> Result<DictationTranscribeResponse, sacp::Error> {
-        use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+        use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
         let config = crate::config::Config::global();
 
         #[cfg(not(feature = "local-inference"))]
@@ -3189,7 +3220,7 @@ impl GooseAcpAgent {
             other => {
                 return Err(
                     sacp::Error::invalid_params().data(format!("Unsupported format: {other}"))
-                )
+                );
             }
         };
 
@@ -3295,7 +3326,7 @@ impl GooseAcpAgent {
     ) -> Result<DictationModelsListResponse, sacp::Error> {
         #[cfg(feature = "local-inference")]
         {
-            use crate::download_manager::{get_download_manager, DownloadStatus};
+            use crate::download_manager::{DownloadStatus, get_download_manager};
 
             let manager = get_download_manager();
             let models = whisper::available_models()

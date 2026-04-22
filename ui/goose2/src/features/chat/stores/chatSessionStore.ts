@@ -12,6 +12,7 @@ import {
   upsertSessionMetadataOverlayRecord,
   type SessionMetadataOverlayRecord,
 } from "@/features/chat/lib/sessionMetadataOverlay";
+import { updateSessionProject } from "@/shared/api/acpApi";
 
 export interface ChatSession {
   id: string;
@@ -114,8 +115,8 @@ function buildOverlayRecord(
 ): SessionMetadataOverlayRecord {
   return {
     sessionId: overlayKeyForSession(session),
-    projectId: session.projectId ?? null,
     userSetTitle: session.userSetName ? session.title : null,
+    projectId: session.projectId ?? null,
     providerId: session.providerId ?? null,
     personaId: session.personaId ?? null,
     modelId: session.modelId ?? null,
@@ -139,7 +140,7 @@ function overlayToFallbackSession(
     id: overlay.sessionId,
     acpSessionId: overlay.sessionId,
     title: overlay.userSetTitle ?? overlay.lastKnownTitle ?? "Untitled",
-    projectId: overlay.projectId,
+    projectId: overlay.projectId ?? undefined,
     agentId: overlay.agentId ?? undefined,
     providerId: overlay.providerId ?? undefined,
     personaId: overlay.personaId ?? undefined,
@@ -166,7 +167,7 @@ function mergeAcpSessionWithOverlay(
       session.title ??
       overlay?.lastKnownTitle ??
       "Untitled",
-    projectId: overlay?.projectId,
+    projectId: session.projectId ?? undefined,
     agentId: overlay?.agentId ?? undefined,
     providerId: overlay?.providerId ?? undefined,
     personaId: overlay?.personaId ?? undefined,
@@ -239,6 +240,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     const { sessionId } = await acpCreateSession(providerId, opts.workingDir, {
       personaId: opts.personaId,
       modelId: opts.modelId,
+      projectId: opts.projectId,
     });
     const chatSession: ChatSession = {
       id: sessionId,
@@ -318,7 +320,15 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         buildOverlayRecord(updatedSession, existing),
       );
     }
-    // TODO: wire session updates to ACP when supported
+
+    // Persist projectId change to ACP backend
+    const acpSessionId = updatedSession?.acpSessionId;
+    if ("projectId" in patch && acpSessionId) {
+      updateSessionProject(acpSessionId, patch.projectId ?? null).catch(
+        (err: unknown) =>
+          console.error("Failed to update session project in backend:", err),
+      );
+    }
   },
 
   addSession: (session) => {
