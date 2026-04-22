@@ -1629,7 +1629,7 @@ fn outcome_to_confirmation(outcome: &RequestPermissionOutcome) -> PermissionConf
 }
 
 fn extract_tool_call_update_meta(
-    tool_response: &goose::conversation::message::ToolResponse,
+    tool_response: &crate::conversation::message::ToolResponse,
 ) -> Option<Meta> {
     let tool_result = tool_response.tool_result.as_ref().ok()?;
     let goose_meta = tool_result.meta.as_ref()?.0.get("goose")?.clone();
