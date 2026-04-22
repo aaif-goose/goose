@@ -369,9 +369,6 @@ pub struct UpdateSourceRequest {
     pub path: String,
     pub description: String,
     pub content: String,
-    pub global: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_dir: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -388,9 +385,6 @@ pub struct DeleteSourceRequest {
     #[serde(rename = "type")]
     pub source_type: SourceType,
     pub path: String,
-    pub global: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_dir: Option<String>,
 }
 
 /// Export a source as a portable JSON payload.
@@ -401,9 +395,6 @@ pub struct ExportSourceRequest {
     #[serde(rename = "type")]
     pub source_type: SourceType,
     pub path: String,
-    pub global: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_dir: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]

@@ -88,42 +88,56 @@ pub(crate) fn validate_skill_name(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn resolve_skill_dir(
-    path: &str,
-    global: bool,
-    project_dir: Option<&str>,
-) -> Result<PathBuf, Error> {
+fn canonicalize_or_original(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn inferred_editable_skill_root(path: &Path) -> Option<PathBuf> {
+    let canonical_path = canonicalize_or_original(path);
+
+    if let Some(global_root) = global_skills_dir() {
+        let canonical_global_root = canonicalize_or_original(&global_root);
+        if canonical_path.starts_with(&canonical_global_root) {
+            return Some(canonical_global_root);
+        }
+    }
+
+    canonical_path.ancestors().find_map(|ancestor| {
+        let parent = ancestor.parent()?;
+        let is_project_skills_root = ancestor.file_name().and_then(|name| name.to_str())
+            == Some("skills")
+            && parent.file_name().and_then(|name| name.to_str()) == Some(".goose");
+        is_project_skills_root.then(|| ancestor.to_path_buf())
+    })
+}
+
+pub(crate) fn resolve_skill_dir(path: &str) -> Result<PathBuf, Error> {
     if path.is_empty() {
         return Err(Error::invalid_params().data("Source path must not be empty"));
     }
 
-    let base_dir = skill_base_dir(global, project_dir)?;
-    let joined_dir = base_dir.join(path);
-    let canonical_dir = joined_dir
+    let canonical_dir = Path::new(path)
         .canonicalize()
         .map_err(|_| Error::invalid_params().data(format!("Source \"{}\" not found", path)))?;
-    let canonical_base_dir = base_dir.canonicalize().unwrap_or_else(|_| base_dir.clone());
 
-    if !canonical_dir.starts_with(&canonical_base_dir) {
-        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
-    }
-
-    if !canonical_dir.is_dir() || !canonical_dir.join("SKILL.md").is_file() {
+    if inferred_editable_skill_root(&canonical_dir).is_none()
+        || !canonical_dir.is_dir()
+        || !canonical_dir.join("SKILL.md").is_file()
+    {
         return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
     }
 
     Ok(canonical_dir)
 }
 
-pub(crate) fn is_editable_skill_dir(path: &Path, working_dir: Option<&Path>) -> bool {
-    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+pub(crate) fn is_editable_skill_dir(path: &Path) -> bool {
+    inferred_editable_skill_root(path).is_some()
+}
 
-    editable_skill_dirs(working_dir)
-        .into_iter()
-        .any(|(dir, _)| {
-            let editable_dir = dir.canonicalize().unwrap_or(dir);
-            canonical_path.starts_with(editable_dir)
-        })
+pub(crate) fn is_global_skill_dir(path: &Path) -> bool {
+    global_skills_dir().as_deref().is_some_and(|root| {
+        canonicalize_or_original(path).starts_with(canonicalize_or_original(root))
+    })
 }
 
 pub(crate) fn infer_skill_name(dir: &Path) -> String {

@@ -3220,8 +3220,6 @@ impl GooseAcpAgent {
             &req.path,
             &req.description,
             &req.content,
-            req.global,
-            req.project_dir.as_deref(),
         )?;
         Ok(UpdateSourceResponse { source })
     }
@@ -3231,12 +3229,7 @@ impl GooseAcpAgent {
         &self,
         req: DeleteSourceRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        crate::sources::delete_source(
-            req.source_type,
-            &req.path,
-            req.global,
-            req.project_dir.as_deref(),
-        )?;
+        crate::sources::delete_source(req.source_type, &req.path)?;
         Ok(EmptyResponse {})
     }
 
@@ -3245,12 +3238,7 @@ impl GooseAcpAgent {
         &self,
         req: ExportSourceRequest,
     ) -> Result<ExportSourceResponse, sacp::Error> {
-        let (json, filename) = crate::sources::export_source(
-            req.source_type,
-            &req.path,
-            req.global,
-            req.project_dir.as_deref(),
-        )?;
+        let (json, filename) = crate::sources::export_source(req.source_type, &req.path)?;
         Ok(ExportSourceResponse { json, filename })
     }
 

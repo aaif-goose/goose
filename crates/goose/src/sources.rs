@@ -1,7 +1,7 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
 
 use crate::skills::{
-    build_skill_md, discover_skills, infer_skill_name, is_editable_skill_dir,
+    build_skill_md, discover_skills, infer_skill_name, is_editable_skill_dir, is_global_skill_dir,
     parse_skill_frontmatter, resolve_skill_dir, skill_base_dir, validate_skill_name,
 };
 use fs_err as fs;
@@ -106,11 +106,9 @@ pub fn update_source(
     path: &str,
     description: &str,
     content: &str,
-    global: bool,
-    project_dir: Option<&str>,
 ) -> Result<SourceEntry, Error> {
     require_skill_type(source_type)?;
-    let dir = resolve_skill_dir(path, global, project_dir)?;
+    let dir = resolve_skill_dir(path)?;
     let name = infer_skill_name(&dir);
 
     let file_path = dir.join("SKILL.md");
@@ -124,19 +122,14 @@ pub fn update_source(
         description,
         content,
         &dir,
-        global,
+        is_global_skill_dir(&dir),
         true,
     ))
 }
 
-pub fn delete_source(
-    source_type: SourceType,
-    path: &str,
-    global: bool,
-    project_dir: Option<&str>,
-) -> Result<(), Error> {
+pub fn delete_source(source_type: SourceType, path: &str) -> Result<(), Error> {
     require_skill_type(source_type)?;
-    let dir = resolve_skill_dir(path, global, project_dir)?;
+    let dir = resolve_skill_dir(path)?;
     fs::remove_dir_all(&dir)
         .map_err(|e| Error::internal_error().data(format!("Failed to delete source: {e}")))?;
     Ok(())
@@ -159,7 +152,7 @@ pub fn list_sources(
         .into_iter()
         .filter(|s| s.source_type == SourceType::Skill)
         .map(|s| {
-            let editable = is_editable_skill_dir(Path::new(&s.directory), working_dir.as_deref());
+            let editable = is_editable_skill_dir(Path::new(&s.directory));
             with_editable(s, editable)
         })
         .collect();
@@ -168,14 +161,9 @@ pub fn list_sources(
     Ok(sources)
 }
 
-pub fn export_source(
-    source_type: SourceType,
-    path: &str,
-    global: bool,
-    project_dir: Option<&str>,
-) -> Result<(String, String), Error> {
+pub fn export_source(source_type: SourceType, path: &str) -> Result<(String, String), Error> {
     require_skill_type(source_type)?;
-    let dir = resolve_skill_dir(path, global, project_dir)?;
+    let dir = resolve_skill_dir(path)?;
 
     let md = dir.join("SKILL.md");
     let raw = fs::read_to_string(&md)
@@ -330,17 +318,15 @@ mod tests {
 
         let updated = update_source(
             SourceType::Skill,
-            "my-skill",
+            created.directory.as_str(),
             "now does a different thing",
             "step three",
-            false,
-            Some(project),
         )
         .unwrap();
         assert_eq!(updated.description, "now does a different thing");
         assert_eq!(updated.name, "my-skill");
 
-        delete_source(SourceType::Skill, "my-skill", false, Some(project)).unwrap();
+        delete_source(SourceType::Skill, created.directory.as_str()).unwrap();
         assert!(!dir.exists());
     }
 
@@ -379,13 +365,9 @@ mod tests {
         )
         .unwrap();
 
-        let (json, filename) = export_source(
-            SourceType::Skill,
-            "portable",
-            false,
-            Some(project_a.to_str().unwrap()),
-        )
-        .unwrap();
+        let portable_dir = project_a.join(".goose").join("skills").join("portable");
+        let (json, filename) =
+            export_source(SourceType::Skill, portable_dir.to_str().unwrap()).unwrap();
         assert_eq!(filename, "portable.skill.json");
 
         let imported = import_sources(&json, false, Some(project_b.to_str().unwrap())).unwrap();
@@ -417,25 +399,25 @@ mod tests {
     #[test]
     fn update_rejects_nonexistent_source() {
         let tmp = TempDir::new().unwrap();
-        let project = tmp.path().to_str().unwrap();
-        let err = update_source(
-            SourceType::Skill,
-            "no-such-skill",
-            "d",
-            "c",
-            false,
-            Some(project),
-        )
-        .unwrap_err();
+        let missing_dir = tmp
+            .path()
+            .join(".goose")
+            .join("skills")
+            .join("no-such-skill");
+        let err =
+            update_source(SourceType::Skill, missing_dir.to_str().unwrap(), "d", "c").unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
     }
 
     #[test]
     fn delete_rejects_nonexistent_source() {
         let tmp = TempDir::new().unwrap();
-        let project = tmp.path().to_str().unwrap();
-        let err =
-            delete_source(SourceType::Skill, "no-such-skill", false, Some(project)).unwrap_err();
+        let missing_dir = tmp
+            .path()
+            .join(".goose")
+            .join("skills")
+            .join("no-such-skill");
+        let err = delete_source(SourceType::Skill, missing_dir.to_str().unwrap()).unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
     }
 
@@ -455,17 +437,16 @@ mod tests {
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err =
-            update_source(SourceType::Recipe, "x", "d", "c", false, Some(project)).unwrap_err();
+        let err = update_source(SourceType::Recipe, "x", "d", "c").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = delete_source(SourceType::Subrecipe, "x", false, Some(project)).unwrap_err();
+        let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = list_sources(Some(SourceType::BuiltinSkill), Some(project)).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = export_source(SourceType::Recipe, "x", false, Some(project)).unwrap_err();
+        let err = export_source(SourceType::Recipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
     }
 
@@ -484,13 +465,12 @@ mod tests {
         )
         .unwrap();
 
+        let skill_dir = tmp.path().join(".goose").join("skills").join("my-dir");
         let updated = update_source(
             SourceType::Skill,
-            "my-dir",
+            skill_dir.to_str().unwrap(),
             "new description",
             "new body",
-            false,
-            Some(project),
         )
         .unwrap();
         // Name is derived from the frontmatter written by create_source
@@ -509,13 +489,12 @@ mod tests {
         )
         .unwrap();
 
+        let attempted_escape = project.join(".goose").join("escaped");
         let err = update_source(
             SourceType::Skill,
-            "../escaped",
+            attempted_escape.to_str().unwrap(),
             "new description",
             "new content",
-            false,
-            Some(project.to_str().unwrap()),
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
@@ -542,13 +521,35 @@ mod tests {
         )
         .unwrap();
 
+        let global_root = tmp.path().join("global-root");
+        std::fs::create_dir_all(global_root.join("config")).unwrap();
+        std::fs::create_dir_all(global_root.join("data")).unwrap();
+        std::fs::create_dir_all(global_root.join("state")).unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", &global_root);
+
+        let home = tmp.path().join("home");
+        let global_skill = home.join(".agents").join("skills").join("global-skill");
+        std::fs::create_dir_all(&global_skill).unwrap();
+        std::fs::write(
+            global_skill.join("SKILL.md"),
+            "---\nname: global-skill\ndescription: Global skill\n---\ncontent",
+        )
+        .unwrap();
+        std::env::set_var("HOME", &home);
+
         let listed =
             list_sources(Some(SourceType::Skill), Some(project.to_str().unwrap())).unwrap();
 
         let goose_skill = listed.iter().find(|s| s.name == "goose-skill").unwrap();
         assert!(goose_skill.editable);
 
+        let global_skill = listed.iter().find(|s| s.name == "global-skill").unwrap();
+        assert!(global_skill.editable);
+
         let claude_skill = listed.iter().find(|s| s.name == "claude-skill").unwrap();
         assert!(!claude_skill.editable);
+
+        std::env::remove_var("GOOSE_PATH_ROOT");
+        std::env::remove_var("HOME");
     }
 }

@@ -207,7 +207,7 @@ export function buildInitScript(options?: {
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
                 directory: path,
-                global: message.params?.global ?? true,
+                global: true,
               },
             });
           }

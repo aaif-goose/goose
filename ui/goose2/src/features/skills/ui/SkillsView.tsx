@@ -9,6 +9,7 @@ import {
   Copy,
   Download,
   Upload,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
@@ -55,6 +56,10 @@ function SkillCardMenu({
 }) {
   const { t } = useTranslation(["skills", "common"]);
 
+  if (!skill.editable) {
+    return null;
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -98,7 +103,12 @@ export function SkillsView() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<
-    | { name: string; description: string; instructions: string; path: string }
+    | {
+        name: string;
+        description: string;
+        instructions: string;
+        path: string;
+      }
     | undefined
   >(undefined);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -112,7 +122,6 @@ export function SkillsView() {
       const result = await listSkills();
       setSkills(result);
     } catch {
-      // skills directory may not exist yet
       setSkills([]);
     } finally {
       setLoading(false);
@@ -139,6 +148,10 @@ export function SkillsView() {
   };
 
   const handleEdit = (skill: SkillInfo) => {
+    if (!skill.editable) {
+      return;
+    }
+
     setEditingSkill({
       name: skill.name,
       description: skill.description,
@@ -197,7 +210,6 @@ export function SkillsView() {
         console.error("Failed to import skill:", err);
       }
 
-      // Reset the input so the same file can be re-selected
       if (importInputRef.current) {
         importInputRef.current.value = "";
       }
@@ -244,7 +256,6 @@ export function SkillsView() {
     <div className="flex flex-1 flex-col h-full min-h-0">
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-5xl mx-auto w-full px-6 py-8 space-y-5 page-transition">
-          {/* Header */}
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold font-display tracking-tight">
@@ -283,14 +294,12 @@ export function SkillsView() {
             </div>
           </div>
 
-          {/* Search */}
           <SearchBar
             value={search}
             onChange={setSearch}
             placeholder={t("view.searchPlaceholder")}
           />
 
-          {/* Skills list */}
           {!loading && filtered.length > 0 && (
             <div className="space-y-2">
               {filtered.map((skill) => (
@@ -298,12 +307,28 @@ export function SkillsView() {
                   key={skill.name}
                   className="flex items-start justify-between gap-3 rounded-lg border border-border px-4 py-3"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{skill.name}</p>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{skill.name}</p>
+                      {!skill.editable && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          <Lock className="size-3" />
+                          {t("view.readOnlyBadge")}
+                        </span>
+                      )}
+                    </div>
                     {skill.description && (
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {skill.description}
                       </p>
+                    )}
+                    {!skill.editable && (
+                      <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                        <p>{t("view.readOnlyDescription")}</p>
+                        <p className="mt-1 break-all font-mono text-[11px] text-foreground/80">
+                          {skill.fileLocation}
+                        </p>
+                      </div>
                     )}
                   </div>
                   <SkillCardMenu
@@ -316,7 +341,6 @@ export function SkillsView() {
                 </div>
               ))}
 
-              {/* New Skill card */}
               <Button
                 type="button"
                 variant="ghost"
@@ -336,7 +360,6 @@ export function SkillsView() {
             </div>
           )}
 
-          {/* Empty state */}
           {!loading && filtered.length === 0 && (
             <div
               {...dropHandlers}
@@ -375,7 +398,6 @@ export function SkillsView() {
         </div>
       </div>
 
-      {/* Hidden file input for drag-and-drop import */}
       <input
         ref={dropFileInputRef}
         type="file"
@@ -384,7 +406,6 @@ export function SkillsView() {
         onChange={handleDropFileChange}
       />
 
-      {/* Create / Edit dialog */}
       <CreateSkillDialog
         isOpen={dialogOpen}
         onClose={handleDialogClose}
@@ -392,7 +413,6 @@ export function SkillsView() {
         editingSkill={editingSkill}
       />
 
-      {/* Delete confirmation dialog */}
       <AlertDialog
         open={!!deletingSkill}
         onOpenChange={(open) => !open && setDeletingSkill(null)}
@@ -418,7 +438,6 @@ export function SkillsView() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Export notification toast */}
       {notification && (
         <div className="fixed bottom-4 right-4 z-50 rounded-lg border border-border bg-background px-4 py-3 shadow-popover text-sm animate-in fade-in slide-in-from-bottom-2">
           {notification}

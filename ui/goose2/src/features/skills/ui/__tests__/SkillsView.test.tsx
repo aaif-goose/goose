@@ -8,13 +8,17 @@ const mockSkills = [
     name: "code-review",
     description: "Reviews code",
     instructions: "Review the code...",
-    path: "/path",
+    path: "/path/code-review",
+    editable: true,
+    fileLocation: "/path/code-review/SKILL.md",
   },
   {
     name: "test-writer",
     description: "Writes tests",
     instructions: "Write tests...",
-    path: "/path",
+    path: "/path/test-writer",
+    editable: true,
+    fileLocation: "/path/test-writer/SKILL.md",
   },
 ];
 
@@ -192,8 +196,61 @@ describe("SkillsView", () => {
       await user.click(screen.getByRole("button", { name: "Delete" }));
 
       await waitFor(() => {
-        expect(deleteSkill).toHaveBeenCalledWith("code-review");
+        expect(deleteSkill).toHaveBeenCalledWith("/path/code-review");
       });
+    });
+
+    it("shows read-only state and file location for non-editable skills", async () => {
+      listSkills.mockResolvedValue([
+        {
+          name: "claude-skill",
+          description: "Imported from Claude",
+          instructions: "Use this skill...",
+          path: "/Users/test/.claude/skills/claude-skill",
+          editable: false,
+          fileLocation: "/Users/test/.claude/skills/claude-skill/SKILL.md",
+        },
+      ]);
+
+      render(<SkillsView />);
+
+      expect(await screen.findByText("claude-skill")).toBeInTheDocument();
+      expect(screen.getByText("Read-only")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "This skill was discovered outside Goose’s managed skills folders. Edit the file directly at:",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("/Users/test/.claude/skills/claude-skill/SKILL.md"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText("Options for claude-skill"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows ~/.agents/skills entries as editable when returned editable by the API", async () => {
+      listSkills.mockResolvedValue([
+        {
+          name: "managed-skill",
+          description: "Managed by Goose",
+          instructions: "Use this skill...",
+          path: "/Users/test/.agents/skills/managed-skill",
+          editable: true,
+          fileLocation: "/Users/test/.agents/skills/managed-skill/SKILL.md",
+        },
+      ]);
+      const user = userEvent.setup();
+
+      render(<SkillsView />);
+
+      expect(await screen.findByText("managed-skill")).toBeInTheDocument();
+      expect(screen.queryByText("Read-only")).not.toBeInTheDocument();
+
+      await user.click(screen.getByLabelText("Options for managed-skill"));
+      expect(
+        screen.getByRole("menuitem", { name: /edit/i }),
+      ).toBeInTheDocument();
     });
   });
 });
