@@ -118,6 +118,11 @@ pub struct ScheduledJob {
     pub process_start_time: Option<DateTime<Utc>>,
     #[serde(default)]
     pub parameters: Vec<(String, String)>,
+    /// Original directory of the recipe file before it was copied to scheduled_recipes/.
+    /// Preserved so that relative paths (sub-recipes, template includes) resolve correctly
+    /// against the source tree rather than the scheduler's internal storage directory.
+    #[serde(default)]
+    pub recipe_base_dir: Option<String>,
 }
 
 async fn persist_jobs(
@@ -312,6 +317,9 @@ impl Scheduler {
             let destination_recipe_path = scheduled_recipes_dir.join(destination_filename);
 
             fs::copy(original_recipe_path, &destination_recipe_path)?;
+            stored_job.recipe_base_dir = original_recipe_path
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned());
             stored_job.source = destination_recipe_path.to_string_lossy().into_owned();
             stored_job.current_session_id = None;
             stored_job.process_start_time = None;
@@ -365,6 +373,7 @@ impl Scheduler {
                         current_session_id: None,
                         process_start_time: None,
                         parameters: vec![],
+                        recipe_base_dir: None,
                     };
                     self.add_scheduled_job(job, false).await
                 }
@@ -796,7 +805,15 @@ async fn execute_job(
 
     let recipe_path = Path::new(&job.source);
     let recipe_content = fs::read_to_string(recipe_path)?;
-    let recipe_dir = recipe_path.parent().unwrap_or(Path::new("."));
+    // Use the original recipe directory for path resolution so that relative
+    // references (sub-recipes, template includes) survive the copy into scheduled_recipes/.
+    let recipe_dir_owned;
+    let recipe_dir = if let Some(ref base) = job.recipe_base_dir {
+        recipe_dir_owned = PathBuf::from(base);
+        recipe_dir_owned.as_path()
+    } else {
+        recipe_path.parent().unwrap_or(Path::new("."))
+    };
 
     let recipe: Recipe = build_recipe_from_template(
         recipe_content,
@@ -1107,6 +1124,7 @@ mod tests {
             current_session_id: None,
             process_start_time: None,
             parameters: vec![],
+            recipe_base_dir: None,
         };
 
         scheduler.add_scheduled_job(job, true).await.unwrap();
@@ -1140,6 +1158,7 @@ mod tests {
             current_session_id: None,
             process_start_time: None,
             parameters: vec![],
+            recipe_base_dir: None,
         };
 
         scheduler.add_scheduled_job(job, true).await.unwrap();
@@ -1180,6 +1199,7 @@ mod tests {
             current_session_id: None,
             process_start_time: None,
             parameters: vec![],
+            recipe_base_dir: None,
         };
 
         // Schedule the job and let it run — should not panic

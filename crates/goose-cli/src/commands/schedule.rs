@@ -90,6 +90,7 @@ pub async fn handle_schedule_add(
         current_session_id: None,
         process_start_time: None,
         parameters: params,
+        recipe_base_dir: None,
     };
 
     let scheduler_storage_path =
