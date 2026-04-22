@@ -632,7 +632,6 @@ body {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-2);
-  overflow: hidden;
   transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 .composer:focus-within {
@@ -687,6 +686,8 @@ body {
   border-top: 1px solid var(--color-border-subtle);
   background: var(--color-surface);
   flex-wrap: wrap;
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
 }
 .footer-btn {
   display: flex;
@@ -949,6 +950,9 @@ body {
   gap: var(--space-3);
   animation: msgIn 280ms var(--ease-out);
 }
+.msg.user-msg { flex-direction: row-reverse; text-align: right; }
+.msg.user-msg .msg-who { justify-content: flex-end; }
+.msg.user-msg .msg-actions { justify-content: flex-end; }
 @keyframes msgIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }

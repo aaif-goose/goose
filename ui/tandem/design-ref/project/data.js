@@ -1,6 +1,6 @@
 // Sample data for Tandem AI Workspace
 
-const USER = { firstName: 'Maxim', fullName: 'Maxim Cherepanov', initials: 'MC' };
+const USER = { firstName: 'Maxim', fullName: 'Maxim Larkin', initials: 'ML' };
 
 const MODELS = [
   { id: 'opus-4.7', name: 'Claude Opus 4.7', desc: 'Most capable, best for hard problems', max: 200000, badge: 'Flagship' },
