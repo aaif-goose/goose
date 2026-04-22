@@ -18,6 +18,11 @@ on:
         type: string
         required: false
         default: ""
+      windows_variant:
+        description: "Windows artifact variant to build"
+        required: false
+        default: "standard"
+        type: string
 
 name: "Reusable workflow to build CLI"
 
@@ -64,23 +69,24 @@ jobs:
 
     steps:
       - name: Checkout code
+        if: ${{ inputs.windows_variant == 'standard' || matrix.os == 'windows' }}
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
         with:
           ref: ${{ inputs.ref }}
 
       - name: Update version in Cargo.toml
-        if: ${{ inputs.version != '' }}
+        if: ${{ inputs.version != '' && (inputs.windows_variant == 'standard' || matrix.os == 'windows') }}
         shell: bash
         run: |
           sed -i.bak 's/^version = ".*"/version = "'${{ inputs.version }}'"/' Cargo.toml
           rm -f Cargo.toml.bak
 
       - name: Install cross
-        if: matrix.use-cross
+        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
         run: source ./bin/activate-hermit && cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Cache Cargo artifacts (Linux/macOS)
-        if: matrix.use-cross
+        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
         with:
           key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-macos-deployment-target-12
@@ -89,10 +95,10 @@ jobs:
         if: matrix.os == 'windows'
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
         with:
-          key: windows-msvc-cli
+          key: windows-msvc-cli-${{ inputs.windows_variant }}
 
       - name: Build CLI (Linux/macOS)
-        if: matrix.use-cross
+        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
         env:
           CROSS_NO_WARNINGS: 0
           RUST_LOG: debug
@@ -123,7 +129,11 @@ jobs:
         shell: bash
         run: |
           echo "🚀 Building Windows CLI executable..."
-          cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
+          if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
+          else
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
+          fi
 
           if [ ! -f "./target/x86_64-pc-windows-msvc/release/goose.exe" ]; then
             echo "❌ Windows CLI binary not found."
@@ -135,7 +145,7 @@ jobs:
           ls -la ./target/x86_64-pc-windows-msvc/release/goose.exe
 
       - name: Package CLI (Linux/macOS)
-        if: matrix.use-cross
+        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
         run: |
           source ./bin/activate-hermit
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
@@ -157,21 +167,25 @@ jobs:
         shell: bash
         run: |
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
+          export VARIANT_SUFFIX=""
+          if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
+            VARIANT_SUFFIX="-cuda"
+          fi
 
           mkdir -p "target/${TARGET}/release/goose-package"
 
           cp "target/${TARGET}/release/goose.exe" "target/${TARGET}/release/goose-package/"
 
           cd "target/${TARGET}/release"
-          7z a -tzip "goose-${TARGET}.zip" goose-package/
-          echo "ARTIFACT_ZIP=target/${TARGET}/release/goose-${TARGET}.zip" >> $GITHUB_ENV
+          7z a -tzip "goose-${TARGET}${VARIANT_SUFFIX}.zip" goose-package/
+          echo "ARTIFACT_ZIP=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.zip" >> $GITHUB_ENV
 
       - name: Upload CLI artifact
+        if: ${{ inputs.windows_variant == 'standard' || matrix.os == 'windows' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}
+          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: |
             ${{ env.ARTIFACT_BZ2 }}
             ${{ env.ARTIFACT_GZ }}
             ${{ env.ARTIFACT_ZIP }}
-

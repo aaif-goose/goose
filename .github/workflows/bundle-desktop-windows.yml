@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: false
+      windows_variant:
+        description: 'Windows artifact variant to build'
+        required: false
+        type: string
+        default: 'standard'
   workflow_call:
     inputs:
       version:
@@ -24,6 +29,11 @@ on:
         required: false
         type: string
         default: ''
+      windows_variant:
+        description: 'Windows artifact variant to build'
+        required: false
+        type: string
+        default: 'standard'
 
 # Permissions required for OIDC authentication with Azure Trusted Signing
 permissions:
@@ -64,7 +74,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: windows-msvc-desktop
+          key: windows-msvc-desktop-${{ inputs.windows_variant }}
 
       - name: Setup Rust
         shell: bash
@@ -76,7 +86,11 @@ jobs:
         shell: bash
         run: |
           echo "🚀 Building Windows executable..."
-          cargo build --release --target x86_64-pc-windows-msvc
+          if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-server --features cuda
+          else
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-server
+          fi
 
           # Verify build succeeded
           if [ ! -f "./target/x86_64-pc-windows-msvc/release/goosed.exe" ]; then
@@ -155,7 +169,7 @@ jobs:
       - name: Upload unsigned distribution
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: windows-unsigned
+          name: windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: ui/desktop/dist-windows/
 
   sign-desktop-windows:
@@ -169,7 +183,7 @@ jobs:
       - name: Download unsigned distribution
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          name: windows-unsigned
+          name: windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: dist-windows
 
       - name: Azure login
@@ -206,13 +220,17 @@ jobs:
       - name: Create Windows zip package
         shell: bash
         run: |
-          7z a -tzip "Goose-win32-x64.zip" dist-windows/
+          ZIP_NAME="Goose-win32-x64"
+          if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
+            ZIP_NAME="${ZIP_NAME}-cuda"
+          fi
+          7z a -tzip "${ZIP_NAME}.zip" dist-windows/
 
       - name: Upload signed Windows build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: Goose-win32-x64
-          path: Goose-win32-x64.zip
+          name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
+          path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
 
   # When signing is disabled, package the unsigned build directly
   package-desktop-windows:
@@ -225,16 +243,20 @@ jobs:
       - name: Download unsigned distribution
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          name: windows-unsigned
+          name: windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: dist-windows
 
       - name: Create Windows zip package
         shell: bash
         run: |
-          7z a -tzip "Goose-win32-x64.zip" dist-windows/
+          ZIP_NAME="Goose-win32-x64"
+          if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
+            ZIP_NAME="${ZIP_NAME}-cuda"
+          fi
+          7z a -tzip "${ZIP_NAME}.zip" dist-windows/
 
       - name: Upload Windows build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: Goose-win32-x64
-          path: Goose-win32-x64.zip
+          name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
+          path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
