@@ -316,6 +316,11 @@ export function App() {
             };
           }),
         );
+        if (status === "completed" && settings.memoryDir) {
+          listMemoryNotes(settings.memoryDir)
+            .then((notes) => setMemoryNotes(notes))
+            .catch((err) => console.error("[memory] refresh failed", err));
+        }
         break;
       }
       default:
@@ -323,11 +328,16 @@ export function App() {
     }
   };
 
+  // Keep the notification handler ref pointed at the latest closure, so it sees
+  // the current `settings` etc. instead of the values captured on first render.
+  const handlerRef = useRef(handleNotification);
+  handlerRef.current = handleNotification;
+
   // Warm the ACP client + register our handler once.
   useEffect(() => {
     let cancelled = false;
     initAcp((n) => {
-      if (!cancelled) handleNotification(n);
+      if (!cancelled) handlerRef.current(n);
     }).catch((err: unknown) => {
       console.error("[acp] init failed", err);
       addToast(`ACP init failed: ${String(err)}`);
@@ -335,7 +345,6 @@ export function App() {
     return () => {
       cancelled = true;
     };
-    // handleNotification closes over setTabs which is stable; addToast is defined above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -415,7 +424,7 @@ export function App() {
     setActiveTab(tabId);
     try {
       const prompt = await loadRecipePrompt(recipe.path);
-      const gooseSessionId = await startSession();
+      const gooseSessionId = await startSession(settings.memoryDir || undefined);
       sessionToTab.current.set(gooseSessionId, tabId);
       setTabs((ts) =>
         ts.map((t) =>
@@ -479,14 +488,24 @@ export function App() {
 
     try {
       let gooseSessionId = tab.gooseSessionId;
+      let outgoing = text;
       if (!gooseSessionId) {
-        gooseSessionId = await startSession();
+        gooseSessionId = await startSession(settings.memoryDir || undefined);
         sessionToTab.current.set(gooseSessionId, tab.id);
         setTabs((ts) =>
           ts.map((t) => (t.id === tab.id ? { ...t, gooseSessionId } : t)),
         );
+        if (settings.memoryDir) {
+          outgoing =
+            `[context] Memory folder: ${settings.memoryDir} (also your working directory).\n` +
+            `- For "remember X" / note-taking requests, use the memory tool; ` +
+            `local memories are persisted under ${settings.memoryDir}\\.goose\\memory\\.\n` +
+            `- For explicit file creation (e.g. "save this markdown"), write under ` +
+            `${settings.memoryDir} using an absolute path. Do not invent other locations.\n\n` +
+            text;
+        }
       }
-      await sendMessage(gooseSessionId, text);
+      await sendMessage(gooseSessionId, outgoing);
     } catch (err) {
       console.error("[acp] sendMessage failed", err);
       addToast(`Send failed: ${String(err)}`);

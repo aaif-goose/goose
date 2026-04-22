@@ -12,8 +12,8 @@ import type {
 
 export const USER = {
   firstName: "Maxim",
-  fullName: "Maxim Cherepanov",
-  initials: "MC",
+  fullName: "Maxim Larkin",
+  initials: "ML",
 };
 
 export const MODELS: Model[] = [
