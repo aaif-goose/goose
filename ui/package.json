@@ -5,7 +5,7 @@
     "text",
     "desktop",
     "goose-binary/*",
-    "talos"
+    "tandem"
   ],
   "scripts": {
     "changeset": "changeset",
