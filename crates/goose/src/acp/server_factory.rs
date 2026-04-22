@@ -1,6 +1,6 @@
 use crate::acp::server::{AcpProviderFactory, GooseAcpAgent};
 use anyhow::Result;
-use goose::agents::GoosePlatform;
+use crate::agents::GoosePlatform;
 use std::sync::Arc;
 use tracing::info;
 
