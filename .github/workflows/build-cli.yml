@@ -124,6 +124,22 @@ jobs:
           rustup show
           rustup target add x86_64-pc-windows-msvc
 
+      - name: Install CUDA toolkit (Windows CUDA)
+        if: ${{ matrix.os == 'windows' && inputs.windows_variant == 'cuda' }}
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '12.5.0'
+          method: 'local'
+          log-file-suffix: 'build-cli-windows-cuda.txt'
+
+      - name: Verify CUDA toolchain (Windows CUDA)
+        if: ${{ matrix.os == 'windows' && inputs.windows_variant == 'cuda' }}
+        shell: bash
+        run: |
+          echo "CUDA_PATH=${CUDA_PATH}"
+          where nvcc
+          nvcc -V
+
       - name: Build CLI (Windows)
         if: matrix.os == 'windows'
         shell: bash
