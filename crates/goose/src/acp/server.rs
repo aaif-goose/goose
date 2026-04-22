@@ -30,7 +30,7 @@ use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
 use anyhow::Result;
 use fs_err as fs;
-use futures::future::BoxFuture;
+use futures::future::{BoxFuture, Either};
 use goose_acp_macros::custom_methods;
 use rmcp::model::{CallToolResult, RawContent, ResourceContents, Role};
 use sacp::schema::{
@@ -1721,6 +1721,29 @@ impl GooseAcpAgent {
             })
     }
 
+    /// Look up the session and return the agent if already ready, or the watch
+    /// receiver if still loading.  Optionally sets a cancellation token on the
+    /// session (needed by `on_prompt`).
+    async fn get_agent_or_receiver(
+        &self,
+        thread_id: &str,
+        cancel_token: Option<CancellationToken>,
+    ) -> Result<Either<Arc<Agent>, tokio::sync::watch::Receiver<AgentSetupSignal>>, sacp::Error>
+    {
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions.get_mut(thread_id).ok_or_else(|| {
+            sacp::Error::resource_not_found(Some(thread_id.to_string()))
+                .data(format!("Session not found: {}", thread_id))
+        })?;
+        if let Some(token) = cancel_token {
+            session.cancel_token = Some(token);
+        }
+        match &session.agent {
+            AgentHandle::Ready(agent) => Ok(Either::Left(agent.clone())),
+            AgentHandle::Loading(rx) => Ok(Either::Right(rx.clone())),
+        }
+    }
+
     /// Wait until the agent is **fully ready** (provider + all extensions).
     /// Most callers (e.g. `on_prompt`, `on_get_tools`) should use this.
     async fn get_session_agent(
@@ -1728,76 +1751,52 @@ impl GooseAcpAgent {
         thread_id: &str,
         cancel_token: Option<CancellationToken>,
     ) -> Result<Arc<Agent>, sacp::Error> {
-        let mut rx = {
-            let mut sessions = self.sessions.lock().await;
-            let session = sessions.get_mut(thread_id).ok_or_else(|| {
-                sacp::Error::resource_not_found(Some(thread_id.to_string()))
-                    .data(format!("Session not found: {}", thread_id))
-            })?;
-            if let Some(token) = cancel_token {
-                session.cancel_token = Some(token);
-            }
-            match &session.agent {
-                AgentHandle::Ready(agent) => return Ok(agent.clone()),
-                AgentHandle::Loading(rx) => rx.clone(),
-            }
+        let mut rx = match self.get_agent_or_receiver(thread_id, cancel_token).await? {
+            Either::Left(agent) => return Ok(agent),
+            Either::Right(rx) => rx,
         };
-        // Drop the lock while we wait for the background setup to finish.
         // Wait specifically for FullyReady (not just ProviderReady).
-        let agent = {
-            let guard = rx
-                .wait_for(|v| {
-                    matches!(
-                        v,
-                        Some(Ok(AgentSetupProgress::FullyReady(_))) | Some(Err(_))
-                    )
-                })
-                .await
-                .map_err(|_| {
-                    sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
-                })?;
-            match guard.as_ref().unwrap() {
-                Ok(AgentSetupProgress::FullyReady(agent)) => agent.clone(),
-                Err(e) => return Err(sacp::Error::internal_error().data(e.clone())),
-                // wait_for predicate excludes ProviderReady
-                _ => unreachable!(),
-            }
-        };
-        Ok(agent)
+        let guard = rx
+            .wait_for(|v| {
+                matches!(
+                    v,
+                    Some(Ok(AgentSetupProgress::FullyReady(_))) | Some(Err(_))
+                )
+            })
+            .await
+            .map_err(|_| {
+                sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
+            })?;
+        match guard.as_ref().unwrap() {
+            Ok(AgentSetupProgress::FullyReady(agent)) => Ok(agent.clone()),
+            Err(e) => Err(sacp::Error::internal_error().data(e.clone())),
+            // wait_for predicate excludes ProviderReady
+            _ => unreachable!(),
+        }
     }
 
     /// Wait only until the **provider** is initialized.  Extensions may still
     /// be loading in the background.  Use this for operations that only touch
-    /// the provider (e.g. `update_provider`, `set_model`).
+    /// the provider (e.g. `update_provider`, `set_model`, `build_config_update`).
     async fn get_session_agent_provider_ready(
         &self,
         thread_id: &str,
     ) -> Result<Arc<Agent>, sacp::Error> {
-        let mut rx = {
-            let sessions = self.sessions.lock().await;
-            let session = sessions.get(thread_id).ok_or_else(|| {
-                sacp::Error::resource_not_found(Some(thread_id.to_string()))
-                    .data(format!("Session not found: {}", thread_id))
-            })?;
-            match &session.agent {
-                AgentHandle::Ready(agent) => return Ok(agent.clone()),
-                AgentHandle::Loading(rx) => rx.clone(),
-            }
+        let mut rx = match self.get_agent_or_receiver(thread_id, None).await? {
+            Either::Left(agent) => return Ok(agent),
+            Either::Right(rx) => rx,
         };
         // Any signal (ProviderReady, FullyReady, or Err) unblocks us.
-        let agent = {
-            let guard = rx.wait_for(|v| v.is_some()).await.map_err(|_| {
-                sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
-            })?;
-            match guard.as_ref().unwrap() {
-                Ok(progress) => match progress {
-                    AgentSetupProgress::ProviderReady(agent)
-                    | AgentSetupProgress::FullyReady(agent) => agent.clone(),
-                },
-                Err(e) => return Err(sacp::Error::internal_error().data(e.clone())),
-            }
-        };
-        Ok(agent)
+        let guard = rx.wait_for(|v| v.is_some()).await.map_err(|_| {
+            sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
+        })?;
+        match guard.as_ref().unwrap() {
+            Ok(progress) => match progress {
+                AgentSetupProgress::ProviderReady(agent)
+                | AgentSetupProgress::FullyReady(agent) => Ok(agent.clone()),
+            },
+            Err(e) => Err(sacp::Error::internal_error().data(e.clone())),
+        }
     }
 
     async fn add_mcp_extensions(
@@ -2381,7 +2380,7 @@ impl GooseAcpAgent {
             .get_session(&internal_id, false)
             .await
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-        let agent = self.get_session_agent(&thread_id.0, None).await?;
+        let agent = self.get_session_agent_provider_ready(&thread_id.0).await?;
         let provider = agent.provider().await.map_err(|e| {
             sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
         })?;
