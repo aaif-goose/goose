@@ -247,8 +247,12 @@ fn parse_think_tag(buffer: &str, start: usize) -> Option<(ThinkTag, usize)> {
 }
 
 fn is_possible_partial_think_tag(suffix: &str) -> bool {
+    // Allow a trailing `/` so a chunk boundary that lands between `<think` and
+    // `>` in a self-closing `<think/>` (or `<thinking/>`) is still recognised
+    // as a partial tag and buffered until the `>` arrives in the next chunk.
     static OPEN_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)^<(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s[^>]*)?$").unwrap()
+        Regex::new(r"(?is)^<(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s[^>]*|/)?$")
+            .unwrap()
     });
     static CLOSE_RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?is)^</(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s*)?$").unwrap()
@@ -1286,6 +1290,39 @@ mod tests {
 
         assert_eq!(out.content, "visible chunk 1visible chunk 2");
         assert!(out.thinking.is_empty());
+    }
+
+    #[test]
+    fn test_think_filter_streaming_across_self_closing_boundary() {
+        // Regression: a chunk boundary between `<think` and `>` in a
+        // self-closing `<think/>` used to fall out of the partial-tag regex
+        // (which only allowed `<think<ws>...`), so the `<think/` prefix leaked
+        // into visible content before the `>` arrived.
+        for (a, b) in [
+            ("before <think/", "> after"),
+            ("before <thinking/", "> after"),
+            ("head <think ", "/> tail"),
+        ] {
+            let mut filter = ThinkFilter::new();
+            let mut out = filter.push(a);
+            let second = filter.push(b);
+            let final_out = filter.finish();
+            out.content.push_str(&second.content);
+            out.content.push_str(&final_out.content);
+            out.thinking.push_str(&second.thinking);
+            out.thinking.push_str(&final_out.thinking);
+
+            assert!(
+                !out.content.contains('<'),
+                "partial tag leaked into content for ({a:?}, {b:?}): {:?}",
+                out.content
+            );
+            assert!(
+                out.thinking.is_empty(),
+                "unexpected thinking for ({a:?}, {b:?}): {:?}",
+                out.thinking
+            );
+        }
     }
 
     #[test]
