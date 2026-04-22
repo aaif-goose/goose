@@ -98,7 +98,8 @@ export function SkillsView() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<
-    { name: string; description: string; instructions: string } | undefined
+    | { name: string; description: string; instructions: string; path: string }
+    | undefined
   >(undefined);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +130,7 @@ export function SkillsView() {
   const handleConfirmDeleteSkill = async () => {
     if (!deletingSkill) return;
     try {
-      await deleteSkill(deletingSkill.name);
+      await deleteSkill(deletingSkill.path);
       await loadSkills();
     } catch {
       // best-effort
@@ -142,6 +143,7 @@ export function SkillsView() {
       name: skill.name,
       description: skill.description,
       instructions: skill.instructions,
+      path: skill.path,
     });
     setDialogOpen(true);
   };
@@ -164,7 +166,7 @@ export function SkillsView() {
 
   const handleExport = async (skill: SkillInfo) => {
     try {
-      const result = await exportSkill(skill.name);
+      const result = await exportSkill(skill.path);
       const blob = new Blob([result.json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

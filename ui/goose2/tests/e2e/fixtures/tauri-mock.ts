@@ -197,24 +197,30 @@ export function buildInitScript(options?: {
                 global: message.params?.global ?? true,
               },
             });
-          case "_goose/sources/update":
+          case "_goose/sources/update": {
+            const path = message.params?.path ?? "/mock/.agents/skills/updated-skill";
+            const name = String(path).split("/").filter(Boolean).at(-1) ?? "updated-skill";
             return jsonRpcResult(message.id, {
               source: {
-                name: message.params?.name ?? "updated-skill",
+                name,
                 type: "skill",
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (message.params?.name ?? "updated-skill"),
+                directory: path,
                 global: message.params?.global ?? true,
               },
             });
+          }
           case "_goose/sources/delete":
             return jsonRpcResult(message.id, {});
-          case "_goose/sources/export":
+          case "_goose/sources/export": {
+            const path = message.params?.path ?? "/mock/.agents/skills/skill";
+            const name = String(path).split("/").filter(Boolean).at(-1) ?? "skill";
             return jsonRpcResult(message.id, {
               json: "{}",
-              filename: (message.params?.name ?? "skill") + ".skill.json",
+              filename: name + ".skill.json",
             });
+          }
           case "_goose/sources/import":
             return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
           default:

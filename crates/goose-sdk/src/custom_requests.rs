@@ -338,8 +338,11 @@ pub struct CreateSourceResponse {
     pub source: SourceEntry,
 }
 
-/// List sources. If `type` is omitted, sources of all known types are returned.
-/// Both global and project-scoped sources are included when `project_dir` is set.
+/// List discovered sources.
+///
+/// Today this endpoint only returns skills. If `type` is omitted, it defaults
+/// to listing skill sources. Both global and project-scoped skills are included
+/// when `project_dir` is set.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/sources/list", response = ListSourcesResponse)]
 #[serde(rename_all = "camelCase")]

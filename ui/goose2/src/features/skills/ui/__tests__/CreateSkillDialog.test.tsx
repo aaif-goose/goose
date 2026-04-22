@@ -53,6 +53,7 @@ describe("CreateSkillDialog", () => {
             name: "my-skill",
             description: "desc",
             instructions: "instr",
+            path: "/mock/.agents/skills/my-skill",
           }}
         />,
       );
@@ -120,6 +121,7 @@ describe("CreateSkillDialog", () => {
       name: "code-review",
       description: "Reviews code",
       instructions: "Review the code carefully",
+      path: "/mock/.agents/skills/code-review",
     };
 
     it("pre-fills fields with existing skill data", () => {
@@ -193,6 +195,7 @@ describe("CreateSkillDialog", () => {
             name: "code-review",
             description: "Reviews code",
             instructions: "Review carefully",
+            path: "/mock/.agents/skills/code-review",
           }}
         />,
       );
@@ -207,7 +210,7 @@ describe("CreateSkillDialog", () => {
       await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       expect(updateSkill).toHaveBeenCalledWith(
-        "code-review",
+        "/mock/.agents/skills/code-review",
         "Updated description",
         "Review carefully",
       );

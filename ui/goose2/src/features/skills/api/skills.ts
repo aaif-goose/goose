@@ -48,24 +48,24 @@ export async function listSkills(): Promise<SkillInfo[]> {
   return sources.map(toSkillInfo);
 }
 
-export async function deleteSkill(name: string): Promise<void> {
+export async function deleteSkill(path: string): Promise<void> {
   const client = await getClient();
   await client.extMethod("_goose/sources/delete", {
     type: "skill",
-    name,
+    path,
     global: true,
   });
 }
 
 export async function updateSkill(
-  name: string,
+  path: string,
   description: string,
   instructions: string,
 ): Promise<SkillInfo> {
   const client = await getClient();
   const raw = await client.extMethod("_goose/sources/update", {
     type: "skill",
-    name,
+    path,
     description,
     content: instructions,
     global: true,
@@ -74,12 +74,12 @@ export async function updateSkill(
 }
 
 export async function exportSkill(
-  name: string,
+  path: string,
 ): Promise<{ json: string; filename: string }> {
   const client = await getClient();
   const raw = await client.extMethod("_goose/sources/export", {
     type: "skill",
-    name,
+    path,
     global: true,
   });
   return { json: raw.json as string, filename: raw.filename as string };
