@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none">
+  <defs>
+    <linearGradient id="lw_gemBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a093ff"></stop>
+      <stop offset="100%" stop-color="#6758d9"></stop>
+    </linearGradient>
+    <linearGradient id="lw_gemLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c9c0ff" stop-opacity="0.9"></stop>
+      <stop offset="100%" stop-color="#8b7cff" stop-opacity="0"></stop>
+    </linearGradient>
+  </defs>
+  <g transform="translate(4, 4)">
+    <path d="M20 0 L36 12 L28 38 L12 38 L4 12 Z" fill="url(#lw_gemBody)"></path>
+    <path d="M20 0 L36 12 L20 14 L4 12 Z" fill="#a093ff"></path>
+    <path d="M20 0 L20 38" stroke="#16171b" stroke-width="1" stroke-opacity="0.35"></path>
+    <path d="M4 12 L20 14 L12 38" stroke="#16171b" stroke-width="1" stroke-opacity="0.3" fill="none"></path>
+    <path d="M36 12 L20 14 L28 38" stroke="#16171b" stroke-width="1" stroke-opacity="0.3" fill="none"></path>
+    <path d="M20 0 L30 10 L20 14 Z" fill="url(#lw_gemLight)"></path>
+  </g>
+  <text x="52" y="32" font-family="Inter, sans-serif" font-size="22" font-weight="600" fill="#e4e4e8" letter-spacing="-0.5">Tandem</text>
+</svg>

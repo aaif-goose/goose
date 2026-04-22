@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tandem UI — AI Workspace</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="ds/assets/icon.svg">
+  <link rel="stylesheet" href="ds/colors_and_type.css">
+  <link rel="stylesheet" href="app.css">
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script src="data.js"></script>
+  <script type="text/babel" src="Icon.jsx"></script>
+  <script type="text/babel" src="Sidebar.jsx"></script>
+  <script type="text/babel" src="Chat.jsx"></script>
+  <script type="text/babel" src="RightPanel.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "violet",
+  "emptyLayout": "centered",
+  "switcher": "icons-text",
+  "msgStyle": "column",
+  "tokenPop": "inline",
+  "footerOrder": "default",
+  "rightMode": "list"
+}/*EDITMODE-END*/;
+
+const ACCENT_MAP = {
+  violet: { c: '#8b7cff', h: '#a093ff', a: '#7668f0', dim: 'rgba(139, 124, 255, 0.14)', sel: 'rgba(139, 124, 255, 0.22)', focus: 'rgba(139, 124, 255, 0.55)' },
+  indigo: { c: '#7aa2f7', h: '#9bb8f9', a: '#5e88e5', dim: 'rgba(122, 162, 247, 0.14)', sel: 'rgba(122, 162, 247, 0.22)', focus: 'rgba(122, 162, 247, 0.55)' },
+  teal:   { c: '#6fcf97', h: '#8bd9ac', a: '#57b680', dim: 'rgba(111, 207, 151, 0.14)', sel: 'rgba(111, 207, 151, 0.22)', focus: 'rgba(111, 207, 151, 0.55)' },
+  amber:  { c: '#e6b450', h: '#efc776', a: '#cc9a36', dim: 'rgba(230, 180, 80, 0.14)', sel: 'rgba(230, 180, 80, 0.22)', focus: 'rgba(230, 180, 80, 0.55)' },
+  rose:   { c: '#e06c75', h: '#e88a91', a: '#c95661', dim: 'rgba(224, 108, 117, 0.14)', sel: 'rgba(224, 108, 117, 0.22)', focus: 'rgba(224, 108, 117, 0.55)' },
+};
+
+function App() {
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULTS);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+
+  // Apply accent color CSS vars
+  useEffect(() => {
+    const a = ACCENT_MAP[tweaks.accent] || ACCENT_MAP.violet;
+    const r = document.documentElement.style;
+    r.setProperty('--color-accent', a.c);
+    r.setProperty('--color-accent-hover', a.h);
+    r.setProperty('--color-accent-active', a.a);
+    r.setProperty('--color-accent-dim', a.dim);
+    r.setProperty('--color-selection', a.sel);
+    r.setProperty('--color-focus-ring', a.focus);
+  }, [tweaks.accent]);
+
+  const [activeApp, setActiveApp] = useState('chat');
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(tweaks.rightMode === 'collapsed');
+  const [section, setSection] = useState('chat');
+  const [search, setSearch] = useState('');
+  const [tabs, setTabs] = useState([
+    { id: 't1', title: 'New chat', chatId: null, messages: [], composer: '', attachments: [] },
+  ]);
+  const [activeTab, setActiveTab] = useState('t1');
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const [openNote, setOpenNote] = useState(tweaks.rightMode === 'editor' ? 'n2' : null);
+  const [model, setModel] = useState('opus-4.7');
+  const [mcpServers, setMcpServers] = useState(MCP_SERVERS);
+  const [contextFolder, setContextFolder] = useState('memory');
+  const [skills, setSkills] = useState(SKILLS);
+  const [sending, setSending] = useState(false);
+
+  // Sync rightMode tweak with state
+  useEffect(() => {
+    setRightCollapsed(tweaks.rightMode === 'collapsed');
+    if (tweaks.rightMode === 'editor' && !openNote) setOpenNote('n2');
+    if (tweaks.rightMode === 'list') setOpenNote(null);
+  }, [tweaks.rightMode]);
+
+  const addToast = (msg) => {
+    const id = Date.now() + Math.random();
+    setToasts(ts => [...ts, { id, msg }]);
+    setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 2400);
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(p => !p); }
+      else if (meta && e.key.toLowerCase() === 'n') { e.preventDefault(); newTab(); }
+      else if (meta && e.key.toLowerCase() === 'b' && !e.shiftKey) { e.preventDefault(); setLeftCollapsed(c => !c); }
+      else if (meta && e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); setRightCollapsed(c => !c); }
+      else if (meta && e.key === '/') { e.preventDefault(); document.querySelector('.composer-input')?.focus(); }
+      else if (meta && e.key >= '1' && e.key <= '5') {
+        e.preventDefault();
+        setSection(SECTIONS[parseInt(e.key) - 1].id);
+      }
+      else if (e.key === 'Escape') { setPaletteOpen(false); setTweaksOpen(false); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Tweaks protocol
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.data || typeof e.data !== 'object') return;
+      if (e.data.type === '__activate_edit_mode') setTweaksOpen(true);
+      if (e.data.type === '__deactivate_edit_mode') setTweaksOpen(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const updateTweaks = (next) => {
+    setTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+  };
+
+  const SECTIONS_LIST = [
+    { id: 'chat', label: 'Chat', icon: 'message-square' },
+    { id: 'projects', label: 'Projects', icon: 'folder-kanban' },
+    { id: 'memory', label: 'Memory', icon: 'brain' },
+    { id: 'workflows', label: 'Workflows', icon: 'workflow' },
+    { id: 'skills', label: 'Skills', icon: 'sparkles' },
+  ];
+
+  // Tab ops
+  const newTab = () => {
+    const id = 't' + Date.now();
+    setTabs(ts => [...ts, { id, title: 'New chat', chatId: null, messages: [], composer: '', attachments: [] }]);
+    setActiveTab(id);
+  };
+  const closeTab = (id) => {
+    const idx = tabs.findIndex(t => t.id === id);
+    const next = tabs.filter(t => t.id !== id);
+    if (next.length === 0) { newTab(); return; }
+    setTabs(next);
+    if (activeTab === id) setActiveTab(next[Math.max(0, idx - 1)].id);
+  };
+
+  const openChatSession = (chatId) => {
+    // Find existing tab for this chat
+    const existing = tabs.find(t => t.chatId === chatId);
+    if (existing) { setActiveTab(existing.id); return; }
+    const chat = CHATS.find(c => c.id === chatId);
+    if (!chat) return;
+    // Fake a conversation
+    const msgs = generateFakeConversation(chat);
+    const t = { id: 't' + Date.now(), title: chat.title, chatId, messages: msgs, composer: '', attachments: [] };
+    setTabs(ts => [...ts, t]);
+    setActiveTab(t.id);
+  };
+
+  const openItem = (id, kind) => {
+    if (kind === 'note') { setOpenNote(id); setRightCollapsed(false); return; }
+    openChatSession(id);
+  };
+
+  const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
+  const isEmpty = (currentTab.messages || []).length === 0;
+
+  const updateTab = (patch) => {
+    setTabs(ts => ts.map(t => t.id === activeTab ? {...t, ...patch} : t));
+  };
+
+  const handleSend = () => {
+    const text = currentTab.composer.trim();
+    if (!text) return;
+    const userMsg = { role: 'user', paragraphs: [text] };
+    updateTab({
+      messages: [...currentTab.messages, userMsg],
+      composer: '',
+      title: currentTab.messages.length === 0 ? truncate(text, 36) : currentTab.title,
+    });
+    setSending(true);
+    // Canned reply after a delay
+    setTimeout(() => {
+      const reply = {
+        role: 'assistant',
+        model: MODELS.find(m => m.id === model)?.name,
+        paragraphs: CANNED_REPLIES.default.text,
+        bullets: CANNED_REPLIES.default.bullets,
+        followup: CANNED_REPLIES.default.followup,
+        tool: { name: 'memory_search', summary: 'Found 3 relevant notes' },
+      };
+      setTabs(ts => ts.map(t => t.id === activeTab ? {...t, messages: [...t.messages, reply]} : t));
+      setSending(false);
+    }, 1400);
+  };
+
+  const composerProps = {
+    value: currentTab.composer,
+    setValue: v => updateTab({ composer: v }),
+    onSend: handleSend,
+    attachments: currentTab.attachments,
+    setAttachments: v => updateTab({ attachments: v }),
+    model, setModel,
+    mcpServers, setMcpServers,
+    contextFolder, setContextFolder,
+    tokenPopoverVariant: tweaks.tokenPop,
+  };
+
+  const commands = [
+    { label: 'New chat session', icon: 'plus', kbd: '⌘N', section: 'Chat', run: newTab },
+    { label: 'Close tab', icon: 'x', kbd: '⌘W', section: 'Tabs' },
+    { label: 'Toggle left panel', icon: 'sidebar-left', kbd: '⌘B', section: 'View', run: () => setLeftCollapsed(c => !c) },
+    { label: 'Toggle right panel', icon: 'sidebar-right', kbd: '⌘⇧B', section: 'View', run: () => setRightCollapsed(c => !c) },
+    { label: 'Focus composer', icon: 'pencil', kbd: '⌘/', section: 'Chat' },
+    { label: 'Switch to Chat', icon: 'message-square', kbd: '⌘1', section: 'Navigation', run: () => setSection('chat') },
+    { label: 'Switch to Projects', icon: 'folder-kanban', kbd: '⌘2', section: 'Navigation', run: () => setSection('projects') },
+    { label: 'Switch to Memory', icon: 'brain', kbd: '⌘3', section: 'Navigation', run: () => setSection('memory') },
+    { label: 'Switch to Workflows', icon: 'workflow', kbd: '⌘4', section: 'Navigation', run: () => setSection('workflows') },
+    { label: 'Switch to Skills', icon: 'sparkles', kbd: '⌘5', section: 'Navigation', run: () => setSection('skills') },
+    { label: 'Compact context now', icon: 'scroll', section: 'Chat', run: () => addToast('Context compacted — 8.2k → 3.1k tokens') },
+    { label: 'Run workflow: Weekly status digest', icon: 'play', section: 'Workflows', run: () => addToast('Running Weekly status digest…') },
+    { label: 'Open settings', icon: 'settings', kbd: '⌘,', section: 'App' },
+    { label: 'Open Tweaks panel', icon: 'sliders', section: 'Design', run: () => setTweaksOpen(true) },
+    { label: 'Report a bug', icon: 'bug', section: 'App' },
+  ];
+
+  return (
+    <div className="app" data-screen-label={isEmpty ? '01 Empty state' : '02 Active chat'}>
+      <div className="body-row">
+        <Ribbon
+          activeApp={activeApp}
+          onActivate={setActiveApp}
+          onPlaceholder={(name) => addToast(`${name} plugin not yet installed.`)}
+          onOpenPlugins={() => addToast('Plugin marketplace coming soon.')}
+          onOpenSettings={() => addToast('Settings: not in v1 shell.')}
+        />
+
+        <div className={'pane pane-left ' + (leftCollapsed ? 'collapsed' : '')}>
+          <LeftHeader
+            collapsed={leftCollapsed}
+            onToggle={() => setLeftCollapsed(c => !c)}
+            search={search} setSearch={setSearch}
+            onNew={newTab}
+          />
+          <SectionSwitcher
+            section={section}
+            setSection={setSection}
+            collapsed={leftCollapsed}
+            style={tweaks.switcher}
+          />
+          {!leftCollapsed && (
+            <>
+              {section === 'chat' && <ChatSection chats={CHATS} activeChatId={currentTab.chatId} onOpen={openItem} search={search}/>}
+              {section === 'projects' && <ProjectsSection projects={PROJECTS} chats={CHATS} onOpen={openItem} activeChatId={currentTab.chatId}/>}
+              {section === 'memory' && <MemorySection onOpen={openItem} search={search}/>}
+              {section === 'workflows' && <WorkflowsSection onRun={(n) => addToast(`Running ${n}…`)}/>}
+              {section === 'skills' && <SkillsSection skills={skills} setSkills={setSkills}/>}
+            </>
+          )}
+          <LeftFooter collapsed={leftCollapsed} onOpenSettings={() => addToast('Settings: not in v1 shell.')}/>
+        </div>
+
+        <div className="pane pane-main">
+          <TabBar
+            tabs={tabs}
+            activeTab={activeTab}
+            onActivate={setActiveTab}
+            onClose={closeTab}
+            onNew={newTab}
+          />
+          <div className="chat-pane">
+            {isEmpty ? (
+              <EmptyState
+                greetingLayout={tweaks.emptyLayout}
+                composerProps={composerProps}
+                name={USER.firstName}
+                onPromptPick={(label) => updateTab({ composer: label })}
+              />
+            ) : (
+              <ChatView
+                messages={currentTab.messages}
+                thinking={sending}
+                composerProps={composerProps}
+                bubble={tweaks.msgStyle === 'bubbles'}
+              />
+            )}
+          </div>
+        </div>
+
+        <RightPanel
+          collapsed={rightCollapsed}
+          onToggle={() => setRightCollapsed(c => !c)}
+          activeChatId={currentTab.chatId}
+          openNote={openNote}
+          setOpenNote={setOpenNote}
+          variant={tweaks.rightMode}
+        />
+      </div>
+
+      <StatusBar
+        model={MODELS.find(m => m.id === model)?.name || '—'}
+        contextFolder={CONTEXT_FOLDERS.find(f => f.id === contextFolder)?.name || 'Memory'}
+        mcpActive={mcpServers.filter(s => s.on).length}
+        sessionCount={CHATS.length}
+        skillsOn={skills.filter(s => s.on).length}
+      />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={commands}
+        onRun={(c) => c.run && c.run()}
+      />
+
+      <TweaksPanel open={tweaksOpen} onClose={() => setTweaksOpen(false)} tweaks={tweaks} setTweaks={updateTweaks}/>
+
+      <div className="toast-stack">
+        {toasts.map(t => <div key={t.id} className="toast">{t.msg}</div>)}
+      </div>
+    </div>
+  );
+}
+
+function truncate(s, n) { return s.length <= n ? s : s.slice(0, n - 1) + '…'; }
+
+function generateFakeConversation(chat) {
+  // Tailor to topic
+  if (chat.id === 'c1') {
+    return [
+      { role: 'user', paragraphs: ['I\'m seeing three WebSockets open on cold start — my code calls getClient() from three different modules in parallel. What\'s the cleanest fix?'] },
+      { role: 'assistant', model: 'Claude Opus 4.7',
+        paragraphs: ['Classic init race. The fix is to cache the Promise, not the resolved client — so parallel callers all await the same in-flight connection.'],
+        tool: { name: 'read_file', summary: 'acpConnection.ts' },
+      },
+      { role: 'assistant', model: 'Claude Opus 4.7',
+        paragraphs: ['Here\'s the pattern:'],
+        bullets: [
+          'Module-level variable: `let clientPromise: Promise<Client> | null = null`',
+          'getClient() returns clientPromise ??= connect()',
+          'On connection error, null the Promise so the next caller retries',
+          'Use .closed to detect drops without active pings'
+        ],
+        followup: 'Want me to draft the patch against your acpConnection.ts?'
+      },
+      { role: 'user', paragraphs: ['Yes, and also explain why null-on-error instead of keeping the rejection.'] },
+    ];
+  }
+  if (chat.id === 'c2') {
+    return [
+      { role: 'user', paragraphs: ['Reviewing the PRD — the four-region layout feels right, but I\'m worried the composer footer is doing too much. Six controls in one ribbon?'] },
+      { role: 'assistant', model: 'Claude Sonnet 4.6',
+        paragraphs: ['Fair concern. Let me count what\'s load-bearing vs. decorative.'],
+        bullets: [
+          'Context folder — load-bearing, changes model behavior',
+          'Attach — load-bearing but used rarely, could move into a `/` command',
+          'Token counter — load-bearing signal, but hover-only popover',
+          'Model selector — load-bearing, users switch often',
+          'MCP — load-bearing, same',
+          'Bug reporter — could live in settings or status bar',
+        ],
+        followup: 'If you pull Attach into slash commands and Bug into the status bar, you\'re down to 4. Still dense but scannable. Want mockups?'
+      },
+    ];
+  }
+  // Default
+  return [
+    { role: 'user', paragraphs: ['Let\'s pick this back up.'] },
+    { role: 'assistant', model: 'Claude Sonnet 4.6',
+      paragraphs: [`Picking up the thread on "${chat.title}". Where were we — do you want me to summarize the last turn, or jump straight to next steps?`],
+    },
+  ];
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+
+<style>
+.typing-dots {
+  display: inline-block;
+  animation: typing 1.2s infinite;
+  letter-spacing: 2px;
+}
+@keyframes typing {
+  0%, 60%, 100% { opacity: 0.3; }
+  30% { opacity: 1; }
+}
+</style>
+</body>
+</html>
