@@ -299,7 +299,13 @@ impl Scheduler {
 
         let mut stored_job = original_job_spec;
         if make_copy {
-            let original_recipe_path = Path::new(&stored_job.source);
+            let original_recipe_path =
+                Path::new(&stored_job.source).canonicalize().map_err(|e| {
+                    SchedulerError::RecipeLoadError(format!(
+                        "Recipe file not found: {}: {}",
+                        stored_job.source, e
+                    ))
+                })?;
             if !original_recipe_path.is_file() {
                 return Err(SchedulerError::RecipeLoadError(format!(
                     "Recipe file not found: {}",
@@ -316,7 +322,7 @@ impl Scheduler {
             let destination_filename = format!("{}.{}", stored_job.id, original_extension);
             let destination_recipe_path = scheduled_recipes_dir.join(destination_filename);
 
-            fs::copy(original_recipe_path, &destination_recipe_path)?;
+            fs::copy(&original_recipe_path, &destination_recipe_path)?;
             stored_job.recipe_base_dir = original_recipe_path
                 .parent()
                 .map(|p| p.to_string_lossy().into_owned());
