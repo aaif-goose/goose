@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
 import { TextInput, PasswordInput } from '@inkjs/ui';
-import type { GooseClient, ProviderDetailEntry } from "@aaif/goose-sdk";
+import type { GooseClient, ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import {
   CRANBERRY,
   TEAL,
@@ -30,9 +30,9 @@ interface OnboardingProps {
 }
 
 export interface ProviderSelectorProps {
-  providers: ProviderDetailEntry[];
+  providers: ProviderInventoryEntryDto[];
   height: number;
-  onSelect: (provider: ProviderDetailEntry) => void;
+  onSelect: (provider: ProviderInventoryEntryDto) => void;
   title?: string;
   subtitle?: string;
   onBack?: () => void;
@@ -49,8 +49,8 @@ export const ProviderSelector = React.memo(function ProviderSelector({ providers
     const q = searchQuery.toLowerCase();
     return providers.filter(
       (p) =>
-        p.displayName.toLowerCase().includes(q) ||
-        p.name.toLowerCase().includes(q),
+        p.providerName.toLowerCase().includes(q) ||
+        p.providerId.toLowerCase().includes(q),
     );
   })();
 
@@ -151,7 +151,11 @@ export const ProviderSelector = React.memo(function ProviderSelector({ providers
   });
 
   // Create grid of provider cards
-  const renderProviderCard = (provider: ProviderDetailEntry, _index: number, isSelected: boolean) => {
+  const renderProviderCard = (
+    provider: ProviderInventoryEntryDto,
+    _index: number,
+    isSelected: boolean,
+  ) => {
     const cardBorder = isSelected ? "double" : "single";
     const cardBorderColor = isSelected ? GOLD : RULE_COLOR;
     const textColor = isSelected ? TEXT_PRIMARY : TEXT_SECONDARY;
@@ -166,7 +170,7 @@ export const ProviderSelector = React.memo(function ProviderSelector({ providers
     
     return (
       <Box
-        key={provider.name}
+        key={provider.providerId}
         width={cardWidth}
         height={cardHeight}
         borderStyle={cardBorder}
@@ -178,14 +182,14 @@ export const ProviderSelector = React.memo(function ProviderSelector({ providers
         <Box justifyContent="space-between" alignItems="center">
           <Box width={titleWidth} flexShrink={1}>
             <Text color={textColor} bold={isSelected} wrap="truncate">
-              {provider.displayName}
+              {provider.providerName}
             </Text>
           </Box>
           <Box flexShrink={0}>
             {provider.providerType === "Preferred" && (
               <Text color={TEAL}>★</Text>
             )}
-            {provider.isConfigured && (
+            {provider.configured && (
               <Text color={TEAL}>✓</Text>
             )}
           </Box>
@@ -194,7 +198,7 @@ export const ProviderSelector = React.memo(function ProviderSelector({ providers
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
           <Box width={contentWidth}>
             <Text color={TEXT_DIM} wrap="truncate">
-              {provider.name}
+              {provider.providerId}
             </Text>
           </Box>
           {provider.description && (
@@ -306,7 +310,7 @@ export const ProviderSelector = React.memo(function ProviderSelector({ providers
 });
 
 export interface ProviderConfiguratorProps {
-  provider: ProviderDetailEntry;
+  provider: ProviderInventoryEntryDto;
   height: number;
   onComplete: (values: Record<string, string>) => void;
   onBack: () => void;
@@ -383,7 +387,7 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({ p
         {/* Header */}
         <Box justifyContent="center" marginBottom={1}>
           <Text color={TEXT_PRIMARY} bold>
-            ◆ Configure {provider.displayName} ◆
+            ◆ Configure {provider.providerName} ◆
           </Text>
         </Box>
         {provider.description && (
@@ -473,7 +477,7 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({ p
 });
 
 interface SuccessScreenProps {
-  provider: ProviderDetailEntry | null;
+  provider: ProviderInventoryEntryDto | null;
   height: number;
 }
 
@@ -501,7 +505,7 @@ const SuccessScreen = React.memo(function SuccessScreen({ provider, height }: Su
         {provider && (
           <Box marginTop={1}>
             <Text color={TEXT_SECONDARY}>
-              Connected to {provider.displayName}
+              Connected to {provider.providerName}
             </Text>
           </Box>
         )}
@@ -517,9 +521,9 @@ export default function Onboarding({
   onComplete,
 }: OnboardingProps) {
   const [phase, setPhase] = useState<Phase>("loading");
-  const [providers, setProviders] = useState<ProviderDetailEntry[]>([]);
+  const [providers, setProviders] = useState<ProviderInventoryEntryDto[]>([]);
   const [selectedProvider, setSelectedProvider] =
-    useState<ProviderDetailEntry | null>(null);
+    useState<ProviderInventoryEntryDto | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [spinIdx, setSpinIdx] = useState(0);
   const [fetchKey, setFetchKey] = useState(0);
@@ -535,12 +539,12 @@ export default function Onboarding({
   useEffect(() => {
     (async () => {
       try {
-        const resp = await client.goose.GooseProvidersDetails({});
-        const sorted = [...resp.providers].sort((a, b) => {
+        const resp = await client.goose.GooseProvidersList({ providerIds: [] });
+        const sorted = [...resp.entries].sort((a, b) => {
           const aP = a.providerType === "Preferred" ? 0 : 1;
           const bP = b.providerType === "Preferred" ? 0 : 1;
           if (aP !== bP) return aP - bP;
-          return a.displayName.localeCompare(b.displayName);
+          return a.providerName.localeCompare(b.providerName);
         });
         setProviders(sorted);
         setPhase("select_provider");
@@ -552,7 +556,7 @@ export default function Onboarding({
   }, [client, fetchKey]);
 
   const saveProvider = useCallback(
-    async (provider: ProviderDetailEntry, values: Record<string, string>) => {
+    async (provider: ProviderInventoryEntryDto, values: Record<string, string>) => {
       setPhase("saving");
       try {
         for (const [key, value] of Object.entries(values)) {
@@ -565,7 +569,7 @@ export default function Onboarding({
         }
         await client.goose.GooseConfigUpsert({
           key: "GOOSE_PROVIDER",
-          value: provider.name,
+          value: provider.providerId,
         });
         await client.goose.GooseConfigUpsert({
           key: "GOOSE_MODEL",
@@ -582,7 +586,7 @@ export default function Onboarding({
   );
 
   const confirmProvider = useCallback(
-    (provider: ProviderDetailEntry) => {
+    (provider: ProviderInventoryEntryDto) => {
       const keys = provider.configKeys.filter(
         (k) => k.required && !k.oauthFlow && !k.deviceCodeFlow,
       );

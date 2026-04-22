@@ -51,6 +51,24 @@
       "standalone": "Chat independiente"
     }
   },
+  "compaction": {
+    "description": "Administra cómo Goose compacta el contexto anterior en chats largos.",
+    "goose": {
+      "autoCompact": {
+        "current": "Umbral",
+        "description": "Elige cuándo Goose debe compactar el contexto anterior antes de responder. Esto se aplica a todos los chats de Goose.",
+        "helper": "Ajústalo al 100% para desactivar la compactación automática.",
+        "label": "Compactación automática del contexto",
+        "loading": "Cargando...",
+        "off": "Desactivado",
+        "saveError": "No se pudo guardar la configuración de compactación automática."
+      },
+      "builtIn": "Integrado",
+      "description": "Controles de contexto específicos de Goose para chats largos.",
+      "label": "Goose (Agente)"
+    },
+    "title": "Compactación"
+  },
   "deleteProject": {
     "description": "¿Seguro que quieres eliminar permanentemente \"{{name}}\"? Esta acción no se puede deshacer.",
     "title": "¿Eliminar el proyecto de forma permanente?"
@@ -172,6 +190,7 @@
     "about": "Acerca de",
     "appearance": "Apariencia",
     "chats": "Chats",
+    "compaction": "Compactación",
     "doctor": "Diagnóstico",
     "general": "General",
     "projects": "Proyectos",

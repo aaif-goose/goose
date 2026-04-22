@@ -1,4 +1,4 @@
-use super::base::{ConfigKey, ModelInfo};
+use super::base::{ConfigKey, ModelInfo, ProviderType};
 use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
@@ -19,7 +19,12 @@ const STALE_AFTER_HOURS: i64 = 24;
 pub struct ProviderInventoryEntry {
     pub provider_id: String,
     pub provider_name: String,
+    pub description: String,
+    pub default_model: String,
     pub configured: bool,
+    pub provider_type: ProviderType,
+    pub config_keys: Vec<ConfigKey>,
+    pub setup_steps: Vec<String>,
     pub supports_refresh: bool,
     pub refreshing: bool,
     pub models: Vec<InventoryModel>,
@@ -162,8 +167,13 @@ struct InventorySnapshot {
 struct ProviderDescriptor {
     provider_id: String,
     provider_name: String,
+    description: String,
+    default_model: String,
     identity: InventoryIdentity,
     configured: bool,
+    provider_type: ProviderType,
+    config_keys: Vec<ConfigKey>,
+    setup_steps: Vec<String>,
     supports_refresh: bool,
     static_models: Vec<ModelInfo>,
     model_selection_hint: Option<String>,
@@ -199,7 +209,12 @@ impl ProviderInventoryService {
         Ok(Some(ProviderInventoryEntry {
             provider_id: descriptor.provider_id,
             provider_name: descriptor.provider_name,
+            description: descriptor.description,
+            default_model: descriptor.default_model,
             configured: descriptor.configured,
+            provider_type: descriptor.provider_type,
+            config_keys: descriptor.config_keys,
+            setup_steps: descriptor.setup_steps,
             supports_refresh: descriptor.supports_refresh,
             refreshing,
             models,
@@ -419,8 +434,13 @@ impl ProviderInventoryService {
         Ok(Some(ProviderDescriptor {
             provider_id: metadata.name.clone(),
             provider_name: metadata.display_name.clone(),
+            description: metadata.description.clone(),
+            default_model: metadata.default_model.clone(),
             identity,
             configured: entry.inventory_configured(),
+            provider_type: entry.provider_type(),
+            config_keys: metadata.config_keys.clone(),
+            setup_steps: metadata.setup_steps.clone(),
             supports_refresh: entry.supports_inventory_refresh(),
             static_models: metadata.known_models,
             model_selection_hint: metadata.model_selection_hint,

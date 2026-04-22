@@ -14,12 +14,17 @@ import { useChatSessionController } from "../hooks/useChatSessionController";
 
 interface ChatViewProps {
   sessionId: string;
+  onCreatePersona?: () => void;
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
   }) => void;
 }
 
-export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
+export function ChatView({
+  sessionId,
+  onCreatePersona,
+  onCreateProject,
+}: ChatViewProps) {
   const { t } = useTranslation("chat");
   const mountStart = useRef(performance.now());
   const isContextPanelOpen = useChatSessionStore(
@@ -29,7 +34,10 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
   const [globalArtifactRoot, setGlobalArtifactRoot] = useState<string | null>(
     null,
   );
-  const controller = useChatSessionController({ sessionId });
+  const controller = useChatSessionController({
+    sessionId,
+    onCreatePersonaRequested: onCreatePersona,
+  });
   const contextPanelLabel = isContextPanelOpen
     ? t("context.closePanel")
     : t("context.openPanel");
@@ -103,7 +111,10 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
 
           <ChatInput
             onSend={controller.handleSend}
-            disabled={controller.projectMetadataPending}
+            disabled={
+              controller.projectMetadataPending ||
+              controller.isCompactingContext
+            }
             queuedMessage={controller.queue.queuedMessage}
             onDismissQueue={controller.queue.dismiss}
             initialValue={controller.draftValue}
@@ -140,6 +151,11 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
             }
             contextTokens={controller.tokenState.accumulatedTotal}
             contextLimit={controller.tokenState.contextLimit}
+            isContextUsageReady={controller.isContextUsageReady}
+            onCompactContext={controller.compactConversation}
+            canCompactContext={controller.canCompactContext}
+            isCompactingContext={controller.isCompactingContext}
+            supportsCompactionControls={controller.supportsCompactionControls}
           />
         </div>
 

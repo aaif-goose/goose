@@ -50,6 +50,7 @@ describe("acpNotificationHandler", () => {
       .getSessionRuntime("draft-session-1");
     expect(runtime.tokenState.accumulatedTotal).toBe(512);
     expect(runtime.tokenState.contextLimit).toBe(8192);
+    expect(runtime.hasUsageSnapshot).toBe(true);
   });
 
   it("does not buffer non-usage updates before the local session mapping exists", async () => {

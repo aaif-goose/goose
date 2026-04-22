@@ -205,7 +205,7 @@ check-acp-schema: generate-acp-types
     #!/usr/bin/env bash
     set -e
     echo "🔍 Checking ACP schema and generated types are up-to-date..."
-    if ! git diff --exit-code crates/goose-acp/acp-schema.json crates/goose-acp/acp-meta.json ui/sdk/src/generated/; then
+    if ! git diff --exit-code crates/goose/acp-schema.json crates/goose/acp-meta.json ui/sdk/src/generated/; then
       echo ""
       echo "❌ ACP generated files are out of date!"
       echo ""
@@ -217,8 +217,8 @@ check-acp-schema: generate-acp-types
 # Generate ACP JSON schema from Rust types
 generate-acp-schema:
     @echo "Generating ACP schema..."
-    cd crates/goose-acp && cargo run --bin generate-acp-schema
-    @echo "ACP schema generated: crates/goose-acp/acp-schema.json, crates/goose-acp/acp-meta.json"
+    cd crates/goose && cargo run --bin generate-acp-schema
+    @echo "ACP schema generated: crates/goose/acp-schema.json, crates/goose/acp-meta.json"
 
 # Generate ACP TypeScript types from JSON schema (requires generate-acp-schema first)
 generate-acp-types: generate-acp-schema

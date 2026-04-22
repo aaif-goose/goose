@@ -12,7 +12,7 @@ test.describe("Skills view", () => {
     await navigateToSkills(page);
     await expect(page.locator("h1", { hasText: "Skills" })).toBeVisible();
     await expect(
-      page.getByText("Reusable instructions for your AI personas"),
+      page.getByText("Reusable instructions for your AI agents"),
     ).toBeVisible();
   });
 

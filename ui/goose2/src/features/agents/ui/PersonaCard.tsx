@@ -13,6 +13,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
 import type { Persona } from "@/shared/types/agents";
+import { getPersonaSource } from "@/features/agents/lib/personaPresentation";
 
 interface PersonaCardProps {
   persona: Persona;
@@ -38,18 +39,30 @@ export function PersonaCard({
 
   const initials = persona.displayName.charAt(0).toUpperCase();
   const avatarSrc = useAvatarSrc(persona.avatar);
+  const personaSource = getPersonaSource(persona);
+  const canEditPersona = personaSource === "custom";
+  const canDeletePersona = personaSource !== "builtin";
+  const providerModelLabel = [persona.provider, persona.model]
+    .filter(Boolean)
+    .join(" / ");
+
+  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || menuOpen) {
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect?.(persona);
+    }
+  };
 
   return (
-    <section
+    // biome-ignore lint/a11y/useSemanticElements: card contains nested menu buttons, so a native button is not valid here
+    <div
       aria-label={t("card.ariaLabel", { name: persona.displayName })}
+      role="button"
       onClick={() => !menuOpen && onSelect?.(persona)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect?.(persona);
-        }
-      }}
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: card needs keyboard focus but contains nested interactive buttons
+      onKeyDown={handleCardKeyDown}
       tabIndex={0}
       className={cn(
         "group relative flex flex-col items-center gap-3 rounded-xl border p-5 cursor-pointer",
@@ -68,6 +81,7 @@ export function PersonaCard({
               size="icon-xs"
               aria-label={t("card.options")}
               onClick={(e) => e.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
               className={cn(
                 "size-6 rounded-md text-muted-foreground hover:text-foreground",
                 menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
@@ -77,10 +91,12 @@ export function PersonaCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={4}>
-            <DropdownMenuItem onSelect={() => onEdit?.(persona)}>
-              <Pencil className="size-3.5" />
-              {t("common:actions.edit")}
-            </DropdownMenuItem>
+            {canEditPersona && (
+              <DropdownMenuItem onSelect={() => onEdit?.(persona)}>
+                <Pencil className="size-3.5" />
+                {t("common:actions.edit")}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={() => onDuplicate?.(persona)}>
               <Copy className="size-3.5" />
               {t("common:actions.duplicate")}
@@ -89,7 +105,7 @@ export function PersonaCard({
               <Download className="size-3.5" />
               {t("common:actions.export")}
             </DropdownMenuItem>
-            {!persona.isBuiltin && !persona.isFromDisk && (
+            {canDeletePersona && (
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => onDelete?.(persona)}
@@ -116,9 +132,14 @@ export function PersonaCard({
       </h3>
 
       {/* Built-in badge */}
-      {persona.isBuiltin && (
+      {personaSource === "builtin" && (
         <Badge variant="secondary" className="text-[10px]">
           {t("common:labels.builtIn")}
+        </Badge>
+      )}
+      {personaSource === "file" && (
+        <Badge variant="secondary" className="text-[10px]">
+          {t("card.fileBacked")}
         </Badge>
       )}
 
@@ -128,15 +149,13 @@ export function PersonaCard({
       </p>
 
       {/* Provider/model badge */}
-      {(persona.provider || persona.model) && (
-        <Badge variant="secondary" className="text-[10px]">
-          {persona.provider && <span>{persona.provider}</span>}
-          {persona.provider && persona.model && (
-            <span aria-hidden="true">/</span>
-          )}
-          {persona.model && <span>{persona.model}</span>}
+      {providerModelLabel && (
+        <Badge variant="secondary" className="max-w-full min-w-0 text-[10px]">
+          <span className="block max-w-full truncate">
+            {providerModelLabel}
+          </span>
         </Badge>
       )}
-    </section>
+    </div>
   );
 }

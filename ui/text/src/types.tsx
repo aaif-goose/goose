@@ -1,10 +1,4 @@
-import type { ContentChunk, ToolCall, RequestPermissionResponse } from "@agentclientprotocol/sdk";
-
-export interface PendingPermission {
-  toolTitle: string;
-  options: Array<{ optionId: string; name: string; kind: string }>;
-  resolve: (response: RequestPermissionResponse) => void;
-}
+import type { ContentChunk, ToolCall } from "@agentclientprotocol/sdk";
 
 export type ResponseItem =
   | (ContentChunk & { itemType: "content_chunk" })

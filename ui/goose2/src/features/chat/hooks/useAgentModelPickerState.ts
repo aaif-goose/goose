@@ -155,6 +155,7 @@ export function useAgentModelPickerState({
         provider: selectedModel?.provider,
         providerId: selectedModel?.providerId,
         providerName: selectedModel?.providerName,
+        contextLimit: selectedModel?.contextLimit,
         recommended: selectedModel?.recommended,
       });
     },
