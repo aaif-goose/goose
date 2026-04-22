@@ -25,6 +25,7 @@ export interface DiagnosticsRequest {
   enabledMcpServers: string[];
   outputZipPath: string;
   includeMemoryDir: boolean;
+  memoryDir?: string | null;
 }
 
 export interface WriteDiagnosticsResult {

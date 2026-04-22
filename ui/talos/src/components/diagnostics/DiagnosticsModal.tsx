@@ -18,6 +18,7 @@ interface DiagnosticsModalProps {
   currentTab: ChatTab;
   model: string;
   mcpServers: McpServer[];
+  memoryDir?: string;
   onToast: (msg: string) => void;
 }
 
@@ -27,14 +28,19 @@ export function DiagnosticsModal({
   currentTab,
   model,
   mcpServers,
+  memoryDir,
   onToast,
 }: DiagnosticsModalProps) {
   const [downloading, setDownloading] = useState(false);
   const [filingBug, setFilingBug] = useState(false);
+  const [includeMemoryDir, setIncludeMemoryDir] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setError(null);
+    if (open) {
+      setError(null);
+      setIncludeMemoryDir(false);
+    }
   }, [open]);
 
   if (!open) return null;
@@ -56,7 +62,8 @@ export function DiagnosticsModal({
         model,
         enabledMcpServers: buildEnabledMcpList(mcpServers),
         outputZipPath: outputPath,
-        includeMemoryDir: false,
+        includeMemoryDir: includeMemoryDir && Boolean(memoryDir),
+        memoryDir: memoryDir ?? null,
       });
       onToast(
         `Diagnostics saved (${formatBytes(result.bytesWritten)}) to ${result.outputPath}`,
@@ -126,9 +133,36 @@ export function DiagnosticsModal({
             <BundleItem label="Current session transcript" />
             <BundleItem label="Talos settings snapshot" />
             <BundleItem label="UI state snapshot (composer drafts redacted)" />
+            <BundleItem label="Recent Goose logs (tail of last 5)" />
             <BundleItem label="README explaining the bundle" />
-            <BundleItem label="Recent Goose logs" soon />
           </div>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+              fontSize: "var(--text-sm)",
+              color: memoryDir ? "var(--color-text)" : "var(--color-text-muted)",
+              cursor: memoryDir ? "pointer" : "not-allowed",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={includeMemoryDir}
+              disabled={!memoryDir || busy}
+              onChange={(e) => setIncludeMemoryDir(e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              Include memory folder contents
+              <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
+                {memoryDir
+                  ? `Walks ${memoryDir} (text files only, capped at 50 MB). May contain personal notes.`
+                  : "No memory folder configured. Set one in Settings to enable."}
+              </div>
+            </span>
+          </label>
 
           <div
             style={{

@@ -647,6 +647,7 @@ export function App() {
         currentTab={currentTab}
         model={model}
         mcpServers={mcpServers}
+        memoryDir={settings.memoryDir}
         onToast={addToast}
       />
 

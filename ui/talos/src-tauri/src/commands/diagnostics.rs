@@ -42,6 +42,120 @@ fn collect_system_info(
     }
 }
 
+const MEMORY_TOTAL_CAP: u64 = 50 * 1024 * 1024;
+const MEMORY_PER_FILE_CAP: u64 = 5 * 1024 * 1024;
+
+/// Walk `root` recursively and stuff each text file under `memory/<rel path>`
+/// in the ZIP. Skips dot-prefixed path segments (`.git`, `.DS_Store`, ...),
+/// files larger than [`MEMORY_PER_FILE_CAP`], and anything with a null byte
+/// in its first 8 KiB. Stops accepting files once [`MEMORY_TOTAL_CAP`] is hit
+/// and writes a `memory/_TRUNCATED.txt` listing what was omitted.
+fn add_memory_dir(
+    zip: &mut ZipWriter<File>,
+    options: SimpleFileOptions,
+    root: &Path,
+) -> Result<Vec<String>, String> {
+    if !root.exists() {
+        return Err(format!("memory dir does not exist: {}", root.display()));
+    }
+    let mut entries: Vec<String> = Vec::new();
+    let mut omitted: Vec<String> = Vec::new();
+    let mut total: u64 = 0;
+    let mut stack: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+
+    while let Some(current) = stack.pop() {
+        let dir_iter = match std::fs::read_dir(&current) {
+            Ok(d) => d,
+            Err(e) => {
+                omitted.push(format!("{}: read_dir failed ({e})", current.display()));
+                continue;
+            }
+        };
+        for entry in dir_iter.filter_map(Result::ok) {
+            let path = entry.path();
+            let name = match path.file_name().and_then(|s| s.to_str()) {
+                Some(n) => n,
+                None => continue,
+            };
+            if name.starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+            let rel = match path.strip_prefix(root) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(e) => {
+                    omitted.push(format!("{rel_str}: stat failed ({e})"));
+                    continue;
+                }
+            };
+            if meta.len() > MEMORY_PER_FILE_CAP {
+                omitted.push(format!("{rel_str}: exceeds per-file cap ({} bytes)", meta.len()));
+                continue;
+            }
+            if total + meta.len() > MEMORY_TOTAL_CAP {
+                omitted.push(format!("{rel_str}: total cap reached"));
+                continue;
+            }
+
+            let bytes = match std::fs::read(&path) {
+                Ok(b) => b,
+                Err(e) => {
+                    omitted.push(format!("{rel_str}: read failed ({e})"));
+                    continue;
+                }
+            };
+            if looks_binary(&bytes) {
+                omitted.push(format!("{rel_str}: looks binary"));
+                continue;
+            }
+
+            let entry_name = format!("memory/{rel_str}");
+            zip.start_file(&entry_name, options)
+                .map_err(|e| format!("zip start_file {entry_name}: {e}"))?;
+            zip.write_all(&bytes)
+                .map_err(|e| format!("zip write {entry_name}: {e}"))?;
+            total += meta.len();
+            entries.push(entry_name);
+        }
+    }
+
+    if !omitted.is_empty() {
+        let mut note = String::from(
+            "The following files from the memory folder were omitted from this bundle:\n\n",
+        );
+        for line in &omitted {
+            note.push_str("- ");
+            note.push_str(line);
+            note.push('\n');
+        }
+        zip.start_file("memory/_TRUNCATED.txt", options)
+            .map_err(|e| format!("zip start_file memory/_TRUNCATED.txt: {e}"))?;
+        zip.write_all(note.as_bytes())
+            .map_err(|e| format!("zip write memory/_TRUNCATED.txt: {e}"))?;
+        entries.push("memory/_TRUNCATED.txt".to_string());
+    }
+
+    Ok(entries)
+}
+
+/// Classic heuristic: treat as binary if a null byte appears in the first
+/// 8 KiB. Avoids shipping PDFs, images, etc.
+fn looks_binary(bytes: &[u8]) -> bool {
+    bytes.iter().take(8 * 1024).any(|&b| b == 0)
+}
+
 fn read_file_if_exists(path: &Path) -> Option<Vec<u8>> {
     if path.exists() {
         std::fs::read(path).ok()
@@ -134,6 +248,8 @@ pub struct DiagnosticsRequest {
     pub output_zip_path: String,
     #[serde(default)]
     pub include_memory_dir: bool,
+    #[serde(default)]
+    pub memory_dir: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -241,8 +357,41 @@ pub async fn write_diagnostics_zip(
         }
     }
 
+    for log in crate::services::log_capture::find_recent_logs() {
+        let bytes = match crate::services::log_capture::read_tail_bytes(
+            &log.path,
+            crate::services::log_capture::MAX_BYTES_PER_LOG,
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!(
+                    "Skipping log {} in diagnostics bundle: {e}",
+                    log.path.display()
+                );
+                continue;
+            }
+        };
+        let entry_name = format!("logs/{}/{}", log.date_dir, log.file_name);
+        zip.start_file(&entry_name, options)
+            .map_err(|e| format!("zip start_file {entry_name}: {e}"))?;
+        zip.write_all(&bytes)
+            .map_err(|e| format!("zip write {entry_name}: {e}"))?;
+        entries.push(entry_name);
+    }
+
     if request.include_memory_dir {
-        entries.push("memory/ (not implemented in phase 1)".to_string());
+        if let Some(dir) = request.memory_dir.as_deref() {
+            match add_memory_dir(&mut zip, options, Path::new(dir)) {
+                Ok(added) => {
+                    for name in added {
+                        entries.push(name);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Skipping memory dir in diagnostics bundle: {e}");
+                }
+            }
+        }
     }
 
     let mut file = zip

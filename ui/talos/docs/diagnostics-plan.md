@@ -305,7 +305,9 @@ No additions needed. `@tauri-apps/plugin-dialog` and `@tauri-apps/plugin-opener`
 
 ## 6. Phasing
 
-**Phase 1 — Thinnest end-to-end slice (day 1)**
+> **Status:** Phases 1–4 shipped. Phase 5 deferred as optional polish.
+
+**Phase 1 — Thinnest end-to-end slice (day 1)** ✅ **DONE**
 - Add `DiagnosticsModal` with list of placeholders and both buttons.
 - Wire composer bug button → `App.tsx` → modal.
 - Add Rust `write_diagnostics_zip` command that writes a ZIP containing only `system.json` (hardcoded system info) and a `session.json` from the frontend.
@@ -313,27 +315,28 @@ No additions needed. `@tauri-apps/plugin-dialog` and `@tauri-apps/plugin-opener`
 - `File Bug` button opens a **static** URL via `plugin-opener::openUrl` (no system info interpolation yet).
 - Ship-test: button click → modal → Download → pick path → ZIP appears on disk with 2 files; GitHub button opens browser at correct repo URL.
 
-**Phase 2 — Real system info + issue body interpolation**
+**Phase 2 — Real system info + issue body interpolation** ✅ **DONE**
 - Implement `get_system_info` Rust command with `os_info`.
 - Wire frontend side (provider/model/mcp merge) and template interpolation.
 - Add `system.txt` to ZIP.
 - Add Talos `settings.json` + `state.json` copies to ZIP (with trivial PII pass — strip `composer` drafts, keep message bodies).
+- **Note:** `provider` and `model` fall back to goose's `config.yaml` (`GOOSE_PROVIDER` / `GOOSE_MODEL` keys) via env var → YAML → None. No provider picker surfaced in the UI.
 
-**Phase 3 — Log capture**
-- Add `services/log_capture.rs`.
-- Modify `goose_serve.rs` to tee into `goose-serve.log`.
-- Include rotated logs in ZIP.
-- Add `read_log_tail` command (not user-visible yet, helps QA).
+**Phase 3 — Log capture** ✅ **DONE** *(with a correction)*
+- Original plan was to tee `goose serve` stdout/stderr into `goose-serve.log`. Discovered during implementation that `goose-cli`'s `setup_logging` writes JSON logs via `tracing_appender` to `{data_dir}/Block/goose/data/logs/cli/<date>/*.log` and explicitly disables console output — a stdout tee captures nothing.
+- **Actual implementation:** `services/log_capture.rs` locates goose's own log files on disk; `write_diagnostics_zip` copies up to 5 most recent `.log` files (tailed at 10 MiB each) into `logs/<date>/<file>` in the ZIP.
+- `read_log_tail` command **not implemented** — skipped as low-value (no UI, and the ZIP already carries the logs).
 
-**Phase 4 — Memory folder inclusion + polish**
-- Checkbox in modal for `include_memory_dir`.
-- Rust walker with 50 MiB total cap and `.git`/binary-file skip.
-- Success toast wording, keyboard shortcuts (`Esc` closes, handled by scrim).
-- Add diagnostics entry to `commands` array in `App.tsx` so it shows up in `⌘K` palette.
+**Phase 4 — Memory folder inclusion** ✅ **DONE**
+- Checkbox "Include memory folder contents" in modal, off by default, disabled when `settings.memoryDir` is unset.
+- Rust walker under `memory/<relative path>`: dot-prefixed segments skipped (`.git`, `.DS_Store`, ...), per-file cap 5 MiB, total cap 50 MiB, binary-file detection via null-byte heuristic in first 8 KiB. Omitted files listed in `memory/_TRUNCATED.txt`.
+- Palette entry "Report a bug" landed in Phase 1 already (covered by the same `setDiagnosticsOpen(true)` run handler).
+- **Skipped polish:** Esc-to-close (scrim click works), keyboard focus trap, success-toast wording beyond the current `Diagnostics saved (X.X KB) to <path>`.
 
-**Phase 5 (optional) — App-log plumbing**
-- Add `tauri-plugin-log`, route `log::info!` macros to a second file under the same log dir, include it in ZIP.
-- Add a "View logs" button in the modal that calls `read_log_tail` into a read-only pane.
+**Phase 5 (optional) — App-log plumbing** ⏭ **DEFERRED**
+- Would add `tauri-plugin-log`, route `log::info!` macros to a second file under the same log dir, include it in ZIP.
+- Would add a "View logs" button in the modal that calls `read_log_tail` into a read-only pane.
+- Not shipped: the ZIP already surfaces goose's logs, and Talos-side structured logging is thin. Pick this up when there's a real debugging need.
 
 Each phase is independently shippable and testable.
 
