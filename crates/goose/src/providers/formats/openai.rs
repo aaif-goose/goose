@@ -954,7 +954,11 @@ where
 
                     yield (
                         Some(msg),
-                        usage,
+                        if chunk.choices[0].finish_reason.is_some() {
+                            usage
+                        } else {
+                            None
+                        },
                     )
                 } else if usage.is_some() {
                     yield (None, usage)
@@ -1991,6 +1995,23 @@ data: [DONE]
         assert_eq!(result.tool_calls.len(), 1, "Expected 1 tool call");
         assert_eq!(result.tool_calls[0], "developer__shell");
         assert_usage_yielded_once(&result, 12376, 79, 12455);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_azure_annotation_chunk_without_delta_does_not_fail() -> anyhow::Result<()> {
+        let response_lines = r#"
+data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1234567890,"model":"gpt-5.4","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}],"usage":null}
+data: {"choices":[{"content_filter_offsets":{"check_offset":5,"start_offset":5,"end_offset":5},"content_filter_results":{"hate":{"filtered":false,"severity":"safe"},"self_harm":{"filtered":false,"severity":"safe"},"sexual":{"filtered":false,"severity":"safe"},"violence":{"filtered":false,"severity":"safe"}},"finish_reason":null,"index":0}],"created":0,"id":"","model":"","object":""}
+data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1234567891,"model":"gpt-5.4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}
+data: [DONE]
+"#;
+
+        let result = run_streaming_test(response_lines).await?;
+
+        assert!(result.has_text_content, "Expected text content in response");
+        assert_usage_yielded_once(&result, 10, 1, 11);
 
         Ok(())
     }
