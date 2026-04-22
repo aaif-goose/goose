@@ -45,7 +45,7 @@ export async function listProviders(): Promise<AcpProvider[]> {
 
 export async function listSessions(): Promise<AcpSessionInfo[]> {
   const client = await getClient();
-  const response = await client.listSessions({});
+  const response = await client.unstable_listSessions({});
   return response.sessions.map((info: SessionInfo) => ({
     sessionId: info.sessionId,
     title: info.title ?? null,
