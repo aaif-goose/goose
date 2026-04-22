@@ -142,7 +142,7 @@ jobs:
         if: ${{ matrix.os == 'windows' && inputs.windows_variant == 'cuda' }}
         shell: pwsh
         env:
-          CUDA_COMPUTE_CAP: "75"
+          CUDA_COMPUTE_CAP: "80"
         run: |
           Write-Output "CUDA_PATH=$env:CUDA_PATH"
           Write-Output "CUDA_COMPUTE_CAP=$env:CUDA_COMPUTE_CAP"
@@ -154,12 +154,12 @@ jobs:
         if: matrix.os == 'windows'
         shell: pwsh
         env:
-          CUDA_COMPUTE_CAP: ${{ inputs.windows_variant == 'cuda' && '75' || '' }}
+          CUDA_COMPUTE_CAP: ${{ inputs.windows_variant == 'cuda' && '80' || '' }}
         run: |
           Write-Output "Building Windows CLI executable..."
           if ("${{ inputs.windows_variant }}" -eq "cuda") {
             cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
-          else
+          } else {
             cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
           }
 
