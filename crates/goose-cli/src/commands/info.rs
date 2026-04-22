@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use console::style;
-use goose::config::Config;
 use goose::config::paths::Paths;
+use goose::config::Config;
 use goose::conversation::message::Message;
 use goose::providers::errors::ProviderError;
 use goose::session::session_manager::{DB_NAME, SESSIONS_FOLDER};
@@ -163,7 +163,8 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
     if check {
         println!("\n{}", style("Provider Check:").cyan().bold());
 
-        match check_provider(&config).await {
+        let result = check_provider(config).await;
+        match &result {
             Ok(success) => {
                 print_aligned("Provider:", &success.provider, label_padding);
                 print_aligned("Model:", &success.model, label_padding);
@@ -201,16 +202,34 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                 error,
                 show_api_key_hint,
             }) => {
-                print_aligned(
-                    "Auth:",
-                    &format!("{} {}", style("FAILED").red().bold(), error),
-                    label_padding,
-                );
-                if show_api_key_hint {
+                // Split auth failures (missing/invalid credential) from provider
+                // construction failures (unknown provider, malformed provider
+                // config). Labeling the latter as "Auth: FAILED" misdirects
+                // troubleshooting toward rotating API keys.
+                if *show_api_key_hint {
+                    print_aligned(
+                        "Auth:",
+                        &format!("{} {}", style("FAILED").red().bold(), error),
+                        label_padding,
+                    );
                     print_aligned(
                         "Hint:",
                         &format!(
                             "Set the API key in your environment or run '{}'",
+                            style("goose configure").cyan()
+                        ),
+                        label_padding,
+                    );
+                } else {
+                    print_aligned(
+                        "Provider:",
+                        &format!("{} {}", style("FAILED").red().bold(), error),
+                        label_padding,
+                    );
+                    print_aligned(
+                        "Hint:",
+                        &format!(
+                            "Check the provider name and config, or run '{}'",
                             style("goose configure").cyan()
                         ),
                         label_padding,
@@ -241,6 +260,13 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                     );
                 }
             },
+        }
+
+        // Propagate non-zero exit status so automation (CI scripts, install
+        // checks, health probes) can rely on `goose info --check` as a
+        // pre-flight verifier.
+        if result.is_err() {
+            return Err(anyhow!("provider check failed"));
         }
     }
 
