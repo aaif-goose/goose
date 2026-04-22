@@ -56,6 +56,7 @@ import type {
   RemoveExtensionRequest,
   RemoveSecretRequest,
   UnarchiveSessionRequest,
+  UpdateSessionProjectRequest,
   UpdateSourceRequest,
   UpdateSourceResponse,
   UpdateWorkingDirRequest,
@@ -192,6 +193,12 @@ export class GooseExtClient {
   ): Promise<ImportSessionResponse> {
     const raw = await this.conn.extMethod("_goose/session/import", params);
     return zImportSessionResponse.parse(raw) as ImportSessionResponse;
+  }
+
+  async GooseSessionUpdateProject(
+    params: UpdateSessionProjectRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/session/update_project", params);
   }
 
   async GooseSessionArchive(params: ArchiveSessionRequest): Promise<void> {

@@ -294,6 +294,17 @@ export const zImportSessionResponse = z.object({
 });
 
 /**
+ * Update the project association for a session.
+ */
+export const zUpdateSessionProjectRequest = z.object({
+    sessionId: z.string(),
+    projectId: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
  * Archive a session (soft delete).
  */
 export const zArchiveSessionRequest = z.object({
@@ -594,6 +605,7 @@ export const zExtRequest = z.object({
             zRemoveSecretRequest,
             zExportSessionRequest,
             zImportSessionRequest,
+            zUpdateSessionProjectRequest,
             zArchiveSessionRequest,
             zUnarchiveSessionRequest,
             zCreateSourceRequest,

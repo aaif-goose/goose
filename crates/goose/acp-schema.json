@@ -669,6 +669,26 @@
       "x-side": "agent",
       "x-method": "_goose/session/import"
     },
+    "UpdateSessionProjectRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Update the project association for a session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/update_project"
+    },
     "ArchiveSessionRequest": {
       "type": "object",
       "properties": {
@@ -1486,6 +1506,15 @@
                   ],
                   "description": "Params for _goose/session/import",
                   "title": "ImportSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpdateSessionProjectRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/update_project",
+                  "title": "UpdateSessionProjectRequest"
                 },
                 {
                   "allOf": [
