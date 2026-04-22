@@ -190,7 +190,7 @@ pem = { version = "3", optional = true }
 pkcs1 = { version = "0.7", default-features = false, features = ["pkcs8"], optional = true }
 pkcs8 = { version = "0.10", default-features = false, features = ["alloc"], optional = true }
 sec1 = { version = "0.7", default-features = false, features = ["der", "pkcs8"], optional = true }
-goose-acp-macros = { version = "1.31.0", path = "../goose-acp-macros" }
+goose-acp-macros = { path = "../goose-acp-macros" }
 tower-http = { workspace = true, features = ["cors"] }
 http-body-util = "0.1.3"
 
