@@ -97,37 +97,22 @@ export function useResolvedAgentModelPicker({
       }
 
       const inventoryEntry = getProviderInventoryEntry(agentId);
-      if (!inventoryEntry?.defaultModel) {
+      if (!inventoryEntry) {
         return null;
       }
 
       const resolvedInventoryModel =
-        inventoryEntry.models.find(
-          (model) =>
-            model.id === inventoryEntry.defaultModel && !isModelAlias(model.id),
-        ) ??
         inventoryEntry.models.find((model) => model.recommended) ??
         inventoryEntry.models.find((model) => !isModelAlias(model.id)) ??
-        inventoryEntry.models.find(
-          (model) => model.id === inventoryEntry.defaultModel,
-        ) ??
         inventoryEntry.models[0];
 
-      if (resolvedInventoryModel) {
-        return {
-          id: resolvedInventoryModel.id,
-          name: resolvedInventoryModel.name,
-          providerId:
-            inventoryEntry.providerId === agentId
-              ? inventoryEntry.providerId
-              : fallbackProviderId,
-          source: "default" as const,
-        };
+      if (!resolvedInventoryModel) {
+        return null;
       }
 
       return {
-        id: inventoryEntry.defaultModel,
-        name: inventoryEntry.defaultModel,
+        id: resolvedInventoryModel.id,
+        name: resolvedInventoryModel.name,
         providerId:
           inventoryEntry.providerId === agentId
             ? inventoryEntry.providerId

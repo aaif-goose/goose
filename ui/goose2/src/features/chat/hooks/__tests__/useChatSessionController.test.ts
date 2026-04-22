@@ -7,8 +7,6 @@ import { useChatSessionStore } from "../../stores/chatSessionStore";
 
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
-const mockSendMessage = vi.fn();
-const mockCompactConversation = vi.fn();
 const mockSetSelectedProvider = vi.fn();
 const mockResolveSessionCwd = vi.fn();
 const mockGooseConfigRead = vi.fn();
@@ -24,27 +22,6 @@ const mockPickerState = {
   modelsLoading: false,
   modelStatusMessage: null as string | null,
 };
-const mockSetAutoCompactThreshold = vi.fn();
-const mockQueueEnqueue = vi.fn();
-const mockQueueDismiss = vi.fn();
-let mockSelectedAgentId = "goose";
-const INITIAL_TOKEN_STATE = {
-  inputTokens: 0,
-  outputTokens: 0,
-  totalTokens: 0,
-  accumulatedInput: 0,
-  accumulatedOutput: 0,
-  accumulatedTotal: 0,
-  contextLimit: 0,
-};
-let mockTokenState = { ...INITIAL_TOKEN_STATE };
-let capturedQueuedSend:
-  | ((
-      text: string,
-      overridePersona?: { id: string; name?: string },
-      attachments?: unknown[],
-    ) => boolean | Promise<boolean>)
-  | null = null;
 
 vi.mock("@/shared/api/acp", () => ({
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
@@ -67,32 +44,18 @@ vi.mock("../useChat", () => ({
   useChat: () => ({
     messages: [],
     chatState: "idle",
-    tokenState: mockTokenState,
-    sendMessage: (...args: unknown[]) => mockSendMessage(...args),
-    compactConversation: (...args: unknown[]) =>
-      mockCompactConversation(...args),
+    tokenState: null,
+    sendMessage: vi.fn(),
     stopStreaming: vi.fn(),
     streamingMessageId: null,
   }),
 }));
 
 vi.mock("../useMessageQueue", () => ({
-  useMessageQueue: (...args: unknown[]) => {
-    capturedQueuedSend = args[2] as typeof capturedQueuedSend;
-    return {
-      queuedMessage: null,
-      enqueue: (...enqueueArgs: unknown[]) => mockQueueEnqueue(...enqueueArgs),
-      dismiss: () => mockQueueDismiss(),
-    };
-  },
-}));
-
-vi.mock("../useAutoCompactPreferences", () => ({
-  useAutoCompactPreferences: () => ({
-    autoCompactThreshold: 0.8,
-    isHydrated: true,
-    setAutoCompactThreshold: (...args: unknown[]) =>
-      mockSetAutoCompactThreshold(...args),
+  useMessageQueue: () => ({
+    queuedMessage: null,
+    enqueue: vi.fn(),
+    dismiss: vi.fn(),
   }),
 }));
 
@@ -123,10 +86,9 @@ vi.mock("../useAgentModelPickerState", () => ({
       name: string;
       displayName?: string;
       providerId?: string;
-      contextLimit?: number | null;
     }) => void;
   }) => ({
-    selectedAgentId: mockSelectedAgentId,
+    selectedAgentId: "goose",
     pickerAgents: mockPickerState.pickerAgents,
     availableModels: mockPickerState.availableModels,
     modelsLoading: mockPickerState.modelsLoading,
@@ -139,7 +101,6 @@ vi.mock("../useAgentModelPickerState", () => ({
           name: modelId,
           displayName: "Claude Sonnet 4",
           providerId: "anthropic",
-          contextLimit: 200_000,
         });
       }
     },
@@ -154,7 +115,6 @@ describe("useChatSessionController", () => {
     window.localStorage.clear();
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
-    mockCompactConversation.mockResolvedValue("completed");
     mockResolveSessionCwd.mockResolvedValue("/tmp/project");
     mockGooseConfigRead.mockResolvedValue({ value: null });
     mockUseProviderInventory.mockReturnValue({
@@ -164,9 +124,6 @@ describe("useChatSessionController", () => {
     mockPickerState.availableModels = [];
     mockPickerState.modelsLoading = false;
     mockPickerState.modelStatusMessage = null;
-    mockTokenState = { ...INITIAL_TOKEN_STATE };
-    capturedQueuedSend = null;
-    mockSelectedAgentId = "goose";
 
     useAgentStore.setState({
       personas: [],
@@ -467,240 +424,5 @@ describe("useChatSessionController", () => {
     expect(
       window.localStorage.getItem("goose:preferredModelsByAgent"),
     ).toBeNull();
-  });
-
-  it("hides context usage until a fresh usage snapshot exists after switching models", () => {
-    const store = useChatStore.getState();
-    store.replaceTokenState(
-      "session-1",
-      {
-        ...INITIAL_TOKEN_STATE,
-        contextLimit: 400_000,
-      },
-      false,
-    );
-
-    const { result } = renderHook(() =>
-      useChatSessionController({ sessionId: "session-1" }),
-    );
-
-    act(() => {
-      result.current.handleModelChange("claude-sonnet-4");
-    });
-
-    const runtime = useChatStore.getState().getSessionRuntime("session-1");
-    expect(runtime.hasUsageSnapshot).toBe(false);
-    expect(runtime.tokenState).toEqual(INITIAL_TOKEN_STATE);
-  });
-
-  it("hides context usage after switching models even when a snapshot existed", () => {
-    const store = useChatStore.getState();
-    store.replaceTokenState(
-      "session-1",
-      {
-        ...INITIAL_TOKEN_STATE,
-        accumulatedTotal: 12_000,
-        contextLimit: 400_000,
-      },
-      true,
-    );
-
-    const { result } = renderHook(() =>
-      useChatSessionController({ sessionId: "session-1" }),
-    );
-
-    act(() => {
-      result.current.handleModelChange("claude-sonnet-4");
-    });
-
-    const runtime = useChatStore.getState().getSessionRuntime("session-1");
-    expect(runtime.hasUsageSnapshot).toBe(false);
-    expect(runtime.tokenState).toEqual(INITIAL_TOKEN_STATE);
-  });
-
-  it("hides pending home context usage after switching models", () => {
-    const store = useChatStore.getState();
-    store.replaceTokenState(
-      "__home_pending__",
-      {
-        ...INITIAL_TOKEN_STATE,
-        accumulatedTotal: 12_000,
-        contextLimit: 400_000,
-      },
-      true,
-    );
-
-    const { result } = renderHook(() =>
-      useChatSessionController({ sessionId: null }),
-    );
-
-    act(() => {
-      result.current.handleModelChange("claude-sonnet-4");
-    });
-
-    const runtime = useChatStore
-      .getState()
-      .getSessionRuntime("__home_pending__");
-    expect(runtime.hasUsageSnapshot).toBe(false);
-    expect(runtime.tokenState).toEqual(INITIAL_TOKEN_STATE);
-  });
-
-  it("auto-compacts goose sessions before sending when the threshold is exceeded", async () => {
-    mockTokenState = {
-      ...INITIAL_TOKEN_STATE,
-      accumulatedTotal: 8_500,
-      contextLimit: 10_000,
-    };
-    useChatStore
-      .getState()
-      .replaceTokenState("session-1", mockTokenState, true);
-    useChatSessionStore.getState().updateSession("session-1", {
-      providerId: "goose",
-    });
-
-    const { result } = renderHook(() =>
-      useChatSessionController({ sessionId: "session-1" }),
-    );
-
-    await act(async () => {
-      await result.current.handleSend("hello");
-    });
-
-    expect(mockCompactConversation).toHaveBeenCalledOnce();
-    expect(mockSendMessage).toHaveBeenCalledWith("hello", undefined, undefined);
-    expect(mockCompactConversation.mock.invocationCallOrder[0]).toBeLessThan(
-      mockSendMessage.mock.invocationCallOrder[0],
-    );
-  });
-  it("keeps compaction enabled for goose agent sessions backed by model providers", async () => {
-    mockTokenState = {
-      ...INITIAL_TOKEN_STATE,
-      accumulatedTotal: 8_500,
-      contextLimit: 10_000,
-    };
-    useChatStore
-      .getState()
-      .replaceTokenState("session-1", mockTokenState, true);
-
-    const { result } = renderHook(() =>
-      useChatSessionController({ sessionId: "session-1" }),
-    );
-
-    expect(result.current.selectedProvider).toBe("goose");
-    expect(result.current.supportsAutoCompactContext).toBe(true);
-    expect(result.current.supportsCompactionControls).toBe(true);
-
-    await act(async () => {
-      await result.current.handleSend("hello");
-    });
-
-    expect(mockCompactConversation).toHaveBeenCalledOnce();
-    expect(mockSendMessage).toHaveBeenCalledWith("hello", undefined, undefined);
-  });
-
-  it("compacts the queued persona session before sending", async () => {
-    mockTokenState = {
-      ...INITIAL_TOKEN_STATE,
-      accumulatedTotal: 8_500,
-      contextLimit: 10_000,
-    };
-    useChatStore
-      .getState()
-      .replaceTokenState("session-1", mockTokenState, true);
-    useChatSessionStore.getState().updateSession("session-1", {
-      providerId: "goose",
-      personaId: "persona-b",
-    });
-
-    renderHook(() => useChatSessionController({ sessionId: "session-1" }));
-
-    expect(capturedQueuedSend).not.toBeNull();
-
-    await act(async () => {
-      await capturedQueuedSend?.("hello", { id: "persona-a" });
-    });
-
-    expect(mockCompactConversation).toHaveBeenCalledWith({ id: "persona-a" });
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      "hello",
-      { id: "persona-a" },
-      undefined,
-    );
-  });
-
-  it("auto-compacts queued messages for goose personas even after switching away", async () => {
-    mockSelectedAgentId = "claude-acp";
-    mockTokenState = {
-      ...INITIAL_TOKEN_STATE,
-      accumulatedTotal: 8_500,
-      contextLimit: 10_000,
-    };
-    useChatStore
-      .getState()
-      .replaceTokenState("session-1", mockTokenState, true);
-    useAgentStore.setState({
-      personas: [
-        {
-          id: "persona-a",
-          displayName: "Persona A",
-          systemPrompt: "",
-          provider: "openai",
-          isBuiltin: false,
-          createdAt: "",
-          updatedAt: "",
-        },
-      ],
-    });
-
-    renderHook(() => useChatSessionController({ sessionId: "session-1" }));
-
-    await act(async () => {
-      await capturedQueuedSend?.("hello", { id: "persona-a" });
-    });
-
-    expect(mockCompactConversation).toHaveBeenCalledWith({ id: "persona-a" });
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      "hello",
-      { id: "persona-a" },
-      undefined,
-    );
-  });
-
-  it("skips auto-compaction for queued messages targeting unsupported personas", async () => {
-    mockSelectedAgentId = "goose";
-    mockTokenState = {
-      ...INITIAL_TOKEN_STATE,
-      accumulatedTotal: 8_500,
-      contextLimit: 10_000,
-    };
-    useChatStore
-      .getState()
-      .replaceTokenState("session-1", mockTokenState, true);
-    useAgentStore.setState({
-      personas: [
-        {
-          id: "persona-a",
-          displayName: "Persona A",
-          systemPrompt: "",
-          provider: "claude-acp",
-          isBuiltin: false,
-          createdAt: "",
-          updatedAt: "",
-        },
-      ],
-    });
-
-    renderHook(() => useChatSessionController({ sessionId: "session-1" }));
-
-    await act(async () => {
-      await capturedQueuedSend?.("hello", { id: "persona-a" });
-    });
-
-    expect(mockCompactConversation).not.toHaveBeenCalled();
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      "hello",
-      { id: "persona-a" },
-      undefined,
-    );
   });
 });

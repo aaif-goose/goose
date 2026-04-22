@@ -5,12 +5,20 @@ import type {
 import { getClient } from "@/shared/api/acpConnection";
 import { perfLog } from "@/shared/lib/perfLog";
 
+type ProviderInventoryReader = {
+  GooseProvidersInventory: (params: { providerIds: string[] }) => Promise<{
+    entries: ProviderInventoryEntryDto[];
+  }>;
+};
+
 export async function getProviderInventory(
   providerIds: string[] = [],
 ): Promise<ProviderInventoryEntryDto[]> {
   const client = await getClient();
   const t0 = performance.now();
-  const response = await client.goose.GooseProvidersList({ providerIds });
+  const response = await (
+    client.goose as typeof client.goose & ProviderInventoryReader
+  ).GooseProvidersInventory({ providerIds });
   perfLog(
     `[perf:inventory] getProviderInventory done in ${(performance.now() - t0).toFixed(1)}ms (n=${response.entries.length})`,
   );

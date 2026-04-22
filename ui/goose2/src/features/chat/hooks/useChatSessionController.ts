@@ -23,7 +23,6 @@ import {
   supportsContextCompactionControls,
 } from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
-import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
   useResolvedAgentModelPicker,
