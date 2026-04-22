@@ -1,0 +1,45 @@
+name: Tandem isolation guard
+
+# Fails the build when a PR targeting a tandem/* branch modifies files
+# outside the Tandem sandbox + the 3 shared workspace registrations.
+# Escape hatch: include [cross-boundary] in the HEAD commit message.
+
+on:
+  pull_request:
+    branches:
+      - tandem/main
+      - 'tandem/feat/**'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail on cross-boundary edits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          MSG=$(git log -1 --format=%B "$HEAD_SHA")
+          if printf '%s' "$MSG" | grep -q '\[cross-boundary\]'; then
+            echo "Opt-out tag [cross-boundary] present in HEAD commit; skipping guard."
+            exit 0
+          fi
+
+          BAD=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            | grep -Ev '^(ui/tandem/|Cargo\.toml$|ui/pnpm-workspace\.yaml$|ui/package\.json$|\.github/workflows/tandem-|BRANCHING\.md$)' \
+            || true)
+
+          if [ -n "$BAD" ]; then
+            echo "::error::Cross-boundary edits detected. Tandem branches may only modify ui/tandem/** and the three shared workspace files."
+            echo "$BAD" | sed 's/^/  - /'
+            echo ""
+            echo "If this is intentional (e.g. patching upstream code), add [cross-boundary] to the HEAD commit message."
+            exit 1
+          fi
+
+          echo "All changes are within the Tandem allowlist."
