@@ -68,10 +68,7 @@ pub async fn run_list_sessions<C: Connection>() {
         "messageCount".to_string(),
         serde_json::Value::Number(2.into()),
     );
-    expected_meta.insert(
-        "userSetName".to_string(),
-        serde_json::Value::Bool(false),
-    );
+    expected_meta.insert("userSetName".to_string(), serde_json::Value::Bool(false));
     assert_eq!(
         response,
         ListSessionsResponse::new(vec![SessionInfo::new(
