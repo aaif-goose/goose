@@ -21,6 +21,7 @@ export interface AcpSessionInfo {
   projectId?: string | null;
   providerId: string | null;
   modelId: string | null;
+  personaId: string | null;
 }
 
 const DEPRECATED_PROVIDER_IDS = new Set(["claude-code", "codex", "gemini-cli"]);
@@ -56,6 +57,7 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
     projectId: (info._meta?.projectId as string) ?? null,
     providerId: (info._meta?.providerId as string) ?? null,
     modelId: (info._meta?.modelId as string) ?? null,
+    personaId: (info._meta?.personaId as string) ?? null,
   }));
 }
 
@@ -86,6 +88,7 @@ export async function forkSession(sessionId: string): Promise<AcpSessionInfo> {
     projectId: (response._meta?.projectId as string) ?? null,
     providerId: (response._meta?.providerId as string) ?? null,
     modelId: (response._meta?.modelId as string) ?? null,
+    personaId: (response._meta?.personaId as string) ?? null,
   };
 }
 
@@ -153,6 +156,7 @@ export async function newSession(
   workingDir: string,
   providerId?: string,
   projectId?: string,
+  personaId?: string,
 ): Promise<NewSessionResponse> {
   const tClient = performance.now();
   const client = await getClient();
@@ -166,6 +170,7 @@ export async function newSession(
   const meta: Record<string, string> = {};
   if (providerId) meta.provider = providerId;
   if (projectId) meta.projectId = projectId;
+  if (personaId) meta.personaId = personaId;
   if (Object.keys(meta).length > 0) request.meta = meta;
 
   const tCall = performance.now();

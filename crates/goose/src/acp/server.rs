@@ -197,6 +197,12 @@ fn thread_session_meta(
             serde_json::Value::String(model_id.clone()),
         );
     }
+    if let Some(ref persona_id) = metadata.persona_id {
+        meta.insert(
+            "personaId".to_string(),
+            serde_json::Value::String(persona_id.clone()),
+        );
+    }
     meta
 }
 
@@ -1653,10 +1659,18 @@ impl GooseAcpAgent {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
+        let persona_id = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("personaId"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         // Create the Thread — this IS the ACP session from the client's perspective.
         let thread_metadata = crate::session::ThreadMetadata {
             provider_id: requested_provider.clone(),
             project_id,
+            persona_id,
             mode: Some(self.goose_mode.to_string()),
             ..Default::default()
         };

@@ -170,7 +170,7 @@ function mergeAcpSessionWithOverlay(
     projectId: session.projectId ?? undefined,
     agentId: overlay?.agentId ?? undefined,
     providerId: session.providerId ?? overlay?.providerId ?? undefined,
-    personaId: overlay?.personaId ?? undefined,
+    personaId: session.personaId ?? overlay?.personaId ?? undefined,
     modelId: session.modelId ?? overlay?.modelId ?? undefined,
     modelName: overlay?.modelName ?? undefined,
     createdAt: overlay?.createdAt ?? updatedAt ?? new Date().toISOString(),
