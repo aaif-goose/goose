@@ -264,9 +264,15 @@ export function createHttpStream(serverUrl: string): Stream {
         controller.close();
       }
     },
-    cancel() {
+    async cancel() {
       closed = true;
+      await sendDelete();
       getStreamAbort?.abort();
+      if (pullResolve) {
+        const r = pullResolve;
+        pullResolve = null;
+        r();
+      }
     },
   });
 

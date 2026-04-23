@@ -65,9 +65,20 @@ async fn run_ws(
     connection: Arc<super::connection::Connection>,
 ) {
     let (mut ws_tx, mut ws_rx) = socket.split();
-    let mut outbound_rx = connection.outbound_tx.subscribe();
+    let (replay, mut outbound_rx) = connection.subscribe_with_replay().await;
 
     debug!(connection_id = %connection_id, "Starting WebSocket message loop");
+
+    for text in replay {
+        trace!(connection_id = %connection_id, payload = %text, "Agent → Client (replay): {} bytes", text.len());
+        if ws_tx.send(Message::Text(text.into())).await.is_err() {
+            error!(connection_id = %connection_id, "WebSocket send failed during replay");
+            if let Some(conn) = registry.remove(&connection_id).await {
+                conn.shutdown().await;
+            }
+            return;
+        }
+    }
 
     loop {
         tokio::select! {

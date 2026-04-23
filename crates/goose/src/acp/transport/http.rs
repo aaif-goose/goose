@@ -202,8 +202,8 @@ pub(crate) async fn handle_get(
         return (StatusCode::NOT_FOUND, "Unknown Acp-Connection-Id").into_response();
     };
 
-    let receiver = connection.outbound_tx.subscribe();
-    let sse = build_sse_stream(connection.clone(), receiver);
+    let (replay, receiver) = connection.subscribe_with_replay().await;
+    let sse = build_sse_stream(connection.clone(), replay, receiver);
 
     let mut response = sse.into_response();
     if let Ok(v) = HeaderValue::from_str(&connection_id) {
@@ -214,9 +214,14 @@ pub(crate) async fn handle_get(
 
 fn build_sse_stream(
     _connection: Arc<Connection>,
+    replay: Vec<String>,
     mut receiver: broadcast::Receiver<String>,
 ) -> Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
     let stream = async_stream::stream! {
+        for msg in replay {
+            trace!(payload = %msg, "SSE → client (replay)");
+            yield Ok::<_, Infallible>(axum::response::sse::Event::default().data(msg));
+        }
         loop {
             match receiver.recv().await {
                 Ok(msg) => {
