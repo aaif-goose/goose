@@ -11,6 +11,7 @@ use goose::config::declarative_providers::LoadedProvider;
 use goose::config::paths::Paths;
 use goose::config::ExtensionEntry;
 use goose::config::{Config, ConfigError};
+use goose::custom_requests::SourceType;
 use goose::model::ModelConfig;
 use goose::providers::base::{ProviderMetadata, ProviderType};
 use goose::providers::canonical::maybe_get_canonical_model;
@@ -441,10 +442,9 @@ pub async fn get_slash_commands(
     for source in
         goose::agents::platform_extensions::summon::discover_filesystem_sources(discover_dir)
     {
-        use goose::agents::platform_extensions::SourceKind;
         if matches!(
-            source.kind,
-            SourceKind::Agent | SourceKind::Recipe | SourceKind::Subrecipe
+            source.source_type,
+            SourceType::Agent | SourceType::Recipe | SourceType::Subrecipe
         ) && !source.content.is_empty()
         {
             commands.push(SlashCommand {
