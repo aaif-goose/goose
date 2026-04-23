@@ -105,26 +105,53 @@ pub fn create_source(
 pub fn update_source(
     source_type: SourceType,
     path: &str,
+    name: &str,
     description: &str,
     content: &str,
 ) -> Result<SourceEntry, Error> {
     require_skill_type(source_type)?;
-    let dir = resolve_skill_dir(path)?;
-    let name = infer_skill_name(&dir);
+    validate_skill_name(name)?;
 
-    let file_path = dir.join("SKILL.md");
-    let md = build_skill_md(&name, description, content);
+    let dir = resolve_discoverable_skill_dir(path)?;
+    let current_dir_name = dir
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| Error::internal_error().data("Failed to resolve source directory name"))?;
+
+    let target_dir = if name == current_dir_name {
+        dir.clone()
+    } else {
+        let base_dir = dir.parent().ok_or_else(|| {
+            Error::internal_error().data("Failed to resolve source base directory")
+        })?;
+        let target_dir = base_dir.join(name);
+
+        if target_dir.exists() {
+            return Err(
+                Error::invalid_params().data(format!("A source named \"{}\" already exists", name))
+            );
+        }
+
+        fs::rename(&dir, &target_dir).map_err(|e| {
+            Error::internal_error().data(format!("Failed to rename source directory: {e}"))
+        })?;
+
+        target_dir
+    };
+
+    let file_path = target_dir.join("SKILL.md");
+    let md = build_skill_md(name, description, content);
     fs::write(&file_path, md)
         .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
 
     Ok(source_entry(
         source_type,
-        &name,
+        name,
         description,
         content,
-        &dir,
-        is_global_skill_dir(&dir),
-        true,
+        &target_dir,
+        is_global_skill_dir(&target_dir),
+        is_editable_skill_dir(&target_dir),
     ))
 }
 
@@ -320,6 +347,7 @@ mod tests {
         let updated = update_source(
             SourceType::Skill,
             created.directory.as_str(),
+            "my-skill",
             "now does a different thing",
             "step three",
         )
@@ -405,6 +433,37 @@ mod tests {
     }
 
     #[test]
+    fn update_allows_discovered_read_only_skill() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        let claude_skill_dir = project.join(".claude").join("skills").join("portable");
+        std::fs::create_dir_all(&claude_skill_dir).unwrap();
+        std::fs::write(
+            claude_skill_dir.join("SKILL.md"),
+            build_skill_md("portable", "describes itself", "body goes here"),
+        )
+        .unwrap();
+
+        let updated = update_source(
+            SourceType::Skill,
+            claude_skill_dir.to_str().unwrap(),
+            "portable",
+            "updated description",
+            "updated body",
+        )
+        .unwrap();
+
+        assert_eq!(updated.name, "portable");
+        assert_eq!(updated.description, "updated description");
+        assert_eq!(updated.content, "updated body");
+        assert!(!updated.editable);
+
+        let raw = std::fs::read_to_string(claude_skill_dir.join("SKILL.md")).unwrap();
+        assert!(raw.contains("description: 'updated description'"));
+        assert!(raw.contains("updated body"));
+    }
+
+    #[test]
     fn import_collision_appends_suffix() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
@@ -431,8 +490,14 @@ mod tests {
             .join(".goose")
             .join("skills")
             .join("no-such-skill");
-        let err =
-            update_source(SourceType::Skill, missing_dir.to_str().unwrap(), "d", "c").unwrap_err();
+        let err = update_source(
+            SourceType::Skill,
+            missing_dir.to_str().unwrap(),
+            "no-such-skill",
+            "d",
+            "c",
+        )
+        .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
     }
 
@@ -464,7 +529,7 @@ mod tests {
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = update_source(SourceType::Recipe, "x", "d", "c").unwrap_err();
+        let err = update_source(SourceType::Recipe, "x", "x", "d", "c").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
@@ -496,6 +561,7 @@ mod tests {
         let updated = update_source(
             SourceType::Skill,
             skill_dir.to_str().unwrap(),
+            "my-dir",
             "new description",
             "new body",
         )
@@ -520,6 +586,7 @@ mod tests {
         let err = update_source(
             SourceType::Skill,
             attempted_escape.to_str().unwrap(),
+            "escaped",
             "new description",
             "new content",
         )

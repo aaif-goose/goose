@@ -444,11 +444,12 @@ export type ListSourcesResponse = {
 };
 
 /**
- * Update an existing source's description and content by absolute path.
+ * Update an existing source's name, description, and content by absolute path.
  */
 export type UpdateSourceRequest = {
     type: SourceType;
     path: string;
+    name: string;
     description: string;
     content: string;
 };

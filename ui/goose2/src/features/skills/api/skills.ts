@@ -69,6 +69,7 @@ export async function deleteSkill(path: string): Promise<void> {
 
 export async function updateSkill(
   path: string,
+  name: string,
   description: string,
   instructions: string,
 ): Promise<SkillInfo> {
@@ -76,6 +77,7 @@ export async function updateSkill(
   const response = await client.goose.GooseSourcesUpdate({
     type: SKILL_SOURCE_TYPE,
     path,
+    name,
     description,
     content: instructions,
   });

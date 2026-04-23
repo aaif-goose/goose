@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
@@ -31,6 +30,28 @@ function isValidSkillName(name: string): boolean {
   );
 }
 
+function formatSkillName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/^-/, "")
+    .slice(0, MAX_SKILL_NAME_LENGTH);
+}
+
+function getRenamedSkillFileLocation(
+  fileLocation: string,
+  name: string,
+): string {
+  const separator = fileLocation.includes("\\") ? "\\" : "/";
+  const parts = fileLocation.split(separator);
+
+  if (parts.length >= 2) {
+    parts[parts.length - 2] = name;
+  }
+
+  return parts.join(separator);
+}
+
 interface CreateSkillDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -40,6 +61,7 @@ interface CreateSkillDialogProps {
     description: string;
     instructions: string;
     path: string;
+    fileLocation: string;
   };
 }
 
@@ -77,13 +99,7 @@ export function CreateSkillDialog({
   const canSave = nameValid && description.trim().length > 0 && !saving;
 
   const handleNameChange = (raw: string) => {
-    if (isEditing) return;
-    const formatted = raw
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, "-")
-      .replace(/^-/, "")
-      .slice(0, MAX_SKILL_NAME_LENGTH);
-    setName(formatted);
+    setName(formatSkillName(raw));
     setError(null);
   };
 
@@ -102,7 +118,12 @@ export function CreateSkillDialog({
     setError(null);
     try {
       if (isEditing) {
-        await updateSkill(editingSkill.path, description.trim(), instructions);
+        await updateSkill(
+          editingSkill.path,
+          name,
+          description.trim(),
+          instructions,
+        );
       } else {
         await createSkill(name, description.trim(), instructions);
       }
@@ -141,8 +162,6 @@ export function CreateSkillDialog({
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder={t("dialog.namePlaceholder")}
-              readOnly={isEditing}
-              className={cn(isEditing && "opacity-60 cursor-not-allowed")}
             />
             {name.length > 0 && !nameValid && (
               <p className="text-xs text-destructive">
@@ -166,6 +185,13 @@ export function CreateSkillDialog({
               placeholder={t("dialog.descriptionPlaceholder")}
             />
           </div>
+
+          {isEditing && editingSkill && (
+            <p className="-mt-2 break-all text-[11px] text-muted-foreground">
+              {t("dialog.pathOnDisk")}:{" "}
+              {getRenamedSkillFileLocation(editingSkill.fileLocation, name)}
+            </p>
+          )}
 
           {/* Instructions */}
           <div className="space-y-1">

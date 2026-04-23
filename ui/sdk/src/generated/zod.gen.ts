@@ -386,11 +386,12 @@ export const zListSourcesResponse = z.object({
 });
 
 /**
- * Update an existing source's description and content by absolute path.
+ * Update an existing source's name, description, and content by absolute path.
  */
 export const zUpdateSourceRequest = z.object({
     type: zSourceType,
     path: z.string(),
+    name: z.string(),
     description: z.string(),
     content: z.string()
 });

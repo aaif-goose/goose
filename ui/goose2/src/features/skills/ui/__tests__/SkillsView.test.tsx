@@ -33,12 +33,11 @@ vi.mock("../../api/skills", () => ({
   importSkills: vi.fn().mockResolvedValue([]),
 }));
 
-const { listSkills, deleteSkill } = (await import(
-  "../../api/skills"
-)) as unknown as {
-  listSkills: ReturnType<typeof vi.fn>;
-  deleteSkill: ReturnType<typeof vi.fn>;
-};
+const { listSkills, deleteSkill } =
+  (await import("../../api/skills")) as unknown as {
+    listSkills: ReturnType<typeof vi.fn>;
+    deleteSkill: ReturnType<typeof vi.fn>;
+  };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -200,7 +199,7 @@ describe("SkillsView", () => {
       });
     });
 
-    it("shows read-only state and file location for non-editable skills", async () => {
+    it("does not show the path on disk in the list view and still allows editing for non-editable skills", async () => {
       listSkills.mockResolvedValue([
         {
           name: "claude-skill",
@@ -216,20 +215,15 @@ describe("SkillsView", () => {
       render(<SkillsView />);
 
       expect(await screen.findByText("claude-skill")).toBeInTheDocument();
-      expect(screen.getByText("Read-only")).toBeInTheDocument();
+      expect(screen.queryByText("Path on disk:")).not.toBeInTheDocument();
       expect(
-        screen.getByText(
-          "This skill was discovered outside Goose’s managed skills folders. Edit the file directly at:",
-        ),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("/Users/test/.claude/skills/claude-skill/SKILL.md"),
-      ).toBeInTheDocument();
+        screen.queryByText("/Users/test/.claude/skills/claude-skill/SKILL.md"),
+      ).not.toBeInTheDocument();
 
       await user.click(screen.getByLabelText("Options for claude-skill"));
       expect(
-        screen.queryByRole("menuitem", { name: /edit/i }),
-      ).not.toBeInTheDocument();
+        screen.getByRole("menuitem", { name: /edit/i }),
+      ).toBeInTheDocument();
       expect(
         screen.getByRole("menuitem", { name: /duplicate/i }),
       ).toBeInTheDocument();

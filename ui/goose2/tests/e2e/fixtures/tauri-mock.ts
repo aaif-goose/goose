@@ -203,14 +203,23 @@ export function buildInitScript(options?: {
             });
           case "_goose/sources/update": {
             const path = message.params?.path ?? "/mock/.agents/skills/updated-skill";
-            const name = String(path).split("/").filter(Boolean).at(-1) ?? "updated-skill";
+            const nextName = message.params?.name;
+            const name =
+              typeof nextName === "string" && nextName.length > 0
+                ? nextName
+                : String(path).split("/").filter(Boolean).at(-1) ?? "updated-skill";
+            const segments = String(path).split("/").filter(Boolean);
+            if (segments.length > 0) {
+              segments[segments.length - 1] = name;
+            }
+            const directory = `/${segments.join("/")}`;
             return jsonRpcResult(message.id, {
               source: {
                 name,
                 type: "skill",
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: path,
+                directory,
                 global: true,
                 editable: true,
                 supportingFiles: [],

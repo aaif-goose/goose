@@ -10,6 +10,7 @@
     "name": "Name",
     "namePlaceholder": "my-skill-name",
     "nameValidation": "Use 1–64 lowercase letters, numbers, or hyphens. Names cannot start or end with a hyphen.",
+    "pathOnDisk": "Path on disk",
     "newTitle": "New Skill",
     "saving": "Saving..."
   },
@@ -25,6 +26,7 @@
     "noMatchesDescription": "Try a different search term.",
     "noMatchesTitle": "No matching skills",
     "optionsAria": "Options for {{name}}",
+    "pathOnDiskDescription": "Path on disk:",
     "readOnlyBadge": "Read-only",
     "readOnlyDescription": "This skill was discovered outside Goose’s managed skills folders. Edit the file directly at:",
     "searchPlaceholder": "Search skills by name or description...",

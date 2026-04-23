@@ -359,7 +359,7 @@ pub struct ListSourcesResponse {
     pub sources: Vec<SourceEntry>,
 }
 
-/// Update an existing source's description and content by absolute path.
+/// Update an existing source's name, description, and content by absolute path.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/sources/update", response = UpdateSourceResponse)]
 #[serde(rename_all = "camelCase")]
@@ -367,6 +367,7 @@ pub struct UpdateSourceRequest {
     #[serde(rename = "type")]
     pub source_type: SourceType,
     pub path: String,
+    pub name: String,
     pub description: String,
     pub content: String,
 }

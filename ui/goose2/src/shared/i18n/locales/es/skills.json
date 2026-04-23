@@ -10,6 +10,7 @@
     "name": "Nombre",
     "namePlaceholder": "mi-skill",
     "nameValidation": "Usa de 1 a 64 letras minúsculas, números o guiones. El nombre no puede empezar ni terminar con un guion.",
+    "pathOnDisk": "Ruta en disco",
     "newTitle": "Nueva skill",
     "saving": "Guardando..."
   },
@@ -25,6 +26,7 @@
     "noMatchesDescription": "Prueba con otro término de búsqueda.",
     "noMatchesTitle": "No hay skills que coincidan",
     "optionsAria": "Opciones de {{name}}",
+    "pathOnDiskDescription": "Ruta en disco:",
     "readOnlyBadge": "Solo lectura",
     "readOnlyDescription": "Esta skill se detectó fuera de las carpetas de skills administradas por Goose. Edita el archivo directamente en:",
     "searchPlaceholder": "Buscar skills por nombre o descripción...",

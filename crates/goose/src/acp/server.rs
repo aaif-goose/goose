@@ -3218,6 +3218,7 @@ impl GooseAcpAgent {
         let source = crate::sources::update_source(
             req.source_type,
             &req.path,
+            &req.name,
             &req.description,
             &req.content,
         )?;

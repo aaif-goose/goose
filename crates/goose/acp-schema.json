@@ -873,6 +873,9 @@
         "path": {
           "type": "string"
         },
+        "name": {
+          "type": "string"
+        },
         "description": {
           "type": "string"
         },
@@ -883,10 +886,11 @@
       "required": [
         "type",
         "path",
+        "name",
         "description",
         "content"
       ],
-      "description": "Update an existing source's description and content by absolute path.",
+      "description": "Update an existing source's name, description, and content by absolute path.",
       "x-side": "agent",
       "x-method": "_goose/sources/update"
     },

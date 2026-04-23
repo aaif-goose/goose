@@ -56,6 +56,7 @@ describe("CreateSkillDialog", () => {
             description: "desc",
             instructions: "instr",
             path: "/mock/.agents/skills/my-skill",
+            fileLocation: "/mock/.agents/skills/my-skill/SKILL.md",
           }}
         />,
       );
@@ -136,6 +137,7 @@ describe("CreateSkillDialog", () => {
       description: "Reviews code",
       instructions: "Review the code carefully",
       path: "/mock/.agents/skills/code-review",
+      fileLocation: "/mock/.agents/skills/code-review/SKILL.md",
     };
 
     it("pre-fills fields with existing skill data", () => {
@@ -155,12 +157,46 @@ describe("CreateSkillDialog", () => {
       ).toHaveValue("Review the code carefully");
     });
 
-    it("name field is read-only in edit mode", () => {
+    it("name field is editable in edit mode", async () => {
+      const user = userEvent.setup();
       render(
         <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
       );
       const nameInput = screen.getByPlaceholderText("my-skill-name");
-      expect(nameInput).toHaveAttribute("readOnly");
+
+      await user.clear(nameInput);
+      await user.type(nameInput, "renamed-skill");
+
+      expect(nameInput).toHaveValue("renamed-skill");
+    });
+
+    it("shows the skill path on disk as minimal helper text in edit mode", () => {
+      render(
+        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
+      );
+
+      expect(
+        screen.getByText(
+          "Path on disk: /mock/.agents/skills/code-review/SKILL.md",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("updates the path helper text when the name changes in edit mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
+      );
+
+      const nameInput = screen.getByPlaceholderText("my-skill-name");
+      await user.clear(nameInput);
+      await user.type(nameInput, "renamed-skill");
+
+      expect(
+        screen.getByText(
+          "Path on disk: /mock/.agents/skills/renamed-skill/SKILL.md",
+        ),
+      ).toBeInTheDocument();
     });
 
     it('save button text is "Save Changes" in edit mode', () => {
@@ -181,6 +217,7 @@ describe("CreateSkillDialog", () => {
             description: "Existing description",
             instructions: "Existing instructions",
             path: "/mock/.agents/skills/double--hyphen",
+            fileLocation: "/mock/.agents/skills/double--hyphen/SKILL.md",
           }}
         />,
       );
@@ -231,6 +268,7 @@ describe("CreateSkillDialog", () => {
             description: "Reviews code",
             instructions: "Review carefully",
             path: "/mock/.agents/skills/code-review",
+            fileLocation: "/mock/.agents/skills/code-review/SKILL.md",
           }}
         />,
       );
@@ -246,7 +284,37 @@ describe("CreateSkillDialog", () => {
 
       expect(updateSkill).toHaveBeenCalledWith(
         "/mock/.agents/skills/code-review",
+        "code-review",
         "Updated description",
+        "Review carefully",
+      );
+    });
+
+    it("calls updateSkill API with the renamed skill name in edit mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <CreateSkillDialog
+          {...defaultProps}
+          editingSkill={{
+            name: "code-review",
+            description: "Reviews code",
+            instructions: "Review carefully",
+            path: "/mock/.agents/skills/code-review",
+            fileLocation: "/mock/.agents/skills/code-review/SKILL.md",
+          }}
+        />,
+      );
+
+      const nameInput = screen.getByPlaceholderText("my-skill-name");
+      await user.clear(nameInput);
+      await user.type(nameInput, "renamed-skill");
+
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      expect(updateSkill).toHaveBeenCalledWith(
+        "/mock/.agents/skills/code-review",
+        "renamed-skill",
+        "Reviews code",
         "Review carefully",
       );
     });

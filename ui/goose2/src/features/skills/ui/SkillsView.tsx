@@ -9,7 +9,6 @@ import {
   Copy,
   Download,
   Upload,
-  Lock,
 } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
@@ -70,12 +69,10 @@ function SkillCardMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4}>
-        {skill.editable && (
-          <DropdownMenuItem onSelect={() => onEdit(skill)}>
-            <Pencil className="size-3.5" />
-            {t("common:actions.edit")}
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem onSelect={() => onEdit(skill)}>
+          <Pencil className="size-3.5" />
+          {t("common:actions.edit")}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onDuplicate(skill)}>
           <Copy className="size-3.5" />
           {t("common:actions.duplicate")}
@@ -108,6 +105,7 @@ export function SkillsView() {
         description: string;
         instructions: string;
         path: string;
+        fileLocation: string;
       }
     | undefined
   >(undefined);
@@ -149,15 +147,12 @@ export function SkillsView() {
   };
 
   const handleEdit = (skill: SkillInfo) => {
-    if (!skill.editable) {
-      return;
-    }
-
     setEditingSkill({
       name: skill.name,
       description: skill.description,
       instructions: skill.instructions,
       path: skill.path,
+      fileLocation: skill.fileLocation,
     });
     setDialogOpen(true);
   };
@@ -317,25 +312,11 @@ export function SkillsView() {
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{skill.name}</p>
-                      {!skill.editable && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          <Lock className="size-3" />
-                          {t("view.readOnlyBadge")}
-                        </span>
-                      )}
                     </div>
                     {skill.description && (
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {skill.description}
                       </p>
-                    )}
-                    {!skill.editable && (
-                      <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                        <p>{t("view.readOnlyDescription")}</p>
-                        <p className="mt-1 break-all font-mono text-[11px] text-foreground/80">
-                          {skill.fileLocation}
-                        </p>
-                      </div>
                     )}
                   </div>
                   <SkillCardMenu
