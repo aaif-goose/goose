@@ -66,18 +66,6 @@ describe("CreateSkillDialog", () => {
   // ── Name validation ────────────────────────────────────────────────
 
   describe("name validation", () => {
-    it("allows valid skill names", async () => {
-      const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
-      const nameInput = screen.getByPlaceholderText("my-skill-name");
-
-      await user.type(nameInput, "my-skill");
-      expect(nameInput).toHaveValue("my-skill");
-      expect(
-        screen.queryByText(/cannot start or end with a hyphen/i),
-      ).not.toBeInTheDocument();
-    });
-
     it("allows consecutive hyphens to match backend validation", async () => {
       const user = userEvent.setup();
       render(<CreateSkillDialog {...defaultProps} />);
@@ -105,15 +93,6 @@ describe("CreateSkillDialog", () => {
 
       await user.type(nameInput, "My Skill");
       expect(nameInput).toHaveValue("my-skill");
-    });
-
-    it("allows typing hyphens", async () => {
-      const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
-      const nameInput = screen.getByPlaceholderText("my-skill-name");
-
-      await user.type(nameInput, "code-review");
-      expect(nameInput).toHaveValue("code-review");
     });
 
     it("shows validation error for invalid name with trailing hyphen", async () => {

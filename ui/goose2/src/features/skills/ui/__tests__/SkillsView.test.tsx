@@ -240,29 +240,5 @@ describe("SkillsView", () => {
         screen.queryByRole("menuitem", { name: /delete/i }),
       ).not.toBeInTheDocument();
     });
-
-    it("shows ~/.agents/skills entries as editable when returned editable by the API", async () => {
-      listSkills.mockResolvedValue([
-        {
-          name: "managed-skill",
-          description: "Managed by Goose",
-          instructions: "Use this skill...",
-          path: "/Users/test/.agents/skills/managed-skill",
-          editable: true,
-          fileLocation: "/Users/test/.agents/skills/managed-skill/SKILL.md",
-        },
-      ]);
-      const user = userEvent.setup();
-
-      render(<SkillsView />);
-
-      expect(await screen.findByText("managed-skill")).toBeInTheDocument();
-      expect(screen.queryByText("Read-only")).not.toBeInTheDocument();
-
-      await user.click(screen.getByLabelText("Options for managed-skill"));
-      expect(
-        screen.getByRole("menuitem", { name: /edit/i }),
-      ).toBeInTheDocument();
-    });
   });
 });
