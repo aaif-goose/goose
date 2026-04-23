@@ -374,7 +374,7 @@ export type UnarchiveSessionRequest = {
 };
 
 /**
- * Create a new source (global or project-scoped).
+ * Create a new source in an explicit target scope (global or project-scoped).
  */
 export type CreateSourceRequest = {
     type: SourceType;
@@ -444,7 +444,7 @@ export type ListSourcesResponse = {
 };
 
 /**
- * Update an existing source's description and content.
+ * Update an existing source's description and content by absolute path.
  */
 export type UpdateSourceRequest = {
     type: SourceType;
@@ -458,7 +458,7 @@ export type UpdateSourceResponse = {
 };
 
 /**
- * Delete a source and its on-disk directory.
+ * Delete a source and its on-disk directory by absolute path.
  */
 export type DeleteSourceRequest = {
     type: SourceType;
@@ -466,7 +466,7 @@ export type DeleteSourceRequest = {
 };
 
 /**
- * Export a source as a portable JSON payload.
+ * Export a source at an absolute path as a portable JSON payload.
  */
 export type ExportSourceRequest = {
     type: SourceType;
@@ -480,8 +480,8 @@ export type ExportSourceResponse = {
 
 /**
  * Import a source from a JSON export payload produced by `_goose/sources/export`.
- * The imported source is written under the given scope; on name collisions a
- * `-imported` suffix is appended.
+ * The imported source is written into the explicit target scope; on name
+ * collisions a `-imported` suffix is appended.
  */
 export type ImportSourcesRequest = {
     data: string;

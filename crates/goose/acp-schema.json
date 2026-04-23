@@ -750,7 +750,7 @@
         "content",
         "global"
       ],
-      "description": "Create a new source (global or project-scoped).",
+      "description": "Create a new source in an explicit target scope (global or project-scoped).",
       "x-side": "agent",
       "x-method": "_goose/sources/create"
     },
@@ -886,7 +886,7 @@
         "description",
         "content"
       ],
-      "description": "Update an existing source's description and content.",
+      "description": "Update an existing source's description and content by absolute path.",
       "x-side": "agent",
       "x-method": "_goose/sources/update"
     },
@@ -917,7 +917,7 @@
         "type",
         "path"
       ],
-      "description": "Delete a source and its on-disk directory.",
+      "description": "Delete a source and its on-disk directory by absolute path.",
       "x-side": "agent",
       "x-method": "_goose/sources/delete"
     },
@@ -935,7 +935,7 @@
         "type",
         "path"
       ],
-      "description": "Export a source as a portable JSON payload.",
+      "description": "Export a source at an absolute path as a portable JSON payload.",
       "x-side": "agent",
       "x-method": "_goose/sources/export"
     },
@@ -976,7 +976,7 @@
         "data",
         "global"
       ],
-      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written under the given scope; on name collisions a\n`-imported` suffix is appended.",
+      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
       "x-side": "agent",
       "x-method": "_goose/sources/import"
     },

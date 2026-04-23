@@ -330,7 +330,7 @@ export const zSourceType = z.enum([
 ]);
 
 /**
- * Create a new source (global or project-scoped).
+ * Create a new source in an explicit target scope (global or project-scoped).
  */
 export const zCreateSourceRequest = z.object({
     type: zSourceType,
@@ -386,7 +386,7 @@ export const zListSourcesResponse = z.object({
 });
 
 /**
- * Update an existing source's description and content.
+ * Update an existing source's description and content by absolute path.
  */
 export const zUpdateSourceRequest = z.object({
     type: zSourceType,
@@ -400,7 +400,7 @@ export const zUpdateSourceResponse = z.object({
 });
 
 /**
- * Delete a source and its on-disk directory.
+ * Delete a source and its on-disk directory by absolute path.
  */
 export const zDeleteSourceRequest = z.object({
     type: zSourceType,
@@ -408,7 +408,7 @@ export const zDeleteSourceRequest = z.object({
 });
 
 /**
- * Export a source as a portable JSON payload.
+ * Export a source at an absolute path as a portable JSON payload.
  */
 export const zExportSourceRequest = z.object({
     type: zSourceType,
@@ -422,8 +422,8 @@ export const zExportSourceResponse = z.object({
 
 /**
  * Import a source from a JSON export payload produced by `_goose/sources/export`.
- * The imported source is written under the given scope; on name collisions a
- * `-imported` suffix is appended.
+ * The imported source is written into the explicit target scope; on name
+ * collisions a `-imported` suffix is appended.
  */
 export const zImportSourcesRequest = z.object({
     data: z.string(),
