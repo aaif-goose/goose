@@ -191,10 +191,10 @@ fn thread_session_meta(
             serde_json::Value::String(provider_id.clone()),
         );
     }
-    if let Some(ref model_name) = metadata.model_name {
+    if let Some(ref model_id) = metadata.model_id {
         meta.insert(
-            "modelName".to_string(),
-            serde_json::Value::String(model_name.clone()),
+            "modelId".to_string(),
+            serde_json::Value::String(model_id.clone()),
         );
     }
     meta
@@ -2425,7 +2425,7 @@ impl GooseAcpAgent {
         let t_step = std::time::Instant::now();
         let model_id_owned = model_id.to_string();
         self.update_thread_metadata(thread_id, move |meta| {
-            meta.model_name = Some(model_id_owned);
+            meta.model_id = Some(model_id_owned);
         })
         .await?;
         debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model update_thread_metadata");

@@ -98,7 +98,7 @@ describe("chatSessionStore", () => {
           updatedAt: "2026-04-01",
           messageCount: 4,
           providerId: "openai",
-          modelName: "gpt-4.1",
+          modelId: "gpt-4.1",
         },
         {
           sessionId: "acp-2",
@@ -106,7 +106,7 @@ describe("chatSessionStore", () => {
           updatedAt: "2026-04-02",
           messageCount: 7,
           providerId: null,
-          modelName: null,
+          modelId: null,
         },
       ]);
 
@@ -122,7 +122,6 @@ describe("chatSessionStore", () => {
       expect(sessions[1].messageCount).toBe(4);
       expect(sessions[1].providerId).toBe("openai");
       expect(sessions[1].modelId).toBe("gpt-4.1");
-      expect(sessions[1].modelName).toBe("gpt-4.1");
     });
 
     it("rehydrates cached project metadata for ACP sessions", async () => {
@@ -151,7 +150,7 @@ describe("chatSessionStore", () => {
           messageCount: 7,
           projectId: "project-123",
           providerId: "anthropic",
-          modelName: "claude-sonnet-4",
+          modelId: "claude-sonnet-4",
         },
       ]);
 
@@ -167,8 +166,8 @@ describe("chatSessionStore", () => {
       expect(session.updatedAt).toBe("2026-04-02");
       expect(session.messageCount).toBe(7);
       expect(session.userSetName).toBe(true);
-      // Backend-provided modelName takes precedence over overlay
-      expect(session.modelName).toBe("claude-sonnet-4");
+      // Backend-provided modelId takes precedence over overlay
+      expect(session.modelId).toBe("claude-sonnet-4");
     });
 
     it("ignores legacy draft records while hydrating overlays", async () => {
@@ -208,7 +207,7 @@ describe("chatSessionStore", () => {
           updatedAt: "2026-04-02",
           messageCount: 1,
           providerId: null,
-          modelName: null,
+          modelId: null,
         },
       ]);
 
