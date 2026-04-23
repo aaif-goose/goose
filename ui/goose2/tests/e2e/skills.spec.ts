@@ -145,19 +145,45 @@ test.describe("Skills view", () => {
     await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
   });
 
-  test("Edit opens edit dialog with pre-filled fields", async ({
+  test("Edit opens edit dialog with pre-filled editable fields", async ({
     tauriMocked: page,
   }) => {
     await navigateToSkills(page);
     await page.getByLabel("Options for code-review").click();
     await page.getByRole("menuitem", { name: "Edit" }).click();
+
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("h2", { hasText: "Edit Skill" })).toBeVisible();
-    // Name should be pre-filled and read-only
+
     const nameInput = dialog.getByPlaceholder("my-skill-name");
+    const descriptionInput = dialog.getByPlaceholder(
+      "What it does and when to use it...",
+    );
+    const instructionsInput = dialog.getByPlaceholder(
+      "Markdown instructions the agent will follow...",
+    );
+
     await expect(nameInput).toHaveValue("code-review");
-    await expect(nameInput).toHaveAttribute("readonly", "");
+    await expect(descriptionInput).toHaveValue(
+      "Reviews code for quality and best practices",
+    );
+    await expect(instructionsInput).toHaveValue(
+      "When asked to review code, analyze the diff and provide feedback on code quality, potential bugs, and best practices.",
+    );
+    await expect(
+      dialog.getByText(
+        "Path on disk: /mock/.agents/skills/code-review/SKILL.md",
+      ),
+    ).toBeVisible();
+
+    await nameInput.fill("renamed-skill");
+    await expect(nameInput).toHaveValue("renamed-skill");
+    await expect(
+      dialog.getByText(
+        "Path on disk: /mock/.agents/skills/renamed-skill/SKILL.md",
+      ),
+    ).toBeVisible();
   });
 
   test("Delete triggers confirmation dialog", async ({ tauriMocked: page }) => {
