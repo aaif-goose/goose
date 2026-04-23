@@ -118,6 +118,7 @@ export function SkillsView() {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const loadSkills = useCallback(async () => {
+    setLoading(true);
     try {
       const result = await listSkills();
       setSkills(result);
@@ -299,6 +300,12 @@ export function SkillsView() {
             onChange={setSearch}
             placeholder={t("view.searchPlaceholder")}
           />
+
+          {loading && (
+            <div className="py-8 text-sm text-muted-foreground" role="status">
+              {t("common:labels.loading")}
+            </div>
+          )}
 
           {!loading && filtered.length > 0 && (
             <div className="space-y-2">
