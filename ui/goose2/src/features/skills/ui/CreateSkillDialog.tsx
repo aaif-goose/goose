@@ -14,7 +14,22 @@ import {
 } from "@/shared/ui/dialog";
 import { createSkill, updateSkill } from "../api/skills";
 
-const KEBAB_CASE_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const MAX_SKILL_NAME_LENGTH = 64;
+
+function isValidSkillName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    name.length <= MAX_SKILL_NAME_LENGTH &&
+    !name.startsWith("-") &&
+    !name.endsWith("-") &&
+    [...name].every(
+      (char) =>
+        (char >= "a" && char <= "z") ||
+        (char >= "0" && char <= "9") ||
+        char === "-",
+    )
+  );
+}
 
 interface CreateSkillDialogProps {
   isOpen: boolean;
@@ -58,16 +73,16 @@ export function CreateSkillDialog({
     }
   }, [isOpen, editingSkill]);
 
-  const nameValid = name.length > 0 && KEBAB_CASE_REGEX.test(name);
+  const nameValid = isValidSkillName(name);
   const canSave = nameValid && description.trim().length > 0 && !saving;
 
   const handleNameChange = (raw: string) => {
-    if (isEditing) return; // name is read-only in edit mode
+    if (isEditing) return;
     const formatted = raw
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-/, "");
+      .replace(/^-/, "")
+      .slice(0, MAX_SKILL_NAME_LENGTH);
     setName(formatted);
     setError(null);
   };

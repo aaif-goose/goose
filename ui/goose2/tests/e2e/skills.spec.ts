@@ -95,17 +95,17 @@ test.describe("Skills view", () => {
     await expect(nameInput).toHaveValue("my-skill-name");
   });
 
-  test("shows kebab-case validation error for trailing hyphen", async ({
+  test("shows validation error for trailing hyphen", async ({
     tauriMocked: page,
   }) => {
     await navigateToSkills(page);
     await page.getByRole("button", { name: "New Skill" }).first().click();
     const dialog = page.getByRole("dialog");
-    // Type something that ends with a hyphen (the auto-formatter will produce "test-")
     await dialog.getByPlaceholder("my-skill-name").pressSequentially("test ");
-    // The regex /^[a-z0-9]+(-[a-z0-9]+)*$/ won't match "test-", so error shows
     await expect(
-      dialog.getByText("Must be kebab-case (e.g. code-review)"),
+      dialog.getByText(
+        "Use 1–64 lowercase letters, numbers, or hyphens. Names cannot start or end with a hyphen.",
+      ),
     ).toBeVisible();
   });
 

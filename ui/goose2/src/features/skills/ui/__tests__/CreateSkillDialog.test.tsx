@@ -10,6 +10,8 @@ vi.mock("../../api/skills", () => ({
     description: "test",
     instructions: "",
     path: "",
+    editable: true,
+    fileLocation: "/mock/.agents/skills/test/SKILL.md",
   }),
 }));
 
@@ -64,14 +66,36 @@ describe("CreateSkillDialog", () => {
   // ── Name validation ────────────────────────────────────────────────
 
   describe("name validation", () => {
-    it("allows valid kebab-case names", async () => {
+    it("allows valid skill names", async () => {
       const user = userEvent.setup();
       render(<CreateSkillDialog {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
 
       await user.type(nameInput, "my-skill");
       expect(nameInput).toHaveValue("my-skill");
-      expect(screen.queryByText(/must be kebab-case/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/cannot start or end with a hyphen/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("allows consecutive hyphens to match backend validation", async () => {
+      const user = userEvent.setup();
+      render(<CreateSkillDialog {...defaultProps} />);
+      const nameInput = screen.getByPlaceholderText("my-skill-name");
+      const descriptionInput = screen.getByPlaceholderText(
+        "What it does and when to use it...",
+      );
+
+      await user.type(nameInput, "double--hyphen");
+      await user.type(descriptionInput, "A valid description");
+
+      expect(nameInput).toHaveValue("double--hyphen");
+      expect(
+        screen.queryByText(/cannot start or end with a hyphen/i),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /create skill/i }),
+      ).toBeEnabled();
     });
 
     it("auto-formats input (uppercase to lowercase, spaces to hyphens)", async () => {
@@ -97,14 +121,25 @@ describe("CreateSkillDialog", () => {
       render(<CreateSkillDialog {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
 
-      // Type a single hyphen — the formatter strips leading hyphens,
-      // but we can produce an invalid state by clearing and typing a
-      // non-kebab string. Actually the formatter is aggressive, so let's
-      // just check that when name is non-empty but invalid, the error shows.
-      // We type "a-" which gives "a-" — valid prefix but trailing hyphen fails regex.
       await user.type(nameInput, "a-");
       expect(nameInput).toHaveValue("a-");
-      expect(screen.getByText(/must be kebab-case/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/cannot start or end with a hyphen/i),
+      ).toBeInTheDocument();
+    });
+
+    it("truncates names at 64 characters", async () => {
+      const user = userEvent.setup();
+      render(<CreateSkillDialog {...defaultProps} />);
+      const nameInput = screen.getByPlaceholderText("my-skill-name");
+      const longName = "a".repeat(65);
+
+      await user.type(nameInput, longName);
+
+      expect(nameInput).toHaveValue("a".repeat(64));
+      expect(
+        screen.queryByText(/cannot start or end with a hyphen/i),
+      ).not.toBeInTheDocument();
     });
 
     it("save button is disabled when name is empty", () => {
@@ -156,6 +191,27 @@ describe("CreateSkillDialog", () => {
       expect(
         screen.getByRole("button", { name: /save changes/i }),
       ).toBeInTheDocument();
+    });
+
+    it("allows editing skills whose names contain consecutive hyphens", () => {
+      render(
+        <CreateSkillDialog
+          {...defaultProps}
+          editingSkill={{
+            name: "double--hyphen",
+            description: "Existing description",
+            instructions: "Existing instructions",
+            path: "/mock/.agents/skills/double--hyphen",
+          }}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: /save changes/i }),
+      ).toBeEnabled();
+      expect(
+        screen.queryByText(/cannot start or end with a hyphen/i),
+      ).not.toBeInTheDocument();
     });
   });
 
