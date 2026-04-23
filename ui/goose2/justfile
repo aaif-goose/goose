@@ -179,12 +179,45 @@ dev-debug: setup
 dev-frontend:
     pnpm dev
 
-# Kill the dev process (if running)
-kill:
+# Parse `git worktree list --porcelain` into tab-separated "path\tbranch" lines.
+# Uses sub() instead of $2 so worktree paths containing spaces are preserved.
+# Detached-HEAD worktrees (no branch line) are silently skipped.
+_worktree_awk := '/^worktree / { sub(/^worktree /, ""); wt=$0 } /^branch refs\/heads\// { b=$2; sub(/^refs\/heads\//, "", b); print wt "\t" b }'
+
+# Compute a stable vite port from a directory path passed as $1.
+_port_cmd := "import hashlib,sys; h=int(hashlib.sha256(sys.argv[1].encode()).hexdigest(),16); print(10000+h%55000)"
+
+# List worktrees with an active dev server
+running:
+    #!/usr/bin/env bash
+    git worktree list --porcelain | awk '{{ _worktree_awk }}' \
+    | while IFS=$'\t' read -r wt branch; do
+        dir="$wt/ui/goose2"
+        port=$(python3 -c '{{ _port_cmd }}' "$dir")
+        if lsof -ti :"$port" &>/dev/null; then
+            echo "$branch"
+        fi
+    done
+
+# Kill the dev process (if running). Optionally pass a branch name to kill another worktree's process.
+kill branch="":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT={{ vite_port }}
+    if [[ -n "{{ branch }}" ]]; then
+        WORKTREE_PATH=$(git worktree list --porcelain \
+            | awk '{{ _worktree_awk }}' \
+            | awk -F'\t' -v branch="{{ branch }}" '$2 == branch { print $1; exit }')
+        if [[ -z "$WORKTREE_PATH" ]]; then
+            echo "No worktree found for branch '{{ branch }}'"
+            exit 1
+        fi
+        TARGET_DIR="$WORKTREE_PATH/ui/goose2"
+        VITE_PORT=$(python3 -c '{{ _port_cmd }}' "$TARGET_DIR")
+    else
+        VITE_PORT={{ vite_port }}
+    fi
+
     PID=$(lsof -ti :"$VITE_PORT" 2>/dev/null | head -1) || true
 
     if [[ -z "$PID" ]]; then
@@ -199,8 +232,27 @@ kill:
         exit 1
     fi
 
-    echo "Killing node (PID $PID) on port $VITE_PORT"
-    kill -9 "$PID"
+    PGID=$(ps -p "$PID" -o pgid= 2>/dev/null | tr -d ' ')
+    if [[ -z "$PGID" || "$PGID" == "0" || "$PGID" == "1" ]]; then
+        echo "Killing node (PID $PID) on port $VITE_PORT"
+        kill -9 "$PID"
+    else
+        echo "Killing process group $PGID (found via node PID $PID on port $VITE_PORT)"
+        kill -9 -"$PGID" 2>/dev/null || true
+    fi
+
+# Kill all dev processes across all worktrees
+kill-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branches=$(just running)
+    if [[ -z "$branches" ]]; then
+        echo "No running dev servers found"
+        exit 0
+    fi
+    while read -r branch; do
+        just kill "$branch" || true
+    done <<< "$branches"
 
 # ── Utilities ────────────────────────────────────────────────
 
