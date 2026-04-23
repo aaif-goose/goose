@@ -21,6 +21,7 @@ use crate::agents::extension_manager::{
     get_parameter_names, ExtensionManager, ExtensionManagerCapabilities,
 };
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
+use crate::agents::platform_extensions::summon::discover_filesystem_sources;
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::platform_tools::PLATFORM_MANAGE_SCHEDULE_TOOL_NAME;
 use crate::agents::prompt_manager::PromptManager;
@@ -354,9 +355,16 @@ impl Agent {
         }
         let initial_messages = conversation.messages().clone();
 
-        let (tools, toolshim_tools, system_prompt) = self
+        let (tools, toolshim_tools, mut system_prompt) = self
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
+
+        if let Some(instructions) = self.resolve_at_mention(&conversation, working_dir) {
+            system_prompt = format!(
+                "{}\n\n# Instructions from active agent:\n\n{}",
+                system_prompt, instructions
+            );
+        }
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
@@ -389,6 +397,30 @@ impl Agent {
             tool_call_cut_off,
             initial_messages,
         })
+    }
+
+    fn resolve_at_mention(
+        &self,
+        conversation: &Conversation,
+        working_dir: &std::path::Path,
+    ) -> Option<String> {
+        let last_message = conversation.messages().last()?;
+        if last_message.role == rmcp::model::Role::User {
+            let after_at = last_message
+                .as_concat_text()
+                .trim()
+                .strip_prefix('@')?
+                .to_lowercase();
+
+            for source in discover_filesystem_sources(working_dir) {
+                let name = source.name.to_lowercase();
+                let is_match = after_at == name || after_at.starts_with(&format!("{} ", name));
+                if is_match && !source.content.is_empty() {
+                    return Some(source.content.clone());
+                }
+            }
+        }
+        None
     }
 
     async fn categorize_tools(

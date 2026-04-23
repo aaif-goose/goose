@@ -76,4 +76,49 @@ describe("findExistingDraft", () => {
       }),
     ).toBeUndefined();
   });
+
+  it("does not reuse the active empty draft without content", () => {
+    const draft = makeSession("alpha-draft", {
+      projectId: "alpha",
+      providerId: "goose",
+    });
+
+    expect(
+      findExistingDraft({
+        sessions: [draft],
+        activeSessionId: "alpha-draft",
+        draftsBySession: {},
+        messagesBySession: {},
+        request: {
+          title: "New Chat",
+          projectId: "alpha",
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("does not reuse a session with local messages even if messageCount is 0", () => {
+    const session = makeSession("alpha-session", {
+      projectId: "alpha",
+      providerId: "goose",
+      messageCount: 0,
+    });
+
+    expect(
+      findExistingDraft({
+        sessions: [session],
+        activeSessionId: "alpha-session",
+        draftsBySession: {},
+        messagesBySession: {
+          "alpha-session": [
+            { id: "msg-1", role: "user", content: "hello" } as any,
+          ],
+        },
+        request: {
+          title: "New Chat",
+          projectId: "alpha",
+        },
+      }),
+    ).toBeUndefined();
+  });
 });

@@ -223,7 +223,7 @@ fn scan_agents_from_dir(
     }
 }
 
-fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
+pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     let mut sources: Vec<SourceEntry> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -245,6 +245,7 @@ fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
         })
         .chain(
             [
+                home.as_ref().map(|h| h.join(".goose/recipes")),
                 Some(config.join("recipes")),
                 home.as_ref().map(|h| h.join(".agents/recipes")),
             ]
@@ -260,6 +261,7 @@ fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     ];
 
     let global_agent_dirs: Vec<PathBuf> = [
+        home.as_ref().map(|h| h.join(".goose/agents")),
         home.as_ref().map(|h| h.join(".agents/agents")),
         Some(config.join("agents")),
         home.as_ref().map(|h| h.join(".claude/agents")),

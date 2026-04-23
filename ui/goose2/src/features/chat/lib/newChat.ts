@@ -24,9 +24,13 @@ function isMatchingContext(
 
 function isReusableDraft(
   session: ChatSession,
-  _localMessages: Message[] | undefined,
+  localMessages: Message[] | undefined,
 ): boolean {
-  return !session.archivedAt && session.messageCount === 0;
+  return (
+    !session.archivedAt &&
+    session.messageCount === 0 &&
+    (localMessages?.length ?? 0) === 0
+  );
 }
 
 export function findExistingDraft({
@@ -60,5 +64,5 @@ export function findExistingDraft({
     );
   }
 
-  return candidates.find((session) => session.id === activeSessionId);
+  return undefined;
 }

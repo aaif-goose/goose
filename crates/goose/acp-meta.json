@@ -36,6 +36,21 @@
       "responseType": "GetExtensionsResponse"
     },
     {
+      "method": "_goose/config/extensions/add",
+      "requestType": "AddConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/extensions/remove",
+      "requestType": "RemoveConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/extensions/toggle",
+      "requestType": "ToggleConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_goose/session/extensions",
       "requestType": "GetSessionExtensionsRequest",
       "responseType": "GetSessionExtensionsResponse"

@@ -28,28 +28,31 @@ use crate::providers::inventory::{
 };
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
+use crate::utils::sanitize_unicode_tags;
 use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, Either};
 use goose_acp_macros::custom_methods;
-use rmcp::model::{CallToolResult, RawContent, ResourceContents, Role};
+use rmcp::model::{
+    AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
+};
 use sacp::schema::{
-    AgentCapabilities, AuthMethod, AuthMethodAgent, AuthenticateRequest, AuthenticateResponse,
-    BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
-    ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
-    EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest, ForkSessionResponse,
-    ImageContent, InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
-    LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer, Meta, ModelId, ModelInfo,
-    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
-    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
-    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption, SessionId,
-    SessionInfo, SessionListCapabilities, SessionMode, SessionModeId, SessionModeState,
-    SessionModelState, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
-    SetSessionModelRequest, SetSessionModelResponse, StopReason, TextContent, TextResourceContents,
-    ToolCall, ToolCallContent, ToolCallId, ToolCallLocation, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
+    AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
+    AuthenticateResponse, BlobResourceContents, CancelNotification, CloseSessionRequest,
+    CloseSessionResponse, ConfigOptionUpdate, Content, ContentBlock, ContentChunk,
+    CurrentModeUpdate, EmbeddedResource, EmbeddedResourceResource, FileSystemCapabilities,
+    ForkSessionRequest, ForkSessionResponse, ImageContent, InitializeRequest, InitializeResponse,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    McpCapabilities, McpServer, Meta, ModelId, ModelInfo, NewSessionRequest, NewSessionResponse,
+    PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
+    SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOption, SessionId, SessionInfo, SessionListCapabilities, SessionMode,
+    SessionModeId, SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
+    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
 };
 use sacp::util::MatchDispatchFrom;
 use sacp::{
@@ -1155,16 +1158,49 @@ impl GooseAcpAgent {
         self.sessions.lock().await.contains_key(session_id)
     }
 
-    fn convert_acp_prompt_to_message(&self, prompt: Vec<ContentBlock>) -> Message {
-        let mut user_message = Message::user();
-
+    /// Convert ACP prompt content blocks into a user message.
+    fn convert_acp_prompt_to_message(prompt: &[ContentBlock]) -> Message {
+        let mut message = Message::user();
         for block in prompt {
             match block {
                 ContentBlock::Text(text) => {
-                    user_message = user_message.with_text(&text.text);
+                    let annotated = if let Some(ref ann) = text.annotations {
+                        let audience: Vec<Role> = ann
+                            .audience
+                            .as_ref()
+                            .map(|roles| {
+                                roles
+                                    .iter()
+                                    .filter_map(|r| match r {
+                                        sacp::schema::Role::Assistant => Some(Role::Assistant),
+                                        sacp::schema::Role::User => Some(Role::User),
+                                        _ => None,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let raw = RawTextContent {
+                            text: sanitize_unicode_tags(&text.text),
+                            meta: None,
+                        };
+                        if audience.is_empty() {
+                            raw.no_annotation()
+                        } else {
+                            raw.no_annotation().with_audience(audience)
+                        }
+                    } else {
+                        // No annotations — regular user text.
+                        let sanitized = sanitize_unicode_tags(&text.text);
+                        RawTextContent {
+                            text: sanitized,
+                            meta: None,
+                        }
+                        .no_annotation()
+                    };
+                    message = message.with_content(MessageContent::Text(annotated));
                 }
                 ContentBlock::Image(image) => {
-                    user_message = user_message.with_image(&image.data, &image.mime_type);
+                    message = message.with_image(&image.data, &image.mime_type);
                 }
                 ContentBlock::Resource(resource) => {
                     if let EmbeddedResourceResource::TextResourceContents(text_resource) =
@@ -1172,19 +1208,18 @@ impl GooseAcpAgent {
                     {
                         let header = format!("--- Resource: {} ---\n", text_resource.uri);
                         let content = format!("{}{}\n---\n", header, text_resource.text);
-                        user_message = user_message.with_text(&content);
+                        message = message.with_text(&content);
                     }
                 }
                 ContentBlock::ResourceLink(link) => {
-                    if let Some(text) = read_resource_link(link) {
-                        user_message = user_message.with_text(text)
+                    if let Some(text) = read_resource_link(link.clone()) {
+                        message = message.with_text(text);
                     }
                 }
                 ContentBlock::Audio(..) | _ => (),
             }
         }
-
-        user_message
+        message
     }
 
     async fn handle_message_content(
@@ -1943,9 +1978,21 @@ impl GooseAcpAgent {
             for content_item in &message.content {
                 match content_item {
                     MessageContent::Text(text) => {
-                        let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(
-                            text.text.clone(),
-                        )));
+                        let mut tc = TextContent::new(text.text.clone());
+                        if let Some(audience) = text.audience() {
+                            tc = tc.annotations(
+                                Annotations::new().audience(
+                                    audience
+                                        .iter()
+                                        .map(|r| match r {
+                                            Role::Assistant => sacp::schema::Role::Assistant,
+                                            Role::User => sacp::schema::Role::User,
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                            );
+                        }
+                        let chunk = ContentChunk::new(ContentBlock::Text(tc));
                         let update = match message.role {
                             Role::User => SessionUpdate::UserMessageChunk(chunk),
                             Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
@@ -2150,9 +2197,10 @@ impl GooseAcpAgent {
             .await?;
         debug!(target: "perf", sid = %sid, ms = t_agent.elapsed().as_millis() as u64, "perf: prompt get_session_agent (waits for agent setup)");
 
-        let user_message = self.convert_acp_prompt_to_message(args.prompt);
+        let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
 
         let t_persist = std::time::Instant::now();
+        // Persist user message (may contain assistant-only annotated blocks)
         self.thread_manager
             .append_message(&thread_id, Some(&internal_session_id), &user_message)
             .await
@@ -2870,13 +2918,80 @@ impl GooseAcpAgent {
         let warnings = crate::config::extensions::get_warnings();
         let extensions_json = extensions
             .into_iter()
-            .map(|e| serde_json::to_value(&e))
+            .map(|e| {
+                let config_key = e.config.key();
+                let mut value = serde_json::to_value(&e)?;
+                if let Some(obj) = value.as_object_mut() {
+                    obj.insert(
+                        "config_key".to_string(),
+                        serde_json::Value::String(config_key),
+                    );
+                }
+                Ok::<_, serde_json::Error>(value)
+            })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
         Ok(GetExtensionsResponse {
             extensions: extensions_json,
             warnings,
         })
+    }
+
+    #[custom_method(AddConfigExtensionRequest)]
+    async fn on_add_config_extension(
+        &self,
+        req: AddConfigExtensionRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let mut obj = match req.extension_config {
+            serde_json::Value::Object(obj) => obj,
+            _ => {
+                return Err(
+                    sacp::Error::invalid_params().data("extensionConfig must be a JSON object")
+                );
+            }
+        };
+        obj.insert(
+            "name".to_string(),
+            serde_json::Value::String(req.name.clone()),
+        );
+
+        let config: crate::agents::ExtensionConfig =
+            serde_json::from_value(serde_json::Value::Object(obj))
+                .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
+
+        crate::config::extensions::set_extension(crate::config::extensions::ExtensionEntry {
+            enabled: req.enabled,
+            config,
+        });
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(RemoveConfigExtensionRequest)]
+    async fn on_remove_config_extension(
+        &self,
+        req: RemoveConfigExtensionRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let keys = crate::config::extensions::get_all_extension_names();
+        if !keys.iter().any(|k| k == &req.config_key) {
+            return Err(sacp::Error::invalid_params()
+                .data(format!("Extension '{}' not found", req.config_key)));
+        }
+        crate::config::extensions::remove_extension(&req.config_key);
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(ToggleConfigExtensionRequest)]
+    async fn on_toggle_config_extension(
+        &self,
+        req: ToggleConfigExtensionRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let keys = crate::config::extensions::get_all_extension_names();
+        if !keys.iter().any(|k| k == &req.config_key) {
+            return Err(sacp::Error::invalid_params()
+                .data(format!("Extension '{}' not found", req.config_key)));
+        }
+        crate::config::extensions::set_extension_enabled(&req.config_key, req.enabled);
+        Ok(EmptyResponse {})
     }
 
     #[custom_method(GetSessionExtensionsRequest)]

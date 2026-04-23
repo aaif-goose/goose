@@ -212,7 +212,7 @@ export function buildInitScript(options?: {
             if (segments.length > 0) {
               segments[segments.length - 1] = name;
             }
-            const directory = `/${segments.join("/")}`;
+            const directory = \`/\${segments.join("/")}\`;
             return jsonRpcResult(message.id, {
               source: {
                 name,

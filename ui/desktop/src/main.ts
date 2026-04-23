@@ -749,11 +749,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   // Nudge the user if mesh is their provider but isn't running.
   // Delay to let the renderer mount before sending the IPC event.
   setTimeout(() => {
-    mesh.checkProviderRunning(goosedClient).then((ok) => {
-      if (!ok && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mesh-not-running');
-      }
-    }).catch(() => {});
+    mesh
+      .checkProviderRunning(goosedClient)
+      .then((ok) => {
+        if (!ok && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mesh-not-running');
+        }
+      })
+      .catch(() => {});
   }, 5000);
 
   // Let windowStateKeeper manage the window
@@ -1359,6 +1362,7 @@ const validSettingKeys: Set<string> = new Set([
   'showMenuBarIcon',
   'showDockIcon',
   'enableWakelock',
+  'enableNotifications',
   'spellcheckEnabled',
   'externalGoosed',
   'globalShortcut',
@@ -1570,6 +1574,10 @@ ipcMain.handle('get-spellcheck-state', () => {
     console.error('Error getting spellcheck state:', error);
     return true;
   }
+});
+
+ipcMain.handle('is-any-window-focused', () => {
+  return BrowserWindow.getFocusedWindow() !== null;
 });
 
 // Add file/directory selection handler
