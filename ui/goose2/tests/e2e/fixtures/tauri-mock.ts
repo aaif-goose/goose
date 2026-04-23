@@ -96,7 +96,6 @@ export function buildInitScript(options?: {
         content: s.instructions ?? s.content ?? "",
         directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
         global: true,
-        editable: true,
         supportingFiles: [],
       });
 
@@ -197,7 +196,6 @@ export function buildInitScript(options?: {
                 content: message.params?.content ?? "",
                 directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
                 global: message.params?.global ?? true,
-                editable: true,
                 supportingFiles: [],
               },
             });
@@ -221,7 +219,6 @@ export function buildInitScript(options?: {
                 content: message.params?.content ?? "",
                 directory,
                 global: true,
-                editable: true,
                 supportingFiles: [],
               },
             });

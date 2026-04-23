@@ -9,7 +9,6 @@ const mockSkills = [
     description: "Reviews code",
     instructions: "Review the code...",
     path: "/path/code-review",
-    editable: true,
     fileLocation: "/path/code-review/SKILL.md",
   },
   {
@@ -17,7 +16,6 @@ const mockSkills = [
     description: "Writes tests",
     instructions: "Write tests...",
     path: "/path/test-writer",
-    editable: true,
     fileLocation: "/path/test-writer/SKILL.md",
   },
 ];
@@ -200,14 +198,13 @@ describe("SkillsView", () => {
       });
     });
 
-    it("does not show the path on disk in the list view and still allows editing for non-editable skills", async () => {
+    it("does not show the path on disk in the list view and still allows deleting discovered skills", async () => {
       listSkills.mockResolvedValue([
         {
           name: "claude-skill",
           description: "Imported from Claude",
           instructions: "Use this skill...",
           path: "/Users/test/.claude/skills/claude-skill",
-          editable: false,
           fileLocation: "/Users/test/.claude/skills/claude-skill/SKILL.md",
         },
       ]);
@@ -232,8 +229,8 @@ describe("SkillsView", () => {
         screen.getByRole("menuitem", { name: /export/i }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("menuitem", { name: /delete/i }),
-      ).not.toBeInTheDocument();
+        screen.getByRole("menuitem", { name: /delete/i }),
+      ).toBeInTheDocument();
     });
   });
 });

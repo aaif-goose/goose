@@ -26,9 +26,6 @@
     "noMatchesDescription": "Try a different search term.",
     "noMatchesTitle": "No matching skills",
     "optionsAria": "Options for {{name}}",
-    "pathOnDiskDescription": "Path on disk:",
-    "readOnlyBadge": "Read-only",
-    "readOnlyDescription": "This skill was discovered outside Goose’s managed skills folders. Edit the file directly at:",
     "searchPlaceholder": "Search skills by name or description...",
     "title": "Skills"
   }

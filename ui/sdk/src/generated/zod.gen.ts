@@ -379,7 +379,6 @@ export const zSourceEntry = z.object({
     content: z.string(),
     directory: z.string(),
     global: z.boolean(),
-    editable: z.boolean().optional().default(false),
     supportingFiles: z.array(z.string()).optional()
 });
 

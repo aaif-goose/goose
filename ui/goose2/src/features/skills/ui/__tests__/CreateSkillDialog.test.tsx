@@ -10,7 +10,6 @@ vi.mock("../../api/skills", () => ({
     description: "test",
     instructions: "",
     path: "",
-    editable: true,
     fileLocation: "/mock/.agents/skills/test/SKILL.md",
   }),
 }));

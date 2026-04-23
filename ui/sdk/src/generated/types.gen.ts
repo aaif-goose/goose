@@ -446,10 +446,6 @@ export type SourceEntry = {
      */
     global: boolean;
     /**
-     * Whether this source can be modified through Goose's source CRUD APIs.
-     */
-    editable?: boolean;
-    /**
      * Paths (absolute) of additional files that live alongside the source.
      * Only skills currently populate this; empty for other source types.
      */

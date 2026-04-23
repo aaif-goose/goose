@@ -124,25 +124,6 @@ fn inferred_discoverable_skill_root(path: &Path) -> Option<PathBuf> {
     })
 }
 
-fn inferred_editable_skill_root(path: &Path) -> Option<PathBuf> {
-    let canonical_path = canonicalize_or_original(path);
-
-    if let Some(global_root) = global_skills_dir() {
-        let canonical_global_root = canonicalize_or_original(&global_root);
-        if canonical_path.starts_with(&canonical_global_root) {
-            return Some(canonical_global_root);
-        }
-    }
-
-    canonical_path.ancestors().find_map(|ancestor| {
-        let parent = ancestor.parent()?;
-        let is_project_skills_root = ancestor.file_name().and_then(|name| name.to_str())
-            == Some("skills")
-            && parent.file_name().and_then(|name| name.to_str()) == Some(".goose");
-        is_project_skills_root.then(|| ancestor.to_path_buf())
-    })
-}
-
 pub(crate) fn resolve_discoverable_skill_dir(path: &str) -> Result<PathBuf, Error> {
     if path.is_empty() {
         return Err(Error::invalid_params().data("Source path must not be empty"));
@@ -163,17 +144,7 @@ pub(crate) fn resolve_discoverable_skill_dir(path: &str) -> Result<PathBuf, Erro
 }
 
 pub(crate) fn resolve_skill_dir(path: &str) -> Result<PathBuf, Error> {
-    let canonical_dir = resolve_discoverable_skill_dir(path)?;
-
-    if inferred_editable_skill_root(&canonical_dir).is_none() {
-        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
-    }
-
-    Ok(canonical_dir)
-}
-
-pub(crate) fn is_editable_skill_dir(path: &Path) -> bool {
-    inferred_editable_skill_root(path).is_some()
+    resolve_discoverable_skill_dir(path)
 }
 
 pub(crate) fn is_global_skill_dir(path: &Path) -> bool {
@@ -216,23 +187,6 @@ pub(crate) fn parse_skill_frontmatter(raw: &str) -> (String, String) {
         Ok(Some((meta, body))) => (meta.description, body),
         _ => (String::new(), raw.to_string()),
     }
-}
-
-/// Every directory the agent reads skills from, paired with whether each is a
-/// global (home-rooted) location. Order matches discovery precedence: project
-/// dirs first, then global dirs.
-pub fn editable_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
-    let mut dirs: Vec<(PathBuf, bool)> = Vec::new();
-
-    if let Some(wd) = working_dir {
-        dirs.push((wd.join(".goose").join("skills"), false));
-    }
-
-    if let Some(h) = dirs::home_dir() {
-        dirs.push((h.join(".agents").join("skills"), true));
-    }
-
-    dirs
 }
 
 /// Every directory the agent reads skills from, paired with whether each is a
@@ -293,7 +247,6 @@ fn parse_skill_content(content: &str, path: &Path, global: bool) -> Option<Sourc
         content: body,
         directory: path.to_string_lossy().into_owned(),
         global,
-        editable: false,
         supporting_files: Vec::new(),
     })
 }

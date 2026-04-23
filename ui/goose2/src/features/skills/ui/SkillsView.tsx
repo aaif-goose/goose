@@ -81,15 +81,13 @@ function SkillCardMenu({
           <Download className="size-3.5" />
           {t("common:actions.export")}
         </DropdownMenuItem>
-        {skill.editable && (
-          <DropdownMenuItem
-            variant="destructive"
-            onSelect={() => onDelete(skill)}
-          >
-            <Trash2 className="size-3.5" />
-            {t("common:actions.delete")}
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => onDelete(skill)}
+        >
+          <Trash2 className="size-3.5" />
+          {t("common:actions.delete")}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

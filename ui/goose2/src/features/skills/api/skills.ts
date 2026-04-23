@@ -8,7 +8,6 @@ export interface SkillInfo {
   description: string;
   instructions: string;
   path: string;
-  editable: boolean;
   fileLocation: string;
 }
 
@@ -31,7 +30,6 @@ function toSkillInfo(source: SkillSourceEntry): SkillInfo {
     description: source.description,
     instructions: source.content,
     path: source.directory,
-    editable: source.editable ?? false,
     fileLocation: getSkillFileLocation(source.directory),
   };
 }

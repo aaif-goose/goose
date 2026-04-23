@@ -855,11 +855,6 @@
           "type": "boolean",
           "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
         },
-        "editable": {
-          "type": "boolean",
-          "description": "Whether this source can be modified through Goose's source CRUD APIs.",
-          "default": false
-        },
         "supportingFiles": {
           "type": "array",
           "items": {

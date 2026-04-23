@@ -1,7 +1,7 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
 
 use crate::skills::{
-    build_skill_md, discover_skills, infer_skill_name, is_editable_skill_dir, is_global_skill_dir,
+    build_skill_md, discover_skills, infer_skill_name, is_global_skill_dir,
     parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
     validate_skill_name,
 };
@@ -9,12 +9,7 @@ use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
-
-fn with_editable(mut source: SourceEntry, editable: bool) -> SourceEntry {
-    source.editable = editable;
-    source
-}
+use std::path::PathBuf;
 
 pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
     content: &str,
@@ -46,23 +41,18 @@ fn source_entry(
     name: &str,
     description: &str,
     content: &str,
-    dir: &Path,
+    dir: &std::path::Path,
     global: bool,
-    editable: bool,
 ) -> SourceEntry {
-    with_editable(
-        SourceEntry {
-            source_type,
-            name: name.to_string(),
-            description: description.to_string(),
-            content: content.to_string(),
-            directory: dir.to_string_lossy().to_string(),
-            global,
-            editable: false,
-            supporting_files: Vec::new(),
-        },
-        editable,
-    )
+    SourceEntry {
+        source_type,
+        name: name.to_string(),
+        description: description.to_string(),
+        content: content.to_string(),
+        directory: dir.to_string_lossy().to_string(),
+        global,
+        supporting_files: Vec::new(),
+    }
 }
 
 pub fn create_source(
@@ -98,7 +88,6 @@ pub fn create_source(
         content,
         &dir,
         global,
-        true,
     ))
 }
 
@@ -151,7 +140,6 @@ pub fn update_source(
         content,
         &target_dir,
         is_global_skill_dir(&target_dir),
-        is_editable_skill_dir(&target_dir),
     ))
 }
 
@@ -179,10 +167,6 @@ pub fn list_sources(
     let mut sources: Vec<SourceEntry> = discover_skills(working_dir.as_deref())
         .into_iter()
         .filter(|s| s.source_type == SourceType::Skill)
-        .map(|s| {
-            let editable = is_editable_skill_dir(Path::new(&s.directory));
-            with_editable(s, editable)
-        })
         .collect();
 
     sources.sort_by(|a, b| a.name.cmp(&b.name));
@@ -299,7 +283,6 @@ pub fn import_sources(
         &content,
         &dir,
         global,
-        true,
     )])
 }
 
@@ -423,8 +406,7 @@ mod tests {
         let exported_skill = listed
             .iter()
             .find(|skill| skill.name == "portable")
-            .expect("expected listed read-only skill");
-        assert!(!exported_skill.editable);
+            .expect("expected listed skill");
 
         let (json, filename) =
             export_source(SourceType::Skill, exported_skill.directory.as_str()).unwrap();
@@ -456,7 +438,6 @@ mod tests {
         assert_eq!(updated.name, "portable");
         assert_eq!(updated.description, "updated description");
         assert_eq!(updated.content, "updated body");
-        assert!(!updated.editable);
 
         let raw = std::fs::read_to_string(claude_skill_dir.join("SKILL.md")).unwrap();
         assert!(raw.contains("description: 'updated description'"));
@@ -592,58 +573,5 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
-    }
-
-    #[test]
-    fn list_sources_marks_only_editable_paths_editable() {
-        let tmp = TempDir::new().unwrap();
-        let project = tmp.path();
-
-        let goose_skill = project.join(".goose").join("skills").join("goose-skill");
-        std::fs::create_dir_all(&goose_skill).unwrap();
-        std::fs::write(
-            goose_skill.join("SKILL.md"),
-            "---\nname: goose-skill\ndescription: Goose skill\n---\ncontent",
-        )
-        .unwrap();
-
-        let claude_skill = project.join(".claude").join("skills").join("claude-skill");
-        std::fs::create_dir_all(&claude_skill).unwrap();
-        std::fs::write(
-            claude_skill.join("SKILL.md"),
-            "---\nname: claude-skill\ndescription: Claude skill\n---\ncontent",
-        )
-        .unwrap();
-
-        let global_root = tmp.path().join("global-root");
-        std::fs::create_dir_all(global_root.join("config")).unwrap();
-        std::fs::create_dir_all(global_root.join("data")).unwrap();
-        std::fs::create_dir_all(global_root.join("state")).unwrap();
-        std::env::set_var("GOOSE_PATH_ROOT", &global_root);
-
-        let home = tmp.path().join("home");
-        let global_skill = home.join(".agents").join("skills").join("global-skill");
-        std::fs::create_dir_all(&global_skill).unwrap();
-        std::fs::write(
-            global_skill.join("SKILL.md"),
-            "---\nname: global-skill\ndescription: Global skill\n---\ncontent",
-        )
-        .unwrap();
-        std::env::set_var("HOME", &home);
-
-        let listed =
-            list_sources(Some(SourceType::Skill), Some(project.to_str().unwrap())).unwrap();
-
-        let goose_skill = listed.iter().find(|s| s.name == "goose-skill").unwrap();
-        assert!(goose_skill.editable);
-
-        let global_skill = listed.iter().find(|s| s.name == "global-skill").unwrap();
-        assert!(global_skill.editable);
-
-        let claude_skill = listed.iter().find(|s| s.name == "claude-skill").unwrap();
-        assert!(!claude_skill.editable);
-
-        std::env::remove_var("GOOSE_PATH_ROOT");
-        std::env::remove_var("HOME");
     }
 }
