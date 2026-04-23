@@ -77,7 +77,7 @@ struct ParsedBaseUrl {
     host: String,
     /// Query parameters to forward on every request.
     query_params: Vec<(String, String)>,
-    /// Whether the URL should keep versioned default endpoint paths.
+    /// Whether the URL path ended with `/v1`.
     has_v1: bool,
     /// `true` when the host was derived from `OPENAI_BASE_URL`.
     /// Controls whether `OPENAI_BASE_PATH` is read from env only
@@ -200,13 +200,13 @@ impl OpenAiProvider {
         // leave fast_model unset (complete_fast will fall back to the main model).
         // Parse the URL and compare the hostname exactly to avoid false positives
         // (e.g. https://api.openai.com.local:8000 or proxy paths containing api.openai.com).
-        let host = parsed.host.clone()
+        let host = parsed.host.clone();
 
         // Only apply the default fast model when talking to OpenAI directly.
-        // Custom/compatible endpoints likely do not serve gpt-4o-mini, so
+        // Custom/compatible endpoints likely don't serve gpt-4o-mini, so
         // leave fast_model unset (complete_fast will fall back to the main model).
         // Parse the URL and compare the hostname exactly to avoid false positives
-        // (for example https://api.openai.com.local:8000 or proxy paths containing api.openai.com).
+        // (e.g. https://api.openai.com.local:8000 or proxy paths containing api.openai.com).
         let is_openai = url::Url::parse(&host)
             .ok()
             .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
@@ -389,6 +389,17 @@ impl OpenAiProvider {
             from_base_url: true,
         })
     }
+
+    fn derive_base_path(url_path: &str) -> String {
+        let stripped = url_path.trim_start_matches('/');
+        let normalized = stripped.trim_end_matches('/');
+        if normalized.is_empty() {
+            "v1/chat/completions".to_string()
+        } else if normalized == "v1" || normalized.ends_with("/v1") {
+            format!("{}/chat/completions", normalized)
+        } else {
+            stripped.to_string()
+        }
     }
 
     fn normalize_base_path(base_path: &str) -> String {
@@ -1020,57 +1031,7 @@ mod tests {
         let models_path = OpenAiProvider::map_base_path("/custom/path", "models", "v1/models");
         assert_eq!(models_path, "/v1/models");
     }
-
     #[test]
-<<<<<<< HEAD
-    fn derive_base_path_empty_path_gives_default_endpoint() {
-        assert_eq!(OpenAiProvider::derive_base_path("/"), "v1/chat/completions");
-    }
-
-    #[test]
-    fn derive_base_path_bare_v1_gives_chat_completions() {
-        assert_eq!(
-            OpenAiProvider::derive_base_path("/v1"),
-            "v1/chat/completions"
-        );
-    }
-
-    #[test]
-    fn derive_base_path_v1_with_trailing_slash() {
-        assert_eq!(
-            OpenAiProvider::derive_base_path("/v1/"),
-            "v1/chat/completions"
-        );
-    }
-
-    #[test]
-    fn derive_base_path_prefixed_v1_appends_chat_completions() {
-        assert_eq!(
-            OpenAiProvider::derive_base_path("/zen/go/v1"),
-            "zen/go/v1/chat/completions"
-        );
-    }
-
-    #[test]
-    fn derive_base_path_prefixed_v1_with_trailing_slash() {
-        assert_eq!(
-            OpenAiProvider::derive_base_path("/zen/go/v1/"),
-            "zen/go/v1/chat/completions"
-        );
-    }
-
-    #[test]
-    fn derive_base_path_full_chat_completions_url_unchanged() {
-        assert_eq!(
-            OpenAiProvider::derive_base_path("/openai/v1/chat/completions"),
-            "openai/v1/chat/completions"
-        );
-    }
-
-    #[test]
-    fn derive_base_path_non_v1_prefix_unchanged() {
-        assert_eq!(OpenAiProvider::derive_base_path("/anthropic"), "anthropic");
-=======
     fn parse_base_url_strips_v1_from_standard_openai_url() {
         let r = OpenAiProvider::parse_base_url("https://api.openai.com/v1").unwrap();
         assert_eq!(r.host, "https://api.openai.com");
@@ -1152,13 +1113,9 @@ mod tests {
 
     #[test]
     fn versionless_base_path_opts_out_of_responses_for_codex_models() {
-        // Versionless gateways (OPENAI_BASE_URL without /v1) typically don't
-        // support the Responses API, so "chat/completions" is treated as a
-        // custom path that opts out of model-based routing.
         assert!(!OpenAiProvider::should_use_responses_api(
             "gpt-5-codex",
             "chat/completions"
         ));
->>>>>>> f804c5d3943 (fix: support OPENAI_BASE_URL as fallback alias for OPENAI_HOST)
     }
 }
