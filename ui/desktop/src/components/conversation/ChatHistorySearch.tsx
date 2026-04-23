@@ -177,6 +177,18 @@ export const ChatHistorySearch: React.FC<ChatHistorySearchProps> = ({
     [onSessionClick, clearUnread]
   );
 
+  const handleContainerBlur = useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    const nextFocusedElement = event.relatedTarget;
+    if (!containerRef.current || !nextFocusedElement) {
+      setIsFocused(false);
+      return;
+    }
+
+    if (!containerRef.current.contains(nextFocusedElement)) {
+      setIsFocused(false);
+    }
+  }, []);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -233,7 +245,7 @@ export const ChatHistorySearch: React.FC<ChatHistorySearchProps> = ({
   );
 
   return (
-    <div ref={containerRef} className={cn('relative', className)}>
+    <div ref={containerRef} className={cn('relative', className)} onBlur={handleContainerBlur}>
       <div className="relative group">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-secondary group-focus-within:text-text-primary transition-colors" />
         <input
