@@ -4,10 +4,8 @@ import { useChatSessionStore } from "../stores/chatSessionStore";
 import { clearReplayBuffer, getAndDeleteReplayBuffer } from "./replayBuffer";
 import {
   type ChatAttachmentDraft,
-  type Message,
   createSystemNotificationMessage,
   createUserMessage,
-  getTextContent,
 } from "@/shared/types/messages";
 import type { ChatState, TokenState } from "@/shared/types/chat";
 import {
@@ -28,25 +26,18 @@ import {
   buildAttachmentPromptPreamble,
   buildMessageAttachments,
 } from "../lib/attachments";
+import { sanitizeReplayMessages } from "../lib/replaySanitizer";
+import { i18n } from "@/shared/i18n";
 
 // TODO: Remove this fallback once goose2 has first-class /-commands.
 const MANUAL_COMPACT_TRIGGER = "/compact";
+type CompactConversationResult = "completed" | "failed" | "skipped";
 
-function isManualCompactCommandMessage(message: Message): boolean {
-  if (message.role !== "user") {
-    return false;
-  }
-
-  const normalizedText = getTextContent(message).replace(/\s+/g, "");
-  if (!normalizedText) {
-    return false;
-  }
-
-  return normalizedText.replaceAll(MANUAL_COMPACT_TRIGGER, "").length === 0;
-}
-
-function removeManualCompactCommandMessages(messages: Message[]): Message[] {
-  return messages.filter((message) => !isManualCompactCommandMessage(message));
+function createCompactionConfirmationMessage() {
+  return createSystemNotificationMessage(
+    i18n.t("chat:notifications.compactionComplete"),
+    "compaction",
+  );
 }
 
 function getErrorMessage(error: unknown): string {
@@ -109,7 +100,7 @@ export function useChat(
   personaInfo?: { id: string; name: string },
   options?: {
     onMessageAccepted?: (sessionId: string) => void;
-    ensurePrepared?: () => Promise<void>;
+    ensurePrepared?: (personaId?: string) => Promise<void>;
   },
 ) {
   const store = useChatStore();
@@ -244,7 +235,7 @@ export function useChat(
       streamingPersonaIdRef.current = effectivePersonaInfo?.id ?? null;
 
       try {
-        await options?.ensurePrepared?.();
+        await options?.ensurePrepared?.(effectivePersonaInfo?.id);
 
         store.setChatState(sessionId, "streaming");
         // When images are present with no text, pass a single space so the ACP
@@ -382,77 +373,102 @@ export function useChat(
     [sessionId],
   );
 
-  const compactConversation = useCallback(async () => {
-    const currentChatState = useChatStore
-      .getState()
-      .getSessionRuntime(sessionId).chatState;
-    if (currentChatState !== "idle") {
-      return;
-    }
-
-    const effectivePersonaInfo = resolvePersonaInfo();
-    const gooseSessionId = getGooseSessionId(
-      sessionId,
-      effectivePersonaInfo?.id,
-    );
-
-    if (!gooseSessionId) {
-      const errorMessage =
-        "Session not prepared. Send a message before compacting.";
-      store.addMessage(
-        sessionId,
-        createSystemNotificationMessage(errorMessage, "error"),
-      );
-      store.setError(sessionId, errorMessage);
-      return;
-    }
-
-    store.setActiveSession(sessionId);
-    store.setChatState(sessionId, "compacting");
-    store.setStreamingMessageId(sessionId, null);
-    store.setError(sessionId, null);
-    store.setSessionLoading(sessionId, true);
-    clearReplayBuffer(sessionId);
-
-    try {
-      const sendOptions = effectivePersonaInfo?.id
-        ? { personaId: effectivePersonaInfo.id }
-        : undefined;
-      await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER, sendOptions);
-
-      // Command responses are streamed via prompt notifications, but the ACP
-      // layer does not currently forward history replacement events. Drop those
-      // transient chunks and refresh the session from replay instead.
-      clearReplayBuffer(sessionId);
-      const workingDir = getWorkingDir();
-      await acpLoadSession(sessionId, gooseSessionId, workingDir);
-
-      store.setSessionLoading(sessionId, false);
-
-      const buffer = getAndDeleteReplayBuffer(sessionId);
-      if (buffer) {
-        store.setMessages(
-          sessionId,
-          removeManualCompactCommandMessages(buffer),
-        );
+  const compactConversation = useCallback(
+    async (overridePersona?: { id: string; name?: string }) => {
+      const currentChatState = useChatStore
+        .getState()
+        .getSessionRuntime(sessionId).chatState;
+      if (currentChatState !== "idle") {
+        return "skipped" as CompactConversationResult;
       }
-    } catch (err) {
-      clearReplayBuffer(sessionId);
-      store.setSessionLoading(sessionId, false);
 
-      const errorMessage = getErrorMessage(err);
-      store.addMessage(
-        sessionId,
-        createSystemNotificationMessage(errorMessage, "error"),
+      const effectivePersonaInfo = resolvePersonaInfo(
+        overridePersona?.id,
+        overridePersona?.name,
       );
-      store.setError(sessionId, errorMessage);
-    } finally {
-      store.setChatState(sessionId, "idle");
+      let gooseSessionId = getGooseSessionId(
+        sessionId,
+        effectivePersonaInfo?.id,
+      );
+
+      if (!gooseSessionId) {
+        try {
+          await options?.ensurePrepared?.(effectivePersonaInfo?.id);
+        } catch (err) {
+          const errorMessage = getErrorMessage(err);
+          store.addMessage(
+            sessionId,
+            createSystemNotificationMessage(errorMessage, "error"),
+          );
+          store.setError(sessionId, errorMessage);
+          return "failed" as CompactConversationResult;
+        }
+        gooseSessionId = getGooseSessionId(sessionId, effectivePersonaInfo?.id);
+      }
+
+      if (!gooseSessionId) {
+        const errorMessage =
+          "Session not prepared. Send a message before compacting.";
+        store.addMessage(
+          sessionId,
+          createSystemNotificationMessage(errorMessage, "error"),
+        );
+        store.setError(sessionId, errorMessage);
+        return "failed" as CompactConversationResult;
+      }
+
+      store.setActiveSession(sessionId);
+      store.setChatState(sessionId, "compacting");
       store.setStreamingMessageId(sessionId, null);
-      store.setPendingAssistantProvider(sessionId, null);
-      store.setSessionLoading(sessionId, false);
-    }
-  }, [getWorkingDir, resolvePersonaInfo, sessionId, store]);
+      store.setError(sessionId, null);
+      store.setSessionLoading(sessionId, true);
+      clearReplayBuffer(sessionId);
+
+      try {
+        const sendOptions = effectivePersonaInfo?.id
+          ? { personaId: effectivePersonaInfo.id }
+          : undefined;
+        await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER, sendOptions);
+
+        // Command responses are streamed via prompt notifications, but the ACP
+        // layer does not currently forward history replacement events. Drop those
+        // transient chunks and refresh the session from replay instead.
+        clearReplayBuffer(sessionId);
+        const workingDir = getWorkingDir();
+        await acpLoadSession(sessionId, gooseSessionId, workingDir);
+
+        store.setSessionLoading(sessionId, false);
+
+        const buffer = getAndDeleteReplayBuffer(sessionId);
+        if (buffer) {
+          store.setMessages(sessionId, [
+            ...sanitizeReplayMessages(buffer),
+            createCompactionConfirmationMessage(),
+          ]);
+        } else {
+          store.addMessage(sessionId, createCompactionConfirmationMessage());
+        }
+        return "completed" as CompactConversationResult;
+      } catch (err) {
+        clearReplayBuffer(sessionId);
+        store.setSessionLoading(sessionId, false);
+
+        const errorMessage = getErrorMessage(err);
+        store.addMessage(
+          sessionId,
+          createSystemNotificationMessage(errorMessage, "error"),
+        );
+        store.setError(sessionId, errorMessage);
+        return "failed" as CompactConversationResult;
+      } finally {
+        store.setChatState(sessionId, "idle");
+        store.setStreamingMessageId(sessionId, null);
+        store.setPendingAssistantProvider(sessionId, null);
+        store.setSessionLoading(sessionId, false);
+      }
+    },
+    [getWorkingDir, options, resolvePersonaInfo, sessionId, store],
+  );
 
   const stopStreaming = stopGeneration;
 

@@ -32,6 +32,7 @@ interface AgentModelPickerProps {
   onModelChange?: (modelId: string) => void;
   loading?: boolean;
   isCompact?: boolean;
+  showSelectedModelInTrigger?: boolean;
 }
 
 function getModelDisplayName(model: ModelOption) {
@@ -321,6 +322,7 @@ export function AgentModelPicker({
   onModelChange,
   loading = false,
   isCompact = false,
+  showSelectedModelInTrigger = true,
 }: AgentModelPickerProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
@@ -332,7 +334,9 @@ export function AgentModelPicker({
   const selectedAgentLabel =
     agents.find((agent) => agent.id === selectedAgentId)?.label ??
     formatProviderLabel(selectedAgentId);
-  const hasSelectedModel = currentModelName !== null || currentModelId !== null;
+  const hasSelectedModel =
+    showSelectedModelInTrigger &&
+    (currentModelName !== null || currentModelId !== null);
   const triggerModelLabel = hasSelectedModel
     ? (currentModelName ?? currentModelId)
     : null;

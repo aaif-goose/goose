@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ChatInput } from "../ChatInput";
 import { ChatInputToolbar } from "../ChatInputToolbar";
+import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import type { Persona } from "@/shared/types/agents";
 
 const mockVoiceDictation = {
@@ -57,7 +58,7 @@ const TEST_PERSONAS: Persona[] = [
 function StatefulChatInput({
   onSend = vi.fn(),
 }: {
-  onSend?: (text: string, personaId?: string) => void;
+  onSend?: (text: string, personaId?: string) => boolean | Promise<boolean>;
 }) {
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(
     "builtin-solo",
@@ -89,7 +90,7 @@ describe("ChatInput", () => {
   it("renders with default placeholder", () => {
     render(<ChatInput onSend={vi.fn()} />);
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention personas"),
+      screen.getByPlaceholderText("Message Goose, @ to mention agents"),
     ).toBeInTheDocument();
   });
 
@@ -289,9 +290,52 @@ describe("ChatInput", () => {
     expect(onCompactContext).toHaveBeenCalledOnce();
   });
 
+  it("opens compaction settings from the context usage popover", async () => {
+    const user = userEvent.setup();
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        selectedProvider="goose"
+        contextTokens={1536}
+        contextLimit={8192}
+        canCompactContext
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+
+    await user.click(screen.getByRole("button", { name: /settings/i }));
+
+    expect(dispatchEventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: OPEN_SETTINGS_EVENT,
+        detail: { section: "compaction" },
+      }),
+    );
+
+    dispatchEventSpy.mockRestore();
+  });
+
   it("hides the context usage control when the context limit is unavailable", () => {
     render(
       <ChatInput onSend={vi.fn()} contextTokens={1536} contextLimit={0} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /context usage/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the context usage control until usage is ready", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        contextTokens={1536}
+        contextLimit={8192}
+        isContextUsageReady={false}
+      />,
     );
 
     expect(

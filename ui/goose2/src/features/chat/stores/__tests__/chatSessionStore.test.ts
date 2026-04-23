@@ -142,6 +142,7 @@ describe("chatSessionStore", () => {
           title: null,
           updatedAt: "2026-04-02",
           messageCount: 7,
+          projectId: "project-123",
         },
       ]);
 

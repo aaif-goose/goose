@@ -51,6 +51,24 @@
       "standalone": "Standalone chat"
     }
   },
+  "compaction": {
+    "description": "Manage how Goose trims older context in long-running chats.",
+    "goose": {
+      "autoCompact": {
+        "current": "Threshold",
+        "description": "Choose when Goose should compact older context before replying. This applies to all Goose chats.",
+        "helper": "Set to 100% to turn auto-compaction off.",
+        "label": "Auto-compact context",
+        "loading": "Loading...",
+        "off": "Off",
+        "saveError": "Failed to save auto-compaction setting."
+      },
+      "builtIn": "Built in",
+      "description": "Goose-specific context controls for long-running chats.",
+      "label": "Goose (Agent)"
+    },
+    "title": "Compaction"
+  },
   "deleteProject": {
     "description": "Are you sure you want to permanently delete \"{{name}}\"? This cannot be undone.",
     "title": "Delete project permanently?"
@@ -172,6 +190,7 @@
     "about": "About",
     "appearance": "Appearance",
     "chats": "Chats",
+    "compaction": "Compaction",
     "doctor": "Doctor",
     "general": "General",
     "projects": "Projects",

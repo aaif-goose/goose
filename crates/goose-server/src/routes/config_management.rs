@@ -136,6 +136,7 @@ pub enum CommandType {
     Builtin,
     Recipe,
     Skill,
+    Agent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -434,6 +435,26 @@ pub async fn get_slash_commands(
             help: source.description,
             command_type: CommandType::Skill,
         });
+    }
+
+    let discover_dir = working_dir
+        .as_deref()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    for source in
+        goose::agents::platform_extensions::summon::discover_filesystem_sources(discover_dir)
+    {
+        use goose::agents::platform_extensions::SourceKind;
+        if matches!(
+            source.kind,
+            SourceKind::Agent | SourceKind::Recipe | SourceKind::Subrecipe
+        ) && !source.content.is_empty()
+        {
+            commands.push(SlashCommand {
+                command: source.name,
+                help: source.description,
+                command_type: CommandType::Agent,
+            });
+        }
     }
 
     Ok(Json(SlashCommandsResponse { commands }))

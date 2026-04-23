@@ -44,6 +44,7 @@ describe("agentStore", () => {
       isLoading: false,
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     });
   });
 
@@ -140,12 +141,14 @@ describe("agentStore", () => {
     useAgentStore.getState().openPersonaEditor(p);
     expect(useAgentStore.getState().personaEditorOpen).toBe(true);
     expect(useAgentStore.getState().editingPersona).toEqual(p);
+    expect(useAgentStore.getState().personaEditorMode).toBe("edit");
   });
 
   it("openPersonaEditor without persona sets editingPersona to null", () => {
     useAgentStore.getState().openPersonaEditor();
     expect(useAgentStore.getState().personaEditorOpen).toBe(true);
     expect(useAgentStore.getState().editingPersona).toBeNull();
+    expect(useAgentStore.getState().personaEditorMode).toBe("create");
   });
 
   it("closePersonaEditor clears editing state", () => {
@@ -153,6 +156,7 @@ describe("agentStore", () => {
     useAgentStore.getState().closePersonaEditor();
     expect(useAgentStore.getState().personaEditorOpen).toBe(false);
     expect(useAgentStore.getState().editingPersona).toBeNull();
+    expect(useAgentStore.getState().personaEditorMode).toBe("create");
   });
 
   // ── helpers ───────────────────────────────────────────────────────

@@ -81,6 +81,30 @@ export const zGetExtensionsResponse = z.object({
     warnings: z.array(z.string())
 });
 
+/**
+ * Persist a new extension to the user's global goose config.
+ */
+export const zAddConfigExtensionRequest = z.object({
+    name: z.string(),
+    extensionConfig: z.unknown().optional().default(null),
+    enabled: z.boolean().optional().default(false)
+});
+
+/**
+ * Remove a persisted extension from the user's global goose config.
+ */
+export const zRemoveConfigExtensionRequest = z.object({
+    configKey: z.string()
+});
+
+/**
+ * Toggle the `enabled` flag for a persisted extension in the user's global goose config.
+ */
+export const zToggleConfigExtensionRequest = z.object({
+    configKey: z.string(),
+    enabled: z.boolean()
+});
+
 export const zGetSessionExtensionsRequest = z.object({
     sessionId: z.string()
 });
@@ -90,26 +114,11 @@ export const zGetSessionExtensionsResponse = z.object({
 });
 
 /**
- * List providers available through goose, including the config-default sentinel.
+ * List providers with setup metadata and the current model inventory snapshot.
  */
-export const zListProvidersRequest = z.record(z.unknown());
-
-export const zProviderListEntry = z.object({
-    id: z.string(),
-    label: z.string()
+export const zListProvidersRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
 });
-
-/**
- * Provider list response.
- */
-export const zListProvidersResponse = z.object({
-    providers: z.array(zProviderListEntry)
-});
-
-/**
- * List providers with full metadata (config keys, setup steps, etc.).
- */
-export const zGetProviderDetailsRequest = z.record(z.unknown());
 
 export const zProviderConfigKey = z.object({
     name: z.string(),
@@ -122,37 +131,6 @@ export const zProviderConfigKey = z.object({
     oauthFlow: z.boolean().optional().default(false),
     deviceCodeFlow: z.boolean().optional().default(false),
     primary: z.boolean().optional().default(false)
-});
-
-export const zModelEntry = z.object({
-    name: z.string(),
-    contextLimit: z.number().int().gte(0)
-});
-
-export const zProviderDetailEntry = z.object({
-    name: z.string(),
-    displayName: z.string(),
-    description: z.string(),
-    defaultModel: z.string(),
-    isConfigured: z.boolean(),
-    providerType: z.string(),
-    configKeys: z.array(zProviderConfigKey),
-    setupSteps: z.array(z.string()).optional().default([]),
-    knownModels: z.array(zModelEntry).optional().default([])
-});
-
-/**
- * Provider details response.
- */
-export const zGetProviderDetailsResponse = z.object({
-    providers: z.array(zProviderDetailEntry)
-});
-
-/**
- * Read per-provider inventory. Always returns immediately from stored state.
- */
-export const zGetProviderInventoryRequest = z.object({
-    providerIds: z.array(z.string()).optional().default([])
 });
 
 /**
@@ -182,7 +160,12 @@ export const zProviderInventoryModelDto = z.object({
 export const zProviderInventoryEntryDto = z.object({
     providerId: z.string(),
     providerName: z.string(),
+    description: z.string(),
+    defaultModel: z.string(),
     configured: z.boolean(),
+    providerType: z.string(),
+    configKeys: z.array(zProviderConfigKey),
+    setupSteps: z.array(z.string()),
     supportsRefresh: z.boolean(),
     refreshing: z.boolean(),
     models: z.array(zProviderInventoryModelDto),
@@ -206,9 +189,9 @@ export const zProviderInventoryEntryDto = z.object({
 });
 
 /**
- * Provider inventory response.
+ * Provider list response.
  */
-export const zGetProviderInventoryResponse = z.object({
+export const zListProvidersResponse = z.object({
     entries: z.array(zProviderInventoryEntryDto)
 });
 
@@ -335,6 +318,17 @@ export const zImportSessionResponse = z.object({
 });
 
 /**
+ * Update the project association for a session.
+ */
+export const zUpdateSessionProjectRequest = z.object({
+    sessionId: z.string(),
+    projectId: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
  * Archive a session (soft delete).
  */
 export const zArchiveSessionRequest = z.object({
@@ -346,6 +340,130 @@ export const zArchiveSessionRequest = z.object({
  */
 export const zUnarchiveSessionRequest = z.object({
     sessionId: z.string()
+});
+
+/**
+ * The type of source entity.
+ */
+export const zSourceType = z.enum(['skill']);
+
+/**
+ * Create a new source (global or project-scoped).
+ */
+export const zCreateSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    description: z.string(),
+    content: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * A source — a user-editable entity backed by an on-disk directory. Sources
+ * may be either `global` (shared across all projects) or project-specific.
+ */
+export const zSourceEntry = z.object({
+    type: zSourceType,
+    name: z.string(),
+    description: z.string(),
+    content: z.string(),
+    directory: z.string(),
+    global: z.boolean()
+});
+
+export const zCreateSourceResponse = z.object({
+    source: zSourceEntry
+});
+
+/**
+ * List sources. If `type` is omitted, sources of all known types are returned.
+ * Both global and project-scoped sources are included when `project_dir` is set.
+ */
+export const zListSourcesRequest = z.object({
+    type: z.union([
+        zSourceType,
+        z.null()
+    ]).optional(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zListSourcesResponse = z.object({
+    sources: z.array(zSourceEntry)
+});
+
+/**
+ * Update an existing source's description and content.
+ */
+export const zUpdateSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    description: z.string(),
+    content: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zUpdateSourceResponse = z.object({
+    source: zSourceEntry
+});
+
+/**
+ * Delete a source and its on-disk directory.
+ */
+export const zDeleteSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Export a source as a portable JSON payload.
+ */
+export const zExportSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zExportSourceResponse = z.object({
+    json: z.string(),
+    filename: z.string()
+});
+
+/**
+ * Import a source from a JSON export payload produced by `_goose/sources/export`.
+ * The imported source is written under the given scope; on name collisions a
+ * `-imported` suffix is appended.
+ */
+export const zImportSourcesRequest = z.object({
+    data: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zImportSourcesResponse = z.object({
+    sources: z.array(zSourceEntry)
 });
 
 /**
@@ -500,10 +618,11 @@ export const zExtRequest = z.object({
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
             zGetExtensionsRequest,
+            zAddConfigExtensionRequest,
+            zRemoveConfigExtensionRequest,
+            zToggleConfigExtensionRequest,
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
-            zGetProviderDetailsRequest,
-            zGetProviderInventoryRequest,
             zRefreshProviderInventoryRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
@@ -513,8 +632,15 @@ export const zExtRequest = z.object({
             zRemoveSecretRequest,
             zExportSessionRequest,
             zImportSessionRequest,
+            zUpdateSessionProjectRequest,
             zArchiveSessionRequest,
             zUnarchiveSessionRequest,
+            zCreateSourceRequest,
+            zListSourcesRequest,
+            zUpdateSourceRequest,
+            zDeleteSourceRequest,
+            zExportSourceRequest,
+            zImportSourcesRequest,
             zDictationTranscribeRequest,
             zDictationConfigRequest,
             zDictationModelsListRequest,
@@ -542,13 +668,16 @@ export const zExtResponse = z.union([
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
-                zGetProviderDetailsResponse,
-                zGetProviderInventoryResponse,
                 zRefreshProviderInventoryResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,
                 zImportSessionResponse,
+                zCreateSourceResponse,
+                zListSourcesResponse,
+                zUpdateSourceResponse,
+                zExportSourceResponse,
+                zImportSourcesResponse,
                 zDictationTranscribeResponse,
                 zDictationConfigResponse,
                 zDictationModelsListResponse,

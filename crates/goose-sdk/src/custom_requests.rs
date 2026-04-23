@@ -99,9 +99,41 @@ pub struct GetExtensionsRequest {}
 /// List configured extensions and any warnings.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct GetExtensionsResponse {
-    /// Array of ExtensionEntry objects with `enabled` flag and config details.
+    /// Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.
     pub extensions: Vec<serde_json::Value>,
     pub warnings: Vec<String>,
+}
+
+/// Persist a new extension to the user's global goose config.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/config/extensions/add", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct AddConfigExtensionRequest {
+    pub name: String,
+    /// Extension configuration. Must be a JSON object matching one of the
+    /// `ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).
+    /// `name` and `enabled` are injected server-side.
+    #[serde(default)]
+    pub extension_config: serde_json::Value,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// Remove a persisted extension from the user's global goose config.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/config/extensions/remove", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveConfigExtensionRequest {
+    pub config_key: String,
+}
+
+/// Toggle the `enabled` flag for a persisted extension in the user's global goose config.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/config/extensions/toggle", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ToggleConfigExtensionRequest {
+    pub config_key: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
@@ -181,22 +213,13 @@ pub struct RemoveSecretRequest {
     pub key: String,
 }
 
-/// List providers available through goose, including the config-default sentinel.
+/// Update the project association for a session.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/providers/list", response = ListProvidersResponse)]
-pub struct ListProvidersRequest {}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[request(method = "_goose/session/update_project", response = EmptyResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderListEntry {
-    pub id: String,
-    pub label: String,
-}
-
-/// Provider list response.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct ListProvidersResponse {
-    pub providers: Vec<ProviderListEntry>,
+pub struct UpdateSessionProjectRequest {
+    pub session_id: String,
+    pub project_id: Option<String>,
 }
 
 /// Archive a session (soft delete).
@@ -246,40 +269,6 @@ pub struct ImportSessionResponse {
     pub message_count: u64,
 }
 
-/// List providers with full metadata (config keys, setup steps, etc.).
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/providers/details", response = GetProviderDetailsResponse)]
-pub struct GetProviderDetailsRequest {}
-
-/// Provider details response.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct GetProviderDetailsResponse {
-    pub providers: Vec<ProviderDetailEntry>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderDetailEntry {
-    pub name: String,
-    pub display_name: String,
-    pub description: String,
-    pub default_model: String,
-    pub is_configured: bool,
-    pub provider_type: String,
-    pub config_keys: Vec<ProviderConfigKey>,
-    #[serde(default)]
-    pub setup_steps: Vec<String>,
-    #[serde(default)]
-    pub known_models: Vec<ModelEntry>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelEntry {
-    pub name: String,
-    pub context_limit: usize,
-}
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigKey {
@@ -294,6 +283,144 @@ pub struct ProviderConfigKey {
     pub device_code_flow: bool,
     #[serde(default)]
     pub primary: bool,
+}
+
+/// The type of source entity.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum SourceType {
+    #[default]
+    Skill,
+}
+
+/// A source — a user-editable entity backed by an on-disk directory. Sources
+/// may be either `global` (shared across all projects) or project-specific.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceEntry {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    /// Absolute path to the source's directory on disk.
+    pub directory: String,
+    /// True when the source lives in the user's global sources directory; false
+    /// when it lives inside a specific project.
+    pub global: bool,
+}
+
+/// Create a new source (global or project-scoped).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/create", response = CreateSourceResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub global: bool,
+    /// Absolute path to the project root. Required when `global` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSourceResponse {
+    pub source: SourceEntry,
+}
+
+/// List sources. If `type` is omitted, sources of all known types are returned.
+/// Both global and project-scoped sources are included when `project_dir` is set.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/list", response = ListSourcesResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSourcesRequest {
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<SourceType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSourcesResponse {
+    pub sources: Vec<SourceEntry>,
+}
+
+/// Update an existing source's description and content.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/update", response = UpdateSourceResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSourceResponse {
+    pub source: SourceEntry,
+}
+
+/// Delete a source and its on-disk directory.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/delete", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+/// Export a source as a portable JSON payload.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/export", response = ExportSourceResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSourceRequest {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub name: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSourceResponse {
+    pub json: String,
+    pub filename: String,
+}
+
+/// Import a source from a JSON export payload produced by `_goose/sources/export`.
+/// The imported source is written under the given scope; on name collisions a
+/// `-imported` suffix is appended.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/sources/import", response = ImportSourcesResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSourcesRequest {
+    pub data: String,
+    pub global: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSourcesResponse {
+    pub sources: Vec<SourceEntry>,
 }
 
 /// Transcribe audio via a dictation provider.
@@ -356,22 +483,19 @@ pub struct DictationConfigResponse {
     pub providers: HashMap<String, DictationProviderStatusEntry>,
 }
 
-/// Read per-provider inventory. Always returns immediately from stored state.
+/// List providers with setup metadata and the current model inventory snapshot.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(
-    method = "_goose/providers/inventory",
-    response = GetProviderInventoryResponse
-)]
+#[request(method = "_goose/providers/list", response = ListProvidersResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct GetProviderInventoryRequest {
+pub struct ListProvidersRequest {
     /// Only return entries for these providers. Empty means all.
     #[serde(default)]
     pub provider_ids: Vec<String>,
 }
 
-/// Provider inventory response.
+/// Provider list response.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct GetProviderInventoryResponse {
+pub struct ListProvidersResponse {
     pub entries: Vec<ProviderInventoryEntryDto>,
 }
 
@@ -446,8 +570,18 @@ pub struct ProviderInventoryEntryDto {
     pub provider_id: String,
     /// Human-readable provider name.
     pub provider_name: String,
+    /// Description of the provider's capabilities.
+    pub description: String,
+    /// The default/recommended model for this provider.
+    pub default_model: String,
     /// Whether Goose has enough configuration to use this provider.
     pub configured: bool,
+    /// Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
+    pub provider_type: String,
+    /// Required configuration keys and setup metadata.
+    pub config_keys: Vec<ProviderConfigKey>,
+    /// Step-by-step setup instructions, when present.
+    pub setup_steps: Vec<String>,
     /// Whether this provider supports background inventory refresh.
     pub supports_refresh: bool,
     /// Whether a refresh is currently in flight.

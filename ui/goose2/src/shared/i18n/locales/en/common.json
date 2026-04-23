@@ -45,6 +45,13 @@
       "title": "Environment Variables",
       "toggleVisibility": "Toggle value visibility"
     },
+    "linkSafety": {
+      "copied": "Copied!",
+      "copyLink": "Copy link",
+      "description": "You're about to visit an external website.",
+      "openLink": "Open link",
+      "title": "Open external link?"
+    },
     "messageBranch": {
       "next": "Next branch",
       "page": "{{current}} of {{total}}",

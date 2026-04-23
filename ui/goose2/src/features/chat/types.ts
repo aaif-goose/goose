@@ -9,6 +9,7 @@ export interface ModelOption {
   provider?: string;
   providerId?: string;
   providerName?: string;
+  contextLimit?: number | null;
   /** Whether this model should appear in the compact recommended picker. */
   recommended?: boolean;
 }
@@ -25,7 +26,7 @@ export interface ChatInputProps {
     text: string,
     personaId?: string,
     attachments?: ChatAttachmentDraft[],
-  ) => void;
+  ) => boolean | Promise<boolean>;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
@@ -56,7 +57,9 @@ export interface ChatInputProps {
   }) => void;
   contextTokens?: number;
   contextLimit?: number;
-  onCompactContext?: () => void | Promise<void>;
+  isContextUsageReady?: boolean;
+  onCompactContext?: () => Promise<unknown> | undefined;
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
+  supportsCompactionControls?: boolean;
 }

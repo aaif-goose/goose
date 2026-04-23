@@ -1064,8 +1064,9 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
 }
 
 async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) -> Result<()> {
+    use goose::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+    use goose::acp::transport::create_router;
     use goose::config::paths::Paths;
-    use goose_acp::server_factory::{AcpServer, AcpServerFactoryConfig};
     use std::net::SocketAddr;
     use std::sync::Arc;
     use tracing::info;
@@ -1081,7 +1082,7 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
     }));
-    let router = goose_acp::transport::create_router(server);
+    let router = create_router(server);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);
@@ -1766,7 +1767,7 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
         Some(Command::Info { verbose }) => handle_info(verbose),
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
-        Some(Command::Acp { builtins }) => goose_acp::server::run(builtins).await,
+        Some(Command::Acp { builtins }) => goose::acp::server::run(builtins).await,
         Some(Command::Serve {
             host,
             port,

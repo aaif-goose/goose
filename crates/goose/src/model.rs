@@ -138,9 +138,22 @@ impl ModelConfig {
             }
         }
 
-        if let Some(canonical) =
+        // Try canonical lookup with the full model name first, then fall back
+        // to the name with reasoning-effort suffixes stripped (e.g.
+        // "databricks-gpt-5.4-high" → "databricks-gpt-5.4").
+        let canonical =
             crate::providers::canonical::maybe_get_canonical_model(provider_name, &self.model_name)
-        {
+                .or_else(|| {
+                    let (base, _effort) =
+                        crate::providers::utils::extract_reasoning_effort(&self.model_name);
+                    if base != self.model_name {
+                        crate::providers::canonical::maybe_get_canonical_model(provider_name, &base)
+                    } else {
+                        None
+                    }
+                });
+
+        if let Some(canonical) = canonical {
             if self.context_limit.is_none() {
                 self.context_limit = Some(canonical.limit.context);
             }
@@ -299,15 +312,7 @@ impl ModelConfig {
     }
 
     pub fn is_openai_reasoning_model(&self) -> bool {
-        const DATABRICKS_MODEL_NAME_PREFIXES: &[&str] = &["goose-", "databricks-"];
-        const REASONING_PREFIXES: &[&str] = &["o1", "o3", "o4", "gpt-5"];
-
-        let base = DATABRICKS_MODEL_NAME_PREFIXES
-            .iter()
-            .find_map(|p| self.model_name.strip_prefix(p))
-            .unwrap_or(&self.model_name);
-
-        REASONING_PREFIXES.iter().any(|p| base.starts_with(p))
+        crate::providers::utils::is_openai_responses_model(&self.model_name)
     }
 
     pub fn max_output_tokens(&self) -> i32 {
@@ -498,6 +503,28 @@ mod tests {
             assert_eq!(config.context_limit, None);
             assert_eq!(config.max_tokens, None);
             assert_eq!(config.reasoning, None);
+        }
+
+        #[test]
+        fn resolves_after_stripping_reasoning_effort_suffix() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+
+            // "databricks-gpt-5.4-high" should resolve via "databricks-gpt-5.4"
+            let config = ModelConfig::new_or_fail("databricks-gpt-5.4-high")
+                .with_canonical_limits("databricks");
+            assert_eq!(config.context_limit, Some(1_050_000));
+
+            // "gpt-5.4-xhigh" should resolve via "gpt-5.4"
+            let config = ModelConfig::new_or_fail("gpt-5.4-xhigh").with_canonical_limits("openai");
+            assert_eq!(config.context_limit, Some(1_050_000));
+
+            // "gpt-5.4-nano-low" should resolve via "gpt-5.4-nano"
+            let config =
+                ModelConfig::new_or_fail("gpt-5.4-nano-low").with_canonical_limits("openai");
+            assert_eq!(config.context_limit, Some(400_000));
         }
     }
 

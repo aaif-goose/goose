@@ -90,10 +90,39 @@ export type GetExtensionsRequest = {
  */
 export type GetExtensionsResponse = {
     /**
-     * Array of ExtensionEntry objects with `enabled` flag and config details.
+     * Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.
      */
     extensions: Array<unknown>;
     warnings: Array<string>;
+};
+
+/**
+ * Persist a new extension to the user's global goose config.
+ */
+export type AddConfigExtensionRequest = {
+    name: string;
+    /**
+     * Extension configuration. Must be a JSON object matching one of the
+     * `ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).
+     * `name` and `enabled` are injected server-side.
+     */
+    extensionConfig?: unknown;
+    enabled?: boolean;
+};
+
+/**
+ * Remove a persisted extension from the user's global goose config.
+ */
+export type RemoveConfigExtensionRequest = {
+    configKey: string;
+};
+
+/**
+ * Toggle the `enabled` flag for a persisted extension in the user's global goose config.
+ */
+export type ToggleConfigExtensionRequest = {
+    configKey: string;
+    enabled: boolean;
 };
 
 export type GetSessionExtensionsRequest = {
@@ -105,69 +134,9 @@ export type GetSessionExtensionsResponse = {
 };
 
 /**
- * List providers available through goose, including the config-default sentinel.
+ * List providers with setup metadata and the current model inventory snapshot.
  */
 export type ListProvidersRequest = {
-    [key: string]: unknown;
-};
-
-/**
- * Provider list response.
- */
-export type ListProvidersResponse = {
-    providers: Array<ProviderListEntry>;
-};
-
-export type ProviderListEntry = {
-    id: string;
-    label: string;
-};
-
-/**
- * List providers with full metadata (config keys, setup steps, etc.).
- */
-export type GetProviderDetailsRequest = {
-    [key: string]: unknown;
-};
-
-/**
- * Provider details response.
- */
-export type GetProviderDetailsResponse = {
-    providers: Array<ProviderDetailEntry>;
-};
-
-export type ProviderDetailEntry = {
-    name: string;
-    displayName: string;
-    description: string;
-    defaultModel: string;
-    isConfigured: boolean;
-    providerType: string;
-    configKeys: Array<ProviderConfigKey>;
-    setupSteps?: Array<string>;
-    knownModels?: Array<ModelEntry>;
-};
-
-export type ProviderConfigKey = {
-    name: string;
-    required: boolean;
-    secret: boolean;
-    default?: string | null;
-    oauthFlow?: boolean;
-    deviceCodeFlow?: boolean;
-    primary?: boolean;
-};
-
-export type ModelEntry = {
-    name: string;
-    contextLimit: number;
-};
-
-/**
- * Read per-provider inventory. Always returns immediately from stored state.
- */
-export type GetProviderInventoryRequest = {
     /**
      * Only return entries for these providers. Empty means all.
      */
@@ -175,9 +144,9 @@ export type GetProviderInventoryRequest = {
 };
 
 /**
- * Provider inventory response.
+ * Provider list response.
  */
-export type GetProviderInventoryResponse = {
+export type ListProvidersResponse = {
     entries: Array<ProviderInventoryEntryDto>;
 };
 
@@ -194,9 +163,29 @@ export type ProviderInventoryEntryDto = {
      */
     providerName: string;
     /**
+     * Description of the provider's capabilities.
+     */
+    description: string;
+    /**
+     * The default/recommended model for this provider.
+     */
+    defaultModel: string;
+    /**
      * Whether Goose has enough configuration to use this provider.
      */
     configured: boolean;
+    /**
+     * Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
+     */
+    providerType: string;
+    /**
+     * Required configuration keys and setup metadata.
+     */
+    configKeys: Array<ProviderConfigKey>;
+    /**
+     * Step-by-step setup instructions, when present.
+     */
+    setupSteps: Array<string>;
     /**
      * Whether this provider supports background inventory refresh.
      */
@@ -229,6 +218,16 @@ export type ProviderInventoryEntryDto = {
      * Guidance message shown when this provider manages its own model selection externally.
      */
     modelSelectionHint?: string | null;
+};
+
+export type ProviderConfigKey = {
+    name: string;
+    required: boolean;
+    secret: boolean;
+    default?: string | null;
+    oauthFlow?: boolean;
+    deviceCodeFlow?: boolean;
+    primary?: boolean;
 };
 
 /**
@@ -382,6 +381,14 @@ export type ImportSessionResponse = {
 };
 
 /**
+ * Update the project association for a session.
+ */
+export type UpdateSessionProjectRequest = {
+    sessionId: string;
+    projectId?: string | null;
+};
+
+/**
  * Archive a session (soft delete).
  */
 export type ArchiveSessionRequest = {
@@ -393,6 +400,119 @@ export type ArchiveSessionRequest = {
  */
 export type UnarchiveSessionRequest = {
     sessionId: string;
+};
+
+/**
+ * Create a new source (global or project-scoped).
+ */
+export type CreateSourceRequest = {
+    type: SourceType;
+    name: string;
+    description: string;
+    content: string;
+    global: boolean;
+    /**
+     * Absolute path to the project root. Required when `global` is false.
+     */
+    projectDir?: string | null;
+};
+
+/**
+ * The type of source entity.
+ */
+export type SourceType = 'skill';
+
+export type CreateSourceResponse = {
+    source: SourceEntry;
+};
+
+/**
+ * A source — a user-editable entity backed by an on-disk directory. Sources
+ * may be either `global` (shared across all projects) or project-specific.
+ */
+export type SourceEntry = {
+    type: SourceType;
+    name: string;
+    description: string;
+    content: string;
+    /**
+     * Absolute path to the source's directory on disk.
+     */
+    directory: string;
+    /**
+     * True when the source lives in the user's global sources directory; false
+     * when it lives inside a specific project.
+     */
+    global: boolean;
+};
+
+/**
+ * List sources. If `type` is omitted, sources of all known types are returned.
+ * Both global and project-scoped sources are included when `project_dir` is set.
+ */
+export type ListSourcesRequest = {
+    type?: SourceType | null;
+    projectDir?: string | null;
+};
+
+export type ListSourcesResponse = {
+    sources: Array<SourceEntry>;
+};
+
+/**
+ * Update an existing source's description and content.
+ */
+export type UpdateSourceRequest = {
+    type: SourceType;
+    name: string;
+    description: string;
+    content: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+export type UpdateSourceResponse = {
+    source: SourceEntry;
+};
+
+/**
+ * Delete a source and its on-disk directory.
+ */
+export type DeleteSourceRequest = {
+    type: SourceType;
+    name: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+/**
+ * Export a source as a portable JSON payload.
+ */
+export type ExportSourceRequest = {
+    type: SourceType;
+    name: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+export type ExportSourceResponse = {
+    json: string;
+    filename: string;
+};
+
+/**
+ * Import a source from a JSON export payload produced by `_goose/sources/export`.
+ * The imported source is written under the given scope; on name collisions a
+ * `-imported` suffix is appended.
+ */
+export type ImportSourcesRequest = {
+    data: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+export type ImportSourcesResponse = {
+    sources: Array<SourceEntry>;
 };
 
 /**
@@ -535,14 +655,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderInventoryRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderInventoryResponse | RefreshProviderInventoryResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | RefreshProviderInventoryResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

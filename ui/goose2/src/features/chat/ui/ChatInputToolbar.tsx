@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Mic,
   ArrowUp,
@@ -6,6 +6,7 @@ import {
   Paperclip,
   File,
   FolderOpen,
+  Settings2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
@@ -31,6 +32,8 @@ import { AgentModelPicker } from "./AgentModelPicker";
 import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { getCatalogEntry } from "@/features/providers/providerCatalog";
+import { supportsContextCompactionControls } from "../lib/autoCompact";
+import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
@@ -76,10 +79,12 @@ interface ChatInputToolbarProps {
   // Context
   contextTokens: number;
   contextLimit: number;
+  isContextUsageReady?: boolean;
+  supportsCompactionControls?: boolean;
   // Actions
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
-  onCompactContext?: () => void | Promise<void>;
+  onCompactContext?: () => Promise<unknown> | undefined;
   canSend: boolean;
   isStreaming: boolean;
   hasQueuedMessage: boolean;
@@ -118,6 +123,8 @@ export function ChatInputToolbar({
   onCreateProject,
   contextTokens,
   contextLimit,
+  isContextUsageReady,
+  supportsCompactionControls,
   canCompactContext = false,
   isCompactingContext = false,
   onCompactContext,
@@ -138,6 +145,9 @@ export function ChatInputToolbar({
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
+  const compactionControlsSupported =
+    supportsCompactionControls ??
+    supportsContextCompactionControls(selectedProvider);
 
   const agentProviders = useMemo(() => {
     const seen = new Set<string>();
@@ -171,6 +181,7 @@ export function ChatInputToolbar({
     : undefined;
   const contextProgress =
     contextLimit > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
+  const showContextUsage = isContextUsageReady ?? contextLimit > 0;
   const contextPercentDigits =
     contextProgress > 0 && contextProgress < 0.1 ? 1 : 0;
   const usedPercentLabel = formatNumber(contextProgress, {
@@ -203,6 +214,17 @@ export function ChatInputToolbar({
     void onCompactContext();
   };
 
+  const handleOpenAutoCompactSettings = () => {
+    setIsContextPopoverOpen(false);
+    requestOpenSettings("compaction");
+  };
+
+  useEffect(() => {
+    if (!showContextUsage && isContextPopoverOpen) {
+      setIsContextPopoverOpen(false);
+    }
+  }, [isContextPopoverOpen, showContextUsage]);
+
   return (
     <div className="flex items-center justify-between gap-2">
       {/* Left side: pickers */}
@@ -220,6 +242,7 @@ export function ChatInputToolbar({
             onModelChange={onModelChange}
             loading={providersLoading}
             isCompact={isCompact}
+            showSelectedModelInTrigger={selectedPersonaId === null}
           />
         )}
 
@@ -285,7 +308,7 @@ export function ChatInputToolbar({
             />
           )}
 
-          {contextLimit > 0 && (
+          {showContextUsage && (
             <Popover
               open={isContextPopoverOpen}
               onOpenChange={setIsContextPopoverOpen}
@@ -316,7 +339,7 @@ export function ChatInputToolbar({
                 side="top"
                 align="end"
                 sideOffset={8}
-                className="w-52 rounded-2xl p-1 text-left"
+                className="w-60 rounded-2xl p-1 text-left"
               >
                 <div className="px-2 py-1.5 text-sm font-semibold text-foreground">
                   {t("toolbar.contextWindow")}
@@ -335,18 +358,33 @@ export function ChatInputToolbar({
                     </div>
                     <div className="shrink-0">{usedPercentLabel}</div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="xs"
-                    className="w-full justify-center"
-                    onClick={handleCompactContext}
-                    disabled={!canCompactContext || isCompactingContext}
-                  >
-                    {isCompactingContext
-                      ? t("toolbar.compacting")
-                      : t("toolbar.compactNow")}
-                  </Button>
+                  {compactionControlsSupported ? (
+                    <div className="flex items-center gap-1 pt-0.5">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="xs"
+                        className="min-w-0 flex-1 justify-center"
+                        onClick={handleCompactContext}
+                        disabled={!canCompactContext || isCompactingContext}
+                      >
+                        {isCompactingContext
+                          ? t("toolbar.compacting")
+                          : t("toolbar.compactNow")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="shrink-0 rounded-full"
+                        onClick={handleOpenAutoCompactSettings}
+                        aria-label={t("toolbar.settings")}
+                        title={t("toolbar.settings")}
+                      >
+                        <Settings2 className="size-4" />
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </PopoverContent>
             </Popover>

@@ -4326,7 +4326,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "agent-client-protocol-schema",
  "ahash",
@@ -4358,8 +4358,12 @@ dependencies = [
  "fs-err",
  "fs2",
  "futures",
+ "goose-acp-macros",
+ "goose-mcp",
+ "goose-sdk",
  "goose-test-support",
  "http 1.4.0",
+ "http-body-util",
  "ignore",
  "include_dir",
  "indexmap 2.13.0",
@@ -4418,6 +4422,7 @@ dependencies = [
  "tokio-cron-scheduler",
  "tokio-stream",
  "tokio-util",
+ "tower-http",
  "tracing",
  "tracing-futures",
  "tracing-opentelemetry",
@@ -4446,45 +4451,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "goose-acp"
-version = "1.32.0"
-dependencies = [
- "agent-client-protocol-schema",
- "anyhow",
- "async-stream",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "fs-err",
- "futures",
- "goose",
- "goose-acp-macros",
- "goose-mcp",
- "goose-sdk",
- "goose-test-support",
- "http-body-util",
- "regex",
- "rmcp",
- "sacp",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "sqlx",
- "strum 0.27.2",
- "tempfile",
- "test-case",
- "tokio",
- "tokio-util",
- "tower-http",
- "tracing",
- "url",
- "uuid",
- "wiremock",
-]
-
-[[package]]
 name = "goose-acp-macros"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -4492,7 +4460,7 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "anstream 0.6.21",
  "anyhow",
@@ -4512,7 +4480,6 @@ dependencies = [
  "etcetera 0.11.0",
  "futures",
  "goose",
- "goose-acp",
  "goose-mcp",
  "indicatif",
  "open",
@@ -4545,7 +4512,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4574,7 +4541,7 @@ dependencies = [
 
 [[package]]
 name = "goose-sdk"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "agent-client-protocol-schema",
  "sacp",
@@ -4587,7 +4554,7 @@ dependencies = [
 
 [[package]]
 name = "goose-server"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -4635,7 +4602,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -4643,7 +4610,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.32.0"
+version = "1.31.0"
 dependencies = [
  "axum",
  "env-lock",
@@ -8296,9 +8263,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.12"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "aws-lc-rs",
  "ring",

@@ -56,6 +56,7 @@ export async function prepareSession(
   providerId: string,
   workingDir: string,
   personaId?: string,
+  projectId?: string,
 ): Promise<string> {
   const sid = sessionId.slice(0, 8);
   const key = makeKey(sessionId, personaId);
@@ -101,7 +102,7 @@ export async function prepareSession(
 
   if (!gooseSessionId) {
     const tNew = performance.now();
-    const response = await acpApi.newSession(workingDir, providerId);
+    const response = await acpApi.newSession(workingDir, providerId, projectId);
     gooseSessionId = response.sessionId;
     perfLog(
       `[perf:prepare] ${sid} tracker newSession done in ${(performance.now() - tNew).toFixed(1)}ms (goose_sid=${gooseSessionId.slice(0, 8)})`,

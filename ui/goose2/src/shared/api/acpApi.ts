@@ -3,6 +3,7 @@ import type {
   NewSessionResponse,
   LoadSessionResponse,
   PromptResponse,
+  SessionInfo,
 } from "@agentclientprotocol/sdk";
 import { getClient } from "./acpConnection";
 import { perfLog } from "@/shared/lib/perfLog";
@@ -17,41 +18,41 @@ export interface AcpSessionInfo {
   title: string | null;
   updatedAt: string | null;
   messageCount: number;
+  projectId?: string | null;
 }
 
 const DEPRECATED_PROVIDER_IDS = new Set(["claude-code", "codex", "gemini-cli"]);
+const DEFAULT_PROVIDER: AcpProvider = {
+  id: "goose",
+  label: "Goose (Default)",
+};
 
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
-  const result = await client.goose.GooseProvidersList({});
-  // biome-ignore lint/suspicious/noExplicitAny: ACP SDK types don't expose providers field
-  return (result as any).providers
-    .filter(
-      (p: { id: string; label: string }) => !DEPRECATED_PROVIDER_IDS.has(p.id),
-    )
-    .map((p: { id: string; label: string }) => ({ id: p.id, label: p.label }));
+  const result = await client.goose.GooseProvidersList({
+    providerIds: [],
+  });
+
+  const providers = result.entries
+    .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+    .map((entry) => ({
+      id: entry.providerId,
+      label: entry.providerName,
+    }));
+
+  return [DEFAULT_PROVIDER, ...providers];
 }
 
 export async function listSessions(): Promise<AcpSessionInfo[]> {
   const client = await getClient();
-  // GooseClient.unstable_listSessions doesn't work with SDK 0.19 (renamed to listSessions).
-  // Bypass GooseClient and call the connection directly. Fix when ui/acp is updated.
-  // biome-ignore lint/suspicious/noExplicitAny: SDK doesn't expose conn property
-  const conn = (client as any).conn;
-  const response = await conn.listSessions({});
-  return response.sessions.map(
-    (info: {
-      sessionId: string;
-      title?: string;
-      updatedAt?: string;
-      _meta?: Record<string, unknown>;
-    }) => ({
-      sessionId: info.sessionId,
-      title: info.title ?? null,
-      updatedAt: info.updatedAt ?? null,
-      messageCount: (info._meta?.messageCount as number) ?? 0,
-    }),
-  );
+  const response = await client.listSessions({});
+  return response.sessions.map((info: SessionInfo) => ({
+    sessionId: info.sessionId,
+    title: info.title ?? null,
+    updatedAt: info.updatedAt ?? null,
+    messageCount: (info._meta?.messageCount as number) ?? 0,
+    projectId: (info._meta?.projectId as string) ?? null,
+  }));
 }
 
 export async function exportSession(sessionId: string): Promise<string> {
@@ -125,6 +126,17 @@ export async function updateWorkingDir(
   await client.extMethod("goose/working_dir/update", { sessionId, workingDir });
 }
 
+export async function updateSessionProject(
+  sessionId: string,
+  projectId: string | null,
+): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/update_project", {
+    sessionId,
+    projectId,
+  });
+}
+
 export async function cancelSession(sessionId: string): Promise<void> {
   const client = await getClient();
   await client.cancel({ sessionId });
@@ -133,6 +145,7 @@ export async function cancelSession(sessionId: string): Promise<void> {
 export async function newSession(
   workingDir: string,
   providerId?: string,
+  projectId?: string,
 ): Promise<NewSessionResponse> {
   const tClient = performance.now();
   const client = await getClient();
@@ -143,9 +156,10 @@ export async function newSession(
     mcpServers: [],
   };
 
-  if (providerId) {
-    request.meta = { provider: providerId };
-  }
+  const meta: Record<string, string> = {};
+  if (providerId) meta.provider = providerId;
+  if (projectId) meta.projectId = projectId;
+  if (Object.keys(meta).length > 0) request.meta = meta;
 
   const tCall = performance.now();
   const response = await client.newSession(request);

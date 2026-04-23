@@ -102,14 +102,68 @@ describe("useChat compaction", () => {
     const messages = useChatStore.getState().messagesBySession["session-1"];
     const runtime = useChatStore.getState().getSessionRuntime("session-1");
 
-    expect(messages).toEqual([
+    expect(messages).toHaveLength(3);
+    expect(messages[0]).toEqual(
       createTextMessage("user-1", "user", "Before compact"),
+    );
+    expect(messages[1]).toEqual(
       createTextMessage("assistant-1", "assistant", "After compact"),
-    ]);
+    );
+    expect(messages[2]).toMatchObject({
+      role: "system",
+      content: [
+        {
+          type: "systemNotification",
+          notificationType: "compaction",
+          text: "Conversation compacted. Older context was summarized.",
+        },
+      ],
+      metadata: {
+        userVisible: true,
+        agentVisible: false,
+      },
+    });
     expect(runtime.chatState).toBe("idle");
     expect(runtime.error).toBeNull();
     expect(useChatStore.getState().loadingSessionIds.has("session-1")).toBe(
       false,
+    );
+  });
+
+  it("prepares and compacts the override persona session", async () => {
+    let preparedPersonaId: string | undefined;
+    const ensurePrepared = vi.fn(async (personaId?: string) => {
+      preparedPersonaId = personaId;
+    });
+    mockGetGooseSessionId.mockImplementation(
+      (_sessionId: string, personaId?: string) =>
+        personaId === "persona-a" && preparedPersonaId === "persona-a"
+          ? "goose-session-a"
+          : null,
+    );
+
+    const { result } = renderHook(() =>
+      useChat(
+        "session-1",
+        undefined,
+        undefined,
+        { id: "persona-b", name: "Persona B" },
+        { ensurePrepared },
+      ),
+    );
+
+    await act(async () => {
+      await result.current.compactConversation({ id: "persona-a" });
+    });
+
+    expect(ensurePrepared).toHaveBeenCalledWith("persona-a");
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact", {
+      personaId: "persona-a",
+    });
+    expect(mockAcpLoadSession).toHaveBeenCalledWith(
+      "session-1",
+      "goose-session-a",
+      undefined,
     );
   });
 
@@ -123,7 +177,7 @@ describe("useChat compaction", () => {
 
     const { result } = renderHook(() => useChat("session-1"));
 
-    let compactPromise!: Promise<void>;
+    let compactPromise!: Promise<unknown>;
     await act(async () => {
       compactPromise = result.current.compactConversation();
       await Promise.resolve();
@@ -170,8 +224,8 @@ describe("useChat compaction", () => {
 
     const { result } = renderHook(() => useChat("session-1"));
 
-    let firstCompact!: Promise<void>;
-    let secondCompact!: Promise<void>;
+    let firstCompact!: Promise<unknown>;
+    let secondCompact!: Promise<unknown>;
     await act(async () => {
       firstCompact = result.current.compactConversation();
       secondCompact = result.current.compactConversation();

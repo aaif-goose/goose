@@ -2,7 +2,7 @@ use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
 use super::inventory::InventoryIdentityInput;
-use super::openai_compatible::handle_status_openai_compat;
+use super::openai_compatible::handle_status;
 use super::retry::{ProviderRetry, RetryConfig};
 use super::utils::{ImageFormat, RequestLog};
 use crate::config::declarative_providers::DeclarativeProviderConfig;
@@ -324,7 +324,7 @@ impl Provider for OllamaProvider {
                     .api_client
                     .response_post(Some(session_id), "v1/chat/completions", &payload)
                     .await?;
-                handle_status_openai_compat(resp).await
+                handle_status(resp).await
             })
             .await
             .inspect_err(|e| {

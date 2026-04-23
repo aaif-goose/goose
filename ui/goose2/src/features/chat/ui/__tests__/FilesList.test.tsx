@@ -3,19 +3,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FilesList } from "../FilesList";
 
-const { mockListDirectoryEntries, mockOpenPath, mockRevealInFileManager } =
-  vi.hoisted(() => ({
+import { openPath } from "@tauri-apps/plugin-opener";
+
+const { mockListDirectoryEntries, mockRevealInFileManager } = vi.hoisted(
+  () => ({
     mockListDirectoryEntries: vi.fn(),
-    mockOpenPath: vi.fn(),
     mockRevealInFileManager: vi.fn(),
-  }));
+  }),
+);
 
 vi.mock("@/shared/api/system", () => ({
   listDirectoryEntries: mockListDirectoryEntries,
-}));
-
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: mockOpenPath,
 }));
 
 vi.mock("@/shared/lib/fileManager", () => ({
@@ -32,7 +30,7 @@ const makeEntry = (overrides: Record<string, unknown> = {}) => ({
 describe("FilesList", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockOpenPath.mockResolvedValue(undefined);
+    vi.mocked(openPath).mockResolvedValue(undefined);
     mockRevealInFileManager.mockResolvedValue(undefined);
     mockListDirectoryEntries.mockResolvedValue([]);
   });
@@ -102,7 +100,7 @@ describe("FilesList", () => {
         "/Users/test/project/src",
       );
     });
-    expect(mockOpenPath).not.toHaveBeenCalled();
+    expect(vi.mocked(openPath)).not.toHaveBeenCalled();
     expect(screen.getByText("App.tsx")).toBeInTheDocument();
   });
 
@@ -119,7 +117,9 @@ describe("FilesList", () => {
 
     await user.click(await screen.findByText("README.md"));
 
-    expect(mockOpenPath).toHaveBeenCalledWith("/Users/test/project/README.md");
+    expect(vi.mocked(openPath)).toHaveBeenCalledWith(
+      "/Users/test/project/README.md",
+    );
   });
 
   it("supports context menu actions for folders and files", async () => {

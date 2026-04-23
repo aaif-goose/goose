@@ -52,7 +52,7 @@ describe("PersonaCard", () => {
     const persona = makePersona();
     render(<PersonaCard persona={persona} onSelect={onSelect} />);
 
-    await user.click(screen.getByLabelText(/^persona: /i));
+    await user.click(screen.getByLabelText(/^agent: /i));
     expect(onSelect).toHaveBeenCalledWith(persona);
   });
 
@@ -67,7 +67,7 @@ describe("PersonaCard", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: /persona options/i }));
+    await user.click(screen.getByRole("button", { name: /agent options/i }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /edit/i })).toBeInTheDocument();
     expect(
@@ -87,8 +87,26 @@ describe("PersonaCard", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: /persona options/i }));
+    await user.click(screen.getByRole("button", { name: /agent options/i }));
     const deleteBtn = screen.queryByRole("menuitem", { name: /delete/i });
     expect(deleteBtn).toBeNull();
+  });
+
+  it("does not trigger selection when keyboard opens the options menu", async () => {
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <PersonaCard
+        persona={makePersona()}
+        onSelect={onSelect}
+        onDuplicate={vi.fn()}
+      />,
+    );
+
+    screen.getByRole("button", { name: /agent options/i }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

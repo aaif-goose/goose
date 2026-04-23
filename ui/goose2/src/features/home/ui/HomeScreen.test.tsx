@@ -65,6 +65,7 @@ const mockController = {
   availableProjects: [],
   handleProjectChange: vi.fn(),
   tokenState: { accumulatedTotal: 0, contextLimit: 0 },
+  isContextUsageReady: false,
 };
 
 vi.mock("@/shared/api/acp", () => ({
@@ -178,7 +179,7 @@ describe("HomeScreen", () => {
   it("renders the chat input placeholder with default agent name when no persona selected", () => {
     renderHome();
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention personas"),
+      screen.getByPlaceholderText("Message Goose, @ to mention agents"),
     ).toBeInTheDocument();
   });
 

@@ -80,7 +80,7 @@ export type CheckProviderRequest = {
     provider: string;
 };
 
-export type CommandType = 'Builtin' | 'Recipe' | 'Skill';
+export type CommandType = 'Builtin' | 'Recipe' | 'Skill' | 'Agent';
 
 /**
  * Configuration key metadata for provider setup
