@@ -33,11 +33,12 @@ vi.mock("../../api/skills", () => ({
   importSkills: vi.fn().mockResolvedValue([]),
 }));
 
-const { listSkills, deleteSkill } =
-  (await import("../../api/skills")) as unknown as {
-    listSkills: ReturnType<typeof vi.fn>;
-    deleteSkill: ReturnType<typeof vi.fn>;
-  };
+const { listSkills, deleteSkill } = (await import(
+  "../../api/skills"
+)) as unknown as {
+  listSkills: ReturnType<typeof vi.fn>;
+  deleteSkill: ReturnType<typeof vi.fn>;
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
