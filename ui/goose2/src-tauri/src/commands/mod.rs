@@ -3,7 +3,6 @@ pub mod agent_setup;
 pub mod agents;
 pub mod credentials;
 pub mod doctor;
-pub mod extensions;
 pub mod git;
 pub mod git_changes;
 pub mod model_setup;

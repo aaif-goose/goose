@@ -151,7 +151,7 @@
         "extensions": {
           "type": "array",
           "items": {},
-          "description": "Array of ExtensionEntry objects with `enabled` flag and config details."
+          "description": "Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details."
         },
         "warnings": {
           "type": "array",
@@ -167,6 +167,60 @@
       "description": "List configured extensions and any warnings.",
       "x-side": "agent",
       "x-method": "_goose/config/extensions"
+    },
+    "AddConfigExtensionRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "extensionConfig": {
+          "description": "Extension configuration. Must be a JSON object matching one of the\n`ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).\n`name` and `enabled` are injected server-side.",
+          "default": null
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "description": "Persist a new extension to the user's global goose config.",
+      "x-side": "agent",
+      "x-method": "_goose/config/extensions/add"
+    },
+    "RemoveConfigExtensionRequest": {
+      "type": "object",
+      "properties": {
+        "configKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "configKey"
+      ],
+      "description": "Remove a persisted extension from the user's global goose config.",
+      "x-side": "agent",
+      "x-method": "_goose/config/extensions/remove"
+    },
+    "ToggleConfigExtensionRequest": {
+      "type": "object",
+      "properties": {
+        "configKey": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "configKey",
+        "enabled"
+      ],
+      "description": "Toggle the `enabled` flag for a persisted extension in the user's global goose config.",
+      "x-side": "agent",
+      "x-method": "_goose/config/extensions/toggle"
     },
     "GetSessionExtensionsRequest": {
       "type": "object",
@@ -1407,6 +1461,33 @@
                   ],
                   "description": "Params for _goose/config/extensions",
                   "title": "GetExtensionsRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/AddConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/add",
+                  "title": "AddConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/remove",
+                  "title": "RemoveConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ToggleConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/toggle",
+                  "title": "ToggleConfigExtensionRequest"
                 },
                 {
                   "allOf": [

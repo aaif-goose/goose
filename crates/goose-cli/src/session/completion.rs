@@ -121,6 +121,31 @@ impl GooseCompleter {
         Ok((line.len(), vec![]))
     }
 
+    /// Complete skill names for the /skills command
+    fn complete_skill_names(&self, line: &str) -> Result<(usize, Vec<Pair>)> {
+        use goose::agents::platform_extensions::skills::list_installed_skills;
+
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let skills = list_installed_skills(Some(&cwd));
+        let skill_names: Vec<String> = skills.iter().map(|s| s.name.clone()).collect();
+
+        // Complete the last letter being typed (e.g. "/skills coding in<tab>")
+        let last = line.rsplit_once(' ').map_or("", |(_, w)| w);
+        let pos = line.len() - last.len();
+
+        let partial = last.to_lowercase();
+        let candidates: Vec<Pair> = skill_names
+            .iter()
+            .filter(|name| name.to_lowercase().starts_with(&partial))
+            .map(|name| Pair {
+                display: name.clone(),
+                replacement: format!("{} ", name),
+            })
+            .collect();
+
+        Ok((pos, candidates))
+    }
+
     /// Complete slash commands
     fn complete_slash_commands(&self, line: &str) -> Result<(usize, Vec<Pair>)> {
         // Define available slash commands
@@ -136,6 +161,7 @@ impl GooseCompleter {
             "/prompt",
             "/mode",
             "/recipe",
+            "/skills",
         ];
 
         // Find commands that match the prefix
@@ -372,6 +398,10 @@ impl Completer for GooseCompleter {
 
             if line.starts_with("/mode") {
                 return self.complete_mode_flags(line);
+            }
+
+            if line.starts_with("/skills ") {
+                return self.complete_skill_names(line);
             }
 
             return Ok((pos, vec![]));

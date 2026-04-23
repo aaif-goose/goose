@@ -4165,7 +4165,8 @@
         "enum": [
           "Builtin",
           "Recipe",
-          "Skill"
+          "Skill",
+          "Agent"
         ]
       },
       "ConfigKey": {

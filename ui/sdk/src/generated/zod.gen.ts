@@ -81,6 +81,30 @@ export const zGetExtensionsResponse = z.object({
     warnings: z.array(z.string())
 });
 
+/**
+ * Persist a new extension to the user's global goose config.
+ */
+export const zAddConfigExtensionRequest = z.object({
+    name: z.string(),
+    extensionConfig: z.unknown().optional().default(null),
+    enabled: z.boolean().optional().default(false)
+});
+
+/**
+ * Remove a persisted extension from the user's global goose config.
+ */
+export const zRemoveConfigExtensionRequest = z.object({
+    configKey: z.string()
+});
+
+/**
+ * Toggle the `enabled` flag for a persisted extension in the user's global goose config.
+ */
+export const zToggleConfigExtensionRequest = z.object({
+    configKey: z.string(),
+    enabled: z.boolean()
+});
+
 export const zGetSessionExtensionsRequest = z.object({
     sessionId: z.string()
 });
@@ -594,6 +618,9 @@ export const zExtRequest = z.object({
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
             zGetExtensionsRequest,
+            zAddConfigExtensionRequest,
+            zRemoveConfigExtensionRequest,
+            zToggleConfigExtensionRequest,
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
             zRefreshProviderInventoryRequest,

@@ -90,10 +90,39 @@ export type GetExtensionsRequest = {
  */
 export type GetExtensionsResponse = {
     /**
-     * Array of ExtensionEntry objects with `enabled` flag and config details.
+     * Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.
      */
     extensions: Array<unknown>;
     warnings: Array<string>;
+};
+
+/**
+ * Persist a new extension to the user's global goose config.
+ */
+export type AddConfigExtensionRequest = {
+    name: string;
+    /**
+     * Extension configuration. Must be a JSON object matching one of the
+     * `ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).
+     * `name` and `enabled` are injected server-side.
+     */
+    extensionConfig?: unknown;
+    enabled?: boolean;
+};
+
+/**
+ * Remove a persisted extension from the user's global goose config.
+ */
+export type RemoveConfigExtensionRequest = {
+    configKey: string;
+};
+
+/**
+ * Toggle the `enabled` flag for a persisted extension in the user's global goose config.
+ */
+export type ToggleConfigExtensionRequest = {
+    configKey: string;
+    enabled: boolean;
 };
 
 export type GetSessionExtensionsRequest = {
@@ -626,7 +655,7 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };

@@ -97,6 +97,14 @@ interface ContentSection {
   items: MessageContent[] | ToolChainItem[];
 }
 
+/** Keep only content blocks whose audience includes "user" (or has no audience). */
+function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
+  return content.filter((b) => {
+    const aud = b.annotations?.audience;
+    return !aud || aud.length === 0 || aud.includes("user");
+  });
+}
+
 function findMatchingToolChainIndex(
   items: ToolChainItem[],
   response: ToolResponseContent,
@@ -224,29 +232,17 @@ function renderContentBlock(
     case "toolResponse":
       // Handled by groupContentSections toolChain rendering
       return null;
-    case "thinking": {
-      const th = content as ThinkingContent;
-      return (
-        <Reasoning
-          key={`thinking-${index}`}
-          isStreaming={isStreamingMsg}
-          defaultOpen={false}
-        >
-          <ReasoningTrigger />
-          <ReasoningContent>{th.text}</ReasoningContent>
-        </Reasoning>
-      );
-    }
+    case "thinking":
     case "reasoning": {
-      const r = content as ReasoningContentType;
+      const text = (content as ThinkingContent | ReasoningContentType).text;
       return (
         <Reasoning
-          key={`reasoning-${index}`}
+          key={`${content.type}-${index}`}
           isStreaming={isStreamingMsg}
           defaultOpen={false}
         >
           <ReasoningTrigger />
-          <ReasoningContent>{r.text}</ReasoningContent>
+          <ReasoningContent>{text}</ReasoningContent>
         </Reasoning>
       );
     }
@@ -318,7 +314,10 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation(["chat", "common"]);
   const { formatDate } = useLocaleFormatting();
-  const { role, content, created } = message;
+  const { role, content: rawContent, created } = message;
+  // Only user messages carry annotated blocks; skip the filter for others.
+  const content =
+    role === "user" ? filterUserVisibleContent(rawContent) : rawContent;
   const { handleContentClick, pathNotice } = useArtifactLinkHandler();
   const persona = useAgentStore((state) =>
     message.metadata?.personaId
@@ -327,6 +326,9 @@ export const MessageBubble = memo(function MessageBubble({
   );
   const { isCopied: isCopyConfirmed, copyToClipboard } = useCopyToClipboard();
   const personaAvatarUrl = useAvatarSrc(persona?.avatar);
+
+  // Skip empty user bubbles (all blocks filtered as assistant-only).
+  if (role === "user" && content.length === 0) return null;
 
   const textContent = content
     .filter((c): c is TextContent => c.type === "text")
@@ -347,7 +349,6 @@ export const MessageBubble = memo(function MessageBubble({
       </div>
     );
   }
-
   const isUser = role === "user";
   const assistantProviderId = message.metadata?.providerId;
   const assistantProviderName = assistantProviderId

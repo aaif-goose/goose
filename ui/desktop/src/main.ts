@@ -1385,6 +1385,7 @@ const validSettingKeys: Set<string> = new Set([
   'showMenuBarIcon',
   'showDockIcon',
   'enableWakelock',
+  'enableNotifications',
   'spellcheckEnabled',
   'externalGoosed',
   'globalShortcut',
@@ -1596,6 +1597,10 @@ ipcMain.handle('get-spellcheck-state', () => {
     console.error('Error getting spellcheck state:', error);
     return true;
   }
+});
+
+ipcMain.handle('is-any-window-focused', () => {
+  return BrowserWindow.getFocusedWindow() !== null;
 });
 
 // Add file/directory selection handler

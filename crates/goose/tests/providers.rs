@@ -888,7 +888,7 @@ async fn test_codex_provider() -> Result<()> {
         .await
 }
 
-// Requires: npm install -g @zed-industries/claude-agent-acp
+// Requires: npm install -g @agentclientprotocol/claude-agent-acp
 #[tokio::test]
 async fn test_claude_acp_provider() -> Result<()> {
     ProviderTestConfig::with_agentic_provider("claude-acp", ACP_CURRENT_MODEL, "claude-agent-acp")

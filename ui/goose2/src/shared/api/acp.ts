@@ -73,12 +73,15 @@ export async function acpSendMessage(
     throw new Error("Session not prepared. Call acpPrepareSession first.");
   }
 
-  const hasSystem = systemPrompt && systemPrompt.trim().length > 0;
-  const effectivePrompt = hasSystem
-    ? `<persona-instructions>\n${systemPrompt}\n</persona-instructions>\n\n<user-message>\n${prompt}\n</user-message>`
-    : prompt;
-
-  const content: ContentBlock[] = [{ type: "text", text: effectivePrompt }];
+  const content: ContentBlock[] = [];
+  if (systemPrompt?.trim()) {
+    content.push({
+      type: "text",
+      text: systemPrompt,
+      annotations: { audience: ["assistant"] },
+    });
+  }
+  content.push({ type: "text", text: prompt });
   if (images) {
     for (const [data, mimeType] of images) {
       content.push({ type: "image", data, mimeType } as ContentBlock);

@@ -8,6 +8,7 @@ export interface ExtMethodProvider {
 }
 
 import type {
+  AddConfigExtensionRequest,
   AddExtensionRequest,
   ArchiveSessionRequest,
   CheckSecretRequest,
@@ -52,9 +53,11 @@ import type {
   ReadResourceResponse,
   RefreshProviderInventoryRequest,
   RefreshProviderInventoryResponse,
+  RemoveConfigExtensionRequest,
   RemoveConfigRequest,
   RemoveExtensionRequest,
   RemoveSecretRequest,
+  ToggleConfigExtensionRequest,
   UnarchiveSessionRequest,
   UpdateSessionProjectRequest,
   UpdateSourceRequest,
@@ -121,6 +124,24 @@ export class GooseExtClient {
   ): Promise<GetExtensionsResponse> {
     const raw = await this.conn.extMethod("_goose/config/extensions", params);
     return zGetExtensionsResponse.parse(raw) as GetExtensionsResponse;
+  }
+
+  async GooseConfigExtensionsAdd(
+    params: AddConfigExtensionRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/config/extensions/add", params);
+  }
+
+  async GooseConfigExtensionsRemove(
+    params: RemoveConfigExtensionRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/config/extensions/remove", params);
+  }
+
+  async GooseConfigExtensionsToggle(
+    params: ToggleConfigExtensionRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/config/extensions/toggle", params);
   }
 
   async GooseSessionExtensions(

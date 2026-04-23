@@ -34,7 +34,7 @@ Wraps [amp-acp](https://www.npmjs.com/package/amp-acp), an ACP adapter for [Amp]
 
 ### Claude ACP
 
-Wraps [claude-agent-acp](https://github.com/zed-industries/claude-agent-acp), an ACP adapter for Anthropic's Claude Code. Uses the same Claude subscription as the deprecated `claude-code` CLI provider.
+Wraps [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp), an ACP adapter for Anthropic's Claude Code. Uses the same Claude subscription as the deprecated `claude-code` CLI provider.
 
 **Requirements:**
 - Node.js and npm
@@ -93,7 +93,7 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
 1. **Install the ACP adapter**
 
    ```bash
-   npm install -g @zed-industries/claude-agent-acp
+   npm install -g @agentclientprotocol/claude-agent-acp
    ```
 
 2. **Authenticate with Claude**
@@ -235,7 +235,7 @@ GOOSE_PROVIDER=codex-acp goose run \
 | `approve`       | `default`           | Prompts for all permission-required operations        |
 | `chat`          | `plan`              | Planning only, no tool execution                      |
 
-See [claude-agent-acp](https://github.com/zed-industries/claude-agent-acp) for session mode details.
+See [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) for session mode details.
 
 ### Codex ACP Configuration
 

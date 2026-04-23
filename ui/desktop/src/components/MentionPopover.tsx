@@ -38,11 +38,12 @@ const i18n = defineMessages({
 type DisplayItemType = CommandType | 'Directory' | 'File';
 
 const typeOrder: Record<DisplayItemType, number> = {
-  Directory: 0,
-  File: 1,
-  Builtin: 2,
-  Skill: 3,
-  Recipe: 4,
+  Agent: 0,
+  Directory: 1,
+  File: 2,
+  Builtin: 3,
+  Skill: 4,
+  Recipe: 5,
 };
 
 export interface DisplayItem {
@@ -426,7 +427,9 @@ const MentionPopover = forwardRef<
           );
 
           let finalScore = bestMatch.score;
-          if (finalScore > 0 && currentWorkingDir) {
+          if (finalScore > 0 && file.itemType === 'Agent') {
+            finalScore += 100;
+          } else if (finalScore > 0 && currentWorkingDir) {
             const depth = file.extra.replace(currentWorkingDir, '').split('/').length - 1;
             finalScore += depth <= 1 ? 50 : depth <= 2 ? 30 : depth <= 3 ? 15 : 0;
           }
@@ -449,6 +452,9 @@ const MentionPopover = forwardRef<
     }, [items, query, currentWorkingDir]);
 
     const getSelectionText = (item: DisplayItem): string => {
+      if (item.itemType === 'Agent') {
+        return '@' + item.name + ' ';
+      }
       if (item.itemType === 'Skill') {
         return `Use the ${item.name} skill to `;
       }
@@ -486,17 +492,34 @@ const MentionPopover = forwardRef<
               throwOnError: true,
             });
             if (cancelled) return;
-            const commandItems: DisplayItem[] = (response.data?.commands || []).map((cmd) => ({
-              name: cmd.command,
-              extra: cmd.help,
-              itemType: cmd.command_type,
-              relativePath: cmd.command,
-            }));
+            const commandItems: DisplayItem[] = (response.data?.commands || [])
+              .filter((cmd) => cmd.command_type !== 'Agent')
+              .map((cmd) => ({
+                name: cmd.command,
+                extra: cmd.help,
+                itemType: cmd.command_type,
+                relativePath: cmd.command,
+              }));
             setItems(commandItems);
           } else {
-            const scannedFiles = await scanDirectoryFromRoot(currentWorkingDir || getDefaultStartPath());
+            // Fetch agents from server and scan files in parallel
+            const [agentResponse, scannedFiles] = await Promise.all([
+              getSlashCommands({
+                query: { working_dir: currentWorkingDir },
+                throwOnError: true,
+              }).catch(() => null),
+              scanDirectoryFromRoot(currentWorkingDir || getDefaultStartPath()),
+            ]);
             if (cancelled) return;
-            setItems(scannedFiles);
+            const agentItems: DisplayItem[] = (agentResponse?.data?.commands || [])
+              .filter((cmd) => cmd.command_type === 'Agent')
+              .map((cmd) => ({
+                name: cmd.command,
+                extra: cmd.help,
+                itemType: cmd.command_type,
+                relativePath: cmd.command,
+              }));
+            setItems([...agentItems, ...scannedFiles]);
           }
         } catch (error) {
           if (!cancelled) {
