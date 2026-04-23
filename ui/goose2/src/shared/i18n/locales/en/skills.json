@@ -15,18 +15,32 @@
     "saving": "Saving..."
   },
   "view": {
+    "backToSkills": "Back to skills",
     "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
     "deleteTitle": "Delete skill?",
-    "description": "Reusable instructions for your AI agents",
+    "description": "Skills are reusable instructions that help an agent handle specific tasks, workflows, or tools.",
+    "detailEmptyDescription": "Select a skill to inspect its source, location, and instructions.",
+    "detailEmptyTitle": "Choose a skill",
     "dropFile": "or drop a file",
-    "emptyDescription": "Create a skill or drop a .skill.json file here.",
+    "emptyDescription": "Create a skill or import one to get started.",
     "emptyTitle": "No skills yet",
     "exportedTo": "Exported to {{filename}}",
+    "filePath": "File path",
+    "filtersAllSources": "All",
+    "filtersGlobal": "Personal",
+    "instructions": "Instructions",
+    "location": "Location",
     "newSkill": "New Skill",
-    "noMatchesDescription": "Try a different search term.",
+    "noMatchesDescription": "Try a different search or filter.",
     "noMatchesTitle": "No matching skills",
-    "optionsAria": "Options for {{name}}",
-    "searchPlaceholder": "Search skills by name or description...",
-    "title": "Skills"
+    "openDetails": "Open {{name}} details",
+    "projects": "Projects",
+    "reveal": "Show in folder",
+    "searchPlaceholder": "Search skills",
+    "share": "Share",
+    "source": "Source",
+    "startChat": "Start chat with {{name}}",
+    "title": "Skills",
+    "useInChat": "Use in chat"
   }
 }

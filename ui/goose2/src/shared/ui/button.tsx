@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/shared/lib/cn";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-left text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-left text-sm font-normal transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -18,12 +18,14 @@ const buttonVariants = cva(
         outline:
           "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
         "outline-flat":
-          "border border-input bg-background shadow-none hover:bg-accent hover:text-accent-foreground",
+          "border border-border-soft bg-background shadow-none hover:bg-accent hover:text-accent-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         "ghost-light":
           "font-normal hover:bg-accent hover:text-accent-foreground",
+        "inline-subtle":
+          "rounded-md bg-transparent font-normal text-muted-foreground shadow-none hover:bg-muted/70 hover:text-foreground",
         toolbar:
           "justify-start bg-transparent font-normal text-foreground shadow-none hover:bg-accent hover:text-accent-foreground active:bg-accent active:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground",
         link: "text-brand underline-offset-4 hover:underline",
@@ -58,6 +60,11 @@ const buttonVariants = cva(
         variant: "toolbar",
         size: "default",
         className: "gap-1.5 px-2.5 text-[13px]",
+      },
+      {
+        variant: "inline-subtle",
+        size: "xs",
+        className: "h-6 gap-1.5 px-2 text-[11px]",
       },
       {
         variant: "ghost",

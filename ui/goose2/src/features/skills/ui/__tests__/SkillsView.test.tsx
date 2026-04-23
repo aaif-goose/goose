@@ -1,30 +1,46 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SkillsView } from "../SkillsView";
 
 const mockSkills = [
   {
+    id: "global:/path/code-review",
     name: "code-review",
     description: "Reviews code",
     instructions: "Review the code...",
     path: "/path/code-review",
     fileLocation: "/path/code-review/SKILL.md",
+    directoryPath: "/path/code-review",
+    sourceKind: "global" as const,
+    sourceLabel: "Personal",
+    projectLinks: [],
+    editable: true,
   },
   {
+    id: "project:/tmp/alpha/.goose/skills/test-writer",
     name: "test-writer",
     description: "Writes tests",
     instructions: "Write tests...",
-    path: "/path/test-writer",
-    fileLocation: "/path/test-writer/SKILL.md",
+    path: "/tmp/alpha/.goose/skills/test-writer",
+    fileLocation: "/tmp/alpha/.goose/skills/test-writer/SKILL.md",
+    directoryPath: "/tmp/alpha/.goose/skills/test-writer",
+    sourceKind: "project" as const,
+    sourceLabel: "alpha",
+    projectLinks: [
+      {
+        id: "/tmp/alpha",
+        name: "alpha",
+        workingDir: "/tmp/alpha",
+      },
+    ],
+    editable: true,
   },
 ];
 
 vi.mock("../../api/skills", () => ({
   listSkills: vi.fn().mockResolvedValue([]),
-  createSkill: vi.fn().mockResolvedValue(undefined),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
-  updateSkill: vi.fn().mockResolvedValue(undefined),
   exportSkill: vi
     .fn()
     .mockResolvedValue({ json: "{}", filename: "test.skill.json" }),
@@ -44,193 +60,110 @@ beforeEach(() => {
 });
 
 describe("SkillsView", () => {
-  describe("Rendering", () => {
-    it("shows Skills heading and subtitle", async () => {
-      render(<SkillsView />);
-      expect(screen.getByText("Skills")).toBeInTheDocument();
-      expect(
-        screen.getByText("Reusable instructions for your AI agents"),
-      ).toBeInTheDocument();
-    });
-
-    it("shows New Skill and Import buttons", async () => {
-      render(<SkillsView />);
-      expect(screen.getByText("New Skill")).toBeInTheDocument();
-      expect(screen.getByText("Import")).toBeInTheDocument();
-    });
-
-    it("shows empty state when no skills exist", async () => {
-      render(<SkillsView />);
-      await waitFor(() => {
-        expect(screen.getByText("No skills yet")).toBeInTheDocument();
-      });
-      expect(
-        screen.getByText("Create a skill or drop a .skill.json file here."),
-      ).toBeInTheDocument();
-    });
-
-    it("renders skill cards when skills are loaded", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      render(<SkillsView />);
-      expect(await screen.findByText("code-review")).toBeInTheDocument();
-      expect(screen.getByText("test-writer")).toBeInTheDocument();
-      expect(screen.getByText("Reviews code")).toBeInTheDocument();
-      expect(screen.getByText("Writes tests")).toBeInTheDocument();
-    });
+  it("shows the redesigned heading and description", () => {
+    render(<SkillsView />);
+    expect(screen.getByText("Skills")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Skills are reusable instructions/),
+    ).toBeInTheDocument();
   });
 
-  describe("Search", () => {
-    it("filters skills by name when searching", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
-
-      await user.type(
-        screen.getByPlaceholderText("Search skills by name or description..."),
-        "code",
-      );
-
-      expect(screen.getByText("code-review")).toBeInTheDocument();
-      expect(screen.queryByText("test-writer")).not.toBeInTheDocument();
+  it("shows the empty state when no skills are available", async () => {
+    render(<SkillsView />);
+    await waitFor(() => {
+      expect(screen.getByText("No skills yet")).toBeInTheDocument();
     });
-
-    it("filters skills by description when searching", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
-
-      await user.type(
-        screen.getByPlaceholderText("Search skills by name or description..."),
-        "Writes tests",
-      );
-
-      expect(screen.queryByText("code-review")).not.toBeInTheDocument();
-      expect(screen.getByText("test-writer")).toBeInTheDocument();
-    });
-
-    it("shows empty state when search has no results", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
-
-      await user.type(
-        screen.getByPlaceholderText("Search skills by name or description..."),
-        "nonexistent",
-      );
-
-      expect(screen.getByText("No matching skills")).toBeInTheDocument();
-      expect(
-        screen.getByText("Try a different search term."),
-      ).toBeInTheDocument();
-    });
+    expect(
+      screen.getByText("Create a skill or import one to get started."),
+    ).toBeInTheDocument();
   });
 
-  describe("Skill card menu", () => {
-    it("shows dropdown menu with Edit, Duplicate, Export, Delete options", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
+  it("renders skills and opens the detail subpage", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const user = userEvent.setup();
 
-      await user.click(screen.getByLabelText("Options for code-review"));
+    render(<SkillsView />);
+    await screen.findByText("code-review");
 
-      expect(screen.getByRole("menu")).toBeInTheDocument();
-      expect(
-        screen.getByRole("menuitem", { name: /edit/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("menuitem", { name: /duplicate/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("menuitem", { name: /export/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("menuitem", { name: /delete/i }),
-      ).toBeInTheDocument();
-    });
+    await user.click(
+      screen.getByRole("button", { name: "Open test-writer details" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Back to skills" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("alpha").length).toBeGreaterThan(0);
+    expect(screen.getByText("Write tests...")).toBeInTheDocument();
+    expect(
+      screen.getByText("/tmp/alpha/.goose/skills/test-writer"),
+    ).toBeInTheDocument();
   });
 
-  describe("Delete confirmation", () => {
-    it("shows confirmation dialog when delete is clicked", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
+  it("returns to the list without losing filters", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const user = userEvent.setup();
 
-      await user.click(screen.getByLabelText("Options for code-review"));
-      await user.click(screen.getByRole("menuitem", { name: /delete/i }));
+    render(<SkillsView />);
+    await screen.findByText("code-review");
 
-      expect(screen.getByText("Delete skill?")).toBeInTheDocument();
-      expect(
-        screen.getByText(/Are you sure you want to delete "code-review"\?/),
-      ).toBeInTheDocument();
-    });
+    await user.click(screen.getByRole("button", { name: "alpha" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open test-writer details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Back to skills" }));
 
-    it("cancels deletion when Cancel is clicked", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
+    expect(screen.getByText("test-writer")).toBeInTheDocument();
+    expect(screen.queryByText("code-review")).not.toBeInTheDocument();
+  });
 
-      await user.click(screen.getByLabelText("Options for code-review"));
-      await user.click(screen.getByRole("menuitem", { name: /delete/i }));
-      expect(screen.getByText("Delete skill?")).toBeInTheDocument();
+  it("filters skills by search text", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const user = userEvent.setup();
 
-      await user.click(screen.getByText("Cancel"));
-      expect(screen.queryByText("Delete skill?")).not.toBeInTheDocument();
-    });
+    render(<SkillsView />);
+    await screen.findByText("code-review");
 
-    it("calls deleteSkill API when confirmed", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
+    await user.type(
+      screen.getByPlaceholderText("Search skills"),
+      "writes tests",
+    );
 
-      await user.click(screen.getByLabelText("Options for code-review"));
-      await user.click(screen.getByRole("menuitem", { name: /delete/i }));
-      await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.queryByText("code-review")).not.toBeInTheDocument();
+    expect(screen.getByText("test-writer")).toBeInTheDocument();
+  });
 
-      await waitFor(() => {
-        expect(deleteSkill).toHaveBeenCalledWith("/path/code-review");
-      });
-    });
+  it("filters skills by project from the main filter row", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const user = userEvent.setup();
 
-    it("does not show the path on disk in the list view and still allows deleting discovered skills", async () => {
-      listSkills.mockResolvedValue([
-        {
-          name: "claude-skill",
-          description: "Imported from Claude",
-          instructions: "Use this skill...",
-          path: "/Users/test/.claude/skills/claude-skill",
-          fileLocation: "/Users/test/.claude/skills/claude-skill/SKILL.md",
-        },
-      ]);
-      const user = userEvent.setup();
+    render(<SkillsView />);
+    await screen.findByText("code-review");
 
-      render(<SkillsView />);
+    await user.click(screen.getByRole("button", { name: "alpha" }));
 
-      expect(await screen.findByText("claude-skill")).toBeInTheDocument();
-      expect(screen.queryByText("Path on disk:")).not.toBeInTheDocument();
-      expect(
-        screen.queryByText("/Users/test/.claude/skills/claude-skill/SKILL.md"),
-      ).not.toBeInTheDocument();
+    expect(screen.queryByText("code-review")).not.toBeInTheDocument();
+    expect(screen.getByText("test-writer")).toBeInTheDocument();
+  });
 
-      await user.click(screen.getByLabelText("Options for claude-skill"));
-      expect(
-        screen.getByRole("menuitem", { name: /edit/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("menuitem", { name: /duplicate/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("menuitem", { name: /export/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("menuitem", { name: /delete/i }),
-      ).toBeInTheDocument();
+  it("shows a delete confirmation from the detail panel", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("code-review");
+
+    await user.click(
+      screen.getByRole("button", { name: "Open code-review details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(screen.getByText("Delete skill?")).toBeInTheDocument();
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
+    await user.click(deleteButtons[deleteButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(deleteSkill).toHaveBeenCalledWith("/path/code-review");
     });
   });
 });

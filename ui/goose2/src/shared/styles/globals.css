@@ -102,6 +102,12 @@
 
   /* Semantic borders */
   --border-default: var(--color-gray-200);
+  --border-soft: color-mix(in srgb, var(--border-default) 80%, transparent);
+  --border-soft-divider: color-mix(
+    in srgb,
+    var(--border-default) 70%,
+    transparent
+  );
   --border-input: var(--color-gray-300);
   --border-input-hover: var(--color-gray-400);
   --border-strong: var(--color-gray-900);
@@ -285,6 +291,12 @@
 
   /* semantic borders */
   --border-default: var(--color-gray-700);
+  --border-soft: color-mix(in srgb, var(--border-default) 80%, transparent);
+  --border-soft-divider: color-mix(
+    in srgb,
+    var(--border-default) 70%,
+    transparent
+  );
   --border-input: var(--color-gray-700);
   --border-input-hover: var(--color-gray-600);
   --border-strong: var(--color-white);
@@ -390,6 +402,8 @@
 
   /* semantic borders */
   --color-border-default: var(--border-default);
+  --color-border-soft: var(--border-soft);
+  --color-border-soft-divider: var(--border-soft-divider);
   --color-border-input: var(--border-input);
   --color-border-input-hover: var(--border-input-hover);
   --color-border-strong: var(--border-strong);
@@ -487,6 +501,9 @@
 
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-accordion-content-open: accordion-content-open 0.2s
+    cubic-bezier(0.25, 1, 0.5, 1) both;
+  --animate-accordion-content-close: accordion-content-close 0.2s ease-out both;
   --animate-caret-blink: caret-blink 1s ease-out infinite;
   --animate-scale-in: scale-in 0.2s ease;
   --animate-scale-out: scale-out 0.15s ease;
@@ -513,6 +530,28 @@
     }
     to {
       height: 0;
+    }
+  }
+
+  @keyframes accordion-content-open {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes accordion-content-close {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-2px);
     }
   }
 
