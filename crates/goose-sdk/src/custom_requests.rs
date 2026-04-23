@@ -222,6 +222,15 @@ pub struct UpdateSessionProjectRequest {
     pub project_id: Option<String>,
 }
 
+/// Rename a session.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/session/rename", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameSessionRequest {
+    pub session_id: String,
+    pub title: String,
+}
+
 /// Archive a session (soft delete).
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/session/archive", response = EmptyResponse)]

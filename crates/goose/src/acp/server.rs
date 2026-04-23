@@ -171,33 +171,46 @@ fn sid_short(id: &str) -> String {
 }
 
 fn thread_session_meta(
-    message_count: i64,
-    metadata: &crate::session::ThreadMetadata,
+    thread: &crate::session::Thread,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut meta = serde_json::Map::new();
     meta.insert(
         "messageCount".to_string(),
-        serde_json::Value::Number(message_count.into()),
+        serde_json::Value::Number(thread.message_count.into()),
     );
-    if let Some(ref pid) = metadata.project_id {
+    meta.insert(
+        "createdAt".to_string(),
+        serde_json::Value::String(thread.created_at.to_rfc3339()),
+    );
+    if let Some(ref archived_at) = thread.archived_at {
+        meta.insert(
+            "archivedAt".to_string(),
+            serde_json::Value::String(archived_at.to_rfc3339()),
+        );
+    }
+    meta.insert(
+        "userSetName".to_string(),
+        serde_json::Value::Bool(thread.user_set_name),
+    );
+    if let Some(ref pid) = thread.metadata.project_id {
         meta.insert(
             "projectId".to_string(),
             serde_json::Value::String(pid.clone()),
         );
     }
-    if let Some(ref provider_id) = metadata.provider_id {
+    if let Some(ref provider_id) = thread.metadata.provider_id {
         meta.insert(
             "providerId".to_string(),
             serde_json::Value::String(provider_id.clone()),
         );
     }
-    if let Some(ref model_id) = metadata.model_id {
+    if let Some(ref model_id) = thread.metadata.model_id {
         meta.insert(
             "modelId".to_string(),
             serde_json::Value::String(model_id.clone()),
         );
     }
-    if let Some(ref persona_id) = metadata.persona_id {
+    if let Some(ref persona_id) = thread.metadata.persona_id {
         meta.insert(
             "personaId".to_string(),
             serde_json::Value::String(persona_id.clone()),
@@ -2727,7 +2740,7 @@ impl GooseAcpAgent {
                     .as_deref()
                     .map(std::path::PathBuf::from)
                     .unwrap_or_default();
-                let meta = thread_session_meta(t.message_count, &t.metadata);
+                let meta = thread_session_meta(&t);
                 SessionInfo::new(SessionId::new(t.id), cwd)
                     .title(t.name)
                     .updated_at(t.updated_at.to_rfc3339())
@@ -2791,7 +2804,7 @@ impl GooseAcpAgent {
             },
         );
 
-        let meta = thread_session_meta(new_thread.message_count, &new_thread.metadata);
+        let meta = thread_session_meta(&new_thread);
 
         let mut response = ForkSessionResponse::new(SessionId::new(new_thread_id))
             .modes(mode_state)
@@ -3298,6 +3311,18 @@ impl GooseAcpAgent {
             meta.project_id = project_id;
         })
         .await?;
+        Ok(EmptyResponse {})
+    }
+
+    #[custom_method(RenameSessionRequest)]
+    async fn on_rename_session(
+        &self,
+        req: RenameSessionRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        self.thread_manager
+            .update_thread(&req.session_id, Some(req.title), Some(true), None)
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
         Ok(EmptyResponse {})
     }
 
