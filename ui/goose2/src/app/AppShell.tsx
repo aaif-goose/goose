@@ -276,7 +276,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       perfLog(
         `[perf:newtab] createNewTab start (project=${project?.id ?? "none"})`,
       );
-      const agentId = agentStore.activeAgentId ?? undefined;
       const providerId =
         project?.preferredProvider ?? agentStore.selectedProvider ?? "goose";
       const sessionModelPreference =
@@ -312,7 +311,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const session = await sessionStore.createSession({
         title,
         projectId: project?.id,
-        agentId,
         providerId: sessionModelPreference.providerId,
         workingDir,
         modelId: sessionModelPreference.modelId,
@@ -327,7 +325,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       return session;
     },
     [
-      agentStore.activeAgentId,
       agentStore.selectedProvider,
       chatStore,
       providerInventoryEntries,

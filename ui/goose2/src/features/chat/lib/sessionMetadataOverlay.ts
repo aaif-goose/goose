@@ -13,7 +13,6 @@ export interface SessionMetadataOverlayRecord {
   modelName?: string | null;
   archivedAt?: string | null;
   createdAt?: string | null;
-  agentId?: string | null;
   lastKnownTitle?: string | null;
   lastKnownUpdatedAt?: string | null;
   lastKnownMessageCount?: number | null;
@@ -25,7 +24,6 @@ interface LegacySessionRecord {
   acpSessionId?: string;
   title: string;
   projectId?: string | null;
-  agentId?: string;
   providerId?: string;
   personaId?: string;
   modelId?: string;
@@ -82,7 +80,6 @@ function recordFromLegacySession(
     modelName: session.modelName,
     archivedAt: session.archivedAt ?? null,
     createdAt: session.createdAt,
-    agentId: session.agentId,
     lastKnownTitle: session.title,
     lastKnownUpdatedAt: session.updatedAt,
     lastKnownMessageCount: session.messageCount,

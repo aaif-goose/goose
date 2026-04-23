@@ -19,7 +19,6 @@ export interface ChatSession {
   acpSessionId?: string;
   title: string;
   projectId?: string | null;
-  agentId?: string;
   providerId?: string;
   personaId?: string;
   modelId?: string;
@@ -66,7 +65,6 @@ interface ChatSessionStoreState {
 interface CreateSessionOpts {
   title?: string;
   projectId?: string;
-  agentId?: string;
   providerId?: string;
   personaId?: string;
   workingDir?: string;
@@ -123,7 +121,6 @@ function buildOverlayRecord(
     modelName: session.modelName ?? null,
     archivedAt: session.archivedAt ?? null,
     createdAt: session.createdAt ?? existing?.createdAt ?? null,
-    agentId: session.agentId ?? existing?.agentId ?? null,
     lastKnownTitle: session.title,
     lastKnownUpdatedAt: session.updatedAt,
     lastKnownMessageCount: session.messageCount,
@@ -141,7 +138,6 @@ function overlayToFallbackSession(
     acpSessionId: overlay.sessionId,
     title: overlay.userSetTitle ?? overlay.lastKnownTitle ?? "Untitled",
     projectId: overlay.projectId ?? undefined,
-    agentId: overlay.agentId ?? undefined,
     providerId: overlay.providerId ?? undefined,
     personaId: overlay.personaId ?? undefined,
     modelId: overlay.modelId ?? undefined,
@@ -168,7 +164,6 @@ function mergeAcpSessionWithOverlay(
       overlay?.lastKnownTitle ??
       "Untitled",
     projectId: session.projectId ?? undefined,
-    agentId: overlay?.agentId ?? undefined,
     providerId: session.providerId ?? overlay?.providerId ?? undefined,
     personaId: session.personaId ?? overlay?.personaId ?? undefined,
     modelId: session.modelId ?? overlay?.modelId ?? undefined,
@@ -209,7 +204,6 @@ export function sessionToChatSession(session: Session): ChatSession {
     id: session.id,
     acpSessionId: session.id,
     title: session.title,
-    agentId: session.agentId,
     projectId: session.projectId,
     providerId: session.providerId,
     personaId: session.personaId,
@@ -247,7 +241,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       acpSessionId: sessionId,
       title: opts.title ?? DEFAULT_CHAT_TITLE,
       projectId: opts.projectId,
-      agentId: opts.agentId,
       providerId,
       personaId: opts.personaId,
       modelId: opts.modelId,
