@@ -2227,6 +2227,21 @@ impl GooseAcpAgent {
         let t_start = std::time::Instant::now();
         debug!(target: "perf", sid = %sid, "perf: prompt start");
 
+        // Update persona_id on the thread if the client sent one in _meta.
+        let prompt_persona_id = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("personaId"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        if let Some(ref pid) = prompt_persona_id {
+            let pid = pid.clone();
+            self.update_thread_metadata(&thread_id, move |meta| {
+                meta.persona_id = Some(pid);
+            })
+            .await?;
+        }
+
         let cancel_token = CancellationToken::new();
         let internal_session_id = self.internal_session_id(&thread_id).await?;
 
