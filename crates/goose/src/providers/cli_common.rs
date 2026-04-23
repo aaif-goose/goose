@@ -56,7 +56,12 @@ pub(crate) fn generate_simple_session_description(
         })
         .map(|text| {
             // Strip the wrapper added by generate_session_name so we get
-            // the actual user content.
+            // the actual user content. First strip the optional background context section.
+            let text = if let Some(idx) = text.find(SESSION_NAME_BEGIN_MARKER) {
+                &text[idx..]
+            } else {
+                text
+            };
             let stripped = text
                 .strip_prefix(SESSION_NAME_BEGIN_MARKER)
                 .unwrap_or(text)
