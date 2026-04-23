@@ -17,6 +17,9 @@ export interface AcpSessionInfo {
   sessionId: string;
   title: string | null;
   updatedAt: string | null;
+  createdAt: string | null;
+  archivedAt: string | null;
+  userSetName: boolean;
   messageCount: number;
   projectId?: string | null;
   providerId: string | null;
@@ -53,6 +56,9 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
     sessionId: info.sessionId,
     title: info.title ?? null,
     updatedAt: info.updatedAt ?? null,
+    createdAt: (info._meta?.createdAt as string) ?? null,
+    archivedAt: (info._meta?.archivedAt as string) ?? null,
+    userSetName: (info._meta?.userSetName as boolean) ?? false,
     messageCount: (info._meta?.messageCount as number) ?? 0,
     projectId: (info._meta?.projectId as string) ?? null,
     providerId: (info._meta?.providerId as string) ?? null,
@@ -84,6 +90,9 @@ export async function forkSession(sessionId: string): Promise<AcpSessionInfo> {
     sessionId: response.sessionId,
     title: (response._meta?.title as string) ?? null,
     updatedAt: null,
+    createdAt: (response._meta?.createdAt as string) ?? null,
+    archivedAt: (response._meta?.archivedAt as string) ?? null,
+    userSetName: (response._meta?.userSetName as boolean) ?? false,
     messageCount: (response._meta?.messageCount as number) ?? 0,
     projectId: (response._meta?.projectId as string) ?? null,
     providerId: (response._meta?.providerId as string) ?? null,
@@ -145,6 +154,24 @@ export async function updateSessionProject(
     sessionId,
     projectId,
   });
+}
+
+export async function archiveSession(sessionId: string): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/archive", { sessionId });
+}
+
+export async function unarchiveSession(sessionId: string): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/unarchive", { sessionId });
+}
+
+export async function renameSession(
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/rename", { sessionId, title });
 }
 
 export async function cancelSession(sessionId: string): Promise<void> {
