@@ -56,10 +56,6 @@ function SkillCardMenu({
 }) {
   const { t } = useTranslation(["skills", "common"]);
 
-  if (!skill.editable) {
-    return null;
-  }
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -74,10 +70,12 @@ function SkillCardMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4}>
-        <DropdownMenuItem onSelect={() => onEdit(skill)}>
-          <Pencil className="size-3.5" />
-          {t("common:actions.edit")}
-        </DropdownMenuItem>
+        {skill.editable && (
+          <DropdownMenuItem onSelect={() => onEdit(skill)}>
+            <Pencil className="size-3.5" />
+            {t("common:actions.edit")}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={() => onDuplicate(skill)}>
           <Copy className="size-3.5" />
           {t("common:actions.duplicate")}
@@ -86,13 +84,15 @@ function SkillCardMenu({
           <Download className="size-3.5" />
           {t("common:actions.export")}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          variant="destructive"
-          onSelect={() => onDelete(skill)}
-        >
-          <Trash2 className="size-3.5" />
-          {t("common:actions.delete")}
-        </DropdownMenuItem>
+        {skill.editable && (
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() => onDelete(skill)}
+          >
+            <Trash2 className="size-3.5" />
+            {t("common:actions.delete")}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

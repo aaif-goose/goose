@@ -92,6 +92,38 @@ fn canonicalize_or_original(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+fn inferred_discoverable_skill_root(path: &Path) -> Option<PathBuf> {
+    let canonical_path = canonicalize_or_original(path);
+
+    let mut global_roots = Vec::new();
+    if let Some(global_root) = global_skills_dir() {
+        global_roots.push(global_root);
+    }
+    global_roots.push(Paths::config_dir().join("skills"));
+    if let Some(home) = dirs::home_dir() {
+        global_roots.push(home.join(".claude").join("skills"));
+        global_roots.push(home.join(".config").join("agents").join("skills"));
+    }
+
+    for root in global_roots {
+        let canonical_root = canonicalize_or_original(&root);
+        if canonical_path.starts_with(&canonical_root) {
+            return Some(canonical_root);
+        }
+    }
+
+    canonical_path.ancestors().find_map(|ancestor| {
+        let parent = ancestor.parent()?;
+        let is_project_skills_root = ancestor.file_name().and_then(|name| name.to_str())
+            == Some("skills")
+            && matches!(
+                parent.file_name().and_then(|name| name.to_str()),
+                Some(".goose") | Some(".claude") | Some(".agents")
+            );
+        is_project_skills_root.then(|| ancestor.to_path_buf())
+    })
+}
+
 fn inferred_editable_skill_root(path: &Path) -> Option<PathBuf> {
     let canonical_path = canonicalize_or_original(path);
 
@@ -111,7 +143,7 @@ fn inferred_editable_skill_root(path: &Path) -> Option<PathBuf> {
     })
 }
 
-pub(crate) fn resolve_skill_dir(path: &str) -> Result<PathBuf, Error> {
+pub(crate) fn resolve_discoverable_skill_dir(path: &str) -> Result<PathBuf, Error> {
     if path.is_empty() {
         return Err(Error::invalid_params().data("Source path must not be empty"));
     }
@@ -120,10 +152,20 @@ pub(crate) fn resolve_skill_dir(path: &str) -> Result<PathBuf, Error> {
         .canonicalize()
         .map_err(|_| Error::invalid_params().data(format!("Source \"{}\" not found", path)))?;
 
-    if inferred_editable_skill_root(&canonical_dir).is_none()
+    if inferred_discoverable_skill_root(&canonical_dir).is_none()
         || !canonical_dir.is_dir()
         || !canonical_dir.join("SKILL.md").is_file()
     {
+        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
+    }
+
+    Ok(canonical_dir)
+}
+
+pub(crate) fn resolve_skill_dir(path: &str) -> Result<PathBuf, Error> {
+    let canonical_dir = resolve_discoverable_skill_dir(path)?;
+
+    if inferred_editable_skill_root(&canonical_dir).is_none() {
         return Err(Error::invalid_params().data(format!("Source \"{}\" not found", path)));
     }
 

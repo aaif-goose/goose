@@ -211,6 +211,7 @@ describe("SkillsView", () => {
           fileLocation: "/Users/test/.claude/skills/claude-skill/SKILL.md",
         },
       ]);
+      const user = userEvent.setup();
 
       render(<SkillsView />);
 
@@ -224,8 +225,19 @@ describe("SkillsView", () => {
       expect(
         screen.getByText("/Users/test/.claude/skills/claude-skill/SKILL.md"),
       ).toBeInTheDocument();
+
+      await user.click(screen.getByLabelText("Options for claude-skill"));
       expect(
-        screen.queryByLabelText("Options for claude-skill"),
+        screen.queryByRole("menuitem", { name: /edit/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: /duplicate/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: /export/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("menuitem", { name: /delete/i }),
       ).not.toBeInTheDocument();
     });
 

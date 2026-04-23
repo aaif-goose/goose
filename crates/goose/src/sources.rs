@@ -2,7 +2,8 @@
 
 use crate::skills::{
     build_skill_md, discover_skills, infer_skill_name, is_editable_skill_dir, is_global_skill_dir,
-    parse_skill_frontmatter, resolve_skill_dir, skill_base_dir, validate_skill_name,
+    parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
+    validate_skill_name,
 };
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
@@ -163,7 +164,7 @@ pub fn list_sources(
 
 pub fn export_source(source_type: SourceType, path: &str) -> Result<(String, String), Error> {
     require_skill_type(source_type)?;
-    let dir = resolve_skill_dir(path)?;
+    let dir = resolve_discoverable_skill_dir(path)?;
 
     let md = dir.join("SKILL.md");
     let raw = fs::read_to_string(&md)
@@ -375,6 +376,32 @@ mod tests {
         assert_eq!(imported[0].name, "portable");
         assert_eq!(imported[0].description, "describes itself");
         assert_eq!(imported[0].content, "body goes here");
+    }
+
+    #[test]
+    fn export_allows_discovered_read_only_skill() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        let claude_skill_dir = project.join(".claude").join("skills").join("portable");
+        std::fs::create_dir_all(&claude_skill_dir).unwrap();
+        std::fs::write(
+            claude_skill_dir.join("SKILL.md"),
+            build_skill_md("portable", "describes itself", "body goes here"),
+        )
+        .unwrap();
+
+        let listed =
+            list_sources(Some(SourceType::Skill), Some(project.to_str().unwrap())).unwrap();
+        let exported_skill = listed
+            .iter()
+            .find(|skill| skill.name == "portable")
+            .expect("expected listed read-only skill");
+        assert!(!exported_skill.editable);
+
+        let (json, filename) =
+            export_source(SourceType::Skill, exported_skill.directory.as_str()).unwrap();
+        assert_eq!(filename, "portable.skill.json");
+        assert!(json.contains("\"name\": \"portable\""));
     }
 
     #[test]
