@@ -187,8 +187,7 @@ export function MessageTimeline({
                 messageRefs.current[message.id] = el;
               }}
               className={cn(
-                index === 0 ? "mt-0" : "mt-4",
-                "rounded-xl transition-[background-color,box-shadow]",
+                "transition-[background-color,box-shadow]",
                 pulsingMessageId === message.id &&
                   "bg-accent/25 ring-2 ring-accent/35 ring-inset",
               )}

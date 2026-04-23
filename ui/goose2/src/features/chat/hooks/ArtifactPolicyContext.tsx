@@ -65,6 +65,45 @@ const ArtifactPolicyContext = createContext<ArtifactPolicyContextValue>(
   DEFAULT_CONTEXT_VALUE,
 );
 
+function isArtifactActionTool(toolName: string): boolean {
+  const normalized = toolName.trim().toLowerCase();
+  if (/^(write|writing|create|creating|save|saving)\b/.test(normalized)) {
+    return true;
+  }
+
+  return (
+    normalized.includes("write_file") ||
+    normalized.includes("create_file") ||
+    normalized.includes("save_file")
+  );
+}
+
+function buildToolCardDisplay(
+  candidates: ArtifactPathCandidate[],
+): ToolCardDisplay {
+  if (candidates.length === 0) {
+    return EMPTY_DISPLAY;
+  }
+
+  const firstAllowedIndex = candidates.findIndex(
+    (candidate) => candidate.allowed,
+  );
+  const primaryIndex = firstAllowedIndex === -1 ? 0 : firstAllowedIndex;
+  const primaryCandidate = candidates[primaryIndex] ?? null;
+
+  if (!primaryCandidate) {
+    return EMPTY_DISPLAY;
+  }
+
+  return {
+    role: "primary_host",
+    primaryCandidate,
+    secondaryCandidates: candidates.filter(
+      (_candidate, index) => index !== primaryIndex,
+    ),
+  };
+}
+
 function shortenPath(fullPath: string, homeDir: string | null): string {
   if (homeDir && fullPath.startsWith(homeDir)) {
     return `~${fullPath.slice(homeDir.length)}`;
@@ -150,18 +189,17 @@ export function ArtifactPolicyProvider({
     const displayByToolCallId = new Map<string, ToolCardDisplay>();
 
     for (const ranking of artifactsIndex.byMessageId.values()) {
-      if (!ranking.primaryToolCallId || !ranking.primaryCandidate) continue;
-      if (
-        !ranking.primaryCandidate.toolName ||
-        !isWriteOrientedTool(ranking.primaryCandidate.toolName)
-      ) {
-        continue;
+      for (const [toolCallId, candidates] of ranking.candidatesByToolCallId) {
+        const toolName = candidates[0]?.toolName;
+        if (!toolName || !isArtifactActionTool(toolName)) {
+          continue;
+        }
+
+        const display = buildToolCardDisplay(candidates);
+        if (display.role === "primary_host") {
+          displayByToolCallId.set(toolCallId, display);
+        }
       }
-      displayByToolCallId.set(ranking.primaryToolCallId, {
-        role: "primary_host",
-        primaryCandidate: ranking.primaryCandidate,
-        secondaryCandidates: ranking.secondaryCandidates,
-      });
     }
 
     return {
