@@ -30,9 +30,9 @@ pub fn global_skills_dir() -> Option<PathBuf> {
 }
 
 /// Canonical writable location for project-scoped skills:
-/// `<project>/.goose/skills`.
+/// `<project>/.agents/skills`.
 pub fn project_skills_dir(project_dir: &Path) -> PathBuf {
-    project_dir.join(".goose").join("skills")
+    project_dir.join(".agents").join("skills")
 }
 
 pub(crate) fn skills_dir_global_or_err() -> Result<PathBuf, Error> {
@@ -196,9 +196,9 @@ pub fn all_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
     let mut dirs: Vec<(PathBuf, bool)> = Vec::new();
 
     if let Some(wd) = working_dir {
+        dirs.push((wd.join(".agents").join("skills"), false));
         dirs.push((wd.join(".goose").join("skills"), false));
         dirs.push((wd.join(".claude").join("skills"), false));
-        dirs.push((wd.join(".agents").join("skills"), false));
     }
 
     let home = dirs::home_dir();

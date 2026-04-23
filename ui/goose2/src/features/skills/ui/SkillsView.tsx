@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Upload } from "lucide-react";
+import type { ProjectInfo } from "@/features/projects/api/projects";
+import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button } from "@/shared/ui/button";
@@ -51,8 +53,40 @@ function FilterButton({
   );
 }
 
+function hydrateProjectNames(skills: SkillInfo[], projects: ProjectInfo[]) {
+  const projectNamesByWorkingDir = new Map<string, string>();
+
+  for (const project of projects) {
+    for (const workingDir of project.workingDirs) {
+      const normalizedDir = workingDir.trim();
+      if (!normalizedDir || projectNamesByWorkingDir.has(normalizedDir)) {
+        continue;
+      }
+      projectNamesByWorkingDir.set(normalizedDir, project.name);
+    }
+  }
+
+  return skills.map((skill) => {
+    if (skill.sourceKind !== "project") {
+      return skill;
+    }
+
+    const projectLinks = skill.projectLinks.map((project) => ({
+      ...project,
+      name: projectNamesByWorkingDir.get(project.workingDir) ?? project.name,
+    }));
+
+    return {
+      ...skill,
+      projectLinks,
+      sourceLabel: projectLinks[0]?.name ?? skill.sourceLabel,
+    };
+  });
+}
+
 export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const { t } = useTranslation(["skills", "common"]);
+  const projects = useProjectStore((state) => state.projects);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<SkillsFilter>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -61,8 +95,8 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
         name: string;
         description: string;
         instructions: string;
-        global?: boolean;
-        projectDir?: string;
+        path: string;
+        fileLocation: string;
       }
     | undefined
   >(undefined);
@@ -76,14 +110,15 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
 
   const loadSkills = useCallback(async () => {
     try {
-      const result = await listSkills();
-      setSkills(result);
+      const projectDirs = projects.flatMap((project) => project.workingDirs);
+      const result = await listSkills(projectDirs);
+      setSkills(hydrateProjectNames(result, projects));
     } catch {
       setSkills([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projects]);
 
   useEffect(() => {
     loadSkills();

@@ -3,6 +3,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SkillsView } from "../SkillsView";
 
+const mockProjects = [
+  {
+    id: "project-alpha",
+    name: "alpha",
+    workingDirs: ["/tmp/alpha"],
+  },
+];
+
 const mockSkills = [
   {
     id: "global:/path/code-review",
@@ -47,6 +55,12 @@ vi.mock("../../api/skills", () => ({
   importSkills: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("@/features/projects/stores/projectStore", () => ({
+  useProjectStore: (
+    selector: (state: { projects: typeof mockProjects }) => unknown,
+  ) => selector({ projects: mockProjects }),
+}));
+
 const { listSkills, deleteSkill } = (await import(
   "../../api/skills"
 )) as unknown as {
@@ -56,6 +70,11 @@ const { listSkills, deleteSkill } = (await import(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockProjects.splice(0, mockProjects.length, {
+    id: "project-alpha",
+    name: "alpha",
+    workingDirs: ["/tmp/alpha"],
+  });
   listSkills.mockResolvedValue([]);
 });
 
@@ -70,6 +89,9 @@ describe("SkillsView", () => {
 
   it("shows the empty state when no skills are available", async () => {
     render(<SkillsView />);
+    await waitFor(() => {
+      expect(listSkills).toHaveBeenCalledWith(["/tmp/alpha"]);
+    });
     await waitFor(() => {
       expect(screen.getByText("No skills yet")).toBeInTheDocument();
     });
@@ -164,6 +186,23 @@ describe("SkillsView", () => {
 
     await waitFor(() => {
       expect(deleteSkill).toHaveBeenCalledWith("/path/code-review");
+    });
+  });
+
+  it("passes saved project working directories into listSkills", async () => {
+    mockProjects.splice(0, mockProjects.length, {
+      id: "project-goose",
+      name: "Goose",
+      workingDirs: ["/tmp/goose", "/tmp/goose-worktree"],
+    });
+
+    render(<SkillsView />);
+
+    await waitFor(() => {
+      expect(listSkills).toHaveBeenCalledWith([
+        "/tmp/goose",
+        "/tmp/goose-worktree",
+      ]);
     });
   });
 });
