@@ -177,13 +177,19 @@ fn resolve_login_shell_path() -> Option<String> {
             .spawn()
             .ok()?
     } else {
-        std::process::Command::new(&shell)
-            .args(["-l", "-i", "-c", "echo $PATH"])
+        let mut cmd = std::process::Command::new(&shell);
+        cmd.args(["-l", "-i", "-c", "echo $PATH"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?
+            .stderr(Stdio::null());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+
+        cmd.spawn().ok()?
     };
 
     let mut stdout = child.stdout.take()?;
