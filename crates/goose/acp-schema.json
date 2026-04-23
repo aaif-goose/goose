@@ -743,6 +743,24 @@
       "x-side": "agent",
       "x-method": "_goose/session/update_project"
     },
+    "RenameSessionRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "title"
+      ],
+      "description": "Rename a session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/rename"
+    },
     "ArchiveSessionRequest": {
       "type": "object",
       "properties": {
@@ -1581,6 +1599,15 @@
                   ],
                   "description": "Params for _goose/session/update_project",
                   "title": "UpdateSessionProjectRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RenameSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/rename",
+                  "title": "RenameSessionRequest"
                 },
                 {
                   "allOf": [

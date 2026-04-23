@@ -111,6 +111,11 @@
       "responseType": "EmptyResponse"
     },
     {
+      "method": "_goose/session/rename",
+      "requestType": "RenameSessionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_goose/session/archive",
       "requestType": "ArchiveSessionRequest",
       "responseType": "EmptyResponse"
