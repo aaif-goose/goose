@@ -2674,7 +2674,7 @@ impl GooseAcpAgent {
         let provider_name_owned = provider_name.to_string();
         self.update_thread_metadata(thread_id, move |meta| {
             meta.provider_id = Some(provider_name_owned);
-            meta.model_id = None; // clear stale model from previous provider
+            meta.model_id = None;
         })
         .await?;
         debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider update_thread_metadata");
