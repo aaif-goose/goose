@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { getSession, listSessions } from '../api';
 import { useChatContext } from '../contexts/ChatContext';
 import { useConfig } from '../components/ConfigContext';
 import { useNavigation } from './useNavigation';
 import { startNewSession, resumeSession, shouldShowNewChatTitle } from '../sessions';
+import { groupSessionsByProject, resolveNewChatWorkingDir } from '../utils/projectSessions';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { AppEvents } from '../constants/events';
 import type { Session } from '../api';
@@ -27,6 +28,10 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
   const setView = useNavigation();
 
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
+  const recentSessionsByProject = useMemo(
+    () => groupSessionsByProject(recentSessions),
+    [recentSessions]
+  );
   const sessionsRef = useRef<Session[]>([]);
   const lastSessionIdRef = useRef<string | null>(null);
   const isCreatingSessionRef = useRef(false);
@@ -151,8 +156,8 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
     };
 
     const handleSessionRenamed = (event: Event) => {
-      const { sessionId, newName } =
-        (event as CustomEvent<{ sessionId: string; newName: string }>).detail;
+      const { sessionId, newName } = (event as CustomEvent<{ sessionId: string; newName: string }>)
+        .detail;
 
       setRecentSessions((prev) =>
         prev.map((session) => (session.id === sessionId ? { ...session, name: newName } : session))
@@ -205,7 +210,12 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
     } else {
       isCreatingSessionRef.current = true;
       try {
-        await startNewSession('', setView, getInitialWorkingDir(), {
+        const workingDir = resolveNewChatWorkingDir(
+          activeSessionId,
+          sessionsRef.current,
+          getInitialWorkingDir()
+        );
+        await startNewSession('', setView, workingDir, {
           allExtensions: extensionsList,
         });
       } finally {
@@ -227,6 +237,7 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
 
   return {
     recentSessions,
+    recentSessionsByProject,
     activeSessionId,
     currentSessionId,
     fetchSessions,

@@ -22,6 +22,7 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
   visibleItems,
   isActive,
   recentSessions,
+  recentSessionsByProject,
   activeSessionId,
   onNavClick,
   onNewChat,
@@ -130,6 +131,7 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
                       </DropdownMenuTrigger>
                       <ChatSessionsDropdown
                         sessions={recentSessions}
+                        projectGroups={recentSessionsByProject}
                         activeSessionId={activeSessionId}
                         side={navigationPosition === 'left' ? 'right' : 'left'}
                         getSessionStatus={getSessionStatus}
@@ -239,6 +241,7 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
                   {isChatItem && !isCondensedIconOnly && (
                     <SessionsList
                       sessions={recentSessions}
+                      projectGroups={recentSessionsByProject}
                       activeSessionId={activeSessionId}
                       isExpanded={isChatExpanded}
                       getSessionStatus={getSessionStatus}
@@ -311,6 +314,7 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
                     </DropdownMenuTrigger>
                     <ChatSessionsDropdown
                       sessions={recentSessions}
+                      projectGroups={recentSessionsByProject}
                       activeSessionId={activeSessionId}
                       side={isTopPosition ? 'bottom' : 'top'}
                       getSessionStatus={getSessionStatus}

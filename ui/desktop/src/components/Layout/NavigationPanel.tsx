@@ -44,6 +44,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
 
   const {
     recentSessions,
+    recentSessionsByProject,
     activeSessionId,
     fetchSessions,
     handleNavClick,
@@ -180,6 +181,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
     visibleItems,
     isActive,
     recentSessions,
+    recentSessionsByProject,
     activeSessionId,
     onNavClick: handleNavClick,
     onNewChat: handleNewChat,

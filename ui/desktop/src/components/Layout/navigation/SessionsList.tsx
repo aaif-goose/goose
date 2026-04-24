@@ -8,6 +8,7 @@ import { getSessionDisplayName } from '../../../hooks/useNavigationSessions';
 import { updateSessionName } from '../../../api';
 import type { Session } from '../../../api';
 import type { SessionStatus } from './types';
+import type { ProjectGroup } from '../../../utils/projectSessions';
 import { defineMessages, useIntl } from '../../../i18n';
 
 const i18n = defineMessages({
@@ -27,6 +28,7 @@ const i18n = defineMessages({
 
 interface SessionsListProps {
   sessions: Session[];
+  projectGroups?: ProjectGroup[];
   activeSessionId?: string;
   isExpanded: boolean;
   getSessionStatus: (sessionId: string) => SessionStatus | undefined;
@@ -39,6 +41,7 @@ interface SessionsListProps {
 
 export const SessionsList: React.FC<SessionsListProps> = ({
   sessions,
+  projectGroups = [],
   activeSessionId,
   isExpanded,
   getSessionStatus,
@@ -61,6 +64,54 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     },
     [onSessionRenamed]
   );
+
+  const groupedSessions = projectGroups.length > 1 ? projectGroups : null;
+
+  const renderSessionItem = (session: Session) => {
+    const status = getSessionStatus(session.id);
+    const isStreaming = status?.streamState === 'streaming';
+    const hasError = status?.streamState === 'error';
+    const hasUnread = status?.hasUnreadActivity ?? false;
+    const isActiveSession = session.id === activeSessionId;
+    const isEditing = editingSessionId === session.id;
+
+    return (
+      <div
+        key={session.id}
+        onClick={() => {
+          if (!isEditing) {
+            clearUnread(session.id);
+            onSessionClick(session.id);
+          }
+        }}
+        className={cn(
+          'w-full text-left py-1.5 px-2 text-xs rounded-md',
+          'hover:bg-background-tertiary transition-colors',
+          'flex items-center gap-2 cursor-pointer',
+          isActiveSession && 'bg-background-tertiary'
+        )}
+      >
+        <div className="w-4 flex-shrink-0" />
+        {session.recipe ? (
+          <ChefHat className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+        ) : (
+          <MessageSquare className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+        )}
+        <InlineEditText
+          value={getSessionDisplayName(session)}
+          onSave={(newName) => handleSaveSessionName(session.id, newName)}
+          placeholder={intl.formatMessage(i18n.untitledSession)}
+          disabled={isStreaming}
+          singleClickEdit={false}
+          className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
+          editClassName="!text-xs"
+          onEditStart={() => setEditingSessionId(session.id)}
+          onEditEnd={() => setEditingSessionId(null)}
+        />
+        <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
+      </div>
+    );
+  };
 
   return (
     <AnimatePresence>
@@ -89,55 +140,19 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               </div>
             )}
 
-            {sessions.map((session) => {
-              const status = getSessionStatus(session.id);
-              const isStreaming = status?.streamState === 'streaming';
-              const hasError = status?.streamState === 'error';
-              const hasUnread = status?.hasUnreadActivity ?? false;
-              const isActiveSession = session.id === activeSessionId;
-              const isEditing = editingSessionId === session.id;
-
-              return (
-                <div
-                  key={session.id}
-                  onClick={() => {
-                    if (!isEditing) {
-                      clearUnread(session.id);
-                      onSessionClick(session.id);
-                    }
-                  }}
-                  className={cn(
-                    'w-full text-left py-1.5 px-2 text-xs rounded-md',
-                    'hover:bg-background-tertiary transition-colors',
-                    'flex items-center gap-2 cursor-pointer',
-                    isActiveSession && 'bg-background-tertiary'
-                  )}
-                >
-                  <div className="w-4 flex-shrink-0" />
-                  {session.recipe ? (
-                    <ChefHat className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                  ) : (
-                    <MessageSquare className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                  )}
-                  <InlineEditText
-                    value={getSessionDisplayName(session)}
-                    onSave={(newName) => handleSaveSessionName(session.id, newName)}
-                    placeholder={intl.formatMessage(i18n.untitledSession)}
-                    disabled={isStreaming}
-                    singleClickEdit={false}
-                    className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
-                    editClassName="!text-xs"
-                    onEditStart={() => setEditingSessionId(session.id)}
-                    onEditEnd={() => setEditingSessionId(null)}
-                  />
-                  <SessionIndicators
-                    isStreaming={isStreaming}
-                    hasUnread={hasUnread}
-                    hasError={hasError}
-                  />
-                </div>
-              );
-            })}
+            {groupedSessions
+              ? groupedSessions.map((group) => (
+                  <React.Fragment key={group.path}>
+                    <div
+                      className="px-2 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-text-tertiary truncate"
+                      title={group.path}
+                    >
+                      {group.label}
+                    </div>
+                    {group.sessions.map(renderSessionItem)}
+                  </React.Fragment>
+                ))
+              : sessions.map(renderSessionItem)}
 
             {/* Show All button at bottom */}
             {onShowAll && sessions.length > 0 && (

@@ -1,5 +1,6 @@
 import type { NavItem } from '../../../hooks/useNavigationItems';
 import type { Session } from '../../../api';
+import type { ProjectGroup } from '../../../utils/projectSessions';
 import type { NavigationPosition } from '../NavigationContext';
 
 export type StreamState = 'idle' | 'loading' | 'streaming' | 'error';
@@ -32,6 +33,7 @@ export interface NavigationRendererProps {
 
   // Sessions
   recentSessions: Session[];
+  recentSessionsByProject: ProjectGroup[];
   activeSessionId?: string;
   onNavClick: (path: string) => void;
   onNewChat: () => void;
