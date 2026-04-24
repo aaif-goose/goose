@@ -7,6 +7,7 @@ import { Switch } from '../ui/switch';
 import { FixedExtensionEntry, useConfig } from '../ConfigContext';
 import { toastService } from '../../toasts';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
+import { nameToKey } from '../settings/extensions/utils';
 import { ExtensionConfig, getSessionExtensions } from '../../api';
 import { addToAgent, removeFromAgent } from '../settings/extensions/agent-api';
 import {
@@ -230,19 +231,19 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
       );
     }
 
-    const sessionExtensionNames = new Set(sessionExtensions.map((ext) => ext.name));
-    const globalExtensionNames = new Set(allExtensions.map((ext) => ext.name));
+    const sessionExtensionKeys = new Set(sessionExtensions.map((ext) => nameToKey(ext.name)));
+    const globalExtensionKeys = new Set(allExtensions.map((ext) => nameToKey(ext.name)));
 
     const mergedExtensions = allExtensions.map(
       (ext) =>
         ({
           ...ext,
-          enabled: sessionExtensionNames.has(ext.name),
+          enabled: sessionExtensionKeys.has(nameToKey(ext.name)),
         }) as FixedExtensionEntry
     );
 
     for (const sessionExtension of sessionExtensions) {
-      if (globalExtensionNames.has(sessionExtension.name)) {
+      if (globalExtensionKeys.has(nameToKey(sessionExtension.name))) {
         continue;
       }
 
