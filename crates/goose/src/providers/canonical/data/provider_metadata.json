@@ -41,7 +41,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 518
+    "model_count": 525
   },
   {
     "id": "abacus",
@@ -74,7 +74,7 @@
     "env": [
       "SILICONFLOW_CN_API_KEY"
     ],
-    "model_count": 79
+    "model_count": 81
   },
   {
     "id": "submodel",
@@ -107,7 +107,7 @@
     "env": [
       "DEEPSEEK_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 4
   },
   {
     "id": "meta-llama",
@@ -121,17 +121,6 @@
     "model_count": 7
   },
   {
-    "id": "tencent-token-plan",
-    "display_name": "Tencent Token Plan",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.lkeap.cloud.tencent.com/plan/v3",
-    "doc": "https://cloud.tencent.com/document/product/1823/130060",
-    "env": [
-      "TENCENT_TOKEN_PLAN_API_KEY"
-    ],
-    "model_count": 1
-  },
-  {
     "id": "fireworks-ai",
     "display_name": "Fireworks AI",
     "npm": "@ai-sdk/openai-compatible",
@@ -140,7 +129,7 @@
     "env": [
       "FIREWORKS_API_KEY"
     ],
-    "model_count": 17
+    "model_count": 18
   },
   {
     "id": "kimi-for-coding",
@@ -173,7 +162,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 14
   },
   {
     "id": "io-net",
@@ -195,7 +184,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 76
+    "model_count": 77
   },
   {
     "id": "minimax-cn-coding-plan",
@@ -261,7 +250,7 @@
     "env": [
       "ZENMUX_API_KEY"
     ],
-    "model_count": 88
+    "model_count": 89
   },
   {
     "id": "upstage",
@@ -283,7 +272,7 @@
     "env": [
       "NOVITA_API_KEY"
     ],
-    "model_count": 90
+    "model_count": 96
   },
   {
     "id": "xiaomi-token-plan-cn",
@@ -316,7 +305,7 @@
     "env": [
       "CHUTES_API_KEY"
     ],
-    "model_count": 69
+    "model_count": 70
   },
   {
     "id": "dinference",
@@ -360,7 +349,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 334
+    "model_count": 335
   },
   {
     "id": "morph",
@@ -426,7 +415,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 52
+    "model_count": 58
   },
   {
     "id": "stepfun",
@@ -459,7 +448,7 @@
     "env": [
       "POE_API_KEY"
     ],
-    "model_count": 129
+    "model_count": 130
   },
   {
     "id": "helicone",
@@ -481,7 +470,7 @@
     "env": [
       "OLLAMA_API_KEY"
     ],
-    "model_count": 36
+    "model_count": 37
   },
   {
     "id": "zai-coding-plan",
@@ -514,7 +503,7 @@
     "env": [
       "BASETEN_API_KEY"
     ],
-    "model_count": 12
+    "model_count": 13
   },
   {
     "id": "zhipuai-coding-plan",
@@ -547,7 +536,7 @@
     "env": [
       "FIRMWARE_API_KEY"
     ],
-    "model_count": 24
+    "model_count": 25
   },
   {
     "id": "lmstudio",
@@ -580,7 +569,7 @@
     "env": [
       "MOONSHOT_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
   },
   {
     "id": "wafer.ai",
@@ -756,7 +745,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 33
+    "model_count": 34
   },
   {
     "id": "siliconflow",
@@ -767,7 +756,7 @@
     "env": [
       "SILICONFLOW_API_KEY"
     ],
-    "model_count": 73
+    "model_count": 74
   },
   {
     "id": "minimax",
@@ -868,7 +857,7 @@
     "env": [
       "MOONSHOT_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
   },
   {
     "id": "berget",
@@ -968,6 +957,17 @@
       "MINIMAX_API_KEY"
     ],
     "model_count": 6
+  },
+  {
+    "id": "regolo-ai",
+    "display_name": "Regolo AI",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.regolo.ai/v1",
+    "doc": "https://docs.regolo.ai/",
+    "env": [
+      "REGOLO_API_KEY"
+    ],
+    "model_count": 13
   },
   {
     "id": "xiaomi-token-plan-ams",

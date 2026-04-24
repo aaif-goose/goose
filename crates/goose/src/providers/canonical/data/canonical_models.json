@@ -6539,6 +6539,37 @@
     }
   },
   {
+    "id": "alibaba-cn/kimi-k2.6",
+    "name": "Moonshot Kimi K2.6",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.929,
+      "output": 3.858
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
     "id": "alibaba-cn/kimi/kimi-k2.5",
     "name": "kimi/kimi-k2.5",
     "family": "kimi",
@@ -10717,6 +10748,72 @@
     "limit": {
       "context": 1000000,
       "output": 64000
+    }
+  },
+  {
+    "id": "amazon-bedrock/au.anthropic.claude-opus-4.6-v1",
+    "name": "AU Anthropic Claude Opus 4.6",
+    "family": "claude-opus",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-02-05",
+    "last_updated": "2026-02-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 16.5,
+      "output": 82.5,
+      "cache_read": 1.65,
+      "cache_write": 20.625
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "amazon-bedrock/au.anthropic.claude-sonnet-4.6",
+    "name": "AU Anthropic Claude Sonnet 4.6",
+    "family": "claude-sonnet",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-08",
+    "release_date": "2026-02-17",
+    "last_updated": "2026-02-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.3,
+      "output": 16.5,
+      "cache_read": 0.33,
+      "cache_write": 4.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
@@ -16436,6 +16533,39 @@
     }
   },
   {
+    "id": "azure/claude-sonnet-4.6",
+    "name": "Claude Sonnet 4.6",
+    "family": "claude-sonnet",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-08-31",
+    "release_date": "2026-02-17",
+    "last_updated": "2026-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3,
+      "cache_write": 3.75
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 64000
+    }
+  },
+  {
     "id": "azure/codestral",
     "name": "Codestral 25.01",
     "family": "codestral",
@@ -19505,6 +19635,38 @@
     }
   },
   {
+    "id": "baseten/moonshotai/Kimi-K2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi-k2.6",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
     "id": "baseten/nvidia/Nemotron-120B-A12B",
     "name": "Nemotron 3 Super",
     "family": "nemotron",
@@ -21105,6 +21267,37 @@
     "limit": {
       "context": 262144,
       "output": 65535
+    }
+  },
+  {
+    "id": "chutes/moonshotai/Kimi-K2.6-TEE",
+    "name": "Kimi K2.6 TEE",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-12",
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.44,
+      "output": 2.0
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
     }
   },
   {
@@ -25741,6 +25934,36 @@
     }
   },
   {
+    "id": "cortecs/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi-thinking",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-17",
+    "last_updated": "2026-04-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.81,
+      "output": 3.54,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 256000,
+      "output": 256000
+    }
+  },
+  {
     "id": "cortecs/llama-3.1-405b-instruct",
     "name": "Llama 3.1 405B Instruct",
     "family": "llama",
@@ -26174,6 +26397,98 @@
     }
   },
   {
+    "id": "deepinfra/Qwen/Qwen3.5-35B-A3B",
+    "name": "Qwen 3.5 35B A3B",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-02-01",
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.95
+    },
+    "limit": {
+      "context": 262144,
+      "output": 81920
+    }
+  },
+  {
+    "id": "deepinfra/Qwen/Qwen3.5-397B-A17B",
+    "name": "Qwen 3.5 397B A17B",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-02-01",
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.54,
+      "output": 3.4
+    },
+    "limit": {
+      "context": 262144,
+      "output": 81920
+    }
+  },
+  {
+    "id": "deepinfra/Qwen/Qwen3.6-35B-A3B",
+    "name": "Qwen3.6 35B A3B",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-01",
+    "last_updated": "2026-04-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 1.0
+    },
+    "limit": {
+      "context": 262144,
+      "output": 81920
+    }
+  },
+  {
     "id": "deepinfra/anthropic/claude-3.7-sonnet",
     "name": "Claude Sonnet 3.7 (Latest)",
     "family": "claude-sonnet",
@@ -26574,6 +26889,38 @@
     }
   },
   {
+    "id": "deepinfra/moonshotai/Kimi-K2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-04",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.75,
+      "output": 3.5,
+      "cache_read": 0.15
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
     "id": "deepinfra/openai/gpt-oss-120b",
     "name": "GPT OSS 120B",
     "family": "gpt-oss",
@@ -26895,6 +27242,66 @@
     "limit": {
       "context": 128000,
       "output": 64000
+    }
+  },
+  {
+    "id": "deepseek/deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash",
+    "family": "deepseek-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.14,
+      "output": 0.28,
+      "cache_read": 0.028
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 384000
+    }
+  },
+  {
+    "id": "deepseek/deepseek-v4-pro",
+    "name": "DeepSeek V4 Pro",
+    "family": "deepseek-thinking",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.74,
+      "output": 3.48,
+      "cache_read": 0.145
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 384000
     }
   },
   {
@@ -29618,6 +30025,36 @@
     }
   },
   {
+    "id": "fireworks-ai/accounts/fireworks/models/kimi-k2p6",
+    "name": "Kimi K2.6",
+    "family": "kimi-thinking",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-17",
+    "last_updated": "2026-04-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
+    },
+    "limit": {
+      "context": 262000,
+      "output": 262000
+    }
+  },
+  {
     "id": "fireworks-ai/accounts/fireworks/models/minimax-m2p1",
     "name": "MiniMax-M2.1",
     "family": "minimax",
@@ -30401,6 +30838,35 @@
     }
   },
   {
+    "id": "firmware/kimi-k2-6",
+    "name": "Kimi-K2.6",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "1970-01-01",
+    "last_updated": "1970-01-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
+    },
+    "limit": {
+      "context": 256000,
+      "output": 128000
+    }
+  },
+  {
     "id": "firmware/kimi-k2.5",
     "name": "Kimi-K2.5",
     "attachment": false,
@@ -30492,7 +30958,7 @@
   },
   {
     "id": "firmware/zai-glm-5.1",
-    "name": "GLM-5",
+    "name": "Z.AI GLM-5.1",
     "family": "glm",
     "attachment": true,
     "reasoning": false,
@@ -35976,7 +36442,7 @@
     }
   },
   {
-    "id": "google/gemma-4-26b-it",
+    "id": "google/gemma-4-26b-a4b-it",
     "name": "Gemma 4 26B",
     "family": "gemma",
     "attachment": false,
@@ -47370,6 +47836,35 @@
     }
   },
   {
+    "id": "kilo/moonshotai/kimi-k2.6",
+    "name": "MoonshotAI: Kimi K2.6",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
     "id": "kilo/morph/morph-v3-fast",
     "name": "Morph: Morph V3 Fast",
     "attachment": false,
@@ -55301,7 +55796,7 @@
   {
     "id": "llmgateway/kimi-k2.5",
     "name": "Kimi K2.5",
-    "family": "kimi",
+    "family": "kimi-k2.5",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
@@ -60194,7 +60689,7 @@
   {
     "id": "moonshotai-cn/kimi-k2.5",
     "name": "Kimi K2.5",
-    "family": "kimi",
+    "family": "kimi-k2.5",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
@@ -60217,6 +60712,38 @@
       "input": 0.6,
       "output": 3.0,
       "cache_read": 0.1
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "moonshotai-cn/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi-k2.6",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
     },
     "limit": {
       "context": 262144,
@@ -60376,7 +60903,7 @@
   {
     "id": "moonshotai/kimi-k2.5",
     "name": "Kimi K2.5",
-    "family": "kimi",
+    "family": "kimi-k2.5",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
@@ -60399,6 +60926,38 @@
       "input": 0.6,
       "output": 3.0,
       "cache_read": 0.1
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "moonshotai/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi-k2.6",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
     },
     "limit": {
       "context": 262144,
@@ -64417,6 +64976,35 @@
     "limit": {
       "context": 32768,
       "output": 16384
+    }
+  },
+  {
+    "id": "nano-gpt/alibaba/qwen3.6-flash",
+    "name": "Qwen3.6 Flash",
+    "family": "qwen3.6",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-04-17",
+    "last_updated": "2026-04-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.19,
+      "output": 1.16
+    },
+    "limit": {
+      "context": 991800,
+      "output": 65536
     }
   },
   {
@@ -70911,6 +71499,62 @@
     }
   },
   {
+    "id": "nano-gpt/moonshotai/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi-k2.6",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "release_date": "2026-04-16",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.53,
+      "output": 2.73
+    },
+    "limit": {
+      "context": 256000,
+      "output": 65536
+    }
+  },
+  {
+    "id": "nano-gpt/moonshotai/kimi-k2.6:thinking",
+    "name": "Kimi K2.6 Thinking",
+    "family": "kimi-thinking",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "release_date": "2026-04-16",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.53,
+      "output": 2.73
+    },
+    "limit": {
+      "context": 256000,
+      "output": 65536
+    }
+  },
+  {
     "id": "nano-gpt/nex-agi/deepseek-v3.1-nex-n1",
     "name": "DeepSeek V3.1 Nex N1",
     "family": "deepseek",
@@ -72370,6 +73014,35 @@
     }
   },
   {
+    "id": "nano-gpt/qwen-3.6-plus",
+    "name": "Qwen 3.6 Plus",
+    "family": "qwen3.6",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-04-02",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.45,
+      "output": 2.7
+    },
+    "limit": {
+      "context": 991800,
+      "output": 65536
+    }
+  },
+  {
     "id": "nano-gpt/qwen-image",
     "name": "Qwen Image",
     "attachment": true,
@@ -72497,6 +73170,64 @@
     "limit": {
       "context": 1000000,
       "output": 8192
+    }
+  },
+  {
+    "id": "nano-gpt/qwen/Qwen3.6-35B-A3B",
+    "name": "Qwen3.6 35B A3B",
+    "family": "qwen3.6",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-04-17",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.29,
+      "output": 1.74
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "nano-gpt/qwen/Qwen3.6-35B-A3B:thinking",
+    "name": "Qwen3.6 35B A3B Thinking",
+    "family": "qwen3.6",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "release_date": "2026-04-19",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.29,
+      "output": 1.74
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
     }
   },
   {
@@ -72685,6 +73416,33 @@
     "limit": {
       "context": 32768,
       "output": 32768
+    }
+  },
+  {
+    "id": "nano-gpt/qwen3.6-max-preview",
+    "name": "Qwen3.6 Max Preview",
+    "family": "qwen3.6",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.3,
+      "output": 7.8
+    },
+    "limit": {
+      "context": 245800,
+      "output": 65536
     }
   },
   {
@@ -76082,6 +76840,62 @@
     }
   },
   {
+    "id": "novita-ai/deepseek/deepseek-r1-distill-qwen-14b",
+    "name": "DeepSeek R1 Distill Qwen 14B",
+    "family": "deepseek-thinking",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-01-20",
+    "last_updated": "2025-01-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.15,
+      "output": 0.15
+    },
+    "limit": {
+      "context": 32768,
+      "output": 16384
+    }
+  },
+  {
+    "id": "novita-ai/deepseek/deepseek-r1-distill-qwen-32b",
+    "name": "DeepSeek R1 Distill Qwen 32B",
+    "family": "deepseek-thinking",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2025-01-20",
+    "last_updated": "2025-01-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 0.3
+    },
+    "limit": {
+      "context": 64000,
+      "output": 32000
+    }
+  },
+  {
     "id": "novita-ai/deepseek/deepseek-r1-turbo",
     "name": "DeepSeek R1 (Turbo)\t",
     "attachment": false,
@@ -76280,6 +77094,36 @@
     }
   },
   {
+    "id": "novita-ai/google/gemma-3-12b-it",
+    "name": "Gemma 3 12B",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2025-03-13",
+    "last_updated": "2025-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.05,
+      "output": 0.1
+    },
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    }
+  },
+  {
     "id": "novita-ai/google/gemma-3-27b-it",
     "name": "Gemma 3 27B",
     "family": "gemma",
@@ -76394,6 +77238,34 @@
     }
   },
   {
+    "id": "novita-ai/inclusionai/ling-2.6-1t",
+    "name": "Ling-2.6-1T",
+    "family": "ling",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-23",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 262144,
+      "output": 32768
+    }
+  },
+  {
     "id": "novita-ai/kwaipilot/kat-coder-pro",
     "name": "Kat Coder Pro",
     "attachment": false,
@@ -76503,6 +77375,34 @@
     "limit": {
       "context": 16384,
       "output": 16384
+    }
+  },
+  {
+    "id": "novita-ai/meta-llama/llama-3.2-3b-instruct",
+    "name": "Llama 3.2 3B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2024-09-18",
+    "last_updated": "2024-09-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.03,
+      "output": 0.05
+    },
+    "limit": {
+      "context": 32768,
+      "output": 32000
     }
   },
   {
@@ -76928,6 +77828,38 @@
       "input": 0.6,
       "output": 3.0,
       "cache_read": 0.1
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "novita-ai/moonshotai/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
     },
     "limit": {
       "context": 262144,
@@ -80650,7 +81582,7 @@
     "cost": {},
     "limit": {
       "context": 262144,
-      "output": 8192
+      "output": 262144
     }
   },
   {
@@ -80831,6 +81763,31 @@
     "tool_call": true,
     "release_date": "2026-01-27",
     "last_updated": "2026-01-27",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {},
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "ollama-cloud/kimi-k2.6:cloud",
+    "name": "kimi-k2.6:cloud",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-20",
     "modalities": {
       "input": [
         "text",
@@ -82245,6 +83202,38 @@
     }
   },
   {
+    "id": "openai/gpt-5.5",
+    "name": "GPT-5.5",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2025-12-01",
+    "release_date": "2026-04-23",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 5.0,
+      "output": 30.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 130000
+    }
+  },
+  {
     "id": "openai/gpt-image-1",
     "name": "gpt-image-1",
     "family": "gpt-image",
@@ -82719,6 +83708,66 @@
     }
   },
   {
+    "id": "opencode-go/deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash",
+    "family": "deepseek-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.14,
+      "output": 0.28,
+      "cache_read": 0.028
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 384000
+    }
+  },
+  {
+    "id": "opencode-go/deepseek-v4-pro",
+    "name": "DeepSeek V4 Pro",
+    "family": "deepseek-thinking",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.74,
+      "output": 3.48,
+      "cache_read": 0.145
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 384000
+    }
+  },
+  {
     "id": "opencode-go/glm-5",
     "name": "GLM-5",
     "family": "glm",
@@ -82812,7 +83861,7 @@
   },
   {
     "id": "opencode-go/kimi-k2.6",
-    "name": "Kimi K2.6",
+    "name": "Kimi K2.6 (3x limits)",
     "family": "kimi-k2.6",
     "attachment": true,
     "reasoning": true,
@@ -82833,9 +83882,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.95,
-      "output": 4.0,
-      "cache_read": 0.16
+      "input": 0.32,
+      "output": 1.34,
+      "cache_read": 0.054
     },
     "limit": {
       "context": 262144,
@@ -82845,7 +83894,7 @@
   {
     "id": "opencode-go/mimo-v2-omni",
     "name": "MiMo V2 Omni",
-    "family": "mimo-omni",
+    "family": "mimo-v2-omni",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
@@ -82872,13 +83921,13 @@
     },
     "limit": {
       "context": 262144,
-      "output": 64000
+      "output": 128000
     }
   },
   {
     "id": "opencode-go/mimo-v2-pro",
     "name": "MiMo V2 Pro",
-    "family": "mimo-pro",
+    "family": "mimo-v2-pro",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
@@ -82902,7 +83951,70 @@
     },
     "limit": {
       "context": 1048576,
-      "output": 64000
+      "output": 128000
+    }
+  },
+  {
+    "id": "opencode-go/mimo-v2.5",
+    "name": "MiMo V2.5",
+    "family": "mimo-v2.5",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-12",
+    "release_date": "2026-04-22",
+    "last_updated": "2026-04-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.4,
+      "output": 2.0,
+      "cache_read": 0.08
+    },
+    "limit": {
+      "context": 262144,
+      "output": 128000
+    }
+  },
+  {
+    "id": "opencode-go/mimo-v2.5-pro",
+    "name": "MiMo V2.5 Pro",
+    "family": "mimo-v2.5-pro",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-12",
+    "release_date": "2026-04-22",
+    "last_updated": "2026-04-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.0,
+      "output": 3.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 128000
     }
   },
   {
@@ -84112,6 +85224,70 @@
     }
   },
   {
+    "id": "opencode/gpt-5.5",
+    "name": "GPT-5.5",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2025-12-01",
+    "release_date": "2026-04-23",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 5.0,
+      "output": 30.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 130000
+    }
+  },
+  {
+    "id": "opencode/gpt-5.5-pro",
+    "name": "GPT-5.5 Pro",
+    "family": "gpt-pro",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2025-12-01",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 30.0,
+      "output": 180.0,
+      "cache_read": 30.0
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 128000
+    }
+  },
+  {
     "id": "opencode/grok-code",
     "name": "Grok Code Fast 1",
     "family": "grok",
@@ -84139,6 +85315,36 @@
     "limit": {
       "context": 256000,
       "output": 256000
+    }
+  },
+  {
+    "id": "opencode/hy3-preview-free",
+    "name": "Hy3 preview Free",
+    "family": "hy3-free",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-06",
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0
+    },
+    "limit": {
+      "context": 256000,
+      "output": 64000
     }
   },
   {
@@ -84263,6 +85469,67 @@
     "limit": {
       "context": 262144,
       "output": 262144
+    }
+  },
+  {
+    "id": "opencode/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-10",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
+    },
+    "limit": {
+      "context": 262144,
+      "output": 65536
+    }
+  },
+  {
+    "id": "opencode/ling-2.6-flash-free",
+    "name": "Ling 2.6 Flash Free",
+    "family": "ling-flash-free",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-06",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 262100,
+      "output": 32800
     }
   },
   {
@@ -84472,6 +85739,36 @@
       "input": 0.0,
       "output": 0.0,
       "cache_read": 0.0
+    },
+    "limit": {
+      "context": 204800,
+      "output": 131072
+    }
+  },
+  {
+    "id": "opencode/minimax-m2.7",
+    "name": "MiniMax M2.7",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-03-18",
+    "last_updated": "2026-03-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 1.2,
+      "cache_read": 0.06
     },
     "limit": {
       "context": 204800,
@@ -85490,6 +86787,66 @@
     "limit": {
       "context": 163840,
       "output": 65536
+    }
+  },
+  {
+    "id": "openrouter/deepseek/deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash",
+    "family": "deepseek-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.14,
+      "output": 0.28,
+      "cache_read": 0.028
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 393216
+    }
+  },
+  {
+    "id": "openrouter/deepseek/deepseek-v4-pro",
+    "name": "DeepSeek V4 Pro",
+    "family": "deepseek-thinking",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.74,
+      "output": 3.48,
+      "cache_read": 0.145
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 393216
     }
   },
   {
@@ -87144,6 +88501,36 @@
     }
   },
   {
+    "id": "openrouter/moonshotai/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
     "id": "openrouter/nousresearch/hermes-3-llama-3.1-405b:free",
     "name": "Hermes 3 405B Instruct (free)",
     "family": "hermes",
@@ -88077,9 +89464,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 7.5e-7,
-      "output": 4.5e-6,
-      "cache_read": 7.5e-8
+      "input": 0.75,
+      "output": 4.5,
+      "cache_read": 0.075
     },
     "limit": {
       "context": 400000,
@@ -88109,9 +89496,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 2e-7,
-      "output": 1.25e-6,
-      "cache_read": 2e-8
+      "input": 0.2,
+      "output": 1.25,
+      "cache_read": 0.02
     },
     "limit": {
       "context": 400000,
@@ -93560,6 +94947,35 @@
     }
   },
   {
+    "id": "poe/openai/gpt-image-2",
+    "name": "GPT-Image-2",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": false,
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 5.0505,
+      "output": 32.3232,
+      "cache_read": 1.2626
+    },
+    "limit": {
+      "context": 0,
+      "output": 0
+    }
+  },
+  {
     "id": "poe/openai/o1",
     "name": "o1",
     "family": "o",
@@ -96882,6 +98298,373 @@
     }
   },
   {
+    "id": "regolo-ai/gpt-oss-120b",
+    "name": "GPT-OSS-120B",
+    "family": "gpt-oss",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-05",
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 4.2
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "regolo-ai/gpt-oss-20b",
+    "name": "GPT-OSS-20B",
+    "family": "gpt-oss",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-01",
+    "last_updated": "2026-03-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.4,
+      "output": 1.8
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "regolo-ai/llama-3.1-8b-instruct",
+    "name": "Llama 3.1 8B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-07",
+    "last_updated": "2025-04-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.05,
+      "output": 0.25
+    },
+    "limit": {
+      "context": 120000,
+      "output": 120000
+    }
+  },
+  {
+    "id": "regolo-ai/llama-3.3-70b-instruct",
+    "name": "Llama 3.3 70B Instruct",
+    "family": "llama",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-04-28",
+    "last_updated": "2025-04-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.6,
+      "output": 2.7
+    },
+    "limit": {
+      "context": 128000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "regolo-ai/minimax-m2.5",
+    "name": "MiniMax 2.5",
+    "family": "minimax",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-10",
+    "last_updated": "2026-03-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.8,
+      "output": 3.5
+    },
+    "limit": {
+      "context": 190000,
+      "output": 64000
+    }
+  },
+  {
+    "id": "regolo-ai/mistral-small-4-119b",
+    "name": "Mistral Small 4 119B",
+    "family": "mistral-small",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-15",
+    "last_updated": "2026-03-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.75,
+      "output": 3.0
+    },
+    "limit": {
+      "context": 256000,
+      "output": 16384
+    }
+  },
+  {
+    "id": "regolo-ai/mistral-small3.2",
+    "name": "Mistral Small 3.2",
+    "family": "mistral-small",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-01-31",
+    "last_updated": "2025-01-31",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.5,
+      "output": 2.2
+    },
+    "limit": {
+      "context": 120000,
+      "output": 120000
+    }
+  },
+  {
+    "id": "regolo-ai/qwen-image",
+    "name": "Qwen-Image",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-03-01",
+    "last_updated": "2026-03-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.5,
+      "output": 2.0
+    },
+    "limit": {
+      "context": 8192,
+      "output": 4096
+    }
+  },
+  {
+    "id": "regolo-ai/qwen3-coder-next",
+    "name": "Qwen3-Coder-Next",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-03-01",
+    "last_updated": "2026-03-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.3,
+      "output": 1.2
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "regolo-ai/qwen3-embedding-8b",
+    "name": "Qwen3-Embedding-8B",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": false,
+    "release_date": "2026-02-01",
+    "last_updated": "2026-02-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.1,
+      "output": 0.1
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "regolo-ai/qwen3-reranker-4b",
+    "name": "Qwen3-Reranker-4B",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": false,
+    "release_date": "2026-02-01",
+    "last_updated": "2026-02-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.12,
+      "output": 0.12
+    },
+    "limit": {
+      "context": 32768,
+      "output": 8192
+    }
+  },
+  {
+    "id": "regolo-ai/qwen3.5-122b",
+    "name": "Qwen3.5-122B",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-01",
+    "last_updated": "2026-02-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.9,
+      "output": 3.6
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "regolo-ai/qwen3.5-9b",
+    "name": "Qwen3.5-9B",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-01",
+    "last_updated": "2026-02-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.15,
+      "output": 0.6
+    },
+    "limit": {
+      "context": 262144,
+      "output": 8192
+    }
+  },
+  {
     "id": "requesty/anthropic/claude-3.7-sonnet",
     "name": "Claude Sonnet 3.7",
     "family": "claude-sonnet",
@@ -99654,10 +101437,40 @@
         "text"
       ]
     },
-    "open_weights": false,
+    "open_weights": true,
     "cost": {
-      "input": 0.55,
-      "output": 3.0
+      "input": 0.45,
+      "output": 2.25
+    },
+    "limit": {
+      "context": 262000,
+      "output": 262000
+    }
+  },
+  {
+    "id": "siliconflow-cn/Pro/moonshotai/Kimi-K2.6",
+    "name": "Pro/moonshotai/Kimi-K2.6",
+    "family": "kimi",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
     },
     "limit": {
       "context": 262000,
@@ -100811,6 +102624,37 @@
     "cost": {
       "input": 0.22,
       "output": 1.74
+    },
+    "limit": {
+      "context": 262144,
+      "output": 65536
+    }
+  },
+  {
+    "id": "siliconflow-cn/Qwen/Qwen3.6-35B-A3B",
+    "name": "Qwen/Qwen3.6-35B-A3B",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-04-17",
+    "last_updated": "2026-04-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.23,
+      "output": 1.86
     },
     "limit": {
       "context": 262144,
@@ -103151,10 +104995,40 @@
         "text"
       ]
     },
-    "open_weights": false,
+    "open_weights": true,
     "cost": {
-      "input": 0.55,
-      "output": 3.0
+      "input": 0.45,
+      "output": 2.25
+    },
+    "limit": {
+      "context": 262000,
+      "output": 262000
+    }
+  },
+  {
+    "id": "siliconflow/moonshotai/Kimi-K2.6",
+    "name": "moonshotai/Kimi-K2.6",
+    "family": "kimi",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
     },
     "limit": {
       "context": 262000,
@@ -105267,36 +107141,6 @@
     }
   },
   {
-    "id": "tencent-token-plan/hy3-preview",
-    "name": "Hy3 preview",
-    "family": "Hy",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "release_date": "2026-04-20",
-    "last_updated": "2026-04-20",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.0,
-      "output": 0.0,
-      "cache_read": 0.0,
-      "cache_write": 0.0
-    },
-    "limit": {
-      "context": 256000,
-      "output": 64000
-    }
-  },
-  {
     "id": "tencent-tokenhub/hy3-preview",
     "name": "Hy3 preview",
     "family": "Hy",
@@ -105775,6 +107619,38 @@
     "limit": {
       "context": 262144,
       "output": 262144
+    }
+  },
+  {
+    "id": "togetherai/moonshotai/Kimi-K2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi-k2.6",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.2,
+      "output": 4.5,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 262144,
+      "output": 131000
     }
   },
   {
@@ -106287,6 +108163,62 @@
     }
   },
   {
+    "id": "venice/deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash",
+    "family": "deepseek",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.175,
+      "output": 0.35
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 32768
+    }
+  },
+  {
+    "id": "venice/deepseek-v4-pro",
+    "name": "DeepSeek V4 Pro",
+    "family": "deepseek",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.175,
+      "output": 4.35
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 32768
+    }
+  },
+  {
     "id": "venice/gemini-3-flash-preview",
     "name": "Gemini 3 Flash Preview",
     "family": "gemini-flash",
@@ -106617,6 +108549,36 @@
       "input": 0.56,
       "output": 3.5,
       "cache_read": 0.11
+    },
+    "limit": {
+      "context": 256000,
+      "output": 65536
+    }
+  },
+  {
+    "id": "venice/kimi-k2-6",
+    "name": "Kimi K2.6",
+    "family": "kimi",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.7448,
+      "output": 4.655,
+      "cache_read": 0.1463
     },
     "limit": {
       "context": 256000,
@@ -118468,6 +120430,37 @@
     "limit": {
       "context": 262000,
       "output": 64000
+    }
+  },
+  {
+    "id": "zenmux/moonshotai/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2025-01-01",
+    "release_date": "2026-04-20",
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 4.0,
+      "cache_read": 0.16
+    },
+    "limit": {
+      "context": 262140,
+      "output": 262140
     }
   },
   {
