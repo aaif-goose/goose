@@ -152,7 +152,7 @@ unicode-normalization = "0.1"
 
 # For local Whisper transcription (optional, behind "local-inference" feature)
 candle-core = { version = "0.9", default-features = false, optional = true }
-candle-nn = { version = "0.9", default-features = false, optional = true }
+candle-nn = { version = "0.10", default-features = false, optional = true }
 candle-transformers = { version = "0.9", default-features = false, optional = true }
 byteorder = { version = "1.5.0", optional = true }
 tokenizers = { version = "0.21.0", default-features = false, features = ["onig"], optional = true }
