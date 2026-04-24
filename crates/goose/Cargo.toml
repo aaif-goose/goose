@@ -88,7 +88,7 @@ async-trait = { workspace = true }
 async-stream = { workspace = true }
 minijinja = { version = "2.12.0", features = ["loader"] }
 include_dir = { workspace = true }
-tiktoken-rs = "0.6.0"
+tiktoken-rs = "0.11.0"
 chrono = { workspace = true }
 clap = { workspace = true }
 indoc = { workspace = true }
