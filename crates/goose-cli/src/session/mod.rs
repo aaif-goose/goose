@@ -369,6 +369,7 @@ impl CliSession {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(timeout),
+            socket: None,
             bundled: None,
             available_tools: Vec::new(),
         }
@@ -488,10 +489,12 @@ impl CliSession {
         &mut self,
         message: Message,
         cancel_token: CancellationToken,
+        interactive: bool,
     ) -> Result<()> {
         let cancel_token = cancel_token.clone();
         self.push_message(message);
-        self.process_agent_response(false, cancel_token).await?;
+        self.process_agent_response(interactive, cancel_token)
+            .await?;
         Ok(())
     }
 
@@ -499,7 +502,7 @@ impl CliSession {
     pub async fn interactive(&mut self, prompt: Option<String>) -> Result<()> {
         if let Some(prompt) = prompt {
             let msg = Message::user().with_text(&prompt);
-            self.process_message(msg, CancellationToken::default())
+            self.process_message(msg, CancellationToken::default(), true)
                 .await?;
         }
 
@@ -529,7 +532,7 @@ impl CliSession {
             if matches!(input, InputResult::Exit) {
                 break;
             }
-            self.handle_input(input, &history_manager, &mut editor)
+            self.handle_input(input, &history_manager, &mut editor, &conversation_strings)
                 .await?;
         }
 
@@ -566,6 +569,7 @@ impl CliSession {
         input: InputResult,
         history: &HistoryManager,
         editor: &mut rustyline::Editor<GooseCompleter, rustyline::history::DefaultHistory>,
+        conversation_messages: &[String],
     ) -> Result<()> {
         match input {
             InputResult::Message(content) => {
@@ -632,6 +636,43 @@ impl CliSession {
             InputResult::Compact => {
                 history.save(editor);
                 self.handle_compact().await?;
+            }
+            InputResult::Edit(prefill) => {
+                history.save(editor);
+                match crate::session::editor::resolve_editor_command() {
+                    Some(editor_cmd) => {
+                        let messages: Vec<&str> =
+                            conversation_messages.iter().map(|s| s.as_str()).collect();
+                        match crate::session::editor::get_editor_input(
+                            &editor_cmd,
+                            &messages,
+                            prefill.as_deref(),
+                        ) {
+                            Ok((message, true)) => {
+                                self.handle_message_input(&message, history, editor).await?;
+                            }
+                            Ok((_, false)) => {}
+                            Err(e) => {
+                                output::render_error(&format!("Failed to open editor: {}", e));
+                            }
+                        }
+                    }
+                    None => {
+                        output::render_error(
+                            "No editor found. Set one with:\n  \
+                                 goose configure set goose_prompt_editor \"vim\"\n  \
+                                 or set $VISUAL or $EDITOR in your shell.",
+                        );
+                    }
+                }
+            }
+            InputResult::LoadSkills(names) => {
+                history.save(editor);
+                self.handle_load_skills(&names).await?;
+            }
+            InputResult::ListSkills => {
+                history.save(editor);
+                self.handle_list_skills().await?;
             }
         }
         Ok(())
@@ -842,6 +883,55 @@ impl CliSession {
         }
     }
 
+    async fn handle_load_skills(&mut self, names: &[String]) -> Result<()> {
+        // NOTE: We don't validate the skill names here because the load_skill tool will
+        // handle that and provide feedback to the user if any skill names are invalid.
+        let message = format!(
+            "Use the load_skill tool to load the following skills: {}.",
+            names
+                .iter()
+                .map(|n| format!("\"{}\"", n))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        self.push_message(Message::user().with_text(&message));
+        output::show_thinking();
+        let result = self
+            .process_agent_response(true, CancellationToken::default())
+            .await;
+        output::hide_thinking();
+        result?;
+
+        Ok(())
+    }
+
+    async fn handle_list_skills(&mut self) -> Result<()> {
+        use comfy_table::{presets, Cell, ContentArrangement, Table};
+        use goose::skills::list_installed_skills;
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let skills = list_installed_skills(Some(&cwd));
+
+        if skills.is_empty() {
+            println!("{}", console::style("No skills available.").yellow());
+            return Ok(());
+        }
+
+        let mut table = Table::new();
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+        table.load_preset(presets::ASCII_FULL);
+        table.set_header(vec!["Skill", "Description"]);
+
+        let mut sorted_skills = skills;
+        sorted_skills.sort_by(|a, b| a.name.cmp(&b.name));
+
+        for skill in &sorted_skills {
+            table.add_row(vec![Cell::new(&skill.name), Cell::new(&skill.description)]);
+        }
+
+        println!("{table}");
+        Ok(())
+    }
+
     async fn handle_compact(&mut self) -> Result<()> {
         let prompt = "Are you sure you want to compact this conversation? This will condense the message history.";
         let should_summarize = match cliclack::confirm(prompt).initial_value(true).interact() {
@@ -955,7 +1045,7 @@ impl CliSession {
     /// Process a single message and exit
     pub async fn headless(&mut self, prompt: String) -> Result<()> {
         let message = Message::user().with_text(&prompt);
-        self.process_message(message, CancellationToken::default())
+        self.process_message(message, CancellationToken::default(), false)
             .await?;
         Ok(())
     }
@@ -1009,7 +1099,28 @@ impl CliSession {
                     match result {
                         Some(Ok(AgentEvent::Message(message))) => {
                             if let Some((id, security_prompt)) = find_tool_confirmation(&message) {
-                                let permission = prompt_tool_confirmation(&security_prompt)?;
+                                let permission = if interactive {
+                                    prompt_tool_confirmation(&security_prompt)?
+                                } else {
+                                    // Non-interactive/headless mode: refuse to run in
+                                    // Approve/SmartApprove modes since auto-allowing would
+                                    // bypass the safety contract those modes are meant to enforce.
+                                    let config = Config::global();
+                                    let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
+                                    if goose_mode == GooseMode::Approve || goose_mode == GooseMode::SmartApprove {
+                                        cancel_token_clone.cancel();
+                                        drop(stream);
+                                        return Err(anyhow::anyhow!(
+                                            "Tool approval required in non-interactive mode with GooseMode::{goose_mode}. \
+                                             This is an invalid configuration — Approve/SmartApprove modes require an \
+                                             interactive terminal. Use GooseMode::Auto for headless sessions."
+                                        ));
+                                    }
+                                    tracing::warn!(
+                                        "Tool confirmation required in non-interactive mode, auto-allowing"
+                                    );
+                                    Permission::AllowOnce
+                                };
 
                                 if permission == Permission::Cancel {
                                     output::render_text("Tool call cancelled. Returning to chat...", Some(Color::Yellow), true);
@@ -1036,6 +1147,18 @@ impl CliSession {
                                     permission,
                                 }).await;
                             } else if let Some((elicitation_id, elicitation_message, schema)) = find_elicitation_request(&message) {
+                                if !interactive {
+                                    // Non-interactive/headless mode: cannot collect user input
+                                    tracing::warn!(
+                                        "Elicitation requested in non-interactive mode, cancelling"
+                                    );
+                                    cancel_token_clone.cancel();
+                                    drop(stream);
+                                    return Err(anyhow::anyhow!(
+                                        "Elicitation requested but no interactive terminal is available to collect user input"
+                                    ));
+                                }
+
                                 output::hide_thinking();
                                 let _ = progress_bars.hide();
 
@@ -2095,6 +2218,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -2110,6 +2234,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -2125,6 +2250,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }

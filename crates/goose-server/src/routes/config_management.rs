@@ -11,6 +11,7 @@ use goose::config::declarative_providers::LoadedProvider;
 use goose::config::paths::Paths;
 use goose::config::ExtensionEntry;
 use goose::config::{Config, ConfigError};
+use goose::custom_requests::SourceType;
 use goose::model::ModelConfig;
 use goose::providers::base::{ProviderMetadata, ProviderType};
 use goose::providers::canonical::maybe_get_canonical_model;
@@ -136,6 +137,7 @@ pub enum CommandType {
     Builtin,
     Recipe,
     Skill,
+    Agent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -426,14 +428,31 @@ pub async fn get_slash_commands(
     }
 
     let working_dir = query.working_dir.map(std::path::PathBuf::from);
-    for source in
-        goose::agents::platform_extensions::skills::list_installed_skills(working_dir.as_deref())
-    {
+    for source in goose::skills::list_installed_skills(working_dir.as_deref()) {
         commands.push(SlashCommand {
             command: source.name,
             help: source.description,
             command_type: CommandType::Skill,
         });
+    }
+
+    let discover_dir = working_dir
+        .as_deref()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    for source in
+        goose::agents::platform_extensions::summon::discover_filesystem_sources(discover_dir)
+    {
+        if matches!(
+            source.source_type,
+            SourceType::Agent | SourceType::Recipe | SourceType::Subrecipe
+        ) && !source.content.is_empty()
+        {
+            commands.push(SlashCommand {
+                command: source.name,
+                help: source.description,
+                command_type: CommandType::Agent,
+            });
+        }
     }
 
     Ok(Json(SlashCommandsResponse { commands }))

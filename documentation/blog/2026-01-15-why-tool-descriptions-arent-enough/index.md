@@ -1,10 +1,11 @@
 ---
 title: "Why Tool Descriptions Aren’t Enough"
 description: "I thought better tool descriptions would solve everything. They didn’t. Here’s what finally made MCP sampling click for me."
+image: /img/blog/tool-descriptions-banner.png
 authors: 
     - ebony
 ---
-![blog banner](blogbanner.png)
+![blog banner](/img/blog/tool-descriptions-banner.png)
 
 
 The first question I had when I heard about MCP sampling was:

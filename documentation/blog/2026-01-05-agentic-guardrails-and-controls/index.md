@@ -1,12 +1,13 @@
 ---
 title: "Agent Guardrails and Controls: Applying the CORS Model to Agents"
 description: Applying the security model of CORS to Agentic technologies to address common attacks against tool calling.
+image: /img/blog/agentic_guardrails_header.jpg
 authors: 
     - clinton
     - alex
 ---
 
-![blog cover](agentic_guardrails_header.jpg)
+![blog cover](/img/blog/agentic_guardrails_header.jpg)
 
 
 In [our previous blog post](https://goose-docs.ai/blog/2025/03/31/securing-mcp/) we detailed the Model Context Protocol (MCP) system and discussed some security concerns and mitigations. As a brief recap, MCP provides agents with a means to accomplish tasks using defined tools; reducing the burden of using complex and varied APIs and integrations on the agent.

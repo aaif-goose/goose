@@ -1,0 +1,850 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@source "../../../node_modules/streamdown/dist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* reset */
+  --color-*: initial;
+
+  /* constants */
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* gray — pure monochromatic scale */
+  --color-gray-50: #f5f5f5;
+  --color-gray-100: #f0f0f0;
+  --color-gray-200: #e8e8e8;
+  --color-gray-300: #e5e5e5;
+  --color-gray-400: #cccccc;
+  --color-gray-500: #999999;
+  --color-gray-600: #666666;
+  --color-gray-700: #333333;
+  --color-gray-800: #232323;
+  --color-gray-900: #1a1a1a;
+
+  /* utility — semantic pair per hue (light-mode / dark-mode) */
+  --color-red-100: #ff6b6b;
+  --color-red-200: #f94b4b;
+
+  --color-blue-100: #7cacff;
+  --color-blue-200: #5c98f9;
+
+  --color-green-100: #a3d795;
+  --color-green-200: #91cb80;
+  --color-green-300: #73b468;
+
+  --color-yellow-100: #ffd966;
+  --color-yellow-200: #fbcd44;
+
+  /* compat — standard Tailwind scales used by ai-elements */
+  --color-red-50: #fef2f2;
+  --color-red-400: #f87171;
+  --color-red-500: #ef4444;
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+  --color-red-900: #7f1d1d;
+
+  --color-green-400: #4ade80;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-green-900: #14532d;
+
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-blue-900: #1e3a5f;
+
+  --color-yellow-400: #facc15;
+  --color-yellow-500: #eab308;
+  --color-yellow-600: #ca8a04;
+  --color-yellow-700: #a16207;
+  --color-yellow-900: #713f12;
+
+  --color-orange-100: #ffedd5;
+  --color-orange-400: #fb923c;
+  --color-orange-600: #ea580c;
+  --color-orange-700: #c2410c;
+  --color-orange-900: #7c2d12;
+
+  --color-zinc-100: #f4f4f5;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-800: #27272a;
+  --color-zinc-950: #09090b;
+
+  --color-amber-500: #f59e0b;
+}
+
+:root {
+  /* shape */
+  --radius: 20px;
+
+  /* theming accents */
+  --background-accent: var(--color-gray-900);
+  --border-accent: var(--color-gray-900);
+  --text-accent: var(--color-gray-900);
+
+  /* Semantic backgrounds */
+  --background-default: var(--color-white);
+  --background-alt: var(--color-gray-50);
+  --background-medium: var(--color-gray-400);
+  --background-muted: var(--color-gray-100);
+  --background-inverse: var(--color-black);
+  --background-danger: var(--color-red-200);
+  --background-success: var(--color-green-200);
+  --background-info: var(--color-blue-200);
+  --background-warning: var(--color-yellow-200);
+
+  /* Semantic borders */
+  --border-default: var(--color-gray-200);
+  --border-input: var(--color-gray-300);
+  --border-input-hover: var(--color-gray-400);
+  --border-strong: var(--color-gray-900);
+  --border-card: var(--color-gray-200);
+  --border-inverse: var(--color-black);
+  --border-danger: var(--color-red-200);
+  --border-success: var(--color-green-300);
+  --border-warning: var(--color-yellow-200);
+  --border-info: var(--color-blue-200);
+
+  /* Semantic text */
+  --text-default: var(--color-gray-900);
+  --text-subtle: var(--color-gray-600);
+  --text-muted: var(--color-gray-500);
+  --text-alt: var(--color-gray-600);
+  --text-inverse: var(--color-white);
+  --text-danger: var(--color-red-200);
+  --text-success: var(--color-green-300);
+  --text-warning: var(--color-yellow-200);
+  --text-info: var(--color-blue-200);
+  --text-placeholder: var(--color-gray-400);
+
+  --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
+
+  /* Alpha variants */
+  --dark-10: rgba(26, 26, 26, 0.1);
+  --dark-40: rgba(26, 26, 26, 0.4);
+  --dark-04: rgba(26, 26, 26, 0.04);
+
+  /* Shadows — 4-tier hierarchy */
+  --shadow-mini: 0 2px 8px rgba(76, 76, 76, 0.15);
+  --shadow-mini-inset: 0 1px 4px rgba(76, 76, 76, 0.1) inset;
+  --shadow-btn: 0 2px 8px rgba(76, 76, 76, 0.15);
+  --shadow-card: 0 2px 8px rgba(76, 76, 76, 0.15);
+  --shadow-elevated: 0 3px 12px rgba(76, 76, 76, 0.22);
+  --shadow-popover: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.2);
+  --shadow-kbd: 0 2px 8px rgba(76, 76, 76, 0.15);
+  --shadow-date-field-focus: 0 0 0 3px rgba(26, 26, 26, 0.15);
+
+  /* Dark surfaces */
+  --surface-dark: #0a0a0a;
+  --surface-dark-text: #f5f5f5;
+  --surface-dark-muted: rgba(255, 255, 255, 0.5);
+  --surface-dark-border: rgba(255, 255, 255, 0.08);
+
+  /* Charts */
+  --chart-1: #f6b44a;
+  --chart-2: #7585ff;
+  --chart-3: #d76a6a;
+  --chart-4: #d185e0;
+  --chart-5: #91cb80;
+
+  /* shadcn/ui standard tokens — aliases into our semantic vars */
+  --background: var(--background-default);
+  --foreground: var(--text-default);
+  --card: var(--background-default);
+  --card-foreground: var(--text-default);
+  --popover: var(--background-default);
+  --popover-foreground: var(--text-default);
+  --primary: var(--background-accent);
+  --primary-foreground: var(--text-inverse);
+  --secondary: var(--background-muted);
+  --secondary-foreground: var(--text-default);
+  --muted: var(--background-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--background-muted);
+  --accent-foreground: var(--text-default);
+  --destructive: var(--background-danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--border-default);
+  --input: var(--border-input);
+
+  /* Sidebar */
+  --sidebar: var(--background-default);
+  --sidebar-foreground: var(--text-default);
+  --sidebar-primary: var(--background-accent);
+  --sidebar-primary-foreground: var(--text-inverse);
+  --sidebar-accent: var(--background-muted);
+  --sidebar-accent-foreground: var(--text-default);
+  --sidebar-border: var(--border-default);
+  --sidebar-ring: var(--border-default);
+
+  /* Heading typography — magazine scale */
+  --heading-display-font-size: clamp(64px, 8vw, 96px);
+  --heading-display-line-height: 0.88;
+  --heading-display-letter-spacing: -0.05em;
+  --heading-display-font-weight: 900;
+
+  --heading-section-font-size: clamp(44px, 5vw, 64px);
+  --heading-section-line-height: 0.95;
+  --heading-section-letter-spacing: -0.035em;
+  --heading-section-font-weight: 700;
+
+  --heading-sub-font-size: clamp(28px, 3vw, 40px);
+  --heading-sub-line-height: 1;
+  --heading-sub-letter-spacing: -0.02em;
+  --heading-sub-font-weight: 700;
+
+  --heading-card-font-size: clamp(20px, 2vw, 28px);
+  --heading-card-line-height: 1.1;
+  --heading-card-letter-spacing: -0.01em;
+  --heading-card-font-weight: 600;
+
+  /* Display — hero-scale fluid type */
+  --display-size: clamp(3rem, 12vw, 12rem);
+  --display-line-height: 0.85;
+  --display-letter-spacing: -0.05em;
+
+  /* Body — longform reading */
+  --body-reading-size: clamp(1rem, 1.3vw, 1.25rem);
+  --body-reading-line-height: 1.65;
+  --body-reading-letter-spacing: -0.01em;
+
+  /* Label — uppercase kickers, bylines, category tags */
+  --label-font-size: 11px;
+  --label-letter-spacing: 0.12em;
+  --label-font-weight: 600;
+  --label-line-height: 1.2;
+
+  /* Pull quote — visual punctuation for longform */
+  --pullquote-size: clamp(1.5rem, 3vw, 2.5rem);
+  --pullquote-line-height: 1.3;
+  --pullquote-weight: 300;
+  --pullquote-letter-spacing: -0.02em;
+
+  /* Page layout */
+  --page-container-max-width: 1440px;
+  --page-container-side-gutter: 20px;
+  --section-padding-vertical: 100px;
+  --section-heading-margin-bottom: 75px;
+
+  /* Timing */
+  --ease-spring: cubic-bezier(0.33, 1, 0.68, 1);
+  --duration-fast: 0.15s;
+  --duration-normal: 0.2s;
+  --duration-slow: 0.4s;
+
+  /* goose2 custom — brand accent + density */
+  --color-brand: #3b82f6;
+  --color-brand-foreground: #ffffff;
+  --density-spacing: 1;
+}
+
+.dark {
+  /* theming accents */
+  --background-accent: var(--color-white);
+  --border-accent: var(--color-white);
+  --text-accent: var(--color-white);
+
+  /* shadcn/ui standard tokens — same aliases, dark values cascade via custom vars */
+  --background: var(--background-default);
+  --foreground: var(--text-default);
+  --card: var(--background-default);
+  --card-foreground: var(--text-default);
+  --popover: var(--background-default);
+  --popover-foreground: var(--text-default);
+  --primary: var(--background-accent);
+  --primary-foreground: var(--text-inverse);
+  --secondary: var(--background-muted);
+  --secondary-foreground: var(--text-default);
+  --muted: var(--background-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--background-muted);
+  --accent-foreground: var(--text-default);
+  --destructive: var(--background-danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--border-default);
+  --input: var(--border-input);
+
+  /* semantic backgrounds */
+  --background-default: var(--color-black);
+  --background-alt: var(--color-gray-800);
+  --background-medium: var(--color-gray-700);
+  --background-muted: var(--color-gray-800);
+  --background-inverse: var(--color-white);
+  --background-danger: var(--color-red-100);
+  --background-success: var(--color-green-100);
+  --background-info: var(--color-blue-100);
+  --background-warning: var(--color-yellow-100);
+
+  /* semantic borders */
+  --border-default: var(--color-gray-700);
+  --border-input: var(--color-gray-700);
+  --border-input-hover: var(--color-gray-600);
+  --border-strong: var(--color-white);
+  --border-card: var(--color-gray-700);
+  --border-inverse: var(--color-white);
+  --border-danger: var(--color-red-200);
+  --border-success: var(--color-green-200);
+  --border-warning: var(--color-yellow-200);
+  --border-info: var(--color-blue-200);
+
+  /* semantic text */
+  --text-default: var(--color-white);
+  --text-subtle: var(--color-gray-400);
+  --text-muted: var(--color-gray-500);
+  --text-alt: var(--color-gray-500);
+  --text-inverse: var(--color-black);
+  --text-danger: var(--color-red-100);
+  --text-success: var(--color-green-100);
+  --text-warning: var(--color-yellow-100);
+  --text-info: var(--color-blue-100);
+  --text-placeholder: var(--color-gray-600);
+
+  --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
+
+  /* Alpha variants (dark mode) */
+  --dark-10: rgba(242, 242, 242, 0.1);
+  --dark-40: rgba(242, 242, 242, 0.4);
+  --dark-04: rgba(242, 242, 242, 0.04);
+
+  /* Shadows — doubled intensity for dark backgrounds */
+  --shadow-mini: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-mini-inset: 0 1px 4px rgba(0, 0, 0, 0.5) inset;
+  --shadow-btn: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 3px 12px rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 8px 30px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --shadow-kbd: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-date-field-focus: 0 0 0 3px rgba(244, 244, 245, 0.1);
+
+  /* Charts */
+  --chart-1: #f6b44a;
+  --chart-2: #7585ff;
+  --chart-3: #d76a6a;
+  --chart-4: #d185e0;
+  --chart-5: #91cb80;
+
+  /* Sidebar */
+  --sidebar: var(--background-default);
+  --sidebar-foreground: var(--text-default);
+  --sidebar-primary: var(--background-accent);
+  --sidebar-primary-foreground: var(--text-inverse);
+  --sidebar-accent: var(--background-muted);
+  --sidebar-accent-foreground: var(--text-default);
+  --sidebar-border: var(--border-default);
+  --sidebar-ring: var(--border-default);
+}
+
+@theme inline {
+  /* shadcn/ui standard Tailwind color mappings */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-foreground-subtle: var(--text-subtle);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-placeholder: var(--text-placeholder);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+
+  /* brand accent */
+  --color-brand: var(--color-brand);
+  --color-brand-foreground: var(--color-brand-foreground);
+
+  /* danger (alias for destructive) */
+  --color-danger: var(--destructive);
+
+  /* semantic backgrounds (custom superset) */
+  --color-background-default: var(--background-default);
+  --color-background-alt: var(--background-alt);
+  --color-background-medium: var(--background-medium);
+  --color-background-inverse: var(--background-inverse);
+  --color-background-muted: var(--background-muted);
+  --color-background-danger: var(--background-danger);
+  --color-background-success: var(--background-success);
+  --color-background-info: var(--background-info);
+  --color-background-warning: var(--background-warning);
+
+  --color-background-accent: var(--background-accent);
+  --color-border-accent: var(--border-accent);
+  --color-text-accent: var(--text-accent);
+
+  /* semantic borders */
+  --color-border-default: var(--border-default);
+  --color-border-input: var(--border-input);
+  --color-border-input-hover: var(--border-input-hover);
+  --color-border-strong: var(--border-strong);
+  --color-border-card: var(--border-card);
+  --color-border-inverse: var(--border-inverse);
+  --color-border-danger: var(--border-danger);
+  --color-border-success: var(--border-success);
+  --color-border-warning: var(--border-warning);
+  --color-border-info: var(--border-info);
+
+  /* semantic text */
+  --color-text-default: var(--text-default);
+  --color-text-subtle: var(--text-subtle);
+  --color-text-muted: var(--text-muted);
+  --color-text-alt: var(--text-alt);
+  --color-text-inverse: var(--text-inverse);
+  --color-text-danger: var(--text-danger);
+  --color-text-success: var(--text-success);
+  --color-text-warning: var(--text-warning);
+  --color-text-info: var(--text-info);
+  --color-text-placeholder: var(--text-placeholder);
+
+  /* alpha variants */
+  --color-dark-10: var(--dark-10);
+  --color-dark-40: var(--dark-40);
+  --color-dark-04: var(--dark-04);
+
+  /* dark surfaces */
+  --color-surface-dark: var(--surface-dark);
+  --color-surface-dark-text: var(--surface-dark-text);
+  --color-surface-dark-muted: var(--surface-dark-muted);
+  --color-surface-dark-border: var(--surface-dark-border);
+
+  /* fonts — no bundled fonts; consumers bring their own */
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", monospace;
+  --font-serif: serif;
+  --font-display:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* shape — pill-first radius system */
+  --radius-pill: 999px;
+  --radius-button: 999px;
+  --radius-input: 999px;
+  --radius-card: 20px;
+  --radius-card-lg: 24px;
+  --radius-card-sm: 14px;
+  --radius-dropdown: 20px;
+  --radius-overlay: 20px;
+  --radius-modal: 16px;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-ring: var(--ring);
+
+  /* shadows */
+  --shadow-mini: var(--shadow-mini);
+  --shadow-mini-inset: var(--shadow-mini-inset);
+  --shadow-btn: var(--shadow-btn);
+  --shadow-card: var(--shadow-card);
+  --shadow-elevated: var(--shadow-elevated);
+  --shadow-popover: var(--shadow-popover);
+  --shadow-modal: var(--shadow-modal);
+  --shadow-kbd: var(--shadow-kbd);
+  --shadow-date-field-focus: var(--shadow-date-field-focus);
+
+  /* spacing — button/input heights */
+  --spacing-input: 3.25rem;
+  --spacing-input-sm: 2.75rem;
+  --spacing-button: 2.75rem;
+  --spacing-button-sm: 2rem;
+
+  --text-xxs: 10px;
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --breakpoint-desktop: 1440px;
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-caret-blink: caret-blink 1s ease-out infinite;
+  --animate-scale-in: scale-in 0.2s ease;
+  --animate-scale-out: scale-out 0.15s ease;
+  --animate-fade-in: fade-in 0.2s ease;
+  --animate-fade-out: fade-out 0.15s ease;
+  --animate-enter-from-left: enter-from-left 0.2s ease;
+  --animate-enter-from-right: enter-from-right 0.2s ease;
+  --animate-exit-to-left: exit-to-left 0.2s ease;
+  --animate-exit-to-right: exit-to-right 0.2s ease;
+  --animate-word-reveal: word-reveal 0.4s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes enter-from-right {
+    from {
+      opacity: 0;
+      transform: translateX(200px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes enter-from-left {
+    from {
+      opacity: 0;
+      transform: translateX(-200px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes exit-to-right {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(200px);
+    }
+  }
+
+  @keyframes exit-to-left {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-200px);
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: rotateX(-10deg) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: rotateX(0deg) scale(1);
+    }
+  }
+
+  @keyframes scale-out {
+    from {
+      opacity: 1;
+      transform: rotateX(0deg) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: rotateX(-10deg) scale(0.95);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes hero-blur-in {
+    from {
+      opacity: 0;
+      filter: blur(12px);
+    }
+    to {
+      opacity: 1;
+      filter: blur(0);
+    }
+  }
+
+  @keyframes word-reveal {
+    from {
+      opacity: 0;
+      filter: blur(8px);
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      filter: blur(0);
+      transform: translateY(0);
+    }
+  }
+}
+
+@keyframes fadeToFull {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeToSubtle {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.08;
+  }
+}
+
+/* @font-face — add your own here */
+
+/* App shell lock — outside @layer so nothing can override */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border, currentColor);
+  }
+
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    font-variation-settings: normal;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 60%, transparent);
+    color: #ffffff;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #999;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #666;
+  }
+
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer components {
+  *:not(body):not(.focus-override) {
+    outline: none !important;
+  }
+
+  *:not(body):not(.focus-override) {
+    &:focus-visible {
+      @apply ring-ring ring-offset-background ring-2 ring-offset-1 outline-hidden;
+    }
+  }
+
+  *:not(body):is(
+      [data-slot="dropdown-menu-content"],
+      [data-slot="popover-content"],
+      [data-slot="context-menu-content"]
+    ) {
+    &:focus-visible {
+      @apply ring-0 ring-offset-0;
+    }
+  }
+
+  .link {
+    @apply hover:text-foreground/80 inline-flex items-center gap-1 rounded-xs font-medium underline underline-offset-4;
+  }
+
+  *:not(body):not(.focus-override).link {
+    &:focus-visible {
+      @apply ring-ring ring-offset-background ring-2 ring-offset-2 outline-hidden;
+    }
+  }
+}
+
+[data-streamdown="table-wrapper"],
+[data-streamdown="code-block"],
+[data-streamdown="mermaid-block"] {
+  border: none;
+}
+
+/* Doubled attribute selector bumps specificity above Tailwind's `flex` class
+   (0,2,0 vs 0,1,0) so grid wins regardless of source order. */
+[data-streamdown="code-block"][data-streamdown] {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+[data-streamdown="code-block"] > [data-streamdown="code-block-header"] {
+  grid-column: 1;
+}
+
+[data-streamdown="code-block"]
+  > [data-streamdown="code-block-header"]
+  + div:has([data-streamdown="code-block-actions"]) {
+  grid-column: 2;
+  margin-top: 0;
+}
+
+[data-streamdown="code-block"] > :last-child {
+  grid-column: 1 / -1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   goose2 custom utilities
+   ═══════════════════════════════════════════════════════════ */
+
+/* Density-aware spacing utilities */
+.gap-density {
+  gap: calc(0.5rem * var(--density-spacing));
+}
+.p-density {
+  padding: calc(0.5rem * var(--density-spacing));
+}
+.py-density {
+  padding-top: calc(0.5rem * var(--density-spacing));
+  padding-bottom: calc(0.5rem * var(--density-spacing));
+}
+.px-density {
+  padding-left: calc(0.5rem * var(--density-spacing));
+  padding-right: calc(0.5rem * var(--density-spacing));
+}
+
+/* Page-transition animation */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.page-transition {
+  opacity: 0;
+  animation: page-fade-in 0.08s ease-out forwards;
+  pointer-events: auto;
+}
+
+/* Content fade-in (used for list areas after loading) */
+@keyframes content-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.content-fade-in {
+  animation: content-fade-in 0.3s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .page-transition {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

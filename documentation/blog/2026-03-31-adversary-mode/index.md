@@ -1,11 +1,12 @@
 ---
 title: "Adversary Agent: using a hidden agent to keep the main agent safe"
 description: "Introducing adversary mode — an independent agent reviewer that silently watches the main agent to keep it away from danger."
+image: /img/blog/adversary-mode.png
 authors:
     - mic
 ---
 
-![blog cover](adversary-mode.png)
+![blog cover](/img/blog/adversary-mode.png)
 
 One of the desires of goose (well for some of us) was to avoid the constant asking for permissions, delegating all the decisions to end users in an attempt to keep agent execution of tools safe. Sometimes that gets pretty noisy and annoying and ends up being less secure when you get tired of reading and approving. 
 

@@ -9,8 +9,9 @@ use uuid::Uuid;
 
 use super::finalize_usage;
 use super::inference_engine::{
-    context_cap, create_and_prefill_context, estimate_max_context_for_memory, generation_loop,
-    validate_and_compute_context, GenerationContext, TokenAction,
+    context_cap, create_and_prefill_context, create_and_prefill_multimodal,
+    estimate_max_context_for_memory, generation_loop, validate_and_compute_context,
+    GenerationContext, TokenAction,
 };
 
 pub(super) fn generate_with_native_tools(
@@ -21,7 +22,13 @@ pub(super) fn generate_with_native_tools(
 ) -> Result<(), ProviderError> {
     let min_generation_headroom = 512;
     let n_ctx_train = ctx.loaded.model.n_ctx_train() as usize;
-    let memory_max_ctx = estimate_max_context_for_memory(&ctx.loaded.model, ctx.runtime);
+    let mmproj_overhead = if ctx.loaded.mtmd_ctx.is_some() {
+        ctx.settings.mmproj_size_bytes
+    } else {
+        0
+    };
+    let memory_max_ctx =
+        estimate_max_context_for_memory(&ctx.loaded.model, ctx.runtime, mmproj_overhead);
     let cap = context_cap(ctx.settings, ctx.context_limit, n_ctx_train, memory_max_ctx);
     let token_budget = cap.saturating_sub(min_generation_headroom);
 
@@ -61,6 +68,8 @@ pub(super) fn generate_with_native_tools(
         }
     };
 
+    let estimated_image_tokens = ctx.images.len() * ctx.settings.image_token_estimate;
+
     let template_result = match apply_template(full_tools_json) {
         Ok(r) => {
             let token_count = ctx
@@ -69,7 +78,7 @@ pub(super) fn generate_with_native_tools(
                 .str_to_token(&r.prompt, AddBos::Never)
                 .map(|t| t.len())
                 .unwrap_or(0);
-            if token_count > token_budget {
+            if token_count + estimated_image_tokens > token_budget {
                 apply_template(compact_tools).unwrap_or(r)
             } else {
                 r
@@ -85,26 +94,32 @@ pub(super) fn generate_with_native_tools(
         None,
     );
 
-    let tokens = ctx
-        .loaded
-        .model
-        .str_to_token(&template_result.prompt, AddBos::Never)
-        .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-
-    let (prompt_token_count, effective_ctx) = validate_and_compute_context(
-        ctx.loaded,
-        ctx.runtime,
-        tokens.len(),
-        ctx.context_limit,
-        ctx.settings,
-    )?;
-    let mut llama_ctx = create_and_prefill_context(
-        ctx.loaded,
-        ctx.runtime,
-        &tokens,
-        effective_ctx,
-        ctx.settings,
-    )?;
+    let (mut llama_ctx, prompt_token_count, effective_ctx) = if !ctx.images.is_empty() {
+        create_and_prefill_multimodal(
+            ctx.loaded,
+            ctx.runtime,
+            &template_result.prompt,
+            ctx.images,
+            ctx.context_limit,
+            ctx.settings,
+        )?
+    } else {
+        let tokens = ctx
+            .loaded
+            .model
+            .str_to_token(&template_result.prompt, AddBos::Never)
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+        let (ptc, ectx) = validate_and_compute_context(
+            ctx.loaded,
+            ctx.runtime,
+            tokens.len(),
+            ctx.context_limit,
+            ctx.settings,
+        )?;
+        let lctx =
+            create_and_prefill_context(ctx.loaded, ctx.runtime, &tokens, ectx, ctx.settings)?;
+        (lctx, ptc, ectx)
+    };
 
     let message_id = ctx.message_id;
     let tx = ctx.tx;

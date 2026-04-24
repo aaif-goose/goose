@@ -9,8 +9,7 @@ use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 use rmcp::{
-    handler::server::router::tool::ToolRouter, tool, tool_handler, tool_router,
-    ErrorData as McpError, RoleServer, ServerHandler, Service,
+    tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler, Service,
 };
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -88,23 +87,13 @@ impl<S: Service<RoleServer>> Service<RoleServer> for ValidatingService<S> {
     }
 }
 
-#[derive(Clone)]
-pub struct McpFixtureServer {
-    tool_router: ToolRouter<McpFixtureServer>,
-}
-
-impl Default for McpFixtureServer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[derive(Clone, Default)]
+pub struct McpFixtureServer;
 
 #[tool_router]
 impl McpFixtureServer {
     pub fn new() -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-        }
+        Self
     }
 
     #[tool(description = "Get the code", annotations(read_only_hint = true))]

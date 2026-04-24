@@ -17,7 +17,7 @@ When a session starts, goose adds any skills that it discovers to its instructio
   - "Follow the new-service skill to set up the auth service"
   - "Apply the deployment skill"
 
-You can also ask goose what skills are available.
+You can also ask goose what skills are available, or use the CLI `/skills` command to list available skills and load one or more by name (e.g. `/skills code-review edge-case-finder`).
 
 :::info Claude Compatibility
 goose skills are compatible with Claude Desktop and other [agents that support Agent Skills](https://agentskills.io/home#adoption).

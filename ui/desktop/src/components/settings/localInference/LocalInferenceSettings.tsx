@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, Trash2, X, ChevronDown, ChevronUp, Settings2 } from 'lucide-react';
+import { Download, Trash2, X, ChevronDown, ChevronUp, Settings2, Eye } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { useModelAndProvider } from '../../ModelAndProviderContext';
 import { defineMessages, useIntl } from '../../../i18n';
 import {
   listLocalModels,
+  syncFeaturedModels,
   downloadHfModel,
   getLocalModelDownloadProgress,
   cancelLocalModelDownload,
@@ -83,7 +84,61 @@ const i18n = defineMessages({
     id: 'localInferenceSettings.modelSettingsTitle',
     defaultMessage: 'Model settings',
   },
+  vision: {
+    id: 'localInferenceSettings.vision',
+    defaultMessage: 'Vision',
+  },
+  visionEncoderDownloading: {
+    id: 'localInferenceSettings.visionEncoderDownloading',
+    defaultMessage: 'Vision encoder downloading…',
+  },
+  visionEncoderNotDownloaded: {
+    id: 'localInferenceSettings.visionEncoderNotDownloaded',
+    defaultMessage: 'Vision encoder not downloaded',
+  },
 });
+
+const VisionBadge = ({
+  model,
+  intl,
+}: {
+  model: LocalModelResponse;
+  intl: ReturnType<typeof useIntl>;
+}) => {
+  if (!model.vision_capable) return null;
+
+  const mmproj = model.mmproj_status;
+  const isDownloaded = mmproj?.state === 'Downloaded';
+  const isDownloading = mmproj?.state === 'Downloading';
+
+  if (isDownloaded) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded">
+        <Eye className="w-3 h-3" />
+        {intl.formatMessage(i18n.vision)}
+      </span>
+    );
+  }
+
+  if (isDownloading) {
+    const percent =
+      mmproj && 'progress_percent' in mmproj ? Math.round(mmproj.progress_percent) : null;
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded">
+        <Eye className="w-3 h-3" />
+        {intl.formatMessage(i18n.visionEncoderDownloading)}
+        {percent != null && ` ${percent}%`}
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-text-muted bg-background-subtle px-2 py-0.5 rounded">
+      <Eye className="w-3 h-3" />
+      {intl.formatMessage(i18n.vision)}
+    </span>
+  );
+};
 
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes}B`;
@@ -105,6 +160,7 @@ export const LocalInferenceSettings = () => {
 
   const loadModels = useCallback(async (): Promise<LocalModelResponse[] | undefined> => {
     try {
+      await syncFeaturedModels();
       const response = await listLocalModels();
       if (response.data) {
         setModels(response.data);
@@ -127,6 +183,19 @@ export const LocalInferenceSettings = () => {
     loadModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Poll model list while any vision encoder is downloading
+  useEffect(() => {
+    const hasDownloadingMmproj = models.some(
+      (m) => m.vision_capable && m.mmproj_status?.state === 'Downloading'
+    );
+    if (!hasDownloadingMmproj) return;
+
+    const interval = setInterval(() => {
+      loadModels();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [models, loadModels]);
 
   const selectModel = async (modelId: string) => {
     try {
@@ -262,7 +331,9 @@ export const LocalInferenceSettings = () => {
       {/* Active Downloads */}
       {downloads.size > 0 && (
         <div ref={downloadSectionRef}>
-          <h4 className="text-sm font-medium text-text-default mb-2">{intl.formatMessage(i18n.downloading)}</h4>
+          <h4 className="text-sm font-medium text-text-default mb-2">
+            {intl.formatMessage(i18n.downloading)}
+          </h4>
           <div className="space-y-2">
             {Array.from(downloads.entries()).map(([modelId, progress]) => {
               if (progress.status === 'completed') return null;
@@ -335,7 +406,9 @@ export const LocalInferenceSettings = () => {
       {/* Downloaded Models */}
       {downloadedModels.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-text-default mb-2">{intl.formatMessage(i18n.downloadedModels)}</h4>
+          <h4 className="text-sm font-medium text-text-default mb-2">
+            {intl.formatMessage(i18n.downloadedModels)}
+          </h4>
           <div className="space-y-2">
             {downloadedModels.map((model) => {
               const isSelected = selectedModelId === model.id;
@@ -365,6 +438,7 @@ export const LocalInferenceSettings = () => {
                           {intl.formatMessage(i18n.recommended)}
                         </span>
                       )}
+                      <VisionBadge model={model} intl={intl} />
                     </div>
                     <div className="flex items-center gap-1">
                       <Button
@@ -395,7 +469,9 @@ export const LocalInferenceSettings = () => {
       {/* Featured Models (not yet downloaded) */}
       {displayedFeatured.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-text-default mb-2">{intl.formatMessage(i18n.featuredModels)}</h4>
+          <h4 className="text-sm font-medium text-text-default mb-2">
+            {intl.formatMessage(i18n.featuredModels)}
+          </h4>
           <div className="space-y-2">
             {displayedFeatured.map((model) => (
               <div
@@ -414,6 +490,7 @@ export const LocalInferenceSettings = () => {
                           {intl.formatMessage(i18n.recommended)}
                         </span>
                       )}
+                      <VisionBadge model={model} intl={intl} />
                     </div>
                   </div>
                   <Button
@@ -456,11 +533,19 @@ export const LocalInferenceSettings = () => {
 
       {/* HuggingFace Search */}
       <div className="border-t border-border-subtle pt-4">
-        <HuggingFaceModelSearch onDownloadStarted={handleHfDownloadStarted} />
+        <HuggingFaceModelSearch
+          onDownloadStarted={handleHfDownloadStarted}
+          activeDownloadIds={new Set(downloads.keys())}
+          downloadedModelIds={
+            new Set(models.filter((m) => m.status.state === 'Downloaded').map((m) => m.id))
+          }
+        />
       </div>
 
       {models.length === 0 && (
-        <div className="text-center py-6 text-text-muted text-sm">{intl.formatMessage(i18n.noModels)}</div>
+        <div className="text-center py-6 text-text-muted text-sm">
+          {intl.formatMessage(i18n.noModels)}
+        </div>
       )}
 
       <Dialog

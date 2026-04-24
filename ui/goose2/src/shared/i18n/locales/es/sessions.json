@@ -1,0 +1,34 @@
+{
+  "card": {
+    "open": "Abrir {{title}}",
+    "optionsFor": "Opciones para {{title}}"
+  },
+  "dateGroups": {
+    "today": "Hoy",
+    "yesterday": "Ayer"
+  },
+  "history": {
+    "archivedSubtitle": "Sesiones que has archivado",
+    "archivedTitle": "Sesiones archivadas",
+    "backToActive": "Volver a activas",
+    "emptyArchived": "No hay sesiones archivadas",
+    "emptyArchivedHint": "Las sesiones archivadas aparecerán aquí.",
+    "emptyHint": "Inicia un chat para verlo aquí.",
+    "emptyNoMatches": "No hay sesiones coincidentes",
+    "emptyNoMatchesHint": "Prueba con otro término de búsqueda.",
+    "emptyTitle": "Aún no hay sesiones",
+    "searchArchivedPlaceholder": "Buscar sesiones archivadas...",
+    "searchError": "La búsqueda de mensajes falló. Mostrando solo coincidencias por título, agente y proyecto.",
+    "searchPlaceholder": "Buscar conversaciones",
+    "searching": "Buscando sesiones...",
+    "subtitle": "Explora y busca sesiones anteriores",
+    "toggleArchived": "Archivadas",
+    "title": "Historial de sesiones"
+  },
+  "search": {
+    "messageMatches_one": "{{displayCount}} coincidencia en mensajes",
+    "messageMatches_other": "{{displayCount}} coincidencias en mensajes"
+  },
+  "messageCount_one": "{{displayCount}} mensaje",
+  "messageCount_other": "{{displayCount}} mensajes"
+}

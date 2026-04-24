@@ -1388,6 +1388,7 @@ mod tests {
             env_keys: vec![],
             headers: HashMap::from([("Authorization".into(), "Bearer ghp_xxxxxxxxxxxx".into())]),
             timeout: None,
+            socket: None,
             bundled: Some(false),
             available_tools: vec![],
         },
@@ -1441,6 +1442,7 @@ mod tests {
             env_keys: vec![],
             headers: HashMap::from([("Authorization".into(), "Bearer ghp_xxxxxxxxxxxx".into())]),
             timeout: None,
+            socket: None,
             bundled: Some(false),
             available_tools: vec![],
         };
@@ -1553,7 +1555,7 @@ mod tests {
                 ],
             ))
         => Ok(("auto-gemini-3".to_string(), vec!["auto-gemini-3".to_string(), "auto-gemini-2.5".to_string(), "gemini-2.5-pro".to_string()]))
-        ; "gemini-acp falls back to models"
+        ; "gemini falls back to models"
     )]
     #[test_case(
         NewSessionResponse::new("s1")

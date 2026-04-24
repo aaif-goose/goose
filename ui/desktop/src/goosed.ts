@@ -78,7 +78,7 @@ export const findGoosedBinaryPath = (options: FindBinaryOptions = {}): string =>
 };
 
 export const checkServerStatus = async (client: Client, errorLog: string[]): Promise<boolean> => {
-  const timeout = 10000;
+  const timeout = 30000;
   const interval = 100;
   const maxAttempts = Math.ceil(timeout / interval);
 
@@ -142,6 +142,7 @@ export interface ExternalGoosedConfig {
   enabled: boolean;
   url?: string;
   secret?: string;
+  certFingerprint?: string;
 }
 
 export interface StartGoosedOptions {

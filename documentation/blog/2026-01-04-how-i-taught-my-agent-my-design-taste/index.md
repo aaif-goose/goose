@@ -3,6 +3,7 @@ title: "How I Taught My Agent My Design Taste"
 description: "I used Agent Skills and recipes to automate execution so I could study taste, constraint design, feedback loops, and avoid AI smells."
 authors: 
     - rizel
+image: /img/blog/automate-taste.png
 ---
 
 ![blog cover](automate-taste.png)

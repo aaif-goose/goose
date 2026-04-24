@@ -41,6 +41,18 @@ const i18n = defineMessages({
     id: 'externalBackendSection.secretKeyHelp',
     defaultMessage: 'The secret key configured on the goosed server (GOOSE_SERVER__SECRET_KEY)',
   },
+  certFingerprint: {
+    id: 'externalBackendSection.certFingerprint',
+    defaultMessage: 'Certificate Fingerprint (optional)',
+  },
+  certFingerprintPlaceholder: {
+    id: 'externalBackendSection.certFingerprintPlaceholder',
+    defaultMessage: 'AA:BB:CC:... or sha256/base64',
+  },
+  certFingerprintHelp: {
+    id: 'externalBackendSection.certFingerprintHelp',
+    defaultMessage: 'Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU).',
+  },
   restartNote: {
     id: 'externalBackendSection.restartNote',
     defaultMessage:
@@ -186,6 +198,25 @@ export default function ExternalBackendSection() {
                 />
                 <p className="text-xs text-text-secondary">
                   {intl.formatMessage(i18n.secretKeyHelp)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="external-cert-fingerprint" className="text-text-primary text-xs">
+                  {intl.formatMessage(i18n.certFingerprint)}
+                </label>
+                <Input
+                  id="external-cert-fingerprint"
+                  type="text"
+                  placeholder={intl.formatMessage(i18n.certFingerprintPlaceholder)}
+                  value={config.certFingerprint || ''}
+                  onChange={(e) => updateField('certFingerprint', e.target.value)}
+                  onBlur={() => saveConfig(config)}
+                  disabled={isSaving}
+                  className="font-mono text-xs"
+                />
+                <p className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.certFingerprintHelp)}
                 </p>
               </div>
 

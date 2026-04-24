@@ -3,9 +3,10 @@ title: "Order Lunch Without Leaving Your AI Agent"
 description: "Use the Neighborhood extension in goose to discover nearby restaurants, browse interactive menus, and place a takeout order, all from a simple chat prompt."
 authors:
   - debbie
+image: /img/blog/lunch-with-goose.png
 ---
 
-![Ba'al Falafel salads menu in goose showing Couscous Salad, Red Cabbage Salad, and Beets Apple Salad with photos and prices](banner.png)
+![Ba'al Falafel salads menu in goose showing Couscous Salad, Red Cabbage Salad, and Beets Apple Salad with photos and prices](/img/blog/lunch-with-goose.png)
 
 If you're anything like me, deciding what to eat for lunch is harder than it should be. Now add dietary restrictions on top of that (I'm coeliac so have to eat gluten-free) and suddenly finding a restaurant becomes a whole research project. Searching menus, cross-referencing reviews, checking if that one sandwich actually has gluten in it... it's exhausting.
 

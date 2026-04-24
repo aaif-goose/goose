@@ -2,8 +2,9 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::model::ModelConfig;
 use crate::providers::formats::anthropic::{thinking_effort, thinking_type, ThinkingType};
 use crate::providers::utils::{
-    convert_image, detect_image_path, is_valid_function_name, load_image_file, safely_parse_json,
-    sanitize_function_name, ImageFormat,
+    convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
+    is_valid_function_name, load_image_file, safely_parse_json, sanitize_function_name,
+    ImageFormat,
 };
 use anyhow::{anyhow, Error};
 use rmcp::model::{
@@ -581,24 +582,8 @@ pub fn create_request(
         ));
     }
 
-    let is_openai_reasoning_model = model_config.is_openai_reasoning_model();
-    let (model_name, reasoning_effort) = if is_openai_reasoning_model {
-        let parts: Vec<&str> = model_config.model_name.split('-').collect();
-        let last_part = parts.last().unwrap();
-
-        match *last_part {
-            "low" | "medium" | "high" => {
-                let base_name = parts[..parts.len() - 1].join("-");
-                (base_name, Some(last_part.to_string()))
-            }
-            _ => (
-                model_config.model_name.to_string(),
-                Some("medium".to_string()),
-            ),
-        }
-    } else {
-        (model_config.model_name.to_string(), None)
-    };
+    let (model_name, reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
+    let is_openai_reasoning_model = is_openai_responses_model(&model_name);
 
     let system_message = DatabricksMessage {
         role: "system".to_string(),
@@ -1074,6 +1059,63 @@ mod tests {
     }
 
     #[test]
+    fn test_create_request_reasoning_effort_xhigh() -> anyhow::Result<()> {
+        let model_config = ModelConfig {
+            model_name: "o3-xhigh".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+        let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+        assert_eq!(request["model"], "o3");
+        assert_eq!(request["reasoning_effort"], "xhigh");
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_reasoning_effort_none() -> anyhow::Result<()> {
+        let model_config = ModelConfig {
+            model_name: "o3-none".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+        let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+        assert_eq!(request["model"], "o3");
+        assert_eq!(request["reasoning_effort"], "none");
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_reasoning_effort_for_prefixed_gpt5_model() -> anyhow::Result<()> {
+        let model_config = ModelConfig {
+            model_name: "databricks-gpt-5.4-high".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+        let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+        assert_eq!(request["model"], "databricks-gpt-5.4");
+        assert_eq!(request["reasoning_effort"], "high");
+        Ok(())
+    }
+
+    #[test]
     fn test_create_request_adaptive_thinking_for_46_models() -> anyhow::Result<()> {
         let _guard = env_lock::lock_env([
             ("CLAUDE_THINKING_TYPE", Some("adaptive")),
@@ -1100,12 +1142,16 @@ mod tests {
     fn test_create_request_enabled_thinking_with_budget() -> anyhow::Result<()> {
         let _guard = env_lock::lock_env([
             ("CLAUDE_THINKING_TYPE", None::<&str>),
-            ("CLAUDE_THINKING_ENABLED", Some("1")),
+            ("CLAUDE_THINKING_ENABLED", None::<&str>),
             ("CLAUDE_THINKING_BUDGET", Some("10000")),
         ]);
 
         let mut model_config = ModelConfig::new_or_fail("databricks-claude-3-7-sonnet");
         model_config.max_tokens = Some(4096);
+        model_config = model_config.with_request_params(Some(std::collections::HashMap::from([(
+            "thinking_type".to_string(),
+            json!("enabled"),
+        )])));
 
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
 

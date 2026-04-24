@@ -281,6 +281,23 @@
     ]
   },
   {
+    "id": "exa",
+    "name": "Exa Search",
+    "description": "AI-powered web search with neural and keyword capabilities",
+    "command": "npx -y exa-mcp-server",
+    "link": "https://github.com/exa-labs/exa-mcp-server",
+    "installation_notes": "Install using npx package manager. Requires Exa API key.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "EXA_API_KEY",
+        "description": "API key for Exa web search service",
+        "required": true
+      }
+    ]
+  },
+  {
     "id": "excalidraw-mcp-app",
     "name": "Excalidraw",
     "description": "Excalidraw MCP App for diagrammin",
@@ -634,6 +651,26 @@
     ]
   },
   {
+    "id": "rendex-mcp",
+    "name": "Rendex",
+    "description": "Capture screenshots, generate PDFs, and render HTML to images via AI agents",
+    "url": "https://mcp.rendex.dev/mcp",
+    "link": "https://github.com/copperline-labs/rendex-mcp",
+    "installation_notes": "This is a remote extension that requires a Rendex API key from https://rendex.dev/dashboard/keys as a Request Header e.g Authorization: Bearer <YOUR_RENDEX_API_KEY>. Free tier includes 500 calls/month, no credit card required.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": [
+      {
+        "name": "Authorization",
+        "description": "Bearer <YOUR_RENDEX_API_KEY>",
+        "required": true
+      }
+    ],
+    "show_install_command": false,
+    "type": "streamable-http"
+  },
+  {
     "id": "repomix-mcp",
     "name": "Repomix",
     "description": "Repository analysis and code organization",
@@ -802,6 +839,18 @@
     "description": "Discover nearby restaurants, browse menus, and place takeout orders through natural conversation. Sellers are US-based.",
     "type": "streamable-http",
     "url": "https://connect.squareup.com/v2/mcp/neighborhood",
+    "link": "",
+    "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
+    "is_builtin": false,
+    "endorsed": true,
+    "environmentVariables": []
+  },
+  {
+    "id": "cash-app",
+    "name": "Cash App",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
+    "type": "streamable-http",
+    "url": "https://connect.squareup.com/v2/mcp/cash-app",
     "link": "",
     "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
     "is_builtin": false,

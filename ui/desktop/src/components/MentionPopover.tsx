@@ -38,11 +38,12 @@ const i18n = defineMessages({
 type DisplayItemType = CommandType | 'Directory' | 'File';
 
 const typeOrder: Record<DisplayItemType, number> = {
-  Directory: 0,
-  File: 1,
-  Builtin: 2,
-  Skill: 3,
-  Recipe: 4,
+  Agent: 0,
+  Directory: 1,
+  File: 2,
+  Builtin: 3,
+  Skill: 4,
+  Recipe: 5,
 };
 
 export interface DisplayItem {
@@ -426,7 +427,9 @@ const MentionPopover = forwardRef<
           );
 
           let finalScore = bestMatch.score;
-          if (finalScore > 0 && currentWorkingDir) {
+          if (finalScore > 0 && file.itemType === 'Agent') {
+            finalScore += 100;
+          } else if (finalScore > 0 && currentWorkingDir) {
             const depth = file.extra.replace(currentWorkingDir, '').split('/').length - 1;
             finalScore += depth <= 1 ? 50 : depth <= 2 ? 30 : depth <= 3 ? 15 : 0;
           }
@@ -449,6 +452,9 @@ const MentionPopover = forwardRef<
     }, [items, query, currentWorkingDir]);
 
     const getSelectionText = (item: DisplayItem): string => {
+      if (item.itemType === 'Agent') {
+        return '@' + item.name + ' ';
+      }
       if (item.itemType === 'Skill') {
         return `Use the ${item.name} skill to `;
       }
@@ -486,17 +492,34 @@ const MentionPopover = forwardRef<
               throwOnError: true,
             });
             if (cancelled) return;
-            const commandItems: DisplayItem[] = (response.data?.commands || []).map((cmd) => ({
-              name: cmd.command,
-              extra: cmd.help,
-              itemType: cmd.command_type,
-              relativePath: cmd.command,
-            }));
+            const commandItems: DisplayItem[] = (response.data?.commands || [])
+              .filter((cmd) => cmd.command_type !== 'Agent')
+              .map((cmd) => ({
+                name: cmd.command,
+                extra: cmd.help,
+                itemType: cmd.command_type,
+                relativePath: cmd.command,
+              }));
             setItems(commandItems);
           } else {
-            const scannedFiles = await scanDirectoryFromRoot(currentWorkingDir || getDefaultStartPath());
+            // Fetch agents from server and scan files in parallel
+            const [agentResponse, scannedFiles] = await Promise.all([
+              getSlashCommands({
+                query: { working_dir: currentWorkingDir },
+                throwOnError: true,
+              }).catch(() => null),
+              scanDirectoryFromRoot(currentWorkingDir || getDefaultStartPath()),
+            ]);
             if (cancelled) return;
-            setItems(scannedFiles);
+            const agentItems: DisplayItem[] = (agentResponse?.data?.commands || [])
+              .filter((cmd) => cmd.command_type === 'Agent')
+              .map((cmd) => ({
+                name: cmd.command,
+                extra: cmd.help,
+                itemType: cmd.command_type,
+                relativePath: cmd.command,
+              }));
+            setItems([...agentItems, ...scannedFiles]);
           }
         } catch (error) {
           if (!cancelled) {
@@ -572,7 +595,9 @@ const MentionPopover = forwardRef<
           {isLoading ? (
             <div className="flex items-center justify-center py-4">
               <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2"></div>
-              <span className="ml-2 text-sm text-text-secondary">{intl.formatMessage(isSlashCommand ? i18n.loadingCommands : i18n.scanningFiles)}</span>
+              <span className="ml-2 text-sm text-text-secondary">
+                {intl.formatMessage(isSlashCommand ? i18n.loadingCommands : i18n.scanningFiles)}
+              </span>
             </div>
           ) : (
             <>
@@ -607,7 +632,9 @@ const MentionPopover = forwardRef<
 
                 {!isLoading && displayItems.length === 0 && query && (
                   <div className="p-4 text-center text-text-secondary text-sm">
-                    {intl.formatMessage(isSlashCommand ? i18n.noCommandsFound : i18n.noItemsFound, { query })}
+                    {intl.formatMessage(isSlashCommand ? i18n.noCommandsFound : i18n.noItemsFound, {
+                      query,
+                    })}
                   </div>
                 )}
               </div>

@@ -1,0 +1,263 @@
+# Derive a stable port from the working directory so the same worktree
+# always gets the same port.
+vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
+
+# Default recipe
+default:
+    @just --list
+
+# ── Dev Environment ──────────────────────────────────────────
+
+# Install dependencies, build workspace packages, and activate git hooks
+setup:
+    git config core.hooksPath .husky
+    cd ../ && pnpm install
+    cd ../sdk && pnpm build
+    cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
+
+# ── Build & Check ────────────────────────────────────────────
+
+# Run all checks (lint, format, typecheck, file sizes)
+check:
+    pnpm check
+    pnpm typecheck
+
+# Format code
+fmt:
+    pnpm format
+    cd src-tauri && cargo fmt
+
+# Check formatting without modifying
+fmt-check:
+    pnpm exec biome format .
+    cd src-tauri && cargo fmt --check
+
+# Run clippy on Tauri backend
+clippy:
+    cd src-tauri && TAURI_CONFIG='{"bundle":{"externalBin":[]}}' cargo clippy -- -D warnings
+
+# Build the frontend
+build:
+    pnpm build
+
+# Check Tauri Rust formatting
+tauri-fmt-check:
+    cd src-tauri && cargo fmt --check
+
+# Check Tauri Rust types
+tauri-check:
+    cd src-tauri && TAURI_CONFIG='{"bundle":{"externalBin":[]}}' cargo check
+
+# Full CI gate
+ci: check clippy test build tauri-check
+
+bundle:
+    pnpm tauri build
+
+# ── Test ─────────────────────────────────────────────────────
+
+# Run unit/component tests
+test:
+    pnpm test
+
+# Run tests in watch mode
+test-watch:
+    pnpm test:watch
+
+# Run tests with coverage
+test-coverage:
+    pnpm test:coverage
+
+# Run E2E smoke tests (builds first)
+test-e2e:
+    pnpm test:e2e:smoke
+
+# Run all E2E tests (builds first)
+test-e2e-all:
+    pnpm test:e2e
+
+# ── Run ──────────────────────────────────────────────────────
+
+# Start the desktop app in dev mode
+dev: setup
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    VITE_PORT={{ vite_port }}
+    export VITE_PORT
+    # Enable perf logs in the child `goose serve` process by default.
+    # Override with e.g. RUST_LOG=info just dev to disable.
+    export RUST_LOG="${RUST_LOG:-perf=debug,info}"
+    PROJECT_DIR=$(pwd)
+    REPO_ROOT=$(cd ../.. && pwd)
+    LOCAL_GOOSE_DEBUG="${REPO_ROOT}/target/debug/goose"
+    LOCAL_GOOSE_RELEASE="${REPO_ROOT}/target/release/goose"
+    if [[ -x "${LOCAL_GOOSE_DEBUG}" ]]; then
+        export GOOSE_BIN="${LOCAL_GOOSE_DEBUG}"
+    elif [[ -x "${LOCAL_GOOSE_RELEASE}" ]]; then
+        export GOOSE_BIN="${LOCAL_GOOSE_RELEASE}"
+    else
+        unset GOOSE_BIN
+    fi
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"cd ${PROJECT_DIR} && exec pnpm exec vite --port ${VITE_PORT} --strictPort\",\"cwd\":\".\",\"wait\":false}}}")
+
+    if [[ -n "${GOOSE_BIN:-}" ]]; then
+        echo "Using local goose binary: ${GOOSE_BIN}"
+    else
+        echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
+    fi
+
+    # In worktrees, generate a labeled icon so you can tell instances apart
+    if git rev-parse --is-inside-work-tree &>/dev/null; then
+        GIT_DIR=$(git rev-parse --git-dir)
+        if [[ "$GIT_DIR" == *".git/worktrees/"* ]]; then
+            BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+            WORKTREE_LABEL="${BRANCH_NAME##*/}"
+
+            ICON_DIR="$(pwd)/src-tauri/target/dev-icons"
+            mkdir -p "$ICON_DIR"
+            DEV_ICON="$ICON_DIR/icon.icns"
+
+            if swift scripts/generate-dev-icon.swift src-tauri/icons/icon.icns "$DEV_ICON" "$WORKTREE_LABEL"; then
+                echo "🌳 Worktree: ${WORKTREE_LABEL}"
+                EXTRA_CONFIG_ARGS+=(--config "{\"bundle\":{\"icon\":[\"$DEV_ICON\"]}}")
+            fi
+        fi
+    fi
+
+    pnpm tauri dev --features app-test-driver --config src-tauri/tauri.dev.conf.json "${EXTRA_CONFIG_ARGS[@]}"
+
+# Start the desktop app with dev config
+dev-debug: setup
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    VITE_PORT={{ vite_port }}
+    export VITE_PORT
+    # Enable perf logs in the child `goose serve` process by default.
+    # Override with e.g. RUST_LOG=info just dev-debug to disable.
+    export RUST_LOG="${RUST_LOG:-perf=debug,info}"
+    REPO_ROOT=$(cd ../.. && pwd)
+    LOCAL_GOOSE_DEBUG="${REPO_ROOT}/target/debug/goose"
+    LOCAL_GOOSE_RELEASE="${REPO_ROOT}/target/release/goose"
+    if [[ -x "${LOCAL_GOOSE_DEBUG}" ]]; then
+        export GOOSE_BIN="${LOCAL_GOOSE_DEBUG}"
+    elif [[ -x "${LOCAL_GOOSE_RELEASE}" ]]; then
+        export GOOSE_BIN="${LOCAL_GOOSE_RELEASE}"
+    else
+        unset GOOSE_BIN
+    fi
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./node_modules/.bin/vite --port ${VITE_PORT} --strictPort\",\"cwd\":\"..\",\"wait\":false}}}")
+
+    if [[ -n "${GOOSE_BIN:-}" ]]; then
+        echo "Using local goose binary: ${GOOSE_BIN}"
+    else
+        echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
+    fi
+
+    # In worktrees, generate a labeled icon so you can tell instances apart
+    if git rev-parse --is-inside-work-tree &>/dev/null; then
+        GIT_DIR=$(git rev-parse --git-dir)
+        if [[ "$GIT_DIR" == *".git/worktrees/"* ]]; then
+            BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+            WORKTREE_LABEL="${BRANCH_NAME##*/}"
+
+            ICON_DIR="$(pwd)/src-tauri/target/dev-icons"
+            mkdir -p "$ICON_DIR"
+            DEV_ICON="$ICON_DIR/icon.icns"
+
+            if swift scripts/generate-dev-icon.swift src-tauri/icons/icon.icns "$DEV_ICON" "$WORKTREE_LABEL"; then
+                echo "🌳 Worktree: ${WORKTREE_LABEL}"
+                EXTRA_CONFIG_ARGS+=(--config "{\"bundle\":{\"icon\":[\"$DEV_ICON\"]}}")
+            fi
+        fi
+    fi
+
+    pnpm tauri dev --config src-tauri/tauri.dev.conf.json "${EXTRA_CONFIG_ARGS[@]}"
+
+# Start only the frontend dev server
+dev-frontend:
+    pnpm dev
+
+# Parse `git worktree list --porcelain` into tab-separated "path\tbranch" lines.
+# Uses sub() instead of $2 so worktree paths containing spaces are preserved.
+# Detached-HEAD worktrees (no branch line) are silently skipped.
+_worktree_awk := '/^worktree / { sub(/^worktree /, ""); wt=$0 } /^branch refs\/heads\// { b=$2; sub(/^refs\/heads\//, "", b); print wt "\t" b }'
+
+# Compute a stable vite port from a directory path passed as $1.
+_port_cmd := "import hashlib,sys; h=int(hashlib.sha256(sys.argv[1].encode()).hexdigest(),16); print(10000+h%55000)"
+
+# List worktrees with an active dev server
+running:
+    #!/usr/bin/env bash
+    git worktree list --porcelain | awk '{{ _worktree_awk }}' \
+    | while IFS=$'\t' read -r wt branch; do
+        dir="$wt/ui/goose2"
+        port=$(python3 -c '{{ _port_cmd }}' "$dir")
+        if lsof -ti :"$port" &>/dev/null; then
+            echo "$branch"
+        fi
+    done
+
+# Kill the dev process (if running). Optionally pass a branch name to kill another worktree's process.
+kill branch="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -n "{{ branch }}" ]]; then
+        WORKTREE_PATH=$(git worktree list --porcelain \
+            | awk '{{ _worktree_awk }}' \
+            | awk -F'\t' -v branch="{{ branch }}" '$2 == branch { print $1; exit }')
+        if [[ -z "$WORKTREE_PATH" ]]; then
+            echo "No worktree found for branch '{{ branch }}'"
+            exit 1
+        fi
+        TARGET_DIR="$WORKTREE_PATH/ui/goose2"
+        VITE_PORT=$(python3 -c '{{ _port_cmd }}' "$TARGET_DIR")
+    else
+        VITE_PORT={{ vite_port }}
+    fi
+
+    PID=$(lsof -ti :"$VITE_PORT" 2>/dev/null | head -1) || true
+
+    if [[ -z "$PID" ]]; then
+        echo "No process found on port $VITE_PORT"
+        exit 0
+    fi
+
+    PROC_NAME=$(ps -p "$PID" -o comm= 2>/dev/null) || true
+    PROC_BASENAME="${PROC_NAME##*/}"
+    if [[ "$PROC_BASENAME" != "node" ]]; then
+        echo "Process on port $VITE_PORT is '$PROC_NAME', not 'node' — refusing to kill"
+        exit 1
+    fi
+
+    PGID=$(ps -p "$PID" -o pgid= 2>/dev/null | tr -d ' ')
+    if [[ -z "$PGID" || "$PGID" == "0" || "$PGID" == "1" ]]; then
+        echo "Killing node (PID $PID) on port $VITE_PORT"
+        kill -9 "$PID"
+    else
+        echo "Killing process group $PGID (found via node PID $PID on port $VITE_PORT)"
+        kill -9 -"$PGID" 2>/dev/null || true
+    fi
+
+# Kill all dev processes across all worktrees
+kill-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branches=$(just running)
+    if [[ -z "$branches" ]]; then
+        echo "No running dev servers found"
+        exit 0
+    fi
+    while read -r branch; do
+        just kill "$branch" || true
+    done <<< "$branches"
+
+# ── Utilities ────────────────────────────────────────────────
+
+# Clean build artifacts
+clean:
+    cd src-tauri && cargo clean
+    rm -rf dist
+    rm -rf node_modules

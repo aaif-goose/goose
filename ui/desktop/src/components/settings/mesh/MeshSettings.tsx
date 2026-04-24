@@ -12,7 +12,12 @@ import {
 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
-import { setConfigProvider, updateCustomProvider, createCustomProvider, getCustomProvider } from '../../../api';
+import {
+  setConfigProvider,
+  updateCustomProvider,
+  createCustomProvider,
+  getCustomProvider,
+} from '../../../api';
 import { useModelAndProvider } from '../../ModelAndProviderContext';
 const MESH_API_PORT = 9337;
 const MESH_CONSOLE_PORT = 3131;
@@ -119,9 +124,7 @@ export const MeshSettings = () => {
     const body = meshProviderBody(modelList);
 
     // Try the last-known provider ID first, then fall back to 'mesh'
-    const idsToTry = meshProviderId === 'mesh'
-      ? ['mesh']
-      : [meshProviderId, 'mesh'];
+    const idsToTry = meshProviderId === 'mesh' ? ['mesh'] : [meshProviderId, 'mesh'];
 
     for (const id of idsToTry) {
       const existing = await getCustomProvider({ path: { id } });
@@ -172,22 +175,24 @@ export const MeshSettings = () => {
       const args: string[] = [];
 
       if (mode === 'new') {
-        args.push('--model', selectedModel);
+        args.push('serve', '--model', selectedModel);
       } else if (mode === 'join') {
         if (!joinToken.trim()) {
           setError('Paste an invite token to join a mesh');
           setStatus('stopped');
           return;
         }
-        args.push('--join', joinToken.trim());
-        if (!contributeGpu) {
-          args.push('--client');
+        if (contributeGpu) {
+          args.push('serve', '--join', joinToken.trim());
+        } else {
+          args.push('client', '--join', joinToken.trim());
         }
       } else {
         // auto
-        args.push('--auto');
-        if (!contributeGpu) {
-          args.push('--client');
+        if (contributeGpu) {
+          args.push('serve', '--auto');
+        } else {
+          args.push('client', '--auto');
         }
       }
 
@@ -338,8 +343,8 @@ export const MeshSettings = () => {
         <div className="border border-border-subtle rounded-xl p-4 bg-background-default">
           <p className="text-sm font-medium text-text-default">Get started</p>
           <p className="text-xs text-text-muted mt-1">
-            mesh-llm is not installed. Follow the install guide to set it up, or connect to
-            a mesh already running on this machine.
+            mesh-llm is not installed. Follow the install guide to set it up, or connect to a mesh
+            already running on this machine.
           </p>
           <div className="flex items-center gap-2 mt-3">
             <a href="https://docs.anarchai.org/" target="_blank" rel="noopener noreferrer">
@@ -635,7 +640,9 @@ export const MeshSettings = () => {
             </div>
             <div>
               <label className="text-xs text-text-muted block">Console</label>
-              <code className="text-xs text-text-default">http://localhost:{MESH_CONSOLE_PORT}</code>
+              <code className="text-xs text-text-default">
+                http://localhost:{MESH_CONSOLE_PORT}
+              </code>
             </div>
           </div>
         )}

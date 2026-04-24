@@ -21,6 +21,7 @@ import { toastError } from '../toasts';
 import MentionPopover, { DisplayItemWithMatch } from './MentionPopover';
 import { COST_TRACKING_ENABLED } from '../updates';
 import { CostTracker } from './bottom_menu/CostTracker';
+import { ContextWindowIndicator } from './bottom_menu/ContextWindowIndicator';
 import { DroppedFile, useFileDrop } from '../hooks/useFileDrop';
 import { Recipe } from '../recipe';
 import { MessageQueue, QueuedMessage } from './MessageQueue';
@@ -1628,13 +1629,17 @@ export default function ChatInput({
               </div>
             </>
           )}
+          <ContextWindowIndicator
+            totalTokens={totalTokens || 0}
+            tokenLimit={tokenLimit}
+            alerts={alerts}
+          />
           <Tooltip>
             <div>
               <ModelsBottomBar
                 sessionId={sessionId}
                 dropdownRef={dropdownRef}
                 setView={setView}
-                alerts={alerts}
                 sessionModel={effectiveModel}
                 sessionProvider={effectiveProvider}
                 onModelChanged={setModelOverride}

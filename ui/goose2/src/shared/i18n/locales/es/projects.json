@@ -1,0 +1,34 @@
+{
+  "dialog": {
+    "addDirectory": "Añadir directorio",
+    "addDirectoryDialogTitle": "Seleccionar directorio",
+    "color": "Color",
+    "colorAria": "Color {{color}}",
+    "createProject": "Crear proyecto",
+    "creating": "Creando...",
+    "editTitle": "Editar proyecto",
+    "instructions": "Instrucciones",
+    "instructionsPlaceholder": "Prompt del sistema o contexto para agentes que trabajan en este proyecto...",
+    "name": "Nombre",
+    "namePlaceholder": "Mi proyecto",
+    "newTitle": "Nuevo proyecto",
+    "noneUseDefault": "Ninguno (usar predeterminado)",
+    "provider": "Proveedor",
+    "saving": "Guardando...",
+    "useWorktrees": "Usar git worktrees para aislar ramas"
+  },
+  "view": {
+    "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
+    "deleteTitle": "¿Eliminar proyecto?",
+    "description": "Organiza tu trabajo en contextos de proyecto enfocados",
+    "emptyDescription": "Crea un proyecto para organizar tu trabajo.",
+    "emptyTitle": "Aún no hay proyectos",
+    "newProject": "Nuevo proyecto",
+    "noMatchesDescription": "Prueba con otro término de búsqueda.",
+    "noMatchesTitle": "No hay proyectos que coincidan",
+    "optionsAria": "Opciones de {{name}}",
+    "searchPlaceholder": "Buscar proyectos por nombre o descripción...",
+    "startChat": "Iniciar chat",
+    "title": "Proyectos"
+  }
+}

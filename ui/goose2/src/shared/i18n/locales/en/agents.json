@@ -1,0 +1,89 @@
+{
+  "avatar": {
+    "chooseDialogTitle": "Choose avatar image",
+    "dialogFilterName": "Image",
+    "loadFailed": "Failed to load image",
+    "previewAlt": "Avatar preview",
+    "removeAria": "Remove avatar",
+    "saveFailed": "Failed to save avatar",
+    "unsupportedType": "Unsupported image type",
+    "uploadAria": "Drop an image or click to upload avatar"
+  },
+  "card": {
+    "ariaLabel": "Agent: {{name}}",
+    "fileBacked": "File-backed",
+    "options": "Agent options"
+  },
+  "config": {
+    "ariaLabel": "Agent configuration",
+    "createAgent": "Create Agent",
+    "fromPersona": "(from agent: {{value}})",
+    "model": "Model",
+    "modelPlaceholder": "e.g. claude-sonnet-4-20250514",
+    "name": "Name",
+    "namePlaceholder": "My Agent",
+    "persona": "Agent",
+    "provider": "Provider",
+    "systemPromptOverrideCollapsed": "System Prompt Override [+]",
+    "systemPromptOverrideExpanded": "System Prompt Override [-]",
+    "systemPromptPlaceholder": "Override the agent system prompt...",
+    "updateAgent": "Update Agent"
+  },
+  "editor": {
+    "create": "Create",
+    "created": "Agent created.",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "e.g. Code Reviewer",
+    "duplicate": "Duplicate",
+    "duplicated": "Agent duplicated.",
+    "chooseProviderFirst": "Select a provider to choose a model.",
+    "editTitle": "Edit Agent",
+    "model": "Model",
+    "modelPlaceholder": "Select a model",
+    "newTitle": "New Agent",
+    "noModelsAvailable": "No models are available for this provider yet.",
+    "provider": "Provider",
+    "readOnlyBuiltIn": "Built-in agents are read-only. Duplicate to customize one.",
+    "readOnlyFile": "This agent is loaded from a file. You can review it here, but editing is disabled.",
+    "saveFailed": "Failed to save agent.",
+    "savedModelUnavailable": "{{model}} (saved, unavailable)",
+    "savedModelUnavailableHelp": "This agent uses a saved model that is not in the current provider inventory.",
+    "saving": "Saving...",
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "You are a helpful assistant that...",
+    "updated": "Agent updated."
+  },
+  "gallery": {
+    "createAria": "Create new agent",
+    "dropFile": "or drop a file",
+    "loading": "Loading agents",
+    "new": "New Agent"
+  },
+  "statuses": {
+    "error": "Error",
+    "offline": "Offline",
+    "online": "Online",
+    "starting": "Starting"
+  },
+  "view": {
+    "copyName": "{{name}} (Copy)",
+    "deleteFailed": "Failed to delete agent.",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+    "deleteTitle": "Delete agent?",
+    "deleted": "\"{{name}}\" deleted.",
+    "description": "Custom agent configurations for specific workflows",
+    "emptyAgentsDescription": "Create an agent to get started.",
+    "emptyAgentsTitle": "No agents yet",
+    "exportFailed": "Failed to export agent.",
+    "exportedTo": "Exported to {{filename}}",
+    "importInvalidExtension": "Unsupported file type. Choose a .json file.",
+    "importInvalidMimeType": "Unsupported file type. Choose a JSON file.",
+    "importFailed": "Failed to import agent.",
+    "imported_one": "Imported {{count}} agent.",
+    "imported_other": "Imported {{count}} agents.",
+    "newPersona": "New Agent",
+    "optionsAria": "Options for {{name}}",
+    "searchPlaceholder": "Search agents...",
+    "title": "Agents"
+  }
+}

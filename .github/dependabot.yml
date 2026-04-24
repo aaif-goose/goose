@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # pnpm workspace for the UI (desktop, acp, text, sdk, goose-binary/*, goose2).
+  # Point at the workspace ROOT where pnpm-lock.yaml lives so Dependabot updates
+  # both the child package.json AND ui/pnpm-lock.yaml in one PR.
+  - package-ecosystem: "npm"
+    directory: "/ui"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      ui-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Cargo workspace at the repo root.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions used by workflows in .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

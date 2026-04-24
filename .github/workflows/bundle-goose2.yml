@@ -1,0 +1,699 @@
+# Reusable workflow that bundles the Goose 2 (Tauri) desktop app.
+# Produces .app / .dmg on macOS and .deb / .AppImage on Linux.
+#
+# The justfile recipe is: `just bundle`  →  `pnpm tauri build`
+#
+# Called from release.yml, canary.yml, or manually via bundle-goose2-manual.yml.
+#
+# The goose CLI binary can either be built from source (default) or pulled
+# from a prior build-cli.yml run by passing `cli-run-id`. This avoids
+# redundant ~20min Rust builds during release pipelines.
+name: "Bundle Goose 2 Desktop"
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to set for the build (leave empty to use Cargo.toml default)"
+        required: false
+        default: ""
+        type: string
+      signing:
+        description: "Whether to perform Apple signing and notarization (macOS only)"
+        required: false
+        default: false
+        type: boolean
+      quick_test:
+        description: "Whether to perform the quick launch test (macOS only)"
+        required: false
+        default: true
+        type: boolean
+      ref:
+        description: "Git ref to checkout (branch, tag, or SHA). Defaults to the triggering ref."
+        required: false
+        default: ""
+        type: string
+      environment:
+        description: "GitHub Environment containing signing secrets. Leave empty to skip."
+        required: false
+        default: ""
+        type: string
+      cli-run-id:
+        description: >
+          Run ID of a prior build-cli.yml workflow run to download the goose
+          binary from. When empty, the goose CLI is built from source.
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  # ───────────────────────────────────────────────
+  # macOS ARM (Apple Silicon)
+  # ───────────────────────────────────────────────
+  bundle-macos-arm:
+    name: "macOS ARM64"
+    runs-on: macos-latest
+    environment: ${{ inputs.environment || '' }}
+    timeout-minutes: 60
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+    steps:
+      - name: Debug workflow info
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_SIGNING: ${{ inputs.signing }}
+          INPUT_CLI_RUN_ID: ${{ inputs.cli-run-id }}
+        run: |
+          echo "=== Goose 2 Bundle (macOS ARM64) ==="
+          echo "Ref: ${INPUT_REF:-<default>}"
+          echo "Version: ${INPUT_VERSION:-<from Cargo.toml>}"
+          echo "Signing: ${INPUT_SIGNING}"
+          echo "CLI run ID: ${INPUT_CLI_RUN_ID:-<build from source>}"
+          df -h
+
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+
+      # ── Version stamps ──
+      - name: Update versions
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Root Cargo.toml (workspace version)
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+
+          # Tauri Cargo.toml
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" ui/goose2/src-tauri/Cargo.toml
+          rm -f ui/goose2/src-tauri/Cargo.toml.bak
+
+          # package.json
+          source ./bin/activate-hermit
+          cd ui/goose2
+          npm pkg set "version=${VERSION}"
+
+      # ── Goose CLI: download from prior run OR build from source ──
+      - name: Download goose CLI from build-cli run
+        if: inputs.cli-run-id != ''
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: goose-aarch64-apple-darwin
+          run-id: ${{ inputs.cli-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: cli-artifact
+
+      - name: Extract downloaded goose CLI
+        if: inputs.cli-run-id != ''
+        run: |
+          TRIPLE="aarch64-apple-darwin"
+          mkdir -p target/release
+          # The artifact contains goose-<triple>.tar.bz2 with goose inside
+          tar -xjf "cli-artifact/goose-${TRIPLE}.tar.bz2" -C target/release/
+          chmod +x target/release/goose
+          cp target/release/goose "target/release/goose-${TRIPLE}"
+          ls -lh "target/release/goose-${TRIPLE}"
+
+      - name: Cache Rust dependencies
+        if: inputs.cli-run-id == ''
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: goose2-macos-arm64
+
+      - name: Build goose CLI (release)
+        if: inputs.cli-run-id == ''
+        run: |
+          source ./bin/activate-hermit
+          cargo build --release -p goose-cli --bin goose
+
+      - name: Prepare goose binary with target triple
+        if: inputs.cli-run-id == ''
+        run: |
+          TRIPLE=$(rustc --print host-tuple)
+          cp target/release/goose "target/release/goose-${TRIPLE}"
+          ls -lh "target/release/goose-${TRIPLE}"
+
+      # ── Frontend: pnpm install + SDK build ──
+      - name: Cache pnpm dependencies
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        with:
+          path: |
+            ui/goose2/node_modules
+            ui/sdk/node_modules
+            .hermit/node/cache
+          key: goose2-pnpm-macos-arm64-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            goose2-pnpm-macos-arm64-${{ runner.os }}-
+
+      - name: Install pnpm dependencies
+        run: |
+          source ./bin/activate-hermit
+          cd ui
+          pnpm install --frozen-lockfile
+
+      - name: Build SDK
+        run: |
+          source ./bin/activate-hermit
+          cd ui/sdk
+          pnpm build
+
+      # ── Apple signing ──
+      - name: Import Apple signing certificate
+        if: inputs.signing
+        uses: ./.github/actions/apple-codesign
+        with:
+          certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      # ── Tauri bundle ──
+      - name: Check disk space before bundle
+        run: df -h
+
+      - name: Bundle Goose 2 (pnpm tauri build)
+        env:
+          APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
+          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
+        working-directory: ui/goose2
+        run: |
+          source ../../bin/activate-hermit
+          pnpm tauri build
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+      # ── Upload ──
+      - name: List bundle output
+        run: |
+          BUNDLE_DIR="ui/goose2/src-tauri/target/release/bundle"
+          echo "=== Bundle contents ==="
+          find "$BUNDLE_DIR" -type f 2>/dev/null || echo "(no bundle output found)"
+
+      - name: Upload Goose 2 macOS ARM64 artifact
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Goose2-darwin-arm64
+          path: |
+            ui/goose2/src-tauri/target/release/bundle/dmg/*.dmg
+            ui/goose2/src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: error
+
+      # ── Smoke test ──
+      - name: Quick launch test
+        if: inputs.quick_test
+        run: |
+          APP_PATH=$(find ui/goose2/src-tauri/target/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found, skipping launch test"
+            exit 0
+          fi
+
+          xattr -cr "$APP_PATH"
+          echo "Opening $APP_PATH..."
+          open -g "$APP_PATH"
+          sleep 5
+
+          if pgrep -f "Goose.app/Contents/MacOS" > /dev/null; then
+            echo "✅ App is running"
+          else
+            echo "❌ App did not stay open"
+            exit 1
+          fi
+
+          pkill -f "Goose.app/Contents/MacOS" || true
+
+  # ───────────────────────────────────────────────
+  # macOS Intel (x86_64)
+  # ───────────────────────────────────────────────
+  bundle-macos-intel:
+    name: "macOS x86_64"
+    runs-on: macos-latest
+    environment: ${{ inputs.environment || '' }}
+    timeout-minutes: 60
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+
+      - name: Update versions
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" ui/goose2/src-tauri/Cargo.toml
+          rm -f ui/goose2/src-tauri/Cargo.toml.bak
+          source ./bin/activate-hermit
+          cd ui/goose2
+          npm pkg set "version=${VERSION}"
+
+      # ── Goose CLI: download from prior run OR build from source ──
+      - name: Download goose CLI from build-cli run
+        if: inputs.cli-run-id != ''
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: goose-x86_64-apple-darwin
+          run-id: ${{ inputs.cli-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: cli-artifact
+
+      - name: Extract downloaded goose CLI
+        if: inputs.cli-run-id != ''
+        run: |
+          TARGET="x86_64-apple-darwin"
+          mkdir -p target/release
+          tar -xjf "cli-artifact/goose-${TARGET}.tar.bz2" -C target/release/
+          chmod +x target/release/goose
+          cp target/release/goose "target/release/goose-${TARGET}"
+          ls -lh "target/release/goose-${TARGET}"
+
+      - name: Cache Rust dependencies
+        if: inputs.cli-run-id == ''
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: goose2-macos-x86_64
+
+      - name: Install Intel target for both toolchains
+        if: inputs.cli-run-id == ''
+        run: |
+          source ./bin/activate-hermit
+          rustup target add x86_64-apple-darwin
+          cd ui/goose2/src-tauri
+          rustup target add x86_64-apple-darwin
+
+      - name: Build goose CLI for Intel (x86_64-apple-darwin)
+        if: inputs.cli-run-id == ''
+        run: |
+          source ./bin/activate-hermit
+          cargo build --release -p goose-cli --bin goose --target x86_64-apple-darwin
+
+      - name: Prepare goose binary with target triple
+        if: inputs.cli-run-id == ''
+        run: |
+          TARGET="x86_64-apple-darwin"
+          mkdir -p target/release
+          cp "target/${TARGET}/release/goose" "target/release/goose-${TARGET}"
+          ls -lh "target/release/goose-${TARGET}"
+
+      # ── Intel target still needed for Tauri's own Rust build ──
+      - name: Install Intel target for Tauri toolchain
+        run: |
+          source ./bin/activate-hermit
+          rustup target add x86_64-apple-darwin
+          cd ui/goose2/src-tauri
+          rustup target add x86_64-apple-darwin
+
+      # ── Frontend ──
+      - name: Cache pnpm dependencies
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        with:
+          path: |
+            ui/goose2/node_modules
+            ui/sdk/node_modules
+            .hermit/node/cache
+          key: goose2-pnpm-macos-intel-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            goose2-pnpm-macos-intel-${{ runner.os }}-
+
+      - name: Install pnpm dependencies
+        run: |
+          source ./bin/activate-hermit
+          cd ui
+          pnpm install --frozen-lockfile
+
+      - name: Build SDK
+        run: |
+          source ./bin/activate-hermit
+          cd ui/sdk
+          pnpm build
+
+      # ── Apple signing ──
+      - name: Import Apple signing certificate
+        if: inputs.signing
+        uses: ./.github/actions/apple-codesign
+        with:
+          certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      # ── Tauri bundle (cross-compile for Intel) ──
+      - name: Bundle Goose 2 for Intel
+        env:
+          APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
+          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
+        working-directory: ui/goose2
+        run: |
+          source ../../bin/activate-hermit
+          pnpm tauri build --target x86_64-apple-darwin
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+      # ── Upload ──
+      - name: List bundle output
+        run: |
+          BUNDLE_DIR="ui/goose2/src-tauri/target/x86_64-apple-darwin/release/bundle"
+          echo "=== Bundle contents ==="
+          find "$BUNDLE_DIR" -type f 2>/dev/null || echo "(no bundle output found)"
+
+      - name: Upload Goose 2 macOS Intel artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Goose2-darwin-x64
+          path: |
+            ui/goose2/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            ui/goose2/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
+          if-no-files-found: error
+
+      - name: Quick launch test
+        if: inputs.quick_test
+        run: |
+          APP_PATH=$(find ui/goose2/src-tauri/target/x86_64-apple-darwin/release/bundle/macos -maxdepth 1 -name "*.app" 2>/dev/null | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found, skipping launch test"
+            exit 0
+          fi
+
+          xattr -cr "$APP_PATH"
+          echo "Opening $APP_PATH..."
+          open -g "$APP_PATH"
+          sleep 5
+
+          if pgrep -f "Goose.app/Contents/MacOS" > /dev/null; then
+            echo "✅ App is running"
+          else
+            echo "❌ App did not stay open"
+            exit 1
+          fi
+
+          pkill -f "Goose.app/Contents/MacOS" || true
+
+  # ───────────────────────────────────────────────
+  # Linux x86_64
+  # ───────────────────────────────────────────────
+  bundle-linux:
+    name: "Linux x86_64"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            protobuf-compiler
+
+      - name: Update versions
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" ui/goose2/src-tauri/Cargo.toml
+          rm -f ui/goose2/src-tauri/Cargo.toml.bak
+          source ./bin/activate-hermit
+          cd ui/goose2
+          npm pkg set "version=${VERSION}"
+
+      # ── Goose CLI: download from prior run OR build from source ──
+      - name: Download goose CLI from build-cli run
+        if: inputs.cli-run-id != ''
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: goose-x86_64-unknown-linux-gnu
+          run-id: ${{ inputs.cli-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: cli-artifact
+
+      - name: Extract downloaded goose CLI
+        if: inputs.cli-run-id != ''
+        run: |
+          TRIPLE="x86_64-unknown-linux-gnu"
+          mkdir -p target/release
+          tar -xjf "cli-artifact/goose-${TRIPLE}.tar.bz2" -C target/release/
+          chmod +x target/release/goose
+          cp target/release/goose "target/release/goose-${TRIPLE}"
+          ls -lh "target/release/goose-${TRIPLE}"
+
+      - name: Cache Rust dependencies
+        if: inputs.cli-run-id == ''
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: goose2-linux-x86_64
+
+      - name: Build goose CLI (release)
+        if: inputs.cli-run-id == ''
+        run: |
+          source ./bin/activate-hermit
+          cargo build --release -p goose-cli --bin goose
+
+      - name: Prepare goose binary with target triple
+        if: inputs.cli-run-id == ''
+        run: |
+          TRIPLE=$(rustc --print host-tuple)
+          cp target/release/goose "target/release/goose-${TRIPLE}"
+          ls -lh "target/release/goose-${TRIPLE}"
+
+      # ── Frontend ──
+      - name: Cache pnpm dependencies
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        with:
+          path: |
+            ui/goose2/node_modules
+            ui/sdk/node_modules
+            .hermit/node/cache
+          key: goose2-pnpm-linux-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            goose2-pnpm-linux-${{ runner.os }}-
+
+      - name: Install pnpm dependencies
+        run: |
+          source ./bin/activate-hermit
+          cd ui
+          pnpm install --frozen-lockfile
+
+      - name: Build SDK
+        run: |
+          source ./bin/activate-hermit
+          cd ui/sdk
+          pnpm build
+
+      # ── Tauri bundle ──
+      - name: Bundle Goose 2 (pnpm tauri build)
+        working-directory: ui/goose2
+        run: |
+          source ../../bin/activate-hermit
+          pnpm tauri build
+
+      # ── Upload ──
+      - name: List bundle output
+        run: |
+          BUNDLE_DIR="ui/goose2/src-tauri/target/release/bundle"
+          echo "=== Bundle contents ==="
+          find "$BUNDLE_DIR" -type f 2>/dev/null | head -30
+          echo ""
+          echo "=== File sizes ==="
+          find "$BUNDLE_DIR" -type f -exec ls -lh {} \; 2>/dev/null | head -20
+
+      - name: Upload .deb package
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Goose2-linux-x64-deb
+          path: ui/goose2/src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: warn
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Goose2-linux-x64-appimage
+          path: ui/goose2/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: warn
+
+      - name: Upload RPM package
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Goose2-linux-x64-rpm
+          path: ui/goose2/src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: warn
+
+  # ───────────────────────────────────────────────
+  # Windows x86_64
+  # ───────────────────────────────────────────────
+  bundle-windows:
+    name: "Windows x86_64"
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+
+      # Hermit doesn't work on Windows — install node/pnpm directly
+      - name: Set up Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10.33.0
+
+      - name: Update versions
+        if: inputs.version != ''
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" ui/goose2/src-tauri/Cargo.toml
+          rm -f ui/goose2/src-tauri/Cargo.toml.bak
+          cd ui/goose2
+          npm pkg set "version=${VERSION}"
+
+      # ── Goose CLI: download from prior run OR build from source ──
+      - name: Download goose CLI from build-cli run
+        if: inputs.cli-run-id != ''
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: goose-x86_64-pc-windows-msvc
+          run-id: ${{ inputs.cli-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: cli-artifact
+
+      - name: Extract downloaded goose CLI
+        if: inputs.cli-run-id != ''
+        shell: bash
+        run: |
+          TARGET="x86_64-pc-windows-msvc"
+          mkdir -p target/release
+          # The zip contains goose-package/goose.exe
+          cd cli-artifact
+          7z x "goose-${TARGET}.zip"
+          cd ..
+          cp cli-artifact/goose-package/goose.exe target/release/
+          # Tauri externalBin appends target triple + .exe on Windows
+          cp target/release/goose.exe "target/release/goose-${TARGET}.exe"
+          ls -lh "target/release/goose-${TARGET}.exe"
+
+      - name: Cache Rust dependencies
+        if: inputs.cli-run-id == ''
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: goose2-windows-x86_64
+
+      - name: Setup Rust
+        if: inputs.cli-run-id == ''
+        shell: bash
+        run: |
+          rustup show
+          rustup target add x86_64-pc-windows-msvc
+
+      - name: Build goose CLI (release)
+        if: inputs.cli-run-id == ''
+        shell: bash
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --bin goose
+
+      - name: Prepare goose binary with target triple
+        if: inputs.cli-run-id == ''
+        shell: bash
+        run: |
+          TARGET="x86_64-pc-windows-msvc"
+          cp "target/${TARGET}/release/goose.exe" "target/release/goose-${TARGET}.exe"
+          ls -lh "target/release/goose-${TARGET}.exe"
+
+      # ── Frontend ──
+      - name: Cache pnpm dependencies
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        with:
+          path: |
+            ui/goose2/node_modules
+            ui/sdk/node_modules
+          key: goose2-pnpm-windows-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            goose2-pnpm-windows-${{ runner.os }}-
+
+      - name: Install pnpm dependencies
+        shell: bash
+        run: |
+          cd ui
+          pnpm install --frozen-lockfile
+
+      - name: Build SDK
+        shell: bash
+        run: |
+          cd ui/sdk
+          pnpm build
+
+      # ── Tauri bundle ──
+      - name: Bundle Goose 2 (pnpm tauri build)
+        shell: bash
+        working-directory: ui/goose2
+        run: |
+          pnpm tauri build --target x86_64-pc-windows-msvc
+
+      # ── Upload ──
+      - name: List bundle output
+        shell: bash
+        run: |
+          BUNDLE_DIR="ui/goose2/src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
+          echo "=== Bundle contents ==="
+          find "$BUNDLE_DIR" -type f 2>/dev/null || echo "(no bundle output found)"
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Goose2-windows-x64-nsis
+          path: ui/goose2/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: warn
+
+      - name: Upload MSI installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Goose2-windows-x64-msi
+          path: ui/goose2/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          if-no-files-found: warn

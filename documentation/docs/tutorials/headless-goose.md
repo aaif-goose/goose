@@ -302,9 +302,9 @@ export GOOSE_CLI_MIN_PRIORITY=0.2  # Reduce verbose output
 ### Advanced Configuration
 
 ```bash
-# For complex workflows requiring different models
-export GOOSE_LEAD_MODEL=gpt-4o  # For planning
-export GOOSE_WORKER_MODEL=gpt-4o-mini  # For execution
+# For complex workflows requiring dedicated planning
+export GOOSE_PLANNER_PROVIDER=openai
+export GOOSE_PLANNER_MODEL=gpt-4o
 
 # Security and permissions
 export GOOSE_ALLOWLIST=https://company.com/allowed-extensions.json

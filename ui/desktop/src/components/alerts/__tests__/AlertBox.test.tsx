@@ -73,8 +73,8 @@ describe('AlertBox', () => {
     });
   });
 
-  describe('Progress Bar', () => {
-    it('should render progress bar when progress is provided', () => {
+  describe('Progress Alert', () => {
+    it('should render auto-compact threshold when progress is provided', async () => {
       const alert: Alert = {
         type: AlertType.Info,
         message: 'Context window',
@@ -86,53 +86,11 @@ describe('AlertBox', () => {
 
       renderWithIntl(<AlertBox alert={alert} />);
 
-      expect(screen.getByText('50')).toBeInTheDocument();
-      expect(screen.getByText('50%')).toBeInTheDocument();
-      expect(screen.getByText('100')).toBeInTheDocument();
-
-      // Check progress bar exists
-      const progressDots = screen
-        .getByText('Context window')
-        .parentElement?.parentElement?.querySelectorAll('.h-\\[2px\\]');
-      expect(progressDots).toBeDefined();
+      // Should show auto-compact threshold (default 80%)
+      expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();
     });
 
-    it('should handle zero current value', () => {
-      const alert: Alert = {
-        type: AlertType.Info,
-        message: 'Context window',
-        progress: {
-          current: 0,
-          total: 100,
-        },
-      };
-
-      renderWithIntl(<AlertBox alert={alert} />);
-
-      expect(screen.getByText('0')).toBeInTheDocument();
-      expect(screen.getByText('0%')).toBeInTheDocument();
-      expect(screen.getByText('100')).toBeInTheDocument();
-    });
-
-    it('should handle 100% progress', () => {
-      const alert: Alert = {
-        type: AlertType.Info,
-        message: 'Context window',
-        progress: {
-          current: 100,
-          total: 100,
-        },
-      };
-
-      renderWithIntl(<AlertBox alert={alert} />);
-
-      // Use getAllByText since there are multiple "100" elements (current and total)
-      const hundredElements = screen.getAllByText('100');
-      expect(hundredElements).toHaveLength(2); // One for current, one for total
-      expect(screen.getByText('100%')).toBeInTheDocument();
-    });
-
-    it('should format large numbers with k suffix', () => {
+    it('should not render progress dots or token counts', () => {
       const alert: Alert = {
         type: AlertType.Info,
         message: 'Context window',
@@ -142,28 +100,14 @@ describe('AlertBox', () => {
         },
       };
 
-      renderWithIntl(<AlertBox alert={alert} />);
+      const { container } = renderWithIntl(<AlertBox alert={alert} />);
 
-      expect(screen.getByText('1.5k')).toBeInTheDocument();
-      expect(screen.getByText('15%')).toBeInTheDocument();
-      expect(screen.getByText('10k')).toBeInTheDocument();
-    });
-
-    it('should handle progress over 100%', () => {
-      const alert: Alert = {
-        type: AlertType.Warning,
-        message: 'Context window',
-        progress: {
-          current: 150,
-          total: 100,
-        },
-      };
-
-      renderWithIntl(<AlertBox alert={alert} />);
-
-      expect(screen.getByText('150')).toBeInTheDocument();
-      expect(screen.getByText('150%')).toBeInTheDocument();
-      expect(screen.getByText('100')).toBeInTheDocument();
+      // Progress dots and token counts are no longer rendered
+      expect(screen.queryByText('1.5k')).not.toBeInTheDocument();
+      expect(screen.queryByText('10k')).not.toBeInTheDocument();
+      expect(screen.queryByText('15%')).not.toBeInTheDocument();
+      const progressDots = container.querySelectorAll('.h-\\[2px\\]');
+      expect(progressDots.length).toBe(0);
     });
   });
 
@@ -272,7 +216,7 @@ describe('AlertBox', () => {
   });
 
   describe('Combined Features', () => {
-    it('should render progress bar and compact button together', () => {
+    it('should render threshold settings and compact button together', async () => {
       const alert: Alert = {
         type: AlertType.Info,
         message: 'Context window',
@@ -286,9 +230,7 @@ describe('AlertBox', () => {
 
       renderWithIntl(<AlertBox alert={alert} />);
 
-      expect(screen.getByText('75')).toBeInTheDocument();
-      expect(screen.getByText('75%')).toBeInTheDocument();
-      expect(screen.getByText('100')).toBeInTheDocument();
+      expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();
       expect(screen.getByText('Compact now')).toBeInTheDocument();
     });
 
@@ -300,7 +242,6 @@ describe('AlertBox', () => {
 
       renderWithIntl(<AlertBox alert={alert} />);
 
-      // Use a function matcher to handle the whitespace-pre-line rendering
       expect(
         screen.getByText(
           (content) =>
@@ -319,12 +260,11 @@ describe('AlertBox', () => {
 
       const { container } = renderWithIntl(<AlertBox alert={alert} />);
 
-      // Should still render the alert container
       const alertElement = container.querySelector('.flex.flex-col.gap-2');
       expect(alertElement).toBeInTheDocument();
     });
 
-    it('should handle progress with zero total', () => {
+    it('should handle progress with zero total gracefully', async () => {
       const alert: Alert = {
         type: AlertType.Info,
         message: 'Context window',
@@ -336,10 +276,8 @@ describe('AlertBox', () => {
 
       renderWithIntl(<AlertBox alert={alert} />);
 
-      expect(screen.getByText('10')).toBeInTheDocument();
-      expect(screen.getByText('0')).toBeInTheDocument();
-      // Progress percentage would be Infinity, but it should still render
-      expect(screen.getByText('Infinity%')).toBeInTheDocument();
+      // Should still render threshold settings
+      expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();
     });
   });
 });

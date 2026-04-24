@@ -19,7 +19,7 @@ From the repository root:
 
 ```bash
 # Build for current platform only
-cd ui/acp
+cd ui/sdk
 npm run build:native
 
 # Build for all platforms (requires cross-compilation toolchains)
@@ -43,7 +43,7 @@ For manual publishing:
 ./ui/scripts/publish.sh --real
 ```
 
-This will publish all native packages along with `@aaif/goose-acp` and `@aaif/goose`.
+This will publish all native packages along with `@aaif/goose-sdk` and `@aaif/goose`.
 
 ## Usage
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { defineMessages, useIntl } from '../i18n';
 import { v7 as uuidv7 } from 'uuid';
 import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
@@ -227,7 +228,7 @@ function createEventProcessor(
   dispatch: React.Dispatch<StreamAction>,
   onFinish: (error?: string) => void,
   sessionId: string,
-  onReloadNeeded?: () => void,
+  onReloadNeeded?: () => void
 ) {
   let currentMessages = initialMessages;
   const reduceMotion = prefersReducedMotion();
@@ -343,11 +344,23 @@ function createEventProcessor(
   return processEvent;
 }
 
+const i18n = defineMessages({
+  notificationTitle: {
+    id: 'chat.notification.taskComplete.title',
+    defaultMessage: 'Goose finished the task.',
+  },
+  notificationBody: {
+    id: 'chat.notification.taskComplete.body',
+    defaultMessage: 'Click here to bring Goose back into focus.',
+  },
+});
+
 export function useChatStream({
   sessionId,
   onStreamFinish,
   onSessionLoaded,
 }: UseChatStreamProps): UseChatStreamReturn {
+  const intl = useIntl();
   const [state, dispatch] = useReducer(streamReducer, initialState);
 
   // Long-lived SSE connection for this session
@@ -358,7 +371,6 @@ export function useChatStream({
   const activeRequestSessionIdRef = useRef<string | null>(null);
   const activeAbortRef = useRef<AbortController | null>(null);
   const activeUnsubscribeRef = useRef<(() => void) | null>(null);
-  const lastInteractionTimeRef = useRef<number>(Date.now());
   // When ActiveRequests fires before resumeAgent populates messages (cold mount),
   // defer the reattach until the session is loaded so the event processor has
   // the full conversation history. Events are buffered in the meantime.
@@ -399,12 +411,21 @@ export function useChatStream({
 
       dispatch({ type: 'STREAM_FINISH', payload: error });
 
-      const timeSinceLastInteraction = Date.now() - lastInteractionTimeRef.current;
-      if (!error && timeSinceLastInteraction > 60000) {
-        window.electron.showNotification({
-          title: 'goose finished the task.',
-          body: 'Click here to expand.',
-        });
+      if (!error) {
+        try {
+          const [notificationsEnabled, anyWindowFocused] = await Promise.all([
+            window.electron.getSetting('enableNotifications'),
+            window.electron.isAnyWindowFocused(),
+          ]);
+          if (notificationsEnabled === true && !anyWindowFocused) {
+            window.electron.showNotification({
+              title: intl.formatMessage(i18n.notificationTitle),
+              body: intl.formatMessage(i18n.notificationBody),
+            });
+          }
+        } catch (notifyError) {
+          console.warn('Failed to show task completion notification:', notifyError);
+        }
       }
 
       const isNewSession = sessionId && sessionId.match(/^\d{8}_\d{6}$/);
@@ -444,7 +465,7 @@ export function useChatStream({
 
       onStreamFinish();
     },
-    [onStreamFinish, sessionId]
+    [intl, onStreamFinish, sessionId]
   );
 
   // Reload the full conversation from the server, e.g. after the SSE
@@ -453,14 +474,16 @@ export function useChatStream({
     getSession({
       path: { session_id: sessionId },
       throwOnError: true,
-    }).then((response) => {
-      const session = response.data as Session;
-      if (session?.conversation) {
-        dispatch({ type: 'SET_MESSAGES', payload: session.conversation });
-      }
-    }).catch((e) => {
-      console.warn('Failed to reload conversation after buffer overflow:', e);
-    });
+    })
+      .then((response) => {
+        const session = response.data as Session;
+        if (session?.conversation) {
+          dispatch({ type: 'SET_MESSAGES', payload: session.conversation });
+        }
+      })
+      .catch((e) => {
+        console.warn('Failed to reload conversation after buffer overflow:', e);
+      });
   }, [sessionId]);
 
   // Perform the actual reattach: wire up an event processor and listener
@@ -479,7 +502,7 @@ export function useChatStream({
         dispatch,
         onFinish,
         sessionId,
-        reloadConversation,
+        reloadConversation
       );
 
       // Replay any events that were buffered during cold-mount wait
@@ -523,7 +546,7 @@ export function useChatStream({
       });
       activeUnsubscribeRef.current = unsubscribe;
     },
-    [sessionId, addListener, onFinish, reloadConversation],
+    [sessionId, addListener, onFinish, reloadConversation]
   );
   doReattachRef.current = doReattach;
 
@@ -582,9 +605,7 @@ export function useChatStream({
       targetSessionId: string,
       userMessage: Message,
       currentMessages: Message[],
-      overrideConversation?: Message[],
-      recipeName?: string,
-      recipeVersion?: string,
+      overrideConversation?: Message[]
     ) => {
       const requestId = uuidv7();
       const abortController = new AbortController();
@@ -598,7 +619,7 @@ export function useChatStream({
         dispatch,
         onFinish,
         targetSessionId,
-        reloadConversation,
+        reloadConversation
       );
 
       const unsubscribe = addListener(requestId, (event) => {
@@ -624,8 +645,6 @@ export function useChatStream({
             request_id: requestId,
             user_message: userMessage,
             override_conversation: overrideConversation,
-            recipe_name: recipeName,
-            recipe_version: recipeVersion,
           },
           signal: abortController.signal,
           throwOnError: true,
@@ -805,8 +824,6 @@ export function useChatStream({
         return;
       }
 
-      lastInteractionTimeRef.current = Date.now();
-
       // Emit session-created event for first message in a new session
       if (!hasExistingMessages && hasNewMessage) {
         window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
@@ -879,8 +896,6 @@ export function useChatStream({
       if (!currentState.session || currentState.chatState === ChatState.LoadingConversation) {
         return;
       }
-
-      lastInteractionTimeRef.current = Date.now();
 
       const responseMessage = createElicitationResponseMessage(elicitationId, userData);
       const currentMessages = [...currentState.messages, responseMessage];
@@ -965,7 +980,6 @@ export function useChatStream({
     activeRequestSessionIdRef.current = null;
 
     dispatch({ type: 'SET_CHAT_STATE', payload: ChatState.Idle });
-    lastInteractionTimeRef.current = Date.now();
   }, []);
 
   const onMessageUpdate = useCallback(

@@ -1,0 +1,34 @@
+{
+  "card": {
+    "open": "Open {{title}}",
+    "optionsFor": "Options for {{title}}"
+  },
+  "dateGroups": {
+    "today": "Today",
+    "yesterday": "Yesterday"
+  },
+  "history": {
+    "archivedSubtitle": "Sessions you've archived",
+    "archivedTitle": "Archived Sessions",
+    "backToActive": "Back to active",
+    "emptyArchived": "No archived sessions",
+    "emptyArchivedHint": "Archived sessions will appear here.",
+    "emptyHint": "Start a chat to see it here.",
+    "emptyNoMatches": "No matching sessions",
+    "emptyNoMatchesHint": "Try a different search term.",
+    "emptyTitle": "No sessions yet",
+    "searchArchivedPlaceholder": "Search archived sessions...",
+    "searchError": "Message search failed. Showing title, agent, and project matches only.",
+    "searchPlaceholder": "Search conversations",
+    "searching": "Searching sessions...",
+    "subtitle": "Browse and search past sessions",
+    "toggleArchived": "Archived",
+    "title": "Session History"
+  },
+  "search": {
+    "messageMatches_one": "{{displayCount}} message match",
+    "messageMatches_other": "{{displayCount}} message matches"
+  },
+  "messageCount_one": "{{displayCount}} message",
+  "messageCount_other": "{{displayCount}} messages"
+}

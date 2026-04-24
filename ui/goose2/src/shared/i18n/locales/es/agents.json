@@ -1,0 +1,89 @@
+{
+  "avatar": {
+    "chooseDialogTitle": "Elegir imagen de avatar",
+    "dialogFilterName": "Imagen",
+    "loadFailed": "No se pudo cargar la imagen",
+    "previewAlt": "Vista previa del avatar",
+    "removeAria": "Quitar avatar",
+    "saveFailed": "No se pudo guardar el avatar",
+    "unsupportedType": "Tipo de imagen no compatible",
+    "uploadAria": "Suelta una imagen o haz clic para subir un avatar"
+  },
+  "card": {
+    "ariaLabel": "Agente: {{name}}",
+    "fileBacked": "Desde archivo",
+    "options": "Opciones del agente"
+  },
+  "config": {
+    "ariaLabel": "Configuración del agente",
+    "createAgent": "Crear agente",
+    "fromPersona": "(desde el agente: {{value}})",
+    "model": "Modelo",
+    "modelPlaceholder": "p. ej. claude-sonnet-4-20250514",
+    "name": "Nombre",
+    "namePlaceholder": "Mi agente",
+    "persona": "Agente",
+    "provider": "Proveedor",
+    "systemPromptOverrideCollapsed": "Sobrescribir prompt del sistema [+]",
+    "systemPromptOverrideExpanded": "Sobrescribir prompt del sistema [-]",
+    "systemPromptPlaceholder": "Sobrescribe el prompt del sistema del agente...",
+    "updateAgent": "Actualizar agente"
+  },
+  "editor": {
+    "create": "Crear",
+    "created": "Agente creado.",
+    "displayName": "Nombre para mostrar",
+    "displayNamePlaceholder": "p. ej. Revisor de código",
+    "duplicate": "Duplicar",
+    "duplicated": "Agente duplicado.",
+    "chooseProviderFirst": "Selecciona un proveedor para elegir un modelo.",
+    "editTitle": "Editar agente",
+    "model": "Modelo",
+    "modelPlaceholder": "Selecciona un modelo",
+    "newTitle": "Nuevo agente",
+    "noModelsAvailable": "Todavía no hay modelos disponibles para este proveedor.",
+    "provider": "Proveedor",
+    "readOnlyBuiltIn": "Los agentes integrados son de solo lectura. Duplícalo para personalizarlo.",
+    "readOnlyFile": "Este agente se cargó desde un archivo. Puedes revisarlo aquí, pero la edición está deshabilitada.",
+    "saveFailed": "No se pudo guardar el agente.",
+    "savedModelUnavailable": "{{model}} (guardado, no disponible)",
+    "savedModelUnavailableHelp": "Este agente usa un modelo guardado que no está en el inventario actual del proveedor.",
+    "saving": "Guardando...",
+    "systemPrompt": "Prompt del sistema",
+    "systemPromptPlaceholder": "Eres un asistente útil que...",
+    "updated": "Agente actualizado."
+  },
+  "gallery": {
+    "createAria": "Crear nuevo agente",
+    "dropFile": "o suelta un archivo",
+    "loading": "Cargando agentes",
+    "new": "Nuevo agente"
+  },
+  "statuses": {
+    "error": "Error",
+    "offline": "Desconectado",
+    "online": "En línea",
+    "starting": "Iniciando"
+  },
+  "view": {
+    "copyName": "{{name}} (Copia)",
+    "deleteFailed": "No se pudo eliminar el agente.",
+    "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
+    "deleteTitle": "¿Eliminar agente?",
+    "deleted": "Se eliminó \"{{name}}\".",
+    "description": "Configuraciones de agente personalizadas para flujos de trabajo específicos",
+    "emptyAgentsDescription": "Crea un agente para empezar.",
+    "emptyAgentsTitle": "Aún no hay agentes",
+    "exportFailed": "No se pudo exportar el agente.",
+    "exportedTo": "Exportado a {{filename}}",
+    "importInvalidExtension": "Tipo de archivo no compatible. Elige un archivo .json.",
+    "importInvalidMimeType": "Tipo de archivo no compatible. Elige un archivo JSON.",
+    "importFailed": "No se pudo importar el agente.",
+    "imported_one": "Se importó {{count}} agente.",
+    "imported_other": "Se importaron {{count}} agentes.",
+    "newPersona": "Nuevo agente",
+    "optionsAria": "Opciones de {{name}}",
+    "searchPlaceholder": "Buscar agentes...",
+    "title": "Agentes"
+  }
+}

@@ -6,7 +6,7 @@
 import React from 'react';
 import { screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { AppInner } from './App';
+import { AppInner, resolveSessionInitialMessage } from './App';
 import { IntlTestWrapper } from './i18n/test-utils';
 
 // Set up globals for jsdom
@@ -60,6 +60,7 @@ vi.mock('./sessions', () => ({
     .fn()
     .mockResolvedValue({ sessionId: 'test', messages: [], metadata: { description: '' } }),
   generateSessionId: vi.fn(),
+  createSession: vi.fn(),
 }));
 
 // Mock the ConfigContext module
@@ -86,6 +87,8 @@ vi.mock('./components/ModelAndProviderContext', () => ({
     provider: null,
     model: null,
     getCurrentModelAndProvider: vi.fn(),
+    getFallbackModelAndProvider: vi.fn().mockResolvedValue({ provider: '', model: '' }),
+    refreshCurrentModelAndProvider: vi.fn().mockResolvedValue(undefined),
     setCurrentModelAndProvider: vi.fn(),
   }),
 }));
@@ -161,7 +164,7 @@ const mockElectron = {
 
 // Mock appConfig
 const mockAppConfig = {
-  get: vi.fn((key: string) => {
+  get: vi.fn((key: string): string | null => {
     if (key === 'GOOSE_WORKING_DIR') return '/test/dir';
     return null;
   }),
@@ -191,6 +194,10 @@ describe('App Component - Brand New State', () => {
     vi.clearAllMocks();
     mockNavigate.mockClear();
     mockSetSearchParams.mockClear();
+    mockAppConfig.get.mockImplementation((key: string): string | null => {
+      if (key === 'GOOSE_WORKING_DIR') return '/test/dir';
+      return null;
+    });
 
     // Reset search params
     mockSearchParams.forEach((_, key) => {
@@ -200,8 +207,6 @@ describe('App Component - Brand New State', () => {
     window.location.hash = '';
     window.location.search = '';
     window.location.pathname = '/';
-    window.sessionStorage?.clear?.();
-    window.localStorage?.clear?.();
   });
 
   afterEach(() => {
@@ -266,5 +271,21 @@ describe('App Component - Brand New State', () => {
 
     // Should not navigate anywhere since provider is configured and we're already at "/"
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('should seed recipe sessions with the recipe prompt when no initial message is provided', () => {
+    expect(
+      resolveSessionInitialMessage(
+        {
+          recipe: {
+            prompt: 'Write a release note for the latest change',
+          },
+        },
+        undefined
+      )
+    ).toEqual({
+      msg: 'Write a release note for the latest change',
+      images: [],
+    });
   });
 });

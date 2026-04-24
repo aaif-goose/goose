@@ -1,3 +1,4 @@
+mod acp_tooling;
 pub mod amp_acp;
 pub mod anthropic;
 pub mod api_client;
@@ -27,12 +28,16 @@ pub mod gemini_cli;
 pub mod gemini_oauth;
 pub mod githubcopilot;
 pub mod google;
+pub mod http_status;
 mod init;
+pub mod inventory;
+pub mod kimicode;
 pub mod litellm;
 #[cfg(feature = "local-inference")]
 pub mod local_inference;
 pub mod nanogpt;
 pub mod oauth;
+pub mod oauth_device_flow;
 pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
@@ -54,6 +59,6 @@ pub mod xai;
 
 pub use init::{
     cleanup_provider, create, create_with_default_model, create_with_named_model,
-    get_from_registry, providers, refresh_custom_providers,
+    get_from_registry, inventory_identity, providers, refresh_custom_providers,
 };
 pub use retry::{retry_operation, RetryConfig};

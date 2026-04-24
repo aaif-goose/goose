@@ -1,11 +1,12 @@
 ---
 title: "8 Things You Didn't Know About Code Mode"
 description: Discover how Code mode reduces context rot and token usage in AI agents making them more efficient for long running sessions.
+image: /img/blog/code-mode-header-image.png
 authors:
     - rizel
 ---
 
-![blog cover](header-image.png)
+![blog cover](/img/blog/code-mode-header-image.png)
 
 Agents fundamentally changed how we program. They enable developers to move faster by disintermediating the traditional development workflow. This means less time switching between specialized tools and fewer dependencies on other teams. Now that agents can execute complicated tasks, developers face a new challenge: using them effectively over long sessions.
 

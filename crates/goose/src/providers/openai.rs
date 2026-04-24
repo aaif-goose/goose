@@ -7,8 +7,9 @@ use super::formats::openai_responses::{
     create_responses_request, get_responses_usage, responses_api_to_message,
     responses_api_to_streaming_message, ResponsesApiResponse,
 };
+use super::inventory::{config_secret_value, InventoryIdentityInput};
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status_openai_compat, stream_openai_compat,
+    handle_response_openai_compat, handle_status, stream_openai_compat,
 };
 use super::retry::ProviderRetry;
 use super::utils::ImageFormat;
@@ -47,9 +48,21 @@ pub const OPEN_AI_KNOWN_MODELS: &[(&str, usize)] = &[
     ("gpt-3.5-turbo", 16_385),
     ("gpt-4-turbo", 128_000),
     ("o4-mini", 128_000),
+    ("gpt-5", 400_000),
+    ("gpt-5-mini", 400_000),
     ("gpt-5-nano", 400_000),
-    ("gpt-5.1-codex", 400_000),
+    ("gpt-5-pro", 400_000),
     ("gpt-5-codex", 400_000),
+    ("gpt-5.1", 400_000),
+    ("gpt-5.1-codex", 400_000),
+    ("gpt-5.2", 400_000),
+    ("gpt-5.2-codex", 400_000),
+    ("gpt-5.2-pro", 400_000),
+    ("gpt-5.3-codex", 400_000),
+    ("gpt-5.4", 1_050_000),
+    ("gpt-5.4-mini", 400_000),
+    ("gpt-5.4-nano", 400_000),
+    ("gpt-5.4-pro", 1_050_000),
 ];
 
 pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
@@ -71,12 +84,26 @@ pub struct OpenAiProvider {
 
 impl OpenAiProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
-        let model = model.with_fast(OPEN_AI_DEFAULT_FAST_MODEL, OPEN_AI_PROVIDER_NAME)?;
-
         let config = crate::config::Config::global();
         let host: String = config
             .get_param("OPENAI_HOST")
             .unwrap_or_else(|_| "https://api.openai.com".to_string());
+
+        // Only apply the default fast model when talking to OpenAI directly.
+        // Custom/compatible endpoints likely don't serve gpt-4o-mini, so
+        // leave fast_model unset (complete_fast will fall back to the main model).
+        // Parse the URL and compare the hostname exactly to avoid false positives
+        // (e.g. https://api.openai.com.local:8000 or proxy paths containing api.openai.com).
+        let is_openai = url::Url::parse(&host)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+            .map(|h| h == "api.openai.com" || h.ends_with(".api.openai.com"))
+            .unwrap_or(false);
+        let model = if is_openai {
+            model.with_fast(OPEN_AI_DEFAULT_FAST_MODEL, OPEN_AI_PROVIDER_NAME)?
+        } else {
+            model
+        };
 
         let secrets = config
             .get_secrets("OPENAI_API_KEY", &["OPENAI_CUSTOM_HEADERS"])
@@ -187,12 +214,7 @@ impl OpenAiProvider {
         let base_path = if let Some(ref explicit_path) = config.base_path {
             explicit_path.trim_start_matches('/').to_string()
         } else {
-            let url_path = url.path().trim_start_matches('/').to_string();
-            if url_path.is_empty() || url_path == "v1" || url_path == "v1/" {
-                "v1/chat/completions".to_string()
-            } else {
-                url_path
-            }
+            Self::derive_base_path(url.path())
         };
 
         let timeout_secs = config.timeout_seconds.unwrap_or(600);
@@ -241,6 +263,19 @@ impl OpenAiProvider {
         })
     }
 
+    // Derive a base path from the raw URL path
+    fn derive_base_path(url_path: &str) -> String {
+        let stripped = url_path.trim_start_matches('/');
+        let normalized = stripped.trim_end_matches('/');
+        if normalized.is_empty() {
+            "v1/chat/completions".to_string()
+        } else if normalized == "v1" || normalized.ends_with("/v1") {
+            format!("{}/chat/completions", normalized)
+        } else {
+            stripped.to_string()
+        }
+    }
+
     fn normalize_base_path(base_path: &str) -> String {
         if let Some(path) = base_path.strip_prefix('/') {
             format!("/{}", path.trim_end_matches('/'))
@@ -260,10 +295,7 @@ impl OpenAiProvider {
     }
 
     fn is_responses_model(model_name: &str) -> bool {
-        let normalized_model = model_name.to_ascii_lowercase();
-        (normalized_model.starts_with("gpt-5") && normalized_model.contains("codex"))
-            || normalized_model.starts_with("gpt-5.2-pro")
-            || normalized_model.starts_with("gpt-5.4")
+        super::utils::is_openai_responses_model(model_name)
     }
 
     fn should_use_responses_api(model_name: &str, base_path: &str) -> bool {
@@ -417,6 +449,58 @@ impl ProviderDef for OpenAiProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
     }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_configured() -> bool {
+        let config = crate::config::Config::global();
+        // If the host is explicitly set to something non-default, trust the user's
+        // custom setup (e.g. a local server that doesn't require an API key).
+        if let Ok(host) = config.get_param::<String>("OPENAI_HOST") {
+            if host != "https://api.openai.com" {
+                return true;
+            }
+        }
+        // Standard OpenAI endpoint requires an API key.
+        config
+            .get_secret::<serde_json::Value>("OPENAI_API_KEY")
+            .is_ok()
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        let config = crate::config::Config::global();
+        let mut identity =
+            InventoryIdentityInput::new(OPEN_AI_PROVIDER_NAME, OPEN_AI_PROVIDER_NAME)
+                .with_public(
+                    "host",
+                    config
+                        .get_param::<String>("OPENAI_HOST")
+                        .unwrap_or_else(|_| "https://api.openai.com".to_string()),
+                )
+                .with_public(
+                    "base_path",
+                    config
+                        .get_param::<String>("OPENAI_BASE_PATH")
+                        .unwrap_or_else(|_| OPEN_AI_DEFAULT_BASE_PATH.to_string()),
+                );
+
+        if let Ok(organization) = config.get_param::<String>("OPENAI_ORGANIZATION") {
+            identity = identity.with_public("organization", organization);
+        }
+        if let Ok(project) = config.get_param::<String>("OPENAI_PROJECT") {
+            identity = identity.with_public("project", project);
+        }
+        if let Some(api_key) = config_secret_value(config, "OPENAI_API_KEY") {
+            identity = identity.with_secret("api_key", api_key);
+        }
+        if let Some(custom_headers) = config_secret_value(config, "OPENAI_CUSTOM_HEADERS") {
+            identity = identity.with_secret("custom_headers", custom_headers);
+        }
+
+        Ok(identity)
+    }
 }
 
 #[async_trait]
@@ -495,7 +579,7 @@ impl Provider for OpenAiProvider {
                             &payload_clone,
                         )
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {
@@ -560,7 +644,7 @@ impl Provider for OpenAiProvider {
                         .api_client
                         .response_post(Some(session_id), &self.base_path, &payload)
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {
@@ -759,59 +843,20 @@ mod tests {
     }
 
     #[test]
-    fn gpt_5_2_codex_uses_responses_when_base_path_is_default() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-codex",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_2_pro_uses_responses_when_base_path_is_default() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-pro",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_2_pro_with_date_uses_responses() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-pro-2025-12-11",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn explicit_chat_path_forces_chat_completions() {
-        assert!(!OpenAiProvider::should_use_responses_api(
-            "gpt-5.2-codex",
-            "openai/v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_4_uses_responses_when_base_path_is_default() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.4",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_5_4_with_date_uses_responses() {
-        assert!(OpenAiProvider::should_use_responses_api(
-            "gpt-5.4-2026-03-01",
-            "v1/chat/completions"
-        ));
-    }
-
-    #[test]
-    fn gpt_4o_does_not_use_responses() {
-        assert!(!OpenAiProvider::should_use_responses_api(
-            "gpt-4o",
-            "v1/chat/completions"
-        ));
+    fn responses_api_routing_uses_model_family_unless_path_forces_chat() {
+        for (model_name, base_path, expected) in [
+            ("gpt-5.4", "v1/chat/completions", true),
+            ("gpt-5.4-xhigh", "v1/chat/completions", true),
+            ("gpt-5.2-pro-2025-12-11", "v1/chat/completions", true),
+            ("gpt-4o", "v1/chat/completions", false),
+            ("gpt-5.2-codex", "openai/v1/chat/completions", false),
+        ] {
+            assert_eq!(
+                OpenAiProvider::should_use_responses_api(model_name, base_path),
+                expected,
+                "unexpected routing for {model_name} via {base_path}"
+            );
+        }
     }
 
     #[test]
@@ -848,5 +893,55 @@ mod tests {
     fn unknown_absolute_path_falls_back_to_absolute_models_path() {
         let models_path = OpenAiProvider::map_base_path("/custom/path", "models", "v1/models");
         assert_eq!(models_path, "/v1/models");
+    }
+
+    #[test]
+    fn derive_base_path_empty_path_gives_default_endpoint() {
+        assert_eq!(OpenAiProvider::derive_base_path("/"), "v1/chat/completions");
+    }
+
+    #[test]
+    fn derive_base_path_bare_v1_gives_chat_completions() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/v1"),
+            "v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_v1_with_trailing_slash() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/v1/"),
+            "v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_prefixed_v1_appends_chat_completions() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/zen/go/v1"),
+            "zen/go/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_prefixed_v1_with_trailing_slash() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/zen/go/v1/"),
+            "zen/go/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_full_chat_completions_url_unchanged() {
+        assert_eq!(
+            OpenAiProvider::derive_base_path("/openai/v1/chat/completions"),
+            "openai/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn derive_base_path_non_v1_prefix_unchanged() {
+        assert_eq!(OpenAiProvider::derive_base_path("/anthropic"), "anthropic");
     }
 }

@@ -8,7 +8,7 @@ description: Use Claude Code, Codex, Cursor Agent, or Gemini CLI subscriptions i
 # CLI Providers
 
 :::warning Deprecated — Use ACP Providers
-The Claude Code (`claude-code`), Codex (`codex`), and Gemini CLI (`gemini-cli`) providers are deprecated. Use the [ACP providers](/docs/guides/acp-providers) (`claude-acp`, `codex-acp`, `gemini-acp`) instead, which support goose extensions via MCP and use the standardized Agent Client Protocol. CLI providers are kept for backward compatibility only.
+The Claude Code (`claude-code`), Codex (`codex`), and Gemini CLI (`gemini-cli`) providers are deprecated. Use the [ACP providers](/docs/guides/acp-providers) (`claude-acp`, `codex-acp`) instead, which support goose extensions via MCP and use the standardized Agent Client Protocol. For Gemini, use the `Gemini` (`gemini_oauth`) provider which authenticates via OAuth. CLI providers are kept for backward compatibility only.
 :::
 
 goose can make use of pass-through providers that integrate with existing CLI tools from Anthropic, OpenAI, Cursor, and Google. These providers allow you to use your existing Claude Code, Codex, Cursor Agent, and Google Gemini CLI subscriptions through goose's interface, adding session management, persistence, and workflow integration capabilities to these tools.
@@ -37,7 +37,7 @@ CLI providers are useful if you:
 #### Workflow Integration  
 - **Recipe compatibility**: Use CLI providers in automated goose recipes
 - **Scheduling support**: Include in scheduled tasks and workflows
-- **Hybrid configurations**: Combine with LLM providers using lead/worker patterns
+- **Hybrid configurations**: Combine with planning mode and model-specific workflows
 
 #### Interface Consistency
 - **Unified commands**: Use the same `goose session` interface across all providers
@@ -260,16 +260,16 @@ Once configured, you can start a goose session using these providers just like a
 goose session
 ```
 
-### Combining with Other Models
+### Combining with Planner Models
 
-CLI providers work well in combination with other models using goose's [lead/worker pattern](/docs/tutorials/lead-worker):
+CLI providers also work well with planning mode when you want one model for strategy and another for execution:
 
 ```bash
-# Use Claude Code as lead model, GPT-4o as worker
-export GOOSE_LEAD_PROVIDER=claude-code
-export GOOSE_PROVIDER=openai
-export GOOSE_MODEL=gpt-4o
-export GOOSE_LEAD_MODEL=default
+# Use Claude Code for execution, OpenAI for planning
+export GOOSE_PROVIDER=claude-code
+export GOOSE_MODEL=default
+export GOOSE_PLANNER_PROVIDER=openai
+export GOOSE_PLANNER_MODEL=gpt-4o
 
 goose session
 ```

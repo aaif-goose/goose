@@ -137,12 +137,15 @@ export default function BaseChat({
     return initialMessage;
   }, [initialMessage, recipe?.prompt, session?.user_recipe_values]);
 
+  const canAutoSubmit = !recipe || hasNotAcceptedRecipe === false;
+
   useAutoSubmit({
     sessionId,
     session,
     messages,
     chatState,
     initialMessage: resolvedInitialMessage,
+    canAutoSubmit,
     handleSubmit,
   });
 
@@ -206,7 +209,7 @@ export default function BaseChat({
   const sessionLoaded = session !== undefined;
 
   useEffect(() => {
-    if (!recipe) return;
+    if (!recipe || !isActiveSession) return;
 
     (async () => {
       const accepted = await window.electron.hasAcceptedRecipeBefore(recipe);
@@ -217,7 +220,7 @@ export default function BaseChat({
         setHasRecipeSecurityWarnings(scanResult.has_security_warnings);
       }
     })();
-  }, [recipe]);
+  }, [recipe, isActiveSession]);
 
   const handleRecipeAccept = async (accept: boolean) => {
     if (recipe && accept) {
@@ -525,7 +528,7 @@ export default function BaseChat({
         </div>
       </MainPanelLayout>
 
-      {recipe && (
+      {recipe && isActiveSession && (
         <RecipeWarningModal
           isOpen={!!hasNotAcceptedRecipe}
           onConfirm={() => handleRecipeAccept(true)}

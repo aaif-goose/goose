@@ -2,6 +2,7 @@
 name = "goose"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -67,6 +68,7 @@ rmcp = { workspace = true, features = [
     "transport-child-process",
     "transport-streamable-http-client",
     "transport-streamable-http-client-reqwest",
+    "transport-streamable-http-client-unix-socket",
 ] }
 oauth2 = { version = "5.0", default-features = false }
 arboard = { workspace = true }
@@ -80,7 +82,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = "0.7"
 jsonschema = "0.30.0"
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
 regex = { workspace = true }
 async-trait = { workspace = true }
 async-stream = { workspace = true }
@@ -94,7 +96,7 @@ nanoid = "0.4"
 sha2 = { workspace = true }
 base64 = { workspace = true }
 url = { workspace = true }
-axum = { workspace = true }
+axum = { workspace = true, features = ["ws"] }
 webbrowser = { workspace = true }
 lazy_static = "1.5.0"
 tracing = { workspace = true }
@@ -112,6 +114,7 @@ strum = { workspace = true }
 once_cell = { workspace = true }
 etcetera = { workspace = true }
 fs-err = "3"
+goose-sdk = { path = "../goose-sdk" }
 rand = { workspace = true }
 utoipa = { workspace = true, features = ["chrono"] }
 tokio-cron-scheduler = "0.14.0"
@@ -179,7 +182,7 @@ tree-sitter-typescript = { workspace = true }
 which = { workspace = true }
 pctx_code_mode = { version = "^0.3.0", optional = true }
 pulldown-cmark = "0.13.0"
-llama-cpp-2 = { version = "0.1.143", features = ["sampler"], optional = true }
+llama-cpp-2 = { version = "0.1.143", features = ["sampler", "mtmd"], optional = true }
 encoding_rs = "0.8.35"
 pastey = "0.2.1"
 shell-words = { workspace = true }
@@ -187,6 +190,9 @@ pem = { version = "3", optional = true }
 pkcs1 = { version = "0.7", default-features = false, features = ["pkcs8"], optional = true }
 pkcs8 = { version = "0.10", default-features = false, features = ["alloc"], optional = true }
 sec1 = { version = "0.7", default-features = false, features = ["der", "pkcs8"], optional = true }
+goose-acp-macros = { path = "../goose-acp-macros" }
+tower-http = { workspace = true, features = ["cors"] }
+http-body-util = "0.1.3"
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -197,7 +203,7 @@ keyring = { version = "3.6.2", features = ["windows-native"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.9", default-features = false, features = ["metal"], optional = true }
 candle-nn = { version = "0.9", default-features = false, features = ["metal"], optional = true }
-llama-cpp-2 = { version = "0.1.143", features = ["sampler", "metal"], optional = true }
+llama-cpp-2 = { version = "0.1.143", features = ["sampler", "metal", "mtmd"], optional = true }
 keyring = { version = "3.6.2", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -219,6 +225,7 @@ opentelemetry_sdk = { workspace = true, features = ["testing"] }
 goose-test-support = { path = "../goose-test-support" }
 bytes.workspace = true
 http.workspace = true
+goose-mcp = { path = "../goose-mcp" }
 
 [[example]]
 name = "agent"
@@ -241,6 +248,10 @@ path = "src/bin/analyze_cli.rs"
 name = "build_canonical_models"
 path = "src/providers/canonical/build_canonical_models.rs"
 
+[[bin]]
+name = "generate-acp-schema"
+path = "src/bin/generate_acp_schema.rs"
+
 [package.metadata.cargo-machete]
 
 ignored = [
@@ -248,4 +259,6 @@ ignored = [
     "winapi",
     # Used to provide extras imports for sacp
     "agent-client-protocol-schema",
+    # Used via http transport
+    "http-body-util",
 ]

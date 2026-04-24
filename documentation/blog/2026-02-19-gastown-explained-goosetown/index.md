@@ -1,12 +1,13 @@
 ---
 title: "Gas Town Explained: How to Use Goosetown for Parallel Agentic Engineering"
 description: "Learn how Gas Town and Goosetown lead the industrial coding revolution by teaching AI agents to work together in a team. This beginner guide explains the infrastructure we're using to move from talking to one AI to coordinating many agents at once."
+image: /img/blog/goosetown.png
 authors:
   - rizel
   - tyler
 ---
 
-![Goosetown](goosetown.png)
+![Goosetown](/img/blog/goosetown.png)
 
 On New Year's Day 2026, while many were recovering from the night before, a different kind of hangover took hold of every AI-pilled, chronically online software engineer. Steve Yegge published a new blog post: "[Welcome to Gas Town](https://steve-yegge.medium.com/welcome-to-gas-town-4f25ee16dd04)." Some walked away inspired to finally use their agents optimally; others were just plain confused. If you're like me, you felt a bit of both. 
 

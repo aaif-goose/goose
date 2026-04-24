@@ -1174,6 +1174,7 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
             headers,
             description,
             timeout: Some(timeout),
+            socket: None,
             bundled: None,
             available_tools: Vec::new(),
         },

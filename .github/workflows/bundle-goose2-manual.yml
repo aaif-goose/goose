@@ -1,0 +1,26 @@
+name: "Manual Goose 2 Bundle (Unsigned)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch name to bundle app from"
+        required: true
+        type: string
+      cli-run-id:
+        description: "Run ID of a build-cli workflow to pull the goose binary from (optional, builds from source if empty)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  bundle-goose2:
+    uses: ./.github/workflows/bundle-goose2.yml
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    with:
+      signing: false
+      ref: ${{ inputs.branch }}
+      cli-run-id: ${{ inputs.cli-run-id }}

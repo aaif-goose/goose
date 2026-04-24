@@ -55,7 +55,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
 
       - name: Install Dependencies
         run: |
@@ -108,7 +108,7 @@ jobs:
           node-version: '22'
 
       - name: Install agentic providers
-        run: npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli @zed-industries/claude-agent-acp @zed-industries/codex-acp
+        run: npm install -g @anthropic-ai/claude-code @zed-industries/claude-agent-acp @zed-industries/codex-acp
 
       - name: Run Smoke Tests with Provider Script
         env:
