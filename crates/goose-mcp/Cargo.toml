@@ -34,7 +34,7 @@ etcetera = { workspace = true }
 tempfile = { workspace = true }
 include_dir = { workspace = true }
 once_cell = { workspace = true }
-lopdf = "0.36.0"
+lopdf = "0.40.0"
 docx-rs = "0.4.7"
 image = { version = "0.24.9", features = ["jpeg"] }
 umya-spreadsheet = "2.2.3"

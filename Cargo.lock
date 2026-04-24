@@ -5872,9 +5872,9 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "lopdf"
-version = "0.36.0"
+version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59fa2559e99ba0f26a12458aabc754432c805bbb8cba516c427825a997af1fb7"
+checksum = "73fdcbab5b237a03984f83b1394dc534e0b1960675c7f3ec4d04dccc9032b56d"
 dependencies = [
  "aes",
  "bitflags 2.11.0",
@@ -5883,6 +5883,7 @@ dependencies = [
  "ecb",
  "encoding_rs",
  "flate2",
+ "getrandom 0.4.2",
  "indexmap 2.13.0",
  "itoa",
  "jiff",
@@ -5890,13 +5891,14 @@ dependencies = [
  "md-5",
  "nom 8.0.0",
  "nom_locate",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rangemap",
  "rayon",
  "sha2",
  "stringprep",
  "thiserror 2.0.18",
  "time",
+ "ttf-parser",
  "weezl",
 ]
 
@@ -7381,7 +7383,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -11095,6 +11097,12 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "ttf-parser"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
 name = "tungstenite"
