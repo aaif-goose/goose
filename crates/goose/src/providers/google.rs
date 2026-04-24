@@ -1,7 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::MessageStream;
 use super::errors::ProviderError;
-use super::openai_compatible::handle_status_openai_compat;
+use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use super::utils::RequestLog;
 use crate::conversation::message::Message;
@@ -101,7 +101,7 @@ impl GoogleProvider {
             .api_client
             .response_post(session_id, &path, payload)
             .await?;
-        handle_status_openai_compat(response).await
+        handle_status(response).await
     }
 }
 

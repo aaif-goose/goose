@@ -2,7 +2,7 @@ use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status_openai_compat, map_http_error_to_provider_error,
+    handle_response_openai_compat, handle_status, map_http_error_to_provider_error,
     stream_openai_compat,
 };
 use super::retry::ProviderRetry;
@@ -55,7 +55,7 @@ impl TetrateProvider {
 
         let auth = AuthMethod::BearerToken(api_key);
         let api_client = ApiClient::new(host, auth)?
-            .with_header("HTTP-Referer", "https://block.github.io/goose")?
+            .with_header("HTTP-Referer", "https://goose-docs.ai")?
             .with_header("X-Title", "goose")?;
 
         Ok(Self {
@@ -155,7 +155,7 @@ impl Provider for TetrateProvider {
                     .api_client
                     .response_post(Some(session_id), "v1/chat/completions", &payload)
                     .await?;
-                let resp = handle_status_openai_compat(resp)
+                let resp = handle_status(resp)
                     .await
                     .map_err(Self::enrich_credits_error)?;
 

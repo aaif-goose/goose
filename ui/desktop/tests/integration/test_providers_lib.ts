@@ -142,28 +142,16 @@ function getProviders(): ProviderConfig[] {
     },
     {
       provider: 'chatgpt_codex',
-      models: ['gpt-5.1-codex'],
+      models: ['gpt-5.4'],
       available: () =>
         hasEnv('CHATGPT_CODEX_TOKEN') ||
-        hasFile(path.join(os.homedir(), '.config/goose/chatgpt_codex_token.json')),
+        hasFile(path.join(os.homedir(), '.config/goose/chatgpt_codex/tokens.json')),
     },
     {
       provider: 'claude-code',
       models: ['default'],
       agentic: true,
       available: () => hasCmd('claude'),
-    },
-    {
-      provider: 'codex',
-      models: ['gpt-5.2-codex'],
-      agentic: true,
-      available: () => hasCmd('codex'),
-    },
-    {
-      provider: 'gemini-cli',
-      models: ['gemini-2.5-pro'],
-      agentic: true,
-      available: () => hasCmd('gemini'),
     },
     {
       provider: 'cursor-agent',
@@ -184,7 +172,10 @@ function getProviders(): ProviderConfig[] {
 // ---------------------------------------------------------------------------
 
 function stripQuotes(s: string): string {
-  if (s.length >= 2 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+  if (
+    s.length >= 2 &&
+    ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))
+  ) {
     return s.slice(1, -1);
   }
   return s;

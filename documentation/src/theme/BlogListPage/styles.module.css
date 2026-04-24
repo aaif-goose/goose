@@ -1,0 +1,258 @@
+/* Magazine-style Blog Layout */
+
+.blogContainer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.featuredSection {
+  margin-bottom: 3rem;
+}
+
+.featuredPost {
+  background: var(--ifm-card-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  gap: 2rem;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+  margin-bottom: 2rem;
+}
+
+.featuredPost:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.featuredContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.featuredImage {
+  flex: 0 0 350px;
+  order: 2;
+  display: flex;
+}
+
+.featuredImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.featuredDate {
+  font-size: 0.9rem;
+  color: var(--ifm-color-content-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.featuredTitle {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin-bottom: 0.75rem;
+  color: var(--ifm-color-content);
+  line-height: 1.2;
+}
+
+.featuredTitle a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.featuredTitle a:hover {
+  color: var(--ifm-color-primary);
+}
+
+
+.postAuthors {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.authorInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.authorAvatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.authorName {
+  font-size: 0.85rem;
+  color: var(--ifm-color-content-secondary);
+}
+
+.featuredDescription {
+  color: var(--ifm-color-content-secondary);
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+  flex-grow: 1;
+}
+
+.featuredButton {
+  align-self: flex-start;
+  background: var(--ifm-color-primary);
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: background-color 0.3s ease;
+  width: fit-content;
+}
+
+.featuredButton:hover {
+  background: var(--ifm-color-primary-dark);
+  color: white;
+  text-decoration: none;
+}
+
+.postsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+
+.postCard {
+  background: var(--ifm-card-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.postCard:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.postImage {
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+}
+
+.postImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.postContent {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.postDate {
+  font-size: 0.85rem;
+  color: var(--ifm-color-content-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.postTitle {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-bottom: 0.75rem;
+  color: var(--ifm-color-content);
+  line-height: 1.3;
+}
+
+.postTitle a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.postTitle a:hover {
+  color: var(--ifm-color-primary);
+}
+
+
+.postDescription {
+  color: var(--ifm-color-content-secondary);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+  flex-grow: 1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.paginationWrapper {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+}
+
+/* Responsive Design */
+@media (max-width: 996px) {
+  .postsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+
+  .featuredPost {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .featuredImage {
+    order: 0;
+    flex: none;
+  }
+
+  .featuredImage img {
+    height: 250px;
+  }
+}
+
+@media (max-width: 768px) {
+  .postsGrid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .blogContainer {
+    padding: 0 0.5rem;
+  }
+
+  .featuredPost {
+    padding: 1.5rem;
+  }
+
+  .featuredTitle {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .postContent {
+    padding: 1rem;
+  }
+
+  .featuredPost {
+    padding: 1rem;
+  }
+}

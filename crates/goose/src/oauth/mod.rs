@@ -17,6 +17,7 @@ use tracing::warn;
 use crate::oauth::persist::GooseCredentialStore;
 
 const CALLBACK_TEMPLATE: &str = include_str!("oauth_callback.html");
+const CLIENT_METADATA_URL: &str = "https://goose-docs.ai/oauth/client-metadata.json";
 
 #[derive(Clone)]
 struct AppState {
@@ -79,9 +80,14 @@ pub async fn oauth_flow(
 
     let mut oauth_state = OAuthState::new(mcp_server_url, None).await?;
 
-    let redirect_uri = format!("http://localhost:{}/oauth_callback", used_addr.port());
+    let redirect_uri = format!("http://127.0.0.1:{}/oauth_callback", used_addr.port());
     oauth_state
-        .start_authorization(&[], redirect_uri.as_str(), Some("goose"))
+        .start_authorization_with_metadata_url(
+            &[],
+            redirect_uri.as_str(),
+            Some("goose"),
+            Some(CLIENT_METADATA_URL),
+        )
         .await?;
 
     let authorization_url = oauth_state.get_authorization_url().await?;
@@ -109,17 +115,17 @@ pub async fn oauth_flow(
         .unwrap_or_default();
 
     credential_store
-        .save(StoredCredentials {
+        .save(StoredCredentials::new(
             client_id,
             token_response,
             granted_scopes,
-            token_received_at: Some(
+            Some(
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|duration| duration.as_secs())
                     .unwrap_or(0),
             ),
-        })
+        ))
         .await?;
 
     auth_manager.set_credential_store(credential_store);

@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
-use super::openai_compatible::{handle_status_openai_compat, stream_openai_compat};
+use super::openai_compatible::{handle_status, stream_openai_compat};
 use super::retry::ProviderRetry;
 use super::utils::{ImageFormat, RequestLog};
 use crate::conversation::message::Message;
@@ -57,7 +57,7 @@ impl OpenRouterProvider {
 
         let auth = AuthMethod::BearerToken(api_key);
         let api_client = ApiClient::new(host, auth)?
-            .with_header("HTTP-Referer", "https://block.github.io/goose")?
+            .with_header("HTTP-Referer", "https://goose-docs.ai")?
             .with_header("X-Title", "goose")?;
 
         Ok(Self {
@@ -291,7 +291,7 @@ impl Provider for OpenRouterProvider {
                     .api_client
                     .response_post(Some(session_id), "api/v1/chat/completions", &payload)
                     .await?;
-                handle_status_openai_compat(resp).await
+                handle_status(resp).await
             })
             .await
             .inspect_err(|e| {

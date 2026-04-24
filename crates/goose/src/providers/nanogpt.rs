@@ -1,7 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
-use super::openai_compatible::{handle_status_openai_compat, stream_openai_compat};
+use super::openai_compatible::{handle_status, stream_openai_compat};
 use super::retry::ProviderRetry;
 use super::utils::{ImageFormat, RequestLog};
 use crate::conversation::message::Message;
@@ -29,11 +29,16 @@ pub struct NanoGptProvider {
 }
 
 impl NanoGptProvider {
-    async fn check_subscription(api_key: &str) -> bool {
-        let client = match ApiClient::new(
-            NANOGPT_SUBSCRIPTION_HOST.to_string(),
+    fn build_client(host: &str, api_key: &str) -> Result<ApiClient> {
+        ApiClient::new(
+            host.to_string(),
             AuthMethod::BearerToken(api_key.to_string()),
-        ) {
+        )?
+        .with_header("x-client", "goose")
+    }
+
+    async fn check_subscription(api_key: &str) -> bool {
+        let client = match Self::build_client(NANOGPT_SUBSCRIPTION_HOST, api_key) {
             Ok(c) => c,
             Err(_) => return false,
         };
@@ -62,7 +67,7 @@ impl NanoGptProvider {
             NANOGPT_API_HOST.to_string()
         };
 
-        let api_client = ApiClient::new(host, AuthMethod::BearerToken(api_key))?;
+        let api_client = Self::build_client(&host, &api_key)?;
 
         Ok(Self {
             api_client,
@@ -186,7 +191,7 @@ impl Provider for NanoGptProvider {
                     .api_client
                     .response_post(Some(session_id), "chat/completions", &payload)
                     .await?;
-                handle_status_openai_compat(resp).await
+                handle_status(resp).await
             })
             .await
             .inspect_err(|e| {

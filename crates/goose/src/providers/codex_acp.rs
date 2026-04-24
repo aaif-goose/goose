@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, PermissionMapping,
-    ACP_CURRENT_MODEL,
+    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::model::ModelConfig;
+use crate::providers::acp_tooling::{acp_adapter_installed, acp_inventory_identity};
 use crate::providers::base::{ProviderDef, ProviderMetadata};
+use crate::providers::inventory::InventoryIdentityInput;
 
 const CODEX_ACP_PROVIDER_NAME: &str = "codex-acp";
 const CODEX_ACP_DOC_URL: &str = "https://github.com/zed-industries/codex-acp";
@@ -74,13 +75,6 @@ impl ProviderDef for CodexAcpProvider {
                 ]);
             }
 
-            // codex-acp permission option_ids
-            let permission_mapping = PermissionMapping {
-                allow_option_id: Some("approved".to_string()),
-                reject_option_id: Some("abort".to_string()),
-                rejected_tool_status: sacp::schema::ToolCallStatus::Failed,
-            };
-
             // Chat and Approve both map to "read-only".
             let mode_mapping = HashMap::from([
                 (GooseMode::Auto, "full-access".to_string()),
@@ -99,13 +93,24 @@ impl ProviderDef for CodexAcpProvider {
                 // Disabled until https://github.com/zed-industries/codex-acp/issues/179 is fixed.
                 session_mode_id: None,
                 mode_mapping,
-                permission_mapping,
                 notification_callback: None,
             };
 
             let metadata = Self::metadata();
             AcpProvider::connect(metadata.name, model, goose_mode, provider_config).await
         })
+    }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        acp_inventory_identity(CODEX_ACP_PROVIDER_NAME, CODEX_ACP_PROVIDER_NAME)
+    }
+
+    fn inventory_configured() -> bool {
+        acp_adapter_installed(CODEX_ACP_PROVIDER_NAME)
     }
 }
 

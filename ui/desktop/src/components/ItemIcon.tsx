@@ -36,6 +36,8 @@ export const getItemIcon = (item: DisplayItem): IconInfo => {
       return { Icon: BookOpen, color: '#10b981' }; // Green
     case 'Skill':
       return { Icon: Sparkles, color: '#8b5cf6' }; // Purple
+    case 'Agent':
+      return { Icon: Terminal, color: '#f59e0b' }; // Amber
     case 'Directory':
       return { Icon: Folder, color: '#f59e0b' }; // Amber
     default: {

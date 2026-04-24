@@ -39,7 +39,7 @@ fn is_meta_provider(provider: &str) -> bool {
     matches!(provider, "databricks" | "tetrate" | "bedrock" | "azure")
 }
 
-fn map_provider_name(provider: &str) -> &str {
+pub fn map_provider_name(provider: &str) -> &str {
     match provider {
         // Goose provider names that differ from models.dev names
         "xai" => "x-ai",
@@ -47,6 +47,8 @@ fn map_provider_name(provider: &str) -> &str {
         "aws_bedrock" => "amazon-bedrock",
         "gcp_vertex_ai" => "google-vertex",
         "gemini_oauth" => "google",
+        "zhipu" => "zhipuai",
+        "novita" => "novita-ai",
         _ => provider,
     }
 }
@@ -488,6 +490,16 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("databricks", "x-ai-grok-3", r),
             Some("x-ai/grok-3".to_string())
+        );
+
+        // === Zhipu AI ===
+        assert_eq!(
+            map_to_canonical_model("zhipu", "glm-4.7", r),
+            Some("zhipuai/glm-4.7".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("zhipu", "glm-5", r),
+            Some("zhipuai/glm-5".to_string())
         );
 
         // === GCP Vertex AI ===

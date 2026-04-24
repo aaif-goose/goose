@@ -1,0 +1,197 @@
+{
+  "attachments": {
+    "alt": "Adjunto {{index}}",
+    "chooseFilesDialogTitle": "Elegir archivos para adjuntar",
+    "chooseFoldersDialogTitle": "Elegir carpetas para adjuntar",
+    "dropToAttach": "Suelta archivos o carpetas para adjuntarlos",
+    "open": "Abrir adjunto {{name}}",
+    "remove": "Eliminar adjunto",
+    "view": "Ver adjunto {{index}}"
+  },
+  "context": {
+    "closePanel": "Cerrar panel de contexto",
+    "openPanel": "Abrir panel de contexto",
+    "ringAria": "Contexto: {{percent}}% usado"
+  },
+  "contextPanel": {
+    "actions": {
+      "chooseCreateAction": "Elegir acción de creación",
+      "refreshGitStatus": "Actualizar estado de git"
+    },
+    "createDialog": {
+      "baseBranch": "Rama base",
+      "branchDescription": "Crea una nueva rama y cambia este espacio de trabajo a ella.",
+      "branchError": "No se pudo crear la rama {{branch}}.",
+      "branchName": "Nombre de la rama",
+      "branchNamePlaceholder": "feature/mi-rama",
+      "branchSuccess": "Se creó y cambió a {{branch}}.",
+      "branchTitle": "Nueva rama",
+      "branchToOpen": "Rama para abrir",
+      "cancel": "Cancelar",
+      "createBranch": "Crear rama",
+      "createNewBranch": "Crear una nueva rama",
+      "createWorktree": "Crear worktree",
+      "creatingBranch": "Creando rama...",
+      "creatingWorktree": "Creando worktree...",
+      "noAvailableBranches": "No hay ramas disponibles",
+      "worktreeDescription": "Crea un worktree separado para una rama nueva o existente.",
+      "worktreeError": "No se pudo crear el worktree {{worktree}}.",
+      "worktreeName": "Nombre del worktree",
+      "worktreeNamePlaceholder": "mi-worktree",
+      "worktreePath": "Carpeta: {{path}}",
+      "worktreeSuccess": "Se creó el worktree {{worktree}}.",
+      "worktreeTitle": "Nuevo worktree"
+    },
+    "empty": {
+      "folderNotSet": "Carpeta no configurada",
+      "noChanges": "No hay cambios sin confirmar",
+      "noProjectAssigned": "No hay proyecto asignado.",
+      "noExtensions": "No hay extensiones habilitadas",
+      "noMatchingExtensions": "No hay extensiones que coincidan"
+    },
+    "errors": {
+      "gitRead": "No se pudo leer el estado de git."
+    },
+    "picker": {
+      "selectContext": "Seleccionar árbol de trabajo o rama",
+      "worktrees": "Árboles de trabajo",
+      "allBranches": "Todas las ramas",
+      "checkedOutBranch": "{{branch}}",
+      "currentBranch": "Rama actual",
+      "dirtyTitle": "Cambios sin confirmar",
+      "dirtyDescription": "Tienes {{count}} cambio(s) sin confirmar. ¿Cómo deseas proceder?",
+      "stashAndSwitch": "Guardar y cambiar",
+      "carryChanges": "Llevar a la rama",
+      "cancel": "Cancelar",
+      "switchError": "Error al cambiar a {{branch}}. Tus cambios pueden entrar en conflicto con la rama destino.",
+      "stashError": "Error al guardar los cambios.",
+      "stashSuccess": "Cambios guardados y cambiado a {{branch}}."
+    },
+    "git": {
+      "fetch": "Fetch",
+      "fetchError": "No se pudieron traer los cambios.",
+      "fetchSuccess": "Se trajeron los cambios más recientes.",
+      "initRepo": "Inicializar Git",
+      "initError": "Error al inicializar el repositorio git.",
+      "pull": "Pull",
+      "pullWithCount": "Pull ({{count}})",
+      "pullError": "No se pudieron bajar los cambios.",
+      "pullSuccess": "Se bajaron los cambios más recientes."
+    },
+    "states": {
+      "detached": "detached",
+      "gitLoading": "Cargando estado de git..."
+    },
+    "tabs": {
+      "details": "Detalles",
+      "files": "Archivos"
+    },
+    "widgets": {
+      "artifacts": "Artefactos",
+      "changes": "Cambios",
+      "changesOnBranch": "en",
+      "extensions": "Extensiones",
+      "searchExtensions": "Buscar extensiones...",
+      "workspace": "Espacio de trabajo"
+    }
+  },
+  "files": {
+    "empty": "Los archivos del proyecto no están disponibles hasta que se asigne un proyecto con directorios de trabajo.",
+    "folderEmpty": "La carpeta está vacía",
+    "loadError": "No se pudo cargar el contenido de la carpeta.",
+    "loading": "Cargando archivos...",
+    "openFolder": "Abrir carpeta: {{path}}",
+    "rootLoadError": "No se pudo cargar esta carpeta."
+  },
+  "image": {
+    "view": "Ver {{label}}"
+  },
+  "input": {
+    "ariaLabel": "Entrada de mensaje del chat",
+    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar agentes"
+  },
+  "loading": {
+    "compacting": "Compactando conversación...",
+    "thinking": "Pensando...",
+    "responding": "Respondiendo..."
+  },
+  "mention": {
+    "ariaLabel": "Sugerencias de menciones",
+    "title": "Menciona un agente",
+    "filesTitle": "Archivos"
+  },
+  "notifications": {
+    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio."
+  },
+  "message": {
+    "copied": "Copiado",
+    "defaultImageAlt": "Adjunto",
+    "redactedThinking": "(pensamiento redactado)"
+  },
+  "persona": {
+    "chooseAssistant": "Elegir asistente",
+    "create": "Crear agente...",
+    "clearActive": "Quitar asistente activo",
+    "defaultDescription": "Sin agente seleccionado: chatea directamente con Goose"
+  },
+  "queue": {
+    "dismiss": "Descartar mensaje en cola",
+    "label": "En cola: {{text}}"
+  },
+  "skeleton": {
+    "loadingConversation": "Cargando conversación"
+  },
+  "timeline": {
+    "ariaLabel": "Mensajes del chat",
+    "emptyDescription": "Envía un mensaje para comenzar",
+    "emptyTitle": "Inicia una conversación",
+    "today": "Hoy",
+    "yesterday": "Ayer"
+  },
+  "toolbar": {
+    "agent": "Agente",
+    "attach": "Adjuntar",
+    "attachFile": "Archivo",
+    "attachFolder": "Carpeta",
+    "chooseAgentModel": "Elegir agente y modelo",
+    "chooseProject": "Elegir un proyecto",
+    "compactNow": "Compactar",
+    "compacting": "Compactando...",
+    "chooseProvider": "Elegir un proveedor",
+    "contextTokensBreakdown": "{{tokens}} / {{limit}} tokens usados",
+    "contextUsage": "Uso del contexto",
+    "contextUsageBreakdown": "{{used}} en uso ({{left}} libres)",
+    "contextUsageTitle": "{{tokens}} / {{limit}} tokens",
+    "contextWindow": "Ventana de contexto",
+    "createProject": "Crear proyecto",
+    "generalChatWithoutProject": "Chat general sin contexto de proyecto",
+    "loading": "Cargando...",
+    "loadingModels": "Cargando modelos...",
+    "model": "Modelo",
+    "allModels": "Todos los modelos",
+    "searchModels": "Buscar modelos...",
+    "settings": "Configuración",
+    "recommended": "Recomendados",
+    "noModelsAvailable": "No hay modelos disponibles",
+    "noSearchResults": "Sin resultados",
+    "showAllModels": "Ver todos los modelos",
+    "noProject": "Sin proyecto",
+    "selectModel": "Seleccionar modelo",
+    "selectProject": "Seleccionar proyecto",
+    "sendMessage": "Enviar mensaje",
+    "stopGeneration": "Detener generación",
+    "voiceInput": "Dictado por voz",
+    "voiceInputDisabled": "Configura un proveedor de voz en Ajustes para activar el dictado",
+    "voiceInputRecording": "Escuchando...",
+    "voiceInputTranscribing": "Transcribiendo...",
+    "voiceInputAutoSubmitHint": "Di \"enviar\" para enviar"
+  },
+  "tools": {
+    "fileNotFound": "Archivo no encontrado: {{path}}",
+    "moreOutputs": "Más salidas ({{count}})",
+    "openFile": "Abrir archivo",
+    "openFolder": "Abrir carpeta",
+    "openPath": "Abrir ruta",
+    "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos."
+  }
+}

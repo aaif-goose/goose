@@ -300,6 +300,10 @@ export const SwitchModelModal = ({
   const [userClearedModel, setUserClearedModel] = useState(false);
   const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
   const [providerWarnings, setProviderWarnings] = useState<Record<string, string>>({});
+  const [activeProvidersList, setActiveProvidersList] = useState<
+    import('../../../../api').ProviderDetails[]
+  >([]);
+  const fetchedProviders = useRef<Set<string>>(new Set());
   const [thinkingLevel, setThinkingLevel] = useState<string>('low');
   const [claudeThinkingType, setClaudeThinkingType] = useState<string>('disabled');
   const [claudeThinkingEffort, setClaudeThinkingEffort] = useState<string>('high');
@@ -465,18 +469,16 @@ export const SwitchModelModal = ({
   }, [currentModel, currentProvider, usePredefinedModels, provider, model, initialProvider]);
 
   useEffect(() => {
-    // Load predefined models if enabled
     if (usePredefinedModels) {
       const models = getPredefinedModelsFromEnv();
       setPredefinedModels(models);
     }
 
-    // Load providers for manual model selection
     (async () => {
       try {
         const providersResponse = await getProviders(false);
         const activeProviders = providersResponse.filter((provider) => provider.is_configured);
-        // Create provider options and add "Use other provider" option
+        setActiveProvidersList(activeProviders);
         setProviderOptions([
           ...activeProviders.map(({ metadata, name }) => ({
             value: name,
@@ -487,24 +489,43 @@ export const SwitchModelModal = ({
             label: intl.formatMessage(i18n.useOtherProvider),
           },
         ]);
+      } catch (error: unknown) {
+        console.error('Failed to query providers:', error);
+      }
+    })();
+  }, [getProviders, usePredefinedModels, read, intl]);
 
-        setLoadingModels(true);
+  useEffect(() => {
+    if (!provider || usePredefinedModels) return;
+    if (fetchedProviders.current.has(provider)) {
+      setLoadingModels(false);
+      return;
+    }
 
-        const results = await fetchModelsForProviders(activeProviders);
+    const activeProvider = activeProvidersList.find((p) => p.name === provider);
+    if (!activeProvider) return;
 
-        // Process results and build grouped options
-        const groupedOptions: {
+    let cancelled = false;
+
+    (async () => {
+      setLoadingModels(true);
+      try {
+        const results = await fetchModelsForProviders([activeProvider]);
+
+        if (cancelled) return;
+
+        const newGroupedOptions: {
           options: { value: string; label: string; provider: string; providerType: ProviderType }[];
         }[] = [];
-        const errorMap: Record<string, string> = {};
-        const warningMap: Record<string, string> = {};
+        const newErrors: Record<string, string> = {};
+        const newWarnings: Record<string, string> = {};
 
         results.forEach(({ provider: p, models, error, warning }) => {
           if (warning) {
-            warningMap[p.name] = warning;
+            newWarnings[p.name] = warning;
           }
           if (error) {
-            errorMap[p.name] = error;
+            newErrors[p.name] = error;
             return;
           }
 
@@ -532,23 +553,38 @@ export const SwitchModelModal = ({
           }
 
           if (options.length > 0) {
-            groupedOptions.push({ options });
+            newGroupedOptions.push({ options });
           }
         });
 
-        // Save provider errors and warnings to state
-        setProviderErrors(errorMap);
-        setProviderWarnings(warningMap);
+        setProviderErrors((prev) => {
+          const next = { ...prev, ...newErrors };
+          if (!newErrors[activeProvider.name]) delete next[activeProvider.name];
+          return next;
+        });
+        setProviderWarnings((prev) => {
+          const next = { ...prev, ...newWarnings };
+          if (!newWarnings[activeProvider.name]) delete next[activeProvider.name];
+          return next;
+        });
 
-        setModelOptions(groupedOptions);
-        setOriginalModelOptions(groupedOptions);
+        setModelOptions((prev) => [...prev, ...newGroupedOptions]);
+        setOriginalModelOptions((prev) => [...prev, ...newGroupedOptions]);
+        fetchedProviders.current.add(provider);
       } catch (error: unknown) {
-        console.error('Failed to query providers:', error);
+        console.error(`Failed to fetch models for ${provider}:`, error);
       } finally {
-        setLoadingModels(false);
+        if (!cancelled) {
+          setLoadingModels(false);
+        }
       }
     })();
-  }, [getProviders, usePredefinedModels, read, intl]);
+
+    return () => {
+      cancelled = true;
+      setLoadingModels(false);
+    };
+  }, [provider, activeProvidersList, usePredefinedModels, intl]);
 
   const filteredModelOptions = provider
     ? modelOptions.filter((group) => group.options[0]?.provider === provider)
@@ -841,21 +877,33 @@ export const SwitchModelModal = ({
                       </div>
                     </div>
                   ) : providerErrors[provider] ? (
-                    /* Show error message when provider failed to connect */
-                    <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3">
-                      <div className="flex items-start">
-                        <div className="flex-1">
-                          <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-                            {intl.formatMessage(i18n.couldNotContactProvider)}
-                          </h3>
-                          <div className="mt-1 text-sm text-red-700 dark:text-red-300">
-                            {providerErrors[provider]}
-                          </div>
-                          <div className="mt-2 text-xs text-red-600 dark:text-red-400">
-                            {intl.formatMessage(i18n.checkProviderConfig)}
+                    /* Show error with custom model input so users aren't stuck */
+                    <div className="flex flex-col gap-2">
+                      <div className="rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3">
+                        <div className="flex items-start">
+                          <div className="flex-1">
+                            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                              {intl.formatMessage(i18n.couldNotContactProvider)}
+                            </h3>
+                            <div className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+                              {providerErrors[provider]}
+                            </div>
+                            <div className="mt-2 text-xs text-yellow-600 dark:text-yellow-400">
+                              {intl.formatMessage(i18n.checkProviderConfig)}
+                            </div>
                           </div>
                         </div>
                       </div>
+                      <label className="text-sm text-text-secondary">{intl.formatMessage(i18n.customModelName)}</label>
+                      <Input
+                        className="border-2 px-4 py-5"
+                        placeholder={intl.formatMessage(i18n.typeModelName)}
+                        onChange={(event) => setModel(event.target.value)}
+                        value={model}
+                      />
+                      {attemptedSubmit && validationErrors.model && (
+                        <div className="text-red-500 text-sm mt-1">{validationErrors.model}</div>
+                      )}
                     </div>
                   ) : !isCustomModel ? (
                     <div>

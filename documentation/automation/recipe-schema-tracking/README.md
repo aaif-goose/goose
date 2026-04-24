@@ -4,7 +4,7 @@ Automated pipeline for detecting and documenting Recipe schema and validation ru
 
 ## Overview
 
-This automation keeps the [Recipe Reference Guide](https://block.github.io/goose/docs/guides/recipes/recipe-reference) synchronized with code changes by:
+This automation keeps the [Recipe Reference Guide](https://goose-docs.ai/docs/guides/recipes/recipe-reference) synchronized with code changes by:
 
 1. **Extracting** schema and validation rules from source code (deterministic)
 2. **Detecting** changes between versions (deterministic diff)

@@ -63,9 +63,9 @@ We will support as many strong, mission-aligned projects as our resources allow.
 
 Potentially, yes. We may extend or renew grants based on progress, impact, and alignment. Renewals are not guaranteed and will be evaluated on a case-by-case basis.
 
-**Does a grant lead to a job at goose or Block?**
+**Does a grant lead to a job at goose or AAIF?**
 
-No. Grants are not employment and do not imply future hiring. However, collaboration with goose or Block teams may emerge naturally from impactful work.
+No. Grants are not employment and do not imply future hiring. However, collaboration with goose or AAIF teams may emerge naturally from impactful work.
 
 **How does work get reviewed?**
 
@@ -103,12 +103,12 @@ If you have additional questions, feel free to reach out in [Discord](https://di
 <head>
   <meta property="og:title" content="goose grant program" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/grants" />
+  <meta property="og:url" content="https://goose-docs.ai/grants" />
   <meta property="og:description" content="$100K grants for open source devs building the future of agentic AI." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-grant-program-3ede164a454d9f29e779108c63773416.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-grant-program-3ede164a454d9f29e779108c63773416.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose grant program" />
   <meta name="twitter:description" content="$100K grants for open source devs building the future of agentic AI." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-grant-program-3ede164a454d9f29e779108c63773416.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-grant-program-3ede164a454d9f29e779108c63773416.png" />
 </head>

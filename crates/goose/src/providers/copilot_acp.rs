@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, PermissionMapping,
-    ACP_CURRENT_MODEL,
+    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::model::ModelConfig;
+use crate::providers::acp_tooling::{acp_adapter_installed, acp_inventory_identity};
 use crate::providers::base::{ProviderDef, ProviderMetadata};
+use crate::providers::inventory::InventoryIdentityInput;
 
 const COPILOT_ACP_PROVIDER_NAME: &str = "copilot-acp";
 const COPILOT_ACP_DOC_URL: &str = "https://github.com/github/copilot-cli";
@@ -54,10 +55,6 @@ impl ProviderDef for CopilotAcpProvider {
                 .resolve(COPILOT_ACP_BINARY)?;
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
 
-            // Copilot uses standard ACP permission option IDs (allow_once,
-            // allow_always, reject_once) so kind-based fallback handles them.
-            let permission_mapping = PermissionMapping::default();
-
             let mut args = vec!["--acp".to_string()];
             if model.model_name != ACP_CURRENT_MODEL {
                 args.push("--model".to_string());
@@ -82,12 +79,23 @@ impl ProviderDef for CopilotAcpProvider {
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
                 session_mode_id: Some(mode_mapping[&goose_mode].clone()),
                 mode_mapping,
-                permission_mapping,
                 notification_callback: None,
             };
 
             let metadata = Self::metadata();
             AcpProvider::connect(metadata.name, model, goose_mode, provider_config).await
         })
+    }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        acp_inventory_identity(COPILOT_ACP_PROVIDER_NAME, COPILOT_ACP_BINARY)
+    }
+
+    fn inventory_configured() -> bool {
+        acp_adapter_installed(COPILOT_ACP_BINARY)
     }
 }

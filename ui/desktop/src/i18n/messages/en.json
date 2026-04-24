@@ -21,7 +21,7 @@
     "defaultMessage": "Custom app"
   },
   "appsView.description": {
-    "defaultMessage": "Applications from your MCP servers and Apps build by goose itself. You can ask it to create new apps through the chat interface and they will appear here."
+    "defaultMessage": "Applications from your MCP servers and Apps built by goose itself. You can ask it to create new apps through the chat interface and they will appear here."
   },
   "appsView.errorLoading": {
     "defaultMessage": "Error loading apps: {error}"
@@ -112,6 +112,12 @@
   },
   "cardButtons.launch": {
     "defaultMessage": "Launch"
+  },
+  "chat.notification.taskComplete.body": {
+    "defaultMessage": "Click here to bring Goose back into focus."
+  },
+  "chat.notification.taskComplete.title": {
+    "defaultMessage": "Goose finished the task."
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
@@ -932,9 +938,6 @@
   "envVarsSection.variableName": {
     "defaultMessage": "Variable name"
   },
-  "environmentBadge.alpha": {
-    "defaultMessage": "Alpha"
-  },
   "environmentBadge.dev": {
     "defaultMessage": "Dev"
   },
@@ -1135,6 +1138,15 @@
   },
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "Search extensions..."
+  },
+  "externalBackendSection.certFingerprint": {
+    "defaultMessage": "Certificate Fingerprint (optional)"
+  },
+  "externalBackendSection.certFingerprintHelp": {
+    "defaultMessage": "Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU)."
+  },
+  "externalBackendSection.certFingerprintPlaceholder": {
+    "defaultMessage": "AA:BB:CC:... or sha256/base64"
   },
   "externalBackendSection.description": {
     "defaultMessage": "By default goose launches a server for you, use this to connect to an external goose server"
@@ -1436,20 +1448,14 @@
   "headersSection.value": {
     "defaultMessage": "Value"
   },
-  "huggingFaceModelSearch.directDownload": {
-    "defaultMessage": "Direct Download"
-  },
-  "huggingFaceModelSearch.directDownloadDescription": {
-    "defaultMessage": "Specify a model directly: {format}"
-  },
-  "huggingFaceModelSearch.directDownloadErrorMsg": {
-    "defaultMessage": "Failed to start the download. Check the spec: {error}"
-  },
-  "huggingFaceModelSearch.directDownloadFailed": {
-    "defaultMessage": "Direct download failed"
-  },
   "huggingFaceModelSearch.download": {
     "defaultMessage": "Download"
+  },
+  "huggingFaceModelSearch.downloaded": {
+    "defaultMessage": "Downloaded"
+  },
+  "huggingFaceModelSearch.downloading": {
+    "defaultMessage": "Downloading…"
   },
   "huggingFaceModelSearch.loadingVariants": {
     "defaultMessage": "Loading variants..."
@@ -1474,6 +1480,9 @@
   },
   "huggingFaceModelSearch.searchPlaceholder": {
     "defaultMessage": "Search for GGUF models..."
+  },
+  "huggingFaceModelSearch.tooLarge": {
+    "defaultMessage": "May not fit in memory ({size} model, {available} available)"
   },
   "imagePreview.altText": {
     "defaultMessage": "goose image"
@@ -1838,6 +1847,15 @@
   "localInferenceSettings.title": {
     "defaultMessage": "Local Inference Models"
   },
+  "localInferenceSettings.vision": {
+    "defaultMessage": "Vision"
+  },
+  "localInferenceSettings.visionEncoderDownloading": {
+    "defaultMessage": "Vision encoder downloading…"
+  },
+  "localInferenceSettings.visionEncoderNotDownloaded": {
+    "defaultMessage": "Vision encoder not downloaded"
+  },
   "localModelManager.active": {
     "defaultMessage": "Active"
   },
@@ -2020,6 +2038,12 @@
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item found} other{# items found}}"
+  },
+  "mentionPopover.loadingCommands": {
+    "defaultMessage": "Loading commands..."
+  },
+  "mentionPopover.noCommandsFound": {
+    "defaultMessage": "No commands found matching \"{query}\""
   },
   "mentionPopover.noItemsFound": {
     "defaultMessage": "No items found matching \"{query}\""
@@ -2297,6 +2321,9 @@
   "modelsBottomBar.currentModel": {
     "defaultMessage": "Current model"
   },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "Loading model..."
+  },
   "modelsBottomBar.localModelSettings": {
     "defaultMessage": "Local Model Settings"
   },
@@ -2380,6 +2407,15 @@
   },
   "navigationStyleSelector.tileLabel": {
     "defaultMessage": "Tile"
+  },
+  "onboardingGuard.checkProviderErrorDescription": {
+    "defaultMessage": "The server may be starting up or temporarily unavailable."
+  },
+  "onboardingGuard.checkProviderErrorTitle": {
+    "defaultMessage": "Unable to connect to Goose server"
+  },
+  "onboardingGuard.retry": {
+    "defaultMessage": "Retry"
   },
   "onboardingGuard.welcomeDescription": {
     "defaultMessage": "Your local AI agent. Connect an AI model provider to get started."
@@ -4022,6 +4058,12 @@
   "settings.notifications.openSettings": {
     "defaultMessage": "Open Settings"
   },
+  "settings.notifications.task.description": {
+    "defaultMessage": "Notify when Goose finishes a task while the window is in the background"
+  },
+  "settings.notifications.task.title": {
+    "defaultMessage": "Task completion notifications"
+  },
   "settings.notifications.title": {
     "defaultMessage": "Notifications"
   },
@@ -4093,6 +4135,39 @@
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Save"
+  },
+  "skillsView.addSkill": {
+    "defaultMessage": "Add Skill"
+  },
+  "skillsView.adjustSearchTerms": {
+    "defaultMessage": "Try adjusting your search terms"
+  },
+  "skillsView.comingSoon": {
+    "defaultMessage": "Coming soon"
+  },
+  "skillsView.errorLoadingSkills": {
+    "defaultMessage": "Error Loading Skills"
+  },
+  "skillsView.noMatchingSkills": {
+    "defaultMessage": "No matching skills found"
+  },
+  "skillsView.noSkillsDescription": {
+    "defaultMessage": "Skills are loaded from SKILL.md files in ~/.config/agents/skills/, .goose/skills/, or other supported directories."
+  },
+  "skillsView.noSkillsInstalled": {
+    "defaultMessage": "No skills installed"
+  },
+  "skillsView.searchSkillsPlaceholder": {
+    "defaultMessage": "Search skills..."
+  },
+  "skillsView.skillsDescription": {
+    "defaultMessage": "View installed skills that extend Goose capabilities. {shortcut} to search."
+  },
+  "skillsView.skillsTitle": {
+    "defaultMessage": "Skills"
+  },
+  "skillsView.tryAgain": {
+    "defaultMessage": "Try Again"
   },
   "spellcheckToggle.description": {
     "defaultMessage": "Check spelling in the chat input. Requires restart to take effect."

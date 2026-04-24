@@ -1,12 +1,12 @@
 use anyhow::Result;
-use axum::http::{HeaderMap, HeaderName};
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use chrono::{DateTime, Utc};
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{future, FutureExt};
 use once_cell::sync::Lazy;
 use rmcp::service::{ClientInitializeError, ServiceError};
 use rmcp::transport::streamable_http_client::{
-    AuthRequiredError, StreamableHttpClientTransportConfig, StreamableHttpError,
+    StreamableHttpClientTransportConfig, StreamableHttpError,
 };
 use rmcp::transport::{
     ConfigureCommandExt, DynamicTransportError, StreamableHttpClientTransport, TokioChildProcess,
@@ -57,6 +57,14 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
+
+fn resolve_timeout(timeout: Option<u64>) -> u64 {
+    timeout.unwrap_or_else(|| {
+        Config::global()
+            .get_goose_default_extension_timeout()
+            .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
+    })
+}
 
 struct Extension {
     pub config: ExtensionConfig,
@@ -275,7 +283,7 @@ async fn child_process_client(
 
     let client_result = McpClient::connect_with_container(
         transport,
-        Duration::from_secs(timeout.unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)),
+        Duration::from_secs(resolve_timeout(*timeout)),
         provider,
         docker_container,
         client_name,
@@ -296,26 +304,39 @@ async fn child_process_client(
     }
 }
 
-fn extract_auth_error(
-    res: &Result<McpClient, ClientInitializeError>,
-) -> Option<&AuthRequiredError> {
-    match res {
-        Ok(_) => None,
-        Err(err) => match err {
-            ClientInitializeError::TransportError {
-                error: DynamicTransportError { error, .. },
-                ..
-            } => error
-                .downcast_ref::<StreamableHttpError<reqwest::Error>>()
-                .and_then(|auth_error| match auth_error {
-                    StreamableHttpError::AuthRequired(auth_required_error) => {
-                        Some(auth_required_error)
-                    }
-                    _ => None,
-                }),
-            _ => None,
-        },
+/// Retry with OAuth for typed auth challenges and wrapped bare HTTP 401 responses.
+fn should_attempt_oauth_fallback(res: &Result<McpClient, ClientInitializeError>) -> bool {
+    let Err(ClientInitializeError::TransportError {
+        error: DynamicTransportError { error, .. },
+        ..
+    }) = res
+    else {
+        return false;
+    };
+
+    if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
+        return match http_err {
+            StreamableHttpError::AuthRequired(_) => true,
+            StreamableHttpError::UnexpectedServerResponse(body) => body.starts_with("HTTP 401"),
+            _ => false,
+        };
     }
+
+    #[cfg(unix)]
+    if let Some(http_err) = error
+        .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
+        )
+    {
+        return match http_err {
+            StreamableHttpError::AuthRequired(_) => true,
+            StreamableHttpError::UnexpectedServerResponse(body) => body.starts_with("HTTP 401"),
+            _ => false,
+        };
+    }
+
+    error
+        .to_string()
+        .contains("unexpected server response: HTTP 401")
 }
 
 /// Merge environment variables from direct envs and keychain-stored env_keys
@@ -408,11 +429,34 @@ async fn create_streamable_http_client(
     timeout: Option<u64>,
     headers: &HashMap<String, String>,
     name: &str,
+    socket: Option<&str>,
     provider: SharedProvider,
     client_name: String,
     capabilities: GooseMcpClientCapabilities,
     roots_dir: &std::path::Path,
 ) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    #[cfg(unix)]
+    if let Some(socket_path) = socket {
+        return create_unix_socket_http_client(
+            uri,
+            timeout,
+            headers,
+            name,
+            socket_path,
+            provider,
+            client_name,
+            capabilities,
+            roots_dir,
+        )
+        .await;
+    }
+    #[cfg(not(unix))]
+    if socket.is_some() {
+        return Err(ExtensionError::ConfigError(
+            "Unix domain socket transport is not supported on this platform".to_string(),
+        ));
+    }
+
     let mut default_headers = HeaderMap::new();
 
     default_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
@@ -434,14 +478,10 @@ async fn create_streamable_http_client(
 
     let transport = StreamableHttpClientTransport::with_client(
         http_client,
-        StreamableHttpClientTransportConfig {
-            uri: uri.into(),
-            ..Default::default()
-        },
+        StreamableHttpClientTransportConfig::with_uri(uri),
     );
 
-    let timeout_duration =
-        Duration::from_secs(timeout.unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT));
+    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
 
     let client_res = McpClient::connect(
         transport,
@@ -453,40 +493,101 @@ async fn create_streamable_http_client(
     )
     .await;
 
-    if extract_auth_error(&client_res).is_some() {
-        let auth_manager = oauth_flow(&uri.to_string(), &name.to_string())
-            .await
-            .map_err(|_| ExtensionError::SetupError("auth error".to_string()))?;
-        let mut auth_headers = HeaderMap::new();
-        auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
-        let auth_http_client = reqwest::Client::builder()
-            .default_headers(auth_headers)
-            .build()
-            .map_err(|_| {
-                ExtensionError::ConfigError("could not construct http client".to_string())
-            })?;
-        let auth_client = AuthClient::new(auth_http_client, auth_manager);
-        let transport = StreamableHttpClientTransport::with_client(
-            auth_client,
-            StreamableHttpClientTransportConfig {
-                uri: uri.into(),
-                ..Default::default()
-            },
-        );
-        Ok(Box::new(
-            McpClient::connect(
-                transport,
-                timeout_duration,
-                provider,
-                client_name,
-                capabilities,
-                roots_dir.to_path_buf(),
-            )
-            .await?,
-        ))
+    if should_attempt_oauth_fallback(&client_res) {
+        match oauth_flow(&uri.to_string(), &name.to_string()).await {
+            Ok(auth_manager) => {
+                let mut auth_headers = HeaderMap::new();
+                auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
+                let auth_http_client = reqwest::Client::builder()
+                    .default_headers(auth_headers)
+                    .build()
+                    .map_err(|_| {
+                        ExtensionError::ConfigError("could not construct http client".to_string())
+                    })?;
+                let auth_client = AuthClient::new(auth_http_client, auth_manager);
+                let transport = StreamableHttpClientTransport::with_client(
+                    auth_client,
+                    StreamableHttpClientTransportConfig::with_uri(uri),
+                );
+                Ok(Box::new(
+                    McpClient::connect(
+                        transport,
+                        timeout_duration,
+                        provider,
+                        client_name,
+                        capabilities,
+                        roots_dir.to_path_buf(),
+                    )
+                    .await?,
+                ))
+            }
+            Err(_) => Ok(Box::new(client_res?)),
+        }
     } else {
         Ok(Box::new(client_res?))
     }
+}
+
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+async fn create_unix_socket_http_client(
+    uri: &str,
+    timeout: Option<u64>,
+    headers: &HashMap<String, String>,
+    name: &str,
+    socket_path: &str,
+    provider: SharedProvider,
+    client_name: String,
+    capabilities: GooseMcpClientCapabilities,
+    roots_dir: &std::path::Path,
+) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    use rmcp::transport::UnixSocketHttpClient;
+
+    let unix_client = UnixSocketHttpClient::new(socket_path, uri);
+
+    let mut custom_headers = std::collections::HashMap::<HeaderName, HeaderValue>::new();
+
+    custom_headers.insert(
+        HeaderName::from_static("user-agent"),
+        GOOSE_USER_AGENT
+            .to_str()
+            .unwrap_or("goose")
+            .parse()
+            .unwrap_or_else(|_| HeaderValue::from_static("goose")),
+    );
+
+    for (key, value) in headers {
+        let header_name = HeaderName::try_from(key)
+            .map_err(|_| ExtensionError::ConfigError(format!("invalid header: {}", key)))?;
+        let header_value = value
+            .parse::<HeaderValue>()
+            .map_err(|_| ExtensionError::ConfigError(format!("invalid header value: {}", key)))?;
+        custom_headers.insert(header_name, header_value);
+    }
+
+    let config = StreamableHttpClientTransportConfig::with_uri(uri).custom_headers(custom_headers);
+    let transport = StreamableHttpClientTransport::with_client(unix_client, config);
+
+    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
+
+    let client_res = McpClient::connect(
+        transport,
+        timeout_duration,
+        provider.clone(),
+        client_name.clone(),
+        capabilities.clone(),
+        roots_dir.to_path_buf(),
+    )
+    .await;
+
+    if should_attempt_oauth_fallback(&client_res) {
+        tracing::warn!(
+            "Extension '{}' returned 401 over Unix domain socket transport; \
+             OAuth is not supported for UDS connections",
+            name,
+        );
+    }
+    Ok(Box::new(client_res?))
 }
 
 impl ExtensionManager {
@@ -585,6 +686,7 @@ impl ExtensionManager {
                 name,
                 envs,
                 env_keys,
+                socket,
                 ..
             } => {
                 let config = Config::global();
@@ -594,6 +696,7 @@ impl ExtensionManager {
                     .iter()
                     .map(|(k, v)| (k.clone(), substitute_env_vars(v, &all_envs)))
                     .collect();
+                let resolved_socket = socket.as_ref().map(|s| substitute_env_vars(s, &all_envs));
                 let capability = GooseMcpClientCapabilities {
                     mcpui: self.capabilities.mcpui,
                 };
@@ -603,6 +706,7 @@ impl ExtensionManager {
                     *timeout,
                     &resolved_headers,
                     name,
+                    resolved_socket.as_deref(),
                     self.provider.clone(),
                     self.client_name.clone(),
                     capability,
@@ -633,7 +737,7 @@ impl ExtensionManager {
                     (def.client_factory)(context)
                 } else {
                     // Builtin MCP server extension
-                    let timeout_secs = timeout.unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT);
+                    let timeout_secs = resolve_timeout(timeout);
                     let extension_fn =
                         get_builtin_extension(normalized_name.as_str()).ok_or_else(|| {
                             ExtensionError::ConfigError(format!("Unknown extension: {}", name))
@@ -2304,5 +2408,44 @@ mod tests {
             1,
             "old extension must be preserved when replacement client creation fails"
         );
+    }
+
+    fn transport_err(error: Box<dyn std::error::Error + Send + Sync>) -> ClientInitializeError {
+        ClientInitializeError::TransportError {
+            error: rmcp::transport::DynamicTransportError::from_parts(
+                "test",
+                std::any::TypeId::of::<()>(),
+                error,
+            ),
+            context: "test context".into(),
+        }
+    }
+
+    fn streamable_err(
+        e: rmcp::transport::streamable_http_client::StreamableHttpError<reqwest::Error>,
+    ) -> ClientInitializeError {
+        transport_err(Box::new(e))
+    }
+
+    #[test]
+    fn test_oauth_fallback_on_typed_auth_required() {
+        let err = streamable_err(
+            rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
+                rmcp::transport::streamable_http_client::AuthRequiredError::new(
+                    "Bearer realm=\"test\"".to_string(),
+                ),
+            ),
+        );
+        assert!(should_attempt_oauth_fallback(&Err(err)));
+    }
+
+    #[test]
+    fn test_oauth_fallback_on_unexpected_response_http_401_prefix() {
+        let err = streamable_err(
+            rmcp::transport::streamable_http_client::StreamableHttpError::UnexpectedServerResponse(
+                std::borrow::Cow::Borrowed("HTTP 401 Unauthorized"),
+            ),
+        );
+        assert!(should_attempt_oauth_fallback(&Err(err)));
     }
 }

@@ -1,23 +1,15 @@
 use anyhow::{anyhow, Result};
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde_json::json;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
 use crate::config::Config;
+use crate::providers::api_client::{ApiClient, AuthMethod};
 
-/// Default model for NanoGPT configuration
-pub const NANOGPT_DEFAULT_MODEL: &str = "openai/gpt-4.1-nano";
-
-const NANOGPT_START_URL: &str = "https://nano-gpt.com/api/cli-login/start";
-const NANOGPT_POLL_URL: &str = "https://nano-gpt.com/api/cli-login/poll";
+const NANOGPT_CLI_LOGIN_HOST: &str = "https://nano-gpt.com/api/cli-login";
 const AUTH_TIMEOUT: Duration = Duration::from_secs(180); // 3 minutes
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
-
-#[derive(Debug, Serialize)]
-struct StartRequest {
-    client_name: String,
-}
 
 #[derive(Debug, Deserialize)]
 struct StartResponse {
@@ -25,27 +17,23 @@ struct StartResponse {
     verification_uri_complete: String,
 }
 
-#[derive(Debug, Serialize)]
-struct PollRequest {
-    device_code: String,
-}
-
 #[derive(Debug, Deserialize)]
 struct PollResponse {
     key: String,
 }
 
-async fn poll_for_token(device_code: &str) -> Result<String> {
-    let client = Client::new();
+fn build_client() -> Result<ApiClient> {
+    ApiClient::new(NANOGPT_CLI_LOGIN_HOST.to_string(), AuthMethod::NoAuth)?
+        .with_header("x-client", "goose")
+}
 
+async fn poll_for_token(client: &ApiClient, device_code: &str) -> Result<String> {
     loop {
         sleep(POLL_INTERVAL).await;
 
-        let body = PollRequest {
-            device_code: device_code.to_string(),
-        };
+        let body = json!({ "device_code": device_code });
 
-        let response = client.post(NANOGPT_POLL_URL).json(&body).send().await?;
+        let response = client.response_post(None, "poll", &body).await?;
         // https://docs.nano-gpt.com/integrations/cli-login#response-codes
         match response.status().as_u16() {
             200 => {
@@ -82,12 +70,10 @@ async fn poll_for_token(device_code: &str) -> Result<String> {
 }
 
 pub async fn complete_nanogpt_auth() -> Result<String> {
-    let client = Client::new();
-    let body = StartRequest {
-        client_name: "goose".to_string(),
-    };
+    let client = build_client()?;
+    let body = json!({ "client_name": "goose" });
 
-    let response = client.post(NANOGPT_START_URL).json(&body).send().await?;
+    let response = client.response_post(None, "start", &body).await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -113,7 +99,12 @@ pub async fn complete_nanogpt_auth() -> Result<String> {
 
     println!("Waiting for NanoGPT authorization...");
 
-    match timeout(AUTH_TIMEOUT, poll_for_token(&start_resp.device_code)).await {
+    match timeout(
+        AUTH_TIMEOUT,
+        poll_for_token(&client, &start_resp.device_code),
+    )
+    .await
+    {
         Ok(Ok(api_key)) => Ok(api_key),
         Ok(Err(e)) => Err(e),
         Err(_) => Err(anyhow!("Authentication timed out - please try again")),
@@ -123,6 +114,5 @@ pub async fn complete_nanogpt_auth() -> Result<String> {
 pub fn configure_nanogpt(config: &Config, api_key: String) -> Result<()> {
     config.set_secret("NANOGPT_API_KEY", &api_key)?;
     config.set_goose_provider("nano-gpt")?;
-    config.set_goose_model(NANOGPT_DEFAULT_MODEL)?;
     Ok(())
 }

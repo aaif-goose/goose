@@ -416,7 +416,7 @@ For the full ACP specification, see the [Agent Client Protocol documentation](ht
 - API client example: `ui/desktop/src/api/` (generated TypeScript client)
 
 **ACP**:
-- ACP server implementation: `crates/goose-acp/src/server.rs`
+- ACP server implementation: `crates/goose/src/acp/server.rs`
 - CLI integration: `crates/goose-cli/src/cli.rs` (Command::Acp)
 - Protocol library: `sacp` crate (Rust implementation of ACP)
 - Test client example: `test_acp_client.py`

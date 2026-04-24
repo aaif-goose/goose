@@ -709,7 +709,12 @@ enum Command {
         /// Show verbose information including current configuration
         #[arg(short, long, help = "Show verbose information including config.yaml")]
         verbose: bool,
+        #[arg(long, help = "Test provider connection and show status")]
+        check: bool,
     },
+
+    #[command(about = "Check that your Goose setup is working")]
+    Doctor {},
 
     /// Manage system prompts and behaviors
     #[command(about = "Run one of the mcp servers bundled with goose")]
@@ -1026,6 +1031,7 @@ pub struct InputConfig {
 fn get_command_name(command: &Option<Command>) -> &'static str {
     match command {
         Some(Command::Configure {}) => "configure",
+        Some(Command::Doctor {}) => "doctor",
         Some(Command::Info { .. }) => "info",
         Some(Command::Mcp { .. }) => "mcp",
         Some(Command::Acp { .. }) => "acp",
@@ -1060,8 +1066,9 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
 }
 
 async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) -> Result<()> {
+    use goose::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+    use goose::acp::transport::create_router;
     use goose::config::paths::Paths;
-    use goose_acp::server_factory::{AcpServer, AcpServerFactoryConfig};
     use std::net::SocketAddr;
     use std::sync::Arc;
     use tracing::info;
@@ -1077,7 +1084,7 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
     }));
-    let router = goose_acp::transport::create_router(server);
+    let router = create_router(server);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);
@@ -1600,6 +1607,10 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
                 source_url: file.download_url.clone(),
                 settings: Default::default(),
                 size_bytes: file.size_bytes,
+                mmproj_path: None,
+                mmproj_source_url: None,
+                mmproj_size_bytes: 0,
+                shard_files: vec![],
             };
 
             {
@@ -1755,9 +1766,10 @@ pub async fn cli() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Configure {}) => handle_configure().await,
-        Some(Command::Info { verbose }) => handle_info(verbose),
+        Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
+        Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
-        Some(Command::Acp { builtins }) => goose_acp::server::run(builtins).await,
+        Some(Command::Acp { builtins }) => goose::acp::server::run(builtins).await,
         Some(Command::Serve {
             host,
             port,

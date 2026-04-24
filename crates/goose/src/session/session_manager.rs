@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 9;
+pub const CURRENT_SCHEMA_VERSION: i32 = 11;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -81,6 +81,8 @@ pub struct Session {
     pub model_config: Option<ModelConfig>,
     #[serde(default)]
     pub goose_mode: GooseMode,
+    #[serde(default)]
+    pub thread_id: Option<String>,
 }
 
 pub struct SessionUpdateBuilder<'a> {
@@ -103,6 +105,7 @@ pub struct SessionUpdateBuilder<'a> {
     provider_name: Option<Option<String>>,
     model_config: Option<Option<ModelConfig>>,
     goose_mode: Option<GooseMode>,
+    thread_id: Option<Option<String>>,
 }
 
 #[derive(Serialize, ToSchema, Debug)]
@@ -134,6 +137,7 @@ impl<'a> SessionUpdateBuilder<'a> {
             provider_name: None,
             model_config: None,
             goose_mode: None,
+            thread_id: None,
         }
     }
 
@@ -232,8 +236,18 @@ impl<'a> SessionUpdateBuilder<'a> {
         self
     }
 
+    pub fn clear_model_config(mut self) -> Self {
+        self.model_config = Some(None);
+        self
+    }
+
     pub fn goose_mode(mut self, mode: GooseMode) -> Self {
         self.goose_mode = Some(mode);
+        self
+    }
+
+    pub fn thread_id(mut self, thread_id: Option<String>) -> Self {
+        self.thread_id = Some(thread_id);
         self
     }
 }
@@ -356,7 +370,22 @@ impl SessionManager {
 
         if user_message_count <= MSG_COUNT_FOR_SESSION_NAME_GENERATION {
             let name = provider.generate_session_name(id, &conversation).await?;
-            self.update(id).system_generated_name(name).apply().await
+            self.update(id)
+                .system_generated_name(name.clone())
+                .apply()
+                .await?;
+
+            // Also update the thread name so ACP clients see it via session/list.
+            if let Some(ref thread_id) = session.thread_id {
+                let thread_mgr = super::thread_manager::ThreadManager::new(self.storage.clone());
+                let thread = thread_mgr.get_thread(thread_id).await?;
+                if !thread.user_set_name {
+                    thread_mgr
+                        .update_thread(thread_id, Some(name), Some(false), None)
+                        .await?;
+                }
+            }
+            Ok(())
         } else {
             Ok(())
         }
@@ -402,7 +431,7 @@ pub struct SessionStorage {
     session_dir: PathBuf,
 }
 
-fn role_to_string(role: &Role) -> &'static str {
+pub(crate) fn role_to_string(role: &Role) -> &'static str {
     match role {
         Role::User => "user",
         Role::Assistant => "assistant",
@@ -434,6 +463,7 @@ impl Default for Session {
             provider_name: None,
             model_config: None,
             goose_mode: GooseMode::default(),
+            thread_id: None,
         }
     }
 }
@@ -503,6 +533,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
+            thread_id: row.try_get("thread_id").ok().flatten(),
         })
     }
 }
@@ -532,7 +563,7 @@ impl SessionStorage {
         }
     }
 
-    async fn pool(&self) -> Result<&Pool<Sqlite>> {
+    pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
         self.initialized
             .get_or_try_init(|| async {
                 let schema_exists = sqlx::query_scalar::<_, bool>(
@@ -602,7 +633,8 @@ impl SessionStorage {
                 user_recipe_values_json TEXT,
                 provider_name TEXT,
                 model_config_json TEXT,
-                goose_mode TEXT NOT NULL DEFAULT 'auto'
+                goose_mode TEXT NOT NULL DEFAULT 'auto',
+                thread_id TEXT
             )
         "#,
         )
@@ -642,6 +674,50 @@ impl SessionStorage {
         sqlx::query("CREATE INDEX idx_sessions_type ON sessions(session_type)")
             .execute(pool)
             .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_thread ON sessions(thread_id)")
+            .execute(pool)
+            .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS threads (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT 'New Chat',
+                user_set_name BOOLEAN DEFAULT FALSE,
+                working_dir TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                archived_at TIMESTAMP,
+                metadata_json TEXT DEFAULT '{}'
+            )",
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS thread_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                thread_id TEXT NOT NULL REFERENCES threads(id),
+                session_id TEXT,
+                message_id TEXT,
+                role TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                created_timestamp INTEGER NOT NULL,
+                metadata_json TEXT DEFAULT '{}'
+            )",
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_thread_messages_thread ON thread_messages(thread_id)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_thread_messages_message_id ON thread_messages(message_id)")
+            .execute(pool)
+            .await?;
+
+        crate::providers::inventory::create_tables(pool).await?;
 
         Ok(())
     }
@@ -933,6 +1009,62 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            10 => {
+                // Check if thread_id column already exists (e.g. fresh schema)
+                let has_thread_id = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'thread_id'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_thread_id {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN thread_id TEXT")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_sessions_thread ON sessions(thread_id)",
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "CREATE TABLE IF NOT EXISTS threads (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL DEFAULT 'New Chat',
+                        user_set_name BOOLEAN DEFAULT FALSE,
+                        working_dir TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        archived_at TIMESTAMP,
+                        metadata_json TEXT DEFAULT '{}'
+                    )",
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "CREATE TABLE IF NOT EXISTS thread_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        thread_id TEXT NOT NULL REFERENCES threads(id),
+                        session_id TEXT,
+                        message_id TEXT,
+                        role TEXT NOT NULL,
+                        content_json TEXT NOT NULL,
+                        created_timestamp INTEGER NOT NULL,
+                        metadata_json TEXT DEFAULT '{}'
+                    )",
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query("CREATE INDEX IF NOT EXISTS idx_thread_messages_thread ON thread_messages(thread_id)")
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query("CREATE INDEX IF NOT EXISTS idx_thread_messages_message_id ON thread_messages(message_id)")
+                    .execute(&mut **tx)
+                    .await?;
+            }
+            11 => {
+                crate::providers::inventory::create_tables_in_tx(tx).await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -994,7 +1126,7 @@ impl SessionStorage {
                total_tokens, input_tokens, output_tokens,
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
                schedule_id, recipe_json, user_recipe_values_json,
-               provider_name, model_config_json, goose_mode
+               provider_name, model_config_json, goose_mode, thread_id
         FROM sessions
         WHERE id = ?
     "#,
@@ -1058,6 +1190,7 @@ impl SessionStorage {
         add_update!(builder.provider_name, "provider_name");
         add_update!(builder.model_config, "model_config_json");
         add_update!(builder.goose_mode, "goose_mode");
+        add_update!(builder.thread_id, "thread_id");
 
         if updates.is_empty() {
             return Ok(());
@@ -1125,6 +1258,9 @@ impl SessionStorage {
         }
         if let Some(goose_mode) = builder.goose_mode {
             q = q.bind(goose_mode.to_string());
+        }
+        if let Some(thread_id) = builder.thread_id {
+            q = q.bind(thread_id);
         }
 
         let pool = self.pool().await?;
@@ -1277,10 +1413,10 @@ impl SessionStorage {
                    s.total_tokens, s.input_tokens, s.output_tokens,
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
-                   s.provider_name, s.model_config_json, s.goose_mode,
+                   s.provider_name, s.model_config_json, s.goose_mode, s.thread_id,
                    COUNT(m.id) as message_count
             FROM sessions s
-            INNER JOIN messages m ON s.id = m.session_id
+            LEFT JOIN messages m ON s.id = m.session_id
             {}
             GROUP BY s.id
             ORDER BY s.updated_at DESC

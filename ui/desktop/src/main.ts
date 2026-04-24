@@ -23,7 +23,7 @@ import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import 'dotenv/config';
 import { checkServerStatus } from './goosed';
 import { startGoosed } from './goosed';
@@ -117,15 +117,24 @@ async function configureProxy() {
 
 if (started) app.quit();
 
-// Accept self-signed certificates from the local goosed server.
+// Certificate trust for goosed servers (local and external).
 // Both certificate-error (renderer) and setCertificateVerifyProc (main-process
-// net.fetch) pin to the exact cert fingerprint emitted by goosed at startup.
-// Before the fingerprint is available (during the health-check bootstrap
-// window) any localhost cert is accepted so the server can come up.
+// net.fetch) pin to the exact cert fingerprint. For locally-spawned goosed the
+// fingerprint comes from its stdout; for external backends we use Trust-On-First-Use
+// (TOFU) — the first TLS handshake pins the cert for the lifetime of the process.
 let pinnedCertFingerprint: string | null = null;
+
+// Cached hostname of the configured external goosed server, updated when a
+// chat is created so we don't hit the filesystem on every TLS handshake.
+let trustedExternalHostname: string | null = null;
 
 function isLocalhost(hostname: string): boolean {
   return hostname === '127.0.0.1' || hostname === 'localhost';
+}
+
+function isTrustedHost(hostname: string): boolean {
+  if (isLocalhost(hostname)) return true;
+  return trustedExternalHostname !== null && hostname === trustedExternalHostname;
 }
 
 function normalizeFingerprint(fp: string): string {
@@ -145,7 +154,7 @@ function normalizeFingerprint(fp: string): string {
 // window) any localhost cert is accepted so the server can come up.
 app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
   const parsed = new URL(url);
-  if (!isLocalhost(parsed.hostname)) {
+  if (!isTrustedHost(parsed.hostname)) {
     callback(false);
     return;
   }
@@ -155,6 +164,8 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
     event.preventDefault();
     callback(match);
   } else {
+    // TOFU: pin the certificate from the first successful handshake.
+    pinnedCertFingerprint = normalizeFingerprint(certificate.fingerprint);
     event.preventDefault();
     callback(true);
   }
@@ -163,17 +174,19 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
 // Main-process net.fetch: pin to the exact cert goosed generated.
 app.whenReady().then(() => {
   session.defaultSession.setCertificateVerifyProc((request, callback) => {
-    if (!isLocalhost(request.hostname)) {
+    if (!isTrustedHost(request.hostname)) {
       callback(-3);
       return;
     }
     if (!pinnedCertFingerprint) {
+      // TOFU: pin the certificate from the first successful handshake.
+      pinnedCertFingerprint = normalizeFingerprint(request.certificate.fingerprint);
       callback(0);
       return;
     }
     const match =
       normalizeFingerprint(request.certificate.fingerprint) === pinnedCertFingerprint.toUpperCase();
-    callback(match ? 0 : -3);
+    callback(match ? 0 : -2);
   });
 });
 
@@ -574,6 +587,26 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   const settings = getSettings();
   const serverSecret = getServerSecret(settings);
 
+  // Update the cached trusted-external-hostname so the TLS handlers allow
+  // connections to the configured remote backend.
+  if (settings.externalGoosed?.enabled && settings.externalGoosed.url) {
+    try {
+      trustedExternalHostname = new URL(settings.externalGoosed.url).hostname;
+    } catch {
+      trustedExternalHostname = null;
+    }
+  } else {
+    trustedExternalHostname = null;
+  }
+
+  // If the user provided a cert fingerprint for the external backend, pin it
+  // directly (skips TOFU). Otherwise reset so the first handshake pins via TOFU.
+  if (settings.externalGoosed?.enabled && settings.externalGoosed.certFingerprint) {
+    pinnedCertFingerprint = normalizeFingerprint(settings.externalGoosed.certFingerprint);
+  } else {
+    pinnedCertFingerprint = null;
+  }
+
   const goosedResult = await startGoosed({
     serverSecret,
     dir: dir || os.homedir(),
@@ -586,8 +619,9 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     logger: log,
   });
 
-  // Pin the certificate fingerprint so the cert handlers above only accept
-  // the exact cert that *this* goosed instance generated.
+  // For locally-spawned goosed, pin using the fingerprint from stdout.
+  // For external backends the TOFU path in the cert handlers will pin
+  // the fingerprint on the first successful TLS handshake.
   if (goosedResult.certFingerprint) {
     pinnedCertFingerprint = goosedResult.certFingerprint;
   }
@@ -715,11 +749,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   // Nudge the user if mesh is their provider but isn't running.
   // Delay to let the renderer mount before sending the IPC event.
   setTimeout(() => {
-    mesh.checkProviderRunning(goosedClient).then((ok) => {
-      if (!ok && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mesh-not-running');
-      }
-    }).catch(() => {});
+    mesh
+      .checkProviderRunning(goosedClient)
+      .then((ok) => {
+        if (!ok && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mesh-not-running');
+        }
+      })
+      .catch(() => {});
   }, 5000);
 
   // Let windowStateKeeper manage the window
@@ -829,6 +866,7 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     sessions: '/sessions',
     schedules: '/schedules',
     recipes: '/recipes',
+    skills: '/skills',
     permission: '/permission',
     ConfigureProviders: '/configure-providers',
     sharedSession: '/shared-session',
@@ -1324,6 +1362,7 @@ const validSettingKeys: Set<string> = new Set([
   'showMenuBarIcon',
   'showDockIcon',
   'enableWakelock',
+  'enableNotifications',
   'spellcheckEnabled',
   'externalGoosed',
   'globalShortcut',
@@ -1442,38 +1481,35 @@ ipcMain.handle('open-notifications-settings', async () => {
       return true;
     } else if (process.platform === 'linux') {
       // Linux: Try different desktop environments
+      function canSpawn(cmd: string): boolean {
+        try {
+          execFileSync('which', [cmd], { stdio: 'ignore' });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
       // GNOME
-      try {
+      if (canSpawn('gnome-control-center')) {
         spawn('gnome-control-center', ['notifications']);
         return true;
-      } catch {
-        console.log('GNOME control center not found, trying other options');
       }
 
       // KDE Plasma
-      try {
+      if (canSpawn('systemsettings5')) {
         spawn('systemsettings5', ['kcm_notifications']);
         return true;
-      } catch {
-        console.log('KDE systemsettings5 not found, trying other options');
       }
 
       // XFCE
-      try {
+      if (canSpawn('xfce4-settings-manager')) {
         spawn('xfce4-settings-manager', ['--socket-id=notifications']);
         return true;
-      } catch {
-        console.log('XFCE settings manager not found, trying other options');
       }
 
-      // Fallback: Try to open general settings
-      try {
-        spawn('gnome-control-center');
-        return true;
-      } catch {
-        console.warn('Could not find a suitable settings application for Linux');
-        return false;
-      }
+      console.warn('Could not find a suitable settings application for Linux');
+      return false;
     } else {
       console.warn(
         `Opening notification settings is not supported on platform: ${process.platform}`
@@ -1538,6 +1574,10 @@ ipcMain.handle('get-spellcheck-state', () => {
     console.error('Error getting spellcheck state:', error);
     return true;
   }
+});
+
+ipcMain.handle('is-any-window-focused', () => {
+  return BrowserWindow.getFocusedWindow() !== null;
 });
 
 // Add file/directory selection handler

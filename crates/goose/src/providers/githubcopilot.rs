@@ -1,6 +1,7 @@
 use crate::config::paths::Paths;
 use crate::providers::api_client::{ApiClient, AuthMethod};
-use crate::providers::openai_compatible::{handle_status_openai_compat, stream_openai_compat};
+use crate::providers::oauth_device_flow::{run_device_flow, DeviceFlowConfig, RequestEncoding};
+use crate::providers::openai_compatible::{handle_status, stream_openai_compat};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use axum::http;
@@ -54,16 +55,42 @@ pub const GITHUB_COPILOT_STREAM_MODELS: &[&str] = &[
 
 const GITHUB_COPILOT_DOC_URL: &str =
     "https://docs.github.com/en/copilot/using-github-copilot/ai-models";
-const GITHUB_COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
-const GITHUB_COPILOT_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
-const GITHUB_COPILOT_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
-const GITHUB_COPILOT_API_KEY_URL: &str = "https://api.github.com/copilot_internal/v2/token";
+const DEFAULT_GITHUB_HOST: &str = "github.com";
+const DEFAULT_GITHUB_COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
 
-#[derive(Debug, Deserialize)]
-struct DeviceCodeInfo {
-    device_code: String,
-    user_code: String,
-    verification_uri: String,
+fn normalize_host(host: &str) -> String {
+    let host = host.trim_end_matches('/');
+    let host = host.strip_prefix("https://").unwrap_or(host);
+    host.to_string()
+}
+
+#[derive(Debug, Clone)]
+struct GithubCopilotUrls {
+    device_code_url: String,
+    access_token_url: String,
+    copilot_token_url: String,
+}
+
+impl GithubCopilotUrls {
+    fn new(host: &str, copilot_token_url: Option<&str>) -> Self {
+        if host == "github.com" {
+            Self {
+                device_code_url: "https://github.com/login/device/code".to_string(),
+                access_token_url: "https://github.com/login/oauth/access_token".to_string(),
+                copilot_token_url: "https://api.github.com/copilot_internal/v2/token".to_string(),
+            }
+        } else {
+            let base = format!("https://{}", host);
+            let copilot_token_url = copilot_token_url
+                .map(|u| u.trim_end_matches('/').to_string())
+                .unwrap_or_else(|| format!("https://api.{}/copilot_internal/v2/token", host));
+            Self {
+                device_code_url: format!("{}/login/device/code", base),
+                access_token_url: format!("{}/login/oauth/access_token", base),
+                copilot_token_url,
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -96,8 +123,13 @@ struct DiskCache {
 }
 
 impl DiskCache {
-    fn new() -> Self {
-        let cache_path = Paths::in_config_dir("githubcopilot/info.json");
+    fn new(host: &str) -> Self {
+        let cache_path = if host == DEFAULT_GITHUB_HOST {
+            Paths::in_config_dir("githubcopilot/info.json")
+        } else {
+            let safe_host = host.replace(['/', ':', '.'], "_");
+            Paths::in_config_dir(&format!("githubcopilot/{}/info.json", safe_host))
+        };
         Self { cache_path }
     }
 
@@ -138,12 +170,22 @@ pub struct GithubCopilotProvider {
     mu: tokio::sync::Mutex<RefCell<Option<CopilotState>>>,
     model: ModelConfig,
     #[serde(skip)]
+    urls: GithubCopilotUrls,
+    #[serde(skip)]
+    client_id: String,
+    #[serde(skip)]
     name: String,
 }
 
 impl GithubCopilotProvider {
     pub async fn cleanup() -> Result<()> {
-        DiskCache::new().clear().await
+        let config = Config::global();
+        let host = normalize_host(
+            &config
+                .get_param::<String>("GITHUB_COPILOT_HOST")
+                .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
+        );
+        DiskCache::new(&host).clear().await
     }
 
     fn payload_contains_image(payload: &Value) -> bool {
@@ -170,16 +212,29 @@ impl GithubCopilotProvider {
     }
 
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
+        let config = Config::global();
+        let host = normalize_host(
+            &config
+                .get_param::<String>("GITHUB_COPILOT_HOST")
+                .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
+        );
+        let client_id: String = config
+            .get_param("GITHUB_COPILOT_CLIENT_ID")
+            .unwrap_or_else(|_| DEFAULT_GITHUB_COPILOT_CLIENT_ID.to_string());
+        let copilot_token_url: Option<String> = config.get_param("GITHUB_COPILOT_TOKEN_URL").ok();
+        let urls = GithubCopilotUrls::new(&host, copilot_token_url.as_deref());
         let client = Client::builder()
             .timeout(Duration::from_secs(600))
             .build()?;
-        let cache = DiskCache::new();
+        let cache = DiskCache::new(&host);
         let mu = tokio::sync::Mutex::new(RefCell::new(None));
         Ok(Self {
             client,
             cache,
             mu,
             model,
+            urls,
+            client_id,
             name: GITHUB_COPILOT_PROVIDER_NAME.to_string(),
         })
     }
@@ -258,7 +313,7 @@ impl GithubCopilotProvider {
         };
         let resp = self
             .client
-            .get(GITHUB_COPILOT_API_KEY_URL)
+            .get(&self.urls.copilot_token_url)
             .headers(self.get_github_headers())
             .header(http::header::AUTHORIZATION, format!("bearer {}", &token))
             .send()
@@ -283,105 +338,16 @@ impl GithubCopilotProvider {
     }
 
     async fn login(&self) -> Result<String> {
-        let device_code_info = self.get_device_code().await?;
-
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            if let Err(e) = clipboard.set_text(&device_code_info.user_code) {
-                tracing::warn!("Failed to copy verification code to clipboard: {}", e);
-            }
-        }
-
-        if let Err(e) = webbrowser::open(&device_code_info.verification_uri) {
-            tracing::warn!("Failed to open browser: {}", e);
-        }
-
-        println!(
-            "Please visit {} and enter code {}",
-            device_code_info.verification_uri, device_code_info.user_code
-        );
-
-        self.poll_for_access_token(&device_code_info.device_code)
-            .await
-    }
-
-    async fn get_device_code(&self) -> Result<DeviceCodeInfo> {
-        #[derive(Serialize)]
-        struct DeviceCodeRequest {
-            client_id: String,
-            scope: String,
-        }
-        self.client
-            .post(GITHUB_COPILOT_DEVICE_CODE_URL)
-            .headers(self.get_github_headers())
-            .json(&DeviceCodeRequest {
-                client_id: GITHUB_COPILOT_CLIENT_ID.to_string(),
-                scope: "read:user".to_string(),
-            })
-            .send()
-            .await
-            .context("failed to send request to get device code")?
-            .error_for_status()
-            .context("failed to get device code")?
-            .json::<DeviceCodeInfo>()
-            .await
-            .context("failed to parse device code response")
-    }
-
-    async fn poll_for_access_token(&self, device_code: &str) -> Result<String> {
-        #[derive(Serialize)]
-        struct AccessTokenRequest {
-            client_id: String,
-            device_code: String,
-            grant_type: String,
-        }
-        #[derive(Debug, Deserialize)]
-        struct AccessTokenResponse {
-            access_token: Option<String>,
-            error: Option<String>,
-            #[serde(flatten)]
-            _extra: HashMap<String, Value>,
-        }
-
-        const MAX_ATTEMPTS: i32 = 36;
-        for attempt in 0..MAX_ATTEMPTS {
-            let resp = self
-                .client
-                .post(GITHUB_COPILOT_ACCESS_TOKEN_URL)
-                .headers(self.get_github_headers())
-                .json(&AccessTokenRequest {
-                    client_id: GITHUB_COPILOT_CLIENT_ID.to_string(),
-                    device_code: device_code.to_string(),
-                    grant_type: "urn:ietf:params:oauth:grant-type:device_code".to_string(),
-                })
-                .send()
-                .await
-                .context("failed to make request while polling for access token")?
-                .error_for_status()
-                .context("error polling for access token")?
-                .json::<AccessTokenResponse>()
-                .await
-                .context("failed to parse response while polling for access token")?;
-            if resp.access_token.is_some() {
-                tracing::trace!("successful authorization: {:#?}", resp,);
-            }
-            if let Some(access_token) = resp.access_token {
-                return Ok(access_token);
-            } else if resp
-                .error
-                .as_ref()
-                .is_some_and(|err| err == "authorization_pending")
-            {
-                tracing::debug!(
-                    "authorization pending (attempt {}/{})",
-                    attempt + 1,
-                    MAX_ATTEMPTS
-                );
-            } else {
-                tracing::debug!("unexpected response: {:#?}", resp);
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        }
-        Err(anyhow!("failed to get access token"))
+        let cfg = DeviceFlowConfig {
+            device_auth_url: Some(&self.urls.device_code_url),
+            token_url: &self.urls.access_token_url,
+            client_id: &self.client_id,
+            scopes: Some("read:user"),
+            extra_headers: self.get_github_headers(),
+            encoding: RequestEncoding::Json,
+        };
+        let tokens = run_device_flow(&self.client, &cfg).await?;
+        Ok(tokens.access_token)
     }
 
     fn get_github_headers(&self) -> http::HeaderMap {
@@ -412,13 +378,12 @@ impl ProviderDef for GithubCopilotProvider {
             GITHUB_COPILOT_DEFAULT_MODEL,
             GITHUB_COPILOT_KNOWN_MODELS.to_vec(),
             GITHUB_COPILOT_DOC_URL,
-            vec![ConfigKey::new_oauth_device_code(
-                "GITHUB_COPILOT_TOKEN",
-                true,
-                true,
-                None,
-                false,
-            )],
+            vec![
+                ConfigKey::new_oauth_device_code("GITHUB_COPILOT_TOKEN", true, true, None, false),
+                ConfigKey::new("GITHUB_COPILOT_HOST", false, false, None, false),
+                ConfigKey::new("GITHUB_COPILOT_CLIENT_ID", false, false, None, false),
+                ConfigKey::new("GITHUB_COPILOT_TOKEN_URL", false, false, None, false),
+            ],
         )
     }
 
@@ -469,7 +434,7 @@ impl Provider for GithubCopilotProvider {
                 .with_retry(|| async {
                     let mut payload_clone = payload.clone();
                     let resp = self.post(Some(session_id), &mut payload_clone).await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {
@@ -633,7 +598,7 @@ fn promote_tool_choice(response: Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::promote_tool_choice;
+    use super::{normalize_host, promote_tool_choice, GithubCopilotUrls};
     use serde_json::json;
 
     #[test]
@@ -676,5 +641,60 @@ mod tests {
 
         let promoted = promote_tool_choice(response.clone());
         assert_eq!(promoted, response);
+    }
+
+    #[test]
+    fn normalize_host_strips_prefix_and_slash() {
+        assert_eq!(normalize_host("github.com"), "github.com");
+        assert_eq!(normalize_host("https://github.com"), "github.com");
+        assert_eq!(normalize_host("github.com/"), "github.com");
+        assert_eq!(normalize_host("https://github.com/"), "github.com");
+        assert_eq!(
+            normalize_host("https://my-enterprise.ghe.com/"),
+            "my-enterprise.ghe.com"
+        );
+    }
+
+    #[test]
+    fn urls_default_github_com() {
+        let urls = GithubCopilotUrls::new("github.com", None);
+        assert_eq!(urls.device_code_url, "https://github.com/login/device/code");
+        assert_eq!(
+            urls.access_token_url,
+            "https://github.com/login/oauth/access_token"
+        );
+        assert_eq!(
+            urls.copilot_token_url,
+            "https://api.github.com/copilot_internal/v2/token"
+        );
+    }
+
+    #[test]
+    fn urls_enterprise_host() {
+        let urls = GithubCopilotUrls::new("my-enterprise.ghe.com", None);
+        assert_eq!(
+            urls.device_code_url,
+            "https://my-enterprise.ghe.com/login/device/code"
+        );
+        assert_eq!(
+            urls.access_token_url,
+            "https://my-enterprise.ghe.com/login/oauth/access_token"
+        );
+        assert_eq!(
+            urls.copilot_token_url,
+            "https://api.my-enterprise.ghe.com/copilot_internal/v2/token"
+        );
+    }
+
+    #[test]
+    fn urls_enterprise_with_token_url_override() {
+        let urls = GithubCopilotUrls::new(
+            "my-enterprise.ghe.com",
+            Some("https://my-enterprise.ghe.com/api/v3/copilot_internal/v2/token"),
+        );
+        assert_eq!(
+            urls.copilot_token_url,
+            "https://my-enterprise.ghe.com/api/v3/copilot_internal/v2/token"
+        );
     }
 }

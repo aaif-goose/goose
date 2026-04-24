@@ -852,7 +852,11 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         }
         Err(e) => {
             spin.stop(style(e.to_string()).red());
-            cliclack::outro(style("Failed to configure provider: init chat completion request with tool did not succeed.").on_red().white())?;
+            cliclack::outro(
+                style(format!("Failed to configure provider: {e}"))
+                    .on_red()
+                    .white(),
+            )?;
             Ok(false)
         }
     }
@@ -1170,6 +1174,7 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
             headers,
             description,
             timeout: Some(timeout),
+            socket: None,
             bundled: None,
             available_tools: Vec::new(),
         },
@@ -1362,7 +1367,9 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_MODE").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_MODE environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_MODE environment variable is set and will override the configuration here.",
+        );
     }
 
     let mode = cliclack::select("Which goose mode would you like to configure?")
@@ -1404,7 +1411,9 @@ pub fn configure_telemetry_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_TELEMETRY_OFF").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_TELEMETRY_OFF environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_TELEMETRY_OFF environment variable is set and will override the configuration here.",
+        );
     }
 
     let current_choice = get_telemetry_choice();
@@ -1435,7 +1444,9 @@ pub fn configure_tool_output_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_CLI_MIN_PRIORITY").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_CLI_MIN_PRIORITY environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_CLI_MIN_PRIORITY environment variable is set and will override the configuration here.",
+        );
     }
     let tool_log_level = cliclack::select("Which tool output would you like to show?")
         .item("high", "High Importance", "")
@@ -1466,7 +1477,9 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
     let config = Config::global();
 
     if std::env::var("GOOSE_DISABLE_KEYRING").is_ok() {
-        let _ = cliclack::log::info("Notice: GOOSE_DISABLE_KEYRING environment variable is set and will override the configuration here.");
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_DISABLE_KEYRING environment variable is set and will override the configuration here.",
+        );
     }
 
     let currently_disabled = config.get_param::<String>("GOOSE_DISABLE_KEYRING").is_ok();
@@ -1478,7 +1491,11 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
     };
 
     let _ = cliclack::log::info(format!("Current secret storage: {}", current_status));
-    let _ = cliclack::log::warning("Note: Disabling the keyring stores secrets in a plain text file (~/.config/goose/secrets.yaml)");
+    let secrets_path = Paths::config_dir().join("secrets.yaml");
+    let _ = cliclack::log::warning(format!(
+        "Note: Disabling the keyring stores secrets in a plain text file ({})",
+        secrets_path.display()
+    ));
 
     let storage_option = cliclack::select("How would you like to store secrets?")
         .item(
@@ -1504,9 +1521,10 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
         "file" => {
             // Set the disable flag to use file storage
             config.set_param("GOOSE_DISABLE_KEYRING", Value::String("true".to_string()))?;
-            cliclack::outro(
-                "Secret storage set to file (~/.config/goose/secrets.yaml). Keep this file secure!",
-            )?;
+            cliclack::outro(format!(
+                "Secret storage set to file ({}). Keep this file secure!",
+                secrets_path.display(),
+            ))?;
             let _ =
                 cliclack::log::info("You may need to restart goose for this change to take effect");
         }
@@ -1854,7 +1872,9 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     eprintln!("⚠️  Configuration test failed: {}", e);
-                    eprintln!("Your settings have been saved, but there may be an issue with the connection.");
+                    eprintln!(
+                        "Your settings have been saved, but there may be an issue with the connection."
+                    );
                 }
             }
         }
@@ -1925,7 +1945,9 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     eprintln!("⚠️  Configuration test failed: {}", e);
-                    eprintln!("Your settings have been saved, but there may be an issue with the connection.");
+                    eprintln!(
+                        "Your settings have been saved, but there may be an issue with the connection."
+                    );
                 }
             }
         }

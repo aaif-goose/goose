@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Goose",
+  "version": "0.1.0",
+  "identifier": "com.goose.app",
+  "build": {
+    "beforeDevCommand": {
+      "script": "exec ./node_modules/.bin/vite",
+      "cwd": "..",
+      "wait": false
+    },
+    "devUrl": "http://localhost:1520",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Goose",
+        "width": 800,
+        "height": 600,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "dragDropEnabled": false,
+        "trafficLightPosition": { "x": 12, "y": 22 }
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/.goose/avatars/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["../../../target/release/goose"]
+  }
+}

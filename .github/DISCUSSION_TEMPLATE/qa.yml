@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         💡 Before posting, please attach your **diagnostics zip** — it helps the Goose team debug faster and saves everyone time.  
-        [How to capture and share diagnostics](https://block.github.io/goose/docs/troubleshooting/diagnostics-and-reporting/)
+        [How to capture and share diagnostics](https://goose-docs.ai/docs/troubleshooting/diagnostics-and-reporting/)
   - type: textarea
     id: problem
     attributes:

@@ -1,0 +1,13 @@
+{
+  "name": "ollama_cloud",
+  "engine": "openai",
+  "display_name": "Ollama Cloud",
+  "description": "Access hosted models on ollama.com via OpenAI-compatible API",
+  "api_key_env": "OLLAMA_CLOUD_API_KEY",
+  "base_url": "https://ollama.com/v1/chat/completions",
+  "models": [],
+  "dynamic_models": true,
+  "headers": null,
+  "timeout_seconds": null,
+  "supports_streaming": true
+}

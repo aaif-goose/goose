@@ -11,7 +11,7 @@ set -eu
 # Supported Architectures: x86_64, arm64
 #
 # Usage:
-#   curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash
+#   curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
 #
 # Environment variables:
 #   GOOSE_BIN_DIR  - Directory to which goose will be installed (default: $HOME/.local/bin)
@@ -52,7 +52,7 @@ fi
 
 
 # --- 2) Variables ---
-REPO="block/goose"
+REPO="aaif-goose/goose"
 OUT_FILE="goose"
 
 # Set default bin directory based on detected OS environment
@@ -199,7 +199,7 @@ echo "Downloading $RELEASE_TAG release: $FILE..."
 if ! curl -sLf "$DOWNLOAD_URL" --output "$FILE"; then
   # If the download fails, only fall back to latest stable when no version was specified and canary was not requested).
   if ! [ -n "${GOOSE_VERSION:-}" ] && [ "${CANARY:-false}" != "true" ]; then
-    LATEST_TAG=$(curl -s https://api.github.com/repos/block/goose/releases/latest | \
+    LATEST_TAG=$(curl -s https://api.github.com/repos/aaif-goose/goose/releases/latest | \
       grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -z "$LATEST_TAG" ]; then
       echo "Error: Failed to download $DOWNLOAD_URL and latest tag unavailable"

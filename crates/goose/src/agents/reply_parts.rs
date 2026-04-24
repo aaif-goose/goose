@@ -339,6 +339,7 @@ impl Agent {
         &self,
         response: &Message,
         tools: &[Tool],
+        suppress_replayed_thinking: bool,
     ) -> (Vec<ToolRequest>, Vec<ToolRequest>, Message) {
         // First collect all tool requests with coercion applied
         let tool_requests: Vec<ToolRequest> = response
@@ -355,7 +356,24 @@ impl Agent {
                                 coerce_tool_arguments(tool_call.arguments.clone(), &schema_value);
 
                             if let Some(ref meta) = tool.meta {
-                                coerced_req.tool_meta = serde_json::to_value(meta).ok();
+                                // Merge registry meta into existing tool_meta;
+                                // existing keys win so provider markers (e.g.
+                                // goose.external_dispatch) survive coercion.
+                                let new_meta = serde_json::to_value(meta).ok();
+                                coerced_req.tool_meta =
+                                    match (coerced_req.tool_meta.take(), new_meta) {
+                                        (
+                                            Some(Value::Object(mut existing)),
+                                            Some(Value::Object(new)),
+                                        ) => {
+                                            for (k, v) in new {
+                                                existing.entry(k).or_insert(v);
+                                            }
+                                            Some(Value::Object(existing))
+                                        }
+                                        (None, new) => new,
+                                        (existing, _) => existing,
+                                    };
                             }
                         }
                     }
@@ -367,7 +385,16 @@ impl Agent {
             })
             .collect();
 
-        // Create a filtered message with frontend tool requests removed
+        let has_tool_requests = !tool_requests.is_empty();
+        let should_suppress_replayed_thinking = suppress_replayed_thinking && has_tool_requests;
+
+        // Create a filtered message with frontend tool requests removed.
+        // When a response contains tool calls, keep reasoning in the original
+        // message for provider/state purposes but only suppress it from the
+        // user-visible filtered message if the caller already surfaced
+        // thinking earlier in this provider turn. That avoids replaying full
+        // accumulated reasoning after streamed thought chunks while still
+        // preserving final-only non-streaming thoughts.
         let mut filtered_content = Vec::new();
         let mut tool_request_index = 0;
 
@@ -378,7 +405,12 @@ impl Agent {
                         let coerced_req = &tool_requests[tool_request_index];
                         tool_request_index += 1;
 
-                        let should_include = if let Ok(tool_call) = &coerced_req.tool_call {
+                        // Always keep externally-dispatched requests visible, even if
+                        // their name happens to overlap a registered frontend tool —
+                        // they're observation-only and must not be removed from history.
+                        let should_include = if coerced_req.is_externally_dispatched() {
+                            true
+                        } else if let Ok(tool_call) = &coerced_req.tool_call {
                             !self.is_frontend_tool(&tool_call.name).await
                         } else {
                             true
@@ -389,6 +421,8 @@ impl Agent {
                         }
                     }
                 }
+                MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+                    if should_suppress_replayed_thinking => {}
                 _ => {
                     filtered_content.push(content.clone());
                 }
@@ -408,6 +442,11 @@ impl Agent {
         let mut other_requests = Vec::new();
 
         for request in tool_requests {
+            // Skip externally-dispatched requests (e.g. claude-acp); the
+            // provider already executed the tool. Stays in filtered_message.
+            if request.is_externally_dispatched() {
+                continue;
+            }
             if let Ok(tool_call) = &request.tool_call {
                 if self.is_frontend_tool(&tool_call.name).await {
                     frontend_requests.push(request);
@@ -659,6 +698,109 @@ mod tests {
         assert!(
             error_seen,
             "Error should have been propagated, not silently ignored"
+        );
+    }
+
+    #[tokio::test]
+    async fn categorize_tool_requests_keeps_thinking_when_not_previously_streamed() {
+        let agent = crate::agents::Agent::new();
+        let response = Message::assistant()
+            .with_thinking("final-only reasoning", "")
+            .with_tool_request(
+                "tool-1",
+                Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+            );
+
+        let (_frontend_requests, other_requests, filtered_message) =
+            agent.categorize_tool_requests(&response, &[], false).await;
+
+        assert_eq!(other_requests.len(), 1);
+        assert_eq!(filtered_message.content.len(), 2);
+        assert!(matches!(
+            filtered_message.content[0],
+            MessageContent::Thinking(_)
+        ));
+        assert!(matches!(
+            filtered_message.content[1],
+            MessageContent::ToolRequest(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn categorize_tool_requests_drops_replayed_thinking_after_streaming() {
+        let agent = crate::agents::Agent::new();
+        let response = Message::assistant()
+            .with_thinking("replayed reasoning", "")
+            .with_tool_request(
+                "tool-1",
+                Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+            );
+
+        let (_frontend_requests, other_requests, filtered_message) =
+            agent.categorize_tool_requests(&response, &[], true).await;
+
+        assert_eq!(other_requests.len(), 1);
+        assert_eq!(filtered_message.content.len(), 1);
+        assert!(matches!(
+            filtered_message.content[0],
+            MessageContent::ToolRequest(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn categorize_tool_requests_skips_externally_dispatched_and_preserves_marker() {
+        // External requests must (1) survive coercion with goose.external_dispatch
+        // intact, (2) be excluded from both dispatch buckets, (3) stay in
+        // filtered_message.
+        use crate::conversation::message::TOOL_META_EXTERNAL_DISPATCH_KEY;
+
+        let agent = crate::agents::Agent::new();
+
+        let registry_tool = Tool::new("test_tool", "a test tool", object!({ "type": "object" }))
+            .with_meta(rmcp::model::Meta(
+                serde_json::json!({ "ui": { "visibility": ["model"] } })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ));
+
+        let response = Message::assistant().with_tool_request_with_metadata(
+            "tool-1",
+            Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+            None,
+            Some(serde_json::json!({ TOOL_META_EXTERNAL_DISPATCH_KEY: true })),
+        );
+
+        let (frontend_requests, other_requests, filtered_message) = agent
+            .categorize_tool_requests(&response, &[registry_tool], false)
+            .await;
+
+        assert!(
+            frontend_requests.is_empty(),
+            "external request leaked into frontend_requests: {frontend_requests:?}"
+        );
+        assert!(
+            other_requests.is_empty(),
+            "external request leaked into other_requests: {other_requests:?}"
+        );
+        assert_eq!(filtered_message.content.len(), 1);
+        let tool_req = match &filtered_message.content[0] {
+            MessageContent::ToolRequest(req) => req,
+            other => panic!("expected ToolRequest, got {other:?}"),
+        };
+        assert!(
+            tool_req.is_externally_dispatched(),
+            "goose.external_dispatch marker was clobbered by coercion; merged tool_meta = {:?}",
+            tool_req.tool_meta
+        );
+        let merged = tool_req
+            .tool_meta
+            .as_ref()
+            .and_then(|v| v.as_object())
+            .expect("tool_meta should be an object after merge");
+        assert!(
+            merged.contains_key("ui"),
+            "registry tool meta keys were dropped; merged tool_meta = {merged:?}"
         );
     }
 

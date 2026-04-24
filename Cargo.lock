@@ -1724,9 +1724,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.57"
+version = "1.2.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a0dd1ca384932ff3641c8718a02769f1698e7563dc6974ffd03346116310423"
+checksum = "b7a4d3ec6524d28a329fc53654bbadc9bdd7b0431f5d65f1a56ffb28a1ee5283"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -4326,7 +4326,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.29.0"
+version = "1.32.0"
 dependencies = [
  "agent-client-protocol-schema",
  "ahash",
@@ -4358,8 +4358,12 @@ dependencies = [
  "fs-err",
  "fs2",
  "futures",
+ "goose-acp-macros",
+ "goose-mcp",
+ "goose-sdk",
  "goose-test-support",
  "http 1.4.0",
+ "http-body-util",
  "ignore",
  "include_dir",
  "indexmap 2.13.0",
@@ -4369,6 +4373,7 @@ dependencies = [
  "jsonwebtoken",
  "keyring",
  "lazy_static",
+ "libc",
  "llama-cpp-2",
  "lru",
  "minijinja",
@@ -4417,6 +4422,7 @@ dependencies = [
  "tokio-cron-scheduler",
  "tokio-stream",
  "tokio-util",
+ "tower-http",
  "tracing",
  "tracing-futures",
  "tracing-opentelemetry",
@@ -4445,43 +4451,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "goose-acp"
-version = "1.29.0"
-dependencies = [
- "agent-client-protocol-schema",
- "anyhow",
- "async-stream",
- "async-trait",
- "axum",
- "fs-err",
- "futures",
- "goose",
- "goose-acp-macros",
- "goose-mcp",
- "goose-test-support",
- "http-body-util",
- "regex",
- "rmcp",
- "sacp",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "sqlx",
- "strum 0.27.2",
- "tempfile",
- "test-case",
- "tokio",
- "tokio-util",
- "tower-http",
- "tracing",
- "url",
- "uuid",
- "wiremock",
-]
-
-[[package]]
 name = "goose-acp-macros"
-version = "1.29.0"
+version = "1.32.0"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -4489,7 +4460,7 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.29.0"
+version = "1.32.0"
 dependencies = [
  "anstream 0.6.21",
  "anyhow",
@@ -4509,7 +4480,6 @@ dependencies = [
  "etcetera 0.11.0",
  "futures",
  "goose",
- "goose-acp",
  "goose-mcp",
  "indicatif",
  "open",
@@ -4542,7 +4512,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.29.0"
+version = "1.32.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4570,8 +4540,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "goose-sdk"
+version = "1.32.0"
+dependencies = [
+ "agent-client-protocol-schema",
+ "sacp",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "goose-server"
-version = "1.29.0"
+version = "1.32.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -4589,6 +4572,7 @@ dependencies = [
  "hex",
  "http 1.4.0",
  "openssl",
+ "pem",
  "rand 0.8.5",
  "rcgen",
  "reqwest 0.13.2",
@@ -4618,7 +4602,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.29.0"
+version = "1.32.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -4626,7 +4610,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.29.0"
+version = "1.32.0"
 dependencies = [
  "axum",
  "env-lock",
@@ -5746,9 +5730,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.184"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
 
 [[package]]
 name = "libdbus-sys"
@@ -5845,9 +5829,9 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
 name = "llama-cpp-2"
-version = "0.1.140"
+version = "0.1.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5604c13b9c847157470479a64d1d7c94f3089709309f82f2fdcbcd43510f2f2"
+checksum = "d564eb5d7ae88f596e7636ffd549e0f27f4c938a7c7841bb91e2a92c248c9ccb"
 dependencies = [
  "encoding_rs",
  "enumflags2",
@@ -5859,9 +5843,9 @@ dependencies = [
 
 [[package]]
 name = "llama-cpp-sys-2"
-version = "0.1.140"
+version = "0.1.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbdd3e2c06f3a9a47466a631735946e9ad47fef565b88bc8766a3794474a66f3"
+checksum = "2f2cf3435dbadb87817e0a95325c818cd89d43026e8ba1ddd32f1d980d96f33d"
 dependencies = [
  "bindgen",
  "cc",
@@ -6925,9 +6909,9 @@ dependencies = [
 
 [[package]]
 name = "pctx_config"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88750f27b7000e143e8b7c5703947fe9565b1a616e119513578bf08ef40fc24f"
+checksum = "c89eac48aabd3fdd2ed13839c006aff8be43f5ba70858378162551414103199d"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7397,7 +7381,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -8035,9 +8019,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "1.2.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba6b9d2f0efe2258b23767f1f9e0054cfbcac9c2d6f81a031214143096d7864f"
+checksum = "67d69668de0b0ccd9cc435f700f3b39a7861863cf37a15e1f304ea78688a4826"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -8047,6 +8031,8 @@ dependencies = [
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
+ "hyper 1.8.1",
+ "hyper-util",
  "oauth2",
  "pastey",
  "pin-project-lite",
@@ -8070,9 +8056,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "1.2.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab9d95d7ed26ad8306352b0d5f05b593222b272790564589790d210aa15caa9e"
+checksum = "48fdc01c81097b0aed18633e676e269fefa3a78ec1df56b4fe597c1241b92025"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -8277,9 +8263,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -10342,9 +10328,9 @@ dependencies = [
 
 [[package]]
 name = "thin-vec"
-version = "0.2.14"
+version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "144f754d318415ac792f9d69fc87abbbfc043ce2ef041c60f16ad828f638717d"
+checksum = "259cdf8ed4e4aca6f1e9d011e10bd53f524a2d0637d7b28450f6c64ac298c4c6"
 
 [[package]]
 name = "thiserror"

@@ -277,16 +277,6 @@ pub struct SingleDonutChart {
     pub labels: Option<Vec<String>>,
 }
 
-/// Donut chart data — a single chart object or an array of chart objects
-#[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
-#[serde(untagged)]
-pub enum DonutChartData {
-    /// Single donut chart
-    Single(SingleDonutChart),
-    /// Multiple donut charts
-    Multiple(Vec<SingleDonutChart>),
-}
-
 impl SingleDonutChart {
     fn validate(&self) -> Result<(), ErrorData> {
         if self.values.is_empty() {
@@ -305,28 +295,21 @@ impl SingleDonutChart {
     }
 }
 
-impl DonutChartData {
-    fn validate(&self) -> Result<(), ErrorData> {
-        match self {
-            DonutChartData::Single(chart) => chart.validate(),
-            DonutChartData::Multiple(charts) => {
-                if charts.is_empty() {
-                    return Err(validation_err("charts array must not be empty"));
-                }
-                for chart in charts {
-                    chart.validate()?;
-                }
-                Ok(())
-            }
-        }
+fn validate_donut_charts(charts: &[SingleDonutChart]) -> Result<(), ErrorData> {
+    if charts.is_empty() {
+        return Err(validation_err("charts array must not be empty"));
     }
+    for chart in charts {
+        chart.validate()?;
+    }
+    Ok(())
 }
 
 /// Parameters for render_donut tool
 #[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct RenderDonutParams {
-    /// The chart data (single chart object or array of chart objects)
-    pub data: DonutChartData,
+    /// The chart data as an array of chart objects. Use a single-element array for one chart.
+    pub data: Vec<SingleDonutChart>,
 }
 
 /// Treemap node structure
@@ -987,7 +970,8 @@ Example:
     #[tool(
         name = "render_donut",
         description = r#"show pie or donut charts for categorical data visualization.
-Supports single or multiple charts in a grid layout.
+Supports one or more charts in a grid layout.
+The `data` field must always be an array; pass a single-element array for one chart.
 
 Each chart object must contain:
 - values: Array of numbers OR objects with 'label' and 'value'
@@ -996,20 +980,24 @@ Each chart object must contain:
 - labels: Optional array of labels (required when values are plain numbers)
 
 Example single chart (labeled values):
-{
-  "values": [
-    {"label": "Marketing", "value": 25000},
-    {"label": "Development", "value": 35000}
-  ],
-  "title": "Budget"
-}
+[
+  {
+    "values": [
+      {"label": "Marketing", "value": 25000},
+      {"label": "Development", "value": 35000}
+    ],
+    "title": "Budget"
+  }
+]
 
 Example single chart (parallel arrays):
-{
-  "values": [45000, 38000],
-  "labels": ["Product A", "Product B"],
-  "type": "pie"
-}
+[
+  {
+    "values": [45000, 38000],
+    "labels": ["Product A", "Product B"],
+    "type": "pie"
+  }
+]
 
 Example multiple charts (array of chart objects):
 [
@@ -1023,7 +1011,7 @@ Example multiple charts (array of chart objects):
         params: Parameters<RenderDonutParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let inner = params.0;
-        inner.data.validate()?;
+        validate_donut_charts(&inner.data)?;
         let data = validate_data_param(
             &serde_json::to_value(inner).map_err(|e| {
                 ErrorData::new(
@@ -1035,15 +1023,21 @@ Example multiple charts (array of chart objects):
             true,
         )?;
 
-        let text_fallback = if data.is_array() {
-            let count = data.as_array().map(|a| a.len()).unwrap_or(0);
-            format!("donut/pie chart: {} chart(s)", count)
-        } else {
-            let title = data
+        let charts = data.as_array().ok_or_else(|| {
+            ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                "The 'data' parameter must be an array.".to_string(),
+                None,
+            )
+        })?;
+        let text_fallback = if charts.len() == 1 {
+            let title = charts[0]
                 .get("title")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Untitled");
             format!("donut/pie chart: \"{}\"", title)
+        } else {
+            format!("donut/pie chart: {} chart(s)", charts.len())
         };
 
         let mut result = CallToolResult::structured(data);
@@ -1566,7 +1560,7 @@ mod tests {
     async fn test_render_donut() {
         let router = AutoVisualiserRouter::new();
         let params = Parameters(RenderDonutParams {
-            data: DonutChartData::Single(SingleDonutChart {
+            data: vec![SingleDonutChart {
                 values: vec![
                     DonutDataItem::Number(30.0),
                     DonutDataItem::Number(40.0),
@@ -1575,7 +1569,7 @@ mod tests {
                 labels: Some(vec!["A".to_string(), "B".to_string(), "C".to_string()]),
                 title: None,
                 chart_type: None,
-            }),
+            }],
         });
 
         let result = router.render_donut(params).await;
@@ -1721,14 +1715,14 @@ mod donut_format_tests {
 
     #[test]
     fn labeled_values_single_chart() {
-        // {"data": {"values": [{"label": "A", "value": 10}, ...]}}
+        // {"data": [{"values": [{"label": "A", "value": 10}, ...]}]}
         let input = json!({
-            "data": {
+            "data": [{
                 "values": [
                     {"label": "A", "value": 10},
                     {"label": "B", "value": 20}
                 ]
-            }
+            }]
         });
         let result = round_trip(input);
         assert!(
@@ -1740,12 +1734,12 @@ mod donut_format_tests {
 
     #[test]
     fn parallel_arrays_single_chart() {
-        // {"data": {"values": [10, 20], "labels": ["A", "B"]}}
+        // {"data": [{"values": [10, 20], "labels": ["A", "B"]}]}
         let input = json!({
-            "data": {
+            "data": [{
                 "values": [10, 20],
                 "labels": ["A", "B"]
-            }
+            }]
         });
         let result = round_trip(input);
         assert!(
@@ -1775,14 +1769,14 @@ mod donut_format_tests {
     #[test]
     fn labeled_values_with_title_and_type() {
         let input = json!({
-            "data": {
+            "data": [{
                 "values": [
                     {"label": "Marketing", "value": 25000},
                     {"label": "Development", "value": 35000}
                 ],
                 "title": "Budget",
                 "type": "pie"
-            }
+            }]
         });
         let result = round_trip(input);
         assert!(
@@ -1910,31 +1904,31 @@ mod validation_tests {
 
     #[test]
     fn donut_rejects_empty_values() {
-        let data = DonutChartData::Single(SingleDonutChart {
+        let data = vec![SingleDonutChart {
             values: vec![],
             title: None,
             chart_type: None,
             labels: None,
-        });
-        assert!(data.validate().is_err());
+        }];
+        assert!(validate_donut_charts(&data).is_err());
     }
 
     #[test]
     fn donut_rejects_mismatched_labels() {
-        let data = DonutChartData::Single(SingleDonutChart {
+        let data = vec![SingleDonutChart {
             values: vec![DonutDataItem::Number(10.0), DonutDataItem::Number(20.0)],
             title: None,
             chart_type: None,
             labels: Some(vec!["A".into()]), // 1 label but 2 values
-        });
-        let err = data.validate().unwrap_err();
+        }];
+        let err = validate_donut_charts(&data).unwrap_err();
         assert!(err.message.contains("labels"));
     }
 
     #[test]
     fn donut_rejects_empty_multiple() {
-        let data = DonutChartData::Multiple(vec![]);
-        assert!(data.validate().is_err());
+        let data: Vec<SingleDonutChart> = vec![];
+        assert!(validate_donut_charts(&data).is_err());
     }
 
     #[test]

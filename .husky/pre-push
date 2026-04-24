@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Run goose2 pre-push checks if any commits being pushed include goose2 changes.
+
+# --- Helper functions ---
+
+# Check if any ref being pushed includes changes under a given path prefix.
+# Reads git's pre-push stdin (local_ref local_oid remote_ref remote_oid).
+push_touches() {
+  local prefix="$1"
+  local z40="0000000000000000000000000000000000000000"
+
+  while read local_ref local_oid remote_ref remote_oid; do
+    [ "$local_oid" = "$z40" ] && continue  # deleting ref
+
+    if [ "$remote_oid" = "$z40" ]; then
+      # New branch — compare against the merge base with the default branch
+      range="$(git merge-base HEAD main 2>/dev/null || echo "$local_oid")...$local_oid"
+    else
+      range="$remote_oid...$local_oid"
+    fi
+
+    if git diff --no-renames --name-only "$range" -- 2>/dev/null | grep -q "^${prefix}"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# Run commands in parallel, exit 1 if any fail.
+# Usage: run_parallel "label1" "cmd1" "label2" "cmd2" ...
+run_parallel() {
+  local -a labels=() pids=()
+  while [[ $# -ge 2 ]]; do
+    labels+=("$1"); shift
+    ( eval "$1" ) & pids+=($!); shift
+  done
+
+  local -a failed=()
+  for i in "${!pids[@]}"; do
+    wait "${pids[$i]}" || failed+=("${labels[$i]}")
+  done
+
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    echo "Failed: ${failed[*]}"
+    return 1
+  fi
+}
+
+# --- Hook body ---
+
+push_touches "ui/goose2/" || exit 0
+
+echo "Detected ui/goose2/ changes — running pre-push checks..."
+
+run_parallel \
+  "fmt-check"    "just goose2 fmt-check" \
+  "clippy"       "just goose2 clippy" \
+  "check"        "just goose2 check" \
+  "test"         "just goose2 test" \
+  "build"        "just goose2 build" \
+  "tauri-check"  "just goose2 tauri-check"
+
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+  echo "All goose2 pre-push checks passed."
+else
+  echo "goose2 pre-push checks failed."
+  exit 1
+fi

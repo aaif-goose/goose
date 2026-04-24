@@ -4,16 +4,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, PermissionMapping,
-    ACP_CURRENT_MODEL,
+    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::model::ModelConfig;
+use crate::providers::acp_tooling::{acp_adapter_installed, acp_inventory_identity};
 use crate::providers::base::{ProviderDef, ProviderMetadata};
+use crate::providers::inventory::InventoryIdentityInput;
 
 const CLAUDE_ACP_PROVIDER_NAME: &str = "claude-acp";
-const CLAUDE_ACP_DOC_URL: &str = "https://github.com/zed-industries/claude-agent-acp";
+const CLAUDE_ACP_DOC_URL: &str = "https://github.com/agentclientprotocol/claude-agent-acp";
 const CLAUDE_ACP_BINARY: &str = "claude-agent-acp";
 
 pub struct ClaudeAcpProvider;
@@ -32,7 +33,7 @@ impl ProviderDef for ClaudeAcpProvider {
             vec![],
         )
         .with_setup_steps(vec![
-            "Install the ACP adapter: `npm install -g @zed-industries/claude-agent-acp`",
+            "Install the ACP adapter: `npm install -g @agentclientprotocol/claude-agent-acp`",
             "Ensure your Claude CLI is authenticated (run `claude` to verify)",
             "Set in your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: claude-acp\n  GOOSE_MODEL: current",
             "Restart goose for changes to take effect",
@@ -50,13 +51,6 @@ impl ProviderDef for ClaudeAcpProvider {
                 .with_npm()
                 .resolve(CLAUDE_ACP_BINARY)?;
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
-
-            // claude-agent-acp permission option_ids
-            let permission_mapping = PermissionMapping {
-                allow_option_id: Some("allow".to_string()),
-                reject_option_id: Some("reject".to_string()),
-                rejected_tool_status: sacp::schema::ToolCallStatus::Failed,
-            };
 
             let mode_mapping = HashMap::from([
                 // Closest to "autonomous": bypassPermissions skips confirmations.
@@ -79,12 +73,23 @@ impl ProviderDef for ClaudeAcpProvider {
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
                 session_mode_id: Some(mode_mapping[&goose_mode].clone()),
                 mode_mapping,
-                permission_mapping,
                 notification_callback: None,
             };
 
             let metadata = Self::metadata();
             AcpProvider::connect(metadata.name, model, goose_mode, provider_config).await
         })
+    }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        acp_inventory_identity(CLAUDE_ACP_PROVIDER_NAME, CLAUDE_ACP_BINARY)
+    }
+
+    fn inventory_configured() -> bool {
+        acp_adapter_installed(CLAUDE_ACP_BINARY)
     }
 }

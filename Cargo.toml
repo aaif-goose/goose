@@ -1,17 +1,19 @@
 [workspace]
 members = [
-    "crates/*", 
+    "crates/*",
     # Mainly for cargo-machete to not error out during inspection.
-    "vendor/v8"
+    "vendor/v8",
 ]
+exclude = ["ui/goose2/src-tauri"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.29.0"
-authors = ["Block <ai-oss-tools@block.xyz>"]
+version = "1.32.0"
+rust-version = "1.91.1"
+authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
-repository = "https://github.com/block/goose"
+repository = "https://github.com/aaif-goose/goose"
 description = "An AI agent"
 
 [workspace.lints.clippy]
@@ -19,7 +21,7 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "1.2.0", features = ["schemars", "auth"] }
+rmcp = { version = "1.5.0", features = ["schemars", "auth"] }
 agent-client-protocol-schema = { version = "0.11", features = ["unstable"] }
 sacp = "11.0.0"
 arboard = "3"

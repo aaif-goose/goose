@@ -2,6 +2,7 @@ export interface ExternalGoosedConfig {
   enabled: boolean;
   url: string;
   secret: string;
+  certFingerprint?: string;
 }
 
 export interface KeyboardShortcuts {
@@ -32,6 +33,7 @@ export interface Settings {
   showMenuBarIcon: boolean;
   showDockIcon: boolean;
   enableWakelock: boolean;
+  enableNotifications: boolean;
   spellcheckEnabled: boolean;
   externalGoosed: ExternalGoosedConfig;
   globalShortcut?: string | null;
@@ -68,6 +70,7 @@ export const defaultSettings: Settings = {
   showMenuBarIcon: true,
   showDockIcon: true,
   enableWakelock: false,
+  enableNotifications: true,
   spellcheckEnabled: true,
   keyboardShortcuts: defaultKeyboardShortcuts,
   externalGoosed: {

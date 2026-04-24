@@ -335,11 +335,28 @@ fn otel_logs_level() -> Level {
         .unwrap_or(Level::INFO)
 }
 
+/// Targets suppressed from OTLP log export.
+///
+/// `rmcp::service` logs the full `InitializeResult` (including extension instructions
+/// and user memory content) as a `peer_info` attribute on every MCP handshake.
+/// This can be 400KB+ per session init and contains PII/sensitive data.
+/// These logs have no analytical value in OTLP — suppress them entirely.
+const OTLP_LOGS_SUPPRESSED_TARGETS: &[&str] = &["rmcp::service"];
+
 /// Creates a custom filter for OTLP logs.
 /// Level is resolved via RUST_LOG → OTEL_LOG_LEVEL → default INFO.
+/// Suppresses targets listed in `OTLP_LOGS_SUPPRESSED_TARGETS`.
 fn create_otlp_logs_filter() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
     let min_level = otel_logs_level();
-    FilterFn::new(move |metadata: &Metadata<'_>| metadata.level() <= &min_level)
+    FilterFn::new(move |metadata: &Metadata<'_>| {
+        if metadata.level() > &min_level {
+            return false;
+        }
+        let target = metadata.target();
+        !OTLP_LOGS_SUPPRESSED_TARGETS
+            .iter()
+            .any(|suppressed| target.starts_with(suppressed))
+    })
 }
 
 /// Shutdown OTLP providers gracefully

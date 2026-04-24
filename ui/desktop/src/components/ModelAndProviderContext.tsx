@@ -63,63 +63,69 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
   const { read, getProviders } = useConfig();
   const intl = useIntl();
 
-  const changeModel = useCallback(async (sessionId: string | null, model: Model) => {
-    const modelName = model.name;
-    const providerName = model.provider;
-    let phase = 'agent';
+  const changeModel = useCallback(
+    async (sessionId: string | null, model: Model) => {
+      const modelName = model.name;
+      const providerName = model.provider;
+      let phase = 'agent';
 
-    try {
-      if (sessionId) {
-        const response = await updateAgentProvider({
-          body: {
-            session_id: sessionId,
-            provider: providerName,
-            model: modelName,
-            context_limit: model.context_limit,
-            request_params: model.request_params,
-          },
-        });
-        if (response.error) {
-          throw new Error(`Failed to update agent provider: ${response.error}`);
+      try {
+        if (sessionId) {
+          const response = await updateAgentProvider({
+            body: {
+              session_id: sessionId,
+              provider: providerName,
+              model: modelName,
+              context_limit: model.context_limit,
+              request_params: model.request_params,
+            },
+          });
+          if (response.error) {
+            throw new Error(`Failed to update agent provider: ${response.error}`);
+          }
         }
-      }
 
-      // Only update the global config default when there's no session
-      // (i.e. changing from settings, not from within an existing chat)
-      if (!sessionId) {
-        phase = 'config';
-        await setConfigProvider({
-          body: {
+        // Only update the global config default when there's no session
+        // (i.e. changing from settings, not from within an existing chat)
+        if (!sessionId) {
+          phase = 'config';
+          await setConfigProvider({
+            body: {
+              provider: providerName,
+              model: modelName,
+            },
+            throwOnError: true,
+          });
+        }
+
+        if (!sessionId) {
+          setCurrentProvider(providerName);
+          setCurrentModel(modelName);
+        }
+
+        toastSuccess({
+          title: intl.formatMessage(i18n.modelChangedTitle),
+          msg: intl.formatMessage(i18n.switchModelSuccess, {
+            model: model.alias ?? modelName,
+            provider: model.subtext ?? providerName,
+          }),
+        });
+        return true;
+      } catch (error) {
+        console.error(`Failed to change model at ${phase} step -- ${modelName} ${providerName}`);
+        toastError({
+          title: intl.formatMessage(i18n.modelChangeFailed, {
             provider: providerName,
             model: modelName,
-          },
-          throwOnError: true,
+          }),
+          msg: `${error}`,
+          traceback: errorMessage(error),
         });
+        return false;
       }
-
-      if (!sessionId) {
-        setCurrentProvider(providerName);
-        setCurrentModel(modelName);
-      }
-
-      toastSuccess({
-        title: intl.formatMessage(i18n.modelChangedTitle),
-        msg: intl.formatMessage(i18n.switchModelSuccess, {
-          model: model.alias ?? modelName,
-          provider: model.subtext ?? providerName,
-        }),
-      });
-      return true;
-    } catch (error) {
-      console.error(`Failed to change model at ${phase} step -- ${modelName} ${providerName}`);
-      toastError({
-        title: intl.formatMessage(i18n.modelChangeFailed, { provider: providerName, model: modelName }),
-        msg: `${error}`,
-        traceback: errorMessage(error),
-      });
-      return false;
-    }
-  }, [intl]);
+    },
+    [intl]
+  );
 
   const getFallbackModelAndProvider = useCallback(async () => {
     const provider = window.appConfig.get('GOOSE_DEFAULT_PROVIDER') as string;

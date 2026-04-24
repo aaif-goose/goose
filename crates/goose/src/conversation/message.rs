@@ -105,7 +105,22 @@ impl ToolRequest {
             Err(e) => format!("Invalid tool call: {}", e),
         }
     }
+
+    /// Returns true if this tool request was already executed externally
+    /// (e.g. by an ACP provider's underlying SDK) and the agent loop must
+    /// not redispatch it. See [`TOOL_META_EXTERNAL_DISPATCH_KEY`].
+    pub fn is_externally_dispatched(&self) -> bool {
+        self.tool_meta
+            .as_ref()
+            .and_then(|v| v.get(TOOL_META_EXTERNAL_DISPATCH_KEY))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
 }
+
+/// Marker key under `ToolRequest.tool_meta` indicating the tool was already
+/// executed externally; the agent loop must skip redispatch.
+pub const TOOL_META_EXTERNAL_DISPATCH_KEY: &str = "goose.external_dispatch";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

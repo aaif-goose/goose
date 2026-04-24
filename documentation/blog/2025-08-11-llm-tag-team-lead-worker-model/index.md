@@ -1,9 +1,14 @@
 ---
 title: "LLM Tag Team: Who Plans, Who Executes?"
 description: Dive into Goose's Lead/Worker model where one LLM plans while another executes - a game-changing approach to AI collaboration that can save costs and boost efficiency.
+unlisted: true
 authors: 
     - ebony
 ---
+
+:::danger Outdated
+Lead/Worker mode has been removed from goose. It has been replaced by [Planning Mode](/docs/guides/creating-plans), which uses a dedicated planner model with the `/plan` command. See the [multi-model guide](/docs/guides/multi-model/) for current workflows.
+:::
 
 ![blog cover](header-image.png)
 
@@ -37,7 +42,7 @@ This is where it gets really cool - you can use Claude for reasoning and OpenAI 
 - 🏃‍♂️ Handle Long Dev Sessions
 Perfect for those marathon coding sessions where you need sustained performance without breaking the bank.
 
-## [Setting It Up](/docs/tutorials/lead-worker#configuration)
+## [Setting It Up](/docs/guides/creating-plans)
 
 Getting started with the Lead/Worker model is surprisingly straightforward. In the Goose desktop app, you just need to:
 
@@ -97,9 +102,9 @@ By the end of our session, we had:
 
 The best part? The models made smart decisions we hadn't even thought of, like automatically categorizing the servers and improving the overall page layout.
 
-## Ready to Try It Yourself?
+## Ready to Try Multi-Model Workflows?
 
-The [Lead/Worker model](/docs/tutorials/lead-worker) is available now in Goose. Whether you're working on documentation, building features, or tackling complex refactoring, having two specialized models working together can be a game changer.
+Lead/Worker mode has been removed, but goose now supports [Planning Mode](/docs/guides/creating-plans) for multi-model workflows. Whether you're working on documentation, building features, or tackling complex refactoring, pairing a strong planner model with a fast execution model can be a game changer.
 
 Want to see it in action? Check out the full stream where we built this feature live:
 
@@ -111,12 +116,12 @@ Got questions or want to share your own Lead/Worker success stories? Join us in 
 <head>
   <meta property="og:title" content="LLM Tag Team: Who Plans, Who Executes?" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/11/llm-tag-team-lead-worker-model" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/11/llm-tag-team-lead-worker-model" />
   <meta property="og:description" content="Dive into Goose's Lead/Worker model where one LLM plans while another executes - a game-changing approach to AI collaboration that can save costs and boost efficiency." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="LLM Tag Team: Who Plans, Who Executes?" />
   <meta name="twitter:description" content="Dive into Goose's Lead/Worker model where one LLM plans while another executes - a game-changing approach to AI collaboration that can save costs and boost efficiency." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/header-image-bed3ed59a52ea231c1da0707b9b6d287.png" />
 </head>

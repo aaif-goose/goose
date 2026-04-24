@@ -2,12 +2,22 @@ use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::providers::anthropic::AnthropicProvider;
 use crate::providers::base::{ModelInfo, ProviderType};
+use crate::providers::inventory::declarative_inventory_identity;
 use crate::providers::ollama::OllamaProvider;
 use crate::providers::openai::OpenAiProvider;
 use anyhow::Result;
 use include_dir::{include_dir, Dir};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Deserialize an optional string, treating empty/whitespace-only values as None.
+fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.trim().is_empty()))
+}
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -66,6 +76,12 @@ pub struct DeclarativeProviderConfig {
     pub dynamic_models: Option<bool>,
     #[serde(default)]
     pub skip_canonical_filtering: bool,
+    #[serde(default, deserialize_with = "deserialize_non_empty_string")]
+    pub model_doc_link: Option<String>,
+    #[serde(default)]
+    pub setup_steps: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_non_empty_string")]
+    pub fast_model: Option<String>,
 }
 
 fn default_requires_auth() -> bool {
@@ -221,6 +237,9 @@ pub fn create_custom_provider(
         env_vars: None,
         dynamic_models: None,
         skip_canonical_filtering: false,
+        model_doc_link: None,
+        setup_steps: vec![],
+        fast_model: None,
     };
 
     let custom_providers_dir = custom_providers_dir();
@@ -287,6 +306,9 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             env_vars: existing_config.env_vars,
             dynamic_models: existing_config.dynamic_models,
             skip_canonical_filtering: existing_config.skip_canonical_filtering,
+            model_doc_link: existing_config.model_doc_link,
+            setup_steps: existing_config.setup_steps,
+            fast_model: existing_config.fast_model.clone(),
         };
 
         let file_path = custom_providers_dir().join(format!("{}.json", updated_config.name));
@@ -447,37 +469,58 @@ pub fn register_declarative_provider(
     match config.engine {
         ProviderEngine::OpenAI => {
             let captured = config.clone();
-            registry.register_with_name::<OpenAiProvider, _>(
+            let identity_config = config.clone();
+            registry.register_with_name::<OpenAiProvider, _, _>(
                 &config,
                 provider_type,
+                config.dynamic_models.unwrap_or(false),
                 move |model| {
                     let mut cfg = captured.clone();
                     resolve_config(&mut cfg)?;
                     OpenAiProvider::from_custom_config(model, cfg)
                 },
+                move || {
+                    let mut cfg = identity_config.clone();
+                    resolve_config(&mut cfg)?;
+                    declarative_inventory_identity(&cfg)
+                },
             );
         }
         ProviderEngine::Ollama => {
             let captured = config.clone();
-            registry.register_with_name::<OllamaProvider, _>(
+            let identity_config = config.clone();
+            registry.register_with_name::<OllamaProvider, _, _>(
                 &config,
                 provider_type,
+                config.dynamic_models.unwrap_or(false),
                 move |model| {
                     let mut cfg = captured.clone();
                     resolve_config(&mut cfg)?;
                     OllamaProvider::from_custom_config(model, cfg)
                 },
+                move || {
+                    let mut cfg = identity_config.clone();
+                    resolve_config(&mut cfg)?;
+                    declarative_inventory_identity(&cfg)
+                },
             );
         }
         ProviderEngine::Anthropic => {
             let captured = config.clone();
-            registry.register_with_name::<AnthropicProvider, _>(
+            let identity_config = config.clone();
+            registry.register_with_name::<AnthropicProvider, _, _>(
                 &config,
                 provider_type,
+                config.dynamic_models.unwrap_or(false),
                 move |model| {
                     let mut cfg = captured.clone();
                     resolve_config(&mut cfg)?;
                     AnthropicProvider::from_custom_config(model, cfg)
+                },
+                move || {
+                    let mut cfg = identity_config.clone();
+                    resolve_config(&mut cfg)?;
+                    declarative_inventory_identity(&cfg)
                 },
             );
         }
@@ -518,12 +561,67 @@ mod tests {
     }
 
     #[test]
+    fn test_llama_swap_json_deserializes() {
+        let json = include_str!("../providers/declarative/llama_swap.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("llama_swap.json should parse");
+        assert_eq!(config.name, "llama_swap");
+        assert_eq!(config.display_name, "Llama Swap");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "");
+        assert!(!config.requires_auth);
+        assert!(config.skip_canonical_filtering);
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.supports_streaming, Some(true));
+        assert_eq!(config.base_url, "${LLAMA_SWAP_HOST}/v1/chat/completions");
+        assert!(config.models.is_empty());
+
+        let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
+        assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars[0].name, "LLAMA_SWAP_HOST");
+        assert!(!env_vars[0].required);
+        assert!(!env_vars[0].secret);
+        assert_eq!(env_vars[0].primary, Some(true));
+        assert_eq!(
+            env_vars[0].default,
+            Some("http://localhost:8080".to_string())
+        );
+    }
+
+    #[test]
     fn test_existing_json_files_still_deserialize_without_new_fields() {
         let json = include_str!("../providers/declarative/groq.json");
         let config: DeclarativeProviderConfig =
             serde_json::from_str(json).expect("groq.json should parse without env_vars");
         assert!(config.env_vars.is_none());
         assert!(config.dynamic_models.is_none());
+        assert!(config.model_doc_link.is_none());
+        assert!(config.setup_steps.is_empty());
+    }
+
+    #[test]
+    fn test_nvidia_json_deserializes() {
+        let json = include_str!("../providers/declarative/nvidia.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("nvidia.json should parse");
+        assert_eq!(config.name, "nvidia");
+        assert_eq!(config.display_name, "NVIDIA");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "NVIDIA_API_KEY");
+        assert_eq!(config.base_url, "https://integrate.api.nvidia.com/v1");
+        assert_eq!(config.catalog_provider_id, Some("nvidia".to_string()));
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.supports_streaming, Some(true));
+        assert!(!config.skip_canonical_filtering);
+        assert_eq!(
+            config.model_doc_link,
+            Some("https://build.nvidia.com/models".to_string())
+        );
+        assert_eq!(config.setup_steps.len(), 4);
+
+        assert_eq!(config.models.len(), 1);
+        assert_eq!(config.models[0].name, "z-ai/glm-4.7");
+        assert_eq!(config.models[0].context_limit, 131072);
     }
 
     #[test]

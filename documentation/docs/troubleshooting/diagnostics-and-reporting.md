@@ -111,7 +111,7 @@ The bug report feature opens a structured GitHub issue template to help you prov
     For CLI users, navigate directly to the GitHub repository:
 
     ```
-    https://github.com/block/goose/issues/new?template=bug_report.md
+    https://github.com/aaif-goose/goose/issues/new?template=bug_report.md
     ```
   </TabItem>
 </Tabs>
@@ -135,7 +135,7 @@ The feature request system helps you suggest improvements and new functionality 
     Navigate directly to the GitHub repository:
 
     ```
-    https://github.com/block/goose/issues/new?template=feature_request.md
+    https://github.com/aaif-goose/goose/issues/new?template=feature_request.md
     ```
   </TabItem>
 </Tabs>

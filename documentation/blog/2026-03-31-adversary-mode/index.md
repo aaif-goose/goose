@@ -1,11 +1,12 @@
 ---
 title: "Adversary Agent: using a hidden agent to keep the main agent safe"
 description: "Introducing adversary mode — an independent agent reviewer that silently watches the main agent to keep it away from danger."
+image: /img/blog/adversary-mode.png
 authors:
     - mic
 ---
 
-![blog cover](adversary-mode.png)
+![blog cover](/img/blog/adversary-mode.png)
 
 One of the desires of goose (well for some of us) was to avoid the constant asking for permissions, delegating all the decisions to end users in an attempt to keep agent execution of tools safe. Sometimes that gets pretty noisy and annoying and ends up being less secure when you get tired of reading and approving. 
 
@@ -65,6 +66,6 @@ For full configuration details — including how to expand which tools get revie
 <head>
   <meta property="og:title" content="Adversary Agent: using a hidden agent to keep the main agent safe" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/03/31/adversary-mode" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/03/31/adversary-mode" />
   <meta property="og:description" content="Introducing adversary mode — an independent agent reviewer that silently watches the main agent to keep it away from danger." />
 </head>

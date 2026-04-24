@@ -268,7 +268,7 @@ where
     let mut error = None;
     for message in &messages {
         if let Err(e) = cli_session
-            .process_message(message.clone(), CancellationToken::default())
+            .process_message(message.clone(), CancellationToken::default(), false)
             .await
         {
             error = Some(e.to_string());

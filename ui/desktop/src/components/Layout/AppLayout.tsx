@@ -146,8 +146,8 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
     };
   }, [isPushTopNav]);
 
-  // Calculate padding based on macOS traffic lights
-  const headerPadding = safeIsMacOS ? 'pl-21' : 'pl-4';
+  const headerPadding = safeIsMacOS ? 'pl-[96px]' : 'pl-4';
+  const headerTop = safeIsMacOS ? 'top-[15px]' : 'top-[11px]';
 
   // Determine flex direction based on navigation position (for push mode)
   const getLayoutClass = () => {
@@ -201,7 +201,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
             ? 'bottom-4 right-6'
             : cn(
                 headerPadding,
-                'top-[11px]',
+                headerTop,
                 navigationPosition === 'right' ? 'right-6 left-auto' : 'ml-1.5'
               )
         )}

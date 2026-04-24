@@ -2,6 +2,7 @@
 name = "goose-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -21,7 +22,6 @@ path = "src/bin/generate_manpages.rs"
 [dependencies]
 clap_mangen = "0.2.31"
 goose = { path = "../goose", default-features = false }
-goose-acp = { path = "../goose-acp", default-features = false }
 goose-mcp = { path = "../goose-mcp" }
 rmcp = { workspace = true }
 clap = { workspace = true }
@@ -70,7 +70,7 @@ winapi = { workspace = true }
 
 [features]
 default = ["code-mode", "local-inference", "aws-providers", "telemetry", "otel", "rustls-tls"]
-code-mode = ["goose/code-mode", "goose-acp/code-mode"]
+code-mode = ["goose/code-mode"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]

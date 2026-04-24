@@ -98,13 +98,13 @@ import ContentCardCarousel from '@site/src/components/ContentCardCarousel';
       type: 'topic',
       title: 'Recipes',
       description: 'Check out the Recipes guide for more docs, tools, and resources to help you master goose recipes.',
-      linkUrl: '/goose/docs/guides/recipes'
+      linkUrl: '/docs/guides/recipes'
     },
     {
       type: 'topic',
       title: 'Research → Plan → Implement Patterns',
       description: 'See how slash commands make it easy to integrate instructions into interactive RPI workflows.',
-      linkUrl: '/goose/docs/tutorials/rpi'
+      linkUrl: '/docs/tutorials/rpi'
     }
   ]}
 />

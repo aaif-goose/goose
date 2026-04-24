@@ -251,13 +251,13 @@ import ContentCardCarousel from '@site/src/components/ContentCardCarousel';
       type: 'topic',
       title: 'Enhanced Code Editing with AI Models',
       description: 'Use AI models to intelligently apply code changes',
-      linkUrl: '/goose/docs/guides/enhanced-code-editing'
+      linkUrl: '/docs/guides/enhanced-code-editing'
     },
     {
       type: 'topic',
       title: 'Codebase Analysis',
       description: 'Understand codebases with semantic analysis and call graphs',
-      linkUrl: '/goose/docs/guides/codebase-analysis'
+      linkUrl: '/docs/guides/codebase-analysis'
     }
   ]}
-/> 
+/>

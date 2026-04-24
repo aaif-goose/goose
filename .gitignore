@@ -35,7 +35,7 @@ ui/desktop/src/bin/goose_llm.dll
 .hermit/
 
 # Claude
-.claude
+.claude/settings.local.json
 
 debug_*.txt
 

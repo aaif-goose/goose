@@ -249,15 +249,23 @@ export default function DeeplinkGenerator() {
             <div className="flex p-1 bg-bgSubtle rounded-lg">
               <Button
                 onClick={() => setActiveTab('form')}
-                className={`flex-1 rounded-none ${activeTab === 'form' ? 'bg-secondary text-textProminent' : 'bg-transparent text-black hover:bg-bgApp'}`}
+                className={`flex-1 rounded-none ${activeTab === "form" ? "bg-secondary dark:bg-black" : "bg-transparent dark:bg-transparent hover:bg-bgApp"}`}
               >
-                Form
+                <span
+                  className={`${activeTab === "form" ? "text-textProminent text-white" : "text-black dark:text-white"}`}
+                >
+                  Form
+                </span>
               </Button>
               <Button
                 onClick={() => setActiveTab('json')}
-                className={`flex-1 rounded-none ${activeTab === 'json' ? 'bg-secondary text-textProminent' : 'bg-transparent text-black hover:bg-bgApp'}`}
+                className={`flex-1 rounded-none ${activeTab === "json" ? "bg-secondary dark:bg-black" : "bg-transparent dark:bg-transparent hover:bg-bgApp"}`}
               >
-                JSON
+                <span
+                  className={`${activeTab === "json" ? "text-textProminent text-white" : "text-black dark:text-white"}`}
+                >
+                  JSON
+                </span>
               </Button>
             </div>
           </div>

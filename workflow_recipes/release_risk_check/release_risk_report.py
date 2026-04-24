@@ -15,7 +15,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-REPO = "block/goose"
+REPO = "aaif-goose/goose"
 
 # Paths considered documentation-only
 DOC_PATTERNS = [

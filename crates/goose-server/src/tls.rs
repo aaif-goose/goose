@@ -11,8 +11,10 @@
 //!   / SChannel respectively, but `axum-server` does not offer those backends so
 //!   the server listener always uses OpenSSL when this feature is active.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use goose::config::paths::Paths;
 use rcgen::{CertificateParams, DnType, KeyPair, SanType};
+use std::path::Path;
 
 #[cfg(feature = "rustls-tls")]
 pub type TlsConfig = axum_server::tls_rustls::RustlsConfig;
@@ -65,6 +67,104 @@ fn sha256_fingerprint(der: &[u8]) -> String {
     }
 }
 
+/// Load TLS configuration from user-provided PEM certificate and key files.
+///
+/// The SHA-256 fingerprint of the leaf certificate is computed and printed to
+/// stdout so the parent process (e.g. Electron) can pin it, just like the
+/// self-signed path.
+pub async fn from_pem_files(cert_path: &Path, key_path: &Path) -> Result<TlsSetup> {
+    let cert_pem = std::fs::read(cert_path)?;
+    let key_pem = std::fs::read(key_path)?;
+
+    // Parse the first PEM block to extract the DER-encoded certificate for fingerprinting.
+    let der = pem::parse(&cert_pem)?.into_contents();
+    let fingerprint = sha256_fingerprint(&der);
+    println!("GOOSED_CERT_FINGERPRINT={fingerprint}");
+
+    #[cfg(feature = "rustls-tls")]
+    let config = {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem.clone()).await?
+    };
+
+    #[cfg(feature = "native-tls")]
+    let config = axum_server::tls_openssl::OpenSSLConfig::from_pem(&cert_pem, &key_pem)?;
+
+    Ok(TlsSetup {
+        config,
+        fingerprint,
+    })
+}
+
+/// Set up TLS, using user-provided PEM files if both paths are given,
+/// otherwise generating a self-signed certificate.
+pub async fn setup_tls(cert_path: Option<&str>, key_path: Option<&str>) -> Result<TlsSetup> {
+    match (cert_path, key_path) {
+        (Some(cert), Some(key)) => from_pem_files(Path::new(cert), Path::new(key)).await,
+        (None, None) => self_signed_config().await,
+        _ => bail!("Both GOOSE_TLS_CERT_PATH and GOOSE_TLS_KEY_PATH must be set, or neither"),
+    }
+}
+
+fn tls_cache_dir() -> std::path::PathBuf {
+    Paths::config_dir().join("tls")
+}
+
+fn write_private_key(path: &std::path::Path, contents: &[u8]) {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let result = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path);
+        if let Ok(mut file) = result {
+            let _ = file.write_all(contents);
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = std::fs::write(path, contents);
+    }
+}
+
+async fn load_cached_tls() -> Option<TlsSetup> {
+    let dir = tls_cache_dir();
+    let cert_pem = std::fs::read(dir.join("server.pem")).ok()?;
+    let key_pem = std::fs::read(dir.join("server.key")).ok()?;
+
+    let der = pem::parse(&cert_pem).ok()?.into_contents();
+    let fingerprint = sha256_fingerprint(&der);
+
+    #[cfg(feature = "rustls-tls")]
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
+        .await
+        .ok()?;
+    #[cfg(feature = "native-tls")]
+    let config = axum_server::tls_openssl::OpenSSLConfig::from_pem(&cert_pem, &key_pem).ok()?;
+
+    Some(TlsSetup {
+        config,
+        fingerprint,
+    })
+}
+
+/// All errors are silently ignored — this is a best-effort optimisation and
+/// must never prevent the server from starting.
+fn save_tls_to_cache(cert_pem: &str, key_pem: &str) {
+    let dir = tls_cache_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let _ = std::fs::write(dir.join("server.pem"), cert_pem);
+    write_private_key(&dir.join("server.key"), key_pem.as_bytes());
+}
+
 /// Generate a self-signed TLS certificate for localhost (127.0.0.1) and
 /// return a [`TlsSetup`] containing the server config and the SHA-256
 /// fingerprint of the generated certificate (colon-separated hex).
@@ -75,6 +175,12 @@ pub async fn self_signed_config() -> Result<TlsSetup> {
     #[cfg(feature = "rustls-tls")]
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
+    // Fast path: reuse a previously cached certificate if one exists.
+    if let Some(cached) = load_cached_tls().await {
+        println!("GOOSED_CERT_FINGERPRINT={}", cached.fingerprint);
+        return Ok(cached);
+    }
+
     let (cert, key_pair) = generate_self_signed_cert()?;
 
     let fingerprint = sha256_fingerprint(cert.der());
@@ -82,6 +188,9 @@ pub async fn self_signed_config() -> Result<TlsSetup> {
 
     let cert_pem = cert.pem();
     let key_pem = key_pair.serialize_pem();
+
+    // Persist for future restarts before moving the strings into the config.
+    save_tls_to_cache(&cert_pem, &key_pem);
 
     #[cfg(feature = "rustls-tls")]
     let config = axum_server::tls_rustls::RustlsConfig::from_pem(

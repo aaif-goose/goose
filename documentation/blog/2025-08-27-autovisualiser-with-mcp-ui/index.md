@@ -55,12 +55,12 @@ There are currently several families of things it can show:
 <head>
   <meta property="og:title" content="Auto Visualiser with MCP-UI" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/08/27/autovisualiser-with-mcp-ui" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/08/27/autovisualiser-with-mcp-ui" />
   <meta property="og:description" content="How Goose now automatically renders visual representations of data as you interact with it, powered by the new MCP-UI feature" />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/autovis-banner-c6e34e561b2fad329ea00024c301e910.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/autovis-banner-c6e34e561b2fad329ea00024c301e910.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Auto Visualiser with MCP-UI" />
   <meta name="twitter:description" content="How Goose now automatically renders visual representations of data as you interact with it, powered by the new MCP-UI feature" />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/autovis-banner-c6e34e561b2fad329ea00024c301e910.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/autovis-banner-c6e34e561b2fad329ea00024c301e910.png" />
 </head>

@@ -204,7 +204,7 @@ extensions:
       display_name: Memory
       timeout: 300
       bundled: true
-      description: "For storing and retrieving formating preferences that might be present"
+      description: "For storing and retrieving formatting preferences that might be present"
 prompt: |
   Analyze the staged changes and any unpushed commits in the git repository {{git_repo_path}} to generate a comprehensive pull request description. Work autonomously without requesting additional information.
 
@@ -300,13 +300,13 @@ We'd love for you to share your ideas with us! Share your ideas by creating a re
 <head>
   <meta property="og:title" content="Championship Driven Development: Your team's AI Playbook for Peak Performance" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/05/09/developers-ai-playbook-for-team-efficiency" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/05/09/developers-ai-playbook-for-team-efficiency" />
   <meta property="og:description" content="Learn how AI-driven 'plays,' based on Model Context Protocol, can help development teams improve common workflows like changelog generation and pull requests." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/cdd-playbook-69a053588574d8678c2acb92a1b21da6.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/cdd-playbook-69a053588574d8678c2acb92a1b21da6.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Championship Driven Development: Your team's AI Playbook for Peak Performance" />
   <meta name="twitter:description" content="Learn how AI-driven 'plays,' based on Model Context Protocol, can help development teams improve common workflows like changelog generation and pull requests." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/cdd-playbook-69a053588574d8678c2acb92a1b21da6.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/cdd-playbook-69a053588574d8678c2acb92a1b21da6.png" />
   <meta name="keywords" content="AI development; Model Context Protocol; developer productivity; team playbook; AI automation; Goose; software development efficiency; changelogs; pull requests" />
 </head>

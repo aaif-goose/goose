@@ -24,7 +24,7 @@ jobs:
   stale:
     name: 'Mark and Close Stale PRs'
     runs-on: ubuntu-latest
-    if: github.repository == 'block/goose'
+    if: github.repository == 'aaif-goose/goose'
     
     steps:
       # Use the official stale action from GitHub
@@ -74,9 +74,6 @@ jobs:
           # === EXEMPTION CONFIGURATION ===
           # Skip PRs with these labels (comma-separated)
           exempt-pr-labels: 'keep-open,wip,work-in-progress,security,pinned,dependencies'
-          
-          # Skip draft PRs (they're typically work in progress)
-          exempt-draft-pr: true
           
           # === ISSUE CONFIGURATION (DISABLED) ===
           # We only want to manage PRs, not issues

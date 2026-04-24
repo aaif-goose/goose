@@ -1,0 +1,197 @@
+{
+  "attachments": {
+    "alt": "Attachment {{index}}",
+    "chooseFilesDialogTitle": "Choose files to attach",
+    "chooseFoldersDialogTitle": "Choose folders to attach",
+    "dropToAttach": "Drop files or folders to attach",
+    "open": "Open attachment {{name}}",
+    "remove": "Remove attachment",
+    "view": "View attachment {{index}}"
+  },
+  "context": {
+    "closePanel": "Close context panel",
+    "openPanel": "Open context panel",
+    "ringAria": "Context: {{percent}}% used"
+  },
+  "contextPanel": {
+    "actions": {
+      "chooseCreateAction": "Choose create action",
+      "refreshGitStatus": "Refresh git status"
+    },
+    "createDialog": {
+      "baseBranch": "Base branch",
+      "branchDescription": "Create a new branch and switch this workspace to it.",
+      "branchError": "Failed to create branch {{branch}}.",
+      "branchName": "Branch name",
+      "branchNamePlaceholder": "feature/my-branch",
+      "branchSuccess": "Created and switched to {{branch}}.",
+      "branchTitle": "New Branch",
+      "branchToOpen": "Branch to open",
+      "cancel": "Cancel",
+      "createBranch": "Create branch",
+      "createNewBranch": "Create a new branch",
+      "createWorktree": "Create worktree",
+      "creatingBranch": "Creating branch...",
+      "creatingWorktree": "Creating worktree...",
+      "noAvailableBranches": "No branches available",
+      "worktreeDescription": "Create a separate worktree for a new or existing branch.",
+      "worktreeError": "Failed to create worktree {{worktree}}.",
+      "worktreeName": "Worktree name",
+      "worktreeNamePlaceholder": "my-worktree",
+      "worktreePath": "Folder: {{path}}",
+      "worktreeSuccess": "Created worktree {{worktree}}.",
+      "worktreeTitle": "New Worktree"
+    },
+    "empty": {
+      "folderNotSet": "Folder not set",
+      "noChanges": "No uncommitted changes",
+      "noProjectAssigned": "No project assigned.",
+      "noExtensions": "No extensions enabled",
+      "noMatchingExtensions": "No matching extensions"
+    },
+    "errors": {
+      "gitRead": "Unable to read git status."
+    },
+    "picker": {
+      "selectContext": "Select worktree or branch",
+      "worktrees": "Worktrees",
+      "allBranches": "All branches",
+      "checkedOutBranch": "{{branch}}",
+      "currentBranch": "Current branch",
+      "dirtyTitle": "Uncommitted Changes",
+      "dirtyDescription": "You have {{count}} uncommitted change(s). How would you like to proceed?",
+      "stashAndSwitch": "Stash & Switch",
+      "carryChanges": "Carry to Branch",
+      "cancel": "Cancel",
+      "switchError": "Failed to switch to {{branch}}. Your changes may conflict with the target branch.",
+      "stashError": "Failed to stash changes.",
+      "stashSuccess": "Changes stashed and switched to {{branch}}."
+    },
+    "git": {
+      "fetch": "Fetch",
+      "fetchError": "Failed to fetch changes.",
+      "fetchSuccess": "Fetched latest changes.",
+      "initRepo": "Initialize Git",
+      "initError": "Failed to initialize git repository.",
+      "pull": "Pull",
+      "pullWithCount": "Pull ({{count}})",
+      "pullError": "Failed to pull changes.",
+      "pullSuccess": "Pulled latest changes."
+    },
+    "states": {
+      "detached": "detached",
+      "gitLoading": "Loading git status..."
+    },
+    "tabs": {
+      "details": "Details",
+      "files": "Files"
+    },
+    "widgets": {
+      "artifacts": "Artifacts",
+      "changes": "Changes",
+      "changesOnBranch": "on",
+      "extensions": "Extensions",
+      "searchExtensions": "Search extensions...",
+      "workspace": "Workspace"
+    }
+  },
+  "files": {
+    "empty": "Project files are unavailable until a project with working directories is assigned.",
+    "folderEmpty": "Folder is empty",
+    "loadError": "Unable to load folder contents.",
+    "loading": "Loading files...",
+    "openFolder": "Open folder: {{path}}",
+    "rootLoadError": "Unable to load this folder."
+  },
+  "image": {
+    "view": "View {{label}}"
+  },
+  "input": {
+    "ariaLabel": "Chat message input",
+    "placeholder": "Message {{agent}}, @ to mention agents"
+  },
+  "loading": {
+    "compacting": "Compacting conversation...",
+    "thinking": "Thinking...",
+    "responding": "Responding..."
+  },
+  "mention": {
+    "ariaLabel": "Mention suggestions",
+    "title": "Mention an agent",
+    "filesTitle": "Files"
+  },
+  "notifications": {
+    "compactionComplete": "Conversation compacted. Older context was summarized."
+  },
+  "message": {
+    "copied": "Copied",
+    "defaultImageAlt": "Attached",
+    "redactedThinking": "(thinking redacted)"
+  },
+  "persona": {
+    "chooseAssistant": "Choose assistant",
+    "create": "Create agent...",
+    "clearActive": "Clear active assistant",
+    "defaultDescription": "No agent selected - chat directly with Goose"
+  },
+  "queue": {
+    "dismiss": "Dismiss queued message",
+    "label": "Queued: {{text}}"
+  },
+  "skeleton": {
+    "loadingConversation": "Loading conversation"
+  },
+  "timeline": {
+    "ariaLabel": "Chat messages",
+    "emptyDescription": "Send a message to get started",
+    "emptyTitle": "Start a conversation",
+    "today": "Today",
+    "yesterday": "Yesterday"
+  },
+  "toolbar": {
+    "agent": "Agent",
+    "attach": "Attach",
+    "attachFile": "File",
+    "attachFolder": "Folder",
+    "chooseAgentModel": "Choose agent and model",
+    "chooseProject": "Choose a project",
+    "compactNow": "Compact",
+    "compacting": "Compacting...",
+    "chooseProvider": "Choose a provider",
+    "contextTokensBreakdown": "{{tokens}} / {{limit}} tokens used",
+    "contextUsage": "Context usage",
+    "contextUsageBreakdown": "{{used}} used ({{left}} left)",
+    "contextUsageTitle": "{{tokens}} / {{limit}} tokens",
+    "contextWindow": "Context window",
+    "createProject": "Create project",
+    "generalChatWithoutProject": "General chat without project context",
+    "loading": "Loading...",
+    "loadingModels": "Loading models...",
+    "model": "Model",
+    "allModels": "All models",
+    "searchModels": "Search models...",
+    "settings": "Settings",
+    "recommended": "Recommended",
+    "noModelsAvailable": "No models available",
+    "noSearchResults": "No matching models",
+    "showAllModels": "Browse all models",
+    "noProject": "No project",
+    "selectModel": "Select model",
+    "selectProject": "Select project",
+    "sendMessage": "Send message",
+    "stopGeneration": "Stop generation",
+    "voiceInput": "Voice dictation",
+    "voiceInputDisabled": "Configure a voice provider in Settings to enable dictation",
+    "voiceInputRecording": "Listening...",
+    "voiceInputTranscribing": "Transcribing...",
+    "voiceInputAutoSubmitHint": "Say \"submit\" to send"
+  },
+  "tools": {
+    "fileNotFound": "File not found: {{path}}",
+    "moreOutputs": "More outputs ({{count}})",
+    "openFile": "Open file",
+    "openFolder": "Open folder",
+    "openPath": "Open path",
+    "pathOutsideRoots": "Path is outside allowed project/artifacts roots."
+  }
+}

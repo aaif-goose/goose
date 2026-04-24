@@ -87,8 +87,17 @@ fn build_vertex_url(
         (ModelProvider::MaaS(_), false) => "generateContent",
     };
 
+    // Anthropic's Vertex AI docs specify v1 for rawPredict endpoints.
+    // The official google-genai SDK uses v1beta1 for Google models,
+    // and the global endpoint requires it.
+    let api_version = match &provider {
+        ModelProvider::Anthropic => "v1",
+        ModelProvider::Google | ModelProvider::MaaS(_) => "v1beta1",
+    };
+
     let path = format!(
-        "v1/projects/{}/locations/{}/publishers/{}/models/{}:{}",
+        "{}/projects/{}/locations/{}/publishers/{}/models/{}:{}",
+        api_version,
         project_id,
         target_location,
         provider.as_str(),

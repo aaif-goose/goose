@@ -201,6 +201,18 @@
   color: var(--text-inverse);
 }
 
+.button--outline {
+  background: transparent;
+  border: 1px solid var(--border-standard);
+  color: var(--text-standard);
+}
+
+.button--outline:hover {
+  background: var(--button-primary-background);
+  border-color: var(--button-primary-background);
+  color: var(--text-inverse);
+}
+
 .button svg {
   margin-right: 0.75rem;
 }

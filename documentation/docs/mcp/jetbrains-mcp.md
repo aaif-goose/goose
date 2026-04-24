@@ -6,7 +6,6 @@ description: Use JetBrains MCP Server as a goose Extension
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import YouTubeShortEmbed from '@site/src/components/YouTubeShortEmbed';
-import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
 import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructions';
 import { PanelLeft } from 'lucide-react';
 
@@ -19,9 +18,65 @@ This tutorial covers how to add the JetBrains extension to integrate with any Je
 **Important**: The configuration steps depend on your IDE version. You can find the version in `[IDE Name] > About` (macOS) or `Help > About` (Windows/Linux).
 
 <Tabs groupId="ideVersion">
-  <TabItem value="later" label="2025.2 and later" default>
+  <TabItem value="2026.1" label="2026.1 and later" default>
 
-    Versions 2025.2 and later have built-in MCP server support and generate a dynamic configuration specific to your IDE instance. See your IDE's documentation for more details (e.g. [MCP Server](https://www.jetbrains.com/help/idea/mcp-server.html) for IntelliJ IDEA).
+    Versions 2026.1 and later expose a streamable HTTP endpoint directly. No plugin install or npm required.
+
+    :::tip Quick Install
+    <Tabs groupId="interface">
+      <TabItem value="ui" label="goose Desktop" default>
+      Use `Add custom extension` in Settings → Extensions with the URL from `Copy HTTP Stream Config` in your IDE.
+      </TabItem>
+      <TabItem value="cli" label="goose CLI">
+      Use `goose configure` with the URL from `Copy HTTP Stream Config` in your IDE.
+      </TabItem>
+    </Tabs>
+    :::
+
+    <br/>
+    Configure the extension using your IDE's built-in HTTP stream endpoint:
+
+    1. Get your IDE-specific URL:
+
+       1. Go to `Settings > Tools > MCP Server` in your IDE
+       2. Check `Enable MCP Server` and confirm the permissions dialog if shown
+       3. Click `Copy HTTP Stream Config`
+       4. Note the `url` value (e.g. `http://127.0.0.1:64344/stream`) — the port is auto-assigned and varies per IDE instance
+
+    2. Add the JetBrains extension to goose using the URL from the config:
+
+       <Tabs groupId="interface">
+         <TabItem value="ui" label="goose Desktop" default>
+           1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar
+           2. Click `Extensions` on the sidebar
+           3. Click `Add custom extension`
+           4. On the `Add custom extension` modal, enter the following:
+              - **Extension Name**: JetBrains
+              - **Type**: Streamable HTTP
+              - **Description**: Integrate goose with any JetBrains IDE
+              - **URL**: Paste the `url` from `Copy HTTP Stream Config`
+           5. Click `Add Extension` to save the extension
+           6. Navigate to the chat
+         </TabItem>
+         <TabItem value="cli" label="goose CLI">
+           <CLIExtensionInstructions
+             name="jetbrains"
+             description="Integrate goose with any JetBrains IDE"
+             type="http"
+             url="http://127.0.0.1:<PORT>/stream"
+             timeout={300}
+             commandNote={
+               <>
+                 Paste the <code>url</code> from <code>Copy HTTP Stream Config</code>. The port varies per IDE instance.
+               </>
+             }
+           />
+         </TabItem>
+       </Tabs>
+  </TabItem>
+  <TabItem value="2025.2" label="2025.2 – 2025.x">
+
+    Versions 2025.2 through 2025.x have built-in MCP server support using stdio transport. See your IDE's documentation for more details (e.g. [MCP Server](https://www.jetbrains.com/help/idea/mcp-server.html) for IntelliJ IDEA).
 
     :::tip Quick Install
     <Tabs groupId="interface">
@@ -77,61 +132,6 @@ This tutorial covers how to add the JetBrains extension to integrate with any Je
            />
          </TabItem>
        </Tabs>
-  </TabItem>
-  <TabItem value="earlier" label="2025.1 and earlier">
-
-    Versions 2025.1 and earlier require installing the MCP Server plugin and using the [JetBrains MCP Proxy Server](https://github.com/JetBrains/mcp-jetbrains).
-
-    :::tip Quick Install
-    <Tabs groupId="interface">
-      <TabItem value="ui" label="goose Desktop" default>
-      [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=%40jetbrains%2Fmcp-proxy&id=jetbrains&name=JetBrains&description=Integrate%20goose%20with%20any%20JetBrains%20IDE)
-      </TabItem>
-      <TabItem value="cli" label="goose CLI">
-      **Command**
-      ```sh
-      npx -y @jetbrains/mcp-proxy
-      ```
-      </TabItem>
-    </Tabs>
-
-    **Required Setup**
-
-    Add the [MCP Server plugin](https://plugins.jetbrains.com/plugin/26071-mcp-server) to your IDE.
-    :::
-
-    :::info
-    Note that you'll need [Node.js](https://nodejs.org/) installed on your system to run this command, as it uses `npx`.
-    :::
-
-    <br/>
-    Configure the extension using the MCP Server plugin and proxy server:
-
-    1. Add the [MCP Server plugin](https://plugins.jetbrains.com/plugin/26071-mcp-server) to your IDE.
-
-    2. Add the JetBrains extension to goose:
-
-       <Tabs groupId="interface">
-         <TabItem value="ui" label="goose Desktop" default>
-           <GooseDesktopInstaller
-             extensionId="jetbrains"
-             extensionName="JetBrains"
-             description="Integrate goose with any JetBrains IDE"
-             command="npx"
-             args={["-y", "@jetbrains/mcp-proxy"]}
-             timeout={300}
-           />
-         </TabItem>
-         <TabItem value="cli" label="goose CLI">
-             <CLIExtensionInstructions
-               name="jetbrains"
-               description="Integrate goose with any JetBrains IDE"
-               command="npx -y @jetbrains/mcp-proxy"
-               timeout={300}
-             />
-         </TabItem>
-       </Tabs>
-
   </TabItem>
 </Tabs>
 

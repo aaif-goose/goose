@@ -7,6 +7,7 @@ use super::local_inference::LocalInferenceProvider;
 #[cfg(feature = "aws-providers")]
 use super::sagemaker_tgi::SageMakerTgiProvider;
 use super::{
+    amp_acp::AmpAcpProvider,
     anthropic::AnthropicProvider,
     avian::AvianProvider,
     azure::AzureProvider,
@@ -24,11 +25,13 @@ use super::{
     gemini_oauth::GeminiOAuthProvider,
     githubcopilot::GithubCopilotProvider,
     google::GoogleProvider,
+    kimicode::KimiCodeProvider,
     litellm::LiteLLMProvider,
     nanogpt::NanoGptProvider,
     ollama::OllamaProvider,
     openai::OpenAiProvider,
     openrouter::OpenRouterProvider,
+    pi_acp::PiAcpProvider,
     provider_registry::ProviderRegistry,
     snowflake::SnowflakeProvider,
     tetrate::TetrateProvider,
@@ -49,6 +52,7 @@ static REGISTRY: OnceCell<RwLock<ProviderRegistry>> = OnceCell::const_new();
 
 async fn init_registry() -> RwLock<ProviderRegistry> {
     let mut registry = ProviderRegistry::new().with_providers(|registry| {
+        registry.register::<AmpAcpProvider>(false);
         registry.register::<AnthropicProvider>(true);
         registry.register::<AvianProvider>(false);
         registry.register::<AzureProvider>(false);
@@ -69,11 +73,13 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<GeminiOAuthProvider>(true);
         registry.register::<GithubCopilotProvider>(false);
         registry.register::<GoogleProvider>(true);
+        registry.register::<KimiCodeProvider>(true);
         registry.register::<LiteLLMProvider>(false);
         registry.register::<NanoGptProvider>(true);
         registry.register::<OllamaProvider>(true);
         registry.register::<OpenAiProvider>(true);
         registry.register::<OpenRouterProvider>(true);
+        registry.register::<PiAcpProvider>(false);
         #[cfg(feature = "aws-providers")]
         registry.register::<SageMakerTgiProvider>(false);
         registry.register::<SnowflakeProvider>(false);
@@ -89,6 +95,14 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     registry.set_cleanup(
         "databricks",
         Arc::new(|| Box::pin(DatabricksProvider::cleanup())),
+    );
+    registry.set_cleanup(
+        "kimi_code",
+        Arc::new(|| Box::pin(KimiCodeProvider::cleanup())),
+    );
+    registry.set_cleanup(
+        "chatgpt_codex",
+        Arc::new(|| Box::pin(ChatGptCodexProvider::cleanup())),
     );
 
     if let Err(e) = load_custom_providers_into_registry(&mut registry) {
@@ -135,13 +149,17 @@ pub async fn get_from_registry(name: &str) -> Result<ProviderEntry> {
         .cloned()
 }
 
+pub async fn inventory_identity(name: &str) -> Result<super::inventory::InventoryIdentityInput> {
+    get_from_registry(name).await?.inventory_identity()
+}
+
 pub async fn create(
     name: &str,
     model: ModelConfig,
     extensions: Vec<ExtensionConfig>,
 ) -> Result<Arc<dyn Provider>> {
-    let constructor = get_from_registry(name).await?.constructor.clone();
-    constructor(model, extensions).await
+    let entry = get_from_registry(name).await?;
+    entry.create(model, extensions).await
 }
 
 pub async fn create_with_default_model(
@@ -173,13 +191,15 @@ pub async fn create_with_named_model(
     model_name: &str,
     extensions: Vec<ExtensionConfig>,
 ) -> Result<Arc<dyn Provider>> {
-    let config = ModelConfig::new(model_name)?.with_canonical_limits(provider_name);
+    let config = ModelConfig::new(model_name)?;
     create(provider_name, config, extensions).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::paths::Paths;
+    use std::fs;
 
     #[tokio::test]
     async fn test_tanzu_declarative_provider_registry_wiring() {
@@ -216,6 +236,41 @@ mod tests {
             .expect("TANZU_AI_ENDPOINT config key should exist");
         assert!(endpoint.required, "Endpoint should be required");
         assert!(!endpoint.secret, "Endpoint should not be secret");
+    }
+
+    #[tokio::test]
+    async fn test_nvidia_declarative_provider_registry_wiring() {
+        let nvidia = get_from_registry("nvidia")
+            .await
+            .expect("nvidia provider should be registered");
+        let meta = nvidia.metadata();
+
+        assert_eq!(nvidia.provider_type(), ProviderType::Declarative);
+        assert!(nvidia.supports_inventory_refresh());
+        assert_eq!(meta.display_name, "NVIDIA");
+        assert_eq!(meta.default_model, "z-ai/glm-4.7");
+        assert_eq!(meta.model_doc_link, "https://build.nvidia.com/models");
+        assert!(!meta.setup_steps.is_empty());
+
+        let api_key = meta
+            .config_keys
+            .iter()
+            .find(|k| k.name == "NVIDIA_API_KEY")
+            .expect("NVIDIA_API_KEY config key should exist");
+        assert!(api_key.required, "NVIDIA_API_KEY should be required");
+        assert!(api_key.secret, "NVIDIA_API_KEY should be secret");
+        assert!(api_key.primary, "NVIDIA_API_KEY should be primary");
+        assert!(
+            !meta.config_keys.iter().any(|k| k.name == "OPENAI_HOST"),
+            "NVIDIA should not expose OpenAI host configuration"
+        );
+        assert!(
+            !meta
+                .config_keys
+                .iter()
+                .any(|k| k.name == "OPENAI_BASE_PATH"),
+            "NVIDIA should not expose OpenAI base path configuration"
+        );
     }
 
     #[tokio::test]
@@ -269,5 +324,61 @@ mod tests {
                 "OPENAI_API_KEY should be secret"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_custom_provider_context_limit_is_applied_from_file() {
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", None::<&str>)]);
+        let temp_dir = tempfile::tempdir().expect("tempdir should be created");
+        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
+
+        let custom_dir = Paths::config_dir().join("custom_providers");
+        fs::create_dir_all(&custom_dir).expect("custom providers dir should be created");
+
+        let custom_inf = r#"{
+  "name": "custom_inf",
+  "engine": "openai",
+  "display_name": "Custom Inf",
+  "description": "test provider",
+  "api_key_env": "",
+  "base_url": "https://example.invalid/v1/chat/completions",
+  "models": [
+    {"name": "kimi-k2.5", "context_limit": 256000}
+  ],
+  "requires_auth": false
+}"#;
+        fs::write(custom_dir.join("custom_inf.json"), custom_inf)
+            .expect("custom_inf.json should be written");
+
+        let custom_zero = r#"{
+  "name": "custom_zero",
+  "engine": "openai",
+  "display_name": "Custom Zero",
+  "description": "test provider",
+  "api_key_env": "",
+  "base_url": "https://example.invalid/v1/chat/completions",
+  "models": [
+    {"name": "zero-model", "context_limit": 0}
+  ],
+  "requires_auth": false
+}"#;
+        fs::write(custom_dir.join("custom_zero.json"), custom_zero)
+            .expect("custom_zero.json should be written");
+
+        refresh_custom_providers()
+            .await
+            .expect("custom providers should refresh");
+
+        let provider = create_with_named_model("custom_inf", "kimi-k2.5", Vec::new())
+            .await
+            .expect("custom_inf provider should be creatable");
+        assert_eq!(provider.get_model_config().context_limit, Some(256_000));
+
+        let zero_provider = create_with_named_model("custom_zero", "zero-model", Vec::new())
+            .await
+            .expect("custom_zero provider should be creatable");
+        assert_eq!(zero_provider.get_model_config().context_limit, None);
+
+        std::env::remove_var("GOOSE_PATH_ROOT");
     }
 }

@@ -4,7 +4,7 @@ Automated pipeline for detecting and documenting CLI command changes between goo
 
 ## Overview
 
-This automation keeps the [CLI Commands Guide](https://block.github.io/goose/docs/guides/goose-cli-commands) synchronized with code changes by:
+This automation keeps the [CLI Commands Guide](https://goose-docs.ai/docs/guides/goose-cli-commands) synchronized with code changes by:
 
 1. **Extracting** CLI structure from goose binary using `--help` output (deterministic)
 2. **Detecting** changes between versions (deterministic diff)

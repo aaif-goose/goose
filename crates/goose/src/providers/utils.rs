@@ -193,26 +193,48 @@ pub async fn handle_response_google_compat(response: Response) -> Result<Value, 
     }
 }
 
-pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
-    let is_reasoning_model = model_name.starts_with("o1")
-        || model_name.starts_with("o2")
-        || model_name.starts_with("o3")
-        || model_name.starts_with("o4")
-        || model_name.starts_with("gpt-5");
+/// True when the model should use the OpenAI Responses API.
+///
+/// The Responses API is backwards-compatible with all OpenAI reasoning
+/// models, so every `o`-series (`o1`, `o3`, `o4`, …) and `gpt-5` variant
+/// routes here. The matcher intentionally scans the full model identifier so
+/// hosted aliases like `databricks-gpt-5.4`, `goose-o3-mini`, or
+/// `headless-goose-o3-mini` work without provider-specific normalization.
+pub fn is_openai_responses_model(model_name: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re =
+        RE.get_or_init(|| Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-5(?:$|[-.]))").unwrap());
+    re.is_match(model_name)
+}
 
-    if !is_reasoning_model {
+/// Extract an explicit reasoning-effort suffix from a model name.
+///
+/// Returns `(base_model_name, Some(effort))` when the user appended a
+/// recognised suffix like `-high` or `-xhigh`, e.g. `gpt-5.4-high` →
+/// `("gpt-5.4", Some("high"))`.
+///
+/// When no suffix is present the effort is `None` — callers should omit
+/// the `reasoning` field entirely so the API applies its own per-model
+/// default. This avoids hard-coding a default that may be invalid for
+/// certain models (e.g. `gpt-5-pro` only accepts `high`; older o-series
+/// models reject `none` and `xhigh`).
+pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
+    if !is_openai_responses_model(model_name) {
         return (model_name.to_string(), None);
     }
 
-    let parts: Vec<&str> = model_name.split('-').collect();
-    let last_part = parts.last().unwrap();
-    match *last_part {
-        "low" | "medium" | "high" => {
-            let base_name = parts[..parts.len() - 1].join("-");
-            (base_name, Some(last_part.to_string()))
-        }
-        _ => (model_name.to_string(), Some("medium".to_string())),
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(r"(?i)^(?P<base>.+)-(?P<effort>none|low|medium|high|xhigh)$").unwrap()
+    });
+
+    if let Some(captures) = re.captures(model_name) {
+        let base = captures["base"].to_string();
+        let effort = captures["effort"].to_ascii_lowercase();
+        return (base, Some(effort));
     }
+
+    (model_name.to_string(), None)
 }
 
 pub fn sanitize_function_name(name: &str) -> String {
@@ -376,6 +398,7 @@ impl RequestLog {
         Payload: Serialize,
     {
         let logs_dir = Paths::in_state_dir("logs");
+        fs_err::create_dir_all(&logs_dir)?;
 
         let request_id = Uuid::new_v4();
         let temp_name = format!("llm_request.{request_id}.jsonl");
@@ -524,6 +547,27 @@ pub fn json_escape_control_chars_in_string(s: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_request_log_start_creates_logs_dir() {
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", None::<&str>)]);
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
+
+        let logs_dir = Paths::in_state_dir("logs");
+        assert!(!logs_dir.exists(), "logs dir should not exist yet");
+
+        let log = RequestLog::start(
+            &ModelConfig::new("test").unwrap(),
+            &json!({"model": "test"}),
+        )
+        .expect("RequestLog::start should create missing logs dir");
+        drop(log);
+
+        assert!(logs_dir.is_dir(), "logs dir should have been created");
+
+        std::env::remove_var("GOOSE_PATH_ROOT");
+    }
 
     #[test]
     fn test_detect_image_path() {
@@ -847,5 +891,66 @@ mod tests {
             parse_google_retry_delay(&payload),
             Some(Duration::from_secs(42))
         );
+    }
+
+    #[test]
+    fn test_is_openai_responses_model_matches_o_and_gpt5_families() {
+        for model in [
+            "o3",
+            "o3-mini",
+            "o4-mini",
+            "gpt-5",
+            "gpt-5-pro",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5-4",
+            "gpt-5-2-pro",
+            "databricks-gpt-5.4",
+            "goose-gpt-5.4-high",
+            "headless-goose-o3-mini",
+        ] {
+            assert!(is_openai_responses_model(model), "{model} should match");
+        }
+    }
+
+    #[test]
+    fn test_is_openai_responses_model_rejects_other_families() {
+        for model in [
+            "gpt-4o",
+            "claude-sonnet-4",
+            "databricks-claude-sonnet-4",
+            "llama-3-70b",
+        ] {
+            assert!(
+                !is_openai_responses_model(model),
+                "{model} should not match"
+            );
+        }
+    }
+
+    #[test]
+    fn test_extract_reasoning_effort_for_responses_models() {
+        for (model, expected_name, expected_effort) in [
+            ("o3-none", "o3", Some("none")),
+            ("o3-xhigh", "o3", Some("xhigh")),
+            ("gpt-5-low", "gpt-5", Some("low")),
+            ("gpt-5.4", "gpt-5.4", None),
+            (
+                "databricks-gpt-5.4-high",
+                "databricks-gpt-5.4",
+                Some("high"),
+            ),
+            ("databricks-o3-low", "databricks-o3", Some("low")),
+            ("goose-gpt-5-high", "goose-gpt-5", Some("high")),
+            ("gpt-4o", "gpt-4o", None),
+        ] {
+            let (name, effort) = extract_reasoning_effort(model);
+            assert_eq!(name, expected_name, "unexpected base model for {model}");
+            assert_eq!(
+                effort.as_deref(),
+                expected_effort,
+                "unexpected effort for {model}"
+            );
+        }
     }
 }

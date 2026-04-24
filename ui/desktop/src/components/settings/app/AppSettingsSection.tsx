@@ -32,6 +32,14 @@ const i18n = defineMessages({
   },
   configGuide: { id: 'settings.notifications.configGuide', defaultMessage: 'Configuration guide' },
   openSettings: { id: 'settings.notifications.openSettings', defaultMessage: 'Open Settings' },
+  taskNotifications: {
+    id: 'settings.notifications.task.title',
+    defaultMessage: 'Task completion notifications',
+  },
+  taskNotificationsDesc: {
+    id: 'settings.notifications.task.description',
+    defaultMessage: 'Notify when Goose finishes a task while the window is in the background',
+  },
   menuBarIcon: { id: 'settings.menuBarIcon.title', defaultMessage: 'Menu bar icon' },
   menuBarIconDesc: {
     id: 'settings.menuBarIcon.description',
@@ -209,6 +217,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
   const [menuBarIconEnabled, setMenuBarIconEnabled] = useState(true);
   const [dockIconEnabled, setDockIconEnabled] = useState(true);
   const [wakelockEnabled, setWakelockEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [isMacOS, setIsMacOS] = useState(false);
   const [isDockSwitchDisabled, setIsDockSwitchDisabled] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -256,6 +265,10 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
 
     window.electron.getWakelockState().then((enabled) => {
       setWakelockEnabled(enabled);
+    });
+
+    window.electron.getSetting('enableNotifications').then((enabled) => {
+      setNotificationsEnabled(enabled ?? true);
     });
 
     if (isMacOS) {
@@ -316,6 +329,12 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
     }
   };
 
+  const handleNotificationsToggle = async (checked: boolean) => {
+    setNotificationsEnabled(checked);
+    await window.electron.setSetting('enableNotifications', checked);
+    trackSettingToggled('task_notifications', checked);
+  };
+
   const handleShowPricingToggle = async (checked: boolean) => {
     setShowPricing(checked);
     await window.electron.setSetting('showPricing', checked);
@@ -368,6 +387,24 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
                 <Settings />
                 {intl.formatMessage(i18n.openSettings)}
               </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-text-primary text-xs">
+                {intl.formatMessage(i18n.taskNotifications)}
+              </h3>
+              <p className="text-xs text-text-secondary max-w-md mt-[2px]">
+                {intl.formatMessage(i18n.taskNotificationsDesc)}
+              </p>
+            </div>
+            <div className="flex items-center">
+              <Switch
+                checked={notificationsEnabled}
+                onCheckedChange={handleNotificationsToggle}
+                variant="mono"
+              />
             </div>
           </div>
 
@@ -469,7 +506,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
             <Button
               onClick={() => {
                 window.open(
-                  'https://github.com/block/goose/issues/new?template=bug_report.md',
+                  'https://github.com/aaif-goose/goose/issues/new?template=bug_report.md',
                   '_blank'
                 );
               }}
@@ -481,7 +518,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
             <Button
               onClick={() => {
                 window.open(
-                  'https://github.com/block/goose/issues/new?template=feature_request.md',
+                  'https://github.com/aaif-goose/goose/issues/new?template=feature_request.md',
                   '_blank'
                 );
               }}
@@ -504,7 +541,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
             <div className="flex items-center gap-3">
               <img
                 src={isDarkMode ? BlockLogoWhite : BlockLogoBlack}
-                alt="Block Logo"
+                alt="Block Logo" // TODO: replace with AAIF logo asset
                 className="h-8 w-auto"
               />
               <span className="text-2xl font-mono text-black dark:text-white">

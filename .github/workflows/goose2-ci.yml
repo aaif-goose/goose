@@ -1,0 +1,185 @@
+name: "Goose 2 CI"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ui/goose2/**"
+      - "ui/sdk/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ui/goose2/**"
+      - "ui/sdk/**"
+  merge_group:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ui/goose2
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
+      - run: pnpm check
+      - run: pnpm typecheck
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
+      - run: pnpm test
+
+  desktop:
+    name: Desktop Build & E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+        with:
+          rust-src-dir: ui/goose2
+
+      - name: Cache Rust
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ui/goose2/src-tauri/target
+          key: ${{ runner.os }}-goose2-cargo-${{ hashFiles('ui/goose2/src-tauri/Cargo.lock') }}
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Mock goose binary
+        working-directory: .
+        run: mkdir -p target/release && touch target/release/goose-$(rustc --print host-tuple)
+
+      - name: Check Tauri
+        run: cd src-tauri && cargo check
+
+      - name: Clippy
+        run: cd src-tauri && cargo clippy -- -D warnings
+
+      - name: Format check
+        run: cd src-tauri && cargo fmt --check
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: pnpm exec playwright test
+
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: |
+            ui/goose2/playwright-report/
+            ui/goose2/test-results/
+          retention-days: 7
+
+  rust-lint:
+    name: Rust Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+        with:
+          rust-src-dir: ui/goose2
+          components: rustfmt, clippy
+
+      - name: Cache Rust
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ui/goose2/src-tauri/target
+          key: ${{ runner.os }}-goose2-cargo-${{ hashFiles('ui/goose2/src-tauri/Cargo.lock') }}
+
+      - name: Mock goose binary
+        working-directory: .
+        run: mkdir -p target/release && touch target/release/goose-$(rustc --print host-tuple)
+
+      - name: Format check
+        run: cd src-tauri && cargo fmt --check
+
+      - name: Clippy
+        run: cd src-tauri && cargo clippy -- -D warnings

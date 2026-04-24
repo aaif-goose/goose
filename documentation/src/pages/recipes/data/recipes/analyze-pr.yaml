@@ -31,7 +31,7 @@ extensions:
       display_name: Memory
       timeout: 300
       bundled: true
-      description: "For storing and retrieving formating preferences that might be present"
+      description: "For storing and retrieving formatting preferences that might be present"
 prompt: |
   Analyze the pr with the name {{ pr }}. Find out what has changed, try to figure out why these
   changes were made and tell the user in detail what you found out.

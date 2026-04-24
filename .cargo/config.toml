@@ -1,5 +1,5 @@
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-args=/FORCE:MULTIPLE"]
+rustflags = ["-C", "link-args=/FORCE:MULTIPLE /STACK:8388608"]
 
 [target.aarch64-pc-windows-msvc]
-rustflags = ["-C", "link-args=/FORCE:MULTIPLE"]
+rustflags = ["-C", "link-args=/FORCE:MULTIPLE /STACK:8388608"]

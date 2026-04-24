@@ -71,7 +71,7 @@ export default function SkillDetailPage(): JSX.Element {
 
   const handleDownload = () => {
     if (skill) {
-      const zipUrl = `/goose/skills-data-zips/${skill.id}.zip`;
+      const zipUrl = `/skills-data-zips/${skill.id}.zip`;
       const link = document.createElement('a');
       link.href = zipUrl;
       link.download = `${skill.id}.zip`;
@@ -227,7 +227,7 @@ export default function SkillDetailPage(): JSX.Element {
                 </Button>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-500">
-                Requires <a href="https://block.github.io/goose/docs/mcp/summon-mcp" className="text-purple-600 hover:underline">Summon extension</a> enabled
+                Requires <a href="https://goose-docs.ai/docs/mcp/summon-mcp" className="text-purple-600 hover:underline">Summon extension</a> enabled
               </p>
             </div>
 

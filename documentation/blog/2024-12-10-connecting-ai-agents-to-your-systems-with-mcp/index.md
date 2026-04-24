@@ -22,7 +22,7 @@ This post was written about a beta version of goose and the commands and flow ma
 
 Anthropic is leading the charge with the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), an open standard that enables large language model (LLM) applications to connect with external systems, providing the necessary context for more informed and relevant AI interactions. 
 
-This is a game changer for AI agents such as [goose](https://block.github.io/goose/), which can perform tasks autonomously - a significant leap beyond chatbots that only provide step-by-step instructions. However, to unlock the full potential of these AI agents, we need a standard method for connecting them to external data sources. MCP provides this foundation.
+This is a game changer for AI agents such as [goose](https://goose-docs.ai/), which can perform tasks autonomously - a significant leap beyond chatbots that only provide step-by-step instructions. However, to unlock the full potential of these AI agents, we need a standard method for connecting them to external data sources. MCP provides this foundation.
 
 With MCP's standardized APIs and endpoints, goose can integrate seamlessly into your systems, enhancing its ability to perform complex tasks like debugging, writing code, and running commands directly in your environment. 
 
@@ -30,7 +30,7 @@ With MCP's standardized APIs and endpoints, goose can integrate seamlessly into 
 
 ### What's Possible
 
-Without MCP, every [goose toolkit](https://block.github.io/goose/plugins/using-toolkits.html) developer would need to implement bespoke integrations with every system they need to connect to. Not only is this tedious and repetitive, but it delays the fun stuff.
+Without MCP, every [goose toolkit](https://goose-docs.ai/plugins/using-toolkits.html) developer would need to implement bespoke integrations with every system they need to connect to. Not only is this tedious and repetitive, but it delays the fun stuff.
 
 Let's take a simple GitHub workflow, for example. goose interacts directly with the GitHub API using custom scripts or configurations. Developers must configure goose to authenticate with GitHub and specify endpoints for actions like fetching open pull requests or adding comments. Each integration requires manual setup and custom coding to handle authentication tokens, error handling, and API updates.
 
@@ -38,7 +38,7 @@ MCP simplifies the process by providing a standardized interface for accessing G
 
 ### Join the Ecosystem
 
-As MCP adoption expands, so does goose’s potential to deliver even more powerful solutions for your organization. By [integrating goose](https://block.github.io/goose/) into your workflows and [embracing MCP](https://modelcontextprotocol.io/introduction), you’re not just enhancing your own systems, you’re contributing to the growth of an ecosystem that makes AI tools more interoperable, efficient, and impactful.
+As MCP adoption expands, so does goose’s potential to deliver even more powerful solutions for your organization. By [integrating goose](https://goose-docs.ai/) into your workflows and [embracing MCP](https://modelcontextprotocol.io/introduction), you’re not just enhancing your own systems, you’re contributing to the growth of an ecosystem that makes AI tools more interoperable, efficient, and impactful.
 
 
 
@@ -54,18 +54,18 @@ As MCP adoption expands, so does goose’s potential to deliver even more powerf
   <meta name="description" content="Learn how MCP standardizes integrations and fosters an ecosystem for the future of AI-enabled tools." />
 
   <!-- Facebook Meta Tags -->
-  <meta property="og:url" content="https://block.github.io/goose/blog/2024/12/10/connecting-ai-agents-to-your-systems-with-mcp" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2024/12/10/connecting-ai-agents-to-your-systems-with-mcp" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Connecting AI Agents to Your Systems with MCP" />
   <meta property="og:description" content="Learn how MCP standardizes integrations and fosters an ecosystem for the future of AI-enabled tools." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/goose-mcp-34a5252d18d18dff26157d673f7af779.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-mcp-34a5252d18d18dff26157d673f7af779.png" />
 
   <!-- Twitter Meta Tags -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io" />
-  <meta property="twitter:url" content="https://block.github.io/goose/blog/2024/12/10/connecting-ai-agents-to-your-systems-with-mcp" />
+  <meta property="twitter:domain" content="aaif-goose.github.io" />
+  <meta property="twitter:url" content="https://goose-docs.ai/blog/2024/12/10/connecting-ai-agents-to-your-systems-with-mcp" />
   <meta name="twitter:title" content="Connecting AI Agents to Your Systems with MCP" />
   <meta name="twitter:description" content="Learn how MCP standardizes integrations and fosters an ecosystem for the future of AI-enabled tools." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/goose-mcp-34a5252d18d18dff26157d673f7af779.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-mcp-34a5252d18d18dff26157d673f7af779.png" />
 </head>
 

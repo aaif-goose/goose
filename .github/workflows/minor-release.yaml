@@ -11,7 +11,7 @@ on:
 
 jobs:
   release:
-    if: github.repository == 'block/goose'
+    if: github.repository == 'aaif-goose/goose'
     uses: ./.github/workflows/create-version-bump-pr.yaml
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

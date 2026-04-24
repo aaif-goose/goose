@@ -189,6 +189,19 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        map.insert(
+            crate::skills::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: crate::skills::EXTENSION_NAME,
+                display_name: "Skills",
+                description: "Discover and provide skill instructions from filesystem and builtins",
+                default_enabled: true,
+                unprefixed_tools: true,
+                hidden: false,
+                client_factory: |ctx| Box::new(crate::skills::SkillsClient::new(ctx).unwrap()),
+            },
+        );
+
         map
     },
 );

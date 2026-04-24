@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-xfixes0 \
     libxkbcommon0 \
     libgl1-mesa-glx \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (LTS) and npm/npx via NodeSource
@@ -45,7 +46,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     uv --version && uvx --version
 
 # Pre-download and install Goose CLI to avoid network issues during runtime
-RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | \
+RUN curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | \
     CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash && \
     echo "✅ Goose CLI pre-installed: $(/usr/local/bin/goose --version)"
 

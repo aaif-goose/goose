@@ -3,9 +3,10 @@ title: "Grant Winner: Goose In A Pond"
 description: "Introducing  a privacy-first, local AI home assistant powered by Goose on edge hardware."
 authors:
   - angie
+image: /img/blog/goose-grant-goose-in-a-pond.png
 ---
 
-![blog banner](banner.png)
+![blog banner](/img/blog/goose-grant-goose-in-a-pond.png)
 
 We launched the [goose grant program](/grants/) awarding $100K grants for developers building the future of agentic AI. We're looking for ambitious, open source projects that push goose into new territory, and today, We're thrilled to introduce one of our grant recipients: **Goose In A Pond**, a project that's taking goose off the desktop and into your home.
 
@@ -99,12 +100,12 @@ And if *you* have a wild idea for what goose could do? The **[goose grant progra
 <head>
   <meta property="og:title" content="meet goose grant winner: Goose In A Pond" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/02/24/goose-grant-goose-in-a-pond" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/02/24/goose-grant-goose-in-a-pond" />
   <meta property="og:description" content="Introducing a privacy-first, local AI home assistant powered by Goose on edge hardware." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/banner-ae6f66bdec317d7e20264c4a62ad0013.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/banner-ae6f66bdec317d7e20264c4a62ad0013.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io" />
+  <meta property="twitter:domain" content="aaif-goose.github.io" />
   <meta name="twitter:title" content="Meet the Goose Grant Winner: Goose In A Pond" />
   <meta name="twitter:description" content="Introducing a privacy-first, local AI home assistant powered by Goose on edge hardware." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/banner-ae6f66bdec317d7e20264c4a62ad0013.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/banner-ae6f66bdec317d7e20264c4a62ad0013.png" />
 </head>

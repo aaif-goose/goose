@@ -327,9 +327,8 @@ impl ClientHandler for GooseClient {
         ActionRequiredManager::global()
             .request_and_wait(message, schema_value, Duration::from_secs(300))
             .await
-            .map(|user_data| CreateElicitationResult {
-                action: ElicitationAction::Accept,
-                content: Some(user_data),
+            .map(|user_data| {
+                CreateElicitationResult::new(ElicitationAction::Accept).with_content(user_data)
             })
             .map_err(|e| {
                 ErrorData::new(

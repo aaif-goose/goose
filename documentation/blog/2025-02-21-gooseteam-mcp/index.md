@@ -34,12 +34,12 @@ Hopefully this contribution inspired you as much as it inspired our community. I
 <head>
   <meta property="og:title" content="Let A Team of AI Agents Do It For You" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2025/02/17/gooseteam-mcp" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2025/02/17/gooseteam-mcp" />
   <meta property="og:description" content="Community Spotlight on Cliff Hall's gooseTeam MCP server." />
-  <meta property="og:image" content="https://block.github.io/goose/assets/images/gooseteam-mcp-082fa2890c313519c2a1637ca979c219.png" />
+  <meta property="og:image" content="https://goose-docs.ai/assets/images/gooseteam-mcp-082fa2890c313519c2a1637ca979c219.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Let A Team of AI Agents Do It For You" />
   <meta name="twitter:description" content="Community Spotlight on Cliff Hall's gooseTeam MCP server." />
-  <meta name="twitter:image" content="https://block.github.io/goose/assets/images/gooseteam-mcp-082fa2890c313519c2a1637ca979c219.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/gooseteam-mcp-082fa2890c313519c2a1637ca979c219.png" />
 </head>

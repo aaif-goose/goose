@@ -21,6 +21,7 @@ use crate::agents::extension_manager::{
     get_parameter_names, ExtensionManager, ExtensionManagerCapabilities,
 };
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
+use crate::agents::platform_extensions::summon::discover_filesystem_sources;
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::platform_tools::PLATFORM_MANAGE_SCHEDULE_TOOL_NAME;
 use crate::agents::prompt_manager::PromptManager;
@@ -354,9 +355,16 @@ impl Agent {
         }
         let initial_messages = conversation.messages().clone();
 
-        let (tools, toolshim_tools, system_prompt) = self
+        let (tools, toolshim_tools, mut system_prompt) = self
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
+
+        if let Some(instructions) = self.resolve_at_mention(&conversation, working_dir) {
+            system_prompt = format!(
+                "{}\n\n# Instructions from active agent:\n\n{}",
+                system_prompt, instructions
+            );
+        }
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
@@ -391,14 +399,40 @@ impl Agent {
         })
     }
 
+    fn resolve_at_mention(
+        &self,
+        conversation: &Conversation,
+        working_dir: &std::path::Path,
+    ) -> Option<String> {
+        let last_message = conversation.messages().last()?;
+        if last_message.role == rmcp::model::Role::User {
+            let after_at = last_message
+                .as_concat_text()
+                .trim()
+                .strip_prefix('@')?
+                .to_lowercase();
+
+            for source in discover_filesystem_sources(working_dir) {
+                let name = source.name.to_lowercase();
+                let is_match = after_at == name || after_at.starts_with(&format!("{} ", name));
+                if is_match && !source.content.is_empty() {
+                    return Some(source.content.clone());
+                }
+            }
+        }
+        None
+    }
+
     async fn categorize_tools(
         &self,
         response: &Message,
         tools: &[rmcp::model::Tool],
+        suppress_replayed_thinking: bool,
     ) -> ToolCategorizeResult {
         // Categorize tool requests
-        let (frontend_requests, remaining_requests, filtered_response) =
-            self.categorize_tool_requests(response, tools).await;
+        let (frontend_requests, remaining_requests, filtered_response) = self
+            .categorize_tool_requests(response, tools, suppress_replayed_thinking)
+            .await;
 
         ToolCategorizeResult {
             frontend_requests,
@@ -757,6 +791,71 @@ impl Agent {
             })?;
 
         Ok(())
+    }
+
+    /// Load multiple extensions in parallel, persisting state once at the end.
+    ///
+    /// Unlike `add_extension`, this avoids per-extension persistence and acquires
+    /// the container lock once upfront to prevent serialisation of the parallel futures.
+    pub async fn add_extensions_bulk(
+        self: &Arc<Self>,
+        extensions: Vec<ExtensionConfig>,
+        session_id: &str,
+    ) -> anyhow::Result<Vec<ExtensionLoadResult>> {
+        let working_dir = match self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await
+        {
+            Ok(session) => Some(session.working_dir),
+            Err(e) => {
+                warn!("Failed to get session for bulk load: {}", e);
+                None
+            }
+        };
+        let container = self.container.lock().await.clone();
+
+        let extension_futures = extensions
+            .into_iter()
+            .map(|config| {
+                let ext_manager = Arc::clone(&self.extension_manager);
+                let working_dir = working_dir.clone();
+                let container = container.clone();
+                let sid = session_id.to_string();
+
+                async move {
+                    let name = config.name().to_string();
+                    match ext_manager
+                        .add_extension(config, working_dir, container.as_ref(), Some(&sid))
+                        .await
+                    {
+                        Ok(_) => ExtensionLoadResult {
+                            name,
+                            success: true,
+                            error: None,
+                        },
+                        Err(e) => {
+                            let error_msg = e.to_string();
+                            warn!("Failed to load extension {}: {}", name, error_msg);
+                            ExtensionLoadResult {
+                                name,
+                                success: false,
+                                error: Some(error_msg),
+                            }
+                        }
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let results = futures::future::join_all(extension_futures).await;
+
+        if results.iter().any(|r| r.success) {
+            self.persist_extension_state(session_id).await?;
+        }
+
+        Ok(results)
     }
 
     async fn add_extension_inner(
@@ -1224,6 +1323,11 @@ impl Agent {
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
 
+                // Track whether this provider turn has already emitted visible
+                // thinking so a later tool-call chunk can suppress replayed
+                // reasoning without hiding final-only non-streaming thoughts.
+                let mut surfaced_thinking_in_turn = false;
+
                 while let Some(next) = stream.next().await {
                     if is_token_cancelled(&cancel_token) || exit_chat {
                         break;
@@ -1242,7 +1346,23 @@ impl Agent {
                                     frontend_requests,
                                     remaining_requests,
                                     filtered_response,
-                                } = self.categorize_tools(&response, &tools).await;
+                                } = self
+                                    .categorize_tools(
+                                        &response,
+                                        &tools,
+                                        surfaced_thinking_in_turn,
+                                    )
+                                    .await;
+
+                                surfaced_thinking_in_turn |= filtered_response.content.iter().any(
+                                    |content| {
+                                        matches!(
+                                            content,
+                                            MessageContent::Thinking(_)
+                                                | MessageContent::RedactedThinking(_)
+                                        )
+                                    },
+                                );
 
                                 yield AgentEvent::Message(filtered_response.clone());
                                 tokio::task::yield_now().await;
@@ -1490,6 +1610,7 @@ impl Agent {
                                 no_tools_called = false;
                             }
                         }
+                        #[allow(unused_variables)]
                         Err(ref provider_err @ ProviderError::ContextLengthExceeded(_)) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());

@@ -27,7 +27,7 @@ ACP sessions are saved to goose's session history where you can access and manag
 :::
 
 :::tip Reference Implementation
-The [goose for VS Code](/docs/experimental/vs-code-extension) extension uses ACP to communicate with goose. See the [vscode-goose](https://github.com/block/vscode-goose) repository for implementation details.
+The [goose for VS Code](/docs/experimental/vs-code-extension) extension uses ACP to communicate with goose. See the [vscode-goose](https://github.com/aaif-goose/vscode-goose) repository for implementation details.
 :::
 
 ## Setup in ACP Clients
@@ -177,7 +177,7 @@ npm install
 
 **Option 1: Auto-launch server (recommended)**
 
-The TUI will automatically start the goose-acp-server if you have it installed:
+The TUI will automatically start the goose acp server if you have it installed:
 
 ```bash
 npm start
@@ -191,7 +191,7 @@ For servers that support the draft standard ACP over Streamable HTTP https://git
 npm start -- --server http://HOST:PORT
 
 # example server
-cargo run -p goose-acp --bin goose-acp-server
+cargo run -p goose-cli --bin goose -- serve
 ```
 
 ### Single Prompt Mode
@@ -247,7 +247,7 @@ import chooseYourIde from '@site/blog/2025-10-24-intro-to-agent-client-protocol-
       title: 'Intro to Agent Client Protocol (ACP): The Standard for AI Agent-Editor Integration',
       description: 'Learn how to integrate AI agents like goose directly into your code editor via ACP, eliminating window-switching and vendor lock-in.',
       thumbnailUrl: chooseYourIde,
-      linkUrl: '/goose/blog/2025/10/24/intro-to-agent-client-protocol-acp',
+      linkUrl: '/blog/2025/10/24/intro-to-agent-client-protocol-acp',
       date: '2025-10-24',
       duration: '7 min read'
     }

@@ -12,7 +12,7 @@ import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructi
 <YouTubeShortEmbed videoUrl="https://www.youtube.com/embed/_WMm4kDYMog" />
 
 :::warning Known Limitation
-The Fetch extension [does not work](https://github.com/block/goose/issues/1184) with Google models (e.g. gemini-2.0-flash) because this extension uses `format: uri` in its JSON schema which Google doesn't support.
+The Fetch extension [does not work](https://github.com/aaif-goose/goose/issues/1184) with Google models (e.g. gemini-2.0-flash) because this extension uses `format: uri` in its JSON schema which Google doesn't support.
 :::
 
 This tutorial covers how to add the [Fetch MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) as a goose extension to retrieve and process content from the web.

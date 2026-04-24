@@ -33,6 +33,15 @@ pub struct HfQuantVariant {
     pub download_url: String,
     pub description: &'static str,
     pub quality_rank: u8,
+    #[serde(default)]
+    pub sharded: bool,
+}
+
+/// Result of resolving a model spec — may contain multiple shard files.
+#[derive(Debug, Clone)]
+pub struct ResolvedModel {
+    pub files: Vec<HfGgufFile>,
+    pub total_size: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,52 +64,71 @@ struct QuantInfo {
     quality_rank: u8,
 }
 
+// quality_rank groups quants by bit-level so that all N-bit variants sort
+// together. Within a group, higher rank = higher quality.
+//
+//   1-bit:  10–19      4-bit:  40–49      8-bit:  80–89
+//   2-bit:  20–29      5-bit:  50–59      16-bit: 90–94
+//   3-bit:  30–39      6-bit:  60–69      32-bit: 95–99
+//
 const QUANT_TABLE: &[(&str, &str, u8)] = &[
-    ("IQ1_S", "Extremely small, very low quality", 1),
-    ("IQ1_M", "Extremely small, very low quality", 2),
-    ("IQ2_XXS", "Very small, low quality", 3),
-    ("IQ2_XS", "Very small, low quality", 4),
-    ("IQ2_S", "Very small, low quality", 5),
-    ("IQ2_M", "Very small, low quality", 6),
-    ("Q2_K", "Small, low quality", 7),
-    ("Q2_K_S", "Small, low quality", 7),
-    ("IQ3_XXS", "Very small, moderate quality loss", 8),
-    ("IQ3_XS", "Small, moderate quality loss", 9),
-    ("IQ3_S", "Small, moderate quality loss", 9),
-    ("Q3_K_S", "Small, moderate quality loss", 10),
-    ("IQ3_M", "Small, moderate quality loss", 11),
-    ("Q3_K_M", "Small, balanced quality/size", 12),
-    ("Q3_K_L", "Medium-small, decent quality", 13),
-    ("IQ4_XS", "Medium, good quality", 14),
-    ("IQ4_NL", "Medium, good quality", 15),
-    ("Q4_0", "Medium, good quality", 16),
-    ("Q4_1", "Medium, good quality", 17),
-    ("Q4_K_S", "Medium, good quality/size balance", 18),
+    // 1-bit
+    ("TQ1_0", "Tiny, ternary quantization", 10),
+    ("IQ1_S", "Extremely small, very low quality", 11),
+    ("IQ1_M", "Extremely small, very low quality", 12),
+    // 2-bit
+    ("IQ2_XXS", "Very small, low quality", 20),
+    ("IQ2_XS", "Very small, low quality", 21),
+    ("IQ2_S", "Very small, low quality", 22),
+    ("IQ2_M", "Very small, low quality", 23),
+    ("Q2_K", "Small, low quality", 24),
+    ("Q2_K_S", "Small, low quality", 24),
+    ("Q2_K_L", "Small, low quality", 25),
+    ("Q2_K_XL", "Small, low quality", 26),
+    // 3-bit
+    ("IQ3_XXS", "Very small, moderate quality loss", 30),
+    ("IQ3_XS", "Small, moderate quality loss", 31),
+    ("IQ3_S", "Small, moderate quality loss", 32),
+    ("IQ3_M", "Small, moderate quality loss", 33),
+    ("Q3_K_S", "Small, moderate quality loss", 34),
+    ("Q3_K_M", "Small, balanced quality/size", 35),
+    ("Q3_K_L", "Medium-small, decent quality", 36),
+    ("Q3_K_XL", "Medium-small, decent quality", 37),
+    // 4-bit
+    ("IQ4_XS", "Medium, good quality", 40),
+    ("IQ4_NL", "Medium, good quality", 41),
+    ("Q4_0", "Medium, good quality", 42),
+    ("Q4_1", "Medium, good quality", 43),
+    ("Q4_K_S", "Medium, good quality/size balance", 44),
     (
         "Q4_K_M",
         "Medium, recommended balance of quality and size",
-        19,
+        45,
     ),
-    ("Q5_0", "Medium-large, high quality", 20),
-    ("Q5_1", "Medium-large, high quality", 21),
-    ("Q5_K_S", "Medium-large, high quality", 22),
-    ("Q5_K_M", "Medium-large, very high quality", 23),
-    ("Q6_K", "Large, near-lossless quality", 24),
-    ("Q8_0", "Large, near-lossless quality", 25),
-    ("F16", "Full size, original quality (16-bit)", 26),
-    ("BF16", "Full size, original quality (bfloat16)", 27),
-    ("F32", "Full size, original quality (32-bit)", 28),
+    ("Q4_K_L", "Medium, good quality", 46),
+    ("Q4_K_XL", "Medium, good quality", 47),
     (
         "MXFP4_MOE",
         "Medium, mixed-precision 4-bit for MoE models",
-        18,
+        48,
     ),
-    ("TQ1_0", "Tiny, ternary quantization", 1),
-    ("Q2_K_XL", "Extended-layer variant", 15),
-    ("Q3_K_XL", "Extended-layer variant", 15),
-    ("Q4_K_XL", "Extended-layer variant", 15),
-    ("Q2_K_L", "Small, low quality (large variant)", 8),
-    ("Q4_K_L", "Medium, good quality (large variant)", 20),
+    // 5-bit
+    ("Q5_0", "Medium-large, high quality", 50),
+    ("Q5_1", "Medium-large, high quality", 51),
+    ("Q5_K_S", "Medium-large, high quality", 52),
+    ("Q5_K_M", "Medium-large, very high quality", 53),
+    ("Q5_K_XL", "Medium-large, very high quality", 54),
+    // 6-bit
+    ("Q6_K", "Large, near-lossless quality", 60),
+    ("Q6_K_XL", "Large, near-lossless quality", 61),
+    // 8-bit
+    ("Q8_0", "Large, near-lossless quality", 80),
+    ("Q8_K_XL", "Large, near-lossless quality", 81),
+    // 16-bit
+    ("F16", "Full size, original quality (16-bit)", 90),
+    ("BF16", "Full size, original quality (bfloat16)", 91),
+    // 32-bit
+    ("F32", "Full size, original quality (32-bit)", 95),
 ];
 
 fn quant_info(quant: &str) -> QuantInfo {
@@ -113,7 +141,7 @@ fn quant_info(quant: &str) -> QuantInfo {
         })
         .unwrap_or(QuantInfo {
             description: "",
-            quality_rank: 15,
+            quality_rank: 45,
         })
 }
 
@@ -168,47 +196,132 @@ fn looks_like_quant(s: &str) -> bool {
 
 fn is_shard_file(filename: &str) -> bool {
     // Matches patterns like "-00001-of-00003.gguf"
+    parse_shard_index(filename).is_some()
+}
+
+/// Parse the shard index (1-based) from a filename like "model-BF16-00001-of-00002.gguf".
+fn parse_shard_index(filename: &str) -> Option<u32> {
     let basename = filename.rsplit('/').next().unwrap_or(filename);
     let stem = basename.trim_end_matches(".gguf");
-    if let Some(pos) = stem.rfind("-of-") {
-        stem.get(..pos)
-            .and_then(|before| before.rsplit('-').next())
-            .map(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
-            .unwrap_or(false)
+    let pos = stem.rfind("-of-")?;
+    let before = stem.get(..pos)?;
+    let idx_str = before.rsplit('-').next()?;
+    if !idx_str.is_empty() && idx_str.chars().all(|c| c.is_ascii_digit()) {
+        idx_str.parse().ok()
     } else {
-        false
+        None
     }
+}
+
+/// Parse the total shard count from a filename like "model-BF16-00001-of-00002.gguf".
+fn parse_shard_total(filename: &str) -> Option<u32> {
+    let basename = filename.rsplit('/').next().unwrap_or(filename);
+    let stem = basename.trim_end_matches(".gguf");
+    let pos = stem.rfind("-of-")?;
+    let total_str = stem.get(pos + 4..)?;
+    total_str.parse().ok()
 }
 
 fn build_download_url(repo_id: &str, filename: &str) -> String {
     format!("{}/{}/resolve/main/{}", HF_DOWNLOAD_BASE, repo_id, filename)
 }
 
-/// Collect single-file GGUFs into quantization variants (sharded files are excluded).
+/// Derive the expected model filename stem from a repo_id.
+/// e.g. "unsloth/gemma-4-26B-A4B-it-GGUF" → "gemma-4-26b-a4b-it" (lowercased)
+fn model_stem_from_repo(repo_id: &str) -> String {
+    let repo_name = repo_id.rsplit('/').next().unwrap_or(repo_id);
+    let stem = repo_name
+        .strip_suffix("-GGUF")
+        .or_else(|| repo_name.strip_suffix("-gguf"))
+        .unwrap_or(repo_name);
+    stem.to_lowercase()
+}
+
+/// Check whether a GGUF file belongs to the main model (vs auxiliary files like mmproj).
+/// Matches files whose basename starts with the model stem derived from the repo name.
+fn is_model_file(filename: &str, model_stem_lower: &str) -> bool {
+    let basename = filename.rsplit('/').next().unwrap_or(filename);
+    basename.to_lowercase().starts_with(model_stem_lower)
+}
+
+/// Collect GGUF files into quantization variants.
+/// Single-file quants use the file directly.
+/// Sharded quants (multiple files for one quantization) aggregate sizes and use the
+/// first shard filename as the representative — the download path must handle all shards.
 fn group_into_variants(repo_id: &str, files: Vec<HfApiSibling>) -> Vec<HfQuantVariant> {
-    let mut variants: Vec<HfQuantVariant> = files
+    use std::collections::HashMap;
+
+    let stem = model_stem_from_repo(repo_id);
+
+    let gguf_files: Vec<_> = files
         .into_iter()
         .filter(|s| {
             s.rfilename.ends_with(".gguf")
-                && !is_shard_file(&s.rfilename)
+                && is_model_file(&s.rfilename, &stem)
                 && parse_quantization(&s.rfilename) != "unknown"
-        })
-        .map(|s| {
-            let quant = parse_quantization(&s.rfilename);
-            let info = quant_info(&quant);
-            let download_url = build_download_url(repo_id, &s.rfilename);
-            HfQuantVariant {
-                quantization: quant,
-                size_bytes: s.size.unwrap_or(0),
-                filename: s.rfilename,
-                download_url,
-                description: info.description,
-                quality_rank: info.quality_rank,
-            }
         })
         .collect();
 
-    variants.sort_by_key(|v| v.quality_rank);
+    // Separate single files from shards
+    let mut single_files: Vec<&HfApiSibling> = Vec::new();
+    let mut shard_groups: HashMap<String, Vec<&HfApiSibling>> = HashMap::new();
+
+    for file in &gguf_files {
+        if is_shard_file(&file.rfilename) {
+            let quant = parse_quantization(&file.rfilename);
+            shard_groups.entry(quant).or_default().push(file);
+        } else {
+            single_files.push(file);
+        }
+    }
+
+    let mut variants: Vec<HfQuantVariant> = Vec::new();
+    let mut seen_quants: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Add single-file variants
+    for s in single_files {
+        let quant = parse_quantization(&s.rfilename);
+        seen_quants.insert(quant.clone());
+        let info = quant_info(&quant);
+        let download_url = build_download_url(repo_id, &s.rfilename);
+        variants.push(HfQuantVariant {
+            quantization: quant,
+            size_bytes: s.size.unwrap_or(0),
+            filename: s.rfilename.clone(),
+            download_url,
+            description: info.description,
+            quality_rank: info.quality_rank,
+            sharded: false,
+        });
+    }
+
+    // Add shard-only variants (quants that only exist as sharded files)
+    for (quant, mut shards) in shard_groups {
+        if seen_quants.contains(&quant) {
+            continue;
+        }
+        shards.sort_by(|a, b| a.rfilename.cmp(&b.rfilename));
+        let total_size: u64 = shards.iter().map(|s| s.size.unwrap_or(0)).sum();
+        let info = quant_info(&quant);
+        let first_filename = &shards[0].rfilename;
+        let download_url = build_download_url(repo_id, first_filename);
+        variants.push(HfQuantVariant {
+            quantization: quant,
+            size_bytes: total_size,
+            filename: first_filename.clone(),
+            download_url,
+            description: info.description,
+            quality_rank: info.quality_rank,
+            sharded: true,
+        });
+    }
+
+    // Sort descending by quality_rank, then by size descending as tiebreaker
+    variants.sort_by(|a, b| {
+        b.quality_rank
+            .cmp(&a.quality_rank)
+            .then_with(|| b.size_bytes.cmp(&a.size_bytes))
+    });
     variants
 }
 
@@ -323,10 +436,13 @@ pub async fn get_repo_gguf_files(repo_id: &str) -> Result<Vec<HfGgufFile>> {
     let model: HfApiModel = response.json().await?;
     let siblings = model.siblings.unwrap_or_default();
 
+    let stem = model_stem_from_repo(repo_id);
+
     let files = siblings
         .into_iter()
         .filter(|s| s.rfilename.ends_with(".gguf"))
         .filter(|s| !is_shard_file(&s.rfilename))
+        .filter(|s| is_model_file(&s.rfilename, &stem))
         .map(|s| {
             let quantization = parse_quantization(&s.rfilename);
             let download_url = build_download_url(repo_id, &s.rfilename);
@@ -358,23 +474,146 @@ pub fn parse_model_spec(spec: &str) -> Result<(String, String)> {
     Ok((repo_id.to_string(), quant.to_string()))
 }
 
+/// Resolve a model spec to all GGUF files for that quantization (handles shards).
+pub async fn resolve_model_spec_full(spec: &str) -> Result<(String, ResolvedModel)> {
+    let (repo_id, quant) = parse_model_spec(spec)?;
+
+    let client = reqwest::Client::new();
+    let url = format!("{}/{}?blobs=true", HF_API_BASE, repo_id);
+    let response = client
+        .get(&url)
+        .header("User-Agent", "goose-ai-agent")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        bail!(
+            "HuggingFace API returned status {} for repo {}",
+            response.status(),
+            repo_id
+        );
+    }
+
+    let model: HfApiModel = response.json().await?;
+    let siblings = model.siblings.unwrap_or_default();
+    let stem = model_stem_from_repo(&repo_id);
+
+    // Collect all GGUF files matching the quantization
+    let matching: Vec<_> = siblings
+        .into_iter()
+        .filter(|s| {
+            s.rfilename.ends_with(".gguf")
+                && is_model_file(&s.rfilename, &stem)
+                && parse_quantization(&s.rfilename).eq_ignore_ascii_case(&quant)
+        })
+        .collect();
+
+    if matching.is_empty() {
+        bail!(
+            "No GGUF file with quantization '{}' found in {}",
+            quant,
+            repo_id
+        );
+    }
+
+    // Separate single files from shards
+    let mut single_files: Vec<&HfApiSibling> = Vec::new();
+    let mut shard_files: Vec<&HfApiSibling> = Vec::new();
+    for f in &matching {
+        if is_shard_file(&f.rfilename) {
+            shard_files.push(f);
+        } else {
+            single_files.push(f);
+        }
+    }
+
+    // Prefer single file if available
+    if let Some(single) = single_files.first() {
+        let file = HfGgufFile {
+            filename: single.rfilename.clone(),
+            size_bytes: single.size.unwrap_or(0),
+            quantization: quant,
+            download_url: build_download_url(&repo_id, &single.rfilename),
+        };
+        let total_size = file.size_bytes;
+        return Ok((
+            repo_id,
+            ResolvedModel {
+                files: vec![file],
+                total_size,
+            },
+        ));
+    }
+
+    // Use shards, sorted by filename so shard 1 is first
+    shard_files.sort_by(|a, b| a.rfilename.cmp(&b.rfilename));
+
+    // Validate shard set completeness: every file must parse to the same
+    // -of-N total, and indices must be contiguous 1..=N.
+    let expected_total = parse_shard_total(&shard_files[0].rfilename).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Cannot parse shard total from '{}'",
+            shard_files[0].rfilename
+        )
+    })?;
+    if shard_files.len() != expected_total as usize {
+        bail!(
+            "Incomplete shard set for '{}' in {}: found {} of {} shards",
+            quant,
+            repo_id,
+            shard_files.len(),
+            expected_total
+        );
+    }
+    for (i, shard) in shard_files.iter().enumerate() {
+        let shard_total = parse_shard_total(&shard.rfilename);
+        if shard_total != Some(expected_total) {
+            bail!(
+                "Inconsistent shard totals for '{}' in {}: shard '{}' has total {:?}, expected {}",
+                quant,
+                repo_id,
+                shard.rfilename,
+                shard_total,
+                expected_total
+            );
+        }
+        let idx = parse_shard_index(&shard.rfilename);
+        if idx != Some((i + 1) as u32) {
+            bail!(
+                "Non-contiguous shard set for '{}' in {}: expected shard {} but found {:?}",
+                quant,
+                repo_id,
+                i + 1,
+                idx
+            );
+        }
+    }
+
+    let files: Vec<HfGgufFile> = shard_files
+        .iter()
+        .map(|s| HfGgufFile {
+            filename: s.rfilename.clone(),
+            size_bytes: s.size.unwrap_or(0),
+            quantization: quant.clone(),
+            download_url: build_download_url(&repo_id, &s.rfilename),
+        })
+        .collect();
+    let total_size: u64 = files.iter().map(|f| f.size_bytes).sum();
+
+    Ok((repo_id, ResolvedModel { files, total_size }))
+}
+
 /// Resolve a model spec to a specific GGUF file from the repo.
 pub async fn resolve_model_spec(spec: &str) -> Result<(String, HfGgufFile)> {
-    let (repo_id, quant) = parse_model_spec(spec)?;
-    let files = get_repo_gguf_files(&repo_id).await?;
-
-    let file = files
-        .into_iter()
-        .find(|f| f.quantization.eq_ignore_ascii_case(&quant))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No GGUF file with quantization '{}' found in {}",
-                quant,
-                repo_id
-            )
-        })?;
-
-    Ok((repo_id, file))
+    let (repo_id, resolved) = resolve_model_spec_full(spec).await?;
+    if resolved.files.len() > 1 {
+        bail!(
+            "Model '{}' is sharded ({} files) — use resolve_model_spec_full instead",
+            spec,
+            resolved.files.len()
+        );
+    }
+    Ok((repo_id, resolved.files.into_iter().next().unwrap()))
 }
 
 /// Recommend which quantization variant to use based on available memory.
@@ -459,7 +698,8 @@ mod tests {
                 filename: "m-Q2_K.gguf".into(),
                 download_url: String::new(),
                 description: "Small",
-                quality_rank: 7,
+                quality_rank: 24,
+                sharded: false,
             },
             HfQuantVariant {
                 quantization: "Q4_K_M".into(),
@@ -467,7 +707,8 @@ mod tests {
                 filename: "m-Q4_K_M.gguf".into(),
                 download_url: String::new(),
                 description: "Medium",
-                quality_rank: 19,
+                quality_rank: 45,
+                sharded: false,
             },
             HfQuantVariant {
                 quantization: "Q8_0".into(),
@@ -475,12 +716,104 @@ mod tests {
                 filename: "m-Q8_0.gguf".into(),
                 download_url: String::new(),
                 description: "Large",
-                quality_rank: 25,
+                quality_rank: 80,
+                sharded: false,
             },
         ];
 
         assert_eq!(recommend_variant(&variants, 5_000_000_000), Some(1));
         assert_eq!(recommend_variant(&variants, 10_000_000_000), Some(2));
         assert_eq!(recommend_variant(&variants, 1_000_000_000), None);
+    }
+
+    #[test]
+    fn test_model_stem_from_repo() {
+        assert_eq!(
+            model_stem_from_repo("unsloth/gemma-4-26B-A4B-it-GGUF"),
+            "gemma-4-26b-a4b-it"
+        );
+        assert_eq!(
+            model_stem_from_repo("bartowski/Llama-3.2-3B-Instruct-GGUF"),
+            "llama-3.2-3b-instruct"
+        );
+        assert_eq!(model_stem_from_repo("someone/SomeModel"), "somemodel");
+    }
+
+    #[test]
+    fn test_is_model_file() {
+        let stem = "gemma-3-27b-it";
+        assert!(is_model_file("gemma-3-27b-it-Q4_K_M.gguf", stem));
+        assert!(is_model_file(
+            "BF16/gemma-3-27b-it-BF16-00001-of-00002.gguf",
+            stem
+        ));
+        assert!(!is_model_file("mmproj-BF16.gguf", stem));
+        assert!(!is_model_file("vision-encoder-Q4_K_M.gguf", stem));
+    }
+
+    #[test]
+    fn test_group_into_variants_filters_auxiliary_files() {
+        let files = vec![
+            HfApiSibling {
+                rfilename: "gemma-3-27b-it-Q4_K_M.gguf".into(),
+                size: Some(4_000_000_000),
+            },
+            HfApiSibling {
+                rfilename: "mmproj-BF16.gguf".into(),
+                size: Some(800_000_000),
+            },
+        ];
+        let variants = group_into_variants("unsloth/gemma-3-27b-it-GGUF", files);
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].quantization, "Q4_K_M");
+    }
+
+    #[test]
+    fn test_group_into_variants_includes_shard_only_quants() {
+        let files = vec![
+            HfApiSibling {
+                rfilename: "BF16/gemma-3-27b-it-BF16-00001-of-00002.gguf".into(),
+                size: Some(40_000_000_000),
+            },
+            HfApiSibling {
+                rfilename: "BF16/gemma-3-27b-it-BF16-00002-of-00002.gguf".into(),
+                size: Some(10_000_000_000),
+            },
+            HfApiSibling {
+                rfilename: "gemma-3-27b-it-Q4_K_M.gguf".into(),
+                size: Some(4_000_000_000),
+            },
+        ];
+        let variants = group_into_variants("unsloth/gemma-3-27b-it-GGUF", files);
+        assert_eq!(variants.len(), 2);
+        // Sorted descending by quality_rank: BF16 (91) > Q4_K_M (45)
+        assert_eq!(variants[0].quantization, "BF16");
+        assert!(variants[0].sharded);
+        assert_eq!(variants[0].size_bytes, 50_000_000_000);
+        assert_eq!(variants[1].quantization, "Q4_K_M");
+        assert!(!variants[1].sharded);
+    }
+
+    #[test]
+    fn test_group_into_variants_sorted_descending() {
+        let files = vec![
+            HfApiSibling {
+                rfilename: "Model-IQ1_S.gguf".into(),
+                size: Some(500_000_000),
+            },
+            HfApiSibling {
+                rfilename: "Model-Q4_K_M.gguf".into(),
+                size: Some(4_000_000_000),
+            },
+            HfApiSibling {
+                rfilename: "Model-Q8_0.gguf".into(),
+                size: Some(8_000_000_000),
+            },
+        ];
+        let variants = group_into_variants("someone/Model-GGUF", files);
+        assert_eq!(variants.len(), 3);
+        assert_eq!(variants[0].quantization, "Q8_0");
+        assert_eq!(variants[1].quantization, "Q4_K_M");
+        assert_eq!(variants[2].quantization, "IQ1_S");
     }
 }

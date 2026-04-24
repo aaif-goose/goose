@@ -33,7 +33,7 @@ interface ConfigContextType {
   extensionsList: FixedExtensionEntry[];
   extensionWarnings: string[];
   upsert: (key: string, value: unknown, is_secret: boolean) => Promise<void>;
-  read: (key: string, is_secret: boolean) => Promise<unknown>;
+  read: (key: string, is_secret: boolean, options?: { throwOnError?: boolean }) => Promise<unknown>;
   remove: (key: string, is_secret: boolean) => Promise<void>;
   addExtension: (name: string, config: ExtensionConfig, enabled: boolean) => Promise<void>;
   toggleExtension: (name: string) => Promise<void>;
@@ -88,11 +88,14 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     [reloadConfig]
   );
 
-  const read = useCallback(async (key: string, is_secret: boolean = false) => {
+  const read = useCallback(async (key: string, is_secret: boolean = false, options?: { throwOnError?: boolean }) => {
     const query: ConfigKeyQuery = { key: key, is_secret: is_secret };
     const response = await readConfig({
       body: query,
     });
+    if (options?.throwOnError && response.error) {
+      throw response.error;
+    }
     return response.data;
   }, []);
 
@@ -175,6 +178,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       try {
         const response = await providers();
         const providersData = response.data || [];
+        providersListRef.current = providersData;
         setProvidersList(providersData);
         return providersData;
       } catch (error) {
@@ -196,6 +200,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       try {
         const providersResponse = await providers();
         const providersData = providersResponse.data || [];
+        providersListRef.current = providersData;
         setProvidersList(providersData);
       } catch (error) {
         console.error('Failed to load providers:', error);

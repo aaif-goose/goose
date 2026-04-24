@@ -19,6 +19,7 @@ interface UseAutoSubmitProps {
   messages: Message[];
   chatState: ChatState;
   initialMessage: UserInput | undefined;
+  canAutoSubmit?: boolean;
   handleSubmit: (input: UserInput) => void;
 }
 
@@ -32,6 +33,7 @@ export function useAutoSubmit({
   messages,
   chatState,
   initialMessage,
+  canAutoSubmit = true,
   handleSubmit,
 }: UseAutoSubmitProps): UseAutoSubmitReturn {
   const [searchParams] = useSearchParams();
@@ -62,6 +64,10 @@ export function useAutoSubmit({
     const shouldStartAgent = isCurrentSession && searchParams.get('shouldStartAgent') === 'true';
 
     if (!session || hasAutoSubmittedRef.current) {
+      return;
+    }
+
+    if (!canAutoSubmit) {
       return;
     }
 
@@ -107,6 +113,7 @@ export function useAutoSubmit({
     sessionId,
     messages.length,
     chatState,
+    canAutoSubmit,
     clearInitialMessage,
     hasUnfilledParameters,
   ]);
