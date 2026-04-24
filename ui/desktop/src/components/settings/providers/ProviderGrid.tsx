@@ -117,7 +117,7 @@ function ProviderCards({
 
   const configureProviderViaModal = useCallback(
     async (provider: ProviderDetails) => {
-      if (provider.provider_type === 'Custom' || provider.provider_type === 'Declarative') {
+      if (provider.provider_type === 'Custom') {
         const { getCustomProvider } = await import('../../../api');
         const result = await getCustomProvider({ path: { id: provider.name }, throwOnError: true });
 

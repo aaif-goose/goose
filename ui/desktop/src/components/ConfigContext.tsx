@@ -178,6 +178,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       try {
         const response = await providers();
         const providersData = response.data || [];
+        providersListRef.current = providersData;
         setProvidersList(providersData);
         return providersData;
       } catch (error) {
@@ -199,6 +200,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       try {
         const providersResponse = await providers();
         const providersData = providersResponse.data || [];
+        providersListRef.current = providersData;
         setProvidersList(providersData);
       } catch (error) {
         console.error('Failed to load providers:', error);

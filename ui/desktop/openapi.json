@@ -4643,6 +4643,10 @@
             },
             "nullable": true
           },
+          "model_doc_link": {
+            "type": "string",
+            "nullable": true
+          },
           "models": {
             "type": "array",
             "items": {
@@ -4654,6 +4658,12 @@
           },
           "requires_auth": {
             "type": "boolean"
+          },
+          "setup_steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "skip_canonical_filtering": {
             "type": "boolean"
