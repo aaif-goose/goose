@@ -66,6 +66,7 @@ jobs:
             target-suffix: pc-windows-msvc
             build-on: windows-latest
             use-cross: false
+        exclude: ${{ fromJSON(inputs.windows_variant == 'cuda' && '[{"os":"ubuntu-latest","architecture":"x86_64"},{"os":"ubuntu-latest","architecture":"aarch64"},{"os":"macos-latest","architecture":"x86_64"},{"os":"macos-latest","architecture":"aarch64"}]' || '[]') }}
 
     steps:
       - name: Checkout code
@@ -155,11 +156,11 @@ jobs:
         shell: pwsh
         env:
           CUDA_COMPUTE_CAP: ${{ inputs.windows_variant == 'cuda' && '80' || '' }}
-          RUSTFLAGS: ${{ inputs.windows_variant == 'cuda' && '-C target-feature=+crt-static' || '' }}
         run: |
           Write-Output "Building Windows CLI executable..."
           if ("${{ inputs.windows_variant }}" -eq "cuda") {
-            cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
+            $cudaRustflagsConfig = 'target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]'
+            cargo build --config $cudaRustflagsConfig --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
           } else {
             cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
           }
