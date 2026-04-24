@@ -58,7 +58,7 @@ function getProviders(): ProviderConfig[] {
         'anthropic/claude-sonnet-4.5',
         { name: 'qwen/qwen3-coder:exacto', flaky: true },
         'z-ai/glm-4.6:exacto',
-        { name: 'nvidia/nemotron-3-nano-30b-a3b', flaky: true },
+        { name: 'nvidia/nemotron-3-nano-30b-a3b:free', flaky: true },
       ],
       available: () => hasEnv('OPENROUTER_API_KEY'),
     },
