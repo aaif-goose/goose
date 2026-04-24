@@ -45,19 +45,28 @@ impl PermissionManager {
     pub fn new(config_dir: PathBuf) -> Self {
         let permission_path = config_dir.join(PERMISSION_FILE);
         let permission_map = if permission_path.exists() {
-            let file_contents =
-                fs::read_to_string(&permission_path).expect("Failed to read permission.yaml");
-            serde_yaml::from_str(&file_contents).unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to parse {}: {}. Refusing to start with corrupted permission config.",
-                    permission_path.display(),
-                    e,
-                );
-                panic!(
-                    "Corrupted permission config at {}. Fix or remove the file to continue.",
-                    permission_path.display(),
-                );
-            })
+            match fs::read_to_string(&permission_path) {
+                Ok(contents) => match serde_yaml::from_str(&contents) {
+                    Ok(map) => map,
+                    Err(e) => {
+                        tracing::error!(
+                            path = %permission_path.display(),
+                            error = %e,
+                            "Failed to parse permission config — starting with empty permissions. \
+                             Fix or remove the file to suppress this warning.",
+                        );
+                        HashMap::new()
+                    }
+                },
+                Err(e) => {
+                    tracing::error!(
+                        path = %permission_path.display(),
+                        error = %e,
+                        "Failed to read permission config — starting with empty permissions.",
+                    );
+                    HashMap::new()
+                }
+            }
         } else {
             // Consolidate directory creation for re-use in global singleton or ACP.
             fs::create_dir_all(&config_dir).expect("Failed to create config directory");
@@ -354,12 +363,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Corrupted permission config")]
-    fn test_corrupted_permission_file_panics() {
+    fn test_corrupted_permission_file_falls_back_to_empty() {
         let temp_dir = TempDir::new().unwrap();
         let permission_path = temp_dir.path().join(PERMISSION_FILE);
         fs::write(&permission_path, "{{invalid yaml: [broken").unwrap();
-        PermissionManager::new(temp_dir.path().to_path_buf());
+        // A corrupted file should not panic — it should start with an empty permission map.
+        let manager = PermissionManager::new(temp_dir.path().to_path_buf());
+        assert!(manager.get_permission_names().is_empty());
     }
 
     use test_case::test_case;
