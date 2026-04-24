@@ -56,26 +56,44 @@ fn resolve_login_shell_path() -> Option<String> {
             }
         });
 
-    std::process::Command::new(&shell)
-        .args(["-l", "-i", "-c", "echo $PATH"])
+    // `-l -i` sources both the login profile (~/.bash_profile, ~/.zprofile)
+    // AND ~/.bashrc / ~/.zshrc, where many users put their PATH exports
+    // (homebrew-on-Apple-Silicon installers, asdf/rbenv/pyenv init, etc).
+    //
+    // Interactive shells call tcsetpgrp() on startup to claim the tty's
+    // foreground process group — and while that bash holds the tty, goose's
+    // next TUI write hits SIGTTOU and gets suspended. setsid() in pre_exec
+    // puts the probe child in a new session with NO controlling terminal,
+    // so it can't grab the foreground pgroup no matter what it does.
+    let mut cmd = std::process::Command::new(&shell);
+    cmd.args(["-l", "-i", "-c", "echo $PATH"])
         .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                // Take the last non-empty line — interactive shells may emit
-                // extra output from profile scripts before our echo.
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .rev()
-                    .find(|line| !line.trim().is_empty())
-                    .map(|line| line.trim().to_string())
-                    .filter(|path| !path.is_empty())
-            } else {
-                None
-            }
-        })
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        extern "C" {
+            fn setsid() -> i32;
+        }
+        cmd.pre_exec(|| {
+            let _ = setsid();
+            Ok(())
+        });
+    }
+    cmd.output().ok().and_then(|output| {
+        if output.status.success() {
+            // Take the last non-empty line — interactive shells may emit
+            // extra output from profile scripts before our echo.
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .rev()
+                .find(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+                .filter(|path| !path.is_empty())
+        } else {
+            None
+        }
+    })
 }
 
 /// Returns the user's full login shell PATH, resolved once and cached.

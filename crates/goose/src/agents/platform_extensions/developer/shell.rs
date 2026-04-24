@@ -168,6 +168,15 @@ pub struct ShellOutput {
 fn resolve_login_shell_path() -> Option<String> {
     let shell = unix_shell();
 
+    // `-l -i` sources both the login profile (~/.bash_profile, ~/.zprofile)
+    // AND ~/.bashrc / ~/.zshrc, where many users put their PATH exports
+    // (homebrew-on-Apple-Silicon installers, asdf/rbenv/pyenv init, etc).
+    //
+    // Interactive shells call tcsetpgrp() on startup to claim the tty's
+    // foreground process group — and while that bash holds the tty, goose's
+    // next TUI write hits SIGTTOU and gets suspended. setsid() in pre_exec
+    // puts the probe child in a new session with NO controlling terminal,
+    // so it can't grab the foreground pgroup no matter what it does.
     let mut child = if is_flatpak() {
         flatpak_spawn_process()
             .args([&shell, "-l", "-i", "-c", "echo $PATH"])
@@ -177,13 +186,23 @@ fn resolve_login_shell_path() -> Option<String> {
             .spawn()
             .ok()?
     } else {
-        std::process::Command::new(&shell)
-            .args(["-l", "-i", "-c", "echo $PATH"])
+        let mut cmd = std::process::Command::new(&shell);
+        cmd.args(["-l", "-i", "-c", "echo $PATH"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            extern "C" {
+                fn setsid() -> i32;
+            }
+            cmd.pre_exec(|| {
+                let _ = setsid();
+                Ok(())
+            });
+        }
+        cmd.spawn().ok()?
     };
 
     let mut stdout = child.stdout.take()?;
