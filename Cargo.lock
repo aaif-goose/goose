@@ -4372,7 +4372,6 @@ dependencies = [
  "jsonschema",
  "jsonwebtoken",
  "keyring",
- "lazy_static",
  "libc",
  "llama-cpp-2",
  "lru",
