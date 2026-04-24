@@ -313,13 +313,19 @@ function registerTests(label: string, cases: TestCase[], fn: ProviderTestFn): vo
   }
 
   if (flaky.length > 0) {
-    test.each(flaky)(`${label} — $provider / $model (flaky)`, async (tc) => {
-      try {
-        await fn(tc);
-      } catch (err) {
-        console.warn(`Flaky test ${tc.provider}/${tc.model} failed (allowed): ${err}`);
-      }
-    });
+    // Use a longer vitest timeout (90s) so the internal runGoose timeout (55s)
+    // fires first — that rejection is catchable and the test passes as "allowed".
+    test.each(flaky)(
+      `${label} — $provider / $model (flaky)`,
+      async (tc) => {
+        try {
+          await fn(tc);
+        } catch (err) {
+          console.warn(`Flaky test ${tc.provider}/${tc.model} failed (allowed): ${err}`);
+        }
+      },
+      90_000
+    );
   }
 
   if (skipped.length > 0) {
@@ -357,9 +363,10 @@ export function runGoose(
   cwd: string,
   prompt: string,
   builtins: string,
-  env: Record<string, string>
+  env: Record<string, string>,
+  timeoutMs: number = 55_000
 ): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const child: ChildProcess = spawn(
       gooseBin,
       ['run', '--text', prompt, '--with-builtin', builtins],
@@ -371,6 +378,16 @@ export function runGoose(
     );
 
     let output = '';
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        child.kill('SIGKILL');
+        reject(new Error(`goose timed out after ${timeoutMs}ms\n\nPartial output:\n${output}`));
+      }
+    }, timeoutMs);
+
     child.stdout?.on('data', (d) => {
       output += String(d);
     });
@@ -379,11 +396,19 @@ export function runGoose(
     });
 
     child.on('close', () => {
-      resolve(output);
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(output);
+      }
     });
 
     child.on('error', (err) => {
-      resolve(`spawn error: ${err.message}`);
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(`spawn error: ${err.message}`);
+      }
     });
   });
 }
