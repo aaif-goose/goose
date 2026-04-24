@@ -4424,6 +4424,7 @@ dependencies = [
  "tokio-util",
  "tower-http",
  "tracing",
+ "tracing-appender",
  "tracing-futures",
  "tracing-opentelemetry",
  "tracing-subscriber",
