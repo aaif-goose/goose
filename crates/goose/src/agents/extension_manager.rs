@@ -1455,6 +1455,36 @@ impl ExtensionManager {
         Ok(result)
     }
 
+    /// Returns the raw `resources/list` result for a single extension. Used
+    /// by the skills platform extension to enumerate supporting resources
+    /// for an MCP-served skill without having to re-pack through the
+    /// stringified form in `list_resources_from_extension`.
+    pub async fn list_resources_for_server(
+        &self,
+        session_id: &str,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::ListResourcesResult, ErrorData> {
+        let client = self.get_server_client(extension_name).await.ok_or_else(|| {
+            ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                format!("Extension '{}' not found", extension_name),
+                None,
+            )
+        })?;
+
+        client
+            .list_resources(session_id, None, cancellation_token)
+            .await
+            .map_err(|e| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Unable to list resources for {}: {:?}", extension_name, e),
+                    None,
+                )
+            })
+    }
+
     pub async fn read_resource(
         &self,
         session_id: &str,
