@@ -8,24 +8,78 @@ Tests:
 2. session/new - Create a new session
 3. session/prompt - Send a prompt to the session
 4. session/load - Load an existing session (new feature)
+
+Usage:
+    # Uses `cargo run -p goose-cli -- acp` by default.
+    python3 test_acp_client.py
+
+    # Faster: point at a pre-built binary via env var.
+    GOOSE_BIN=target/debug/goose.exe python3 test_acp_client.py
 """
 
-import subprocess
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
+
+# Windows consoles default to cp1252, which can't encode the unicode glyphs
+# used in test progress output (✓, ✗, 📝). Force UTF-8 so the test runs
+# uniformly on Windows, Linux, and macOS.
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass
+
+
+def _resolve_goose_cmd():
+    """Return the argv to launch the ACP server.
+
+    Preference order:
+      1. $GOOSE_BIN (explicit override — fastest path, no cargo startup).
+      2. target/debug/goose.exe or target/debug/goose if already built.
+      3. Fall back to `cargo run -p goose-cli -- acp` (recompiles on demand).
+    """
+    bin_env = os.environ.get("GOOSE_BIN")
+    if bin_env and os.path.isfile(bin_env):
+        return [bin_env, "acp"]
+
+    is_windows = sys.platform.startswith("win")
+    exe = "goose.exe" if is_windows else "goose"
+    prebuilt = os.path.join("target", "debug", exe)
+    if os.path.isfile(prebuilt):
+        return [prebuilt, "acp"]
+
+    if shutil.which("cargo"):
+        return ["cargo", "run", "-p", "goose-cli", "--", "acp"]
+
+    raise RuntimeError(
+        "Could not find the goose binary. Build it with "
+        "`cargo build -p goose-cli` or set GOOSE_BIN=<path-to-goose>"
+    )
 
 
 class AcpClient:
     def __init__(self):
+        # On Windows, if stderr is PIPE and nobody reads it, `cargo run`'s
+        # compile chatter fills the ~4 KB pipe buffer, blocks the child's
+        # stderr write, and deadlocks the stdio loop (classic subprocess
+        # pitfall). Route stderr to DEVNULL — this test cares only about
+        # the JSON-RPC framing on stdout.
+        #
+        # `bufsize=1` (line-buffered) matches text-mode semantics on both
+        # Windows and POSIX; the prior `bufsize=0` is only meaningful for
+        # binary streams and made stdout flushes unreliable on Windows.
         self.process = subprocess.Popen(
-            ['cargo', 'run', '-p', 'goose-cli', '--', 'acp'],
+            _resolve_goose_cmd(),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
-            bufsize=0
+            bufsize=1,
         )
         self.request_id = 0
 
