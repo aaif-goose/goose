@@ -108,13 +108,7 @@ jobs:
           node-version: '22'
 
       - name: Install agentic providers
-        run: npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli @zed-industries/claude-agent-acp @zed-industries/codex-acp
-
-      - name: Show installed agentic provider versions
-        run: |
-          codex --version
-          claude --version
-          gemini --version
+        run: npm install -g @anthropic-ai/claude-code @zed-industries/claude-agent-acp @zed-industries/codex-acp
 
       - name: Run Smoke Tests with Provider Script
         env:

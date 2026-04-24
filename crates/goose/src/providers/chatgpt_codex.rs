@@ -62,22 +62,6 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
         name: "gpt-5.3-codex",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.2-codex",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.1-codex",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.1-codex-mini",
-        reasoning_levels: &["medium", "high"],
-    },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.1-codex-max",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
 ];
 
 const CHATGPT_CODEX_DOC_URL: &str = "https://openai.com/chatgpt";

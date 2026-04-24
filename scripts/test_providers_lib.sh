@@ -16,10 +16,8 @@ venice -> llama-3.3-70b
 litellm -> gpt-4o-mini
 sagemaker_tgi -> sagemaker-tgi-endpoint
 github_copilot -> gpt-4.1
-chatgpt_codex -> gpt-5.1-codex
+chatgpt_codex -> gpt-5.4
 claude-code -> default
-codex -> gpt-5.2-codex
-gemini-cli -> gemini-2.5-pro
 cursor-agent -> auto
 ollama -> qwen3
 "
@@ -33,7 +31,7 @@ ALLOWED_FAILURES=(
   "openai:gpt-3.5-turbo"
 )
 
-AGENTIC_PROVIDERS=("claude-code" "codex" "gemini-cli" "cursor-agent")
+AGENTIC_PROVIDERS=("claude-code" "cursor-agent")
 
 if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
@@ -73,11 +71,9 @@ is_provider_available() {
     litellm)         has_env LITELLM_API_KEY ;;
     sagemaker_tgi)   has_env SAGEMAKER_ENDPOINT_NAME && has_env AWS_REGION ;;
     github_copilot)  has_env GITHUB_COPILOT_TOKEN || has_file "$HOME/.config/goose/github_copilot_token.json" ;;
-    chatgpt_codex)   has_env CHATGPT_CODEX_TOKEN || has_file "$HOME/.config/goose/chatgpt_codex_token.json" ;;
+    chatgpt_codex)   has_env CHATGPT_CODEX_TOKEN || has_file "$HOME/.config/goose/chatgpt_codex/tokens.json" ;;
     ollama)          has_env OLLAMA_HOST || has_cmd ollama ;;
     claude-code)     has_cmd claude ;;
-    codex)           has_cmd codex ;;
-    gemini-cli)      has_cmd gemini ;;
     cursor-agent)    has_cmd cursor-agent ;;
     *)               return 0 ;;
   esac
