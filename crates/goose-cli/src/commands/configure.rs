@@ -740,6 +740,11 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         .await
     };
     spin.stop(style("Model fetch complete").green());
+    // cliclack's spinner render thread outlives `stop()` and races the next
+    // prompt's raw-mode stdin read; drop and yield so the picker's
+    // `interact()` doesn't fail before any key is read. See #8373.
+    drop(spin);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // Select a model: on fetch error show styled error and abort; if models available, show list; otherwise free-text input
     let model: String = match models_res {
