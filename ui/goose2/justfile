@@ -99,7 +99,20 @@ dev: setup
     else
         unset GOOSE_BIN
     fi
-    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"cd ${PROJECT_DIR} && exec pnpm exec vite --port ${VITE_PORT} --strictPort\",\"cwd\":\".\",\"wait\":false}}}")
+    # Windows compatibility — three adjustments to the beforeDevCommand script:
+    #   1. Dropped 'cd ${PROJECT_DIR} && ' prefix. The unescaped '&&' inside
+    #      the JSON value gets split by Windows' bash→npm→tauri argv
+    #      passthrough, truncating the --config JSON there.
+    #   2. Dropped the leading 'exec'. Tauri runs beforeDevCommand via
+    #      cmd.exe on Windows, which doesn't recognize the bash 'exec'
+    #      builtin. Harmless to drop on Unix too — pnpm handles its own
+    #      subprocess lifecycle.
+    #   3. Added '--host 127.0.0.1'. Vite 7 binds '::1' (IPv6) only on
+    #      Windows by default; WebView2 and browsers try IPv4 first and
+    #      fail with "no page found".
+    # Also: cwd must be '..' (goose2/) not '.' (src-tauri/) — Tauri resolves
+    # beforeDevCommand cwd relative to src-tauri, not to where `just` ran.
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"pnpm exec vite --port ${VITE_PORT} --strictPort --host 127.0.0.1\",\"cwd\":\"..\",\"wait\":false}}}")
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
@@ -147,7 +160,10 @@ dev-debug: setup
     else
         unset GOOSE_BIN
     fi
-    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./node_modules/.bin/vite --port ${VITE_PORT} --strictPort\",\"cwd\":\"..\",\"wait\":false}}}")
+    # Windows compatibility: drop the 'exec' bash builtin (cmd.exe doesn't
+    # know it) and add '--host 127.0.0.1' (Vite 7 binds IPv6 only on Windows
+    # by default; WebView2/browsers try IPv4 first). Matches the `dev` recipe.
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"./node_modules/.bin/vite --port ${VITE_PORT} --strictPort --host 127.0.0.1\",\"cwd\":\"..\",\"wait\":false}}}")
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
