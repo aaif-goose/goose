@@ -432,11 +432,10 @@ function handleShared(
             currentModelId;
 
           const sessionStore = useChatSessionStore.getState();
-          sessionStore.updateSession(
-            sessionId,
-            { modelId: currentModelId, modelName: currentModelName },
-            { persistOverlay: false },
-          );
+          sessionStore.updateSession(sessionId, {
+            modelId: currentModelId,
+            modelName: currentModelName,
+          });
         }
       }
       break;

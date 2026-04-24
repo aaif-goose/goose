@@ -98,10 +98,9 @@ interface ContentSection {
   items: MessageContent[] | ToolChainItem[];
 }
 
-/** Keep only content blocks whose audience includes "user" (or has no audience). */
 function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
   return content.filter((b) => {
-    const aud = b.annotations?.audience;
+    const aud = "annotations" in b ? b.annotations?.audience : undefined;
     return !aud || aud.length === 0 || aud.includes("user");
   });
 }
