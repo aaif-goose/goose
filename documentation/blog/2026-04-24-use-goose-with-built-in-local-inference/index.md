@@ -86,7 +86,7 @@ There is some cost that comes with choosing to use a local model - the biggest o
 <head>
   <meta property="og:title" content="Private by Default: Built-in Local Inference Models with goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://goose-docs.ai/blog/2026/04/23/use-goose-with-built-in-local-inference" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/04/24/use-goose-with-built-in-local-inference" />
   <meta property="og:description" content="goose now ships with built-in local inference powered by llama.cpp — no server, no API key, no cost. Here's how it works and what to expect." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta property="twitter:domain" content="goose-docs.ai" />
