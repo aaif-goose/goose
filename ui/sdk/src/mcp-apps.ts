@@ -1,4 +1,7 @@
-import type { Implementation, InitializeRequest } from "@agentclientprotocol/sdk";
+import type {
+  Implementation,
+  InitializeRequest,
+} from "@agentclientprotocol/sdk";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps";
 
 export const GOOSE_MCP_UI_EXTENSION_ID = "io.modelcontextprotocol/ui" as const;
