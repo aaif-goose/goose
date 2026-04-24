@@ -187,9 +187,7 @@ export async function newSession(
 ): Promise<NewSessionResponse> {
   const tClient = performance.now();
   const client = await getClient();
-  const request: Parameters<typeof client.newSession>[0] & {
-    meta?: Record<string, string>;
-  } = {
+  const request: Parameters<typeof client.newSession>[0] = {
     cwd: workingDir,
     mcpServers: [],
   };
@@ -198,7 +196,7 @@ export async function newSession(
   if (providerId) meta.provider = providerId;
   if (projectId) meta.projectId = projectId;
   if (personaId) meta.personaId = personaId;
-  if (Object.keys(meta).length > 0) request.meta = meta;
+  if (Object.keys(meta).length > 0) request._meta = meta;
 
   const tCall = performance.now();
   const response = await client.newSession(request);
