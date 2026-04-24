@@ -164,7 +164,6 @@ sys-info = "0.9"
 schemars = { workspace = true, features = [
     "derive",
 ] }
-insta = "1.43.2"
 shellexpand = { workspace = true }
 indexmap = "2.12.0"
 ignore = { workspace = true }
@@ -226,6 +225,7 @@ goose-test-support = { path = "../goose-test-support" }
 bytes.workspace = true
 http.workspace = true
 goose-mcp = { path = "../goose-mcp" }
+insta = "1.43.2"
 
 [[example]]
 name = "agent"
