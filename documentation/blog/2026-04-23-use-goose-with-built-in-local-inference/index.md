@@ -3,10 +3,10 @@ title: "Private by Default: Built-in Local Inference Models with goose"
 description: "goose now ships with built-in local inference powered by llama.cpp — no server, no API key, no cost. Here's how it works and what to expect."
 authors:
     - adewale
-image: /img/blog/goose-local-models.png
+image: /img/blog/goose-built-in-inference.png
 ---
 
-![blog cover](/img/blog/goose-local-models.png)
+![blog cover](/img/blog/goose-built-in-inference.png)
 
 You can now run local models with goose directly on your machine. No Ollama, no Docker, no external server — just entirely within goose. We shipped built-in local inference powered by [llama.cpp](https://github.com/ggml-org/llama.cpp), and it's already available today in the desktop app.
 
