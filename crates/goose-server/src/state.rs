@@ -48,7 +48,7 @@ impl AppState {
             gateway_manager,
             extension_loading_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "local-inference")]
-            inference_runtime: InferenceRuntime::get_or_init(),
+            inference_runtime: InferenceRuntime::get_or_init()?,
             session_buses: Arc::new(Mutex::new(HashMap::new())),
         }))
     }
