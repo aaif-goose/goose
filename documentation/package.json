@@ -27,7 +27,7 @@
     "dotenv": "^16.4.7",
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.475.0",
-    "postcss": "^8.4.35",
+    "postcss": "^8.5.10",
     "postcss-import": "^16.1.0",
     "prism-react-renderer": "^2.3.0",
     "react": "^19.0.0",
