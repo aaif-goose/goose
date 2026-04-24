@@ -1,7 +1,10 @@
 use crate::config::paths::Paths;
 use crate::conversation::message::Message;
 use crate::model::ModelConfig;
-use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use crate::providers::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use crate::providers::errors::ProviderError;
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
 use crate::providers::google::GOOGLE_DOC_URL;
@@ -35,7 +38,7 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::io::StreamReader;
 
-const HTTP_TIMEOUT_SECS: u64 = 600;
+const HTTP_TIMEOUT_SECS: u64 = DEFAULT_PROVIDER_TIMEOUT_SECS;
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()

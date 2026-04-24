@@ -16,7 +16,10 @@ use url::Url;
 
 use crate::conversation::message::Message;
 use crate::model::ModelConfig;
-use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use crate::providers::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 
 use crate::providers::errors::ProviderError;
 use crate::providers::formats::gcpvertexai::{
@@ -34,7 +37,7 @@ const GCP_VERTEX_AI_PROVIDER_NAME: &str = "gcp_vertex_ai";
 /// Base URL for GCP Vertex AI documentation
 const GCP_VERTEX_AI_DOC_URL: &str = "https://cloud.google.com/vertex-ai";
 /// Default timeout for API requests in seconds
-const DEFAULT_TIMEOUT_SECS: u64 = 600;
+const DEFAULT_TIMEOUT_SECS: u64 = DEFAULT_PROVIDER_TIMEOUT_SECS;
 /// Default initial interval for retry (in milliseconds)
 const DEFAULT_INITIAL_RETRY_INTERVAL_MS: u64 = 5000;
 /// Default maximum number of retries

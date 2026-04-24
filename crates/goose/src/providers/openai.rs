@@ -1,5 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod};
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::embedding::{EmbeddingCapable, EmbeddingRequest, EmbeddingResponse};
 use super::errors::ProviderError;
 use super::formats::openai::{create_request, get_usage, response_to_message};
@@ -119,7 +121,9 @@ impl OpenAiProvider {
             .unwrap_or_else(|_| OPEN_AI_DEFAULT_BASE_PATH.to_string());
         let organization: Option<String> = config.get_param("OPENAI_ORGANIZATION").ok();
         let project: Option<String> = config.get_param("OPENAI_PROJECT").ok();
-        let timeout_secs: u64 = config.get_param("OPENAI_TIMEOUT").unwrap_or(600);
+        let timeout_secs: u64 = config
+            .get_param("OPENAI_TIMEOUT")
+            .unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS);
 
         let auth = match api_key {
             Some(key) if !key.is_empty() => AuthMethod::BearerToken(key),
@@ -217,7 +221,9 @@ impl OpenAiProvider {
             Self::derive_base_path(url.path())
         };
 
-        let timeout_secs = config.timeout_seconds.unwrap_or(600);
+        let timeout_secs = config
+            .timeout_seconds
+            .unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS);
 
         let auth = match api_key {
             Some(key) if !key.is_empty() => AuthMethod::BearerToken(key),

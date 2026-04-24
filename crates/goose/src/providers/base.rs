@@ -4,6 +4,11 @@ use futures::future::BoxFuture;
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 
+/// Default HTTP timeout for all provider API calls.
+/// Long-running model inference can take several minutes, so we allow up to 10 minutes
+/// before giving up. Individual providers may override this via their own config key.
+pub const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
+
 use super::canonical::{map_to_canonical_model, CanonicalModelRegistry};
 use super::errors::ProviderError;
 use super::inventory::{default_inventory_identity, InventoryIdentityInput};
