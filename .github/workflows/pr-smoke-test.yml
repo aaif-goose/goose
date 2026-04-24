@@ -133,7 +133,7 @@ jobs:
         run: |
           mkdir -p $HOME/.local/share/goose/sessions
           mkdir -p $HOME/.config/goose
-          source ../../bin/activate-hermit && pnpm run test:integration -- tests/integration/test_providers.test.ts
+          source ../../bin/activate-hermit && pnpm run test:integration:providers
         working-directory: ui/desktop
 
       - name: Set up Python
@@ -211,7 +211,7 @@ jobs:
         run: |
           mkdir -p $HOME/.local/share/goose/sessions
           mkdir -p $HOME/.config/goose
-          source ../../bin/activate-hermit && pnpm run test:integration -- tests/integration/test_providers_code_exec.test.ts
+          source ../../bin/activate-hermit && pnpm run test:integration:providers-code-exec
         working-directory: ui/desktop
 
   compaction-tests:
@@ -287,5 +287,5 @@ jobs:
           SKIP_BUILD: 1
         run: |
             echo 'export PATH=/some/fake/path:$PATH' >> $HOME/.bash_profile
-            source ../../bin/activate-hermit && pnpm run test:integration -- tests/integration/goosed.test.ts
+            source ../../bin/activate-hermit && pnpm run test:integration:goosed
         working-directory: ui/desktop
