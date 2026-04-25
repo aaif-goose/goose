@@ -9,13 +9,23 @@ export interface ProjectGroup {
 
 const UNKNOWN_PROJECT_LABEL = 'Unknown';
 
+function normalizeProjectPath(workingDir: string): string {
+  const normalized = workingDir.trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const withoutTrailingSeparators = normalized.replace(/[\\/]+$/, '');
+  return withoutTrailingSeparators || normalized;
+}
+
 export function getProjectLabel(workingDir: string): string {
   const normalized = workingDir.trim();
   if (!normalized) {
     return UNKNOWN_PROJECT_LABEL;
   }
 
-  const withoutTrailingSeparators = normalized.replace(/[\\/]+$/, '');
+  const withoutTrailingSeparators = normalizeProjectPath(workingDir);
   if (!withoutTrailingSeparators) {
     return normalized;
   }
@@ -28,7 +38,7 @@ export function groupSessionsByProject(sessions: Session[]): ProjectGroup[] {
   const groups = new Map<string, Session[]>();
 
   for (const session of sessions) {
-    const path = session.working_dir.trim();
+    const path = normalizeProjectPath(session.working_dir);
     const existing = groups.get(path);
     if (existing) {
       existing.push(session);
@@ -66,12 +76,10 @@ export function groupSessionsByProject(sessions: Session[]): ProjectGroup[] {
 }
 
 function getDisambiguatedProjectLabel(workingDir: string): string {
-  const normalized = workingDir.trim();
-  if (!normalized) {
+  const withoutTrailingSeparators = normalizeProjectPath(workingDir);
+  if (!withoutTrailingSeparators) {
     return UNKNOWN_PROJECT_LABEL;
   }
-
-  const withoutTrailingSeparators = normalized.replace(/[\\/]+$/, '');
   const parts = withoutTrailingSeparators.split(/[\\/]+/).filter(Boolean);
   if (parts.length >= 2) {
     return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
@@ -90,5 +98,6 @@ export function resolveNewChatWorkingDir(
   }
 
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  return activeSession?.working_dir || fallback;
+  const workingDir = activeSession?.working_dir.trim();
+  return workingDir || fallback;
 }
