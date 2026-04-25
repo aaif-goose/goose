@@ -9,7 +9,7 @@ export interface ProjectGroup {
 
 const UNKNOWN_PROJECT_LABEL = 'Unknown';
 
-function normalizeProjectPath(workingDir: string): string {
+export function normalizeProjectPath(workingDir: string): string {
   const normalized = workingDir.trim();
   if (!normalized) {
     return '';

@@ -44,7 +44,7 @@ import { formatExtensionName } from '../settings/extensions/subcomponents/Extens
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 import { shouldShowNewChatTitle } from '../../sessions';
 import { DEFAULT_CHAT_TITLE } from '../../contexts/ChatContext';
-import { groupSessionsByProject } from '../../utils/projectSessions';
+import { groupSessionsByProject, normalizeProjectPath } from '../../utils/projectSessions';
 
 const i18n = defineMessages({
   editSessionTitle: { id: 'sessions.edit.title', defaultMessage: 'Edit Session Description' },
@@ -334,7 +334,9 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
 
     const projectFilteredSessions = useMemo(() => {
       if (selectedProject === null) return sessions;
-      return sessions.filter((session) => session.working_dir.trim() === selectedProject);
+      return sessions.filter(
+        (session) => normalizeProjectPath(session.working_dir) === selectedProject
+      );
     }, [selectedProject, sessions]);
 
     const visibleDateGroups = useMemo(() => {
