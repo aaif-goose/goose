@@ -58,6 +58,14 @@ const MAX_IMAGES_PER_MESSAGE = 10;
 const TOKEN_LIMIT_DEFAULT = 128000; // fallback for custom models that the backend doesn't know about
 const TOOLS_MAX_SUGGESTED = 60; // max number of tools before we show a warning
 
+const getContextAlertType = (totalTokens: number, tokenLimit: number): AlertType => {
+  const percentage = tokenLimit ? (totalTokens / tokenLimit) * 100 : 0;
+
+  if (percentage > 90) return AlertType.Error;
+  if (percentage > 75) return AlertType.Warning;
+  return AlertType.Info;
+};
+
 // Manual compact trigger message - must match backend constant
 const MANUAL_COMPACT_TRIGGER = '/compact';
 
@@ -544,7 +552,7 @@ export default function ChatInput({
     // Show alert when either there is registered token usage, or we know the limit
     if ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit)) {
       addAlert({
-        type: AlertType.Info,
+        type: getContextAlertType(totalTokens || 0, tokenLimit),
         message: intl.formatMessage(i18n.contextWindow),
         progress: {
           current: totalTokens || 0,
