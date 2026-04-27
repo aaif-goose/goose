@@ -62,7 +62,7 @@ urlencoding = { workspace = true }
 clap_complete = "4.6.2"
 comfy-table = "7.2.2"
 sha2 = { workspace = true }
-sigstore-verify = { version = "0.6", default-features = false }
+sigstore-verify = { version = "=0.6.5", default-features = false, features = ["tuf"] }
 axum.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]

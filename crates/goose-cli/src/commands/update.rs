@@ -165,7 +165,9 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<bool> {
         }
     };
 
-    let trusted_root = TrustedRoot::production().context("Failed to load Sigstore trusted root")?;
+    let trusted_root = TrustedRoot::production()
+        .await
+        .context("Failed to load Sigstore trusted root")?;
     let policy = VerificationPolicy::with_issuer(GITHUB_ACTIONS_ISSUER);
     let artifact_digest =
         Sha256Hash::from_hex(&digest).context("Failed to parse artifact digest")?;

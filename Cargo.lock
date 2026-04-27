@@ -310,6 +310,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4288f83726785267c6f2ef073a3d83dc3f9b81464e9f99898240cced85fce35a"
 
 [[package]]
+name = "async-recursion"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b43422f69d8ff38f95f1b2bb76517c91589a924d1559a0e935d7c8ce0274c11"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "async-stream"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3131,6 +3142,15 @@ dependencies = [
  "smallvec",
  "strck",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "directories"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16f5094c54661b38d03bd7e50df373292118db60b585c08a411c6d840017fe7d"
+dependencies = [
+ "dirs-sys 0.5.0",
 ]
 
 [[package]]
@@ -6584,6 +6604,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "olpc-cjson"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "696183c9b5fe81a7715d074fd632e8bd46f4ccc0231a3ed7fc580a80de5f7083"
+dependencies = [
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7970,12 +8001,14 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
  "tokio-rustls",
+ "tokio-util",
  "tower",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams 0.4.2",
  "web-sys",
  "webpki-roots 1.0.6",
 ]
@@ -8027,7 +8060,7 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams",
+ "wasm-streams 0.5.0",
  "web-sys",
 ]
 
@@ -8947,6 +8980,8 @@ checksum = "6fa1be3a70fdefac1156561f70b44263601dce6ca8ce7022c0c51b142ec0138f"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "directories",
+ "futures",
  "hex",
  "rustls-pki-types",
  "serde",
@@ -8954,6 +8989,10 @@ dependencies = [
  "sigstore-crypto",
  "sigstore-types",
  "thiserror 2.0.18",
+ "tokio",
+ "tough",
+ "tracing",
+ "url",
  "x509-cert",
 ]
 
@@ -9115,6 +9154,29 @@ name = "smawk"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
+
+[[package]]
+name = "snafu"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e84b3f4eacbf3a1ce05eac6763b4d629d60cbc94d632e4092c54ade71f1e1a2"
+dependencies = [
+ "futures-core",
+ "pin-project",
+ "snafu-derive",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "socket2"
@@ -10875,6 +10937,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "tough"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e88d0ee9525696569cc2af5d46f8a739028c0268895071e0386957195b0c9161"
+dependencies = [
+ "async-recursion",
+ "async-trait",
+ "aws-lc-rs",
+ "bytes",
+ "chrono",
+ "dyn-clone",
+ "futures",
+ "futures-core",
+ "globset",
+ "hex",
+ "log",
+ "olpc-cjson",
+ "pem",
+ "percent-encoding",
+ "reqwest 0.12.28",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serde_plain",
+ "snafu",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "typed-path 0.9.3",
+ "untrusted 0.7.1",
+ "url",
+ "walkdir",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11228,6 +11325,12 @@ name = "twox-hash"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7b17f197b3050ba473acf9181f7b1d3b66d1cf7356c6cc57886662276e65908"
+
+[[package]]
+name = "typed-path"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82205ffd44a9697e34fc145491aa47310f9871540bb7909eaa9365e0a9a46607"
 
 [[package]]
 name = "typed-path"
@@ -11733,6 +11836,19 @@ dependencies = [
  "indexmap 2.14.0",
  "wasm-encoder",
  "wasmparser",
+]
+
+[[package]]
+name = "wasm-streams"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -12817,7 +12933,7 @@ dependencies = [
  "crc32fast",
  "indexmap 2.14.0",
  "memchr",
- "typed-path",
+ "typed-path 0.12.3",
 ]
 
 [[package]]
@@ -12830,7 +12946,7 @@ dependencies = [
  "flate2",
  "indexmap 2.14.0",
  "memchr",
- "typed-path",
+ "typed-path 0.12.3",
  "zopfli",
 ]
 
