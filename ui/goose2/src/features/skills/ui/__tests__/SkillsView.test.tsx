@@ -207,7 +207,9 @@ describe("SkillsView", () => {
     await user.click(
       screen.getByRole("button", { name: "Open code-review details" }),
     );
-    await user.click(screen.getByRole("button", { name: "Delete" }));
+    screen.getByRole("button", { name: "More" }).focus();
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
     expect(screen.getByText("Delete skill?")).toBeInTheDocument();
 

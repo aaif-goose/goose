@@ -29,7 +29,7 @@ interface SkillDetailPageProps {
   onEdit: (skill: SkillInfo) => void;
   onReveal: (skill: SkillInfo) => void;
   onShare: (skill: SkillInfo) => void;
-  onStartChat: (skill: SkillInfo) => void;
+  onStartChat?: (skill: SkillInfo) => void;
   onDelete: (skill: SkillInfo) => void;
 }
 
@@ -120,12 +120,14 @@ export function SkillDetailPage({
           descriptionClassName="max-w-3xl leading-relaxed"
           actions={
             <>
-              <SkillHeaderActionButton
-                label={startChatLabel}
-                icon={<IconMessagePlus className="size-3.5" />}
-                tooltipSide="top"
-                onClick={() => onStartChat(skill)}
-              />
+              {onStartChat ? (
+                <SkillHeaderActionButton
+                  label={startChatLabel}
+                  icon={<IconMessagePlus className="size-3.5" />}
+                  tooltipSide="top"
+                  onClick={() => onStartChat(skill)}
+                />
+              ) : null}
               {skill.editable ? (
                 <SkillHeaderActionButton
                   label={editLabel}

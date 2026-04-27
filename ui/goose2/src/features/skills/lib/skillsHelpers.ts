@@ -29,10 +29,6 @@ export function compareSkillsByName(a: SkillInfo, b: SkillInfo) {
   );
 }
 
-export function formatSkillCount(count: number) {
-  return `${count} skill${count === 1 ? "" : "s"}`;
-}
-
 export function downloadExport(json: string, filename: string) {
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);

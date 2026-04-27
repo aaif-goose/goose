@@ -57,6 +57,8 @@
     "reveal": "Show in folder",
     "searchPlaceholder": "Search skills",
     "share": "Share",
+    "skillCount_one": "{{displayCount}} skill",
+    "skillCount_other": "{{displayCount}} skills",
     "source": "Source",
     "startChat": "Start chat with {{name}}",
     "startChatShort": "Start chat",

@@ -469,7 +469,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
           onEdit={handleEdit}
           onReveal={handleReveal}
           onShare={handleExport}
-          onStartChat={handleStartChat}
+          onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
           onDelete={handleDelete}
         />
         {dialogs}
@@ -570,7 +570,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
           expandedSectionIds={expandedSectionIds}
           onExpandedSectionIdsChange={setExpandedSectionIds}
           onSelectSkill={handleSelectSkill}
-          onStartChat={handleStartChat}
+          onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
         />
       ) : null}
 

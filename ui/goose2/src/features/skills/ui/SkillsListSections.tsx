@@ -6,7 +6,6 @@ import {
   AccordionSectionTrigger,
 } from "@/shared/ui/accordion";
 import { Button } from "@/shared/ui/button";
-import { formatSkillCount } from "../lib/skillsHelpers";
 import type { SkillViewInfo } from "../lib/skillCategories";
 
 export interface SkillsSection {
@@ -20,7 +19,7 @@ interface SkillsListSectionsProps {
   expandedSectionIds: string[];
   onExpandedSectionIdsChange: (ids: string[]) => void;
   onSelectSkill: (skill: SkillViewInfo) => void;
-  onStartChat: (skill: SkillViewInfo) => void;
+  onStartChat?: (skill: SkillViewInfo) => void;
 }
 
 export function SkillsListSections({
@@ -47,7 +46,10 @@ export function SkillsListSections({
         >
           <AccordionSectionTrigger
             title={section.title}
-            meta={formatSkillCount(section.skills.length)}
+            meta={t("view.skillCount", {
+              count: section.skills.length,
+              displayCount: section.skills.length,
+            })}
           />
 
           <AccordionContent className="pb-0">
@@ -56,42 +58,38 @@ export function SkillsListSections({
                 {section.skills.map((skill) => (
                   <div
                     key={`${section.id}-${skill.id}`}
-                    className="group px-5 py-4 transition-colors hover:bg-muted/20"
+                    className="group relative flex items-start gap-3 px-5 py-4 transition-colors hover:bg-muted/20"
                   >
                     <button
                       type="button"
-                      className="block w-full min-w-0 text-left"
+                      className="absolute inset-0 cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                       onClick={() => onSelectSkill(skill)}
                       aria-label={t("view.openDetails", { name: skill.name })}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-normal text-foreground">
-                            {skill.name}
-                          </p>
-                          <Button
-                            type="button"
-                            variant="inline-subtle"
-                            size="xs"
-                            className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onStartChat(skill);
-                            }}
-                            aria-label={t("view.startChat", {
-                              name: skill.name,
-                            })}
-                          >
-                            {t("view.useInChat")}
-                          </Button>
-                        </div>
-                        {skill.description ? (
-                          <p className="mt-1 line-clamp-2 text-xs font-light text-muted-foreground">
-                            {skill.description}
-                          </p>
-                        ) : null}
-                      </div>
-                    </button>
+                    />
+                    <div className="pointer-events-none relative z-10 min-w-0 flex-1">
+                      <p className="text-sm font-normal text-foreground">
+                        {skill.name}
+                      </p>
+                      {skill.description ? (
+                        <p className="mt-1 line-clamp-2 text-xs font-light text-muted-foreground">
+                          {skill.description}
+                        </p>
+                      ) : null}
+                    </div>
+                    {onStartChat ? (
+                      <Button
+                        type="button"
+                        variant="inline-subtle"
+                        size="xs"
+                        className="relative z-20 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                        onClick={() => onStartChat(skill)}
+                        aria-label={t("view.startChat", {
+                          name: skill.name,
+                        })}
+                      >
+                        {t("view.useInChat")}
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
               </div>

@@ -57,6 +57,8 @@
     "reveal": "Mostrar en carpeta",
     "searchPlaceholder": "Buscar skills",
     "share": "Compartir",
+    "skillCount_one": "{{displayCount}} skill",
+    "skillCount_other": "{{displayCount}} skills",
     "source": "Origen",
     "startChat": "Iniciar chat con {{name}}",
     "startChatShort": "Iniciar chat",
