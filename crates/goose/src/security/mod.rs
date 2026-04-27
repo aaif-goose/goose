@@ -18,7 +18,7 @@ fn set_default_if_not_exist(config: &Config, key: &str, default_env: &str) {
         return;
     }
     if let Ok(parsed) = config.get_param::<bool>(default_env) {
-        let _ = config.set_param(key, &parsed);
+        let _ = config.set_param(key, parsed);
     }
 }
 
