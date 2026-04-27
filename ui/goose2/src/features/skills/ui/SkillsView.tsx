@@ -5,7 +5,6 @@ import {
   IconAdjustmentsHorizontal,
   IconChevronDown,
 } from "@tabler/icons-react";
-import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
@@ -26,6 +25,7 @@ import { SkillDetailPage } from "./SkillDetailPage";
 import { SkillsDialogs } from "./SkillsDialogs";
 import { SkillsEmptyState } from "./SkillsEmptyState";
 import { SkillsListSections, type SkillsSection } from "./SkillsListSections";
+import { hydrateProjectNames } from "../lib/projectHydration";
 import {
   compareSkillsByName,
   downloadExport,
@@ -146,47 +146,6 @@ function FilterButton({
   );
 }
 
-function hydrateProjectNames(skills: SkillInfo[], projects: ProjectInfo[]) {
-  const projectsByWorkingDir = new Map<
-    string,
-    Pick<ProjectInfo, "id" | "name">
-  >();
-
-  for (const project of projects) {
-    for (const workingDir of project.workingDirs) {
-      const normalizedDir = workingDir.trim();
-      if (!normalizedDir || projectsByWorkingDir.has(normalizedDir)) {
-        continue;
-      }
-      projectsByWorkingDir.set(normalizedDir, {
-        id: project.id,
-        name: project.name,
-      });
-    }
-  }
-
-  return skills.map((skill) => {
-    if (skill.sourceKind !== "project") {
-      return skill;
-    }
-
-    const projectLinks = skill.projectLinks.map((project) => {
-      const savedProject = projectsByWorkingDir.get(project.workingDir);
-      return {
-        ...project,
-        id: savedProject?.id ?? project.id,
-        name: savedProject?.name ?? project.name,
-      };
-    });
-
-    return {
-      ...skill,
-      projectLinks,
-      sourceLabel: projectLinks[0]?.name ?? skill.sourceLabel,
-    };
-  });
-}
-
 export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const { t } = useTranslation(["skills", "common"]);
   const projects = useProjectStore((state) => state.projects);
@@ -213,18 +172,30 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
   const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const loadRequestIdRef = useRef(0);
 
   const loadSkills = useCallback(async () => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+    setLoading(true);
+
     try {
       const projectDirs = projects.flatMap((project) => project.workingDirs);
       const result = await listSkills(projectDirs);
+      if (loadRequestIdRef.current !== requestId) {
+        return;
+      }
       setSkills(
         withInferredSkillCategories(hydrateProjectNames(result, projects)),
       );
     } catch {
-      setSkills([]);
+      if (loadRequestIdRef.current === requestId) {
+        setSkills([]);
+      }
     } finally {
-      setLoading(false);
+      if (loadRequestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [projects]);
 

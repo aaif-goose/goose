@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { SkillInfo } from "../../api/skills";
 import { SkillsView } from "../SkillsView";
 
-const mockProjects = [
+type MockProject = {
+  id: string;
+  name: string;
+  workingDirs: string[];
+};
+
+let mockProjects: MockProject[] = [
   {
     id: "project-alpha",
     name: "alpha",
@@ -11,13 +18,14 @@ const mockProjects = [
   },
 ];
 
-const mockSkills = [
+const mockSkills: SkillInfo[] = [
   {
     id: "global:/path/layout-polish",
     name: "layout",
     description: "Improves layout, spacing, and visual hierarchy",
     instructions: "Refine spacing and visual rhythm...",
     path: "/path/layout/SKILL.md",
+    fileLocation: "/path/layout/SKILL.md",
     directoryPath: "/path/layout",
     sourceKind: "global" as const,
     sourceLabel: "Personal",
@@ -69,7 +77,7 @@ vi.mock("../../api/skills", () => ({
 
 vi.mock("@/features/projects/stores/projectStore", () => ({
   useProjectStore: (
-    selector: (state: { projects: typeof mockProjects }) => unknown,
+    selector: (state: { projects: MockProject[] }) => unknown,
   ) => selector({ projects: mockProjects }),
 }));
 
@@ -82,13 +90,25 @@ const { listSkills, deleteSkill } = (await import(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockProjects.splice(0, mockProjects.length, {
-    id: "project-alpha",
-    name: "alpha",
-    workingDirs: ["/tmp/alpha"],
-  });
+  mockProjects = [
+    {
+      id: "project-alpha",
+      name: "alpha",
+      workingDirs: ["/tmp/alpha"],
+    },
+  ];
   listSkills.mockResolvedValue([]);
 });
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("SkillsView", () => {
   it("shows the redesigned heading and description", () => {
@@ -110,6 +130,94 @@ describe("SkillsView", () => {
     expect(
       screen.getByText("Create a skill or import one to get started."),
     ).toBeInTheDocument();
+  });
+
+  it("ignores stale skill loads after projects change", async () => {
+    const firstLoad = createDeferred<typeof mockSkills>();
+    const secondLoad = createDeferred<typeof mockSkills>();
+    listSkills
+      .mockReturnValueOnce(firstLoad.promise)
+      .mockReturnValueOnce(secondLoad.promise);
+    const { rerender } = render(<SkillsView />);
+
+    await waitFor(() => {
+      expect(listSkills).toHaveBeenCalledTimes(1);
+    });
+
+    mockProjects = [
+      {
+        id: "project-beta",
+        name: "beta",
+        workingDirs: ["/tmp/beta"],
+      },
+    ];
+    rerender(<SkillsView />);
+
+    await waitFor(() => {
+      expect(listSkills).toHaveBeenCalledTimes(2);
+    });
+
+    secondLoad.resolve([
+      {
+        ...mockSkills[2],
+        id: "project:/tmp/beta/.goose/skills/beta-skill",
+        name: "beta-skill",
+        path: "/tmp/beta/.goose/skills/beta-skill",
+        fileLocation: "/tmp/beta/.goose/skills/beta-skill/SKILL.md",
+        directoryPath: "/tmp/beta/.goose/skills/beta-skill",
+        sourceLabel: "beta",
+        projectLinks: [
+          {
+            id: "/tmp/beta",
+            name: "beta",
+            workingDir: "/tmp/beta",
+          },
+        ],
+      },
+    ]);
+    await screen.findByText("beta-skill");
+
+    firstLoad.resolve([mockSkills[2]]);
+    await waitFor(() => {
+      expect(screen.getByText("beta-skill")).toBeInTheDocument();
+      expect(screen.queryByText("test-writer")).not.toBeInTheDocument();
+    });
+  });
+
+  it("matches saved project working directories with trailing separators", async () => {
+    mockProjects = [
+      {
+        id: "project-goose",
+        name: "Goose",
+        workingDirs: ["/tmp/goose/"],
+      },
+    ];
+    listSkills.mockResolvedValue([
+      {
+        ...mockSkills[2],
+        id: "project:/tmp/goose/.agents/skills/test-writer",
+        name: "test-writer",
+        path: "/tmp/goose/.agents/skills/test-writer",
+        fileLocation: "/tmp/goose/.agents/skills/test-writer/SKILL.md",
+        directoryPath: "/tmp/goose/.agents/skills/test-writer",
+        sourceLabel: "goose",
+        projectLinks: [
+          {
+            id: "/tmp/goose",
+            name: "goose",
+            workingDir: "/tmp/goose",
+          },
+        ],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("test-writer");
+
+    await user.click(screen.getByRole("button", { name: "Goose" }));
+
+    expect(screen.getByText("test-writer")).toBeInTheDocument();
   });
 
   it("renders skills and opens the detail subpage", async () => {
@@ -222,11 +330,13 @@ describe("SkillsView", () => {
   });
 
   it("passes saved project working directories into listSkills", async () => {
-    mockProjects.splice(0, mockProjects.length, {
-      id: "project-goose",
-      name: "Goose",
-      workingDirs: ["/tmp/goose", "/tmp/goose-worktree"],
-    });
+    mockProjects = [
+      {
+        id: "project-goose",
+        name: "Goose",
+        workingDirs: ["/tmp/goose", "/tmp/goose-worktree"],
+      },
+    ];
 
     render(<SkillsView />);
 
@@ -239,11 +349,13 @@ describe("SkillsView", () => {
   });
 
   it("groups multiple working directories under the saved project filter", async () => {
-    mockProjects.splice(0, mockProjects.length, {
-      id: "project-goose",
-      name: "Goose",
-      workingDirs: ["/tmp/goose", "/tmp/goose-worktree"],
-    });
+    mockProjects = [
+      {
+        id: "project-goose",
+        name: "Goose",
+        workingDirs: ["/tmp/goose", "/tmp/goose-worktree"],
+      },
+    ];
     listSkills.mockResolvedValue([
       {
         ...mockSkills[2],
