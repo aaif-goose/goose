@@ -18,6 +18,24 @@
     "backToSkills": "Back to skills",
     "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
     "deleteTitle": "Delete skill?",
+    "category": "Category",
+    "categories": {
+      "clear": "Clear categories",
+      "count": "{{count}} categories",
+      "filter": "Filter by category",
+      "label": "Categories",
+      "options": {
+        "design": "Design",
+        "engineering": "Engineering",
+        "general": "General",
+        "integrations": "Integrations",
+        "operations": "Operations",
+        "productivity": "Productivity",
+        "quality": "Quality",
+        "research": "Research",
+        "writing": "Writing"
+      }
+    },
     "description": "Skills are reusable instructions that help an agent handle specific tasks, workflows, or tools.",
     "detailEmptyDescription": "Select a skill to inspect its source, location, and instructions.",
     "detailEmptyTitle": "Choose a skill",
@@ -30,6 +48,7 @@
     "filtersGlobal": "Personal",
     "instructions": "Instructions",
     "location": "Location",
+    "more": "More",
     "newSkill": "New Skill",
     "noMatchesDescription": "Try a different search or filter.",
     "noMatchesTitle": "No matching skills",
@@ -40,6 +59,7 @@
     "share": "Share",
     "source": "Source",
     "startChat": "Start chat with {{name}}",
+    "startChatShort": "Start chat",
     "title": "Skills",
     "useInChat": "Use in chat"
   }

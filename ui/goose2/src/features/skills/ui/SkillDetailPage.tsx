@@ -1,25 +1,71 @@
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  ArrowLeft,
-  FolderOpen,
-  MessageSquarePlus,
-  Pencil,
-  Share2,
-  Trash2,
-} from "lucide-react";
-import { Badge } from "@/shared/ui/badge";
+  IconDots,
+  IconFolderOpen,
+  IconMessagePlus,
+  IconPencil,
+  IconShare,
+  IconTrash,
+} from "@tabler/icons-react";
+import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import { Button } from "@/shared/ui/button";
+import { DetailField } from "@/shared/ui/detail-field";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
+import { PageColumns } from "@/shared/ui/page-columns";
 import { DetailPageShell, PageHeader } from "@/shared/ui/page-shell";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import type { SkillInfo } from "../api/skills";
+import type { SkillViewInfo } from "../lib/skillCategories";
 
 interface SkillDetailPageProps {
-  skill: SkillInfo | null;
+  skill: SkillViewInfo | null;
   onBack: () => void;
   onEdit: (skill: SkillInfo) => void;
   onReveal: (skill: SkillInfo) => void;
   onShare: (skill: SkillInfo) => void;
   onStartChat: (skill: SkillInfo) => void;
   onDelete: (skill: SkillInfo) => void;
+}
+
+interface SkillHeaderActionButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement> {
+  label: string;
+  icon: ReactNode;
+  tooltipSide?: "top" | "right" | "bottom" | "left";
+}
+
+function SkillHeaderActionButton({
+  label,
+  icon,
+  type = "button",
+  tooltipSide = "top",
+  ...props
+}: SkillHeaderActionButtonProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type={type}
+          size="icon-xs"
+          variant="outline-flat"
+          aria-label={label}
+          {...props}
+        >
+          {icon}
+          <span className="sr-only">{label}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side={tooltipSide} align="center" sideOffset={8}>
+        <p>{label}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function SkillDetailPage({
@@ -48,116 +94,116 @@ export function SkillDetailPage({
     skill.projectLinks.length > 0
       ? [...new Set(skill.projectLinks.map((project) => project.name))]
       : [skill.sourceLabel];
+  const startChatLabel = t("view.startChatShort");
+  const editLabel = t("common:actions.edit");
+  const revealLabel = t("view.reveal");
+  const moreLabel = t("view.more");
 
   return (
     <DetailPageShell>
       <div className="space-y-5 border-b border-border pb-6">
         <Button
           type="button"
-          variant="ghost"
+          variant="back"
           size="sm"
-          className="w-fit px-0 text-muted-foreground hover:text-foreground"
+          className="w-fit"
           onClick={onBack}
         >
-          <ArrowLeft className="size-4" />
           {t("view.backToSkills")}
         </Button>
 
         <PageHeader
-          title={
-            <div>
-              <div className="flex flex-wrap gap-2">
-                {sourceLabels.map((label) => (
-                  <Badge
-                    key={label}
-                    variant="secondary"
-                    className="font-normal"
-                  >
-                    {label}
-                  </Badge>
-                ))}
-              </div>
-              <span className="mt-4 block text-2xl font-normal tracking-tight text-foreground">
-                {skill.name}
-              </span>
-            </div>
-          }
-          titleElement="div"
+          title={skill.name}
+          variant="detail"
           description={skill.description}
+          actionsPlacement="below"
           descriptionClassName="max-w-3xl leading-relaxed"
           actions={
             <>
-              <Button
-                type="button"
-                size="xs"
-                variant="outline-flat"
+              <SkillHeaderActionButton
+                label={startChatLabel}
+                icon={<IconMessagePlus className="size-3.5" />}
+                tooltipSide="top"
                 onClick={() => onStartChat(skill)}
-              >
-                <MessageSquarePlus className="size-3.5" />
-                {t("view.startChat", { name: skill.name })}
-              </Button>
+              />
               {skill.editable ? (
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="outline-flat"
+                <SkillHeaderActionButton
+                  label={editLabel}
+                  icon={<IconPencil className="size-3.5" />}
+                  tooltipSide="top"
                   onClick={() => onEdit(skill)}
-                >
-                  <Pencil className="size-3.5" />
-                  {t("common:actions.edit")}
-                </Button>
+                />
               ) : null}
-              <Button
-                type="button"
-                size="xs"
-                variant="outline-flat"
-                onClick={() => onShare(skill)}
-              >
-                <Share2 className="size-3.5" />
-                {t("view.share")}
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                variant="outline-flat"
+              <SkillHeaderActionButton
+                label={revealLabel}
+                icon={<IconFolderOpen className="size-3.5" />}
+                tooltipSide="top"
                 onClick={() => onReveal(skill)}
-              >
-                <FolderOpen className="size-3.5" />
-                {t("view.reveal")}
-              </Button>
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="outline-flat"
+                    aria-label={moreLabel}
+                  >
+                    <IconDots className="size-3.5" />
+                    <span className="sr-only">{moreLabel}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={8}>
+                  <DropdownMenuItem onSelect={() => onShare(skill)}>
+                    <IconShare className="size-3.5" />
+                    {t("view.share")}
+                  </DropdownMenuItem>
+                  {skill.editable ? (
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => onDelete(skill)}
+                    >
+                      <IconTrash className="size-3.5" />
+                      {t("common:actions.delete")}
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           }
-          className="items-start"
-          actionsClassName="flex-wrap"
+          actionsClassName="gap-2"
         />
       </div>
 
-      <div className="grid gap-10 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <aside className="space-y-5">
-          <section className="space-y-3 border-b border-border pb-5">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                {t("view.source")}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {sourceLabels.map((label) => (
-                  <Badge
-                    key={label}
-                    variant="secondary"
-                    className="font-normal"
-                  >
-                    {label}
-                  </Badge>
-                ))}
-              </div>
-            </div>
+      <PageColumns
+        defaultSidebarSize={28}
+        minSidebarSize={22}
+        maxSidebarSize={36}
+        minContentSize={52}
+        sidebar={
+          <aside className="space-y-5">
+            <section className="space-y-5 border-b border-border pb-5">
+              <DetailField
+                label={t("view.category")}
+                contentAs="p"
+                contentClassName="text-foreground"
+              >
+                {t(`view.categories.options.${skill.inferredCategory}`)}
+              </DetailField>
 
-            {skill.projectLinks.length > 0 ? (
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                  {t("view.projects")}
-                </p>
-                <div className="mt-2 space-y-1.5 text-sm text-foreground">
+              <DetailField
+                label={t("view.source")}
+                contentClassName="space-y-1 text-foreground"
+              >
+                {sourceLabels.map((label) => (
+                  <p key={label}>{label}</p>
+                ))}
+              </DetailField>
+
+              {skill.projectLinks.length > 0 ? (
+                <DetailField
+                  label={t("view.projects")}
+                  contentClassName="space-y-1.5"
+                >
                   {skill.projectLinks.map((project) => (
                     <div key={`${project.id}-${project.workingDir}`}>
                       <p>{project.name}</p>
@@ -166,52 +212,27 @@ export function SkillDetailPage({
                       </p>
                     </div>
                   ))}
-                </div>
-              </div>
-            ) : null}
+                </DetailField>
+              ) : null}
 
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                {t("view.location")}
-              </p>
-              <p className="mt-2 text-sm text-foreground">
-                {skill.directoryPath}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                {t("view.filePath")}
-              </p>
-              <p className="mt-2 break-all text-sm text-muted-foreground">
-                {skill.path}
-              </p>
-            </div>
-          </section>
-        </aside>
-
-        <section className="space-y-3 pb-6">
-          <div className="flex items-center justify-between gap-3 border-b border-border pb-4">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-              {t("view.instructions")}
-            </p>
-            {skill.editable ? (
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost-light"
-                onClick={() => onDelete(skill)}
+              <DetailField
+                label={t("view.location")}
+                contentAs="p"
+                contentClassName="break-all text-foreground"
               >
-                <Trash2 className="size-3.5" />
-                {t("common:actions.delete")}
-              </Button>
-            ) : null}
-          </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                {skill.directoryPath}
+              </DetailField>
+            </section>
+          </aside>
+        }
+      >
+        <section className="space-y-4 pb-6">
+          <DetailField label={t("view.instructions")} />
+          <MessageResponse className="min-w-0 text-sm leading-6">
             {skill.instructions || " "}
-          </pre>
+          </MessageResponse>
         </section>
-      </div>
+      </PageColumns>
     </DetailPageShell>
   );
 }

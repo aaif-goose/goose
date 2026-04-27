@@ -24,6 +24,7 @@ test.describe("Skills view", () => {
   }) => {
     await navigateToSkills(page);
 
+    await expect(page.getByText("layout")).toBeVisible();
     await expect(page.getByText("code-review")).toBeVisible();
     await expect(page.getByText("test-writer")).toBeVisible();
 
@@ -35,9 +36,23 @@ test.describe("Skills view", () => {
       page.getByRole("button", { name: "Back to skills" }),
     ).toBeVisible();
     await expect(page.getByText("alpha").first()).toBeVisible();
+    await expect(page.getByText("Quality")).toBeVisible();
     await expect(
       page.getByText("/tmp/alpha/.goose/skills/test-writer"),
     ).toBeVisible();
+  });
+
+  test("category filtering isolates inferred groups", async ({
+    tauriMocked: page,
+  }) => {
+    await navigateToSkills(page);
+
+    await page.getByRole("button", { name: "Filter by category" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Design" }).click();
+
+    await expect(page.getByText("layout")).toBeVisible();
+    await expect(page.getByText("code-review")).not.toBeVisible();
+    await expect(page.getByText("test-writer")).not.toBeVisible();
   });
 
   test("search filters the list", async ({ tauriMocked: page }) => {

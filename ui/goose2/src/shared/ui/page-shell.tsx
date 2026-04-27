@@ -9,11 +9,15 @@ interface ShellProps {
 }
 
 interface PageHeaderProps {
+  eyebrow?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   titleElement?: "h1" | "div";
+  variant?: "default" | "detail";
+  actionsPlacement?: "end" | "below";
   className?: string;
+  eyebrowClassName?: string;
   titleClassName?: string;
   descriptionClassName?: string;
   actionsClassName?: string;
@@ -62,26 +66,39 @@ export function DetailPageShell({
 }
 
 export function PageHeader({
+  eyebrow,
   title,
   description,
   actions,
   titleElement = "h1",
+  variant = "default",
+  actionsPlacement = "end",
   className,
+  eyebrowClassName,
   titleClassName,
   descriptionClassName,
   actionsClassName,
 }: PageHeaderProps) {
   const TitleElement = titleElement;
+  const actionsBelow = actionsPlacement === "below";
+  const titleVariantClassName =
+    variant === "detail"
+      ? "font-display text-2xl font-normal tracking-tight text-foreground"
+      : "text-xl tracking-tight";
 
   return (
     <div
       className={cn(
         "flex flex-wrap items-start justify-between gap-4",
+        actionsBelow && "flex-col items-start justify-start",
         className,
       )}
     >
-      <div>
-        <TitleElement className={cn("text-xl tracking-tight", titleClassName)}>
+      <div className="min-w-0">
+        {eyebrow ? (
+          <div className={cn("mb-3", eyebrowClassName)}>{eyebrow}</div>
+        ) : null}
+        <TitleElement className={cn(titleVariantClassName, titleClassName)}>
           {title}
         </TitleElement>
         {description ? (
@@ -94,8 +111,18 @@ export function PageHeader({
             {description}
           </p>
         ) : null}
+        {actions && actionsBelow ? (
+          <div
+            className={cn(
+              "mt-4 flex flex-wrap items-center gap-1",
+              actionsClassName,
+            )}
+          >
+            {actions}
+          </div>
+        ) : null}
       </div>
-      {actions ? (
+      {actions && !actionsBelow ? (
         <div className={cn("flex items-start gap-2", actionsClassName)}>
           {actions}
         </div>

@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Upload } from "lucide-react";
+import {
+  IconAdjustmentsHorizontal,
+  IconChevronDown,
+} from "@tabler/icons-react";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button } from "@/shared/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import { FilterRow, PageHeader, PageShell } from "@/shared/ui/page-shell";
 import { useFileImportZone } from "@/shared/hooks/useFileImportZone";
 import { revealInFileManager } from "@/shared/lib/fileManager";
@@ -16,6 +29,7 @@ import { SkillsListSections, type SkillsSection } from "./SkillsListSections";
 import {
   compareSkillsByName,
   downloadExport,
+  uniqueSkillCategories,
   uniqueProjectFilters,
 } from "../lib/skillsHelpers";
 import {
@@ -25,8 +39,87 @@ import {
   listSkills,
   type SkillInfo,
 } from "../api/skills";
+import {
+  withInferredSkillCategories,
+  type SkillCategory,
+  type SkillViewInfo,
+} from "../lib/skillCategories";
 
 type SkillsFilter = "all" | "global" | `project:${string}`;
+
+function SkillCategoryFilter({
+  categories,
+  selectedCategories,
+  onSelectedCategoriesChange,
+}: {
+  categories: SkillCategory[];
+  selectedCategories: SkillCategory[];
+  onSelectedCategoriesChange: (categories: SkillCategory[]) => void;
+}) {
+  const { t } = useTranslation(["skills"]);
+
+  const toggleCategory = useCallback(
+    (category: SkillCategory) => {
+      onSelectedCategoriesChange(
+        selectedCategories.includes(category)
+          ? selectedCategories.filter((value) => value !== category)
+          : [...selectedCategories, category],
+      );
+    },
+    [onSelectedCategoriesChange, selectedCategories],
+  );
+
+  const buttonLabel =
+    selectedCategories.length === 0
+      ? t("view.categories.label")
+      : selectedCategories.length === 1
+        ? t(`view.categories.options.${selectedCategories[0]}`)
+        : t("view.categories.count", { count: selectedCategories.length });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="xs"
+          variant={selectedCategories.length > 0 ? "default" : "outline-flat"}
+          leftIcon={<IconAdjustmentsHorizontal />}
+          rightIcon={<IconChevronDown />}
+          aria-label={t("view.categories.filter")}
+        >
+          {buttonLabel}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuLabel>{t("view.categories.label")}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {categories.map((category) => (
+          <DropdownMenuCheckboxItem
+            key={category}
+            checked={selectedCategories.includes(category)}
+            onSelect={(event) => event.preventDefault()}
+            onCheckedChange={() => toggleCategory(category)}
+          >
+            {t(`view.categories.options.${category}`)}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {selectedCategories.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                onSelectedCategoriesChange([]);
+              }}
+            >
+              {t("view.categories.clear")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 interface SkillsViewProps {
   onStartChatWithSkill?: (skillName: string, projectId?: string | null) => void;
@@ -89,6 +182,9 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const projects = useProjectStore((state) => state.projects);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<SkillsFilter>("all");
+  const [selectedCategories, setSelectedCategories] = useState<SkillCategory[]>(
+    [],
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<
     | {
@@ -100,7 +196,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
       }
     | undefined
   >(undefined);
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [skills, setSkills] = useState<SkillViewInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingSkill, setDeletingSkill] = useState<SkillInfo | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
@@ -112,7 +208,9 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     try {
       const projectDirs = projects.flatMap((project) => project.workingDirs);
       const result = await listSkills(projectDirs);
-      setSkills(hydrateProjectNames(result, projects));
+      setSkills(
+        withInferredSkillCategories(hydrateProjectNames(result, projects)),
+      );
     } catch {
       setSkills([]);
     } finally {
@@ -125,6 +223,10 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   }, [loadSkills]);
 
   const projectFilters = useMemo(() => uniqueProjectFilters(skills), [skills]);
+  const categoryFilters = useMemo(
+    () => uniqueSkillCategories(skills),
+    [skills],
+  );
 
   useEffect(() => {
     if (!activeFilter.startsWith("project:")) {
@@ -137,6 +239,12 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     }
   }, [activeFilter, projectFilters]);
 
+  useEffect(() => {
+    setSelectedCategories((current) =>
+      current.filter((category) => categoryFilters.includes(category)),
+    );
+  }, [categoryFilters]);
+
   const filteredSkills = useMemo(() => {
     const searchTerm = search.trim().toLowerCase();
     return skills.filter((skill) => {
@@ -144,7 +252,10 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
         searchTerm.length === 0 ||
         skill.name.toLowerCase().includes(searchTerm) ||
         skill.description.toLowerCase().includes(searchTerm) ||
-        skill.sourceLabel.toLowerCase().includes(searchTerm);
+        skill.sourceLabel.toLowerCase().includes(searchTerm) ||
+        t(`view.categories.options.${skill.inferredCategory}`)
+          .toLowerCase()
+          .includes(searchTerm);
 
       const matchesFilter =
         activeFilter === "all"
@@ -155,9 +266,13 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
                 (project) => `project:${project.id}` === activeFilter,
               );
 
-      return matchesSearch && matchesFilter;
+      const matchesCategory =
+        selectedCategories.length === 0 ||
+        selectedCategories.includes(skill.inferredCategory);
+
+      return matchesSearch && matchesFilter && matchesCategory;
     });
-  }, [activeFilter, search, skills]);
+  }, [activeFilter, search, selectedCategories, skills, t]);
 
   const groupedSkills = useMemo<SkillsSection[]>(() => {
     if (activeFilter === "global") {
@@ -328,7 +443,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     handleFileChange: handleDropFileChange,
   } = useFileImportZone({ onImportFile: handleDropImport });
 
-  const handleSelectSkill = (skill: SkillInfo) => {
+  const handleSelectSkill = (skill: SkillViewInfo) => {
     setActiveSkillId(skill.id);
   };
 
@@ -438,6 +553,13 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
                 </FilterButton>
               );
             })}
+            {categoryFilters.length > 0 ? (
+              <SkillCategoryFilter
+                categories={categoryFilters}
+                selectedCategories={selectedCategories}
+                onSelectedCategoriesChange={setSelectedCategories}
+              />
+            ) : null}
           </FilterRow>
         </div>
       </div>

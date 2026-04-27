@@ -7,20 +7,20 @@ import {
 } from "@/shared/ui/accordion";
 import { Button } from "@/shared/ui/button";
 import { formatSkillCount } from "../lib/skillsHelpers";
-import type { SkillInfo } from "../api/skills";
+import type { SkillViewInfo } from "../lib/skillCategories";
 
 export interface SkillsSection {
   id: string;
   title: string;
-  skills: SkillInfo[];
+  skills: SkillViewInfo[];
 }
 
 interface SkillsListSectionsProps {
   sections: SkillsSection[];
   expandedSectionIds: string[];
   onExpandedSectionIdsChange: (ids: string[]) => void;
-  onSelectSkill: (skill: SkillInfo) => void;
-  onStartChat: (skill: SkillInfo) => void;
+  onSelectSkill: (skill: SkillViewInfo) => void;
+  onStartChat: (skill: SkillViewInfo) => void;
 }
 
 export function SkillsListSections({

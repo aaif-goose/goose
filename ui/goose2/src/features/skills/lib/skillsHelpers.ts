@@ -1,4 +1,5 @@
 import type { SkillInfo } from "../api/skills";
+import { SKILL_CATEGORY_ORDER, type SkillViewInfo } from "./skillCategories";
 
 export function uniqueProjectFilters(skills: SkillInfo[]) {
   const seen = new Map<string, string>();
@@ -12,6 +13,12 @@ export function uniqueProjectFilters(skills: SkillInfo[]) {
   return [...seen.entries()]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function uniqueSkillCategories(skills: SkillViewInfo[]) {
+  return SKILL_CATEGORY_ORDER.filter((category) =>
+    skills.some((skill) => skill.inferredCategory === category),
+  );
 }
 
 export function compareSkillsByName(a: SkillInfo, b: SkillInfo) {

@@ -16,6 +16,24 @@
   },
   "view": {
     "backToSkills": "Volver a skills",
+    "category": "Categoría",
+    "categories": {
+      "clear": "Limpiar categorías",
+      "count": "{{count}} categorías",
+      "filter": "Filtrar por categoría",
+      "label": "Categorías",
+      "options": {
+        "design": "Diseño",
+        "engineering": "Ingeniería",
+        "general": "General",
+        "integrations": "Integraciones",
+        "operations": "Operaciones",
+        "productivity": "Productividad",
+        "quality": "Calidad",
+        "research": "Investigación",
+        "writing": "Redacción"
+      }
+    },
     "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
     "deleteTitle": "¿Eliminar skill?",
     "description": "Las skills son instrucciones reutilizables que ayudan a un agente a manejar tareas, flujos de trabajo o herramientas específicas.",
@@ -30,6 +48,7 @@
     "filtersGlobal": "Personal",
     "instructions": "Instrucciones",
     "location": "Ubicación",
+    "more": "Más",
     "newSkill": "Nueva skill",
     "noMatchesDescription": "Prueba con otra búsqueda o filtro.",
     "noMatchesTitle": "No hay skills que coincidan",
@@ -40,6 +59,7 @@
     "share": "Compartir",
     "source": "Origen",
     "startChat": "Iniciar chat con {{name}}",
+    "startChatShort": "Iniciar chat",
     "title": "Skills",
     "useInChat": "Usar en chat"
   }

@@ -13,6 +13,18 @@ const mockProjects = [
 
 const mockSkills = [
   {
+    id: "global:/path/layout-polish",
+    name: "layout",
+    description: "Improves layout, spacing, and visual hierarchy",
+    instructions: "Refine spacing and visual rhythm...",
+    path: "/path/layout/SKILL.md",
+    directoryPath: "/path/layout",
+    sourceKind: "global" as const,
+    sourceLabel: "Personal",
+    projectLinks: [],
+    editable: true,
+  },
+  {
     id: "global:/path/code-review",
     name: "code-review",
     description: "Reviews code",
@@ -119,6 +131,7 @@ describe("SkillsView", () => {
     expect(
       screen.getByText("/tmp/alpha/.goose/skills/test-writer"),
     ).toBeInTheDocument();
+    expect(screen.getByText("Quality")).toBeInTheDocument();
   });
 
   it("returns to the list without losing filters", async () => {
@@ -165,6 +178,23 @@ describe("SkillsView", () => {
 
     expect(screen.queryByText("code-review")).not.toBeInTheDocument();
     expect(screen.getByText("test-writer")).toBeInTheDocument();
+  });
+
+  it("filters skills by inferred category from the dropdown", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("code-review");
+
+    await user.click(
+      screen.getByRole("button", { name: "Filter by category" }),
+    );
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Design" }));
+
+    expect(screen.getByText("layout")).toBeInTheDocument();
+    expect(screen.queryByText("code-review")).not.toBeInTheDocument();
+    expect(screen.queryByText("test-writer")).not.toBeInTheDocument();
   });
 
   it("shows a delete confirmation from the detail panel", async () => {

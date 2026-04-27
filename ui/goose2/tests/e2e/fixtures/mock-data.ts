@@ -76,6 +76,14 @@ export const MOCK_PROJECTS = [
 
 export const MOCK_SKILLS = [
   {
+    name: "layout",
+    description: "Improves layout, spacing, and visual hierarchy",
+    instructions:
+      "When asked to improve a UI layout, tighten spacing, strengthen hierarchy, and refine composition.",
+    path: "/mock/.agents/skills/layout/SKILL.md",
+    global: true,
+  },
+  {
     name: "code-review",
     description: "Reviews code for quality and best practices",
     instructions:
