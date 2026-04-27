@@ -48,6 +48,23 @@ pub struct OpenAiFormatOptions {
     pub preserve_thinking_context: bool,
 }
 
+fn merge_reasoning_text(prefix: &str, suffix: &str) -> String {
+    if prefix.is_empty() {
+        return suffix.to_string();
+    }
+    if suffix.is_empty() {
+        return prefix.to_string();
+    }
+    if suffix.starts_with(prefix) {
+        return suffix.to_string();
+    }
+    if prefix.ends_with(suffix) {
+        return prefix.to_string();
+    }
+
+    format!("{prefix}{suffix}")
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct DeltaToolCallFunction {
     name: Option<String>,
@@ -379,11 +396,9 @@ pub fn format_messages_with_options(
             }
 
             if !pending_assistant_reasoning.is_empty() {
-                if reasoning_text.is_empty() {
-                    reasoning_text = std::mem::take(&mut pending_assistant_reasoning);
-                } else {
-                    pending_assistant_reasoning.clear();
-                }
+                reasoning_text =
+                    merge_reasoning_text(&pending_assistant_reasoning, &reasoning_text);
+                pending_assistant_reasoning.clear();
             }
         }
 
@@ -2855,6 +2870,34 @@ data: [DONE]"#;
     }
 
     #[test]
+    fn test_format_messages_merges_pending_thinking_with_tool_call_suffix() -> anyhow::Result<()> {
+        let messages = vec![
+            Message::assistant().with_content(MessageContent::thinking("think ", "")),
+            Message::assistant()
+                .with_content(MessageContent::thinking("once", ""))
+                .with_tool_request(
+                    "tool1",
+                    Ok(CallToolRequestParams::new("test_tool")
+                        .with_arguments(object!({"param": "value"}))),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+            },
+        );
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["reasoning_content"], "think once");
+        assert_eq!(spec[0]["tool_calls"][0]["function"]["name"], "test_tool");
+
+        Ok(())
+    }
+
+    #[test]
     fn test_format_messages_does_not_carry_thinking_across_user_message() -> anyhow::Result<()> {
         let messages = vec![
             Message::assistant().with_content(MessageContent::thinking("stale", "")),
@@ -3099,6 +3142,40 @@ data: [DONE]"#;
 
         assert_eq!(thinking, "think once");
         assert_eq!(tool_calls, 1);
+
+        let spec = format_messages_with_options(
+            &history,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+            },
+        );
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["reasoning_content"], "think once");
+        assert_eq!(spec[0]["tool_calls"][0]["function"]["name"], "test_tool");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_tool_call_merges_yielded_reasoning_with_suffix() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"think \"},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"once\",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"test_tool\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n",
+            "data: [DONE]"
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut history = Vec::new();
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                history.push(msg);
+            }
+        }
 
         let spec = format_messages_with_options(
             &history,
