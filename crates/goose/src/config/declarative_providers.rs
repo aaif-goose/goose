@@ -102,10 +102,16 @@ pub struct DeclarativeProviderConfig {
     pub setup_steps: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_non_empty_string")]
     pub fast_model: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub preserves_thinking: bool,
 }
 
 fn default_requires_auth() -> bool {
     true
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl DeclarativeProviderConfig {
@@ -307,6 +313,7 @@ pub fn create_custom_provider(
         model_doc_link: None,
         setup_steps: vec![],
         fast_model: None,
+        preserves_thinking: false,
     };
 
     let custom_providers_dir = custom_providers_dir();
@@ -377,6 +384,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             model_doc_link: existing_config.model_doc_link,
             setup_steps: existing_config.setup_steps,
             fast_model: existing_config.fast_model.clone(),
+            preserves_thinking: existing_config.preserves_thinking,
         };
 
         let file_path = custom_provider_file_path(&updated_config.name)?;
@@ -667,6 +675,32 @@ mod tests {
         assert!(config.dynamic_models.is_none());
         assert!(config.model_doc_link.is_none());
         assert!(config.setup_steps.is_empty());
+        assert!(!config.preserves_thinking);
+    }
+
+    #[test]
+    fn test_zai_json_deserializes() {
+        let json = include_str!("../providers/declarative/zai.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("zai.json should parse");
+        assert_eq!(config.name, "zai");
+        assert_eq!(config.display_name, "Z.AI");
+        assert!(matches!(config.engine, ProviderEngine::Anthropic));
+        assert_eq!(config.api_key_env, "ZHIPU_API_KEY");
+        assert_eq!(config.base_url, "${ZAI_BASE_URL}");
+        assert_eq!(config.catalog_provider_id, Some("zai".to_string()));
+        assert_eq!(config.fast_model, Some("glm-4.5-air".to_string()));
+        assert!(config.preserves_thinking);
+        assert_eq!(config.supports_streaming, Some(true));
+        assert_eq!(config.models[0].name, "glm-5.1");
+
+        let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
+        assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars[0].name, "ZAI_BASE_URL");
+        assert_eq!(
+            env_vars[0].default,
+            Some("https://api.z.ai/api/anthropic".to_string())
+        );
     }
 
     #[test]

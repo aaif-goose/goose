@@ -4718,6 +4718,9 @@
           "name": {
             "type": "string"
           },
+          "preserves_thinking": {
+            "type": "boolean"
+          },
           "requires_auth": {
             "type": "boolean"
           },

@@ -834,6 +834,7 @@ where
         let mut accumulated_reasoning_content = String::new();
         let mut think_filter = ThinkFilter::new();
         let mut saw_structured_reasoning = false;
+        let mut yielded_reasoning_content_len = 0usize;
         let mut last_signature: Option<String> = None;
         // Buffer inline <think>...</think> content until we know whether structured
         // reasoning will arrive. Emitting it immediately and then receiving
@@ -984,10 +985,17 @@ where
                 }
 
                 let mut contents = Vec::new();
-                if !accumulated_reasoning_content.is_empty() {
-                    contents.push(MessageContent::thinking(&accumulated_reasoning_content, ""));
-                    accumulated_reasoning_content.clear();
+                if yielded_reasoning_content_len < accumulated_reasoning_content.len() {
+                    if let Some(unyielded_reasoning) =
+                        accumulated_reasoning_content.get(yielded_reasoning_content_len..)
+                    {
+                        if !unyielded_reasoning.is_empty() {
+                            contents.push(MessageContent::thinking(unyielded_reasoning, ""));
+                        }
+                    }
                 }
+                accumulated_reasoning_content.clear();
+                yielded_reasoning_content_len = 0;
                 let mut sorted_indices: Vec<_> = tool_call_data.keys().cloned().collect();
                 sorted_indices.sort();
 
@@ -1055,6 +1063,7 @@ where
                 if let Some(reasoning) = chunk.choices[0].delta.reasoning_text() {
                     let signature = last_signature.as_deref().unwrap_or("");
                     content.push(MessageContent::thinking(reasoning, signature));
+                    yielded_reasoning_content_len = accumulated_reasoning_content.len();
                 }
 
                 let (text_content, thought_signature) = extract_content_and_signature(chunk.choices[0].delta.content.as_ref());
@@ -2010,6 +2019,48 @@ mod tests {
     }
 
     #[test]
+    fn test_create_request_applies_request_params() -> anyhow::Result<()> {
+        let model_config = ModelConfig {
+            model_name: "glm-4.7".to_string(),
+            context_limit: Some(204800),
+            temperature: None,
+            max_tokens: Some(4096),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(std::collections::HashMap::from([(
+                "thinking".to_string(),
+                json!({
+                    "type": "enabled",
+                    "clear_thinking": false
+                }),
+            )])),
+            reasoning: None,
+        };
+
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )?;
+
+        assert_eq!(
+            request["thinking"],
+            json!({
+                "type": "enabled",
+                "clear_thinking": false
+            })
+        );
+        assert_eq!(request["stream"], true);
+        assert_eq!(request["stream_options"], json!({"include_usage": true}));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_create_request_o1_default() -> anyhow::Result<()> {
         // Without an explicit effort suffix the API picks its own default;
         // we should omit reasoning_effort entirely but still use "developer" role.
@@ -2828,6 +2879,69 @@ data: [DONE]"#;
         while let Some(result) = messages.next().await {
             result?;
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_tool_call_does_not_duplicate_yielded_reasoning() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"think \"},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"once\"},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"test_tool\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n",
+            "data: [DONE]"
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut thinking = String::new();
+        let mut tool_calls = 0;
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    match content {
+                        MessageContent::Thinking(t) => thinking.push_str(&t.thinking),
+                        MessageContent::ToolRequest(_) => tool_calls += 1,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        assert_eq!(thinking, "think once");
+        assert_eq!(tool_calls, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_tool_call_preserves_unyielded_reasoning() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"tool thought\",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"test_tool\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n",
+            "data: [DONE]"
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut thinking = String::new();
+        let mut tool_calls = 0;
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    match content {
+                        MessageContent::Thinking(t) => thinking.push_str(&t.thinking),
+                        MessageContent::ToolRequest(_) => tool_calls += 1,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        assert_eq!(thinking, "tool thought");
+        assert_eq!(tool_calls, 1);
         Ok(())
     }
 
