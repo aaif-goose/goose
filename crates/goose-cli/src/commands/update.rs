@@ -30,11 +30,7 @@ fn asset_name() -> &'static str {
     {
         "goose-x86_64-pc-windows-msvc-cuda.zip"
     }
-    #[cfg(all(
-        target_os = "windows",
-        target_arch = "x86_64",
-        not(feature = "cuda")
-    ))]
+    #[cfg(all(target_os = "windows", target_arch = "x86_64", not(feature = "cuda")))]
     {
         "goose-x86_64-pc-windows-msvc.zip"
     }
