@@ -102,7 +102,12 @@ export async function prepareSession(
 
   if (!gooseSessionId) {
     const tNew = performance.now();
-    const response = await acpApi.newSession(workingDir, providerId, projectId);
+    const response = await acpApi.newSession(
+      workingDir,
+      providerId,
+      projectId,
+      personaId,
+    );
     gooseSessionId = response.sessionId;
     perfLog(
       `[perf:prepare] ${sid} tracker newSession done in ${(performance.now() - tNew).toFixed(1)}ms (goose_sid=${gooseSessionId.slice(0, 8)})`,

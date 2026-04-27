@@ -391,7 +391,7 @@ export const MessageBubble = memo(function MessageBubble({
       <div
         className={cn(
           "group relative min-w-0 flex flex-col gap-1 pb-8",
-          isUser ? "max-w-[640px] items-end" : "max-w-[85%] items-start",
+          isUser ? "max-w-[640px] items-end" : "w-full items-start",
         )}
       >
         {showAssistantIdentity ? (
@@ -423,7 +423,7 @@ export const MessageBubble = memo(function MessageBubble({
         {/* biome-ignore lint/a11y/noStaticElementInteractions: delegated link handler */}
         <div
           className={cn(
-            "w-full min-w-0 text-[13px] leading-relaxed",
+            "w-full min-w-0 text-sm leading-relaxed",
             isUser && "rounded-2xl bg-muted p-3",
           )}
           onClick={handleContentClick}

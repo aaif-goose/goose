@@ -77,6 +77,10 @@ pub struct DeclarativeProviderConfig {
     #[serde(default)]
     pub skip_canonical_filtering: bool,
     #[serde(default, deserialize_with = "deserialize_non_empty_string")]
+    pub model_doc_link: Option<String>,
+    #[serde(default)]
+    pub setup_steps: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_non_empty_string")]
     pub fast_model: Option<String>,
 }
 
@@ -233,6 +237,8 @@ pub fn create_custom_provider(
         env_vars: None,
         dynamic_models: None,
         skip_canonical_filtering: false,
+        model_doc_link: None,
+        setup_steps: vec![],
         fast_model: None,
     };
 
@@ -300,6 +306,8 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             env_vars: existing_config.env_vars,
             dynamic_models: existing_config.dynamic_models,
             skip_canonical_filtering: existing_config.skip_canonical_filtering,
+            model_doc_link: existing_config.model_doc_link,
+            setup_steps: existing_config.setup_steps,
             fast_model: existing_config.fast_model.clone(),
         };
 
@@ -587,6 +595,33 @@ mod tests {
             serde_json::from_str(json).expect("groq.json should parse without env_vars");
         assert!(config.env_vars.is_none());
         assert!(config.dynamic_models.is_none());
+        assert!(config.model_doc_link.is_none());
+        assert!(config.setup_steps.is_empty());
+    }
+
+    #[test]
+    fn test_nvidia_json_deserializes() {
+        let json = include_str!("../providers/declarative/nvidia.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("nvidia.json should parse");
+        assert_eq!(config.name, "nvidia");
+        assert_eq!(config.display_name, "NVIDIA");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "NVIDIA_API_KEY");
+        assert_eq!(config.base_url, "https://integrate.api.nvidia.com/v1");
+        assert_eq!(config.catalog_provider_id, Some("nvidia".to_string()));
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.supports_streaming, Some(true));
+        assert!(!config.skip_canonical_filtering);
+        assert_eq!(
+            config.model_doc_link,
+            Some("https://build.nvidia.com/models".to_string())
+        );
+        assert_eq!(config.setup_steps.len(), 4);
+
+        assert_eq!(config.models.len(), 1);
+        assert_eq!(config.models[0].name, "z-ai/glm-4.7");
+        assert_eq!(config.models[0].context_limit, 131072);
     }
 
     #[test]

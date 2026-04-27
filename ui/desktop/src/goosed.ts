@@ -91,7 +91,7 @@ export const checkServerStatus = async (
   errorLog: string[],
   options: CheckServerStatusOptions = {}
 ): Promise<boolean> => {
-  const timeout = 10000;
+  const timeout = 30000;
   const interval = 100;
   const maxAttempts = Math.ceil(timeout / interval);
   options.onEvent?.('healthcheck_start', { timeoutMs: timeout, intervalMs: interval });

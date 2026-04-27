@@ -8,13 +8,15 @@ const mockSkills = [
     name: "code-review",
     description: "Reviews code",
     instructions: "Review the code...",
-    path: "/path",
+    path: "/path/code-review",
+    fileLocation: "/path/code-review/SKILL.md",
   },
   {
     name: "test-writer",
     description: "Writes tests",
     instructions: "Write tests...",
-    path: "/path",
+    path: "/path/test-writer",
+    fileLocation: "/path/test-writer/SKILL.md",
   },
 ];
 
@@ -192,8 +194,43 @@ describe("SkillsView", () => {
       await user.click(screen.getByRole("button", { name: "Delete" }));
 
       await waitFor(() => {
-        expect(deleteSkill).toHaveBeenCalledWith("code-review");
+        expect(deleteSkill).toHaveBeenCalledWith("/path/code-review");
       });
+    });
+
+    it("does not show the path on disk in the list view and still allows deleting discovered skills", async () => {
+      listSkills.mockResolvedValue([
+        {
+          name: "claude-skill",
+          description: "Imported from Claude",
+          instructions: "Use this skill...",
+          path: "/Users/test/.claude/skills/claude-skill",
+          fileLocation: "/Users/test/.claude/skills/claude-skill/SKILL.md",
+        },
+      ]);
+      const user = userEvent.setup();
+
+      render(<SkillsView />);
+
+      expect(await screen.findByText("claude-skill")).toBeInTheDocument();
+      expect(screen.queryByText("Path on disk:")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("/Users/test/.claude/skills/claude-skill/SKILL.md"),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByLabelText("Options for claude-skill"));
+      expect(
+        screen.getByRole("menuitem", { name: /edit/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: /duplicate/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: /export/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: /delete/i }),
+      ).toBeInTheDocument();
     });
   });
 });

@@ -8,7 +8,7 @@
     "env": [
       "302AI_API_KEY"
     ],
-    "model_count": 64
+    "model_count": 95
   },
   {
     "id": "alibaba",
@@ -41,7 +41,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 518
+    "model_count": 525
   },
   {
     "id": "abacus",
@@ -74,7 +74,7 @@
     "env": [
       "SILICONFLOW_CN_API_KEY"
     ],
-    "model_count": 79
+    "model_count": 81
   },
   {
     "id": "submodel",
@@ -107,7 +107,7 @@
     "env": [
       "DEEPSEEK_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 4
   },
   {
     "id": "meta-llama",
@@ -129,7 +129,7 @@
     "env": [
       "FIREWORKS_API_KEY"
     ],
-    "model_count": 17
+    "model_count": 18
   },
   {
     "id": "kimi-for-coding",
@@ -140,7 +140,7 @@
     "env": [
       "KIMI_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 3
   },
   {
     "id": "moark",
@@ -162,7 +162,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 14
   },
   {
     "id": "io-net",
@@ -184,7 +184,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 76
+    "model_count": 77
   },
   {
     "id": "minimax-cn-coding-plan",
@@ -239,7 +239,7 @@
     "env": [
       "HF_TOKEN"
     ],
-    "model_count": 22
+    "model_count": 23
   },
   {
     "id": "zenmux",
@@ -250,7 +250,7 @@
     "env": [
       "ZENMUX_API_KEY"
     ],
-    "model_count": 88
+    "model_count": 89
   },
   {
     "id": "upstage",
@@ -272,7 +272,7 @@
     "env": [
       "NOVITA_API_KEY"
     ],
-    "model_count": 90
+    "model_count": 96
   },
   {
     "id": "xiaomi-token-plan-cn",
@@ -305,7 +305,7 @@
     "env": [
       "CHUTES_API_KEY"
     ],
-    "model_count": 69
+    "model_count": 70
   },
   {
     "id": "dinference",
@@ -349,7 +349,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 334
+    "model_count": 335
   },
   {
     "id": "morph",
@@ -371,7 +371,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 25
+    "model_count": 26
   },
   {
     "id": "mixlayer",
@@ -415,7 +415,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 52
+    "model_count": 58
   },
   {
     "id": "stepfun",
@@ -448,7 +448,7 @@
     "env": [
       "POE_API_KEY"
     ],
-    "model_count": 128
+    "model_count": 130
   },
   {
     "id": "helicone",
@@ -459,7 +459,7 @@
     "env": [
       "HELICONE_API_KEY"
     ],
-    "model_count": 91
+    "model_count": 90
   },
   {
     "id": "ollama-cloud",
@@ -470,7 +470,7 @@
     "env": [
       "OLLAMA_API_KEY"
     ],
-    "model_count": 36
+    "model_count": 37
   },
   {
     "id": "zai-coding-plan",
@@ -503,7 +503,7 @@
     "env": [
       "BASETEN_API_KEY"
     ],
-    "model_count": 12
+    "model_count": 13
   },
   {
     "id": "zhipuai-coding-plan",
@@ -536,7 +536,7 @@
     "env": [
       "FIRMWARE_API_KEY"
     ],
-    "model_count": 24
+    "model_count": 25
   },
   {
     "id": "lmstudio",
@@ -569,7 +569,18 @@
     "env": [
       "MOONSHOT_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
+  },
+  {
+    "id": "wafer.ai",
+    "display_name": "Wafer",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://pass.wafer.ai/v1",
+    "doc": "https://docs.wafer.ai/wafer-pass",
+    "env": [
+      "WAFER_API_KEY"
+    ],
+    "model_count": 2
   },
   {
     "id": "cloudferro-sherlock",
@@ -635,7 +646,7 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 76
+    "model_count": 77
   },
   {
     "id": "inference",
@@ -671,6 +682,17 @@
     "model_count": 38
   },
   {
+    "id": "digitalocean",
+    "display_name": "DigitalOcean",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://inference.do-ai.run/v1",
+    "doc": "https://docs.digitalocean.com/products/gradient-ai-platform/details/models/",
+    "env": [
+      "DIGITALOCEAN_ACCESS_TOKEN"
+    ],
+    "model_count": 46
+  },
+  {
     "id": "vultr",
     "display_name": "Vultr",
     "npm": "@ai-sdk/openai-compatible",
@@ -701,7 +723,7 @@
     "env": [
       "OVHCLOUD_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 10
   },
   {
     "id": "friendli",
@@ -723,7 +745,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 32
+    "model_count": 34
   },
   {
     "id": "siliconflow",
@@ -734,7 +756,7 @@
     "env": [
       "SILICONFLOW_API_KEY"
     ],
-    "model_count": 73
+    "model_count": 74
   },
   {
     "id": "minimax",
@@ -756,7 +778,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 203
+    "model_count": 182
   },
   {
     "id": "cloudflare-workers-ai",
@@ -768,7 +790,7 @@
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 8
   },
   {
     "id": "fastrouter",
@@ -835,7 +857,7 @@
     "env": [
       "MOONSHOT_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
   },
   {
     "id": "berget",
@@ -846,7 +868,7 @@
     "env": [
       "BERGET_API_KEY"
     ],
-    "model_count": 8
+    "model_count": 5
   },
   {
     "id": "github-models",
@@ -869,6 +891,17 @@
       "QIHANG_API_KEY"
     ],
     "model_count": 9
+  },
+  {
+    "id": "tencent-tokenhub",
+    "display_name": "Tencent TokenHub",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://tokenhub.tencentmaas.com/v1",
+    "doc": "https://cloud.tencent.com/document/product/1823/130050",
+    "env": [
+      "TENCENT_TOKENHUB_API_KEY"
+    ],
+    "model_count": 1
   },
   {
     "id": "modelscope",
@@ -924,6 +957,17 @@
       "MINIMAX_API_KEY"
     ],
     "model_count": 6
+  },
+  {
+    "id": "regolo-ai",
+    "display_name": "Regolo AI",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.regolo.ai/v1",
+    "doc": "https://docs.regolo.ai/",
+    "env": [
+      "REGOLO_API_KEY"
+    ],
+    "model_count": 13
   },
   {
     "id": "xiaomi-token-plan-ams",

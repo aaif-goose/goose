@@ -30,8 +30,8 @@ pub struct ThreadMetadata {
     pub project_id: Option<String>,
     #[serde(default)]
     pub provider_id: Option<String>,
-    #[serde(default)]
-    pub model_name: Option<String>,
+    #[serde(default, alias = "model_name")]
+    pub model_id: Option<String>,
     #[serde(default)]
     pub mode: Option<String>,
     #[serde(flatten)]

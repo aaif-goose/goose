@@ -415,11 +415,7 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
         if (session && !session.userSetName) {
           useChatSessionStore
             .getState()
-            .updateSession(
-              sessionId,
-              { title: info.title as string },
-              { persistOverlay: false },
-            );
+            .updateSession(sessionId, { title: info.title as string });
         }
       }
       break;
@@ -456,11 +452,10 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
             currentModelId;
 
           const sessionStore = useChatSessionStore.getState();
-          sessionStore.updateSession(
-            sessionId,
-            { modelId: currentModelId, modelName: currentModelName },
-            { persistOverlay: false },
-          );
+          sessionStore.updateSession(sessionId, {
+            modelId: currentModelId,
+            modelName: currentModelName,
+          });
         }
       }
       break;

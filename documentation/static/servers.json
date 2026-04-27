@@ -281,6 +281,23 @@
     ]
   },
   {
+    "id": "exa",
+    "name": "Exa Search",
+    "description": "AI-powered web search with neural and keyword capabilities",
+    "command": "npx -y exa-mcp-server",
+    "link": "https://github.com/exa-labs/exa-mcp-server",
+    "installation_notes": "Install using npx package manager. Requires Exa API key.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "EXA_API_KEY",
+        "description": "API key for Exa web search service",
+        "required": true
+      }
+    ]
+  },
+  {
     "id": "excalidraw-mcp-app",
     "name": "Excalidraw",
     "description": "Excalidraw MCP App for diagrammin",

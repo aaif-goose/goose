@@ -140,8 +140,8 @@ impl Agent {
     }
 
     async fn handle_skills_command(&self, session_id: &str) -> Result<Option<Message>> {
-        use super::platform_extensions::skills::list_installed_skills;
-        use super::platform_extensions::SourceKind;
+        use crate::skills::list_installed_skills;
+        use goose_sdk::custom_requests::SourceType;
 
         let working_dir = self
             .config
@@ -153,7 +153,7 @@ impl Agent {
         let sources = list_installed_skills(working_dir.as_deref());
         let skills: Vec<_> = sources
             .iter()
-            .filter(|s| matches!(s.kind, SourceKind::Skill | SourceKind::BuiltinSkill))
+            .filter(|s| matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill))
             .collect();
 
         let mut output = String::new();
@@ -165,7 +165,7 @@ impl Agent {
         } else {
             output.push_str(&format!("**Installed skills ({}):**\n\n", skills.len()));
             for skill in &skills {
-                let kind_label = if skill.kind == SourceKind::BuiltinSkill {
+                let kind_label = if skill.source_type == SourceType::BuiltinSkill {
                     " *(builtin)*"
                 } else {
                     ""

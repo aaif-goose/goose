@@ -55,7 +55,6 @@ export const INITIAL_SESSION_CHAT_RUNTIME: SessionChatRuntime = {
 export interface Session {
   id: string;
   title: string;
-  agentId?: string;
   projectId?: string | null;
   providerId?: string;
   personaId?: string;

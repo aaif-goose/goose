@@ -9,7 +9,8 @@
     "instructionsPlaceholder": "Instrucciones en Markdown que seguirá el agente...",
     "name": "Nombre",
     "namePlaceholder": "mi-skill",
-    "nameValidation": "Debe estar en kebab-case (p. ej. code-review)",
+    "nameValidation": "Usa de 1 a 64 letras minúsculas, números o guiones. El nombre no puede empezar ni terminar con un guion.",
+    "pathOnDisk": "Ruta en disco",
     "newTitle": "Nueva skill",
     "saving": "Guardando..."
   },

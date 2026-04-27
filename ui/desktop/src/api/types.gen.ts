@@ -220,9 +220,11 @@ export type DeclarativeProviderConfig = {
     headers?: {
         [key: string]: string;
     } | null;
+    model_doc_link?: string | null;
     models: Array<ModelInfo>;
     name: string;
     requires_auth?: boolean;
+    setup_steps?: Array<string>;
     skip_canonical_filtering?: boolean;
     supports_streaming?: boolean | null;
     timeout_seconds?: number | null;

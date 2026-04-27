@@ -95,17 +95,17 @@ test.describe("Skills view", () => {
     await expect(nameInput).toHaveValue("my-skill-name");
   });
 
-  test("shows kebab-case validation error for trailing hyphen", async ({
+  test("shows validation error for trailing hyphen", async ({
     tauriMocked: page,
   }) => {
     await navigateToSkills(page);
     await page.getByRole("button", { name: "New Skill" }).first().click();
     const dialog = page.getByRole("dialog");
-    // Type something that ends with a hyphen (the auto-formatter will produce "test-")
     await dialog.getByPlaceholder("my-skill-name").pressSequentially("test ");
-    // The regex /^[a-z0-9]+(-[a-z0-9]+)*$/ won't match "test-", so error shows
     await expect(
-      dialog.getByText("Must be kebab-case (e.g. code-review)"),
+      dialog.getByText(
+        "Use 1–64 lowercase letters, numbers, or hyphens. Names cannot start or end with a hyphen.",
+      ),
     ).toBeVisible();
   });
 
@@ -145,19 +145,45 @@ test.describe("Skills view", () => {
     await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
   });
 
-  test("Edit opens edit dialog with pre-filled fields", async ({
+  test("Edit opens edit dialog with pre-filled editable fields", async ({
     tauriMocked: page,
   }) => {
     await navigateToSkills(page);
     await page.getByLabel("Options for code-review").click();
     await page.getByRole("menuitem", { name: "Edit" }).click();
+
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("h2", { hasText: "Edit Skill" })).toBeVisible();
-    // Name should be pre-filled and read-only
+
     const nameInput = dialog.getByPlaceholder("my-skill-name");
+    const descriptionInput = dialog.getByPlaceholder(
+      "What it does and when to use it...",
+    );
+    const instructionsInput = dialog.getByPlaceholder(
+      "Markdown instructions the agent will follow...",
+    );
+
     await expect(nameInput).toHaveValue("code-review");
-    await expect(nameInput).toHaveAttribute("readonly", "");
+    await expect(descriptionInput).toHaveValue(
+      "Reviews code for quality and best practices",
+    );
+    await expect(instructionsInput).toHaveValue(
+      "When asked to review code, analyze the diff and provide feedback on code quality, potential bugs, and best practices.",
+    );
+    await expect(
+      dialog.getByText(
+        "Path on disk: /mock/.agents/skills/code-review/SKILL.md",
+      ),
+    ).toBeVisible();
+
+    await nameInput.fill("renamed-skill");
+    await expect(nameInput).toHaveValue("renamed-skill");
+    await expect(
+      dialog.getByText(
+        "Path on disk: /mock/.agents/skills/renamed-skill/SKILL.md",
+      ),
+    ).toBeVisible();
   });
 
   test("Delete triggers confirmation dialog", async ({ tauriMocked: page }) => {

@@ -96,6 +96,7 @@ export function buildInitScript(options?: {
         content: s.instructions ?? s.content ?? "",
         directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
         global: true,
+        supportingFiles: [],
       });
 
       function nowIso() {
@@ -195,26 +196,43 @@ export function buildInitScript(options?: {
                 content: message.params?.content ?? "",
                 directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
                 global: message.params?.global ?? true,
+                supportingFiles: [],
               },
             });
-          case "_goose/sources/update":
+          case "_goose/sources/update": {
+            const path = message.params?.path ?? "/mock/.agents/skills/updated-skill";
+            const nextName = message.params?.name;
+            const name =
+              typeof nextName === "string" && nextName.length > 0
+                ? nextName
+                : String(path).split("/").filter(Boolean).at(-1) ?? "updated-skill";
+            const segments = String(path).split("/").filter(Boolean);
+            if (segments.length > 0) {
+              segments[segments.length - 1] = name;
+            }
+            const directory = \`/\${segments.join("/")}\`;
             return jsonRpcResult(message.id, {
               source: {
-                name: message.params?.name ?? "updated-skill",
+                name,
                 type: "skill",
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (message.params?.name ?? "updated-skill"),
-                global: message.params?.global ?? true,
+                directory,
+                global: true,
+                supportingFiles: [],
               },
             });
+          }
           case "_goose/sources/delete":
             return jsonRpcResult(message.id, {});
-          case "_goose/sources/export":
+          case "_goose/sources/export": {
+            const path = message.params?.path ?? "/mock/.agents/skills/skill";
+            const name = String(path).split("/").filter(Boolean).at(-1) ?? "skill";
             return jsonRpcResult(message.id, {
               json: "{}",
-              filename: (message.params?.name ?? "skill") + ".skill.json",
+              filename: name + ".skill.json",
             });
+          }
           case "_goose/sources/import":
             return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
           default:

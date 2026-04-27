@@ -1,118 +1,39 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
-//! methods. A source is a user-editable entity stored under a per-scope root
-//! directory — `~/.agents/skills` for global sources and `<project>/.goose/skills`
-//! for project-specific sources.
 
-use crate::agents::platform_extensions::parse_frontmatter;
+use crate::skills::{
+    build_skill_md, discover_skills, infer_skill_name, is_global_skill_dir,
+    parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
+    validate_skill_name,
+};
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-#[derive(Deserialize)]
-struct SkillFront {
-    #[serde(default)]
-    description: String,
+pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
+    content: &str,
+) -> Result<Option<(T, String)>, serde_yaml::Error> {
+    let parts: Vec<&str> = content.split("---").collect();
+    if parts.len() < 3 {
+        return Ok(None);
+    }
+
+    let yaml_content = parts[1].trim();
+    let metadata: T = serde_yaml::from_str(yaml_content)?;
+
+    let body = parts[2..].join("---").trim().to_string();
+    Ok(Some((metadata, body)))
 }
 
-const GLOBAL_SKILLS_SUBPATH: &[&str] = &[".agents", "skills"];
-const PROJECT_SKILLS_SUBPATH: &[&str] = &[".goose", "skills"];
-
-fn home_dir() -> Result<PathBuf, Error> {
-    dirs::home_dir()
-        .ok_or_else(|| Error::internal_error().data("Could not determine home directory"))
-}
-
-fn skills_dir_global() -> Result<PathBuf, Error> {
-    let mut dir = home_dir()?;
-    for part in GLOBAL_SKILLS_SUBPATH {
-        dir = dir.join(part);
-    }
-    Ok(dir)
-}
-
-fn skills_dir_project(project_dir: &str) -> Result<PathBuf, Error> {
-    if project_dir.trim().is_empty() {
-        return Err(
-            Error::invalid_params().data("projectDir must not be empty when global is false")
-        );
-    }
-    let mut dir = PathBuf::from(project_dir);
-    for part in PROJECT_SKILLS_SUBPATH {
-        dir = dir.join(part);
-    }
-    Ok(dir)
-}
-
-fn source_base_dir(
-    source_type: SourceType,
-    global: bool,
-    project_dir: Option<&str>,
-) -> Result<PathBuf, Error> {
-    match source_type {
-        SourceType::Skill => {
-            if global {
-                skills_dir_global()
-            } else {
-                let pd = project_dir.ok_or_else(|| {
-                    Error::invalid_params().data("projectDir is required when global is false")
-                })?;
-                skills_dir_project(pd)
-            }
-        }
-    }
-}
-
-/// Kebab-case validation: `^[a-z0-9]+(-[a-z0-9]+)*$`. Prevents path traversal
-/// via names like `../../.ssh/authorized_keys`.
-fn validate_source_name(name: &str) -> Result<(), Error> {
-    if name.is_empty() {
-        return Err(Error::invalid_params().data("Source name must not be empty"));
-    }
-    let mut expect_alnum = true;
-    for ch in name.chars() {
-        if ch.is_ascii_lowercase() || ch.is_ascii_digit() {
-            expect_alnum = false;
-        } else if ch == '-' && !expect_alnum {
-            expect_alnum = true;
-        } else {
-            return Err(Error::invalid_params().data(format!(
-                "Invalid source name \"{}\". Names must be kebab-case (lowercase letters, digits, and hyphens; \
-                 must not start or end with a hyphen or contain consecutive hyphens).",
-                name
-            )));
-        }
-    }
-    if expect_alnum {
+fn require_skill_type(source_type: SourceType) -> Result<(), Error> {
+    if source_type != SourceType::Skill {
         return Err(Error::invalid_params().data(format!(
-            "Invalid source name \"{}\". Names must not end with a hyphen.",
-            name
+            "Source type '{}' is not supported. Only 'skill' is currently supported.",
+            source_type
         )));
     }
     Ok(())
-}
-
-fn build_skill_md(name: &str, description: &str, content: &str) -> String {
-    // YAML single-quoted strings escape a literal single quote by doubling it.
-    let safe_desc = description.replace('\'', "''");
-    let mut md = format!("---\nname: {}\ndescription: '{}'\n---\n", name, safe_desc);
-    if !content.is_empty() {
-        md.push('\n');
-        md.push_str(content);
-        md.push('\n');
-    }
-    md
-}
-
-fn parse_skill_frontmatter(raw: &str) -> (String, String) {
-    if !raw.trim_start().starts_with("---") {
-        return (String::new(), raw.to_string());
-    }
-    match parse_frontmatter::<SkillFront>(raw) {
-        Ok(Some((meta, body))) => (meta.description, body),
-        _ => (String::new(), raw.to_string()),
-    }
 }
 
 fn source_entry(
@@ -120,7 +41,7 @@ fn source_entry(
     name: &str,
     description: &str,
     content: &str,
-    dir: &Path,
+    dir: &std::path::Path,
     global: bool,
 ) -> SourceEntry {
     SourceEntry {
@@ -130,6 +51,7 @@ fn source_entry(
         content: content.to_string(),
         directory: dir.to_string_lossy().to_string(),
         global,
+        supporting_files: Vec::new(),
     }
 }
 
@@ -141,8 +63,9 @@ pub fn create_source(
     global: bool,
     project_dir: Option<&str>,
 ) -> Result<SourceEntry, Error> {
-    validate_source_name(name)?;
-    let dir = source_base_dir(source_type, global, project_dir)?.join(name);
+    require_skill_type(source_type)?;
+    validate_skill_name(name)?;
+    let dir = skill_base_dir(global, project_dir)?.join(name);
 
     if dir.exists() {
         return Err(
@@ -170,20 +93,42 @@ pub fn create_source(
 
 pub fn update_source(
     source_type: SourceType,
+    path: &str,
     name: &str,
     description: &str,
     content: &str,
-    global: bool,
-    project_dir: Option<&str>,
 ) -> Result<SourceEntry, Error> {
-    validate_source_name(name)?;
-    let dir = source_base_dir(source_type, global, project_dir)?.join(name);
+    require_skill_type(source_type)?;
+    validate_skill_name(name)?;
 
-    if !dir.exists() {
-        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", name)));
-    }
+    let dir = resolve_discoverable_skill_dir(path)?;
+    let current_dir_name = dir
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| Error::internal_error().data("Failed to resolve source directory name"))?;
 
-    let file_path = dir.join("SKILL.md");
+    let target_dir = if name == current_dir_name {
+        dir.clone()
+    } else {
+        let base_dir = dir.parent().ok_or_else(|| {
+            Error::internal_error().data("Failed to resolve source base directory")
+        })?;
+        let target_dir = base_dir.join(name);
+
+        if target_dir.exists() {
+            return Err(
+                Error::invalid_params().data(format!("A source named \"{}\" already exists", name))
+            );
+        }
+
+        fs::rename(&dir, &target_dir).map_err(|e| {
+            Error::internal_error().data(format!("Failed to rename source directory: {e}"))
+        })?;
+
+        target_dir
+    };
+
+    let file_path = target_dir.join("SKILL.md");
     let md = build_skill_md(name, description, content);
     fs::write(&file_path, md)
         .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
@@ -193,23 +138,14 @@ pub fn update_source(
         name,
         description,
         content,
-        &dir,
-        global,
+        &target_dir,
+        is_global_skill_dir(&target_dir),
     ))
 }
 
-pub fn delete_source(
-    source_type: SourceType,
-    name: &str,
-    global: bool,
-    project_dir: Option<&str>,
-) -> Result<(), Error> {
-    validate_source_name(name)?;
-    let dir = source_base_dir(source_type, global, project_dir)?.join(name);
-
-    if !dir.exists() {
-        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", name)));
-    }
+pub fn delete_source(source_type: SourceType, path: &str) -> Result<(), Error> {
+    require_skill_type(source_type)?;
+    let dir = resolve_skill_dir(path)?;
     fs::remove_dir_all(&dir)
         .map_err(|e| Error::internal_error().data(format!("Failed to delete source: {e}")))?;
     Ok(())
@@ -219,97 +155,45 @@ pub fn list_sources(
     source_type: Option<SourceType>,
     project_dir: Option<&str>,
 ) -> Result<Vec<SourceEntry>, Error> {
-    let kinds: Vec<SourceType> = match source_type {
-        Some(k) => vec![k],
-        None => vec![SourceType::Skill],
-    };
-
-    let mut sources = Vec::new();
-    for kind in kinds {
-        match kind {
-            SourceType::Skill => {
-                if let Some(pd) = project_dir {
-                    if !pd.trim().is_empty() {
-                        let dir = skills_dir_project(pd)?;
-                        sources.extend(read_skill_dir(&dir, false)?);
-                    }
-                }
-                let dir = skills_dir_global()?;
-                sources.extend(read_skill_dir(&dir, true)?);
-            }
-        }
+    if let Some(t) = source_type {
+        require_skill_type(t)?;
     }
+
+    let working_dir = project_dir
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from);
+
+    let mut sources: Vec<SourceEntry> = discover_skills(working_dir.as_deref())
+        .into_iter()
+        .filter(|s| s.source_type == SourceType::Skill)
+        .collect();
+
     sources.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(sources)
 }
 
-fn read_skill_dir(dir: &Path, global: bool) -> Result<Vec<SourceEntry>, Error> {
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-    let entries = fs::read_dir(dir)
-        .map_err(|e| Error::internal_error().data(format!("Failed to read skills dir: {e}")))?;
-
-    let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let skill_md = path.join("SKILL.md");
-        if !skill_md.exists() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-        let raw = fs::read_to_string(&skill_md).unwrap_or_default();
-        let (description, content) = parse_skill_frontmatter(&raw);
-        out.push(source_entry(
-            SourceType::Skill,
-            &name,
-            &description,
-            &content,
-            &path,
-            global,
-        ));
-    }
-    Ok(out)
-}
-
-pub fn export_source(
-    source_type: SourceType,
-    name: &str,
-    global: bool,
-    project_dir: Option<&str>,
-) -> Result<(String, String), Error> {
-    validate_source_name(name)?;
-    let dir = source_base_dir(source_type, global, project_dir)?.join(name);
-
-    if !dir.exists() {
-        return Err(Error::invalid_params().data(format!("Source \"{}\" not found", name)));
-    }
+pub fn export_source(source_type: SourceType, path: &str) -> Result<(String, String), Error> {
+    require_skill_type(source_type)?;
+    let dir = resolve_discoverable_skill_dir(path)?;
 
     let md = dir.join("SKILL.md");
     let raw = fs::read_to_string(&md)
         .map_err(|e| Error::internal_error().data(format!("Failed to read SKILL.md: {e}")))?;
     let (description, content) = parse_skill_frontmatter(&raw);
 
-    let type_slug = match source_type {
-        SourceType::Skill => "skill",
-    };
+    let name = infer_skill_name(&dir);
+
     let export = serde_json::json!({
         "version": 1,
-        "type": type_slug,
+        "type": "skill",
         "name": name,
         "description": description,
         "content": content,
     });
     let json = serde_json::to_string_pretty(&export)
         .map_err(|e| Error::internal_error().data(format!("Failed to serialize source: {e}")))?;
-    let filename = format!("{}.{}.json", name, type_slug);
+    let filename = format!("{}.skill.json", name);
     Ok((json, filename))
 }
 
@@ -331,15 +215,17 @@ pub fn import_sources(
         );
     }
 
-    // Default to `skill` to preserve compatibility with pre-sources skill exports.
-    let source_type = match value
+    match value
         .get("type")
         .and_then(|v| v.as_str())
         .unwrap_or("skill")
     {
-        "skill" => SourceType::Skill,
+        "skill" => {}
         other => {
-            return Err(Error::invalid_params().data(format!("Unsupported source type: {}", other)));
+            return Err(Error::invalid_params().data(format!(
+                "Source type '{}' is not supported. Only 'skill' is currently supported.",
+                other
+            )));
         }
     };
 
@@ -361,7 +247,6 @@ pub fn import_sources(
         return Err(Error::invalid_params().data("Source description must not be empty"));
     }
 
-    // Accept both the new `content` key and the legacy skills `instructions` key.
     let content = value
         .get("content")
         .or_else(|| value.get("instructions"))
@@ -369,9 +254,9 @@ pub fn import_sources(
         .unwrap_or("")
         .to_string();
 
-    validate_source_name(&name)?;
+    validate_skill_name(&name)?;
 
-    let base = source_base_dir(source_type, global, project_dir)?;
+    let base = skill_base_dir(global, project_dir)?;
     let mut final_name = name.clone();
     if base.join(&final_name).exists() {
         final_name = format!("{}-imported", name);
@@ -392,7 +277,7 @@ pub fn import_sources(
         .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
 
     Ok(vec![source_entry(
-        source_type,
+        SourceType::Skill,
         &final_name,
         &description,
         &content,
@@ -407,15 +292,17 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn kebab_case_validation() {
-        assert!(validate_source_name("my-skill").is_ok());
-        assert!(validate_source_name("abc123").is_ok());
-        assert!(validate_source_name("").is_err());
-        assert!(validate_source_name("-leading").is_err());
-        assert!(validate_source_name("trailing-").is_err());
-        assert!(validate_source_name("double--hyphen").is_err());
-        assert!(validate_source_name("CAPS").is_err());
-        assert!(validate_source_name("../escape").is_err());
+    fn skill_name_validation() {
+        assert!(validate_skill_name("my-skill").is_ok());
+        assert!(validate_skill_name("abc123").is_ok());
+        assert!(validate_skill_name("double--hyphen").is_ok());
+        assert!(validate_skill_name("").is_err());
+        assert!(validate_skill_name("-leading").is_err());
+        assert!(validate_skill_name("trailing-").is_err());
+        assert!(validate_skill_name("CAPS").is_err());
+        assert!(validate_skill_name("../escape").is_err());
+        assert!(validate_skill_name(&"a".repeat(64)).is_ok());
+        assert!(validate_skill_name(&"a".repeat(65)).is_err());
     }
 
     #[test]
@@ -434,24 +321,25 @@ mod tests {
         .unwrap();
         assert_eq!(created.name, "my-skill");
         assert!(!created.global);
-        assert!(PathBuf::from(&created.directory).join("SKILL.md").exists());
+        let dir = PathBuf::from(&created.directory);
+        assert!(dir.join("SKILL.md").exists());
 
         let listed = list_sources(Some(SourceType::Skill), Some(project)).unwrap();
         assert!(listed.iter().any(|s| s.name == "my-skill" && !s.global));
 
         let updated = update_source(
             SourceType::Skill,
+            created.directory.as_str(),
             "my-skill",
             "now does a different thing",
             "step three",
-            false,
-            Some(project),
         )
         .unwrap();
         assert_eq!(updated.description, "now does a different thing");
+        assert_eq!(updated.name, "my-skill");
 
-        delete_source(SourceType::Skill, "my-skill", false, Some(project)).unwrap();
-        assert!(!PathBuf::from(&created.directory).exists());
+        delete_source(SourceType::Skill, created.directory.as_str()).unwrap();
+        assert!(!dir.exists());
     }
 
     #[test]
@@ -489,13 +377,9 @@ mod tests {
         )
         .unwrap();
 
-        let (json, filename) = export_source(
-            SourceType::Skill,
-            "portable",
-            false,
-            Some(project_a.to_str().unwrap()),
-        )
-        .unwrap();
+        let portable_dir = project_a.join(".goose").join("skills").join("portable");
+        let (json, filename) =
+            export_source(SourceType::Skill, portable_dir.to_str().unwrap()).unwrap();
         assert_eq!(filename, "portable.skill.json");
 
         let imported = import_sources(&json, false, Some(project_b.to_str().unwrap())).unwrap();
@@ -503,6 +387,61 @@ mod tests {
         assert_eq!(imported[0].name, "portable");
         assert_eq!(imported[0].description, "describes itself");
         assert_eq!(imported[0].content, "body goes here");
+    }
+
+    #[test]
+    fn export_allows_discovered_read_only_skill() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        let claude_skill_dir = project.join(".claude").join("skills").join("portable");
+        std::fs::create_dir_all(&claude_skill_dir).unwrap();
+        std::fs::write(
+            claude_skill_dir.join("SKILL.md"),
+            build_skill_md("portable", "describes itself", "body goes here"),
+        )
+        .unwrap();
+
+        let listed =
+            list_sources(Some(SourceType::Skill), Some(project.to_str().unwrap())).unwrap();
+        let exported_skill = listed
+            .iter()
+            .find(|skill| skill.name == "portable")
+            .expect("expected listed skill");
+
+        let (json, filename) =
+            export_source(SourceType::Skill, exported_skill.directory.as_str()).unwrap();
+        assert_eq!(filename, "portable.skill.json");
+        assert!(json.contains("\"name\": \"portable\""));
+    }
+
+    #[test]
+    fn update_allows_discovered_read_only_skill() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        let claude_skill_dir = project.join(".claude").join("skills").join("portable");
+        std::fs::create_dir_all(&claude_skill_dir).unwrap();
+        std::fs::write(
+            claude_skill_dir.join("SKILL.md"),
+            build_skill_md("portable", "describes itself", "body goes here"),
+        )
+        .unwrap();
+
+        let updated = update_source(
+            SourceType::Skill,
+            claude_skill_dir.to_str().unwrap(),
+            "portable",
+            "updated description",
+            "updated body",
+        )
+        .unwrap();
+
+        assert_eq!(updated.name, "portable");
+        assert_eq!(updated.description, "updated description");
+        assert_eq!(updated.content, "updated body");
+
+        let raw = std::fs::read_to_string(claude_skill_dir.join("SKILL.md")).unwrap();
+        assert!(raw.contains("description: 'updated description'"));
+        assert!(raw.contains("updated body"));
     }
 
     #[test]
@@ -522,5 +461,117 @@ mod tests {
         .to_string();
         let imported = import_sources(&payload, false, Some(project)).unwrap();
         assert_eq!(imported[0].name, "busy-imported");
+    }
+
+    #[test]
+    fn update_rejects_nonexistent_source() {
+        let tmp = TempDir::new().unwrap();
+        let missing_dir = tmp
+            .path()
+            .join(".goose")
+            .join("skills")
+            .join("no-such-skill");
+        let err = update_source(
+            SourceType::Skill,
+            missing_dir.to_str().unwrap(),
+            "no-such-skill",
+            "d",
+            "c",
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("not found"));
+    }
+
+    #[test]
+    fn delete_rejects_nonexistent_source() {
+        let tmp = TempDir::new().unwrap();
+        let missing_dir = tmp
+            .path()
+            .join(".goose")
+            .join("skills")
+            .join("no-such-skill");
+        let err = delete_source(SourceType::Skill, missing_dir.to_str().unwrap()).unwrap_err();
+        assert!(format!("{:?}", err).contains("not found"));
+    }
+
+    #[test]
+    fn rejects_non_skill_source_type() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().to_str().unwrap();
+
+        let err = create_source(
+            SourceType::BuiltinSkill,
+            "x",
+            "d",
+            "c",
+            false,
+            Some(project),
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = update_source(SourceType::Recipe, "x", "x", "d", "c").unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = list_sources(Some(SourceType::BuiltinSkill), Some(project)).unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = export_source(SourceType::Recipe, "x").unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+    }
+
+    #[test]
+    fn update_derives_name_from_frontmatter() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().to_str().unwrap();
+
+        create_source(
+            SourceType::Skill,
+            "my-dir",
+            "orig",
+            "body",
+            false,
+            Some(project),
+        )
+        .unwrap();
+
+        let skill_dir = tmp.path().join(".goose").join("skills").join("my-dir");
+        let updated = update_source(
+            SourceType::Skill,
+            skill_dir.to_str().unwrap(),
+            "my-dir",
+            "new description",
+            "new body",
+        )
+        .unwrap();
+        // Name is derived from the frontmatter written by create_source
+        assert_eq!(updated.name, "my-dir");
+    }
+
+    #[test]
+    fn update_rejects_path_traversal() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        let escaped_dir = project.join(".goose").join("escaped");
+        std::fs::create_dir_all(&escaped_dir).unwrap();
+        std::fs::write(
+            escaped_dir.join("SKILL.md"),
+            "---\nname: escaped\ndescription: escaped\n---\ncontent",
+        )
+        .unwrap();
+
+        let attempted_escape = project.join(".goose").join("escaped");
+        let err = update_source(
+            SourceType::Skill,
+            attempted_escape.to_str().unwrap(),
+            "escaped",
+            "new description",
+            "new content",
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("not found"));
     }
 }

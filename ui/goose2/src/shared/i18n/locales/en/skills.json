@@ -9,7 +9,8 @@
     "instructionsPlaceholder": "Markdown instructions the agent will follow...",
     "name": "Name",
     "namePlaceholder": "my-skill-name",
-    "nameValidation": "Must be kebab-case (e.g. code-review)",
+    "nameValidation": "Use 1–64 lowercase letters, numbers, or hyphens. Names cannot start or end with a hyphen.",
+    "pathOnDisk": "Path on disk",
     "newTitle": "New Skill",
     "saving": "Saving..."
   },

@@ -80,7 +80,7 @@ openssl = { version = "0.10", optional = true }
 pem = "3.0.6"
 
 [target.'cfg(windows)'.dependencies]
-winreg = { version = "0.55.0" }
+winreg = { version = "0.56.0" }
 
 [[bin]]
 name = "goosed"

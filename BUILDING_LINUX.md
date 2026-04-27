@@ -9,7 +9,7 @@ This guide covers building the goose Desktop application from source on various 
 **Debian/Ubuntu:**
 ```bash
 sudo apt update
-sudo apt install -y dpkg fakeroot build-essential libxcb1-dev libxcb-util-dev protobuf-compiler
+sudo apt install -y dpkg fakeroot build-essential clang libxcb1-dev libxcb-util-dev protobuf-compiler
 ```
 
 **Arch/Manjaro:**
@@ -44,6 +44,7 @@ pkg install cmake protobuf clang build-essential
 - **Rust**: Install via [rustup](https://rustup.rs/)
 - **Node.js**: Version 22.9.0 or later (use [nvm](https://github.com/nvm-sh/nvm) for version management)
 - **pnpm**: Version 10 or later (managed via Hermit, or install globally)
+- **just**: Install via `cargo install just` after Rust is installed. More [info](https://github.com/casey/just#packages)
 
 ## Build Process
 
@@ -53,9 +54,25 @@ git clone https://github.com/aaif-goose/goose.git
 cd goose
 ```
 
-### 2. Build the Rust Backend
+### 2. Build
+
+Build Goose CLI:
+
+```bash
+cargo build --release -p goose-cli
+```
+
+Build Goose Server:
+
 ```bash
 cargo build --release -p goose-server
+```
+
+This command should give you a list of possible packages in the
+workspace:
+
+```bash
+cargo test -p
 ```
 
 ### 3. Prepare the Desktop Application
