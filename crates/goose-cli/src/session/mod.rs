@@ -1281,15 +1281,9 @@ impl CliSession {
                 .await
             {
                 Ok(session) => JsonMetadata {
-                    total_tokens: session
-                        .accumulated_total_tokens
-                        .or(session.total_tokens),
-                    input_tokens: session
-                        .accumulated_input_tokens
-                        .or(session.input_tokens),
-                    output_tokens: session
-                        .accumulated_output_tokens
-                        .or(session.output_tokens),
+                    total_tokens: session.accumulated_total_tokens.or(session.total_tokens),
+                    input_tokens: session.accumulated_input_tokens.or(session.input_tokens),
+                    output_tokens: session.accumulated_output_tokens.or(session.output_tokens),
                     status: "completed".to_string(),
                 },
                 Err(_) => JsonMetadata {
