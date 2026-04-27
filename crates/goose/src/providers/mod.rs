@@ -36,6 +36,7 @@ pub mod litellm;
 #[cfg(feature = "local-inference")]
 pub mod local_inference;
 pub mod nanogpt;
+pub mod nvidia;
 pub mod oauth;
 pub mod oauth_device_flow;
 pub mod ollama;

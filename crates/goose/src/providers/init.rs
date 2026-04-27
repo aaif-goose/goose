@@ -28,6 +28,7 @@ use super::{
     kimicode::KimiCodeProvider,
     litellm::LiteLLMProvider,
     nanogpt::NanoGptProvider,
+    nvidia::NvidiaProvider,
     ollama::OllamaProvider,
     openai::OpenAiProvider,
     openrouter::OpenRouterProvider,
@@ -76,6 +77,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<KimiCodeProvider>(true);
         registry.register::<LiteLLMProvider>(false);
         registry.register::<NanoGptProvider>(true);
+        registry.register::<NvidiaProvider>(true);
         registry.register::<OllamaProvider>(true);
         registry.register::<OpenAiProvider>(true);
         registry.register::<OpenRouterProvider>(true);
