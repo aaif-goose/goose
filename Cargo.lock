@@ -4525,6 +4525,7 @@ dependencies = [
  "indoc",
  "lopdf",
  "once_cell",
+ "process-wrap",
  "reqwest 0.13.2",
  "rmcp",
  "schemars 1.2.1",

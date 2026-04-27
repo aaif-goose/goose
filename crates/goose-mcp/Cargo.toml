@@ -39,3 +39,4 @@ docx-rs = "0.4.7"
 image = { version = "0.24.9", features = ["jpeg"] }
 umya-spreadsheet = "2.2.3"
 shell-words = { workspace = true }
+process-wrap = { version = "9.1.0", features = ["std"] }

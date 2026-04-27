@@ -204,7 +204,11 @@ fn resolve_login_shell_path() -> Option<String> {
     });
 
     match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(buf) if child.wait().is_ok_and(|s: std::process::ExitStatus| s.success()) => {
+        Ok(buf)
+            if child
+                .wait()
+                .is_ok_and(|s: std::process::ExitStatus| s.success()) =>
+        {
             // Take the last non-empty line — interactive shells may emit
             // extra output from profile scripts before our echo.
             String::from_utf8_lossy(&buf)
