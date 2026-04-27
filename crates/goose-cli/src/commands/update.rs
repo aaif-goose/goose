@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
-use sigstore_verify::trust_root::TrustedRoot;
+use sigstore_verify::trust_root::{TrustedRoot, SIGSTORE_PRODUCTION_TRUSTED_ROOT};
 use sigstore_verify::types::{Bundle, Sha256Hash};
 use sigstore_verify::VerificationPolicy;
 use std::env;
@@ -165,8 +165,7 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<bool> {
         }
     };
 
-    let trusted_root = TrustedRoot::production()
-        .await
+    let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
         .context("Failed to load Sigstore trusted root")?;
     let policy = VerificationPolicy::with_issuer(GITHUB_ACTIONS_ISSUER);
     let artifact_digest =
