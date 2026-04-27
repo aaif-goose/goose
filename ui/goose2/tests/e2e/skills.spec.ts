@@ -24,9 +24,15 @@ test.describe("Skills view", () => {
   }) => {
     await navigateToSkills(page);
 
-    await expect(page.getByText("layout")).toBeVisible();
-    await expect(page.getByText("code-review")).toBeVisible();
-    await expect(page.getByText("test-writer")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open layout details" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open code-review details" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open test-writer details" }),
+    ).toBeVisible();
 
     await page
       .getByRole("button", { name: "Open test-writer details" })
@@ -38,7 +44,7 @@ test.describe("Skills view", () => {
     await expect(page.getByText("alpha").first()).toBeVisible();
     await expect(page.getByText("Quality")).toBeVisible();
     await expect(
-      page.getByText("/tmp/alpha/.goose/skills/test-writer"),
+      page.getByText("/tmp/alpha/.goose/skills/test-writer/SKILL.md"),
     ).toBeVisible();
   });
 
@@ -49,10 +55,17 @@ test.describe("Skills view", () => {
 
     await page.getByRole("button", { name: "Filter by category" }).click();
     await page.getByRole("menuitemcheckbox", { name: "Design" }).click();
+    await page.keyboard.press("Escape");
 
-    await expect(page.getByText("layout")).toBeVisible();
-    await expect(page.getByText("code-review")).not.toBeVisible();
-    await expect(page.getByText("test-writer")).not.toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open layout details" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open code-review details" }),
+    ).not.toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open test-writer details" }),
+    ).not.toBeVisible();
   });
 
   test("search filters the list", async ({ tauriMocked: page }) => {
@@ -69,10 +82,17 @@ test.describe("Skills view", () => {
   }) => {
     await navigateToSkills(page);
 
-    await page.getByRole("button", { name: "alpha" }).first().click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Alpha", exact: true })
+      .click();
 
-    await expect(page.getByText("test-writer")).toBeVisible();
-    await expect(page.getByText("code-review")).not.toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open test-writer details" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open code-review details" }),
+    ).not.toBeVisible();
   });
 
   test("opens the create skill dialog", async ({ tauriMocked: page }) => {
@@ -102,7 +122,9 @@ test.describe("Skills view", () => {
     await expect(
       page.getByText("Create a skill or import one to get started."),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "New Skill" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Import" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New Skill" })).toHaveCount(
+      2,
+    );
+    await expect(page.getByRole("button", { name: "Import" })).toHaveCount(2);
   });
 });
