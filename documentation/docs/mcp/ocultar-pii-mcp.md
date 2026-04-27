@@ -1,6 +1,6 @@
 ---
 title: Ocultar PII Refinery Extension
-description: Add zero-egress PII detection and redaction to your Goose workflows
+description: Add zero-egress PII detection and redaction to your goose workflows
 unlisted: true
 ---
 
@@ -8,7 +8,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
 
-This tutorial will get you started with the [Ocultar PII Refinery](https://github.com/Edu963/ocultar) as a Goose extension. Ocultar detects and tokenizes personally identifiable information — names, emails, IBANs, phone numbers, addresses and more — in-place before any text reaches an upstream API. No raw PII ever leaves your infrastructure.
+This tutorial will get you started with the [Ocultar PII Refinery](https://github.com/Edu963/ocultar) as a goose extension. Ocultar detects and tokenizes personally identifiable information — names, emails, IBANs, phone numbers, addresses and more — in-place before any text reaches an upstream API. No raw PII ever leaves your infrastructure.
 
 :::info Prerequisites
 You need a running Ocultar instance before using this extension. The fastest way:
@@ -20,10 +20,10 @@ See the [Ocultar repository](https://github.com/Edu963/ocultar) for full setup i
 
 :::tip Quick Install
 <Tabs groupId="interface">
-  <TabItem value="ui" label="Goose Desktop" default>
+  <TabItem value="ui" label="goose Desktop" default>
   [Launch the installer](goose://extension?cmd=uvx&arg=ocultar-goose-mcp&id=ocultar-pii&name=Ocultar%20PII%20Refinery&description=Zero-egress%20PII%20detection%20and%20redaction&env=OCULTAR_URL%3Dhttp%3A%2F%2Flocalhost%3A8080)
   </TabItem>
-  <TabItem value="cli" label="Goose CLI">
+  <TabItem value="cli" label="goose CLI">
   **Command**
   ```sh
   uvx ocultar-goose-mcp
@@ -44,7 +44,7 @@ You need [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 :::
 
 <Tabs groupId="interface">
-  <TabItem value="ui" label="Goose Desktop" default>
+  <TabItem value="ui" label="goose Desktop" default>
   <GooseDesktopInstaller
     extensionId="ocultar-pii"
     extensionName="Ocultar PII Refinery"
@@ -57,7 +57,7 @@ You need [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
     ]}
   />
   </TabItem>
-  <TabItem value="cli" label="Goose CLI">
+  <TabItem value="cli" label="goose CLI">
   1. Run the `configure` command:
   ```sh
   goose configure
@@ -136,9 +136,9 @@ You need [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 
 ## Example Usage
 
-The Ocultar PII Refinery extension exposes a single `refine_text` tool. Goose calls it automatically when you ask it to sanitize or redact content before sending it anywhere sensitive.
+The Ocultar PII Refinery extension exposes a single `refine_text` tool. goose calls it automatically when you ask it to sanitize or redact content before sending it anywhere sensitive.
 
-#### Goose Prompt
+#### goose Prompt
 
 ```
 ( O)> I need to send this support ticket to our AI summarizer, but it contains customer PII. 
@@ -146,7 +146,7 @@ Redact it first: "Hi, I'm Jean-Pierre Dumont, my email is jp.dumont@societe-gene
 and my IBAN is FR76 3000 6000 0112 3456 7890 189. I have a billing issue."
 ```
 
-#### Goose Output
+#### goose Output
 
 ```
 I'll redact the PII from that ticket before it goes anywhere.
