@@ -68,7 +68,7 @@ fn resolve_login_shell_path() -> Option<String> {
     // cannot steal the terminal foreground from the parent goose process.
     cmd.wrap(ProcessSession);
 
-    let mut child = cmd.spawn().ok()?;
+    let child = cmd.spawn().ok()?;
     let output = child.wait_with_output().ok()?;
     if !output.status.success() {
         return None;
