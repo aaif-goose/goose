@@ -36,20 +36,25 @@ function isBundledExtension(extension: FixedExtensionEntry): boolean {
 export async function pruneDeprecatedBundledExtensions(
   existingExtensions: FixedExtensionEntry[],
   removeExtensionFn: (id: string) => Promise<void>
-): Promise<void> {
+): Promise<FixedExtensionEntry[]> {
   const deprecatedExtensionIds = new Set(getDeprecatedBundledExtensions().map((ext) => ext.id));
+  const remainingExtensions: FixedExtensionEntry[] = [];
 
   for (const existingExt of existingExtensions) {
     if (!isBundledExtension(existingExt)) {
+      remainingExtensions.push(existingExt);
       continue;
     }
 
     if (!deprecatedExtensionIds.has(nameToKey(existingExt.name))) {
+      remainingExtensions.push(existingExt);
       continue;
     }
 
     await removeExtensionFn(nameToKey(existingExt.name));
   }
+
+  return remainingExtensions;
 }
 
 /**

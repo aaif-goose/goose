@@ -230,7 +230,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
         const removeExtensionForSync = async (name: string) => {
           await apiRemoveExtension({ path: { name } });
         };
-        await pruneDeprecatedBundledExtensions(extensions, removeExtensionForSync);
+        extensions = await pruneDeprecatedBundledExtensions(extensions, removeExtensionForSync);
         await syncBundledExtensions(extensions, addExtensionForSync);
         // Reload extensions after sync
         const refreshedResponse = await apiGetExtensions();

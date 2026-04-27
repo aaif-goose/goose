@@ -69,9 +69,13 @@ describe('pruneDeprecatedBundledExtensions', () => {
       },
     ] as FixedExtensionEntry[];
 
-    await pruneDeprecatedBundledExtensions(existingExtensions, removeExtensionFn);
+    const remainingExtensions = await pruneDeprecatedBundledExtensions(
+      existingExtensions,
+      removeExtensionFn
+    );
 
     expect(removeExtensionFn).toHaveBeenCalledWith('old-bundled-extension');
+    expect(remainingExtensions).toEqual([]);
   });
 
   it('does not remove non-bundled deprecated extensions', async () => {
@@ -86,13 +90,18 @@ describe('pruneDeprecatedBundledExtensions', () => {
       },
     ] as FixedExtensionEntry[];
 
-    await pruneDeprecatedBundledExtensions(existingExtensions, removeExtensionFn);
+    const remainingExtensions = await pruneDeprecatedBundledExtensions(
+      existingExtensions,
+      removeExtensionFn
+    );
 
     expect(removeExtensionFn).not.toHaveBeenCalled();
+    expect(remainingExtensions).toEqual(existingExtensions);
   });
 
-  it('removes deprecated bundled googledrive extensions', async () => {
+  it('allows same-id bundled extensions to be re-added after prune', async () => {
     const removeExtensionFn = vi.fn().mockResolvedValue(undefined);
+    const addExtensionFn = vi.fn().mockResolvedValue(undefined);
     const existingExtensions = [
       {
         name: 'Google Drive',
@@ -106,8 +115,22 @@ describe('pruneDeprecatedBundledExtensions', () => {
       },
     ] as FixedExtensionEntry[];
 
-    await pruneDeprecatedBundledExtensions(existingExtensions, removeExtensionFn);
+    const remainingExtensions = await pruneDeprecatedBundledExtensions(
+      existingExtensions,
+      removeExtensionFn
+    );
+
+    await syncBundledExtensions(remainingExtensions, addExtensionFn);
 
     expect(removeExtensionFn).toHaveBeenCalledWith('googledrive');
+    expect(addExtensionFn).toHaveBeenCalledWith(
+      'googledrive',
+      expect.objectContaining({
+        type: 'stdio',
+        name: 'googledrive',
+        bundled: true,
+      }),
+      true
+    );
   });
 });
