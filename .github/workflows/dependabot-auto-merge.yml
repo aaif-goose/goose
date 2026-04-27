@@ -2,9 +2,6 @@ name: Dependabot Auto Merge
 
 on:
   pull_request:
-    types:
-      - opened
-      - synchronize
 
 permissions:
   contents: write
