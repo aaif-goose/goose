@@ -38,24 +38,23 @@ jobs:
 
     steps:
       - name: Checkout code
-        if: ${{ inputs.windows_variant == 'standard' || matrix.os == 'windows' }}
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
         with:
           ref: ${{ inputs.ref }}
 
       - name: Update version in Cargo.toml
-        if: ${{ inputs.version != '' && (inputs.windows_variant == 'standard' || matrix.os == 'windows') }}
+        if: ${{ inputs.version != '' }}
         shell: bash
         run: |
           sed -i.bak 's/^version = ".*"/version = "'${{ inputs.version }}'"/' Cargo.toml
           rm -f Cargo.toml.bak
 
       - name: Install cross
-        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
+        if: matrix.use-cross
         run: source ./bin/activate-hermit && cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Cache Cargo artifacts (Linux/macOS)
-        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
+        if: matrix.use-cross
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
         with:
           key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-macos-deployment-target-12
@@ -67,7 +66,7 @@ jobs:
           key: windows-msvc-cli-${{ inputs.windows_variant }}
 
       - name: Build CLI (Linux/macOS)
-        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
+        if: matrix.use-cross
         env:
           CROSS_NO_WARNINGS: 0
           RUST_LOG: debug
@@ -143,7 +142,7 @@ jobs:
           Get-Item ./target/x86_64-pc-windows-msvc/release/goose.exe
 
       - name: Package CLI (Linux/macOS)
-        if: ${{ matrix.use-cross && inputs.windows_variant == 'standard' }}
+        if: matrix.use-cross
         run: |
           source ./bin/activate-hermit
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
@@ -179,7 +178,6 @@ jobs:
           echo "ARTIFACT_ZIP=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.zip" >> $GITHUB_ENV
 
       - name: Upload CLI artifact
-        if: ${{ inputs.windows_variant == 'standard' || matrix.os == 'windows' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
