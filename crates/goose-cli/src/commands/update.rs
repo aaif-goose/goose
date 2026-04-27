@@ -26,7 +26,15 @@ fn asset_name() -> &'static str {
     {
         "goose-aarch64-unknown-linux-gnu.tar.bz2"
     }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[cfg(all(target_os = "windows", target_arch = "x86_64", feature = "cuda"))]
+    {
+        "goose-x86_64-pc-windows-msvc-cuda.zip"
+    }
+    #[cfg(all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        not(feature = "cuda")
+    ))]
     {
         "goose-x86_64-pc-windows-msvc.zip"
     }
