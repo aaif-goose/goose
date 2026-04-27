@@ -37,6 +37,8 @@ pub async fn run() -> Result<()> {
 
     crate::logging::setup_logging(Some("goosed"))?;
 
+    goose::security::set_security_defaults();
+
     let settings = configuration::Settings::new()?;
 
     let secret_key = std::env::var("GOOSE_SERVER__SECRET_KEY")

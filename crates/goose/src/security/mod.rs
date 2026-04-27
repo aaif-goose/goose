@@ -22,7 +22,7 @@ fn set_default_if_not_exist(config: &Config, key: &str, default_env: &str) {
     }
 }
 
-fn set_security_defaults() {
+pub fn set_security_defaults() {
     let config = Config::global();
     set_default_if_not_exist(
         config,
