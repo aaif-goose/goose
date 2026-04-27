@@ -39,6 +39,10 @@ where
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
+fn is_supported_request_param_key(key: &str) -> bool {
+    matches!(key, "thinking")
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct DeltaToolCallFunction {
     name: Option<String>,
@@ -1216,7 +1220,9 @@ pub fn create_request(
     if let Some(params) = &model_config.request_params {
         if let Some(obj) = payload.as_object_mut() {
             for (key, value) in params {
-                obj.insert(key.clone(), value.clone());
+                if is_supported_request_param_key(key) {
+                    obj.insert(key.clone(), value.clone());
+                }
             }
         }
     }
@@ -2028,13 +2034,25 @@ mod tests {
             toolshim: false,
             toolshim_model: None,
             fast_model_config: None,
-            request_params: Some(std::collections::HashMap::from([(
-                "thinking".to_string(),
-                json!({
-                    "type": "enabled",
-                    "clear_thinking": false
-                }),
-            )])),
+            request_params: Some(std::collections::HashMap::from([
+                (
+                    "thinking".to_string(),
+                    json!({
+                        "type": "enabled",
+                        "clear_thinking": false
+                    }),
+                ),
+                ("stream".to_string(), json!(false)),
+                (
+                    "stream_options".to_string(),
+                    json!({"include_usage": false}),
+                ),
+                ("model".to_string(), json!("wrong-model")),
+                ("messages".to_string(), json!([])),
+                ("max_tokens".to_string(), json!(1)),
+                ("temperature".to_string(), json!(2.0)),
+                ("unsupported".to_string(), json!("ignored")),
+            ])),
             reasoning: None,
         };
 
@@ -2056,6 +2074,11 @@ mod tests {
         );
         assert_eq!(request["stream"], true);
         assert_eq!(request["stream_options"], json!({"include_usage": true}));
+        assert_eq!(request["model"], "glm-4.7");
+        assert_eq!(request["messages"][0]["role"], "system");
+        assert_eq!(request["max_tokens"], 4096);
+        assert!(request.get("temperature").is_none());
+        assert!(request.get("unsupported").is_none());
 
         Ok(())
     }
