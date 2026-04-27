@@ -26,7 +26,7 @@ use rmcp::{
     ClientHandler, ErrorData, Peer, RoleClient, ServiceError, ServiceExt,
 };
 use serde_json::Value;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, sync::Weak, time::Duration};
 use tokio::sync::{
     mpsc::{self, Sender},
     Mutex,
@@ -36,6 +36,14 @@ use tokio_util::sync::CancellationToken;
 pub type BoxError = Box<dyn std::error::Error + Sync + Send>;
 
 pub type Error = rmcp::ServiceError;
+
+/// Trait for invalidating the tool cache in the ExtensionManager.
+/// Used by GooseClient to trigger cache invalidation when an MCP server
+/// sends `notifications/tools/list_changed`.
+#[async_trait::async_trait]
+pub trait ToolCacheInvalidator: Send + Sync {
+    async fn invalidate_tools(&self);
+}
 
 #[async_trait::async_trait]
 pub trait McpClientTrait: Send + Sync {
@@ -113,6 +121,7 @@ pub struct GooseClient {
     client_name: String,
     capabilities: GooseMcpClientCapabilities,
     working_dir: Arc<tokio::sync::RwLock<PathBuf>>,
+    tool_cache_invalidator: Option<Weak<dyn ToolCacheInvalidator>>,
 }
 
 impl GooseClient {
@@ -123,6 +132,24 @@ impl GooseClient {
         capabilities: GooseMcpClientCapabilities,
         working_dir: PathBuf,
     ) -> Self {
+        Self::new_with_invalidator(
+            handlers,
+            provider,
+            client_name,
+            capabilities,
+            working_dir,
+            None,
+        )
+    }
+
+    pub fn new_with_invalidator(
+        handlers: Arc<Mutex<Vec<Sender<ServerNotification>>>>,
+        provider: SharedProvider,
+        client_name: String,
+        capabilities: GooseMcpClientCapabilities,
+        working_dir: PathBuf,
+        tool_cache_invalidator: Option<Weak<dyn ToolCacheInvalidator>>,
+    ) -> Self {
         GooseClient {
             notification_handlers: handlers,
             provider,
@@ -130,6 +157,7 @@ impl GooseClient {
             client_name,
             capabilities,
             working_dir: Arc::new(tokio::sync::RwLock::new(working_dir)),
+            tool_cache_invalidator,
         }
     }
 
@@ -163,6 +191,20 @@ impl GooseClient {
             .find(|(key, _)| key.eq_ignore_ascii_case(SESSION_ID_HEADER))
             .and_then(|(_, value)| value.as_str())
             .map(|value| value.to_string())
+    }
+
+    /// Handles the tools/list_changed notification by upgrading the weak reference
+    /// to the cache invalidator and calling `invalidate_tools()`.
+    /// Returns `true` if the invalidator was successfully called, `false` if the
+    /// weak reference had been dropped.
+    async fn handle_tool_list_changed(&self) -> bool {
+        if let Some(ref invalidator) = self.tool_cache_invalidator {
+            if let Some(invalidator) = invalidator.upgrade() {
+                invalidator.invalidate_tools().await;
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -212,6 +254,14 @@ impl ClientHandler for GooseClient {
                 let _ =
                     handler.try_send(ServerNotification::LoggingMessageNotification(notification));
             });
+    }
+
+    async fn on_tool_list_changed(
+        &self,
+        _context: rmcp::service::NotificationContext<rmcp::RoleClient>,
+    ) {
+        tracing::info!("Received tools/list_changed notification from MCP server");
+        self.handle_tool_list_changed().await;
     }
 
     async fn create_message(
@@ -395,6 +445,7 @@ impl McpClient {
         client_name: String,
         capabilities: GooseMcpClientCapabilities,
         working_dir: PathBuf,
+        tool_cache_invalidator: Option<Weak<dyn ToolCacheInvalidator>>,
     ) -> Result<Self, ClientInitializeError>
     where
         T: IntoTransport<RoleClient, E, A>,
@@ -408,10 +459,12 @@ impl McpClient {
             client_name,
             capabilities,
             working_dir,
+            tool_cache_invalidator,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect_with_container<T, E, A>(
         transport: T,
         timeout: std::time::Duration,
@@ -420,6 +473,7 @@ impl McpClient {
         client_name: String,
         capabilities: GooseMcpClientCapabilities,
         working_dir: PathBuf,
+        tool_cache_invalidator: Option<Weak<dyn ToolCacheInvalidator>>,
     ) -> Result<Self, ClientInitializeError>
     where
         T: IntoTransport<RoleClient, E, A>,
@@ -428,12 +482,13 @@ impl McpClient {
         let notification_subscribers =
             Arc::new(Mutex::new(Vec::<mpsc::Sender<ServerNotification>>::new()));
 
-        let client = GooseClient::new(
+        let client = GooseClient::new_with_invalidator(
             notification_subscribers.clone(),
             provider,
             client_name.clone(),
             capabilities.clone(),
             working_dir,
+            tool_cache_invalidator,
         );
         let client: rmcp::service::RunningService<rmcp::RoleClient, GooseClient> =
             client.serve(transport).await?;
@@ -1007,5 +1062,91 @@ mod tests {
         assert_eq!(result.roots.len(), 1);
         assert_eq!(result.roots[0].uri, "file:///tmp/test-project");
         assert_eq!(result.roots[0].name.as_deref(), Some("working_directory"));
+    }
+
+    #[test]
+    fn test_on_tool_list_changed_calls_invalidator() {
+        struct MockInvalidator {
+            call_count: std::sync::atomic::AtomicUsize,
+        }
+
+        #[async_trait::async_trait]
+        impl ToolCacheInvalidator for MockInvalidator {
+            async fn invalidate_tools(&self) {
+                self.call_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let invalidator = Arc::new(MockInvalidator {
+                call_count: std::sync::atomic::AtomicUsize::new(0),
+            });
+
+            let capabilities = GooseMcpClientCapabilities { mcpui: false };
+            let client = GooseClient::new_with_invalidator(
+                Arc::new(Mutex::new(Vec::new())),
+                Arc::new(Mutex::new(None)),
+                "test".to_string(),
+                capabilities,
+                std::env::current_dir().unwrap_or_default(),
+                Some(Arc::downgrade(&invalidator) as Weak<dyn ToolCacheInvalidator>),
+            );
+
+            // Exercise the actual code path that handles tool_list_changed.
+            // This tests the weak-ref upgrade and invalidation call.
+            let result1 = client.handle_tool_list_changed().await;
+            let result2 = client.handle_tool_list_changed().await;
+
+            assert!(result1, "should return true when invalidator is alive");
+            assert!(result2, "should return true when invalidator is alive");
+            assert_eq!(
+                invalidator
+                    .call_count
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                2,
+                "invalidate_tools should have been called twice"
+            );
+        });
+    }
+
+    #[test]
+    fn test_on_tool_list_changed_noop_when_invalidator_dropped() {
+        struct MockInvalidator {
+            call_count: std::sync::atomic::AtomicUsize,
+        }
+
+        #[async_trait::async_trait]
+        impl ToolCacheInvalidator for MockInvalidator {
+            async fn invalidate_tools(&self) {
+                self.call_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let invalidator = Arc::new(MockInvalidator {
+                call_count: std::sync::atomic::AtomicUsize::new(0),
+            });
+
+            let capabilities = GooseMcpClientCapabilities { mcpui: false };
+            let client = GooseClient::new_with_invalidator(
+                Arc::new(Mutex::new(Vec::new())),
+                Arc::new(Mutex::new(None)),
+                "test".to_string(),
+                capabilities,
+                std::env::current_dir().unwrap_or_default(),
+                Some(Arc::downgrade(&invalidator) as Weak<dyn ToolCacheInvalidator>),
+            );
+
+            // Drop the Arc so the weak ref becomes stale.
+            drop(invalidator);
+
+            // handle_tool_list_changed should return false (weak upgrade fails).
+            let result = client.handle_tool_list_changed().await;
+            assert!(!result, "should return false when invalidator is dropped");
+        });
     }
 }

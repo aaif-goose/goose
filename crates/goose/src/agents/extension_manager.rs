@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tempfile::{tempdir, TempDir};
 use tokio::io::AsyncReadExt;
@@ -34,7 +34,9 @@ use super::tool_execution::{ToolCallContext, ToolCallResult};
 use super::types::SharedProvider;
 use crate::agents::extension::{Envs, ProcessExit};
 use crate::agents::extension_malware_check;
-use crate::agents::mcp_client::{GooseMcpClientCapabilities, McpClient, McpClientTrait};
+use crate::agents::mcp_client::{
+    GooseMcpClientCapabilities, McpClient, McpClientTrait, ToolCacheInvalidator,
+};
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
@@ -243,6 +245,7 @@ struct ResolvedTool {
     client: McpClientBox,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn child_process_client(
     mut command: Command,
     timeout: &Option<u64>,
@@ -251,6 +254,7 @@ async fn child_process_client(
     docker_container: Option<String>,
     client_name: String,
     capabilities: GooseMcpClientCapabilities,
+    tool_cache_invalidator: Option<Weak<dyn ToolCacheInvalidator>>,
 ) -> ExtensionResult<McpClient> {
     configure_subprocess(&mut command);
 
@@ -289,6 +293,7 @@ async fn child_process_client(
         client_name,
         capabilities,
         working_dir.clone(),
+        tool_cache_invalidator,
     )
     .await;
 
@@ -434,6 +439,7 @@ async fn create_streamable_http_client(
     client_name: String,
     capabilities: GooseMcpClientCapabilities,
     roots_dir: &std::path::Path,
+    tool_cache_invalidator: Option<Weak<dyn ToolCacheInvalidator>>,
 ) -> ExtensionResult<Box<dyn McpClientTrait>> {
     #[cfg(unix)]
     if let Some(socket_path) = socket {
@@ -490,6 +496,7 @@ async fn create_streamable_http_client(
         client_name.clone(),
         capabilities.clone(),
         roots_dir.to_path_buf(),
+        tool_cache_invalidator.clone(),
     )
     .await;
 
@@ -517,6 +524,7 @@ async fn create_streamable_http_client(
                         client_name,
                         capabilities,
                         roots_dir.to_path_buf(),
+                        tool_cache_invalidator,
                     )
                     .await?,
                 ))
@@ -701,6 +709,9 @@ impl ExtensionManager {
                     mcpui: self.capabilities.mcpui,
                 };
 
+                let invalidator: Option<Weak<dyn ToolCacheInvalidator>> =
+                    Some(Arc::downgrade(self) as Weak<dyn ToolCacheInvalidator>);
+
                 create_streamable_http_client(
                     &resolved_uri,
                     *timeout,
@@ -711,6 +722,7 @@ impl ExtensionManager {
                     self.client_name.clone(),
                     capability,
                     &effective_working_dir,
+                    invalidator,
                 )
                 .await?
             }
@@ -722,6 +734,8 @@ impl ExtensionManager {
                     None
                 };
                 let normalized_name = name_to_key(name);
+                let invalidator: Option<Weak<dyn ToolCacheInvalidator>> =
+                    Some(Arc::downgrade(self) as Weak<dyn ToolCacheInvalidator>);
 
                 if let Some(def) = PLATFORM_EXTENSIONS.get(normalized_name.as_str()) {
                     // Platform extension: create via in-process client factory
@@ -772,6 +786,7 @@ impl ExtensionManager {
                             Some(container_id.to_string()),
                             self.client_name.clone(),
                             capabilities,
+                            invalidator.clone(),
                         )
                         .await?;
                         Box::new(client)
@@ -792,6 +807,7 @@ impl ExtensionManager {
                                 self.client_name.clone(),
                                 capabilities,
                                 effective_working_dir.clone(),
+                                invalidator,
                             )
                             .await?,
                         )
@@ -843,6 +859,8 @@ impl ExtensionManager {
                 let capabilities = GooseMcpClientCapabilities {
                     mcpui: self.capabilities.mcpui,
                 };
+                let invalidator: Option<Weak<dyn ToolCacheInvalidator>> =
+                    Some(Arc::downgrade(self) as Weak<dyn ToolCacheInvalidator>);
                 let client = child_process_client(
                     command,
                     timeout,
@@ -851,6 +869,7 @@ impl ExtensionManager {
                     container.map(|c| c.id().to_string()),
                     self.client_name.clone(),
                     capabilities,
+                    invalidator,
                 )
                 .await?;
                 Box::new(client)
@@ -879,6 +898,9 @@ impl ExtensionManager {
                     mcpui: self.capabilities.mcpui,
                 };
 
+                let invalidator: Option<Weak<dyn ToolCacheInvalidator>> =
+                    Some(Arc::downgrade(self) as Weak<dyn ToolCacheInvalidator>);
+
                 let client = child_process_client(
                     command,
                     timeout,
@@ -887,6 +909,7 @@ impl ExtensionManager {
                     container.map(|c| c.id().to_string()),
                     self.client_name.clone(),
                     capabilities,
+                    invalidator,
                 )
                 .await?;
 
@@ -1803,6 +1826,13 @@ impl ExtensionManager {
         content.push_str("\n</info-msg>");
 
         Some(content)
+    }
+}
+
+#[async_trait::async_trait]
+impl ToolCacheInvalidator for ExtensionManager {
+    async fn invalidate_tools(&self) {
+        self.invalidate_tools_cache_and_bump_version().await;
     }
 }
 
