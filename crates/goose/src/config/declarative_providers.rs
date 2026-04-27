@@ -704,6 +704,39 @@ mod tests {
     }
 
     #[test]
+    fn test_openai_reasoning_provider_json_preserves_thinking() {
+        for (name, json) in [
+            (
+                "custom_deepseek",
+                include_str!("../providers/declarative/deepseek.json"),
+            ),
+            (
+                "moonshot",
+                include_str!("../providers/declarative/moonshot.json"),
+            ),
+            (
+                "novita",
+                include_str!("../providers/declarative/novita.json"),
+            ),
+            (
+                "nvidia",
+                include_str!("../providers/declarative/nvidia.json"),
+            ),
+            (
+                "custom_tensorix",
+                include_str!("../providers/declarative/tensorix.json"),
+            ),
+            ("zhipu", include_str!("../providers/declarative/zhipu.json")),
+        ] {
+            let config: DeclarativeProviderConfig =
+                serde_json::from_str(json).expect("provider json should parse");
+            assert_eq!(config.name, name);
+            assert!(matches!(config.engine, ProviderEngine::OpenAI));
+            assert!(config.preserves_thinking);
+        }
+    }
+
+    #[test]
     fn test_nvidia_json_deserializes() {
         let json = include_str!("../providers/declarative/nvidia.json");
         let config: DeclarativeProviderConfig =

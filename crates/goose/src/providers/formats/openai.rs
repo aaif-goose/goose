@@ -379,10 +379,11 @@ pub fn format_messages_with_options(
             }
 
             if !pending_assistant_reasoning.is_empty() {
-                if !reasoning_text.is_empty() {
-                    pending_assistant_reasoning.push_str(&reasoning_text);
+                if reasoning_text.is_empty() {
+                    reasoning_text = std::mem::take(&mut pending_assistant_reasoning);
+                } else {
+                    pending_assistant_reasoning.clear();
                 }
-                reasoning_text = std::mem::take(&mut pending_assistant_reasoning);
             }
         }
 
@@ -2820,6 +2821,34 @@ data: [DONE]"#;
         assert_eq!(spec[0]["role"], "assistant");
         assert_eq!(spec[0]["reasoning_content"], "think once");
         assert_eq!(spec[0]["content"], json!(null));
+        assert_eq!(spec[0]["tool_calls"][0]["function"]["name"], "test_tool");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_messages_does_not_duplicate_pending_thinking() -> anyhow::Result<()> {
+        let messages = vec![
+            Message::assistant().with_content(MessageContent::thinking("think once", "")),
+            Message::assistant()
+                .with_content(MessageContent::thinking("think once", ""))
+                .with_tool_request(
+                    "tool1",
+                    Ok(CallToolRequestParams::new("test_tool")
+                        .with_arguments(object!({"param": "value"}))),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+            },
+        );
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["reasoning_content"], "think once");
         assert_eq!(spec[0]["tool_calls"][0]["function"]["name"], "test_tool");
 
         Ok(())
