@@ -118,7 +118,9 @@ export async function createSkill(
   });
 }
 
-export async function listSkills(projectDirs: string[] = []): Promise<SkillInfo[]> {
+export async function listSkills(
+  projectDirs: string[] = [],
+): Promise<SkillInfo[]> {
   const client = await getClient();
   const fetchSources = (projectDir?: string) =>
     client.goose.GooseSourcesList({

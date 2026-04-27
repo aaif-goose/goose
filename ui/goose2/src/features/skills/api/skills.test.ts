@@ -83,18 +83,20 @@ describe("listSkills", () => {
   });
 
   it("recognizes legacy .goose project skill paths", async () => {
-    mockGooseSourcesList.mockResolvedValueOnce({ sources: [] }).mockResolvedValueOnce({
-      sources: [
-        {
-          type: "skill",
-          name: "legacy-writer",
-          description: "Legacy project skill",
-          content: "Legacy instructions",
-          directory: "/tmp/beta/.goose/skills/legacy-writer",
-          global: false,
-        },
-      ],
-    });
+    mockGooseSourcesList
+      .mockResolvedValueOnce({ sources: [] })
+      .mockResolvedValueOnce({
+        sources: [
+          {
+            type: "skill",
+            name: "legacy-writer",
+            description: "Legacy project skill",
+            content: "Legacy instructions",
+            directory: "/tmp/beta/.goose/skills/legacy-writer",
+            global: false,
+          },
+        ],
+      });
 
     const { listSkills } = await import("./skills");
     const skills = await listSkills(["/tmp/beta"]);

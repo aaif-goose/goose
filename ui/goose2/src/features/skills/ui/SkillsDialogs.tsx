@@ -21,8 +21,8 @@ interface SkillsDialogsProps {
     name: string;
     description: string;
     instructions: string;
-    global?: boolean;
-    projectDir?: string;
+    path: string;
+    fileLocation: string;
   };
   deletingSkill: SkillInfo | null;
   onDeletingSkillChange: (skill: SkillInfo | null) => void;

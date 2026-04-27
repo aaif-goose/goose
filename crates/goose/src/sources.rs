@@ -575,8 +575,16 @@ mod tests {
     #[test]
     fn project_sources_prefer_agents_directory_over_legacy_goose() {
         let tmp = TempDir::new().unwrap();
-        let agents_skill_dir = tmp.path().join(".agents").join("skills").join("shared-skill");
-        let legacy_skill_dir = tmp.path().join(".goose").join("skills").join("shared-skill");
+        let agents_skill_dir = tmp
+            .path()
+            .join(".agents")
+            .join("skills")
+            .join("shared-skill");
+        let legacy_skill_dir = tmp
+            .path()
+            .join(".goose")
+            .join("skills")
+            .join("shared-skill");
         std::fs::create_dir_all(&agents_skill_dir).unwrap();
         std::fs::create_dir_all(&legacy_skill_dir).unwrap();
         std::fs::write(
@@ -600,8 +608,7 @@ mod tests {
         assert!(matching[0].directory.contains(".agents/skills"));
         assert_eq!(matching[0].description, "preferred");
 
-        let exported =
-            export_source(SourceType::Skill, matching[0].directory.as_str()).unwrap();
+        let exported = export_source(SourceType::Skill, matching[0].directory.as_str()).unwrap();
         assert!(exported.0.contains("preferred"));
     }
 
