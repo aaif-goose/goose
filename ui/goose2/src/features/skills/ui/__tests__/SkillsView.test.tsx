@@ -237,4 +237,55 @@ describe("SkillsView", () => {
       ]);
     });
   });
+
+  it("groups multiple working directories under the saved project filter", async () => {
+    mockProjects.splice(0, mockProjects.length, {
+      id: "project-goose",
+      name: "Goose",
+      workingDirs: ["/tmp/goose", "/tmp/goose-worktree"],
+    });
+    listSkills.mockResolvedValue([
+      {
+        ...mockSkills[2],
+        id: "project:/tmp/goose/.agents/skills/test-writer",
+        name: "test-writer",
+        path: "/tmp/goose/.agents/skills/test-writer",
+        fileLocation: "/tmp/goose/.agents/skills/test-writer/SKILL.md",
+        directoryPath: "/tmp/goose/.agents/skills/test-writer",
+        sourceLabel: "goose",
+        projectLinks: [
+          {
+            id: "/tmp/goose",
+            name: "goose",
+            workingDir: "/tmp/goose",
+          },
+        ],
+      },
+      {
+        ...mockSkills[2],
+        id: "project:/tmp/goose-worktree/.agents/skills/audit",
+        name: "audit",
+        path: "/tmp/goose-worktree/.agents/skills/audit",
+        fileLocation: "/tmp/goose-worktree/.agents/skills/audit/SKILL.md",
+        directoryPath: "/tmp/goose-worktree/.agents/skills/audit",
+        sourceLabel: "goose-worktree",
+        projectLinks: [
+          {
+            id: "/tmp/goose-worktree",
+            name: "goose-worktree",
+            workingDir: "/tmp/goose-worktree",
+          },
+        ],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("test-writer");
+
+    await user.click(screen.getByRole("button", { name: "Goose" }));
+
+    expect(screen.getByText("test-writer")).toBeInTheDocument();
+    expect(screen.getByText("audit")).toBeInTheDocument();
+  });
 });

@@ -147,15 +147,21 @@ function FilterButton({
 }
 
 function hydrateProjectNames(skills: SkillInfo[], projects: ProjectInfo[]) {
-  const projectNamesByWorkingDir = new Map<string, string>();
+  const projectsByWorkingDir = new Map<
+    string,
+    Pick<ProjectInfo, "id" | "name">
+  >();
 
   for (const project of projects) {
     for (const workingDir of project.workingDirs) {
       const normalizedDir = workingDir.trim();
-      if (!normalizedDir || projectNamesByWorkingDir.has(normalizedDir)) {
+      if (!normalizedDir || projectsByWorkingDir.has(normalizedDir)) {
         continue;
       }
-      projectNamesByWorkingDir.set(normalizedDir, project.name);
+      projectsByWorkingDir.set(normalizedDir, {
+        id: project.id,
+        name: project.name,
+      });
     }
   }
 
@@ -164,10 +170,14 @@ function hydrateProjectNames(skills: SkillInfo[], projects: ProjectInfo[]) {
       return skill;
     }
 
-    const projectLinks = skill.projectLinks.map((project) => ({
-      ...project,
-      name: projectNamesByWorkingDir.get(project.workingDir) ?? project.name,
-    }));
+    const projectLinks = skill.projectLinks.map((project) => {
+      const savedProject = projectsByWorkingDir.get(project.workingDir);
+      return {
+        ...project,
+        id: savedProject?.id ?? project.id,
+        name: savedProject?.name ?? project.name,
+      };
+    });
 
     return {
       ...skill,
