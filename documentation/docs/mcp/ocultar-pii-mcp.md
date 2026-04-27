@@ -13,6 +13,8 @@ This tutorial will get you started with the [Ocultar PII Refinery](https://githu
 :::info Prerequisites
 You need a running Ocultar instance before using this extension. The fastest way:
 ```sh
+git clone https://github.com/Edu963/ocultar
+cd ocultar
 docker compose -f docker-compose.community.yml up
 ```
 See the [Ocultar repository](https://github.com/Edu963/ocultar) for full setup instructions.

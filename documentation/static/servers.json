@@ -567,7 +567,7 @@
     "description": "Zero-egress PII detection and redaction for AI workflows. Tokenizes personal data in-place before it reaches any upstream API — names, emails, IBANs, phone numbers, and more. No data leaves your infrastructure.",
     "command": "uvx ocultar-goose-mcp",
     "link": "https://github.com/Edu963/ocultar",
-    "installation_notes": "Install using uvx. Requires a running Ocultar instance (community or enterprise). Start with: docker compose -f docker-compose.community.yml up. Set OCULTAR_URL if your instance is not on localhost:8080.",
+    "installation_notes": "Install using uvx. Requires a running Ocultar instance. First clone the repo: git clone https://github.com/Edu963/ocultar && cd ocultar. Then start the proxy: docker compose -f docker-compose.community.yml up. Set OCULTAR_URL if your instance is not on localhost:8080.",
     "is_builtin": false,
     "endorsed": false,
     "environmentVariables": [
