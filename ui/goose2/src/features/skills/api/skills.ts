@@ -128,17 +128,24 @@ export async function listSkills(
       ...(projectDir ? { projectDir } : {}),
     });
 
-  const responses = await Promise.all([
-    fetchSources(),
-    ...uniqueProjectDirs(projectDirs).map((projectDir) =>
+  const globalResponse = await fetchSources();
+  const projectResponses = await Promise.allSettled(
+    uniqueProjectDirs(projectDirs).map((projectDir) =>
       fetchSources(projectDir),
     ),
-  ]);
+  );
+  const responses = [
+    { response: globalResponse, projectResponse: false },
+    ...projectResponses.flatMap((result) =>
+      result.status === "fulfilled"
+        ? [{ response: result.value, projectResponse: true }]
+        : [],
+    ),
+  ];
   const seen = new Set<string>();
   const skills: SkillInfo[] = [];
 
-  responses.forEach((response, index) => {
-    const projectResponse = index > 0;
+  responses.forEach(({ response, projectResponse }) => {
     for (const source of response.sources) {
       if (!isSkillSource(source) || (projectResponse && source.global)) {
         continue;

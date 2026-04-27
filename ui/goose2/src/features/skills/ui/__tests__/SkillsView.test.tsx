@@ -129,7 +129,7 @@ describe("SkillsView", () => {
     expect(screen.getAllByText("alpha").length).toBeGreaterThan(0);
     expect(screen.getByText("Write tests...")).toBeInTheDocument();
     expect(
-      screen.getByText("/tmp/alpha/.goose/skills/test-writer"),
+      screen.getByText("/tmp/alpha/.goose/skills/test-writer/SKILL.md"),
     ).toBeInTheDocument();
     expect(screen.getByText("Quality")).toBeInTheDocument();
   });

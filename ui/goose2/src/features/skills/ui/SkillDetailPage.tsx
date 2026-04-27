@@ -222,7 +222,7 @@ export function SkillDetailPage({
                 contentAs="p"
                 contentClassName="break-all text-foreground"
               >
-                {skill.directoryPath}
+                {skill.fileLocation}
               </DetailField>
             </section>
           </aside>

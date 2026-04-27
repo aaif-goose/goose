@@ -118,4 +118,42 @@ describe("listSkills", () => {
       ]),
     );
   });
+
+  it("keeps available skills when a project skill listing fails", async () => {
+    mockGooseSourcesList
+      .mockResolvedValueOnce({
+        sources: [
+          {
+            type: "skill",
+            name: "code-review",
+            description: "Reviews code",
+            content: "Review carefully",
+            directory: "/Users/test/.agents/skills/code-review",
+            global: true,
+          },
+        ],
+      })
+      .mockRejectedValueOnce(new Error("permission denied"))
+      .mockResolvedValueOnce({
+        sources: [
+          {
+            type: "skill",
+            name: "test-writer",
+            description: "Writes tests",
+            content: "Write tests",
+            directory: "/tmp/beta/.agents/skills/test-writer",
+            global: false,
+          },
+        ],
+      });
+
+    const { listSkills } = await import("./skills");
+    const skills = await listSkills(["/tmp/alpha", "/tmp/beta"]);
+
+    expect(mockGooseSourcesList).toHaveBeenCalledTimes(3);
+    expect(skills.map((skill) => skill.name)).toEqual([
+      "code-review",
+      "test-writer",
+    ]);
+  });
 });
