@@ -43,6 +43,11 @@ fn is_supported_request_param_key(key: &str) -> bool {
     matches!(key, "thinking")
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OpenAiFormatOptions {
+    pub preserve_thinking_context: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct DeltaToolCallFunction {
     name: Option<String>,
@@ -142,8 +147,22 @@ fn extract_content_and_signature(
 }
 
 pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Value> {
+    format_messages_with_options(messages, image_format, OpenAiFormatOptions::default())
+}
+
+pub fn format_messages_with_options(
+    messages: &[Message],
+    image_format: &ImageFormat,
+    options: OpenAiFormatOptions,
+) -> Vec<Value> {
     let mut messages_spec = Vec::new();
+    let mut pending_assistant_reasoning = String::new();
+
     for message in messages {
+        if options.preserve_thinking_context && message.role != Role::Assistant {
+            pending_assistant_reasoning.clear();
+        }
+
         let mut converted = json!({
             "role": message.role
         });
@@ -350,14 +369,30 @@ pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<
             converted["content"] = json!(null);
         }
 
-        // Include reasoning_content only when non-empty.
-        // Kimi rejects empty reasoning_content (""), so we must omit it entirely
-        // when there's no reasoning to send.
-        if !reasoning_text.is_empty() {
+        let has_message_payload =
+            converted.get("content").is_some() || converted.get("tool_calls").is_some();
+
+        if options.preserve_thinking_context && message.role == Role::Assistant {
+            if !has_message_payload && output.is_empty() && !reasoning_text.is_empty() {
+                pending_assistant_reasoning.push_str(&reasoning_text);
+                continue;
+            }
+
+            if !pending_assistant_reasoning.is_empty() {
+                if !reasoning_text.is_empty() {
+                    pending_assistant_reasoning.push_str(&reasoning_text);
+                }
+                reasoning_text = std::mem::take(&mut pending_assistant_reasoning);
+            }
+        }
+
+        // Include reasoning_content only when non-empty. Kimi rejects empty
+        // reasoning_content (""), so we must omit it entirely.
+        if options.preserve_thinking_context && !reasoning_text.is_empty() {
             converted["reasoning_content"] = json!(reasoning_text);
         }
 
-        if converted.get("content").is_some() || converted.get("tool_calls").is_some() {
+        if has_message_payload {
             output.insert(0, converted);
         }
 
@@ -1154,6 +1189,26 @@ pub fn create_request(
     image_format: &ImageFormat,
     for_streaming: bool,
 ) -> anyhow::Result<Value, Error> {
+    create_request_with_options(
+        model_config,
+        system,
+        messages,
+        tools,
+        image_format,
+        for_streaming,
+        OpenAiFormatOptions::default(),
+    )
+}
+
+pub fn create_request_with_options(
+    model_config: &ModelConfig,
+    system: &str,
+    messages: &[Message],
+    tools: &[Tool],
+    image_format: &ImageFormat,
+    for_streaming: bool,
+    format_options: OpenAiFormatOptions,
+) -> anyhow::Result<Value, Error> {
     if model_config.model_name.starts_with("o1-mini") {
         return Err(anyhow!(
             "o1-mini model is not currently supported since goose uses tool calling and o1-mini does not support it. Please use o1 or o3 models instead."
@@ -1168,7 +1223,7 @@ pub fn create_request(
         "content": system
     });
 
-    let messages_spec = format_messages(messages, image_format);
+    let messages_spec = format_messages_with_options(messages, image_format, format_options);
     let mut tools_spec = format_tools(tools)?;
 
     validate_tool_schemas(&mut tools_spec);
@@ -2695,7 +2750,13 @@ data: [DONE]"#;
                 .with_arguments(rmcp::object!({"param": "value"}))),
         );
 
-        let spec = format_messages(&[message], &ImageFormat::OpenAi);
+        let spec = format_messages_with_options(
+            &[message],
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+            },
+        );
 
         assert_eq!(spec.len(), 1);
         assert_eq!(spec[0]["role"], "assistant");
@@ -2713,6 +2774,78 @@ data: [DONE]"#;
         // Should have tool_calls
         assert!(spec[0]["tool_calls"].is_array());
         assert_eq!(spec[0]["tool_calls"][0]["function"]["name"], "test_tool");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_messages_omits_reasoning_content_by_default() -> anyhow::Result<()> {
+        let message = Message::assistant()
+            .with_content(MessageContent::thinking(
+                "Thinking through the problem...",
+                "",
+            ))
+            .with_text("The result is 42");
+
+        let spec = format_messages(&[message], &ImageFormat::OpenAi);
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["content"], "The result is 42");
+        assert!(spec[0].get("reasoning_content").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_messages_carries_thinking_only_chunks_to_tool_call() -> anyhow::Result<()> {
+        let messages = vec![
+            Message::assistant().with_content(MessageContent::thinking("think ", "")),
+            Message::assistant().with_content(MessageContent::thinking("once", "")),
+            Message::assistant().with_tool_request(
+                "tool1",
+                Ok(CallToolRequestParams::new("test_tool")
+                    .with_arguments(object!({"param": "value"}))),
+            ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+            },
+        );
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["role"], "assistant");
+        assert_eq!(spec[0]["reasoning_content"], "think once");
+        assert_eq!(spec[0]["content"], json!(null));
+        assert_eq!(spec[0]["tool_calls"][0]["function"]["name"], "test_tool");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_messages_does_not_carry_thinking_across_user_message() -> anyhow::Result<()> {
+        let messages = vec![
+            Message::assistant().with_content(MessageContent::thinking("stale", "")),
+            Message::user().with_text("new turn"),
+            Message::assistant()
+                .with_tool_request("tool1", Ok(CallToolRequestParams::new("test_tool"))),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+            },
+        );
+
+        assert_eq!(spec.len(), 2);
+        assert_eq!(spec[0]["role"], "user");
+        assert_eq!(spec[1]["role"], "assistant");
+        assert!(spec[1].get("reasoning_content").is_none());
 
         Ok(())
     }
@@ -2920,6 +3053,7 @@ data: [DONE]"#;
 
         let mut thinking = String::new();
         let mut tool_calls = 0;
+        let mut history = Vec::new();
         while let Some(result) = messages.next().await {
             let (message, _usage) = result?;
             if let Some(msg) = message {
@@ -2930,11 +3064,24 @@ data: [DONE]"#;
                         _ => {}
                     }
                 }
+                history.push(msg);
             }
         }
 
         assert_eq!(thinking, "think once");
         assert_eq!(tool_calls, 1);
+
+        let spec = format_messages_with_options(
+            &history,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+            },
+        );
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["reasoning_content"], "think once");
+        assert_eq!(spec[0]["tool_calls"][0]["function"]["name"], "test_tool");
+
         Ok(())
     }
 

@@ -819,6 +819,22 @@ mod tests {
     }
 
     #[test]
+    fn test_opencode_go_json_deserializes() {
+        let json = include_str!("../providers/declarative/opencode_go.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("opencode_go.json should parse");
+        assert_eq!(config.name, "opencode_go");
+        assert_eq!(config.display_name, "OpenCode Go");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "OPENCODE_API_KEY");
+        assert_eq!(config.base_url, "https://opencode.ai/zen/go/v1");
+        assert_eq!(config.catalog_provider_id, Some("opencode-go".to_string()));
+        assert_eq!(config.dynamic_models, Some(true));
+        assert!(config.preserves_thinking);
+        assert_eq!(config.models[0].name, "kimi-k2.6");
+    }
+
+    #[test]
     fn test_expand_env_vars_replaces_placeholder() {
         let _guard = env_lock::lock_env([("TEST_EXPAND_HOST", Some("https://example.com/api"))]);
 

@@ -1,0 +1,29 @@
+{
+  "name": "opencode_go",
+  "engine": "openai",
+  "display_name": "OpenCode Go",
+  "description": "OpenCode Go models via OpenAI-compatible API.",
+  "api_key_env": "OPENCODE_API_KEY",
+  "base_url": "https://opencode.ai/zen/go/v1",
+  "catalog_provider_id": "opencode-go",
+  "dynamic_models": true,
+  "model_doc_link": "https://opencode.ai/docs/zen",
+  "preserves_thinking": true,
+  "models": [
+    {"name": "kimi-k2.6", "context_limit": 262144},
+    {"name": "kimi-k2.5", "context_limit": 262144},
+    {"name": "deepseek-v4-flash", "context_limit": 1000000},
+    {"name": "deepseek-v4-pro", "context_limit": 1000000},
+    {"name": "glm-5.1", "context_limit": 204800},
+    {"name": "glm-5", "context_limit": 204800},
+    {"name": "mimo-v2.5-pro", "context_limit": 1048576},
+    {"name": "mimo-v2.5", "context_limit": 262144},
+    {"name": "mimo-v2-pro", "context_limit": 1048576},
+    {"name": "mimo-v2-omni", "context_limit": 262144},
+    {"name": "minimax-m2.7", "context_limit": 204800},
+    {"name": "minimax-m2.5", "context_limit": 204800},
+    {"name": "qwen3.6-plus", "context_limit": 262144},
+    {"name": "qwen3.5-plus", "context_limit": 262144}
+  ],
+  "supports_streaming": true
+}
