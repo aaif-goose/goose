@@ -1205,7 +1205,9 @@ mod tests {
         assert!(is_likely_non_chat_model("qwen3-asr-flash"));
         assert!(is_likely_non_chat_model("imagen-4.0-generate-001"));
         assert!(is_likely_non_chat_model("stable-diffusion-xl"));
-        assert!(is_likely_non_chat_model("gemini-2.0-flash-exp-image-generation"));
+        assert!(is_likely_non_chat_model(
+            "gemini-2.0-flash-exp-image-generation"
+        ));
 
         // Should NOT be filtered — these are chat models
         assert!(!is_likely_non_chat_model("gpt-4o"));
