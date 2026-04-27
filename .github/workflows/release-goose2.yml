@@ -163,7 +163,7 @@ jobs:
             release/goose-*.tar.bz2
             release/goose-*.tar.gz
             release/goose-*.zip
-            release/*.dmg
+            release/**/*.dmg
             release/*.exe
             release/*.msi
             release/*.deb
@@ -181,7 +181,7 @@ jobs:
             release/goose-*.tar.bz2
             release/goose-*.tar.gz
             release/goose-*.zip
-            release/*.dmg
+            release/**/*.dmg
             release/*.exe
             release/*.msi
             release/*.deb
