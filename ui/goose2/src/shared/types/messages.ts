@@ -1,3 +1,8 @@
+import type {
+  GooseReadResourceResult,
+  GooseToolMetadata,
+} from "@aaif/goose-sdk";
+
 export type ChatAttachmentKind = "image" | "file" | "directory";
 
 export interface ChatImageAttachmentDraft {
@@ -89,6 +94,30 @@ export interface ToolResponseContent {
   annotations?: ContentAnnotations;
 }
 
+export interface McpAppPayload {
+  sessionId: string;
+  gooseSessionId: string | null;
+  toolCallId: string;
+  toolCallTitle: string;
+  source: "toolCallUpdateMeta";
+  tool: {
+    name: string;
+    extensionName: string;
+    resourceUri: string;
+    meta?: GooseToolMetadata;
+  };
+  resource: {
+    result: GooseReadResourceResult | null;
+    readError?: string;
+  };
+}
+
+export interface McpAppContent {
+  type: "mcpApp";
+  id: string;
+  payload: McpAppPayload;
+}
+
 export interface ThinkingContent {
   type: "thinking";
   text: string;
@@ -129,6 +158,7 @@ export type MessageContent =
   | ImageContent
   | ToolRequestContent
   | ToolResponseContent
+  | McpAppContent
   | ThinkingContent
   | RedactedThinkingContent
   | ReasoningContent
@@ -180,6 +210,9 @@ export function isToolRequest(c: MessageContent): c is ToolRequestContent {
 }
 export function isToolResponse(c: MessageContent): c is ToolResponseContent {
   return c.type === "toolResponse";
+}
+export function isMcpApp(c: MessageContent): c is McpAppContent {
+  return c.type === "mcpApp";
 }
 export function isThinking(c: MessageContent): c is ThinkingContent {
   return c.type === "thinking";

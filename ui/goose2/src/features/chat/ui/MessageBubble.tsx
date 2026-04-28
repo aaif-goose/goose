@@ -32,6 +32,7 @@ import {
 } from "@/shared/ui/ai-elements/reasoning";
 import { ToolChainCards, type ToolChainItem } from "./ToolChainCards";
 import { ClickableImage } from "./ClickableImage";
+import { McpAppView } from "./McpAppView";
 import { useArtifactLinkHandler } from "@/features/chat/hooks/useArtifactLinkHandler";
 import type {
   Message,
@@ -97,10 +98,9 @@ interface ContentSection {
   items: MessageContent[] | ToolChainItem[];
 }
 
-/** Keep only content blocks whose audience includes "user" (or has no audience). */
 function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
   return content.filter((b) => {
-    const aud = b.annotations?.audience;
+    const aud = "annotations" in b ? b.annotations?.audience : undefined;
     return !aud || aud.length === 0 || aud.includes("user");
   });
 }
@@ -232,6 +232,8 @@ function renderContentBlock(
     case "toolResponse":
       // Handled by groupContentSections toolChain rendering
       return null;
+    case "mcpApp":
+      return <McpAppView key={`mcp-app-${index}`} payload={content.payload} />;
     case "thinking":
     case "reasoning": {
       const text = (content as ThinkingContent | ReasoningContentType).text;

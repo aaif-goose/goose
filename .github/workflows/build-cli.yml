@@ -31,36 +31,44 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux builds
           - os: ubuntu-latest
             architecture: x86_64
             target-suffix: unknown-linux-gnu
             build-on: ubuntu-latest
             use-cross: true
             cc: gcc-10
+            variant: standard
           - os: ubuntu-latest
             architecture: aarch64
             target-suffix: unknown-linux-gnu
             build-on: ubuntu-latest
             use-cross: true
             cc: gcc-10
-          # macOS builds
+            variant: standard
           - os: macos-latest
             architecture: x86_64
             target-suffix: apple-darwin
             build-on: macos-latest
             use-cross: true
+            variant: standard
           - os: macos-latest
             architecture: aarch64
             target-suffix: apple-darwin
             build-on: macos-latest
             use-cross: true
-          # Windows builds (only x86_64 supported)
+            variant: standard
           - os: windows
             architecture: x86_64
             target-suffix: pc-windows-msvc
             build-on: windows-latest
             use-cross: false
+            variant: standard
+          - os: windows
+            architecture: x86_64
+            target-suffix: pc-windows-msvc
+            build-on: windows-latest
+            use-cross: false
+            variant: cuda
 
     steps:
       - name: Checkout code
@@ -89,7 +97,7 @@ jobs:
         if: matrix.os == 'windows'
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
         with:
-          key: windows-msvc-cli
+          key: windows-msvc-cli-${{ matrix.variant }}
 
       - name: Build CLI (Linux/macOS)
         if: matrix.use-cross
@@ -118,21 +126,54 @@ jobs:
           rustup show
           rustup target add x86_64-pc-windows-msvc
 
+      - name: Install CUDA toolkit (Windows CUDA)
+        if: ${{ matrix.os == 'windows' && matrix.variant == 'cuda' }}
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '12.9.1'
+          method: 'local'
+          log-file-suffix: 'build-cli-windows-cuda.txt'
+
+      - name: Set up MSVC developer environment (Windows CUDA)
+        if: ${{ matrix.os == 'windows' && matrix.variant == 'cuda' }}
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: amd64
+
+      - name: Verify CUDA toolchain (Windows CUDA)
+        if: ${{ matrix.os == 'windows' && matrix.variant == 'cuda' }}
+        shell: pwsh
+        env:
+          CUDA_COMPUTE_CAP: "80"
+        run: |
+          Write-Output "CUDA_PATH=$env:CUDA_PATH"
+          Write-Output "CUDA_COMPUTE_CAP=$env:CUDA_COMPUTE_CAP"
+          where.exe cl
+          where.exe nvcc
+          nvcc -V
+
       - name: Build CLI (Windows)
         if: matrix.os == 'windows'
-        shell: bash
+        shell: pwsh
+        env:
+          CUDA_COMPUTE_CAP: ${{ matrix.variant == 'cuda' && '80' || '' }}
         run: |
-          echo "🚀 Building Windows CLI executable..."
-          cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
+          Write-Output "Building Windows CLI executable..."
+          if ("${{ matrix.variant }}" -eq "cuda") {
+            $cudaRustflagsConfig = 'target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]'
+            cargo build --config $cudaRustflagsConfig --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
+          } else {
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
+          }
 
-          if [ ! -f "./target/x86_64-pc-windows-msvc/release/goose.exe" ]; then
-            echo "❌ Windows CLI binary not found."
-            ls -la ./target/x86_64-pc-windows-msvc/release/ || echo "Release directory doesn't exist"
+          if (-not (Test-Path "./target/x86_64-pc-windows-msvc/release/goose.exe")) {
+            Write-Error "Windows CLI binary not found."
+            Get-ChildItem ./target/x86_64-pc-windows-msvc/release/ -ErrorAction SilentlyContinue
             exit 1
-          fi
+          }
 
-          echo "✅ Windows CLI binary found!"
-          ls -la ./target/x86_64-pc-windows-msvc/release/goose.exe
+          Write-Output "Windows CLI binary found."
+          Get-Item ./target/x86_64-pc-windows-msvc/release/goose.exe
 
       - name: Package CLI (Linux/macOS)
         if: matrix.use-cross
@@ -157,21 +198,24 @@ jobs:
         shell: bash
         run: |
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
+          export VARIANT_SUFFIX=""
+          if [ "${{ matrix.variant }}" = "cuda" ]; then
+            VARIANT_SUFFIX="-cuda"
+          fi
 
           mkdir -p "target/${TARGET}/release/goose-package"
 
           cp "target/${TARGET}/release/goose.exe" "target/${TARGET}/release/goose-package/"
 
           cd "target/${TARGET}/release"
-          7z a -tzip "goose-${TARGET}.zip" goose-package/
-          echo "ARTIFACT_ZIP=target/${TARGET}/release/goose-${TARGET}.zip" >> $GITHUB_ENV
+          7z a -tzip "goose-${TARGET}${VARIANT_SUFFIX}.zip" goose-package/
+          echo "ARTIFACT_ZIP=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.zip" >> $GITHUB_ENV
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}
+          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant == 'cuda' && '-cuda' || '' }}
           path: |
             ${{ env.ARTIFACT_BZ2 }}
             ${{ env.ARTIFACT_GZ }}
             ${{ env.ARTIFACT_ZIP }}
-

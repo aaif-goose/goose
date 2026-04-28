@@ -126,6 +126,7 @@
   "message": {
     "copied": "Copiado",
     "defaultImageAlt": "Adjunto",
+    "mcpAppUnderConstruction": "🚧 La renderización de MCP App está en construcción",
     "redactedThinking": "(pensamiento redactado)"
   },
   "persona": {

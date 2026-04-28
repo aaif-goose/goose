@@ -1,101 +1,159 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Plus, Upload } from "lucide-react";
 import {
-  AtSign,
-  Plus,
-  Trash2,
-  MoreHorizontal,
-  Pencil,
-  Copy,
-  Download,
-  Upload,
-} from "lucide-react";
+  IconAdjustmentsHorizontal,
+  IconChevronDown,
+} from "@tabler/icons-react";
+import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
-import { Button, buttonVariants } from "@/shared/ui/button";
+import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/alert-dialog";
+import { FilterRow, PageHeader, PageShell } from "@/shared/ui/page-shell";
 import { useFileImportZone } from "@/shared/hooks/useFileImportZone";
-import { CreateSkillDialog } from "./CreateSkillDialog";
+import { revealInFileManager } from "@/shared/lib/fileManager";
+import { SkillDetailPage } from "./SkillDetailPage";
+import { SkillsDialogs } from "./SkillsDialogs";
+import { SkillsEmptyState } from "./SkillsEmptyState";
+import { SkillsListSections, type SkillsSection } from "./SkillsListSections";
+import { hydrateProjectNames } from "../lib/projectHydration";
 import {
-  listSkills,
+  compareSkillsByName,
+  downloadExport,
+  uniqueSkillCategories,
+  uniqueProjectFilters,
+} from "../lib/skillsHelpers";
+import {
   deleteSkill,
-  createSkill,
   exportSkill,
   importSkills,
+  listSkills,
   type SkillInfo,
 } from "../api/skills";
+import {
+  withInferredSkillCategories,
+  type SkillCategory,
+  type SkillViewInfo,
+} from "../lib/skillCategories";
 
-function SkillCardMenu({
-  skill,
-  onEdit,
-  onDuplicate,
-  onExport,
-  onDelete,
+type SkillsFilter = "all" | "global" | `project:${string}`;
+
+function SkillCategoryFilter({
+  categories,
+  selectedCategories,
+  onSelectedCategoriesChange,
 }: {
-  skill: SkillInfo;
-  onEdit: (skill: SkillInfo) => void;
-  onDuplicate: (skill: SkillInfo) => void;
-  onExport: (skill: SkillInfo) => void;
-  onDelete: (skill: SkillInfo) => void;
+  categories: SkillCategory[];
+  selectedCategories: SkillCategory[];
+  onSelectedCategoriesChange: (categories: SkillCategory[]) => void;
 }) {
-  const { t } = useTranslation(["skills", "common"]);
+  const { t } = useTranslation(["skills"]);
+
+  const toggleCategory = useCallback(
+    (category: SkillCategory) => {
+      onSelectedCategoriesChange(
+        selectedCategories.includes(category)
+          ? selectedCategories.filter((value) => value !== category)
+          : [...selectedCategories, category],
+      );
+    },
+    [onSelectedCategoriesChange, selectedCategories],
+  );
+
+  const buttonLabel =
+    selectedCategories.length === 0
+      ? t("view.categories.label")
+      : selectedCategories.length === 1
+        ? t(`view.categories.options.${selectedCategories[0]}`)
+        : t("view.categories.count", { count: selectedCategories.length });
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={t("view.optionsAria", { name: skill.name })}
-          className="size-6 rounded-md text-muted-foreground hover:text-foreground"
+          size="xs"
+          variant={selectedCategories.length > 0 ? "default" : "outline-flat"}
+          leftIcon={<IconAdjustmentsHorizontal />}
+          rightIcon={<IconChevronDown />}
+          aria-label={t("view.categories.filter")}
         >
-          <MoreHorizontal className="size-3.5" />
+          {buttonLabel}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={4}>
-        <DropdownMenuItem onSelect={() => onEdit(skill)}>
-          <Pencil className="size-3.5" />
-          {t("common:actions.edit")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onDuplicate(skill)}>
-          <Copy className="size-3.5" />
-          {t("common:actions.duplicate")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onExport(skill)}>
-          <Download className="size-3.5" />
-          {t("common:actions.export")}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          variant="destructive"
-          onSelect={() => onDelete(skill)}
-        >
-          <Trash2 className="size-3.5" />
-          {t("common:actions.delete")}
-        </DropdownMenuItem>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuLabel>{t("view.categories.label")}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {categories.map((category) => (
+          <DropdownMenuCheckboxItem
+            key={category}
+            checked={selectedCategories.includes(category)}
+            onSelect={(event) => event.preventDefault()}
+            onCheckedChange={() => toggleCategory(category)}
+          >
+            {t(`view.categories.options.${category}`)}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {selectedCategories.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                onSelectedCategoriesChange([]);
+              }}
+            >
+              {t("view.categories.clear")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-export function SkillsView() {
+interface SkillsViewProps {
+  onStartChatWithSkill?: (skillName: string, projectId?: string | null) => void;
+}
+
+function FilterButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      size="xs"
+      variant={active ? "default" : "outline-flat"}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const { t } = useTranslation(["skills", "common"]);
+  const projects = useProjectStore((state) => state.projects);
   const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<SkillsFilter>("all");
+  const [selectedCategories, setSelectedCategories] = useState<SkillCategory[]>(
+    [],
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<
     | {
@@ -107,27 +165,163 @@ export function SkillsView() {
       }
     | undefined
   >(undefined);
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [skills, setSkills] = useState<SkillViewInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingSkill, setDeletingSkill] = useState<SkillInfo | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const loadRequestIdRef = useRef(0);
 
   const loadSkills = useCallback(async () => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
     setLoading(true);
+
     try {
-      const result = await listSkills();
-      setSkills(result);
+      const projectDirs = projects.flatMap((project) => project.workingDirs);
+      const result = await listSkills(projectDirs);
+      if (loadRequestIdRef.current !== requestId) {
+        return;
+      }
+      setSkills(
+        withInferredSkillCategories(hydrateProjectNames(result, projects)),
+      );
     } catch {
-      setSkills([]);
+      if (loadRequestIdRef.current === requestId) {
+        setSkills([]);
+      }
     } finally {
-      setLoading(false);
+      if (loadRequestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [projects]);
 
   useEffect(() => {
     loadSkills();
   }, [loadSkills]);
+
+  const projectFilters = useMemo(() => uniqueProjectFilters(skills), [skills]);
+  const categoryFilters = useMemo(
+    () => uniqueSkillCategories(skills),
+    [skills],
+  );
+
+  useEffect(() => {
+    if (!activeFilter.startsWith("project:")) {
+      return;
+    }
+
+    const projectId = activeFilter.slice("project:".length);
+    if (!projectFilters.some((project) => project.id === projectId)) {
+      setActiveFilter("all");
+    }
+  }, [activeFilter, projectFilters]);
+
+  useEffect(() => {
+    setSelectedCategories((current) =>
+      current.filter((category) => categoryFilters.includes(category)),
+    );
+  }, [categoryFilters]);
+
+  const filteredSkills = useMemo(() => {
+    const searchTerm = search.trim().toLowerCase();
+    return skills.filter((skill) => {
+      const matchesSearch =
+        searchTerm.length === 0 ||
+        skill.name.toLowerCase().includes(searchTerm) ||
+        skill.description.toLowerCase().includes(searchTerm) ||
+        skill.sourceLabel.toLowerCase().includes(searchTerm) ||
+        t(`view.categories.options.${skill.inferredCategory}`)
+          .toLowerCase()
+          .includes(searchTerm);
+
+      const matchesFilter =
+        activeFilter === "all"
+          ? true
+          : activeFilter === "global"
+            ? skill.sourceKind === "global"
+            : skill.projectLinks.some(
+                (project) => `project:${project.id}` === activeFilter,
+              );
+
+      const matchesCategory =
+        selectedCategories.length === 0 ||
+        selectedCategories.includes(skill.inferredCategory);
+
+      return matchesSearch && matchesFilter && matchesCategory;
+    });
+  }, [activeFilter, search, selectedCategories, skills, t]);
+
+  const groupedSkills = useMemo<SkillsSection[]>(() => {
+    if (activeFilter === "global") {
+      return [
+        {
+          id: "personal",
+          title: t("view.filtersGlobal"),
+          skills: [...filteredSkills].sort(compareSkillsByName),
+        },
+      ];
+    }
+
+    if (activeFilter.startsWith("project:")) {
+      const projectId = activeFilter.slice("project:".length);
+      const projectName =
+        projectFilters.find((project) => project.id === projectId)?.name ??
+        t("view.projects");
+
+      return [
+        {
+          id: activeFilter,
+          title: projectName,
+          skills: [...filteredSkills].sort(compareSkillsByName),
+        },
+      ];
+    }
+
+    const personalSkills = filteredSkills
+      .filter((skill) => skill.sourceKind === "global")
+      .sort(compareSkillsByName);
+
+    const projectSections = projectFilters
+      .map((project) => ({
+        id: `project:${project.id}`,
+        title: project.name,
+        skills: filteredSkills
+          .filter((skill) =>
+            skill.projectLinks.some((link) => link.id === project.id),
+          )
+          .sort(compareSkillsByName),
+      }))
+      .filter((section) => section.skills.length > 0);
+
+    return [
+      ...(personalSkills.length > 0
+        ? [
+            {
+              id: "personal",
+              title: t("view.filtersGlobal"),
+              skills: personalSkills,
+            },
+          ]
+        : []),
+      ...projectSections,
+    ];
+  }, [activeFilter, filteredSkills, projectFilters, t]);
+
+  useEffect(() => {
+    const nextIds = groupedSkills.map((section) => section.id);
+    setExpandedSectionIds((prev) => {
+      const stillVisible = prev.filter((id) => nextIds.includes(id));
+      const newIds = nextIds.filter((id) => !stillVisible.includes(id));
+      return [...stillVisible, ...newIds];
+    });
+  }, [groupedSkills]);
+
+  const activeSkill =
+    skills.find((skill) => skill.id === activeSkillId) ?? null;
 
   const handleDelete = (skill: SkillInfo) => {
     setDeletingSkill(skill);
@@ -138,6 +332,9 @@ export function SkillsView() {
     try {
       await deleteSkill(deletingSkill.path);
       await loadSkills();
+      if (activeSkillId === deletingSkill.id) {
+        setActiveSkillId(null);
+      }
     } catch {
       // best-effort
     }
@@ -155,34 +352,10 @@ export function SkillsView() {
     setDialogOpen(true);
   };
 
-  const handleDuplicate = async (skill: SkillInfo) => {
-    const existingNames = new Set(skills.map((s) => s.name));
-    let copyName = `${skill.name}-copy`;
-    let counter = 2;
-    while (existingNames.has(copyName)) {
-      copyName = `${skill.name}-copy-${counter}`;
-      counter++;
-    }
-    try {
-      await createSkill(copyName, skill.description, skill.instructions);
-      await loadSkills();
-    } catch {
-      // best-effort
-    }
-  };
-
   const handleExport = async (skill: SkillInfo) => {
     try {
       const result = await exportSkill(skill.path);
-      const blob = new Blob([result.json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = result.filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadExport(result.json, result.filename);
       setNotification(t("view.exportedTo", { filename: result.filename }));
       setTimeout(() => setNotification(null), 3000);
     } catch (err) {
@@ -190,9 +363,20 @@ export function SkillsView() {
     }
   };
 
+  const handleReveal = useCallback((skill: SkillInfo) => {
+    void revealInFileManager(skill.path);
+  }, []);
+
+  const handleStartChat = useCallback(
+    (skill: SkillInfo) => {
+      onStartChatWithSkill?.(skill.name, skill.projectLinks[0]?.id ?? null);
+    },
+    [onStartChatWithSkill],
+  );
+
   const handleImportFile = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
       if (!file) return;
 
       try {
@@ -200,8 +384,8 @@ export function SkillsView() {
         const bytes = Array.from(new Uint8Array(arrayBuffer));
         await importSkills(bytes, file.name);
         await loadSkills();
-      } catch (err) {
-        console.error("Failed to import skill:", err);
+      } catch (error) {
+        console.error("Failed to import skill:", error);
       }
 
       if (importInputRef.current) {
@@ -226,8 +410,8 @@ export function SkillsView() {
       try {
         await importSkills(fileBytes, fileName);
         await loadSkills();
-      } catch (err) {
-        console.error("Failed to import skill:", err);
+      } catch (error) {
+        console.error("Failed to import skill:", error);
       }
     },
     [loadSkills],
@@ -240,149 +424,146 @@ export function SkillsView() {
     handleFileChange: handleDropFileChange,
   } = useFileImportZone({ onImportFile: handleDropImport });
 
-  const filtered = skills.filter(
-    (s) =>
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.description.toLowerCase().includes(search.toLowerCase()),
+  const handleSelectSkill = (skill: SkillViewInfo) => {
+    setActiveSkillId(skill.id);
+  };
+
+  const dialogs = (
+    <SkillsDialogs
+      dialogOpen={dialogOpen}
+      onDialogClose={handleDialogClose}
+      onCreated={loadSkills}
+      editingSkill={editingSkill}
+      deletingSkill={deletingSkill}
+      onDeletingSkillChange={setDeletingSkill}
+      onConfirmDelete={handleConfirmDeleteSkill}
+      notification={notification}
+    />
   );
 
-  return (
-    <div className="flex flex-1 flex-col h-full min-h-0">
-      <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-5xl mx-auto w-full px-6 py-8 space-y-5 page-transition">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h1 className="text-lg font-semibold font-display tracking-tight">
-                {t("view.title")}
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                {t("view.description")}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".skill.json,.json"
-                className="hidden"
-                onChange={handleImportFile}
-              />
-              <Button
-                type="button"
-                variant="outline-flat"
-                size="xs"
-                onClick={() => importInputRef.current?.click()}
-              >
-                <Upload className="size-3.5" />
-                {t("common:actions.import")}
-              </Button>
-              <Button
-                type="button"
-                variant="outline-flat"
-                size="xs"
-                onClick={handleNewSkill}
-              >
-                <Plus className="size-3.5" />
-                {t("view.newSkill")}
-              </Button>
-            </div>
-          </div>
+  if (activeSkill) {
+    return (
+      <>
+        <SkillDetailPage
+          skill={activeSkill}
+          onBack={() => setActiveSkillId(null)}
+          onEdit={handleEdit}
+          onReveal={handleReveal}
+          onShare={handleExport}
+          onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
+          onDelete={handleDelete}
+        />
+        {dialogs}
+      </>
+    );
+  }
 
+  return (
+    <PageShell>
+      <PageHeader
+        title={t("view.title")}
+        description={t("view.description")}
+        titleClassName="font-normal text-foreground"
+        actions={
+          <>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".skill.json,.json"
+              className="hidden"
+              onChange={handleImportFile}
+            />
+            <Button
+              type="button"
+              variant="outline-flat"
+              size="xs"
+              onClick={() => importInputRef.current?.click()}
+            >
+              <Upload className="size-3.5" />
+              {t("common:actions.import")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline-flat"
+              size="xs"
+              onClick={handleNewSkill}
+            >
+              <Plus className="size-3.5" />
+              {t("view.newSkill")}
+            </Button>
+          </>
+        }
+      />
+
+      <div
+        {...dropHandlers}
+        className={cn(
+          "rounded-2xl transition-colors",
+          isDragOver && "bg-muted/50",
+        )}
+      >
+        <div className="space-y-3">
           <SearchBar
             value={search}
             onChange={setSearch}
             placeholder={t("view.searchPlaceholder")}
           />
 
-          {loading && (
-            <div className="py-8 text-sm text-muted-foreground" role="status">
-              {t("common:labels.loading")}
-            </div>
-          )}
-
-          {!loading && filtered.length > 0 && (
-            <div className="space-y-2">
-              {filtered.map((skill) => (
-                <div
-                  key={skill.name}
-                  className="flex items-start justify-between gap-3 rounded-lg border border-border px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium">{skill.name}</p>
-                    </div>
-                    {skill.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {skill.description}
-                      </p>
-                    )}
-                  </div>
-                  <SkillCardMenu
-                    skill={skill}
-                    onEdit={handleEdit}
-                    onDuplicate={handleDuplicate}
-                    onExport={handleExport}
-                    onDelete={handleDelete}
-                  />
-                </div>
-              ))}
-
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleNewSkill}
-                {...dropHandlers}
-                className={cn(
-                  "h-auto w-full rounded-lg border border-dashed px-4 py-3 text-muted-foreground",
-                  isDragOver
-                    ? "border-ring bg-muted"
-                    : "border-border hover:border-border hover:bg-accent/50",
-                )}
-              >
-                <Plus className="size-4" />
-                <span className="text-sm">{t("view.newSkill")}</span>
-                <span className="ml-1 text-xs">{t("view.dropFile")}</span>
-              </Button>
-            </div>
-          )}
-
-          {!loading && filtered.length === 0 && (
-            <div
-              {...dropHandlers}
-              className={cn(
-                "flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground rounded-lg border border-dashed transition-colors",
-                isDragOver ? "border-ring bg-muted" : "border-transparent",
-              )}
+          <FilterRow>
+            <FilterButton
+              active={activeFilter === "all"}
+              onClick={() => setActiveFilter("all")}
             >
-              <AtSign className="h-10 w-10 opacity-30" />
-              <div className="text-center">
-                <p className="text-sm font-medium">
-                  {skills.length === 0
-                    ? t("view.emptyTitle")
-                    : t("view.noMatchesTitle")}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {skills.length === 0
-                    ? t("view.emptyDescription")
-                    : t("view.noMatchesDescription")}
-                </p>
-              </div>
-              {skills.length === 0 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={handleNewSkill}
-                  className="mt-2"
+              {t("view.filtersAllSources")}
+            </FilterButton>
+            <FilterButton
+              active={activeFilter === "global"}
+              onClick={() => setActiveFilter("global")}
+            >
+              {t("view.filtersGlobal")}
+            </FilterButton>
+            {projectFilters.map((project) => {
+              const filterValue = `project:${project.id}` as const;
+              return (
+                <FilterButton
+                  key={project.id}
+                  active={activeFilter === filterValue}
+                  onClick={() => setActiveFilter(filterValue)}
                 >
-                  <Plus className="size-3.5" />
-                  {t("view.newSkill")}
-                </Button>
-              )}
-            </div>
-          )}
+                  {project.name}
+                </FilterButton>
+              );
+            })}
+            {categoryFilters.length > 0 ? (
+              <SkillCategoryFilter
+                categories={categoryFilters}
+                selectedCategories={selectedCategories}
+                onSelectedCategoriesChange={setSelectedCategories}
+              />
+            ) : null}
+          </FilterRow>
         </div>
       </div>
+
+      {!loading && filteredSkills.length > 0 ? (
+        <SkillsListSections
+          sections={groupedSkills}
+          expandedSectionIds={expandedSectionIds}
+          onExpandedSectionIdsChange={setExpandedSectionIds}
+          onSelectSkill={handleSelectSkill}
+          onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
+        />
+      ) : null}
+
+      {!loading && filteredSkills.length === 0 ? (
+        <SkillsEmptyState
+          hasAnySkills={skills.length > 0}
+          isDragOver={isDragOver}
+          dropHandlers={dropHandlers}
+          onNewSkill={handleNewSkill}
+          onImport={() => importInputRef.current?.click()}
+        />
+      ) : null}
 
       <input
         ref={dropFileInputRef}
@@ -392,43 +573,7 @@ export function SkillsView() {
         onChange={handleDropFileChange}
       />
 
-      <CreateSkillDialog
-        isOpen={dialogOpen}
-        onClose={handleDialogClose}
-        onCreated={loadSkills}
-        editingSkill={editingSkill}
-      />
-
-      <AlertDialog
-        open={!!deletingSkill}
-        onOpenChange={(open) => !open && setDeletingSkill(null)}
-      >
-        <AlertDialogContent className="max-w-sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("view.deleteTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("view.deleteDescription", {
-                name: deletingSkill?.name ?? "",
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common:actions.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className={buttonVariants({ variant: "destructive" })}
-              onClick={handleConfirmDeleteSkill}
-            >
-              {t("common:actions.delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {notification && (
-        <div className="fixed bottom-4 right-4 z-50 rounded-lg border border-border bg-background px-4 py-3 shadow-popover text-sm animate-in fade-in slide-in-from-bottom-2">
-          {notification}
-        </div>
-      )}
-    </div>
+      {dialogs}
+    </PageShell>
   );
 }

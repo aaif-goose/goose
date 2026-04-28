@@ -126,6 +126,7 @@
   "message": {
     "copied": "Copied",
     "defaultImageAlt": "Attached",
+    "mcpAppUnderConstruction": "🚧 MCP App Rendering is under construction",
     "redactedThinking": "(thinking redacted)"
   },
   "persona": {

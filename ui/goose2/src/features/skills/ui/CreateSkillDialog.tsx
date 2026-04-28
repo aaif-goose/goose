@@ -186,12 +186,12 @@ export function CreateSkillDialog({
             />
           </div>
 
-          {isEditing && editingSkill && (
+          {isEditing && editingSkill ? (
             <p className="-mt-2 break-all text-[11px] text-muted-foreground">
               {t("dialog.pathOnDisk")}:{" "}
               {getRenamedSkillFileLocation(editingSkill.fileLocation, name)}
             </p>
-          )}
+          ) : null}
 
           {/* Instructions */}
           <div className="space-y-1">

@@ -1687,8 +1687,7 @@ mod tests {
     }
 
     #[test]
-    fn test_no_defaults_file_behaves_as_before() {
-        // Config without defaults (the normal open-source case)
+    fn test_missing_key_returns_not_found() {
         let config = new_test_config();
 
         let result: Result<String, ConfigError> = config.get_param("nonexistent_key");

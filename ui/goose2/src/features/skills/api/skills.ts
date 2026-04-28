@@ -2,19 +2,48 @@ import type { SourceEntry } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
 
 const SKILL_SOURCE_TYPE = "skill" as const;
+const PROJECT_SKILLS_MARKERS = [
+  "/.agents/skills/",
+  "/.goose/skills/",
+  "/.claude/skills/",
+];
+
+export interface SkillProjectLink {
+  id: string;
+  name: string;
+  workingDir: string;
+}
+
+export type SkillSourceKind = "global" | "project";
 
 export interface SkillInfo {
+  id: string;
   name: string;
   description: string;
   instructions: string;
   path: string;
   fileLocation: string;
+  directoryPath: string;
+  sourceKind: SkillSourceKind;
+  sourceLabel: string;
+  projectLinks: SkillProjectLink[];
+  editable: boolean;
 }
 
 type SkillSourceEntry = SourceEntry & { type: typeof SKILL_SOURCE_TYPE };
 
 function isSkillSource(source: SourceEntry): source is SkillSourceEntry {
   return source.type === SKILL_SOURCE_TYPE;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function basename(path: string): string {
+  const trimmed = normalizePath(path).replace(/\/+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
 
 function getSkillFileLocation(directory: string): string {
@@ -24,14 +53,54 @@ function getSkillFileLocation(directory: string): string {
     : `${directory}${separator}SKILL.md`;
 }
 
+function deriveProjectRoot(directory: string): string | null {
+  const normalizedDirectory = normalizePath(directory);
+
+  for (const marker of PROJECT_SKILLS_MARKERS) {
+    const idx = normalizedDirectory.lastIndexOf(marker);
+    if (idx >= 0) {
+      return directory.slice(0, idx);
+    }
+  }
+
+  return null;
+}
+
 function toSkillInfo(source: SkillSourceEntry): SkillInfo {
+  const sourceKind: SkillSourceKind = source.global ? "global" : "project";
+  const projectRoot = source.global
+    ? null
+    : deriveProjectRoot(source.directory);
+  const projectName = projectRoot ? basename(projectRoot) : "";
+
+  const projectLinks: SkillProjectLink[] = projectRoot
+    ? [
+        {
+          id: projectRoot,
+          name: projectName || projectRoot,
+          workingDir: projectRoot,
+        },
+      ]
+    : [];
+
   return {
+    id: `${sourceKind}:${source.directory}`,
     name: source.name,
     description: source.description,
     instructions: source.content,
     path: source.directory,
     fileLocation: getSkillFileLocation(source.directory),
+    directoryPath: source.directory,
+    sourceKind,
+    sourceLabel:
+      sourceKind === "global" ? "Personal" : projectName || "Project",
+    projectLinks,
+    editable: true,
   };
+}
+
+function uniqueProjectDirs(projectDirs: string[]) {
+  return [...new Set(projectDirs.map((dir) => dir.trim()).filter(Boolean))];
 }
 
 export async function createSkill(
@@ -49,12 +118,50 @@ export async function createSkill(
   });
 }
 
-export async function listSkills(): Promise<SkillInfo[]> {
+export async function listSkills(
+  projectDirs: string[] = [],
+): Promise<SkillInfo[]> {
   const client = await getClient();
-  const response = await client.goose.GooseSourcesList({
-    type: SKILL_SOURCE_TYPE,
+  const fetchSources = (projectDir?: string) =>
+    client.goose.GooseSourcesList({
+      type: SKILL_SOURCE_TYPE,
+      ...(projectDir ? { projectDir } : {}),
+    });
+
+  const globalResponse = await fetchSources();
+  const projectResponses = await Promise.allSettled(
+    uniqueProjectDirs(projectDirs).map((projectDir) =>
+      fetchSources(projectDir),
+    ),
+  );
+  const responses = [
+    { response: globalResponse, projectResponse: false },
+    ...projectResponses.flatMap((result) =>
+      result.status === "fulfilled"
+        ? [{ response: result.value, projectResponse: true }]
+        : [],
+    ),
+  ];
+  const seen = new Set<string>();
+  const skills: SkillInfo[] = [];
+
+  responses.forEach(({ response, projectResponse }) => {
+    for (const source of response.sources) {
+      if (!isSkillSource(source) || (projectResponse && source.global)) {
+        continue;
+      }
+
+      const key = `${source.global ? "global" : "project"}:${source.directory}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      skills.push(toSkillInfo(source));
+    }
   });
-  return response.sources.filter(isSkillSource).map(toSkillInfo);
+
+  return skills;
 }
 
 export async function deleteSkill(path: string): Promise<void> {

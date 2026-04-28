@@ -118,7 +118,8 @@ Ink-TrailingMargin: Don't apply `marginBottom` to the last item in a list — it
 ## Never
 
 Never: Edit ui/desktop/openapi.json manually
-Never: Edit Cargo.toml use cargo add
+Cargo.toml: For human-authored dependency changes, use `cargo add` instead of manually editing dependency entries unless there is a specific reason not to.
+Cargo.toml: Automated dependency bump PRs are exempt; when manual edits are necessary, keep `Cargo.lock` consistent.
 Never: Skip cargo fmt
 Never: Merge without running clippy
 Never: Comment self-evident operations (`// Initialize`, `// Return result`), getters/setters, constructors, or standard Rust idioms

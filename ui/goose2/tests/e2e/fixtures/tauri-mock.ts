@@ -95,7 +95,7 @@ export function buildInitScript(options?: {
         description: s.description,
         content: s.instructions ?? s.content ?? "",
         directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
-        global: true,
+        global: s.global ?? true,
         supportingFiles: [],
       });
 
@@ -196,10 +196,10 @@ export function buildInitScript(options?: {
                 content: message.params?.content ?? "",
                 directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
                 global: message.params?.global ?? true,
-                supportingFiles: [],
               },
             });
-          case "_goose/sources/update": {
+          case "_goose/sources/update":
+          case "goose/sources/update": {
             const path = message.params?.path ?? "/mock/.agents/skills/updated-skill";
             const nextName = message.params?.name;
             const name =
@@ -218,14 +218,16 @@ export function buildInitScript(options?: {
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
                 directory,
-                global: true,
+                global: message.params?.global ?? true,
                 supportingFiles: [],
               },
             });
           }
           case "_goose/sources/delete":
+          case "goose/sources/delete":
             return jsonRpcResult(message.id, {});
-          case "_goose/sources/export": {
+          case "_goose/sources/export":
+          case "goose/sources/export": {
             const path = message.params?.path ?? "/mock/.agents/skills/skill";
             const name = String(path).split("/").filter(Boolean).at(-1) ?? "skill";
             return jsonRpcResult(message.id, {

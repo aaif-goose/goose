@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use fs_err as fs;
 use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
 pub use goose::acp::{map_permission_response, PermissionDecision};
+use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::paths::Paths;
 use goose::config::{GooseMode, PermissionManager};
@@ -190,6 +191,7 @@ pub async fn spawn_acp_server_in_process(
         data_root.to_path_buf(),
         goose_mode,
         true,
+        GoosePlatform::GooseCli,
     )
     .await
     .unwrap();

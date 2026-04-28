@@ -377,7 +377,7 @@ mod tests {
         )
         .unwrap();
 
-        let portable_dir = project_a.join(".goose").join("skills").join("portable");
+        let portable_dir = project_a.join(".agents").join("skills").join("portable");
         let (json, filename) =
             export_source(SourceType::Skill, portable_dir.to_str().unwrap()).unwrap();
         assert_eq!(filename, "portable.skill.json");
@@ -538,7 +538,7 @@ mod tests {
         )
         .unwrap();
 
-        let skill_dir = tmp.path().join(".goose").join("skills").join("my-dir");
+        let skill_dir = tmp.path().join(".agents").join("skills").join("my-dir");
         let updated = update_source(
             SourceType::Skill,
             skill_dir.to_str().unwrap(),
@@ -549,6 +549,67 @@ mod tests {
         .unwrap();
         // Name is derived from the frontmatter written by create_source
         assert_eq!(updated.name, "my-dir");
+    }
+
+    #[test]
+    fn list_sources_reads_project_agents_skills() {
+        let tmp = TempDir::new().unwrap();
+        let skill_dir = tmp.path().join(".agents").join("skills").join("test-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            build_skill_md("test-skill", "from agents", "Body"),
+        )
+        .unwrap();
+
+        let listed =
+            list_sources(Some(SourceType::Skill), Some(tmp.path().to_str().unwrap())).unwrap();
+        let skill = listed
+            .iter()
+            .find(|source| source.name == "test-skill" && !source.global)
+            .unwrap();
+        assert!(skill.directory.contains(".agents/skills"));
+        assert_eq!(skill.description, "from agents");
+    }
+
+    #[test]
+    fn project_sources_prefer_agents_directory_over_legacy_goose() {
+        let tmp = TempDir::new().unwrap();
+        let agents_skill_dir = tmp
+            .path()
+            .join(".agents")
+            .join("skills")
+            .join("shared-skill");
+        let legacy_skill_dir = tmp
+            .path()
+            .join(".goose")
+            .join("skills")
+            .join("shared-skill");
+        std::fs::create_dir_all(&agents_skill_dir).unwrap();
+        std::fs::create_dir_all(&legacy_skill_dir).unwrap();
+        std::fs::write(
+            agents_skill_dir.join("SKILL.md"),
+            build_skill_md("shared-skill", "preferred", "Agents"),
+        )
+        .unwrap();
+        std::fs::write(
+            legacy_skill_dir.join("SKILL.md"),
+            build_skill_md("shared-skill", "legacy", "Goose"),
+        )
+        .unwrap();
+
+        let listed =
+            list_sources(Some(SourceType::Skill), Some(tmp.path().to_str().unwrap())).unwrap();
+        let matching: Vec<_> = listed
+            .iter()
+            .filter(|source| source.name == "shared-skill" && !source.global)
+            .collect();
+        assert_eq!(matching.len(), 1);
+        assert!(matching[0].directory.contains(".agents/skills"));
+        assert_eq!(matching[0].description, "preferred");
+
+        let exported = export_source(SourceType::Skill, matching[0].directory.as_str()).unwrap();
+        assert!(exported.0.contains("preferred"));
     }
 
     #[test]

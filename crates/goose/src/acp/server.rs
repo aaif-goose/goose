@@ -3,7 +3,8 @@ use crate::acp::fs::AcpTools;
 use crate::acp::tools::AcpAwareToolMeta;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
-use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::extension_manager::TRUSTED_TOOL_UPDATE_META_KEY;
+use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
 use crate::agents::platform_extensions::developer::DeveloperClient;
 use crate::agents::{Agent, AgentConfig, ExtensionConfig, GoosePlatform, SessionConfig};
 use crate::config::base::CONFIG_YAML_NAME;
@@ -59,6 +60,7 @@ use sacp::{
     Agent as SacpAgent, ByteStreams, Client, ConnectionTo, Dispatch, HandleDispatchFrom, Handled,
     Responder,
 };
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
@@ -77,6 +79,34 @@ pub type AcpProviderFactory = Arc<
         + Send
         + Sync,
 >;
+
+/// Convenience conversions from any `Display` error into an `sacp::Error`.
+///
+/// Replaces the repetitive `.internal_err()`
+/// pattern. Use `.internal_err()?` for server-side failures and `.invalid_params_err()?`
+/// for bad client input. For custom messages use `.internal_err_ctx("context")?`.
+#[allow(dead_code)]
+trait ResultExt<T> {
+    fn internal_err(self) -> Result<T, sacp::Error>;
+    fn invalid_params_err(self) -> Result<T, sacp::Error>;
+    fn internal_err_ctx(self, context: &str) -> Result<T, sacp::Error>;
+    fn invalid_params_err_ctx(self, context: &str) -> Result<T, sacp::Error>;
+}
+
+impl<T, E: std::fmt::Display> ResultExt<T> for Result<T, E> {
+    fn internal_err(self) -> Result<T, sacp::Error> {
+        self.map_err(|e| sacp::Error::internal_error().data(e.to_string()))
+    }
+    fn invalid_params_err(self) -> Result<T, sacp::Error> {
+        self.map_err(|e| sacp::Error::invalid_params().data(e.to_string()))
+    }
+    fn internal_err_ctx(self, context: &str) -> Result<T, sacp::Error> {
+        self.map_err(|e| sacp::Error::internal_error().data(format!("{context}: {e}")))
+    }
+    fn invalid_params_err_ctx(self, context: &str) -> Result<T, sacp::Error> {
+        self.map_err(|e| sacp::Error::invalid_params().data(format!("{context}: {e}")))
+    }
+}
 
 const DEFAULT_PROVIDER_ID: &str = "goose";
 const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
@@ -154,6 +184,7 @@ pub struct GooseAcpAgent {
     builtins: Vec<String>,
     client_fs_capabilities: OnceCell<FileSystemCapabilities>,
     client_terminal: OnceCell<bool>,
+    client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
     thread_manager: Arc<crate::session::ThreadManager>,
@@ -161,6 +192,7 @@ pub struct GooseAcpAgent {
     goose_mode: GooseMode,
     disable_session_naming: bool,
     provider_inventory: ProviderInventoryService,
+    goose_platform: GoosePlatform,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -223,6 +255,52 @@ fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
     meta.as_ref()
         .and_then(|m| m.get("timeout"))
         .and_then(|v| v.as_u64())
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct GooseClientMetaEnvelope {
+    #[serde(default)]
+    goose: Option<GooseClientMeta>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct GooseClientMeta {
+    #[serde(rename = "mcpHostCapabilities", default)]
+    mcp_host_capabilities: Option<GooseMcpHostCapabilities>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct GooseMcpHostCapabilities {
+    #[serde(default)]
+    extensions: Option<rmcp::model::ExtensionCapabilities>,
+}
+
+fn extract_goose_client_meta(meta: &Meta) -> Option<GooseClientMetaEnvelope> {
+    serde_json::from_value(serde_json::Value::Object(meta.clone())).ok()
+}
+
+fn extract_client_mcp_host_info(args: &InitializeRequest) -> GooseMcpHostInfo {
+    let host_capabilities = args
+        .client_capabilities
+        .meta
+        .as_ref()
+        .and_then(extract_goose_client_meta)
+        .and_then(|meta| meta.goose)
+        .and_then(|goose| goose.mcp_host_capabilities);
+    let explicit_extensions = host_capabilities
+        .as_ref()
+        .and_then(|capabilities| capabilities.extensions.as_ref())
+        .is_some();
+    let extensions = host_capabilities
+        .and_then(|capabilities| capabilities.extensions)
+        .unwrap_or_default();
+
+    GooseMcpHostInfo {
+        explicit_extensions,
+        extensions,
+        client_name: args.client_info.as_ref().map(|info| info.name.clone()),
+        client_version: args.client_info.as_ref().map(|info| info.version.clone()),
+    }
 }
 
 fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConfig, String> {
@@ -767,6 +845,7 @@ impl GooseAcpAgent {
         config_dir: std::path::PathBuf,
         goose_mode: GooseMode,
         disable_session_naming: bool,
+        goose_platform: GoosePlatform,
     ) -> Result<Self> {
         let session_manager = Arc::new(SessionManager::new(data_dir));
         let thread_manager = Arc::new(crate::session::ThreadManager::new(
@@ -781,6 +860,7 @@ impl GooseAcpAgent {
             builtins,
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
+            client_mcp_host_info: OnceCell::new(),
             config_dir,
             session_manager,
             thread_manager,
@@ -788,11 +868,16 @@ impl GooseAcpAgent {
             goose_mode,
             disable_session_naming,
             provider_inventory,
+            goose_platform,
         })
     }
 
     fn load_config(&self) -> Result<Config> {
         Config::new(self.config_dir.join(CONFIG_YAML_NAME), "goose").map_err(Into::into)
+    }
+
+    fn config(&self) -> Result<Config, sacp::Error> {
+        self.load_config().internal_err_ctx("Failed to read config")
     }
 
     async fn create_provider(
@@ -954,13 +1039,14 @@ impl GooseAcpAgent {
             .cloned()
             .unwrap_or_default();
         let client_terminal = self.client_terminal.get().copied().unwrap_or(false);
+        let client_mcp_host_info = self.client_mcp_host_info.get().cloned();
         let provider_factory = Arc::clone(&self.provider_factory);
         let disable_session_naming = self.disable_session_naming;
+        let goose_platform = self.goose_platform.clone();
 
         tokio::spawn(async move {
             let t_setup = std::time::Instant::now();
             debug!(target: "perf", sid = %sid, "perf: agent_setup start (background)");
-
             // Shared config — read once, used by both phases.
             let config = match Config::new(config_dir.join(CONFIG_YAML_NAME), "goose") {
                 Ok(c) => c,
@@ -974,19 +1060,21 @@ impl GooseAcpAgent {
 
             // ── Phase 1: create agent + init provider (fast, ~55ms) ──────
             let phase1: Result<Arc<Agent>, String> = async {
-                let agent = Arc::new(Agent::with_config(AgentConfig::new(
-                    session_manager,
-                    permission_manager,
-                    None,
-                    goose_mode,
-                    disable_session_naming,
-                    GoosePlatform::GooseCli,
-                )));
+                let agent = Arc::new(Agent::with_config(
+                    AgentConfig::new(
+                        session_manager,
+                        permission_manager,
+                        None,
+                        goose_mode,
+                        disable_session_naming,
+                        goose_platform,
+                    )
+                    .with_mcp_host_info(client_mcp_host_info),
+                ));
 
                 // Init provider — reuse the pre-resolved name + model when
                 // available (already computed in on_new_session), otherwise
                 // fall back to reading config (e.g. load_session path).
-                let t_prov = std::time::Instant::now();
                 let (provider_name, model_config) = match resolved_provider {
                     Some(resolved) => resolved,
                     None => resolve_provider_and_model_from_config(&config, &goose_session).await?,
@@ -1010,7 +1098,6 @@ impl GooseAcpAgent {
                     .update_goose_mode(goose_mode, &internal_session_id)
                     .await
                     .map_err(|e| e.to_string())?;
-                debug!(target: "perf", sid = %sid, ms = t_prov.elapsed().as_millis() as u64, "perf: agent_setup provider_init");
 
                 Ok(agent)
             }
@@ -1090,43 +1177,23 @@ impl GooseAcpAgent {
                 }
 
                 let ext_manager = &agent.extension_manager;
-                let ext_count = extensions.len();
-                let t_ext = std::time::Instant::now();
                 let extension_futures = extensions
                     .into_iter()
                     .map(|ext| {
                         let ext_manager = Arc::clone(ext_manager);
                         let sid_inner = sid_str.clone();
-                        let sid_log = sid.clone();
                         async move {
                             let name = ext.name().to_string();
-                            let t_one = std::time::Instant::now();
-                            match ext_manager
+                            if let Err(e) = ext_manager
                                 .add_extension(ext, None, None, sid_inner.as_deref())
                                 .await
                             {
-                                Ok(_) => debug!(
-                                    target: "perf",
-                                    sid = %sid_log,
-                                    extension = %name,
-                                    ms = t_one.elapsed().as_millis() as u64,
-                                    "perf: agent_setup extension_loaded"
-                                ),
-                                Err(e) => {
-                                    warn!(extension = %name, error = %e, "extension load failed")
-                                }
+                                warn!(extension = %name, error = %e, "extension load failed");
                             }
                         }
                     })
                     .collect::<Vec<_>>();
                 futures::future::join_all(extension_futures).await;
-                debug!(
-                    target: "perf",
-                    sid = %sid,
-                    ms = t_ext.elapsed().as_millis() as u64,
-                    extensions = ext_count,
-                    "perf: agent_setup extensions_total"
-                );
 
                 if let Some((client, config)) = acp_developer {
                     let info = client.get_info().cloned();
@@ -1136,18 +1203,9 @@ impl GooseAcpAgent {
                         .await;
                 }
 
-                let t_mcp = std::time::Instant::now();
-                let mcp_count = mcp_servers.len();
                 GooseAcpAgent::add_mcp_extensions(&agent, mcp_servers, &internal_session_id)
                     .await
                     .map_err(|e| e.to_string())?;
-                debug!(
-                    target: "perf",
-                    sid = %sid,
-                    ms = t_mcp.elapsed().as_millis() as u64,
-                    mcp_servers = mcp_count,
-                    "perf: agent_setup mcp_extensions"
-                );
 
                 Ok(())
             }
@@ -1475,12 +1533,11 @@ impl GooseAcpAgent {
             }
         }
 
+        let update = ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
+            .meta(extract_tool_call_update_meta(tool_response));
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
-            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                ToolCallId::new(tool_response.id.clone()),
-                fields,
-            )),
+            SessionUpdate::ToolCallUpdate(update),
         ))?;
 
         Ok(())
@@ -1572,6 +1629,21 @@ fn outcome_to_confirmation(outcome: &RequestPermissionOutcome) -> PermissionConf
     }
 }
 
+fn extract_tool_call_update_meta(
+    tool_response: &crate::conversation::message::ToolResponse,
+) -> Option<Meta> {
+    let tool_result = tool_response.tool_result.as_ref().ok()?;
+    let goose_meta = tool_result
+        .meta
+        .as_ref()?
+        .0
+        .get(TRUSTED_TOOL_UPDATE_META_KEY)?
+        .clone();
+    let mut meta_map = serde_json::Map::new();
+    meta_map.insert("goose".to_string(), goose_meta);
+    Some(meta_map)
+}
+
 fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<ToolCallContent> {
     match tool_result {
         Ok(result) => result
@@ -1627,6 +1699,9 @@ impl GooseAcpAgent {
             .client_fs_capabilities
             .set(args.client_capabilities.fs.clone());
         let _ = self.client_terminal.set(args.client_capabilities.terminal);
+        let _ = self
+            .client_mcp_host_info
+            .set(extract_client_mcp_host_info(&args));
 
         let capabilities = AgentCapabilities::new()
             .load_session(true)
@@ -1696,9 +1771,7 @@ impl GooseAcpAgent {
                 Some(args.cwd.display().to_string()),
             )
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to create thread: {}", e))
-            })?;
+            .internal_err_ctx("Failed to create thread")?;
         let thread_id = thread.id.clone();
         let sid = sid_short(&thread_id);
         debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: new_session create_thread");
@@ -1797,9 +1870,7 @@ impl GooseAcpAgent {
                 self.goose_mode,
             )
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to create session: {}", e))
-            })?;
+            .internal_err_ctx("Failed to create session")?;
 
         let mut builder = self.session_manager.update(&goose_session.id);
         builder = builder.thread_id(Some(thread_id.to_string()));
@@ -1811,16 +1882,15 @@ impl GooseAcpAgent {
                 builder = builder.model_config(mc);
             }
         }
-        builder.apply().await.map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to link session to thread: {}", e))
-        })?;
+        builder
+            .apply()
+            .await
+            .internal_err_ctx("Failed to link session to thread")?;
 
         self.session_manager
             .get_session(&goose_session.id, false)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to reload session: {}", e))
-            })
+            .internal_err_ctx("Failed to reload session")
     }
 
     /// Look up the session and return the agent if already ready, or the watch
@@ -1924,7 +1994,7 @@ impl GooseAcpAgent {
         let results = agent
             .add_extensions_bulk(configs, internal_session_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         for result in &results {
             if !result.success {
                 let error_msg = result.error.as_deref().unwrap_or("unknown error");
@@ -1948,7 +2018,6 @@ impl GooseAcpAgent {
         let thread_id = args.session_id.0.to_string();
         let sid = sid_short(&thread_id);
         let t_start = std::time::Instant::now();
-        debug!(target: "perf", sid = %sid, "perf: load_session start");
 
         let t0 = std::time::Instant::now();
         let thread = self
@@ -1973,10 +2042,7 @@ impl GooseAcpAgent {
             .session_manager
             .get_session(&internal_session_id, false)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error()
-                    .data(format!("Failed to load internal session: {}", e))
-            })?;
+            .internal_err_ctx("Failed to load internal session")?;
         debug!(target: "perf", sid = %sid, ms = t1.elapsed().as_millis() as u64, "perf: load_session get_session");
         let loaded_mode = goose_session.goose_mode;
 
@@ -1990,9 +2056,7 @@ impl GooseAcpAgent {
             .thread_manager
             .list_messages(&thread_id)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to load thread messages: {}", e))
-            })?;
+            .internal_err_ctx("Failed to load thread messages")?;
         debug!(
             target: "perf",
             sid = %sid,
@@ -2007,8 +2071,6 @@ impl GooseAcpAgent {
         let mut replay_tool_requests =
             HashMap::<String, crate::conversation::message::ToolRequest>::new();
 
-        let t_replay = std::time::Instant::now();
-        let mut replay_notifications: u32 = 0;
         for message in &thread_messages {
             if !message.metadata.user_visible {
                 continue;
@@ -2040,7 +2102,6 @@ impl GooseAcpAgent {
                             args.session_id.clone(),
                             update,
                         ))?;
-                        replay_notifications += 1;
                     }
                     MessageContent::ToolRequest(tool_request) => {
                         // Replay-only: emit the ToolCall notification and
@@ -2063,7 +2124,6 @@ impl GooseAcpAgent {
                                 .status(ToolCallStatus::Pending),
                             ),
                         ))?;
-                        replay_notifications += 1;
                     }
                     MessageContent::ToolResponse(tool_response) => {
                         // Replay-only: emit the ToolCallUpdate notification,
@@ -2099,14 +2159,13 @@ impl GooseAcpAgent {
                             }
                         }
 
+                        let update =
+                            ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
+                                .meta(extract_tool_call_update_meta(tool_response));
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(tool_response.id.clone()),
-                                fields,
-                            )),
+                            SessionUpdate::ToolCallUpdate(update),
                         ))?;
-                        replay_notifications += 1;
                     }
                     MessageContent::Thinking(thinking) => {
                         cx.send_notification(SessionNotification::new(
@@ -2115,40 +2174,24 @@ impl GooseAcpAgent {
                                 ContentBlock::Text(TextContent::new(thinking.thinking.clone())),
                             )),
                         ))?;
-                        replay_notifications += 1;
                     }
                     _ => {}
                 }
             }
         }
-        debug!(
-            target: "perf",
-            sid = %sid,
-            ms = t_replay.elapsed().as_millis() as u64,
-            notifications = replay_notifications,
-            "perf: load_session replay_loop"
-        );
 
         // ── Lightweight DB updates (fast) ──
-        let t_db = std::time::Instant::now();
         self.session_manager
             .update(&internal_session_id)
             .working_dir(args.cwd.clone())
             .apply()
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error()
-                    .data(format!("Failed to update session working directory: {}", e))
-            })?;
+            .internal_err_ctx("Failed to update session working directory")?;
 
         self.thread_manager
             .update_working_dir(&thread_id, &args.cwd.display().to_string())
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error()
-                    .data(format!("Failed to update thread working directory: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_db.elapsed().as_millis() as u64, "perf: load_session db_updates");
+            .internal_err_ctx("Failed to update thread working directory")?;
 
         // ── Register the session immediately with a Loading handle ──
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
@@ -2225,7 +2268,6 @@ impl GooseAcpAgent {
         let thread_id = args.session_id.0.to_string();
         let sid = sid_short(&thread_id);
         let t_start = std::time::Instant::now();
-        debug!(target: "perf", sid = %sid, "perf: prompt start");
 
         // Update persona_id on the thread if the client sent one in _meta.
         let prompt_persona_id = args
@@ -2245,23 +2287,17 @@ impl GooseAcpAgent {
         let cancel_token = CancellationToken::new();
         let internal_session_id = self.internal_session_id(&thread_id).await?;
 
-        let t_agent = std::time::Instant::now();
         let agent = self
             .get_session_agent(&thread_id, Some(cancel_token.clone()))
             .await?;
-        debug!(target: "perf", sid = %sid, ms = t_agent.elapsed().as_millis() as u64, "perf: prompt get_session_agent (waits for agent setup)");
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
 
-        let t_persist = std::time::Instant::now();
         // Persist user message (may contain assistant-only annotated blocks)
         self.thread_manager
             .append_message(&thread_id, Some(&internal_session_id), &user_message)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to persist message: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_persist.elapsed().as_millis() as u64, "perf: prompt append_user_message");
+            .internal_err_ctx("Failed to persist message")?;
 
         let session_config = SessionConfig {
             id: internal_session_id.clone(),
@@ -2270,14 +2306,10 @@ impl GooseAcpAgent {
             retry_config: None,
         };
 
-        let t_reply = std::time::Instant::now();
         let mut stream = agent
             .reply(user_message, session_config, Some(cancel_token.clone()))
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Error getting agent reply: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_reply.elapsed().as_millis() as u64, "perf: prompt agent.reply() setup");
+            .internal_err_ctx("Error getting agent reply")?;
 
         use futures::StreamExt;
 
@@ -2306,10 +2338,7 @@ impl GooseAcpAgent {
                     self.thread_manager
                         .append_message(&thread_id, Some(&internal_session_id), &message)
                         .await
-                        .map_err(|e| {
-                            sacp::Error::internal_error()
-                                .data(format!("Failed to persist message: {}", e))
-                        })?;
+                        .internal_err_ctx("Failed to persist message")?;
 
                     let mut sessions = self.sessions.lock().await;
                     let session = sessions.get_mut(&thread_id).ok_or_else(|| {
@@ -2347,12 +2376,11 @@ impl GooseAcpAgent {
             .session_manager
             .get_session(&internal_session_id, false)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to load session: {}", e))
-            })?;
-        let provider = agent.provider().await.map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
-        })?;
+            .internal_err_ctx("Failed to load session")?;
+        let provider = agent
+            .provider()
+            .await
+            .internal_err_ctx("Failed to get provider")?;
         let usage_update =
             build_usage_update(&session, provider.get_model_config().context_limit());
         cx.send_notification(SessionNotification::new(
@@ -2404,75 +2432,37 @@ impl GooseAcpAgent {
         thread_id: &str,
         model_id: &str,
     ) -> Result<SetSessionModelResponse, sacp::Error> {
-        let sid = sid_short(thread_id);
-        let t_total = std::time::Instant::now();
-        debug!(target: "perf", sid = %sid, model = %model_id, "perf: set_model start");
-
-        let t_step = std::time::Instant::now();
         let internal_id = self.internal_session_id(thread_id).await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model internal_session_id");
-
-        let t_step = std::time::Instant::now();
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model load_config");
-
-        let t_step = std::time::Instant::now();
+        let config = self.config()?;
         let agent = self.get_session_agent_provider_ready(thread_id).await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model get_session_agent_provider_ready");
-
-        let t_step = std::time::Instant::now();
-        let current_provider = agent.provider().await.map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
-        })?;
+        let current_provider = agent
+            .provider()
+            .await
+            .internal_err_ctx("Failed to get provider")?;
         let provider_name = current_provider.get_name().to_string();
         let extensions =
             EnabledExtensionsState::for_session(&self.session_manager, &internal_id, &config).await;
         let model_config = crate::model::ModelConfig::new(model_id)
-            .map_err(|e| {
-                sacp::Error::invalid_params().data(format!("Invalid model config: {}", e))
-            })?
+            .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&provider_name);
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, provider = %provider_name, "perf: set_model build_model_config");
-
-        let t_step = std::time::Instant::now();
         let provider = self
             .create_provider(&provider_name, model_config, extensions)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, provider = %provider_name, "perf: set_model create_provider");
-
-        let t_step = std::time::Instant::now();
+            .internal_err_ctx("Failed to create provider")?;
         agent
             .update_provider(provider, &internal_id)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to update provider: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model agent.update_provider");
-
-        let t_step = std::time::Instant::now();
+            .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
             .update_goose_mode(mode, &internal_id)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to propagate mode: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model update_goose_mode");
-
-        let t_step = std::time::Instant::now();
+            .internal_err_ctx("Failed to propagate mode")?;
         let model_id_owned = model_id.to_string();
         self.update_thread_metadata(thread_id, move |meta| {
             meta.model_id = Some(model_id_owned);
         })
         .await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: set_model update_thread_metadata");
-
-        debug!(target: "perf", sid = %sid, ms = t_total.elapsed().as_millis() as u64, model = %model_id, "perf: set_model done");
         Ok(SetSessionModelResponse::new())
     }
 
@@ -2496,7 +2486,7 @@ impl GooseAcpAgent {
         self.thread_manager
             .update_metadata(thread_id, f)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(())
     }
 
@@ -2509,11 +2499,12 @@ impl GooseAcpAgent {
             .session_manager
             .get_session(&internal_id, false)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         let agent = self.get_session_agent_provider_ready(&thread_id.0).await?;
-        let provider = agent.provider().await.map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
-        })?;
+        let provider = agent
+            .provider()
+            .await
+            .internal_err_ctx("Failed to get provider")?;
         let provider_name = provider.get_name().to_string();
         let current_model = provider.get_model_config().model_name.clone();
         let goose_mode = agent.goose_mode().await;
@@ -2521,7 +2512,7 @@ impl GooseAcpAgent {
             .provider_inventory
             .entry_for_provider(&provider_name)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         let Some(inventory) = inventory else {
             return Err(sacp::Error::internal_error()
                 .data(format!("Unknown provider inventory: {}", provider_name)));
@@ -2556,9 +2547,7 @@ impl GooseAcpAgent {
         agent
             .update_goose_mode(mode, &internal_id)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to update mode: {}", e))
-            })?;
+            .internal_err_ctx("Failed to update mode")?;
 
         let mode_id = mode_id.to_string();
         self.update_thread_metadata(thread_id, move |meta| {
@@ -2577,40 +2566,22 @@ impl GooseAcpAgent {
         context_limit: Option<usize>,
         request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> Result<(), sacp::Error> {
-        let sid = sid_short(thread_id);
-        let t_total = std::time::Instant::now();
-        debug!(target: "perf", sid = %sid, provider = %provider_name, "perf: update_provider start");
-
-        let t_step = std::time::Instant::now();
         let internal_id = self.internal_session_id(thread_id).await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider internal_session_id");
-
-        let t_step = std::time::Instant::now();
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider load_config");
-
-        let t_step = std::time::Instant::now();
+        let config = self.config()?;
         let agent = self.get_session_agent_provider_ready(thread_id).await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider get_session_agent_provider_ready");
-
-        let t_step = std::time::Instant::now();
-        let current_provider = agent.provider().await.map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
-        })?;
+        let current_provider = agent
+            .provider()
+            .await
+            .internal_err_ctx("Failed to get provider")?;
         let current_provider_name = current_provider.get_name();
         let current_model = current_provider.get_model_config().model_name;
         let has_default_overrides =
             model_name.is_some() || context_limit.is_some() || request_params.is_some();
         let use_default_provider = provider_name == DEFAULT_PROVIDER_ID;
         let resolved_provider_name = if use_default_provider {
-            config.get_goose_provider().map_err(|e| {
-                sacp::Error::internal_error().data(format!(
-                    "Failed to resolve default provider from config: {}",
-                    e
-                ))
-            })?
+            config
+                .get_goose_provider()
+                .internal_err_ctx("Failed to resolve default provider from config")?
         } else {
             provider_name.to_string()
         };
@@ -2618,12 +2589,9 @@ impl GooseAcpAgent {
         let default_model = if let Some(model_name) = model_name {
             model_name.to_string()
         } else if use_default_provider {
-            config.get_goose_model().map_err(|e| {
-                sacp::Error::internal_error().data(format!(
-                    "Failed to resolve default model from config: {}",
-                    e
-                ))
-            })?
+            config
+                .get_goose_model()
+                .internal_err_ctx("Failed to resolve default model from config")?
         } else if is_changing_provider {
             ACP_CURRENT_MODEL.to_string()
         } else {
@@ -2631,113 +2599,57 @@ impl GooseAcpAgent {
         };
         let model = model_name.unwrap_or(&default_model);
         let model_config = crate::model::ModelConfig::new(model)
-            .map_err(|e| {
-                sacp::Error::invalid_params().data(format!("Invalid model config: {}", e))
-            })?
+            .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&resolved_provider_name)
             .with_context_limit(context_limit)
             .with_request_params(request_params);
-        debug!(
-            target: "perf",
-            sid = %sid,
-            ms = t_step.elapsed().as_millis() as u64,
-            resolved_provider = %resolved_provider_name,
-            current_provider = %current_provider_name,
-            changing = is_changing_provider,
-            has_overrides = has_default_overrides,
-            "perf: update_provider resolve_defaults"
-        );
 
-        let t_step = std::time::Instant::now();
         let extensions =
             EnabledExtensionsState::for_session(&self.session_manager, &internal_id, &config).await;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider build_extensions");
-
-        let t_step = std::time::Instant::now();
         let new_provider = self
             .create_provider(&resolved_provider_name, model_config, extensions)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, provider = %resolved_provider_name, "perf: update_provider create_provider");
-
-        let t_step = std::time::Instant::now();
+            .internal_err_ctx("Failed to create provider")?;
         agent
             .update_provider(new_provider, &internal_id)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to update provider: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider agent.update_provider");
-
-        let t_step = std::time::Instant::now();
+            .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
             .update_goose_mode(mode, &internal_id)
             .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to propagate mode: {}", e))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider update_goose_mode");
+            .internal_err_ctx("Failed to propagate mode")?;
+        let provider = agent
+            .provider()
+            .await
+            .internal_err_ctx("Failed to get provider")?;
 
-        let provider = agent.provider().await.map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to get provider: {}", e))
-        })?;
-
-        let t_step = std::time::Instant::now();
         let provider_name_owned = provider_name.to_string();
         self.update_thread_metadata(thread_id, move |meta| {
             meta.provider_id = Some(provider_name_owned);
             meta.model_id = None;
         })
         .await?;
-        debug!(target: "perf", sid = %sid, ms = t_step.elapsed().as_millis() as u64, "perf: update_provider update_thread_metadata");
 
-        let t_step = std::time::Instant::now();
         if use_default_provider {
             let update = self
                 .session_manager
                 .update(&internal_id)
                 .provider_name(DEFAULT_PROVIDER_ID);
             if has_default_overrides {
-                let provider_model_config = provider.get_model_config();
                 update
-                    .model_config(provider_model_config)
+                    .model_config(provider.get_model_config())
                     .apply()
                     .await
-                    .map_err(|e| {
-                        sacp::Error::internal_error().data(format!(
-                            "Failed to persist default provider selection overrides: {}",
-                            e
-                        ))
-                    })?;
+                    .internal_err_ctx("Failed to persist default provider selection overrides")?;
             } else {
-                update.clear_model_config().apply().await.map_err(|e| {
-                    sacp::Error::internal_error().data(format!(
-                        "Failed to persist default provider selection: {}",
-                        e
-                    ))
-                })?;
+                update
+                    .clear_model_config()
+                    .apply()
+                    .await
+                    .internal_err_ctx("Failed to persist default provider selection")?;
             }
         }
-        debug!(
-            target: "perf",
-            sid = %sid,
-            ms = t_step.elapsed().as_millis() as u64,
-            persisted = use_default_provider,
-            "perf: update_provider persist_session"
-        );
-
-        debug!(
-            target: "perf",
-            sid = %sid,
-            ms = t_total.elapsed().as_millis() as u64,
-            provider = %provider_name,
-            resolved_provider = %resolved_provider_name,
-            changing = is_changing_provider,
-            "perf: update_provider done"
-        );
         Ok(())
     }
 
@@ -2747,7 +2659,7 @@ impl GooseAcpAgent {
             .thread_manager
             .list_threads(false)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         let session_infos: Vec<SessionInfo> = threads
             .into_iter()
             .map(|t| {
@@ -2778,7 +2690,7 @@ impl GooseAcpAgent {
             .thread_manager
             .fork_thread(source_thread_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         let new_thread_id = new_thread.id.clone();
 
         // Create an internal session for the new thread.
@@ -2862,7 +2774,7 @@ impl GooseAcpAgent {
         agent
             .add_extension(config, &internal_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -2876,7 +2788,7 @@ impl GooseAcpAgent {
         agent
             .remove_extension(&req.name, &internal_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -2889,7 +2801,7 @@ impl GooseAcpAgent {
             .into_iter()
             .map(|t| serde_json::to_value(&t))
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(GetToolsResponse { tools: tools_json })
     }
 
@@ -2905,9 +2817,8 @@ impl GooseAcpAgent {
             .extension_manager
             .read_resource(&internal_id, &req.uri, &req.extension_name, cancel_token)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-        let result_json = serde_json::to_value(&result)
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
+        let result_json = serde_json::to_value(&result).internal_err()?;
         Ok(ReadResourceResponse {
             result: result_json,
         })
@@ -2932,12 +2843,12 @@ impl GooseAcpAgent {
             .working_dir(path.clone())
             .apply()
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         self.thread_manager
             .update_working_dir(&req.session_id, &working_dir)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         if let Some(session) = self.sessions.lock().await.get_mut(&req.session_id) {
             match &session.agent {
@@ -2962,7 +2873,7 @@ impl GooseAcpAgent {
         self.thread_manager
             .delete_thread(&req.session_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         self.sessions.lock().await.remove(&req.session_id);
         Ok(EmptyResponse {})
     }
@@ -2985,7 +2896,7 @@ impl GooseAcpAgent {
                 Ok::<_, serde_json::Error>(value)
             })
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(GetExtensionsResponse {
             extensions: extensions_json,
             warnings,
@@ -3059,7 +2970,7 @@ impl GooseAcpAgent {
             .session_manager
             .get_session(&internal_id, false)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         let extensions = EnabledExtensionsState::extensions_or_default(
             Some(&session.extension_data),
@@ -3070,7 +2981,7 @@ impl GooseAcpAgent {
             .into_iter()
             .map(|e| serde_json::to_value(&e))
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         Ok(GetSessionExtensionsResponse {
             extensions: extensions_json,
@@ -3086,7 +2997,7 @@ impl GooseAcpAgent {
             .provider_inventory
             .entries(&req.provider_ids)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(ListProvidersResponse {
             entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
         })
@@ -3101,8 +3012,7 @@ impl GooseAcpAgent {
             .provider_inventory
             .plan_refresh(&req.provider_ids)
             .await;
-        let refresh_plan =
-            refresh_plan.map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let refresh_plan = refresh_plan.internal_err()?;
         for provider_id in &refresh_plan.started {
             let provider_inventory = self.provider_inventory.clone();
             let provider_factory = Arc::clone(&self.provider_factory);
@@ -3160,9 +3070,7 @@ impl GooseAcpAgent {
         &self,
         req: ReadConfigRequest,
     ) -> Result<ReadConfigResponse, sacp::Error> {
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
+        let config = self.config()?;
         let response = match config.get_param::<serde_json::Value>(&req.key) {
             Ok(value) => ReadConfigResponse { value },
             Err(crate::config::ConfigError::NotFound(_)) => ReadConfigResponse {
@@ -3178,12 +3086,8 @@ impl GooseAcpAgent {
         &self,
         req: UpsertConfigRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
-        config
-            .set_param(&req.key, &req.value)
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let config = self.config()?;
+        config.set_param(&req.key, &req.value).internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -3192,12 +3096,8 @@ impl GooseAcpAgent {
         &self,
         req: RemoveConfigRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
-        config
-            .delete(&req.key)
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let config = self.config()?;
+        config.delete(&req.key).internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -3206,9 +3106,7 @@ impl GooseAcpAgent {
         &self,
         req: CheckSecretRequest,
     ) -> Result<CheckSecretResponse, sacp::Error> {
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
+        let config = self.config()?;
         let exists = config.get_secret::<serde_json::Value>(&req.key).is_ok();
         Ok(CheckSecretResponse { exists })
     }
@@ -3218,12 +3116,8 @@ impl GooseAcpAgent {
         &self,
         req: UpsertSecretRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
-        config
-            .set_secret(&req.key, &req.value)
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let config = self.config()?;
+        config.set_secret(&req.key, &req.value).internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -3232,12 +3126,8 @@ impl GooseAcpAgent {
         &self,
         req: RemoveSecretRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.load_config().map_err(|e| {
-            sacp::Error::internal_error().data(format!("Failed to read config: {}", e))
-        })?;
-        config
-            .delete_secret(&req.key)
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        let config = self.config()?;
+        config.delete_secret(&req.key).internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -3250,7 +3140,7 @@ impl GooseAcpAgent {
             .thread_manager
             .get_thread(&req.session_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         let internal_id = thread
             .current_session_id
             .ok_or_else(|| sacp::Error::internal_error().data("Thread has no internal session"))?;
@@ -3258,7 +3148,7 @@ impl GooseAcpAgent {
             .session_manager
             .export_session(&internal_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(ExportSessionResponse { data })
     }
 
@@ -3271,7 +3161,7 @@ impl GooseAcpAgent {
             .session_manager
             .import_session(&req.data, Some(SessionType::Acp))
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         // Create a thread for the imported session.
         let thread = self
@@ -3282,7 +3172,7 @@ impl GooseAcpAgent {
                 Some(session.working_dir.display().to_string()),
             )
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         // Link the internal session to the thread.
         self.session_manager
@@ -3290,7 +3180,7 @@ impl GooseAcpAgent {
             .thread_id(Some(thread.id.clone()))
             .apply()
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         // Copy conversation messages into thread_messages so they appear in the thread.
         if let Some(ref conversation) = session.conversation {
@@ -3298,7 +3188,7 @@ impl GooseAcpAgent {
                 self.thread_manager
                     .append_message(&thread.id, Some(&session.id), msg)
                     .await
-                    .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+                    .internal_err()?;
             }
         }
 
@@ -3307,7 +3197,7 @@ impl GooseAcpAgent {
             .thread_manager
             .get_thread(&thread.id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         Ok(ImportSessionResponse {
             session_id: thread.id,
@@ -3350,7 +3240,7 @@ impl GooseAcpAgent {
         self.thread_manager
             .archive_thread(&req.session_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         self.sessions.lock().await.remove(&req.session_id);
         Ok(EmptyResponse {})
     }
@@ -3363,7 +3253,7 @@ impl GooseAcpAgent {
         self.thread_manager
             .unarchive_thread(&req.session_id)
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -3478,49 +3368,24 @@ impl GooseAcpAgent {
         };
 
         let text = match provider {
-            DictationProvider::OpenAI => {
-                let model = dictation_selected_model(config, DictationProvider::OpenAI)
-                    .unwrap_or_else(|| OPENAI_TRANSCRIPTION_MODEL.to_string());
-                transcribe_with_provider(
-                    DictationProvider::OpenAI,
-                    "model".to_string(),
-                    model,
-                    audio_bytes,
-                    extension,
-                    &req.mime_type,
-                )
-                .await
-            }
-            DictationProvider::Groq => {
-                let model = dictation_selected_model(config, DictationProvider::Groq)
-                    .unwrap_or_else(|| GROQ_TRANSCRIPTION_MODEL.to_string());
-                transcribe_with_provider(
-                    DictationProvider::Groq,
-                    "model".to_string(),
-                    model,
-                    audio_bytes,
-                    extension,
-                    &req.mime_type,
-                )
-                .await
-            }
-            DictationProvider::ElevenLabs => {
-                let model = dictation_selected_model(config, DictationProvider::ElevenLabs)
-                    .unwrap_or_else(|| ELEVENLABS_TRANSCRIPTION_MODEL.to_string());
-                transcribe_with_provider(
-                    DictationProvider::ElevenLabs,
-                    "model_id".to_string(),
-                    model,
-                    audio_bytes,
-                    extension,
-                    &req.mime_type,
-                )
-                .await
-            }
             #[cfg(feature = "local-inference")]
             DictationProvider::Local => transcribe_local(audio_bytes).await,
+            remote => {
+                let (model_param, default_model) = dictation_transcribe_params(remote);
+                let model = dictation_selected_model(config, remote)
+                    .unwrap_or_else(|| default_model.to_string());
+                transcribe_with_provider(
+                    remote,
+                    model_param.to_string(),
+                    model,
+                    audio_bytes,
+                    extension,
+                    &req.mime_type,
+                )
+                .await
+            }
         }
-        .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        .internal_err()?;
 
         Ok(DictationTranscribeResponse { text })
     }
@@ -3650,7 +3515,7 @@ impl GooseAcpAgent {
                     })),
                 )
                 .await
-                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+                .internal_err()?;
 
             Ok(EmptyResponse {})
         }
@@ -3700,9 +3565,7 @@ impl GooseAcpAgent {
             use crate::download_manager::get_download_manager;
 
             let manager = get_download_manager();
-            manager
-                .cancel_download(&_req.model_id)
-                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            manager.cancel_download(&_req.model_id).internal_err()?;
 
             Ok(EmptyResponse {})
         }
@@ -3726,8 +3589,7 @@ impl GooseAcpAgent {
                 return Err(sacp::Error::invalid_params().data("Model not downloaded"));
             }
 
-            std::fs::remove_file(path)
-                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            std::fs::remove_file(path).internal_err()?;
 
             Ok(EmptyResponse {})
         }
@@ -3772,7 +3634,7 @@ impl GooseAcpAgent {
 
         crate::config::Config::global()
             .set_param(key, req.model_id)
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .internal_err()?;
 
         Ok(EmptyResponse {})
     }
@@ -3787,6 +3649,18 @@ fn dictation_model_config_key(provider: DictationProvider) -> Option<String> {
         }
         #[cfg(feature = "local-inference")]
         DictationProvider::Local => Some(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY.to_string()),
+    }
+}
+
+/// Returns the (param_name, default_model) pair used by `transcribe_with_provider`
+/// for remote dictation providers. Local inference is handled separately.
+fn dictation_transcribe_params(provider: DictationProvider) -> (&'static str, &'static str) {
+    match provider {
+        DictationProvider::OpenAI => ("model", OPENAI_TRANSCRIPTION_MODEL),
+        DictationProvider::Groq => ("model", GROQ_TRANSCRIPTION_MODEL),
+        DictationProvider::ElevenLabs => ("model_id", ELEVENLABS_TRANSCRIPTION_MODEL),
+        #[cfg(feature = "local-inference")]
+        DictationProvider::Local => ("", ""),
     }
 }
 
@@ -3940,7 +3814,6 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                         let sid = sid_short(session_id.0.as_ref());
                         let config_id = req.config_id.0.to_string();
                         let t_handler = std::time::Instant::now();
-                        debug!(target: "perf", sid = %sid, config_id = %config_id, value = %value_id.0, "perf: set_config_option start");
                         match config_id.as_ref() {
                             "provider" => {
                                 match agent.update_provider(&session_id.0, &value_id.0, None, None, None).await {
@@ -3968,11 +3841,9 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             }
                         }
                         // Respond immediately using the current provider inventory snapshot.
-                        let t_tail = std::time::Instant::now();
                         let (notification, config_options) = agent.build_config_update(&session_id).await?;
                         cx.send_notification(notification)?;
                         responder.respond(SetSessionConfigOptionResponse::new(config_options))?;
-                        debug!(target: "perf", sid = %sid, ms = t_tail.elapsed().as_millis() as u64, "perf: set_config_option inventory_respond");
 
                         let maybe_refresh = if config_id == "provider" {
                             let provider_id = value_id.0.to_string();
@@ -3989,9 +3860,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             let agent_bg = agent.clone();
                             let cx_bg = cx.clone();
                             let session_id_bg = session_id.clone();
-                            let sid_bg = sid.clone();
                             tokio::spawn(async move {
-                                let t_bg = std::time::Instant::now();
                                 let refreshed = async {
                                     let session_agent =
                                         agent_bg.get_session_agent(&session_id_bg.0, None).await?;
@@ -4018,7 +3887,6 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                 match refreshed {
                                     Ok((fresh_notification, _)) => {
                                         let _ = cx_bg.send_notification(fresh_notification);
-                                        debug!(target: "perf", sid = %sid_bg, ms = t_bg.elapsed().as_millis() as u64, "perf: set_config_option background_refresh done");
                                     }
                                     Err(e) => {
                                         if let Ok(session_agent) =
@@ -4032,7 +3900,6 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                                     .await;
                                             }
                                         }
-                                        debug!(target: "perf", sid = %sid_bg, error = %e, ms = t_bg.elapsed().as_millis() as u64, "perf: set_config_option background_refresh failed");
                                     }
                                 }
                             });
@@ -4170,6 +4037,7 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
             builtins,
             data_dir: Paths::data_dir(),
             config_dir: Paths::config_dir(),
+            goose_platform: GoosePlatform::GooseCli,
         },
     );
     let agent = server.create_agent().await?;
@@ -4554,6 +4422,49 @@ print(\"hello, world\")
     ) -> Option<Vec<(PathBuf, Option<u32>)>> {
         extract_locations_from_meta(&response)
             .map(|locs| locs.into_iter().map(|loc| (loc.path, loc.line)).collect())
+    }
+
+    #[test]
+    fn test_extract_tool_call_update_meta_ignores_untrusted_goose_meta() {
+        let response = response_with_meta(Some(serde_json::json!({
+            "goose": {
+                "mcpApp": {
+                    "resourceUri": "ui://spoofed/app",
+                },
+            },
+        })));
+
+        assert_eq!(extract_tool_call_update_meta(&response), None);
+    }
+
+    #[test]
+    fn test_extract_tool_call_update_meta_uses_trusted_meta_only() {
+        let response = response_with_meta(Some(serde_json::json!({
+            "goose": {
+                "mcpApp": {
+                    "resourceUri": "ui://spoofed/app",
+                },
+            },
+            TRUSTED_TOOL_UPDATE_META_KEY: {
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            },
+        })));
+
+        let extracted = extract_tool_call_update_meta(&response).expect("expected trusted meta");
+        assert_eq!(
+            extracted.get("goose"),
+            Some(&serde_json::json!({
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            })),
+        );
     }
 
     fn make_session_with_usage(
