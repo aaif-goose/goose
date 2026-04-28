@@ -199,7 +199,10 @@ export function useCredentials(): UseCredentialsReturn {
     async (providerId: string, fields: ProviderFieldSave[]) => {
       setProviderSaving(providerId, true);
       try {
-        const result = await saveProviderConfig(providerId, fields);
+        const result = await saveProviderConfig(
+          providerId,
+          fields.map(({ key, value }) => ({ key, value })),
+        );
         updateProviderStatus(result.status);
         startInventorySync(providerId, result.refresh);
       } finally {

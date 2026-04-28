@@ -331,16 +331,15 @@ export type ProviderConfigStatusDto = {
  */
 export type ProviderConfigSaveRequest = {
     providerId: string;
-    fields: Array<ProviderConfigSaveFieldDto>;
+    fields: Array<ProviderConfigFieldUpdate>;
 };
 
-export type ProviderConfigSaveFieldDto = {
+export type ProviderConfigFieldUpdate = {
     key: string;
     value: string;
-    isSecret: boolean;
 };
 
-export type ProviderConfigMutationResponse = {
+export type ProviderConfigChangeResponse = {
     status: ProviderConfigStatusDto;
     refresh: RefreshProviderInventoryResponse;
 };
@@ -735,7 +734,7 @@ export type ExtRequest = {
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigMutationResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

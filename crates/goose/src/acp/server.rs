@@ -3331,7 +3331,7 @@ impl GooseAcpAgent {
     async fn on_save_provider_config(
         &self,
         req: ProviderConfigSaveRequest,
-    ) -> Result<ProviderConfigMutationResponse, sacp::Error> {
+    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
         let entry = crate::providers::get_from_registry(&req.provider_id)
             .await
             .invalid_params_err_ctx("Unknown provider")?;
@@ -3349,12 +3349,6 @@ impl GooseAcpAgent {
                 return Err(sacp::Error::invalid_params()
                     .data(format!("Unsupported provider config field: {}", field.key)));
             };
-            if config_key.secret != field.is_secret {
-                return Err(sacp::Error::invalid_params().data(format!(
-                    "Provider config field has wrong secret flag: {}",
-                    field.key
-                )));
-            }
 
             let value = field.value.trim();
             if value.is_empty() {
@@ -3387,14 +3381,14 @@ impl GooseAcpAgent {
         let provider_ids = [req.provider_id.clone()];
         let status = self.provider_config_status(&req.provider_id).await;
         let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigMutationResponse { status, refresh })
+        Ok(ProviderConfigChangeResponse { status, refresh })
     }
 
     #[custom_method(ProviderConfigDeleteRequest)]
     async fn on_delete_provider_config(
         &self,
         req: ProviderConfigDeleteRequest,
-    ) -> Result<ProviderConfigMutationResponse, sacp::Error> {
+    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
         let entry = crate::providers::get_from_registry(&req.provider_id)
             .await
             .invalid_params_err_ctx("Unknown provider")?;
@@ -3423,7 +3417,7 @@ impl GooseAcpAgent {
         let provider_ids = [req.provider_id.clone()];
         let status = self.provider_config_status(&req.provider_id).await;
         let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigMutationResponse { status, refresh })
+        Ok(ProviderConfigChangeResponse { status, refresh })
     }
 
     #[custom_method(ReadConfigRequest)]

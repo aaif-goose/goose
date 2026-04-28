@@ -314,10 +314,9 @@ pub struct ProviderConfigStatusDto {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderConfigSaveFieldDto {
+pub struct ProviderConfigFieldUpdate {
     pub key: String,
     pub value: String,
-    pub is_secret: bool,
 }
 
 /// Read saved configuration field values for one provider.
@@ -359,19 +358,19 @@ pub struct ProviderConfigStatusResponse {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/providers/config/save",
-    response = ProviderConfigMutationResponse
+    response = ProviderConfigChangeResponse
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigSaveRequest {
     pub provider_id: String,
-    pub fields: Vec<ProviderConfigSaveFieldDto>,
+    pub fields: Vec<ProviderConfigFieldUpdate>,
 }
 
 /// Delete provider configuration fields and start an inventory refresh when supported.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/providers/config/delete",
-    response = ProviderConfigMutationResponse
+    response = ProviderConfigChangeResponse
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigDeleteRequest {
@@ -380,7 +379,7 @@ pub struct ProviderConfigDeleteRequest {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderConfigMutationResponse {
+pub struct ProviderConfigChangeResponse {
     pub status: ProviderConfigStatusDto,
     pub refresh: RefreshProviderInventoryResponse,
 }

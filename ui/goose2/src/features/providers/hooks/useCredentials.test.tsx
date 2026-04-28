@@ -87,7 +87,6 @@ describe("useCredentials", () => {
       {
         key: "ANTHROPIC_API_KEY",
         value: "sk-ant-test",
-        isSecret: true,
       },
     ];
 

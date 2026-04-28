@@ -47,8 +47,8 @@ import type {
   ListProvidersResponse,
   ListSourcesRequest,
   ListSourcesResponse,
+  ProviderConfigChangeResponse,
   ProviderConfigDeleteRequest,
-  ProviderConfigMutationResponse,
   ProviderConfigReadRequest,
   ProviderConfigReadResponse,
   ProviderConfigSaveRequest,
@@ -90,7 +90,7 @@ import {
   zImportSourcesResponse,
   zListProvidersResponse,
   zListSourcesResponse,
-  zProviderConfigMutationResponse,
+  zProviderConfigChangeResponse,
   zProviderConfigReadResponse,
   zProviderConfigStatusResponse,
   zReadConfigResponse,
@@ -207,26 +207,26 @@ export class GooseExtClient {
 
   async GooseProvidersConfigSave(
     params: ProviderConfigSaveRequest,
-  ): Promise<ProviderConfigMutationResponse> {
+  ): Promise<ProviderConfigChangeResponse> {
     const raw = await this.conn.extMethod(
       "_goose/providers/config/save",
       params,
     );
-    return zProviderConfigMutationResponse.parse(
+    return zProviderConfigChangeResponse.parse(
       raw,
-    ) as ProviderConfigMutationResponse;
+    ) as ProviderConfigChangeResponse;
   }
 
   async GooseProvidersConfigDelete(
     params: ProviderConfigDeleteRequest,
-  ): Promise<ProviderConfigMutationResponse> {
+  ): Promise<ProviderConfigChangeResponse> {
     const raw = await this.conn.extMethod(
       "_goose/providers/config/delete",
       params,
     );
-    return zProviderConfigMutationResponse.parse(
+    return zProviderConfigChangeResponse.parse(
       raw,
-    ) as ProviderConfigMutationResponse;
+    ) as ProviderConfigChangeResponse;
   }
 
   async GooseConfigRead(

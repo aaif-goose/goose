@@ -1,13 +1,13 @@
 import type {
-  ProviderConfigMutationResponse,
-  ProviderConfigSaveFieldDto,
+  ProviderConfigChangeResponse,
+  ProviderConfigFieldUpdate,
   ProviderConfigStatusDto,
 } from "@aaif/goose-sdk";
 import type { ProviderFieldValue } from "@/shared/types/providers";
 import { getClient } from "@/shared/api/acpConnection";
 
 export type ProviderStatus = ProviderConfigStatusDto;
-export type ProviderFieldSaveInput = ProviderConfigSaveFieldDto;
+export type ProviderFieldSaveInput = ProviderConfigFieldUpdate;
 
 export async function getProviderConfig(
   providerId: string,
@@ -23,14 +23,14 @@ export async function getProviderConfig(
 export async function saveProviderConfig(
   providerId: string,
   fields: ProviderFieldSaveInput[],
-): Promise<ProviderConfigMutationResponse> {
+): Promise<ProviderConfigChangeResponse> {
   const client = await getClient();
   return client.goose.GooseProvidersConfigSave({ providerId, fields });
 }
 
 export async function deleteProviderConfig(
   providerId: string,
-): Promise<ProviderConfigMutationResponse> {
+): Promise<ProviderConfigChangeResponse> {
   const client = await getClient();
   return client.goose.GooseProvidersConfigDelete({ providerId });
 }

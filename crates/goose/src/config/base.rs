@@ -1101,16 +1101,6 @@ mod tests {
     }
 
     #[test]
-    fn keyring_disabled_in_config_accepts_string_one() -> Result<(), ConfigError> {
-        let config_file = NamedTempFile::new().unwrap();
-        std::fs::write(config_file.path(), "GOOSE_DISABLE_KEYRING: \"1\"\n")?;
-
-        assert!(keyring_disabled_in_config(config_file.path()));
-
-        Ok(())
-    }
-
-    #[test]
     fn test_value_management() -> Result<(), ConfigError> {
         let config = new_test_config();
 

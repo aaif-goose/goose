@@ -157,12 +157,10 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
                     {
                         "key": "XAI_API_KEY",
                         "value": "xai-provider-config-key",
-                        "isSecret": true,
                     },
                     {
                         "key": "XAI_HOST",
                         "value": "https://api.x.ai/v1",
-                        "isSecret": false,
                     },
                 ],
             }),

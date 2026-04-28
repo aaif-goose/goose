@@ -652,7 +652,7 @@
         "fields": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ProviderConfigSaveFieldDto"
+            "$ref": "#/$defs/ProviderConfigFieldUpdate"
           }
         }
       },
@@ -664,7 +664,7 @@
       "x-side": "agent",
       "x-method": "_goose/providers/config/save"
     },
-    "ProviderConfigSaveFieldDto": {
+    "ProviderConfigFieldUpdate": {
       "type": "object",
       "properties": {
         "key": {
@@ -672,18 +672,14 @@
         },
         "value": {
           "type": "string"
-        },
-        "isSecret": {
-          "type": "boolean"
         }
       },
       "required": [
         "key",
-        "value",
-        "isSecret"
+        "value"
       ]
     },
-    "ProviderConfigMutationResponse": {
+    "ProviderConfigChangeResponse": {
       "type": "object",
       "properties": {
         "status": {
@@ -2070,10 +2066,10 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProviderConfigMutationResponse"
+                          "$ref": "#/$defs/ProviderConfigChangeResponse"
                         }
                       ],
-                      "title": "ProviderConfigMutationResponse"
+                      "title": "ProviderConfigChangeResponse"
                     },
                     {
                       "allOf": [

@@ -260,10 +260,9 @@ export const zProviderConfigStatusResponse = z.object({
     statuses: z.array(zProviderConfigStatusDto)
 });
 
-export const zProviderConfigSaveFieldDto = z.object({
+export const zProviderConfigFieldUpdate = z.object({
     key: z.string(),
-    value: z.string(),
-    isSecret: z.boolean()
+    value: z.string()
 });
 
 /**
@@ -271,10 +270,10 @@ export const zProviderConfigSaveFieldDto = z.object({
  */
 export const zProviderConfigSaveRequest = z.object({
     providerId: z.string(),
-    fields: z.array(zProviderConfigSaveFieldDto)
+    fields: z.array(zProviderConfigFieldUpdate)
 });
 
-export const zProviderConfigMutationResponse = z.object({
+export const zProviderConfigChangeResponse = z.object({
     status: zProviderConfigStatusDto,
     refresh: zRefreshProviderInventoryResponse
 });
@@ -744,7 +743,7 @@ export const zExtResponse = z.union([
                 zRefreshProviderInventoryResponse,
                 zProviderConfigReadResponse,
                 zProviderConfigStatusResponse,
-                zProviderConfigMutationResponse,
+                zProviderConfigChangeResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,

@@ -55,12 +55,10 @@ describe("provider credential API", () => {
       {
         key: "ANTHROPIC_API_KEY",
         value: "sk-ant-test",
-        isSecret: true,
       },
       {
         key: "ANTHROPIC_HOST",
         value: "https://api.anthropic.com",
-        isSecret: false,
       },
     ];
     const response = {

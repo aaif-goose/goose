@@ -78,12 +78,12 @@
     {
       "method": "_goose/providers/config/save",
       "requestType": "ProviderConfigSaveRequest",
-      "responseType": "ProviderConfigMutationResponse"
+      "responseType": "ProviderConfigChangeResponse"
     },
     {
       "method": "_goose/providers/config/delete",
       "requestType": "ProviderConfigDeleteRequest",
-      "responseType": "ProviderConfigMutationResponse"
+      "responseType": "ProviderConfigChangeResponse"
     },
     {
       "method": "_goose/config/read",
