@@ -24,7 +24,7 @@ How to do this on the desktop app:
 
 1. Open **Settings → Local Inference**
 2. Browse the featured model list — goose recommends the best one for your available memory or you can search for specific models of your choice.
-3. Click download — the model file lands in `~/.local/share/goose/models/`
+3. Click download — the model file lands in goose’s data directory under `models`
 4. Start building. That's it.
 
 goose handles the details: GPU offloading, memory management, context window sizing, and automatic model unloading when you switch between models.
@@ -52,7 +52,7 @@ goose ships with a curated list of models that are tested and known to work well
 - Mistral Small 24B (GGUF) — a larger model with strong reasoning capabilities, but slower on CPU.
 - Hermes 2 Pro Mistral 7B (GGUF) — a 7 billion parameter model optimized for instruction following and coding tasks.
 - Gemma 4 E4B (GGUF) — a 4 billion parameter variant of Google's Gemma 4, optimized for local inference with native tool calling support.
-- Gemma 4 26B-A4B (GGUF) — a 26 billion parameter variant of Gemma 4 with native tool calling and vision support, for users
+- Gemma 4 26B-A4B (GGUF) — a 26 billion parameter variant of Gemma 4 with native tool calling and vision support, for users who want stronger local performance and have enough available memory.
 
 ## What to expect
 
@@ -88,8 +88,10 @@ There is some cost that comes with choosing to use a local model - the biggest o
   <meta property="og:type" content="article" />
   <meta property="og:url" content="https://goose-docs.ai/blog/2026/04/24/use-goose-with-built-in-local-inference" />
   <meta property="og:description" content="goose now ships with built-in local inference powered by llama.cpp — no server, no API key, no cost. Here's how it works and what to expect." />
+  <meta property="og:image" content="https://goose-docs.ai/img/blog/goose-built-in-inference.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Private by Default: Built-in Local Inference Models with goose" />
   <meta name="twitter:description" content="goose now ships with built-in local inference powered by llama.cpp — no server, no API key, no cost. Here's how it works and what to expect." />
+  <meta name="twitter:image" content="https://goose-docs.ai/img/blog/goose-built-in-inference.png" />
 </head>
