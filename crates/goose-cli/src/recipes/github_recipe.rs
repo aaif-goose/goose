@@ -174,6 +174,7 @@ fn ensure_repo_cloned(recipe_repo_full_name: &str) -> Result<PathBuf> {
         let error_message: String = format!("Failed to clone repo: {}", recipe_repo_full_name);
         let status = Command::new("gh")
             .args(["repo", "clone", recipe_repo_full_name])
+            .arg(&local_repo_path)
             .current_dir(local_repo_parent_path.clone())
             .set_no_window()
             .status()
