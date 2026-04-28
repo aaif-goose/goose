@@ -35,7 +35,7 @@ goose: I can see the form. Clicking on the email field...
 → type "hello@example.com" --return
 ```
 
-The `see` command returns both an annotated screenshot (so goose can visually understand the UI) and structured JSON data with element IDs, labels, and types. This combination of vision and structure is what makes the interaction reliable.
+The `see` command returns both an annotated screenshot (that is stored temporarily in memory) and structured JSON data with element IDs, labels, and types. This combination of vision and structure is what makes the interaction reliable.
 
 ## What can goose actually do with this?
 
@@ -67,55 +67,15 @@ goose can combine its existing file system and shell capabilities with GUI autom
 
 ## The full command toolkit
 
-Peekaboo gives goose a comprehensive set of commands for interacting with macOS:
+Peekaboo gives goose a comprehensive set of commands for interacting with macOS across vision, interaction, and system control. Check out the [Peekaboo docs](https://github.com/steipete/Peekaboo) for a full list. Some highlights:
+- `see` — capture an annotated screenshot and get structured UI data
+- `click` — click on an element by its ID
+- `type` — type text or press keys
+- `scroll` — scroll within an element
+- `drag` — click and drag from one element to another
+- `menu` — interact with menu bar items
+- `dialog` — interact with system dialogs and notifications
 
-### Vision
-
-| Command | What it does | Example |
-|---------|-------------|---------|
-| `see` | Annotated screenshot with element IDs | `see --app Safari --annotate` |
-| `image` | Screenshot without annotation | `image --mode frontmost` |
-| `capture` | Live motion-aware capture | `capture live --mode region --region 100,100,800,600` |
-
-### Interaction
-
-| Command | What it does | Example |
-|---------|-------------|---------|
-| `click` | Click an element by ID or coordinates | `click --on B3` |
-| `type` | Type text with optional key presses | `type "hello" --return` |
-| `press` | Press special keys | `press tab --count 3` |
-| `hotkey` | Keyboard shortcuts | `hotkey --keys cmd,c` |
-| `paste` | Clipboard paste (reliable for long text) | `paste --text "long content"` |
-| `scroll` | Scroll in any direction | `scroll --direction down --amount 5` |
-| `drag` | Drag between elements | `drag --from B1 --to B2` |
-
-### Apps and system
-
-| Command | What it does | Example |
-|---------|-------------|---------|
-| `app` | Launch, quit, or switch apps | `app launch Safari --open https://example.com` |
-| `window` | Manage window position and size | `window set-bounds --app Safari --width 1200 --height 800` |
-| `menu` | Click application menu items | `menu click --app Safari --item "New Window"` |
-| `menubar` | Interact with the status bar | `menubar click --title "WiFi"` |
-| `dialog` | Handle system dialogs | `dialog click --button "OK"` |
-| `clipboard` | Read or write the clipboard | `clipboard --action get` |
-
-Every command supports targeting by app name (`--app Safari`), window title (`--window-title "Dashboard"`), or element ID (`--on B1`). This means goose can work across multiple apps simultaneously without getting confused about which window it's interacting with.
-
-## Auto-install, zero config
-
-One of the nice details: Peekaboo auto-installs via Homebrew the first time goose needs it. You don't need to set anything up manually. When goose encounters a GUI task and the Computer Controller extension is enabled, it checks for Peekaboo, installs it if needed (`brew install steipete/tap/peekaboo`), and gets to work.
-
-The only prerequisites are:
-- **macOS 15+ (Sequoia)** — Peekaboo uses modern macOS accessibility APIs
-- **Homebrew** — for the auto-install
-- **Screen Recording and Accessibility permissions** — macOS will prompt you the first time
-
-You can check your permissions status at any time:
-
-```
-→ permissions status
-```
 
 ## Tips for best results
 
@@ -160,16 +120,11 @@ Open System Settings, go to Displays, and set the resolution to "More Space."
 
 goose will figure out the rest — seeing the UI, identifying the right elements, and clicking through to get it done.
 
-The Computer Controller turns goose into a true desktop assistant. It's not just a coding agent anymore — it can interact with any app you can see on screen. We'd love to hear what you automate with it.
-
----
-
-*Check out the [Computer Controller extension docs](/docs/mcp/computer-controller-mcp) for setup details, or dive into the [PR that shipped this overhaul](https://github.com/block/goose/pull/7342).*
 
 <head>
   <meta property="og:title" content="Beyond the Terminal: goose Controls Your Desktop with Peekaboo" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/04/24/computer-controller-peekaboo" />
+  <meta property="og:url" content="https://block.github.io/goose/blog/2026/04/29/computer-controller-peekaboo" />
   <meta property="og:description" content="The Computer Controller extension was rebuilt with Peekaboo, giving goose the ability to see, click, type, and interact with any application on your Mac." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta property="twitter:domain" content="block.github.io/goose" />
