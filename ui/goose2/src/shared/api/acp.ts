@@ -1,6 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
-import { buildProviderListFromEntries, type AcpSessionInfo } from "./acpApi";
+import type { AcpSessionInfo } from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
 import {
   getCatalogEntry,
@@ -48,7 +48,9 @@ export async function discoverAcpProviders(): Promise<AcpProvider[]> {
 export function discoverAcpProvidersFromEntries(
   entries: Array<{ providerId: string; providerName: string }>,
 ): AcpProvider[] {
-  return resolveProvidersCatalog(buildProviderListFromEntries(entries));
+  return resolveProvidersCatalog(
+    directAcp.buildProviderListFromEntries(entries),
+  );
 }
 
 function resolveProvidersCatalog(providers: AcpProvider[]): AcpProvider[] {
