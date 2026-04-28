@@ -6,9 +6,7 @@ import {
   skillDraftSnapshotsMatch,
 } from "../lib/chatInputSnapshots";
 import { getChatInputPlaceholder } from "../lib/chatInputPlaceholder";
-import { buildSkillSendPayload } from "../lib/skillSendPayload";
 import { cn } from "@/shared/lib/cn";
-import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import { Badge } from "@/shared/ui/badge";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
 import { MentionAutocomplete } from "./MentionAutocomplete";
@@ -21,6 +19,7 @@ import { useChatInputAttachments } from "../hooks/useChatInputAttachments";
 import { useChatInputFilePicker } from "../hooks/useChatInputFilePicker";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSelectionChips } from "./ChatInputSelectionChips";
+import { useChatInputSubmit } from "../hooks/useChatInputSubmit";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
 import type { ChatInputProps, ChatSkillDraft } from "../types";
 
@@ -104,17 +103,6 @@ export function ChatInput({
 
   const hasQueuedMessage = queuedMessage !== null;
 
-  const dictation = useVoiceDictation({
-    text,
-    setText,
-    attachments,
-    clearAttachments,
-    selectedPersonaId,
-    onSend,
-    resetTextarea,
-    isSendLocked: hasQueuedMessage || disabled,
-  });
-
   const activePersona = useMemo(
     () => personas.find((persona) => persona.id === selectedPersonaId) ?? null,
     [personas, selectedPersonaId],
@@ -188,21 +176,34 @@ export function ChatInput({
 
   useEffect(() => textareaRef.current?.focus(), []);
 
+  const { submitChatInputMessage, handleVoiceAutoSubmit } = useChatInputSubmit({
+    attachmentsRef,
+    selectedSkillsRef,
+    selectedPersonaId,
+    onSend,
+    setSelectedSkills,
+    resolveSkillSlashCommand,
+  });
+
+  const dictation = useVoiceDictation({
+    text,
+    setText,
+    attachments,
+    clearAttachments,
+    selectedPersonaId,
+    onSend,
+    onAutoSubmit: handleVoiceAutoSubmit,
+    resetTextarea,
+    isSendLocked: hasQueuedMessage || disabled,
+  });
+
   const handleSend = useCallback(async () => {
     if (!canSend) {
       return;
     }
 
-    // If recording, stop without waiting for final flush and send what's
-    // already transcribed into the textarea. This makes Send a single click
-    // even while the mic is hot; any in-flight audio after the user clicked
-    // Send is intentionally dropped.
-    //
-    // Also handles the edge case where the user clicks Send while a
-    // getUserMedia startup is still pending (isRecording is still false but
-    // a stream is about to be acquired) — stopRecording sets the internal
-    // cancel flag so the pending startup tears itself down instead of
-    // leaving the OS mic indicator on.
+    // Stop without flushing so Send uses the text already in the composer.
+    // This also cancels an in-flight microphone startup.
     if (
       dictation.isRecording ||
       dictation.isTranscribing ||
@@ -213,32 +214,13 @@ export function ChatInput({
 
     const submittedText = text;
     const submittedSkills = selectedSkills;
-    const slashSkillCommand =
-      submittedSkills.length === 0
-        ? resolveSkillSlashCommand(submittedText)
-        : null;
-    const { messageText, sendOptions } = buildSkillSendPayload(
-      submittedText,
-      submittedSkills,
-      slashSkillCommand,
-    );
     const submittedAttachments = attachments;
-    const sendResult = sendOptions
-      ? onSend(
-          messageText,
-          selectedPersonaId ?? undefined,
-          submittedAttachments.length > 0 ? submittedAttachments : undefined,
-          sendOptions,
-        )
-      : onSend(
-          messageText.trim(),
-          selectedPersonaId ?? undefined,
-          submittedAttachments.length > 0 ? submittedAttachments : undefined,
-        );
-    const accepted = isPromiseLike<boolean>(sendResult)
-      ? await sendResult
-      : sendResult;
-    if (accepted === false) {
+    const accepted = await submitChatInputMessage(
+      submittedText,
+      submittedAttachments,
+      submittedSkills,
+    );
+    if (!accepted) {
       return;
     }
     const draftStillMatchesSubmission =
@@ -259,12 +241,10 @@ export function ChatInput({
     canSend,
     clearAttachments,
     dictation,
-    onSend,
-    resolveSkillSlashCommand,
-    selectedPersonaId,
     selectedSkills,
     setSelectedSkills,
     setText,
+    submitChatInputMessage,
     text,
   ]);
 

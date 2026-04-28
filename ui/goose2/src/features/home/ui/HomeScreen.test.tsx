@@ -189,10 +189,10 @@ describe("HomeScreen", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the assistant chooser affordance", () => {
+  it("renders the agent/model chooser affordance", () => {
     renderHome();
     expect(
-      screen.getByRole("button", { name: /choose assistant/i }),
+      screen.getByRole("button", { name: /choose agent and model/i }),
     ).toBeInTheDocument();
   });
 
@@ -206,17 +206,17 @@ describe("HomeScreen", () => {
     ).toBeInTheDocument();
   });
 
-  it("forwards persona selection through the shared session controller", async () => {
+  it("forwards agent selection through the shared session controller", async () => {
     vi.useRealTimers();
     const user = userEvent.setup();
 
     renderHome();
 
-    await user.click(screen.getByRole("button", { name: /choose assistant/i }));
-    await user.click(screen.getByRole("menuitem", { name: /solo/i }));
-
-    expect(mockController.handlePersonaChange).toHaveBeenLastCalledWith(
-      "builtin-solo",
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
     );
+    await user.click(screen.getByRole("button", { name: /claude code/i }));
+
+    expect(setSelectedProvider).toHaveBeenLastCalledWith("claude-acp");
   });
 });

@@ -104,9 +104,7 @@ export function resolveSkillSlashCommand<TSkill extends SkillLike>(
   text: string,
   skills: TSkill[],
 ): SkillCommandMatch<TSkill> | null {
-  const match = text
-    .trimStart()
-    .match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/);
+  const match = text.trimStart().match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
   if (!match) {
     return null;
   }
