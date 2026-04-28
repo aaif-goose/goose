@@ -251,6 +251,7 @@
           "oauthTerminal": "Run `goose configure` in your terminal to finish sign-in."
         }
       },
+      "checkingStatus": "Checking provider status...",
       "title": "Models"
     },
     "loadingModels": "Loading models...",

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/shared/ui/button";
 import { Separator } from "@/shared/ui/separator";
-import { Skeleton } from "@/shared/ui/skeleton";
+import { Spinner } from "@/shared/ui/spinner";
 import { IconChevronDown } from "@tabler/icons-react";
 import {
   getAgentProviders,
@@ -112,23 +112,6 @@ export function ProvidersSettings() {
   const advancedModels = orderedModels.filter((m) => m.tier === "advanced");
   const visibleModels = showAllModels ? orderedModels : promotedModels;
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="mt-2 h-4 w-64" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
       <h3 className="text-lg font-semibold font-display tracking-tight">
@@ -161,9 +144,17 @@ export function ProvidersSettings() {
 
       <section>
         <div className="mb-3">
-          <h4 className="text-sm font-semibold">
-            {t("providers.models.title")}
-          </h4>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold">
+              {t("providers.models.title")}
+            </h4>
+            {loading ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Spinner className="size-3 text-accent" />
+                {t("providers.models.checkingStatus")}
+              </span>
+            ) : null}
+          </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {t("providers.models.description")}
           </p>
