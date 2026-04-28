@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
+import { discoverAcpProvidersFromEntries } from "@/shared/api/acp";
 import { setNotificationHandler, getClient } from "@/shared/api/acpConnection";
 import notificationHandler from "@/shared/api/acpNotificationHandler";
 import { perfLog } from "@/shared/lib/perfLog";
@@ -61,9 +62,6 @@ export function useAppStartup() {
           inventoryStore.setEntries(entries);
 
           // Derive ACP providers from the same response
-          const { discoverAcpProvidersFromEntries } = await import(
-            "@/shared/api/acp"
-          );
           const providers = discoverAcpProvidersFromEntries(entries);
           store.setProviders(providers);
 

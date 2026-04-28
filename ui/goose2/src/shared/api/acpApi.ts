@@ -37,20 +37,30 @@ export const DEFAULT_PROVIDER: AcpProvider = {
   label: "Goose (Default)",
 };
 
+/**
+ * Build the ACP provider list from raw inventory entries.
+ *
+ * Shared by both `listProviders` (which fetches entries via RPC) and
+ * `discoverAcpProvidersFromEntries` in acp.ts (which reuses
+ * already-fetched entries at startup).
+ */
+export function buildProviderListFromEntries(
+  entries: Array<{ providerId: string; providerName: string }>,
+): AcpProvider[] {
+  return [
+    DEFAULT_PROVIDER,
+    ...entries
+      .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+      .map((entry) => ({ id: entry.providerId, label: entry.providerName })),
+  ];
+}
+
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
   const result = await client.goose.GooseProvidersList({
     providerIds: [],
   });
-
-  const providers = result.entries
-    .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
-    .map((entry) => ({
-      id: entry.providerId,
-      label: entry.providerName,
-    }));
-
-  return [DEFAULT_PROVIDER, ...providers];
+  return buildProviderListFromEntries(result.entries);
 }
 
 export async function listSessions(): Promise<AcpSessionInfo[]> {
