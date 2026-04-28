@@ -108,7 +108,7 @@
   },
   "input": {
     "ariaLabel": "Chat message input",
-    "placeholder": "Message {{agent}}, @ to mention agents"
+    "placeholder": "Message {{agent}}, @ to mention agents or skills"
   },
   "loading": {
     "compacting": "Compacting conversation...",
@@ -118,6 +118,7 @@
   "mention": {
     "ariaLabel": "Mention suggestions",
     "title": "Mention an agent",
+    "skillsTitle": "Skills",
     "filesTitle": "Files"
   },
   "notifications": {
@@ -134,6 +135,9 @@
     "create": "Create agent...",
     "clearActive": "Clear active assistant",
     "defaultDescription": "No agent selected - chat directly with Goose"
+  },
+  "skill": {
+    "clearSelected": "Remove {{skill}} skill"
   },
   "queue": {
     "dismiss": "Dismiss queued message",

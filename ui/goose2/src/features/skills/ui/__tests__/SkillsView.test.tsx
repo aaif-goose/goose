@@ -242,6 +242,43 @@ describe("SkillsView", () => {
     expect(screen.getByText("Quality")).toBeInTheDocument();
   });
 
+  it("starts a chat with the selected skill from the list", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const onStartChatWithSkill = vi.fn();
+    const user = userEvent.setup();
+
+    render(<SkillsView onStartChatWithSkill={onStartChatWithSkill} />);
+    await screen.findByText("test-writer");
+
+    await user.click(
+      screen.getByRole("button", { name: "Start chat with test-writer" }),
+    );
+
+    expect(onStartChatWithSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "test-writer" }),
+      "project-alpha",
+    );
+  });
+
+  it("starts a chat with the selected skill from the detail page", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const onStartChatWithSkill = vi.fn();
+    const user = userEvent.setup();
+
+    render(<SkillsView onStartChatWithSkill={onStartChatWithSkill} />);
+    await screen.findByText("code-review");
+
+    await user.click(
+      screen.getByRole("button", { name: "Open code-review details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onStartChatWithSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "code-review" }),
+      null,
+    );
+  });
+
   it("returns to the list without losing filters", async () => {
     listSkills.mockResolvedValue(mockSkills);
     const user = userEvent.setup();

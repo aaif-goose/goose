@@ -194,10 +194,11 @@ function PersonaAvatar({
   size = "sm",
 }: {
   persona?: Persona;
-  size?: "sm" | "md";
+  size?: "xs" | "sm" | "md";
 }) {
-  const dim = size === "sm" ? "h-4 w-4" : "h-6 w-6";
-  const iconDim = size === "sm" ? "h-2.5 w-2.5" : "h-3.5 w-3.5";
+  const dim =
+    size === "xs" ? "h-3.5 w-3.5" : size === "sm" ? "h-4 w-4" : "h-6 w-6";
+  const iconDim = size === "md" ? "h-3.5 w-3.5" : "h-2.5 w-2.5";
 
   const avatarSrc = useAvatarSrc(persona?.avatar);
   if (avatarSrc) {

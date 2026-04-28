@@ -21,6 +21,13 @@ export interface ProjectOption {
   color?: string | null;
 }
 
+export interface ChatSkillDraft {
+  id: string;
+  name: string;
+  description?: string;
+  sourceLabel?: string;
+}
+
 export interface ChatInputProps {
   onSend: (
     text: string,
@@ -34,11 +41,12 @@ export interface ChatInputProps {
   onDismissQueue?: () => void;
   initialValue?: string;
   onDraftChange?: (text: string) => void;
+  selectedSkills?: ChatSkillDraft[];
+  onSkillsChange?: (skills: ChatSkillDraft[]) => void;
   className?: string;
   personas?: Persona[];
   selectedPersonaId?: string | null;
   onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
   providers?: AcpProvider[];
   providersLoading?: boolean;
   selectedProvider?: string;

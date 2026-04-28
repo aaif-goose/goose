@@ -12,11 +12,9 @@ import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { IconLibraryPlusFilled } from "@tabler/icons-react";
 import type { AcpProvider } from "@/shared/api/acp";
-import type { Persona } from "@/shared/types/agents";
 import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
-import { PersonaPicker } from "./PersonaPicker";
 import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
 import {
@@ -52,11 +50,7 @@ function ProjectDot({ color }: { color?: string | null }) {
 }
 
 interface ChatInputToolbarProps {
-  // Personas
-  personas: Persona[];
   selectedPersonaId: string | null;
-  onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
   // Provider
   providers: AcpProvider[];
   providersLoading?: boolean;
@@ -103,10 +97,7 @@ interface ChatInputToolbarProps {
 }
 
 export function ChatInputToolbar({
-  personas,
   selectedPersonaId,
-  onPersonaChange,
-  onCreatePersona,
   providers,
   providersLoading,
   selectedProvider,
@@ -298,16 +289,6 @@ export function ChatInputToolbar({
       {/* Right side: actions */}
       <div className="flex items-center">
         <div className="flex items-center gap-px">
-          {personas.length > 0 && (
-            <PersonaPicker
-              personas={personas}
-              selectedPersonaId={selectedPersonaId}
-              onPersonaChange={(id) => onPersonaChange?.(id)}
-              onCreatePersona={onCreatePersona}
-              triggerVariant="icon"
-            />
-          )}
-
           {showContextUsage && (
             <Popover
               open={isContextPopoverOpen}
@@ -441,7 +422,7 @@ export function ChatInputToolbar({
                     voiceTranscribing && "animate-pulse",
                   )}
                 >
-                  <Mic />
+                  <Mic className="h-4 w-4" />
                 </Button>
               </span>
             </TooltipTrigger>

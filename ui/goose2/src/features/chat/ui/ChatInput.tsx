@@ -1,37 +1,27 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { formatSkillDraftsChatPrompt } from "@/features/skills/lib/skillChatPrompt";
+import {
+  attachmentSnapshotsMatch,
+  skillDraftSnapshotsMatch,
+} from "../lib/chatInputSnapshots";
 import { cn } from "@/shared/lib/cn";
 import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
 import { MentionAutocomplete } from "./MentionAutocomplete";
 import { useMentionHandlers } from "../hooks/useMentionHandlers";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { TooltipProvider } from "@/shared/ui/tooltip";
-import { PersonaAvatar } from "./PersonaPicker";
 import { useAttachmentDropTarget } from "../hooks/useAttachmentDropTarget";
-import {
-  normalizeDialogSelection,
-  useChatInputAttachments,
-} from "../hooks/useChatInputAttachments";
+import { useChatInputAttachments } from "../hooks/useChatInputAttachments";
+import { useChatInputFilePicker } from "../hooks/useChatInputFilePicker";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { ChatInputSelectionChips } from "./ChatInputSelectionChips";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
-import type { ChatInputProps } from "../types";
-
-function attachmentSnapshotsMatch(
-  current: ChatAttachmentDraft[],
-  snapshot: ChatAttachmentDraft[],
-) {
-  return (
-    current.length === snapshot.length &&
-    current.every((attachment, index) => attachment.id === snapshot[index]?.id)
-  );
-}
+import type { ChatInputProps, ChatSkillDraft } from "../types";
 
 export function ChatInput({
   onSend,
@@ -42,11 +32,12 @@ export function ChatInput({
   onDismissQueue,
   initialValue = "",
   onDraftChange,
+  selectedSkills: selectedSkillsProp,
+  onSkillsChange,
   className,
   personas = [],
   selectedPersonaId = null,
   onPersonaChange,
-  onCreatePersona,
   providers = [],
   providersLoading = false,
   selectedProvider = "goose",
@@ -71,6 +62,11 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
+  const [internalSelectedSkills, setInternalSelectedSkills] = useState<
+    ChatSkillDraft[]
+  >([]);
+  const selectedSkills = selectedSkillsProp ?? internalSelectedSkills;
+  const setSelectedSkills = onSkillsChange ?? setInternalSelectedSkills;
   const textRef = useRef(initialValue);
   useEffect(() => {
     setTextRaw(initialValue);
@@ -96,6 +92,8 @@ export function ChatInput({
   } = useChatInputAttachments();
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
+  const selectedSkillsRef = useRef(selectedSkills);
+  selectedSkillsRef.current = selectedSkills;
 
   const resetTextarea = useCallback(() => {
     if (textareaRef.current) {
@@ -133,16 +131,31 @@ export function ChatInput({
     !hasQueuedMessage &&
     !disabled;
 
+  const handleSkillMentionAdded = useCallback(
+    (skill: (typeof selectedSkills)[number]) => {
+      if (
+        selectedSkills.some((selectedSkill) => selectedSkill.id === skill.id)
+      ) {
+        return;
+      }
+      setSelectedSkills([...selectedSkills, skill]);
+    },
+    [selectedSkills, setSelectedSkills],
+  );
+
   const {
     mentionOpen,
     mentionSelectedIndex,
     filteredPersonas,
+    filteredSkills,
     filteredFiles,
+    expandSkillSlashCommand,
     detectMention,
     closeMention,
     navigateMention,
     confirmMention,
     handlePersonaMentionSelect,
+    handleSkillMentionSelect,
     handleFileMentionSelect,
     handleMentionConfirm,
   } = useMentionHandlers({
@@ -152,6 +165,7 @@ export function ChatInput({
     setText,
     textareaRef,
     onPersonaChange,
+    onSkillMentionSelect: handleSkillMentionAdded,
   });
 
   useEffect(() => {
@@ -195,9 +209,14 @@ export function ChatInput({
     }
 
     const submittedText = text;
+    const submittedSkills = selectedSkills;
+    const messageText =
+      submittedSkills.length > 0
+        ? formatSkillDraftsChatPrompt(submittedSkills, submittedText)
+        : (expandSkillSlashCommand(submittedText) ?? submittedText);
     const submittedAttachments = attachments;
     const sendResult = onSend(
-      submittedText.trim(),
+      messageText.trim(),
       selectedPersonaId ?? undefined,
       submittedAttachments.length > 0 ? submittedAttachments : undefined,
     );
@@ -209,11 +228,13 @@ export function ChatInput({
     }
     const draftStillMatchesSubmission =
       textRef.current === submittedText &&
+      skillDraftSnapshotsMatch(selectedSkillsRef.current, submittedSkills) &&
       attachmentSnapshotsMatch(attachmentsRef.current, submittedAttachments);
     if (!draftStillMatchesSubmission) {
       return;
     }
     setText("");
+    setSelectedSkills([]);
     clearAttachments();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -223,8 +244,11 @@ export function ChatInput({
     canSend,
     clearAttachments,
     dictation,
+    expandSkillSlashCommand,
     onSend,
     selectedPersonaId,
+    selectedSkills,
+    setSelectedSkills,
     setText,
     text,
   ]);
@@ -302,39 +326,10 @@ export function ChatInput({
       void addPathAttachments(paths);
     },
   });
-
-  const handleAttachFiles = useCallback(async () => {
-    if (disabled) {
-      return;
-    }
-
-    try {
-      const selected = await open({
-        title: t("attachments.chooseFilesDialogTitle"),
-        multiple: true,
-      });
-      await addPathAttachments(normalizeDialogSelection(selected));
-    } catch {
-      // Dialog plugin may be unavailable in some environments.
-    }
-  }, [addPathAttachments, disabled, t]);
-
-  const handleAttachFolders = useCallback(async () => {
-    if (disabled) {
-      return;
-    }
-
-    try {
-      const selected = await open({
-        directory: true,
-        title: t("attachments.chooseFoldersDialogTitle"),
-        multiple: true,
-      });
-      await addPathAttachments(normalizeDialogSelection(selected));
-    } catch {
-      // Dialog plugin may be unavailable in some environments.
-    }
-  }, [addPathAttachments, disabled, t]);
+  const { handleAttachFiles, handleAttachFolders } = useChatInputFilePicker({
+    disabled,
+    addPathAttachments,
+  });
 
   const providerDisplayName =
     providers.find((provider) => provider.id === selectedProvider)?.label ??
@@ -359,6 +354,13 @@ export function ChatInput({
   const handleClearStickyPersona = useCallback(() => {
     onPersonaChange?.(null);
   }, [onPersonaChange]);
+
+  const handleRemoveSkill = useCallback(
+    (skillId: string) => {
+      setSelectedSkills(selectedSkills.filter((skill) => skill.id !== skillId));
+    },
+    [selectedSkills, setSelectedSkills],
+  );
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -390,9 +392,11 @@ export function ChatInput({
 
               <MentionAutocomplete
                 filteredPersonas={filteredPersonas}
+                filteredSkills={filteredSkills}
                 filteredFiles={filteredFiles}
                 isOpen={mentionOpen}
                 onSelectPersona={handlePersonaMentionSelect}
+                onSelectSkill={handleSkillMentionSelect}
                 onSelectFile={handleFileMentionSelect}
                 onClose={closeMention}
                 selectedIndex={mentionSelectedIndex}
@@ -403,24 +407,12 @@ export function ChatInput({
                 onRemove={removeAttachment}
               />
 
-              {stickyPersona && (
-                <div className="mb-2 flex items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-1 text-[11px] font-medium text-brand">
-                    <PersonaAvatar persona={stickyPersona} size="sm" />
-                    <span>@{stickyPersona.displayName}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="ml-0.5 size-auto p-0 opacity-60 hover:bg-transparent hover:opacity-100"
-                      onClick={handleClearStickyPersona}
-                      aria-label={t("persona.clearActive")}
-                    >
-                      <X className="size-3" />
-                    </Button>
-                  </span>
-                </div>
-              )}
+              <ChatInputSelectionChips
+                persona={stickyPersona}
+                skills={selectedSkills}
+                onClearPersona={handleClearStickyPersona}
+                onRemoveSkill={handleRemoveSkill}
+              />
 
               {queuedMessage && (
                 <div className="mb-2 flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-1.5">
@@ -460,10 +452,7 @@ export function ChatInput({
               </PopoverAnchor>
 
               <ChatInputToolbar
-                personas={personas}
                 selectedPersonaId={selectedPersonaId}
-                onPersonaChange={onPersonaChange}
-                onCreatePersona={onCreatePersona}
                 providers={providers}
                 providersLoading={providersLoading}
                 selectedProvider={selectedProvider}

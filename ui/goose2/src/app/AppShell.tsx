@@ -32,6 +32,8 @@ import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { perfLog } from "@/shared/lib/perfLog";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { sanitizeReplayMessages } from "@/features/chat/lib/replaySanitizer";
+import type { SkillInfo } from "@/features/skills/api/skills";
+import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
 
 export type AppView =
   | "home"
@@ -337,6 +339,25 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       void createNewTab(DEFAULT_CHAT_TITLE, project);
     },
     [createNewTab],
+  );
+
+  const handleStartChatWithSkill = useCallback(
+    (skill: SkillInfo, projectId?: string | null) => {
+      const project = projectId
+        ? projectStore.projects.find((candidate) => candidate.id === projectId)
+        : undefined;
+
+      void createNewTab(DEFAULT_CHAT_TITLE, project)
+        .then((session) => {
+          useChatStore
+            .getState()
+            .setSkillDrafts(session.id, [toChatSkillDraft(skill)]);
+        })
+        .catch((error) => {
+          console.error("Failed to start chat with skill:", error);
+        });
+    },
+    [createNewTab, projectStore.projects],
   );
 
   const handleNewChatInProject = useCallback(
@@ -708,6 +729,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
               onSelectSession={handleSelectSession}
               onSelectSearchResult={handleSelectSearchResult}
               onStartChatFromProject={handleStartChatFromProject}
+              onStartChatWithSkill={handleStartChatWithSkill}
             />
           )}
         </main>

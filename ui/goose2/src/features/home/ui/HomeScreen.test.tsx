@@ -83,6 +83,10 @@ vi.mock("@/features/providers/hooks/useAgentProviderStatus", () => ({
   }),
 }));
 
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("@/features/chat/hooks/useChatSessionController", () => ({
   useChatSessionController: () => mockController,
 }));
@@ -179,7 +183,9 @@ describe("HomeScreen", () => {
   it("renders the chat input placeholder with default agent name when no persona selected", () => {
     renderHome();
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention agents"),
+      screen.getByPlaceholderText(
+        "Message Goose, @ to mention agents or skills",
+      ),
     ).toBeInTheDocument();
   });
 

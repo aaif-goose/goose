@@ -108,7 +108,7 @@
   },
   "input": {
     "ariaLabel": "Entrada de mensaje del chat",
-    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar agentes"
+    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar agentes o habilidades"
   },
   "loading": {
     "compacting": "Compactando conversación...",
@@ -118,6 +118,7 @@
   "mention": {
     "ariaLabel": "Sugerencias de menciones",
     "title": "Menciona un agente",
+    "skillsTitle": "Habilidades",
     "filesTitle": "Archivos"
   },
   "notifications": {
@@ -134,6 +135,9 @@
     "create": "Crear agente...",
     "clearActive": "Quitar asistente activo",
     "defaultDescription": "Sin agente seleccionado: chatea directamente con Goose"
+  },
+  "skill": {
+    "clearSelected": "Quitar habilidad {{skill}}"
   },
   "queue": {
     "dismiss": "Descartar mensaje en cola",
