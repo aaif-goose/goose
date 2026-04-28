@@ -445,6 +445,8 @@ impl Config {
             }
         }
 
+        crate::config::migrations::run_migrations(&mut merged);
+
         Ok(merged)
     }
 
