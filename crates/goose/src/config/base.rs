@@ -388,7 +388,7 @@ impl Config {
     }
 
     pub fn exists(&self) -> bool {
-        self.write_path().exists()
+        self.config_paths.iter().any(|p| p.exists())
     }
 
     pub fn clear(&self) -> Result<(), ConfigError> {
