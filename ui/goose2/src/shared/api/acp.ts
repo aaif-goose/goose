@@ -1,6 +1,10 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
-import type { AcpSessionInfo } from "./acpApi";
+import {
+  DEPRECATED_PROVIDER_IDS,
+  DEFAULT_PROVIDER,
+  type AcpSessionInfo,
+} from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
 import {
   getCatalogEntry,
@@ -48,13 +52,8 @@ export async function discoverAcpProviders(): Promise<AcpProvider[]> {
 export function discoverAcpProvidersFromEntries(
   entries: Array<{ providerId: string; providerName: string }>,
 ): AcpProvider[] {
-  const DEPRECATED_PROVIDER_IDS = new Set([
-    "claude-code",
-    "codex",
-    "gemini-cli",
-  ]);
   const providers: AcpProvider[] = [
-    { id: "goose", label: "Goose (Default)" },
+    DEFAULT_PROVIDER,
     ...entries
       .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
       .map((entry) => ({ id: entry.providerId, label: entry.providerName })),

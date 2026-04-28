@@ -27,8 +27,12 @@ export interface AcpSessionInfo {
   personaId: string | null;
 }
 
-const DEPRECATED_PROVIDER_IDS = new Set(["claude-code", "codex", "gemini-cli"]);
-const DEFAULT_PROVIDER: AcpProvider = {
+export const DEPRECATED_PROVIDER_IDS = new Set([
+  "claude-code",
+  "codex",
+  "gemini-cli",
+]);
+export const DEFAULT_PROVIDER: AcpProvider = {
   id: "goose",
   label: "Goose (Default)",
 };
