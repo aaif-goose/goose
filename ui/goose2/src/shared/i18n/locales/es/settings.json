@@ -253,8 +253,8 @@
       },
       "title": "Modelos"
     },
-    "restartButton": "Reiniciar ahora",
-    "restartMessage": "Reinicia para aplicar los cambios de credenciales.",
+    "loadingModels": "Cargando modelos...",
+    "modelRefreshWarning": "Credenciales guardadas. La actualización de modelos necesita atención: {{message}}",
     "saved": "Guardado",
     "showFewer": "Mostrar menos",
     "showMore": "Mostrar {{count}} proveedores más",

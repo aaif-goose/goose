@@ -253,8 +253,8 @@
       },
       "title": "Models"
     },
-    "restartButton": "Restart now",
-    "restartMessage": "Restart to apply credential changes.",
+    "loadingModels": "Loading models...",
+    "modelRefreshWarning": "Credentials saved. Model refresh needs attention: {{message}}",
     "saved": "Saved",
     "showFewer": "Show fewer",
     "showMore": "Show {{count}} more providers",

@@ -181,9 +181,10 @@ impl Default for Config {
             secrets_cache: Arc::new(Mutex::new(None)),
         };
 
-        let secrets = if no_secrets_config
-            .get_param::<serde_json::Value>("GOOSE_DISABLE_KEYRING")
-            .is_ok()
+        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
+            || no_secrets_config
+                .get_param::<serde_yaml::Value>("GOOSE_DISABLE_KEYRING")
+                .is_ok_and(|v| keyring_disabled_value(&v))
         {
             SecretStorage::File {
                 path: config_dir.join("secrets.yaml"),
@@ -281,6 +282,10 @@ fn parse_yaml_content(content: &str) -> Result<Mapping, ConfigError> {
     serde_yaml::from_str(content).map_err(|e| e.into())
 }
 
+fn keyring_disabled_value(value: &serde_yaml::Value) -> bool {
+    value.as_bool().unwrap_or(false) || value.as_str().is_some_and(|s| s == "true" || s == "1")
+}
+
 const EXTENSIONS_KEY: &str = "extensions";
 
 pub fn merge_config_values(base: &mut Mapping, overlay: Mapping) {
@@ -325,6 +330,19 @@ fn merge_extensions(base: &mut Mapping, overlay: &Mapping) {
     }
 }
 
+/// Read the GOOSE_DISABLE_KEYRING flag from the config file.
+///
+/// Called before Config is fully initialised, so we do a minimal raw read
+/// rather than going through `get_param`.  All errors are treated as `false`
+/// (keyring stays enabled) so a missing/malformed file is never fatal here.
+fn keyring_disabled_in_config(config_path: &Path) -> bool {
+    std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|s| parse_yaml_content(&s).ok())
+        .and_then(|m| m.get("GOOSE_DISABLE_KEYRING").map(keyring_disabled_value))
+        .unwrap_or(false)
+}
+
 impl Config {
     /// Get the global configuration instance.
     ///
@@ -339,11 +357,25 @@ impl Config {
     /// This is primarily useful for testing or for applications that need
     /// to manage multiple configuration files.
     pub fn new<P: AsRef<Path>>(config_path: P, service: &str) -> Result<Self, ConfigError> {
-        Ok(Config {
-            config_paths: vec![config_path.as_ref().to_path_buf()],
-            secrets: SecretStorage::Keyring {
+        let config_path = config_path.as_ref().to_path_buf();
+        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
+            || keyring_disabled_in_config(&config_path)
+        {
+            let config_dir = config_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(Paths::config_dir);
+            SecretStorage::File {
+                path: config_dir.join("secrets.yaml"),
+            }
+        } else {
+            SecretStorage::Keyring {
                 service: service.to_string(),
-            },
+            }
+        };
+        Ok(Config {
+            config_paths: vec![config_path],
+            secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
         })
@@ -767,6 +799,40 @@ impl Config {
         Ok(result)
     }
 
+    fn write_all_secrets(&self, values: &HashMap<String, Value>) -> Result<(), ConfigError> {
+        match &self.secrets {
+            SecretStorage::Keyring { service } => {
+                let json_value = serde_json::to_string(values)?;
+                match self.handle_keyring_operation(
+                    |entry| entry.set_password(&json_value),
+                    service,
+                    Some(values),
+                ) {
+                    Ok(_) => {}
+                    Err(ConfigError::FallbackToFileStorage) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            SecretStorage::File { path } => {
+                let yaml_value = serde_yaml::to_string(values)?;
+                write_secrets_file(path, &yaml_value)?;
+            }
+        }
+
+        self.invalidate_secrets_cache();
+        Ok(())
+    }
+
+    fn mutate_secrets(
+        &self,
+        mutate: impl FnOnce(&mut HashMap<String, Value>),
+    ) -> Result<(), ConfigError> {
+        let _guard = self.guard.lock().unwrap();
+        let mut values = self.all_secrets()?;
+        mutate(&mut values);
+        self.write_all_secrets(&values)
+    }
+
     /// Set a secret value in the system keyring.
     ///
     /// This will store the value in a single JSON object in the system keyring,
@@ -785,34 +851,27 @@ impl Config {
     where
         V: Serialize,
     {
-        // Lock before reading to prevent race condition.
-        let _guard = self.guard.lock().unwrap();
+        let value = serde_json::to_value(value)?;
+        self.mutate_secrets(|values| {
+            values.insert(key.to_string(), value);
+        })
+    }
 
-        let mut values = self.all_secrets()?;
-        values.insert(key.to_string(), serde_json::to_value(value)?);
+    /// Set multiple secret values with one storage read and one storage write.
+    ///
+    /// This is intended for provider setup flows that save several fields at once.
+    /// It keeps keychain access batched while preserving the same storage format as
+    /// `set_secret`.
+    pub fn set_secret_values(&self, updates: &[(String, Value)]) -> Result<(), ConfigError> {
+        if updates.is_empty() {
+            return Ok(());
+        }
 
-        match &self.secrets {
-            SecretStorage::Keyring { service } => {
-                let json_value = serde_json::to_string(&values)?;
-                match self.handle_keyring_operation(
-                    |entry| entry.set_password(&json_value),
-                    service,
-                    Some(&values),
-                ) {
-                    Ok(_) => {}
-                    Err(ConfigError::FallbackToFileStorage) => {}
-                    Err(e) => return Err(e),
-                }
+        self.mutate_secrets(|values| {
+            for (key, value) in updates {
+                values.insert(key.clone(), value.clone());
             }
-            SecretStorage::File { path } => {
-                let yaml_value = serde_yaml::to_string(&values)?;
-                write_secrets_file(path, &yaml_value)?;
-            }
-        };
-
-        self.invalidate_secrets_cache();
-
-        Ok(())
+        })
     }
 
     /// Delete a secret from the system keyring.
@@ -826,34 +885,22 @@ impl Config {
     /// - There is an error accessing the keyring
     /// - There is an error serializing the remaining values
     pub fn delete_secret(&self, key: &str) -> Result<(), ConfigError> {
-        // Lock before reading to prevent race condition.
-        let _guard = self.guard.lock().unwrap();
+        self.mutate_secrets(|values| {
+            values.remove(key);
+        })
+    }
 
-        let mut values = self.all_secrets()?;
-        values.remove(key);
+    /// Delete multiple secret values with one storage read and one storage write.
+    pub fn delete_secret_values(&self, keys: &[String]) -> Result<(), ConfigError> {
+        if keys.is_empty() {
+            return Ok(());
+        }
 
-        match &self.secrets {
-            SecretStorage::Keyring { service } => {
-                let json_value = serde_json::to_string(&values)?;
-                match self.handle_keyring_operation(
-                    |entry| entry.set_password(&json_value),
-                    service,
-                    Some(&values),
-                ) {
-                    Ok(_) => {}
-                    Err(ConfigError::FallbackToFileStorage) => {}
-                    Err(e) => return Err(e),
-                }
+        self.mutate_secrets(|values| {
+            for key in keys {
+                values.remove(key);
             }
-            SecretStorage::File { path } => {
-                let yaml_value = serde_yaml::to_string(&values)?;
-                write_secrets_file(path, &yaml_value)?;
-            }
-        };
-
-        self.invalidate_secrets_cache();
-
-        Ok(())
+        })
     }
 
     /// Read secrets from a YAML file
@@ -1049,6 +1096,16 @@ mod tests {
         let content = std::fs::read_to_string(config_file.path())?;
         assert!(content.contains("key1: value1"));
         assert!(content.contains("key2: 42"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn keyring_disabled_in_config_accepts_string_one() -> Result<(), ConfigError> {
+        let config_file = NamedTempFile::new().unwrap();
+        std::fs::write(config_file.path(), "GOOSE_DISABLE_KEYRING: \"1\"\n")?;
+
+        assert!(keyring_disabled_in_config(config_file.path()));
 
         Ok(())
     }

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/shared/ui/button";
 import { Separator } from "@/shared/ui/separator";
 import { Skeleton } from "@/shared/ui/skeleton";
-import { IconChevronDown, IconRefresh } from "@tabler/icons-react";
+import { IconChevronDown } from "@tabler/icons-react";
 import {
   getAgentProviders,
   getModelProviders,
@@ -45,12 +45,12 @@ export function ProvidersSettings() {
   const {
     configuredIds,
     loading,
-    saving,
-    needsRestart,
+    savingProviderIds,
+    syncingProviderIds,
+    inventoryWarnings,
     getConfig,
     save,
     remove,
-    restart,
     completeNativeSetup,
   } = useCredentials();
 
@@ -138,16 +138,6 @@ export function ProvidersSettings() {
         {t("providers.description")}
       </p>
 
-      {needsRestart && (
-        <div className="mt-3 flex items-center gap-3 rounded-lg border border-accent bg-background-accent/30 px-3 py-2.5">
-          <p className="flex-1 text-sm">{t("providers.restartMessage")}</p>
-          <Button type="button" size="sm" onClick={() => void restart()}>
-            <IconRefresh className="size-3.5" />
-            {t("providers.restartButton")}
-          </Button>
-        </div>
-      )}
-
       <Separator className="my-4" />
 
       <section>
@@ -185,10 +175,12 @@ export function ProvidersSettings() {
               key={model.id}
               provider={model}
               onGetConfig={getConfig}
-              onSaveField={save}
+              onSaveFields={(fields) => save(model.id, fields)}
               onRemoveConfig={() => remove(model.id)}
               onCompleteNativeSetup={completeNativeSetup}
-              saving={saving}
+              saving={savingProviderIds.has(model.id)}
+              inventorySyncing={syncingProviderIds.has(model.id)}
+              inventoryWarning={inventoryWarnings.get(model.id)}
             />
           ))}
         </div>

@@ -1,0 +1,113 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ComponentType } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getModelProviders } from "@/features/providers/providerCatalog";
+import { ModelProviderRow } from "../ModelProviderRow";
+
+const Row = ModelProviderRow as unknown as ComponentType<
+  Record<string, unknown>
+>;
+
+function modelProvider(id: string, status: "connected" | "not_configured") {
+  const provider = getModelProviders().find((entry) => entry.id === id);
+  if (!provider) {
+    throw new Error(`missing provider fixture: ${id}`);
+  }
+  return {
+    ...provider,
+    status,
+  };
+}
+
+describe("ModelProviderRow", () => {
+  const onGetConfig = vi.fn();
+  const onSaveFields = vi.fn();
+  const onRemoveConfig = vi.fn();
+  const onCompleteNativeSetup = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    onGetConfig.mockResolvedValue([]);
+    onSaveFields.mockResolvedValue(undefined);
+    onRemoveConfig.mockResolvedValue(undefined);
+    onCompleteNativeSetup.mockResolvedValue(undefined);
+  });
+
+  it("saves all changed setup fields from one setup submit", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ModelProviderRow
+        provider={modelProvider("databricks", "not_configured")}
+        onGetConfig={onGetConfig}
+        onSaveFields={onSaveFields}
+        onRemoveConfig={onRemoveConfig}
+        onCompleteNativeSetup={onCompleteNativeSetup}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /databricks/i }));
+    await user.type(
+      await screen.findByPlaceholderText(/cloud\.databricks\.com/i),
+      "https://dbc-test.cloud.databricks.com",
+    );
+    await user.type(
+      screen.getByPlaceholderText(/paste your access token/i),
+      "databricks-token",
+    );
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(onSaveFields).toHaveBeenCalledTimes(1));
+    expect(onSaveFields).toHaveBeenCalledWith([
+      {
+        key: "DATABRICKS_HOST",
+        value: "https://dbc-test.cloud.databricks.com",
+        isSecret: false,
+      },
+      {
+        key: "DATABRICKS_TOKEN",
+        value: "databricks-token",
+        isSecret: true,
+      },
+    ]);
+  });
+
+  it("shows the connected row while model inventory is still loading", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Row
+        provider={modelProvider("anthropic", "connected")}
+        onGetConfig={onGetConfig}
+        onSaveFields={onSaveFields}
+        onRemoveConfig={onRemoveConfig}
+        onCompleteNativeSetup={onCompleteNativeSetup}
+        inventorySyncing={true}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /anthropic/i }));
+
+    expect(screen.getByText(/loading models/i)).toBeInTheDocument();
+  });
+
+  it("shows a non-blocking inventory warning without replacing the connected state", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Row
+        provider={modelProvider("anthropic", "connected")}
+        onGetConfig={onGetConfig}
+        onSaveFields={onSaveFields}
+        onRemoveConfig={onRemoveConfig}
+        onCompleteNativeSetup={onCompleteNativeSetup}
+        inventoryWarning="Model refresh failed"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /anthropic/i }));
+
+    expect(screen.getByText(/model refresh failed/i)).toBeInTheDocument();
+  });
+});

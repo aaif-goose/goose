@@ -25,7 +25,8 @@ use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
 use crate::providers::inventory::{
-    ProviderInventoryEntry, ProviderInventoryService, RefreshSkipReason,
+    InventoryIdentity, ProviderInventoryEntry, ProviderInventoryService, RefreshPlan,
+    RefreshSkipReason,
 };
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
@@ -33,6 +34,7 @@ use crate::utils::sanitize_unicode_tags;
 use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, Either};
+use futures::FutureExt;
 use goose_acp_macros::custom_methods;
 use rmcp::model::{
     AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
@@ -62,6 +64,7 @@ use sacp::{
 };
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
 use tokio::sync::{Mutex, OnceCell};
@@ -116,6 +119,20 @@ const ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "ELEVENLABS_TRANSCRIPTIO
 const OPENAI_TRANSCRIPTION_MODEL: &str = "whisper-1";
 const GROQ_TRANSCRIPTION_MODEL: &str = "whisper-large-v3-turbo";
 const ELEVENLABS_TRANSCRIPTION_MODEL: &str = "scribe_v1";
+
+async fn ensure_refresh_identity_current(
+    provider_id: &str,
+    planned_identity: &InventoryIdentity,
+) -> Result<()> {
+    let current_identity = crate::providers::inventory_identity(provider_id)
+        .await?
+        .into_identity()?;
+    if current_identity != *planned_identity {
+        anyhow::bail!("provider inventory identity changed before refresh completed");
+    }
+
+    Ok(())
+}
 
 /// In-memory state for an active ACP session.
 ///
@@ -613,6 +630,100 @@ fn provider_config_key_to_dto(key: crate::providers::base::ConfigKey) -> Provide
     }
 }
 
+const SECRET_MASK_PREFIX_LEN: usize = 4;
+const SECRET_MASK_SUFFIX_LEN: usize = 3;
+const SECRET_MASK_FALLBACK: &str = "***";
+
+fn mask_secret_value(value: &str) -> String {
+    let prefix: String = value.chars().take(SECRET_MASK_PREFIX_LEN).collect();
+    let suffix_chars: Vec<char> = value.chars().rev().take(SECRET_MASK_SUFFIX_LEN).collect();
+    let suffix: String = suffix_chars.into_iter().rev().collect();
+
+    if prefix.is_empty()
+        || suffix.is_empty()
+        || value.chars().count() <= SECRET_MASK_PREFIX_LEN + SECRET_MASK_SUFFIX_LEN
+    {
+        return SECRET_MASK_FALLBACK.to_string();
+    }
+
+    format!("{prefix}...{suffix}")
+}
+
+fn config_value_to_string(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(value) if value.is_empty() => None,
+        serde_json::Value::String(value) => Some(value.clone()),
+        other => serde_json::to_string(other).ok(),
+    }
+}
+
+fn provider_config_field_value(
+    config: &Config,
+    key: &crate::providers::base::ConfigKey,
+    secrets: Option<&HashMap<String, serde_json::Value>>,
+) -> ProviderConfigFieldValueDto {
+    let value = if key.secret {
+        std::env::var(key.name.to_uppercase()).ok().or_else(|| {
+            secrets
+                .and_then(|values| values.get(&key.name))
+                .and_then(config_value_to_string)
+        })
+    } else {
+        config
+            .get_param::<serde_json::Value>(&key.name)
+            .ok()
+            .and_then(|value| config_value_to_string(&value))
+    };
+
+    ProviderConfigFieldValueDto {
+        key: key.name.clone(),
+        value: value.as_deref().map(|value| {
+            if key.secret {
+                mask_secret_value(value)
+            } else {
+                value.to_string()
+            }
+        }),
+        is_set: value.is_some(),
+        is_secret: key.secret,
+        required: key.required,
+    }
+}
+
+fn refresh_skip_reason_to_dto(reason: RefreshSkipReason) -> RefreshProviderInventorySkipReasonDto {
+    match reason {
+        RefreshSkipReason::UnknownProvider => {
+            RefreshProviderInventorySkipReasonDto::UnknownProvider
+        }
+        RefreshSkipReason::NotConfigured => RefreshProviderInventorySkipReasonDto::NotConfigured,
+        RefreshSkipReason::DoesNotSupportRefresh => {
+            RefreshProviderInventorySkipReasonDto::DoesNotSupportRefresh
+        }
+        RefreshSkipReason::AlreadyRefreshing => {
+            RefreshProviderInventorySkipReasonDto::AlreadyRefreshing
+        }
+    }
+}
+
+fn refresh_plan_to_response(refresh_plan: RefreshPlan) -> RefreshProviderInventoryResponse {
+    RefreshProviderInventoryResponse {
+        started: refresh_plan
+            .started
+            .into_iter()
+            .map(|job| job.provider_id)
+            .collect(),
+        skipped: refresh_plan
+            .skipped
+            .into_iter()
+            .map(|entry| RefreshProviderInventorySkipDto {
+                provider_id: entry.provider_id,
+                reason: refresh_skip_reason_to_dto(entry.reason),
+            })
+            .collect(),
+    }
+}
+
 fn build_model_state(current_model: &str, inventory: &ProviderInventoryEntry) -> SessionModelState {
     let mut available_models = inventory
         .models
@@ -921,6 +1032,7 @@ impl GooseAcpAgent {
                         Some(&goose_session.extension_data),
                         &config,
                     );
+                    Config::global().invalidate_secrets_cache();
                     match self
                         .create_provider(provider_name, model_config.clone(), ext_state)
                         .await
@@ -933,34 +1045,84 @@ impl GooseAcpAgent {
                                 .plan_refresh(std::slice::from_ref(&provider_id))
                                 .await
                             {
-                                Ok(plan) if plan.started.iter().any(|id| id == &provider_id) => {
-                                    match provider.fetch_recommended_models().await {
-                                        Ok(models) => {
-                                            if let Err(error) = self
-                                                .provider_inventory
-                                                .store_refreshed_models(&provider_id, &models)
-                                                .await
+                                Ok(plan)
+                                    if plan
+                                        .started
+                                        .iter()
+                                        .any(|job| job.provider_id == provider_id) =>
+                                {
+                                    let refresh_job = plan
+                                        .started
+                                        .into_iter()
+                                        .find(|job| job.provider_id == provider_id);
+                                    if let Some(refresh_job) = refresh_job {
+                                        let mut refresh_guard = self
+                                            .provider_inventory
+                                            .refresh_guard(&refresh_job.identity);
+                                        let fetch_result: Result<Vec<String>> =
+                                            match ensure_refresh_identity_current(
+                                                &provider_id,
+                                                &refresh_job.identity,
+                                            )
+                                            .await
                                             {
-                                                warn!(
-                                                    provider = %provider_id,
-                                                    error = %error,
-                                                    "failed to store refreshed provider inventory during session init"
-                                                );
-                                            }
-                                        }
-                                        Err(error) => {
-                                            if let Err(store_error) = self
-                                                .provider_inventory
-                                                .store_refresh_error(
-                                                    &provider_id,
-                                                    error.to_string(),
+                                                Ok(()) => match AssertUnwindSafe(
+                                                    provider.fetch_recommended_models(),
                                                 )
+                                                .catch_unwind()
                                                 .await
-                                            {
+                                                {
+                                                    Ok(Ok(models)) => Ok(models),
+                                                    Ok(Err(error)) => {
+                                                        Err(anyhow::anyhow!(error.to_string()))
+                                                    }
+                                                    Err(_) => Err(anyhow::anyhow!(
+                                                        "provider inventory refresh task panicked"
+                                                    )),
+                                                },
+                                                Err(error) => Err(error),
+                                            };
+                                        match fetch_result {
+                                            Ok(models) => {
+                                                if let Err(error) = self
+                                                    .provider_inventory
+                                                    .store_refreshed_models_for_identity(
+                                                        &refresh_job.identity,
+                                                        &models,
+                                                    )
+                                                    .await
+                                                {
+                                                    warn!(
+                                                        provider = %provider_id,
+                                                        error = %error,
+                                                        "failed to store refreshed provider inventory during session init"
+                                                    );
+                                                } else {
+                                                    refresh_guard.complete();
+                                                }
+                                            }
+                                            Err(error) => {
+                                                let error_message = error.to_string();
+                                                if let Err(store_error) = self
+                                                    .provider_inventory
+                                                    .store_refresh_error_for_identity(
+                                                        &refresh_job.identity,
+                                                        error_message.clone(),
+                                                    )
+                                                    .await
+                                                {
+                                                    warn!(
+                                                        provider = %provider_id,
+                                                        error = %store_error,
+                                                        "failed to store provider inventory refresh error during session init"
+                                                    );
+                                                } else {
+                                                    refresh_guard.complete();
+                                                }
                                                 warn!(
                                                     provider = %provider_id,
-                                                    error = %store_error,
-                                                    "failed to store provider inventory refresh error during session init"
+                                                    error = %error_message,
+                                                    "provider inventory refresh failed during session init"
                                                 );
                                             }
                                         }
@@ -3003,66 +3165,265 @@ impl GooseAcpAgent {
         })
     }
 
+    async fn provider_config_status(&self, provider_id: &str) -> ProviderConfigStatusDto {
+        let is_configured = crate::providers::get_from_registry(provider_id)
+            .await
+            .map(|entry| entry.inventory_configured())
+            .unwrap_or(false);
+        ProviderConfigStatusDto {
+            provider_id: provider_id.to_string(),
+            is_configured,
+        }
+    }
+
+    async fn provider_config_statuses(
+        &self,
+        provider_ids: &[String],
+    ) -> Vec<ProviderConfigStatusDto> {
+        let mut ids = if provider_ids.is_empty() {
+            crate::providers::providers()
+                .await
+                .into_iter()
+                .map(|(metadata, _)| metadata.name)
+                .collect::<Vec<_>>()
+        } else {
+            provider_ids.to_vec()
+        };
+        ids.sort();
+        ids.dedup();
+
+        let mut statuses = Vec::with_capacity(ids.len());
+        for provider_id in ids {
+            statuses.push(self.provider_config_status(&provider_id).await);
+        }
+        statuses
+    }
+
+    fn spawn_provider_inventory_refresh_jobs(&self, refresh_plan: &RefreshPlan) {
+        for refresh_job in refresh_plan.started.iter().cloned() {
+            let provider_inventory = self.provider_inventory.clone();
+            let provider_factory = Arc::clone(&self.provider_factory);
+            let provider_id = refresh_job.provider_id.clone();
+            let identity = refresh_job.identity.clone();
+            tokio::spawn(async move {
+                let mut refresh_guard = provider_inventory.refresh_guard(&identity);
+                let provider_result = AssertUnwindSafe(async {
+                    let metadata = crate::providers::get_from_registry(&provider_id).await?;
+                    let model_config =
+                        crate::model::ModelConfig::new(&metadata.metadata().default_model)?
+                            .with_canonical_limits(&provider_id);
+                    provider_factory(provider_id.clone(), model_config, Vec::new()).await
+                })
+                .catch_unwind()
+                .await;
+
+                let fetch_result: Result<Vec<String>> = match provider_result {
+                    Ok(Ok(provider)) => {
+                        match ensure_refresh_identity_current(&provider_id, &identity).await {
+                            Ok(()) => match AssertUnwindSafe(provider.fetch_recommended_models())
+                                .catch_unwind()
+                                .await
+                            {
+                                Ok(Ok(models)) => Ok(models),
+                                Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
+                                Err(_) => {
+                                    Err(anyhow::anyhow!("provider inventory refresh task panicked"))
+                                }
+                            },
+                            Err(error) => Err(error),
+                        }
+                    }
+                    Ok(Err(error)) => Err(error),
+                    Err(_) => Err(anyhow::anyhow!("provider inventory refresh task panicked")),
+                };
+
+                match fetch_result {
+                    Ok(models) => match provider_inventory
+                        .store_refreshed_models_for_identity(&identity, &models)
+                        .await
+                    {
+                        Ok(()) => refresh_guard.complete(),
+                        Err(error) => warn!(
+                            provider = %provider_id,
+                            error = %error,
+                            "failed to store refreshed provider inventory"
+                        ),
+                    },
+                    Err(error) => {
+                        let error_message = error.to_string();
+                        match provider_inventory
+                            .store_refresh_error_for_identity(&identity, error_message.clone())
+                            .await
+                        {
+                            Ok(()) => refresh_guard.complete(),
+                            Err(store_error) => warn!(
+                                provider = %provider_id,
+                                error = %store_error,
+                                refresh_error = %error_message,
+                                "failed to store provider inventory refresh error"
+                            ),
+                        }
+                        warn!(provider = %provider_id, error = %error_message, "provider inventory refresh failed");
+                    }
+                }
+            });
+        }
+    }
+
+    async fn start_provider_inventory_refresh(
+        &self,
+        provider_ids: &[String],
+    ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
+        let refresh_plan = self
+            .provider_inventory
+            .plan_refresh(provider_ids)
+            .await
+            .internal_err()?;
+        self.spawn_provider_inventory_refresh_jobs(&refresh_plan);
+        Ok(refresh_plan_to_response(refresh_plan))
+    }
+
     #[custom_method(RefreshProviderInventoryRequest)]
     async fn on_refresh_provider_inventory(
         &self,
         req: RefreshProviderInventoryRequest,
     ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
-        let refresh_plan = self
-            .provider_inventory
-            .plan_refresh(&req.provider_ids)
-            .await;
-        let refresh_plan = refresh_plan.internal_err()?;
-        for provider_id in &refresh_plan.started {
-            let provider_inventory = self.provider_inventory.clone();
-            let provider_factory = Arc::clone(&self.provider_factory);
-            let provider_id = provider_id.clone();
-            tokio::spawn(async move {
-                let result = async {
-                    let metadata = crate::providers::get_from_registry(&provider_id).await?;
-                    let model_config =
-                        crate::model::ModelConfig::new(&metadata.metadata().default_model)?
-                            .with_canonical_limits(&provider_id);
-                    let provider =
-                        provider_factory(provider_id.clone(), model_config, Vec::new()).await?;
-                    let models = provider.fetch_recommended_models().await?;
-                    provider_inventory
-                        .store_refreshed_models(&provider_id, &models)
-                        .await
-                }
-                .await;
-                if let Err(error) = result {
-                    let _ = provider_inventory
-                        .store_refresh_error(&provider_id, error.to_string())
-                        .await;
-                    warn!(provider = %provider_id, error = %error, "provider inventory refresh failed");
-                }
-            });
-        }
-        Ok(RefreshProviderInventoryResponse {
-            started: refresh_plan.started,
-            skipped: refresh_plan
-                .skipped
-                .into_iter()
-                .map(|entry| RefreshProviderInventorySkipDto {
-                    provider_id: entry.provider_id,
-                    reason: match entry.reason {
-                        RefreshSkipReason::UnknownProvider => {
-                            RefreshProviderInventorySkipReasonDto::UnknownProvider
-                        }
-                        RefreshSkipReason::NotConfigured => {
-                            RefreshProviderInventorySkipReasonDto::NotConfigured
-                        }
-                        RefreshSkipReason::DoesNotSupportRefresh => {
-                            RefreshProviderInventorySkipReasonDto::DoesNotSupportRefresh
-                        }
-                        RefreshSkipReason::AlreadyRefreshing => {
-                            RefreshProviderInventorySkipReasonDto::AlreadyRefreshing
-                        }
-                    },
-                })
+        Config::global().invalidate_secrets_cache();
+        self.start_provider_inventory_refresh(&req.provider_ids)
+            .await
+    }
+
+    #[custom_method(ProviderConfigReadRequest)]
+    async fn on_read_provider_config(
+        &self,
+        req: ProviderConfigReadRequest,
+    ) -> Result<ProviderConfigReadResponse, sacp::Error> {
+        let entry = crate::providers::get_from_registry(&req.provider_id)
+            .await
+            .invalid_params_err_ctx("Unknown provider")?;
+        let config = self.config()?;
+        let config_keys = &entry.metadata().config_keys;
+        let secrets = if config_keys.iter().any(|key| key.secret) {
+            Some(config.all_secrets().internal_err()?)
+        } else {
+            None
+        };
+
+        Ok(ProviderConfigReadResponse {
+            fields: config_keys
+                .iter()
+                .map(|key| provider_config_field_value(&config, key, secrets.as_ref()))
                 .collect(),
         })
+    }
+
+    #[custom_method(ProviderConfigStatusRequest)]
+    async fn on_provider_config_status(
+        &self,
+        req: ProviderConfigStatusRequest,
+    ) -> Result<ProviderConfigStatusResponse, sacp::Error> {
+        Ok(ProviderConfigStatusResponse {
+            statuses: self.provider_config_statuses(&req.provider_ids).await,
+        })
+    }
+
+    #[custom_method(ProviderConfigSaveRequest)]
+    async fn on_save_provider_config(
+        &self,
+        req: ProviderConfigSaveRequest,
+    ) -> Result<ProviderConfigMutationResponse, sacp::Error> {
+        let entry = crate::providers::get_from_registry(&req.provider_id)
+            .await
+            .invalid_params_err_ctx("Unknown provider")?;
+        let metadata = entry.metadata().clone();
+        let config = self.config()?;
+        let mut config_updates = Vec::new();
+        let mut secret_updates = Vec::new();
+
+        for field in &req.fields {
+            let Some(config_key) = metadata
+                .config_keys
+                .iter()
+                .find(|config_key| config_key.name == field.key)
+            else {
+                return Err(sacp::Error::invalid_params()
+                    .data(format!("Unsupported provider config field: {}", field.key)));
+            };
+            if config_key.secret != field.is_secret {
+                return Err(sacp::Error::invalid_params().data(format!(
+                    "Provider config field has wrong secret flag: {}",
+                    field.key
+                )));
+            }
+
+            let value = field.value.trim();
+            if value.is_empty() {
+                return Err(sacp::Error::invalid_params().data(format!(
+                    "Provider config field cannot be empty: {}",
+                    field.key
+                )));
+            }
+
+            if config_key.secret {
+                secret_updates.push((
+                    config_key.name.clone(),
+                    serde_json::Value::String(value.to_string()),
+                ));
+            } else {
+                config_updates.push((config_key.name.clone(), value.to_string()));
+            }
+        }
+
+        for (key, value) in config_updates {
+            config
+                .set_param(&key, &value)
+                .internal_err_ctx("Failed to save provider config field")?;
+        }
+        config
+            .set_secret_values(&secret_updates)
+            .internal_err_ctx("Failed to save provider secret fields")?;
+        Config::global().invalidate_secrets_cache();
+
+        let provider_ids = [req.provider_id.clone()];
+        let status = self.provider_config_status(&req.provider_id).await;
+        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigMutationResponse { status, refresh })
+    }
+
+    #[custom_method(ProviderConfigDeleteRequest)]
+    async fn on_delete_provider_config(
+        &self,
+        req: ProviderConfigDeleteRequest,
+    ) -> Result<ProviderConfigMutationResponse, sacp::Error> {
+        let entry = crate::providers::get_from_registry(&req.provider_id)
+            .await
+            .invalid_params_err_ctx("Unknown provider")?;
+        let metadata = entry.metadata().clone();
+        let config = self.config()?;
+        let mut secret_keys = Vec::new();
+
+        for config_key in &metadata.config_keys {
+            if config_key.secret {
+                secret_keys.push(config_key.name.clone());
+            } else {
+                config
+                    .delete(&config_key.name)
+                    .internal_err_ctx("Failed to delete provider config field")?;
+            }
+        }
+
+        config
+            .delete_secret_values(&secret_keys)
+            .internal_err_ctx("Failed to delete provider secret fields")?;
+        crate::providers::cleanup_provider(&req.provider_id)
+            .await
+            .internal_err_ctx("Failed to clean up provider state")?;
+        Config::global().invalidate_secrets_cache();
+
+        let provider_ids = [req.provider_id.clone()];
+        let status = self.provider_config_status(&req.provider_id).await;
+        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigMutationResponse { status, refresh })
     }
 
     #[custom_method(ReadConfigRequest)]
@@ -3118,6 +3479,7 @@ impl GooseAcpAgent {
     ) -> Result<EmptyResponse, sacp::Error> {
         let config = self.config()?;
         config.set_secret(&req.key, &req.value).internal_err()?;
+        Config::global().invalidate_secrets_cache();
         Ok(EmptyResponse {})
     }
 
@@ -3128,6 +3490,7 @@ impl GooseAcpAgent {
     ) -> Result<EmptyResponse, sacp::Error> {
         let config = self.config()?;
         config.delete_secret(&req.key).internal_err()?;
+        Config::global().invalidate_secrets_cache();
         Ok(EmptyResponse {})
     }
 
@@ -3832,6 +4195,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             let t_handler = std::time::Instant::now();
                             match config_id.as_ref() {
                                 "provider" => {
+                                    Config::global().invalidate_secrets_cache();
                                     match agent.update_provider(&session_id.0, &value_id.0, None, None, None).await {
                                         Ok(_) => {}
                                         Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
@@ -3868,16 +4232,25 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                     .plan_refresh(std::slice::from_ref(&provider_id))
                                     .await
                                     .ok()
-                                    .filter(|plan| plan.started.iter().any(|id| id == &provider_id))
+                                    .and_then(|plan| {
+                                        plan.started
+                                            .into_iter()
+                                            .find(|job| job.provider_id == provider_id)
+                                    })
                             } else {
                                 None
                             };
-                            if maybe_refresh.is_some() {
+                            if let Some(refresh_job) = maybe_refresh {
                                 let agent_bg = agent.clone();
                                 let cx_bg = cx.clone();
                                 let session_id_bg = session_id.clone();
                                 tokio::spawn(async move {
-                                    let refreshed = async {
+                                    let refresh_identity = refresh_job.identity;
+                                    let refresh_provider_id = refresh_job.provider_id;
+                                    let mut refresh_guard =
+                                        agent_bg.provider_inventory.refresh_guard(&refresh_identity);
+                                    let provider_result: Result<Arc<dyn Provider>> =
+                                        AssertUnwindSafe(async {
                                         let session_agent =
                                             agent_bg.get_session_agent(&session_id_bg.0, None).await?;
                                         let provider = session_agent
@@ -3885,39 +4258,103 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                             .await
                                             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
                                         let provider_name = provider.get_name().to_string();
-                                        let models = provider
-                                            .fetch_recommended_models()
-                                            .await
-                                            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                                        agent_bg
-                                            .provider_inventory
-                                            .store_refreshed_models(&provider_name, &models)
-                                            .await?;
-                                        agent_bg
-                                            .build_config_update(&session_id_bg)
-                                            .await
-                                            .map_err(|e| anyhow::anyhow!(e.to_string()))
-                                    }
-                                    .await;
-
-                                    match refreshed {
-                                        Ok((fresh_notification, _)) => {
-                                            let _ = cx_bg.send_notification(fresh_notification);
+                                        if provider_name != refresh_provider_id {
+                                            return Err(anyhow::anyhow!(
+                                                "provider changed before inventory refresh completed"
+                                            ));
                                         }
-                                        Err(e) => {
-                                            if let Ok(session_agent) =
-                                                agent_bg.get_session_agent(&session_id_bg.0, None).await
+                                        Ok(provider)
+                                    })
+                                    .catch_unwind()
+                                .await
+                                .map_err(|_| {
+                                    anyhow::anyhow!("provider inventory refresh task panicked")
+                                })
+                                .and_then(|result| result);
+
+                                let fetch_result = match provider_result {
+                                    Ok(provider) => {
+                                        match ensure_refresh_identity_current(
+                                            &refresh_provider_id,
+                                            &refresh_identity,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => match AssertUnwindSafe(
+                                                provider.fetch_recommended_models(),
+                                            )
+                                            .catch_unwind()
+                                            .await
                                             {
-                                                if let Ok(provider) = session_agent.provider().await {
-                                                    let provider_name = provider.get_name().to_string();
-                                                    let _ = agent_bg
-                                                        .provider_inventory
-                                                        .store_refresh_error(&provider_name, e.to_string())
-                                                        .await;
+                                                Ok(Ok(models)) => Ok(models),
+                                                Ok(Err(error)) => {
+                                                    Err(anyhow::anyhow!(error.to_string()))
                                                 }
+                                                Err(_) => Err(anyhow::anyhow!(
+                                                    "provider inventory refresh task panicked"
+                                                )),
+                                            },
+                                            Err(error) => Err(error),
+                                        }
+                                    }
+                                    Err(error) => Err(error),
+                                };
+
+                                match fetch_result {
+                                    Ok(models) => match agent_bg
+                                        .provider_inventory
+                                        .store_refreshed_models_for_identity(
+                                            &refresh_identity,
+                                            &models,
+                                        )
+                                        .await
+                                    {
+                                        Ok(()) => {
+                                            refresh_guard.complete();
+                                            match agent_bg.build_config_update(&session_id_bg).await
+                                            {
+                                                Ok((fresh_notification, _)) => {
+                                                    let _ = cx_bg
+                                                        .send_notification(fresh_notification);
+                                                }
+                                                Err(error) => warn!(
+                                                    provider = %refresh_provider_id,
+                                                    error = %error,
+                                                    "failed to build config update after provider inventory refresh"
+                                                ),
                                             }
                                         }
+                                        Err(error) => warn!(
+                                            provider = %refresh_provider_id,
+                                            error = %error,
+                                            "failed to store refreshed provider inventory after config change"
+                                        ),
+                                    },
+                                    Err(error) => {
+                                        let error_message = error.to_string();
+                                        match agent_bg
+                                            .provider_inventory
+                                            .store_refresh_error_for_identity(
+                                                &refresh_identity,
+                                                error_message.clone(),
+                                            )
+                                            .await
+                                        {
+                                            Ok(()) => refresh_guard.complete(),
+                                            Err(store_error) => warn!(
+                                                provider = %refresh_provider_id,
+                                                error = %store_error,
+                                                refresh_error = %error_message,
+                                                "failed to store provider inventory refresh error after config change"
+                                            ),
+                                        }
+                                        warn!(
+                                            provider = %refresh_provider_id,
+                                            error = %error_message,
+                                            "provider inventory refresh failed after config change"
+                                        );
                                     }
+                                }
                                 });
                             }
 

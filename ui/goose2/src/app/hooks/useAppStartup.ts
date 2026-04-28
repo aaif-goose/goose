@@ -7,12 +7,6 @@ import { setNotificationHandler, getClient } from "@/shared/api/acpConnection";
 import notificationHandler from "@/shared/api/acpNotificationHandler";
 import { perfLog } from "@/shared/lib/perfLog";
 
-const INVENTORY_POLL_DELAYS_MS = [250, 500, 750, 1000, 1500, 2000];
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 export function useAppStartup() {
   useEffect(() => {
     (async () => {
@@ -101,27 +95,12 @@ export function useAppStartup() {
             return;
           }
 
-          const { getProviderInventory, refreshProviderInventory } =
-            await import("@/features/providers/api/inventory");
-          const refresh = await refreshProviderInventory(configuredProviderIds);
-          if (refresh.started.length === 0) {
-            return;
-          }
-
-          inventoryStore.mergeEntries(
-            await getProviderInventory(refresh.started),
+          const { syncProviderInventory } = await import(
+            "@/features/providers/api/inventorySync"
           );
-
-          for (const delayMs of INVENTORY_POLL_DELAYS_MS) {
-            await sleep(delayMs);
-            const refreshedEntries = await getProviderInventory(
-              refresh.started,
-            );
-            inventoryStore.mergeEntries(refreshedEntries);
-            if (refreshedEntries.every((entry) => !entry.refreshing)) {
-              return;
-            }
-          }
+          await syncProviderInventory(configuredProviderIds, {
+            onEntries: (entries) => inventoryStore.mergeEntries(entries),
+          });
         } catch (err) {
           console.error(
             "Failed to refresh provider inventory on startup:",

@@ -34,24 +34,38 @@ import {
   getFieldSetupDescription,
   renderSetupMessage,
 } from "./modelProviderHelpers";
-import { ConnectedFieldsPanel, SetupFieldsPanel } from "./ModelProviderPanels";
+import {
+  ConnectedFieldsPanel,
+  InventorySyncMessage,
+  SetupFieldsPanel,
+} from "./ModelProviderPanels";
+
+interface ProviderFieldSaveInput {
+  key: string;
+  value: string;
+  isSecret: boolean;
+}
 
 interface ModelProviderRowProps {
   provider: ProviderDisplayInfo;
   onGetConfig: (providerId: string) => Promise<ProviderFieldValue[]>;
-  onSaveField: (key: string, value: string, isSecret: boolean) => Promise<void>;
+  onSaveFields: (fields: ProviderFieldSaveInput[]) => Promise<void>;
   onRemoveConfig?: () => Promise<void>;
-  onCompleteNativeSetup: () => Promise<void>;
+  onCompleteNativeSetup: (providerId: string) => Promise<void>;
   saving?: boolean;
+  inventorySyncing?: boolean;
+  inventoryWarning?: string | null;
 }
 
 export function ModelProviderRow({
   provider,
   onGetConfig,
-  onSaveField,
+  onSaveFields,
   onRemoveConfig,
   onCompleteNativeSetup,
   saving = false,
+  inventorySyncing = false,
+  inventoryWarning = null,
 }: ModelProviderRowProps) {
   const { t } = useTranslation("settings");
   const [expanded, setExpanded] = useState(false);
@@ -161,8 +175,10 @@ export function ModelProviderRow({
     const unlisten = await onModelSetupOutput(provider.id, appendSetupOutput);
 
     try {
+      // The native connector exits after writing credentials; only then do we
+      // ask the credentials hook to refresh ACP inventory for this provider.
       await authenticateModelProvider(provider.id, provider.nativeConnectQuery);
-      await onCompleteNativeSetup();
+      await onCompleteNativeSetup(provider.id);
     } catch (nextError) {
       setSetupError(
         nextError instanceof Error
@@ -219,7 +235,9 @@ export function ModelProviderRow({
     setError("");
     try {
       shouldRestorePanelFocus.current = true;
-      await onSaveField(field.key, nextValue, field.secret);
+      await onSaveFields([
+        { key: field.key, value: nextValue, isSecret: field.secret },
+      ]);
       await loadConfig();
       setEditingKey(null);
       setShowSavedState(true);
@@ -269,10 +287,13 @@ export function ModelProviderRow({
 
     setError("");
     try {
-      for (const field of fieldsToSave) {
-        const nextValue = draftValues[field.key]?.trim() ?? "";
-        await onSaveField(field.key, nextValue, field.secret);
-      }
+      await onSaveFields(
+        fieldsToSave.map((field) => ({
+          key: field.key,
+          value: draftValues[field.key]?.trim() ?? "",
+          isSecret: field.secret,
+        })),
+      );
       await loadConfig();
       setShowSavedState(true);
       setPreserveSetupLayout(true);
@@ -364,6 +385,10 @@ export function ModelProviderRow({
               <span>{t("providers.waitingForSignIn")}</span>
             </div>
           ) : null}
+          <InventorySyncMessage
+            syncing={inventorySyncing}
+            warning={inventoryWarning}
+          />
           {setupOutput.length > 0 ? (
             <div className="space-y-1 rounded-md bg-muted px-3 py-2 font-mono text-xxs text-muted-foreground">
               {setupOutput.map((line) => (
@@ -387,6 +412,8 @@ export function ModelProviderRow({
           editingKey={editingKey}
           draftValues={draftValues}
           saving={saving}
+          inventorySyncing={inventorySyncing}
+          inventoryWarning={inventoryWarning}
           showSavedState={showSavedState}
           error={error}
           setupMessage={setupMessage}
@@ -407,6 +434,8 @@ export function ModelProviderRow({
           fieldValueMap={fieldValueMap}
           draftValues={draftValues}
           saving={saving}
+          inventorySyncing={inventorySyncing}
+          inventoryWarning={inventoryWarning}
           showSavedState={showSavedState}
           error={error}
           setupMethod={provider.setupMethod}
@@ -426,6 +455,10 @@ export function ModelProviderRow({
         className="focus-override mx-3 space-y-2 rounded-b-lg border-x border-b px-3 py-3 outline-none"
       >
         {renderSetupMessage(setupMessage)}
+        <InventorySyncMessage
+          syncing={inventorySyncing}
+          warning={inventoryWarning}
+        />
       </div>
     );
   }
@@ -451,6 +484,9 @@ export function ModelProviderRow({
 
         {isConnected ? (
           <IconCheck className="size-4 flex-shrink-0 text-success" />
+        ) : null}
+        {inventorySyncing ? (
+          <Spinner className="size-3.5 flex-shrink-0 text-accent" />
         ) : null}
         {!isConnected && authenticating ? (
           <Spinner className="size-3.5 flex-shrink-0 text-accent" />
