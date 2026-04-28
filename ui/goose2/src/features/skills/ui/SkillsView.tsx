@@ -397,7 +397,11 @@ export function SkillsView() {
       >
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("view.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("view.deleteTitle", {
+                name: deletingSkill?.name ?? "",
+              })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("view.deleteDescription", {
                 name: deletingSkill?.name ?? "",

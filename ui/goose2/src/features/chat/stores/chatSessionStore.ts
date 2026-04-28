@@ -5,7 +5,10 @@ import {
   type AcpSessionInfo,
 } from "@/shared/api/acp";
 import type { Session } from "@/shared/types/chat";
-import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
+import {
+  DEFAULT_CHAT_TITLE,
+  normalizeAcpTitle,
+} from "@/features/chat/lib/sessionTitle";
 import {
   loadSessionMetadataOverlay,
   persistSessionMetadataOverlay,
@@ -164,7 +167,7 @@ function mergeAcpSessionWithOverlay(
     acpSessionId: session.sessionId,
     title:
       overlay?.userSetTitle ??
-      session.title ??
+      normalizeAcpTitle(session.title) ??
       overlay?.lastKnownTitle ??
       "Untitled",
     projectId: session.projectId ?? undefined,

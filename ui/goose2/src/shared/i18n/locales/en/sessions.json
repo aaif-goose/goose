@@ -18,8 +18,8 @@
     "emptyNoMatchesHint": "Try a different search term.",
     "emptyTitle": "No sessions yet",
     "searchArchivedPlaceholder": "Search archived sessions...",
-    "searchError": "Message search failed. Showing title, agent, and project matches only.",
-    "searchPlaceholder": "Search sessions..."
+    "searchError": "Message search failed. Showing title, agent, and project matches only. Try again.",
+    "searchPlaceholder": "Search sessions...",
     "searching": "Searching sessions...",
     "subtitle": "Browse and search past sessions",
     "toggleArchived": "Archived",

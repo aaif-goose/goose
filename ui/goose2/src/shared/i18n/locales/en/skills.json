@@ -14,8 +14,8 @@
     "saving": "Saving..."
   },
   "view": {
-    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This can't be undone.",
-    "deleteTitle": "Delete skill?",
+    "deleteDescription": "This skill and its configuration will be permanently removed.",
+    "deleteTitle": "Delete \"{{name}}\" permanently?",
     "description": "Use skills to add specific instructions or behaviors to any agent.",
     "dropFile": "or drop a file",
     "emptyDescription": "Create a skill or drop a .skill.json file here.",

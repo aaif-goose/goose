@@ -70,8 +70,8 @@
     "title": "Compactación"
   },
   "deleteProject": {
-    "description": "¿Seguro que quieres eliminar permanentemente \"{{name}}\"? Esta acción no se puede deshacer.",
-    "title": "¿Eliminar el proyecto de forma permanente?"
+    "description": "Este proyecto y todos sus datos se eliminarán de forma permanente.",
+    "title": "¿Eliminar \"{{name}}\" de forma permanente?"
   },
   "extensions": {
     "title": "Extensiones",
@@ -127,7 +127,7 @@
     "copyDetails": "Copiar detalles",
     "description": "Verifica las herramientas necesarias y la disponibilidad de agentes para Goose.",
     "empty": "Todavía no hay comprobaciones disponibles.",
-    "rerun": "Volver a ejecutar",
+    "rerun": "Volver a intentar",
     "runFix": "¿Ejecutar corrección?",
     "runFixDescription": "Esto ejecutará el siguiente comando:",
     "running": "Ejecutando comprobaciones...",

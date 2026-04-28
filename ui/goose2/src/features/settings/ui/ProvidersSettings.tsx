@@ -134,9 +134,9 @@ export function ProvidersSettings() {
       <h3 className="text-lg font-semibold font-display tracking-tight">
         {t("providers.title")}
       </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
+      {/* <p className="mt-1 text-sm text-muted-foreground">
         {t("providers.description")}
-      </p>
+      </p> */}
 
       {needsRestart && (
         <div className="mt-3 flex items-center gap-3 rounded-lg border border-accent bg-background-accent/30 px-3 py-2.5">

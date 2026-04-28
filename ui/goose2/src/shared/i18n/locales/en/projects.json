@@ -18,8 +18,8 @@
     "useWorktrees": "Use Git worktrees for branch isolation"
   },
   "view": {
-    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This can't be undone.",
-    "deleteTitle": "Delete project?",
+    "deleteDescription": "This project and all its data will be permanently removed.",
+    "deleteTitle": "Delete \"{{name}}\" permanently?",
     "description": "Organize your work into focused project contexts",
     "emptyDescription": "Create a project to organize your work.",
     "emptyTitle": "No projects yet",

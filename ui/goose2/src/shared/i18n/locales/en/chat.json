@@ -50,7 +50,7 @@
       "noMatchingExtensions": "No matching extensions"
     },
     "errors": {
-      "gitRead": "Unable to read git status."
+      "gitRead": "Couldn't read git status."
     },
     "picker": {
       "selectContext": "Select worktree or branch",
@@ -99,10 +99,10 @@
   "files": {
     "empty": "Files will show here after you assign a project.",
     "folderEmpty": "Folder is empty",
-    "loadError": "Unable to load this folder.",
+    "loadError": "Couldn't load this folder. Try again.",
     "loading": "Loading files...",
     "openFolder": "Open folder: {{path}}",
-    "rootLoadError": "Unable to load this folder."
+    "rootLoadError": "Couldn't load this folder. Try again."
   },
   "image": {
     "view": "View {{label}}"

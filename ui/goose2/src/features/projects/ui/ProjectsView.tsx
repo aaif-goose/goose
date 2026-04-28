@@ -300,7 +300,11 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
       >
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("view.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("view.deleteTitle", {
+                name: deletingProject?.name ?? "",
+              })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("view.deleteDescription", {
                 name: deletingProject?.name ?? "",
