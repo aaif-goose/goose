@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
-import { StatusBar } from "@/features/status/ui/StatusBar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
 import type { ProjectInfo } from "@/features/projects/api/projects";
@@ -152,17 +151,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     }
   }, [activeSessionId, activeView]);
 
-  const isHome = activeView === "home";
-
   const activeSession = activeSessionId
     ? sessionStore.getSession(activeSessionId)
     : undefined;
-  const modelName =
-    activeView === "chat" ? activeSession?.modelName : undefined;
-  const tokenCount =
-    activeView === "chat" && activeSessionId
-      ? chatStore.getSessionRuntime(activeSessionId).tokenState.totalTokens
-      : 0;
   const homeSession = homeSessionId
     ? sessionStore.getSession(homeSessionId)
     : undefined;
@@ -667,7 +658,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-      <TopBar onSettingsClick={() => openSettings()} />
+      <TopBar />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div
@@ -684,6 +675,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             width={sidebarWidth}
             isResizing={isResizing}
             onCollapse={toggleSidebar}
+            onSettingsClick={() => openSettings()}
             onNavigate={handleNavigate}
             onNewChatInProject={handleNewChatInProject}
             onNewChat={() => {
@@ -733,18 +725,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             />
           )}
         </main>
-      </div>
-
-      <div
-        className={`overflow-hidden transition-all duration-300 ease-in-out ${
-          isHome ? "max-h-0 opacity-0" : "max-h-8 opacity-100"
-        }`}
-      >
-        <StatusBar
-          modelName={modelName}
-          sessionId={activeSessionId ?? undefined}
-          tokenCount={tokenCount}
-        />
       </div>
 
       {settingsOpen && (

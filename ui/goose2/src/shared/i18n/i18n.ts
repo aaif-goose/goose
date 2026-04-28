@@ -36,7 +36,6 @@ const localeResourceLoaders = {
     settings: () => import("./locales/en/settings.json"),
     skills: () => import("./locales/en/skills.json"),
     sidebar: () => import("./locales/en/sidebar.json"),
-    status: () => import("./locales/en/status.json"),
     sessions: () => import("./locales/en/sessions.json"),
   },
   es: {
@@ -48,7 +47,6 @@ const localeResourceLoaders = {
     settings: () => import("./locales/es/settings.json"),
     skills: () => import("./locales/es/skills.json"),
     sidebar: () => import("./locales/es/sidebar.json"),
-    status: () => import("./locales/es/status.json"),
     sessions: () => import("./locales/es/sessions.json"),
   },
 } as const satisfies Record<

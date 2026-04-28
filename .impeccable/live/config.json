@@ -1,0 +1,6 @@
+{
+  "files": ["ui/goose2/index.html"],
+  "insertBefore": "</body>",
+  "commentSyntax": "html",
+  "cspChecked": true
+}
