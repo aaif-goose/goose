@@ -64,11 +64,6 @@ struct JsonOutput {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonMetadata {
-    /// Cumulative tokens across the whole session (sum of every LLM round-trip).
-    /// Mirrors `Session::accumulated_total_tokens`, **not** `Session::total_tokens`
-    /// (which is the last-turn context size and gets overwritten / reset on
-    /// compaction — see `update_session_metrics` in
-    /// `goose/src/agents/reply_parts.rs`).
     total_tokens: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     input_tokens: Option<i32>,
@@ -91,9 +86,6 @@ enum StreamEvent {
     Error {
         error: String,
     },
-    /// Emitted once at end of a `goose run` in `--output-format stream-json`.
-    /// `total_tokens` is the **cumulative** session usage
-    /// (`Session::accumulated_total_tokens`), not the last-turn context size.
     Complete {
         total_tokens: Option<i32>,
         #[serde(skip_serializing_if = "Option::is_none")]
