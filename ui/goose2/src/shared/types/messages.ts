@@ -242,6 +242,7 @@ export function getTextContent(message: Message): string {
 export function createUserMessage(
   text: string,
   attachments?: MessageAttachment[],
+  chips?: MessageChip[],
 ): Message {
   return {
     id: crypto.randomUUID(),
@@ -252,6 +253,7 @@ export function createUserMessage(
       userVisible: true,
       agentVisible: true,
       ...(attachments ? { attachments } : {}),
+      ...(chips && chips.length > 0 ? { chips } : {}),
     },
   };
 }

@@ -5,16 +5,15 @@ import type {
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import {
-  ensureReplayBuffer,
   getBufferedMessage,
   findLatestUnpairedToolRequest,
 } from "@/features/chat/hooks/replayBuffer";
 import type {
-  TextContent,
   ToolRequestContent,
   ToolResponseContent,
 } from "@/shared/types/messages";
 import type { AcpNotificationHandler } from "./acpConnection";
+import { handleReplayUserMessageChunk } from "./acpSkillReplayChips";
 import {
   attachMcpAppPayload,
   extractToolResultText,
@@ -168,31 +167,7 @@ function handleReplay(
       clearReplayAssistantMessage(sessionId);
       if (update.content.type !== "text" || !("text" in update.content)) break;
       const messageId = update.messageId ?? crypto.randomUUID();
-      const buffer = ensureReplayBuffer(sessionId);
-      const existing = getBufferedMessage(sessionId, messageId);
-      // biome-ignore lint/suspicious/noExplicitAny: wire format has annotations but SDK types don't
-      const rawAnn = (update.content as any).annotations;
-      const ann: TextContent["annotations"] | undefined =
-        typeof rawAnn === "object" && rawAnn !== null ? rawAnn : undefined;
-      // Drop assistant-only blocks so they never enter chat state.
-      if (
-        ann?.audience &&
-        ann.audience.length > 0 &&
-        !ann.audience.includes("user")
-      )
-        break;
-      const textBlock = makeTextBlock(update.content.text, ann);
-      if (!existing) {
-        buffer.push({
-          id: messageId,
-          role: "user",
-          created: Date.now(),
-          content: [textBlock],
-          metadata: { userVisible: true, agentVisible: true },
-        });
-      } else {
-        existing.content.push(textBlock);
-      }
+      handleReplayUserMessageChunk(sessionId, messageId, update.content);
       break;
     }
 
@@ -467,13 +442,6 @@ function handleShared(
 function findStreamingMessageId(sessionId: string): string | null {
   return useChatStore.getState().getSessionRuntime(sessionId)
     .streamingMessageId;
-}
-
-function makeTextBlock(
-  text: string,
-  ann?: TextContent["annotations"],
-): TextContent {
-  return { type: "text", text, ...(ann ? { annotations: ann } : {}) };
 }
 
 function ensureLiveAssistantMessage(

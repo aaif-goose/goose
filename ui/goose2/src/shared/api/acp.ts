@@ -20,6 +20,7 @@ export interface AcpProvider {
 
 export interface AcpSendMessageOptions {
   systemPrompt?: string;
+  assistantPrompt?: string;
   personaId?: string;
   personaName?: string;
   /** Image attachments as [base64Data, mimeType] pairs. */
@@ -64,7 +65,7 @@ export async function acpSendMessage(
   prompt: string,
   options: AcpSendMessageOptions = {},
 ): Promise<void> {
-  const { systemPrompt, personaId, images } = options;
+  const { systemPrompt, assistantPrompt, personaId, images } = options;
   const sid = sessionId.slice(0, 8);
   const tStart = performance.now();
 
@@ -78,6 +79,13 @@ export async function acpSendMessage(
     content.push({
       type: "text",
       text: systemPrompt,
+      annotations: { audience: ["assistant"] },
+    });
+  }
+  if (assistantPrompt?.trim()) {
+    content.push({
+      type: "text",
+      text: assistantPrompt,
       annotations: { audience: ["assistant"] },
     });
   }

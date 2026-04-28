@@ -1,6 +1,6 @@
 import type { AcpProvider } from "@/shared/api/acp";
 import type { Persona } from "@/shared/types/agents";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
+import type { ChatAttachmentDraft, MessageChip } from "@/shared/types/messages";
 
 export interface ModelOption {
   id: string;
@@ -28,11 +28,18 @@ export interface ChatSkillDraft {
   sourceLabel?: string;
 }
 
+export interface ChatSendOptions {
+  displayText?: string;
+  assistantPrompt?: string;
+  chips?: MessageChip[];
+}
+
 export interface ChatInputProps {
   onSend: (
     text: string,
     personaId?: string,
     attachments?: ChatAttachmentDraft[],
+    options?: ChatSendOptions,
   ) => boolean | Promise<boolean>;
   onStop?: () => void;
   isStreaming?: boolean;

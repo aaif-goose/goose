@@ -14,7 +14,7 @@ import {
   INITIAL_SESSION_CHAT_RUNTIME,
   INITIAL_TOKEN_STATE,
 } from "@/shared/types/chat";
-import type { ChatSkillDraft } from "../types";
+import type { ChatSendOptions, ChatSkillDraft } from "../types";
 import { loadCachedDrafts, persistDrafts } from "./draftPersistence";
 
 function createInitialSessionRuntime(): SessionChatRuntime {
@@ -28,6 +28,7 @@ export interface QueuedMessage {
   text: string;
   personaId?: string;
   attachments?: ChatAttachmentDraft[];
+  sendOptions?: ChatSendOptions;
 }
 
 export interface ScrollTargetMessage {

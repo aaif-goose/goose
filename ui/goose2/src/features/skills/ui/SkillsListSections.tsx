@@ -6,6 +6,8 @@ import {
   AccordionSectionTrigger,
 } from "@/shared/ui/accordion";
 import { Button } from "@/shared/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
+import { IconMessagePlus } from "@tabler/icons-react";
 import type { SkillViewInfo } from "../lib/skillCategories";
 
 export interface SkillsSection {
@@ -58,7 +60,7 @@ export function SkillsListSections({
                 {section.skills.map((skill) => (
                   <div
                     key={`${section.id}-${skill.id}`}
-                    className="group relative flex items-start gap-3 px-5 py-4 transition-colors hover:bg-muted/20"
+                    className="group relative flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/20"
                   >
                     <button
                       type="button"
@@ -77,18 +79,32 @@ export function SkillsListSections({
                       ) : null}
                     </div>
                     {onStartChat ? (
-                      <Button
-                        type="button"
-                        variant="inline-subtle"
-                        size="xs"
-                        className="relative z-20 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                        onClick={() => onStartChat(skill)}
-                        aria-label={t("view.startChat", {
-                          name: skill.name,
-                        })}
-                      >
-                        {t("view.useInChat")}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline-flat"
+                            size="icon-xs"
+                            className="relative z-20 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                            onClick={() => onStartChat(skill)}
+                            aria-label={t("view.startChat", {
+                              name: skill.name,
+                            })}
+                          >
+                            <IconMessagePlus className="size-3.5" />
+                            <span className="sr-only">
+                              {t("view.startChatShort")}
+                            </span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          align="center"
+                          sideOffset={8}
+                        >
+                          <p>{t("view.startChatShort")}</p>
+                        </TooltipContent>
+                      </Tooltip>
                     ) : null}
                   </div>
                 ))}

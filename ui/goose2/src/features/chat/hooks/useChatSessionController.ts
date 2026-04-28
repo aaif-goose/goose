@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatSkillDraft } from "../types";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
+import type { ChatSendOptions } from "../types";
 import { INITIAL_TOKEN_STATE } from "@/shared/types/chat";
 import { useChat } from "./useChat";
 import { useAutoCompactPreferences } from "./useAutoCompactPreferences";
@@ -484,9 +485,14 @@ export function useChatSessionController({
       text: string,
       overridePersona?: { id: string; name?: string },
       attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
     ) => {
       if (!canAutoCompactBeforeSend(overridePersona)) {
-        void sendMessage(text, overridePersona, attachments);
+        if (sendOptions) {
+          void sendMessage(text, overridePersona, attachments, sendOptions);
+        } else {
+          void sendMessage(text, overridePersona, attachments);
+        }
         return true;
       }
 
@@ -496,7 +502,11 @@ export function useChatSessionController({
           return false;
         }
 
-        void sendMessage(text, overridePersona, attachments);
+        if (sendOptions) {
+          void sendMessage(text, overridePersona, attachments, sendOptions);
+        } else {
+          void sendMessage(text, overridePersona, attachments);
+        }
         return true;
       })();
     },
@@ -511,6 +521,7 @@ export function useChatSessionController({
   const deferredSend = useRef<{
     text: string;
     attachments?: ChatAttachmentDraft[];
+    sendOptions?: ChatSendOptions;
     resolve?: (accepted: boolean) => void;
   } | null>(null);
   const queue = useMessageQueue(
@@ -520,10 +531,15 @@ export function useChatSessionController({
   );
 
   const handleSend = useCallback(
-    (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {
+    (
+      text: string,
+      personaId?: string,
+      attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
+    ) => {
       if (!sessionId) {
         if (!queue.queuedMessage) {
-          queue.enqueue(text, personaId, attachments);
+          queue.enqueue(text, personaId, attachments, sendOptions);
         }
         return true;
       }
@@ -531,16 +547,16 @@ export function useChatSessionController({
       if (personaId && personaId !== selectedPersonaId) {
         handlePersonaChange(personaId);
         return new Promise<boolean>((resolve) => {
-          deferredSend.current = { text, attachments, resolve };
+          deferredSend.current = { text, attachments, sendOptions, resolve };
         });
       }
 
       if (chatState !== "idle" && !queue.queuedMessage) {
-        queue.enqueue(text, personaId, attachments);
+        queue.enqueue(text, personaId, attachments, sendOptions);
         return true;
       }
 
-      return sendWithAutoCompact(text, undefined, attachments);
+      return sendWithAutoCompact(text, undefined, attachments, sendOptions);
     },
     [
       chatState,
@@ -554,9 +570,14 @@ export function useChatSessionController({
 
   useEffect(() => {
     if (deferredSend.current && selectedPersona) {
-      const { text, attachments, resolve } = deferredSend.current;
+      const { text, attachments, sendOptions, resolve } = deferredSend.current;
       deferredSend.current = null;
-      const sendResult = sendWithAutoCompact(text, undefined, attachments);
+      const sendResult = sendWithAutoCompact(
+        text,
+        undefined,
+        attachments,
+        sendOptions,
+      );
       if (sendResult instanceof Promise) {
         void sendResult.then((accepted) => {
           if (accepted === false) {

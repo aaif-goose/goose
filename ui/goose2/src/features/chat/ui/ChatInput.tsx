@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { formatSkillDraftsChatPrompt } from "@/features/skills/lib/skillChatPrompt";
 import {
   attachmentSnapshotsMatch,
   skillDraftSnapshotsMatch,
 } from "../lib/chatInputSnapshots";
+import { getChatInputPlaceholder } from "../lib/chatInputPlaceholder";
+import { buildSkillSendPayload } from "../lib/skillSendPayload";
 import { cn } from "@/shared/lib/cn";
 import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import { Badge } from "@/shared/ui/badge";
@@ -127,7 +128,9 @@ export function ChatInput({
   const stickyPersona = activePersona;
 
   const canSend =
-    (text.trim().length > 0 || attachments.length > 0) &&
+    (text.trim().length > 0 ||
+      attachments.length > 0 ||
+      selectedSkills.length > 0) &&
     !hasQueuedMessage &&
     !disabled;
 
@@ -149,7 +152,7 @@ export function ChatInput({
     filteredPersonas,
     filteredSkills,
     filteredFiles,
-    expandSkillSlashCommand,
+    resolveSkillSlashCommand,
     detectMention,
     closeMention,
     navigateMention,
@@ -210,16 +213,28 @@ export function ChatInput({
 
     const submittedText = text;
     const submittedSkills = selectedSkills;
-    const messageText =
-      submittedSkills.length > 0
-        ? formatSkillDraftsChatPrompt(submittedSkills, submittedText)
-        : (expandSkillSlashCommand(submittedText) ?? submittedText);
-    const submittedAttachments = attachments;
-    const sendResult = onSend(
-      messageText.trim(),
-      selectedPersonaId ?? undefined,
-      submittedAttachments.length > 0 ? submittedAttachments : undefined,
+    const slashSkillCommand =
+      submittedSkills.length === 0
+        ? resolveSkillSlashCommand(submittedText)
+        : null;
+    const { messageText, sendOptions } = buildSkillSendPayload(
+      submittedText,
+      submittedSkills,
+      slashSkillCommand,
     );
+    const submittedAttachments = attachments;
+    const sendResult = sendOptions
+      ? onSend(
+          messageText,
+          selectedPersonaId ?? undefined,
+          submittedAttachments.length > 0 ? submittedAttachments : undefined,
+          sendOptions,
+        )
+      : onSend(
+          messageText.trim(),
+          selectedPersonaId ?? undefined,
+          submittedAttachments.length > 0 ? submittedAttachments : undefined,
+        );
     const accepted = isPromiseLike<boolean>(sendResult)
       ? await sendResult
       : sendResult;
@@ -244,8 +259,8 @@ export function ChatInput({
     canSend,
     clearAttachments,
     dictation,
-    expandSkillSlashCommand,
     onSend,
+    resolveSkillSlashCommand,
     selectedPersonaId,
     selectedSkills,
     setSelectedSkills,
@@ -347,9 +362,12 @@ export function ChatInput({
     );
     return selectedModel?.displayName ?? selectedModel?.name ?? currentModelId;
   }, [availableModels, currentModel, currentModelId]);
-  const effectivePlaceholder = t("input.placeholder", {
-    agent: agentDisplayName,
-  });
+  const inputPlaceholder = getChatInputPlaceholder(
+    t,
+    agentDisplayName,
+    dictation.isRecording,
+    dictation.isTranscribing,
+  );
 
   const handleClearStickyPersona = useCallback(() => {
     onPersonaChange?.(null);
@@ -437,13 +455,7 @@ export function ChatInput({
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  placeholder={
-                    dictation.isRecording
-                      ? t("toolbar.voiceInputRecording")
-                      : dictation.isTranscribing
-                        ? t("toolbar.voiceInputTranscribing")
-                        : effectivePlaceholder
-                  }
+                  placeholder={inputPlaceholder}
                   disabled={disabled}
                   rows={1}
                   className="mb-3 min-h-[36px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-foreground placeholder:font-light placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"

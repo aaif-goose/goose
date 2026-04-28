@@ -245,6 +245,49 @@ describe("acpNotificationHandler", () => {
     });
   });
 
+  it("replay restores skill chips from assistant-only user chunks", async () => {
+    const replaySessionId = "replay-skill-session";
+    useChatStore.setState({
+      loadingSessionIds: new Set<string>([replaySessionId]),
+    });
+
+    await handleSessionNotification({
+      sessionId: replaySessionId,
+      update: {
+        sessionUpdate: "user_message_chunk",
+        messageId: "user-1",
+        content: {
+          type: "text",
+          text: "Use these skills for this request: capture-task.",
+          annotations: { audience: ["assistant"] },
+        },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: replaySessionId,
+      update: {
+        sessionUpdate: "user_message_chunk",
+        messageId: "user-1",
+        content: {
+          type: "text",
+          text: "redo the settings modal",
+        },
+      },
+    } as never);
+
+    const buffer = getReplayBuffer(replaySessionId);
+    expect(buffer).toHaveLength(1);
+    expect(buffer?.[0]).toMatchObject({
+      id: "user-1",
+      role: "user",
+      content: [{ type: "text", text: "redo the settings modal" }],
+      metadata: {
+        chips: [{ label: "capture-task", type: "skill" }],
+      },
+    });
+  });
+
   it("replay preserves gooseSessionId in MCP app payloads before tracker registration", async () => {
     const replaySessionId = "replay-goose-session-2";
     useChatStore.setState({

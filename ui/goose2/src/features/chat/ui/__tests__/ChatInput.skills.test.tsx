@@ -102,9 +102,14 @@ describe("ChatInput skill mentions", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).toHaveBeenCalledWith(
-      "Use the code-review skill to check this diff",
+      "check this diff",
       undefined,
       undefined,
+      {
+        assistantPrompt: "Use these skills for this request: code-review.",
+        chips: [{ label: "code-review", type: "skill" }],
+        displayText: "check this diff",
+      },
     );
   });
 
@@ -131,9 +136,14 @@ describe("ChatInput skill mentions", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).toHaveBeenCalledWith(
-      "Use the code-review skill to check this diff",
+      "check this diff",
       undefined,
       undefined,
+      {
+        assistantPrompt: "Use these skills for this request: code-review.",
+        chips: [{ label: "code-review", type: "skill" }],
+        displayText: "check this diff",
+      },
     );
   });
 

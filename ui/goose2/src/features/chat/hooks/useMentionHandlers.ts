@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listSkills } from "@/features/skills/api/skills";
-import { expandSkillSlashCommand } from "@/features/skills/lib/skillChatPrompt";
+import {
+  expandSkillSlashCommand,
+  resolveSkillSlashCommand,
+} from "@/features/skills/lib/skillChatPrompt";
 import { listFilesForMentions } from "@/shared/api/system";
 import type { Persona } from "@/shared/types/agents";
 import {
@@ -286,6 +289,8 @@ export function useMentionHandlers({
     filteredFiles,
     expandSkillSlashCommand: (message: string) =>
       expandSkillSlashCommand(message, skillMentionItems),
+    resolveSkillSlashCommand: (message: string) =>
+      resolveSkillSlashCommand(message, skillMentionItems),
     detectMention,
     closeMention,
     navigateMention,

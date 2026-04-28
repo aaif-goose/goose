@@ -1,13 +1,6 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Copy,
-  Check,
-  RotateCcw,
-  Pencil,
-  FileText,
-  FolderClosed,
-} from "lucide-react";
+import { Check, FileText, FolderClosed } from "lucide-react";
 import { IconRobot } from "@tabler/icons-react";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { cn } from "@/shared/lib/cn";
@@ -20,11 +13,7 @@ import {
   formatProviderLabel,
 } from "@/shared/ui/icons/ProviderIcons";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import {
-  MessageActions,
-  MessageAction,
-  MessageResponse,
-} from "@/shared/ui/ai-elements/message";
+import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import {
   Reasoning,
   ReasoningTrigger,
@@ -45,6 +34,8 @@ import type {
   ReasoningContent as ReasoningContentType,
   SystemNotificationContent,
 } from "@/shared/types/messages";
+import { MessageBubbleActions } from "./MessageBubbleActions";
+import { MessageMetadataChip } from "./MessageMetadataChip";
 
 function MessageAttachmentRow({
   attachment,
@@ -202,6 +193,9 @@ function renderContentBlock(
     case "text": {
       const tc = content as TextContent;
       if (isUserMessage) {
+        if (!tc.text.trim()) {
+          return null;
+        }
         return (
           <p key={`text-${index}`} className="whitespace-pre-wrap break-words">
             {tc.text}
@@ -283,31 +277,6 @@ function renderContentBlock(
   }
 }
 
-function CopyAction({
-  copied,
-  onCopy,
-}: {
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  const { t } = useTranslation(["chat", "common"]);
-
-  return (
-    <MessageAction
-      size="xs"
-      variant="ghost-light"
-      className={cn(
-        "text-muted-foreground",
-        copied && "bg-accent text-foreground hover:bg-accent active:bg-accent",
-      )}
-      tooltip={copied ? t("message.copied") : t("common:actions.copy")}
-      onClick={onCopy}
-    >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-    </MessageAction>
-  );
-}
-
 export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming,
@@ -369,6 +338,7 @@ export const MessageBubble = memo(function MessageBubble({
       (assistantDisplayName || personaAvatarUrl || assistantProviderIcon),
   );
   const messageAttachments = message.metadata?.attachments ?? [];
+  const messageChips = message.metadata?.chips ?? [];
   const timestamp = (
     <span
       data-role="message-timestamp"
@@ -430,6 +400,16 @@ export const MessageBubble = memo(function MessageBubble({
           )}
           onClick={handleContentClick}
         >
+          {isUser && messageChips.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1.5">
+              {messageChips.map((chip) => (
+                <MessageMetadataChip
+                  key={`${chip.type}-${chip.label}`}
+                  chip={chip}
+                />
+              ))}
+            </div>
+          )}
           {messageAttachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {messageAttachments.map((attachment) => (
@@ -480,38 +460,16 @@ export const MessageBubble = memo(function MessageBubble({
             isUser ? "right-0" : "left-0",
           )}
         >
-          <MessageActions className="pt-0">
-            {isUser && timestamp}
-            {textContent && (
-              <CopyAction
-                copied={isCopyConfirmed}
-                onCopy={() => copyToClipboard(textContent)}
-              />
-            )}
-            {!isUser && onRetryMessage && (
-              <MessageAction
-                size="xs"
-                variant="ghost-light"
-                className="text-muted-foreground"
-                tooltip={t("common:actions.retry")}
-                onClick={() => onRetryMessage(message.id)}
-              >
-                <RotateCcw className="size-3.5" />
-              </MessageAction>
-            )}
-            {isUser && onEditMessage && (
-              <MessageAction
-                size="xs"
-                variant="ghost-light"
-                className="text-muted-foreground"
-                tooltip={t("common:actions.edit")}
-                onClick={() => onEditMessage(message.id)}
-              >
-                <Pencil className="size-3.5" />
-              </MessageAction>
-            )}
-            {!isUser && timestamp}
-          </MessageActions>
+          <MessageBubbleActions
+            isUser={isUser}
+            messageId={message.id}
+            timestamp={timestamp}
+            textContent={textContent}
+            copied={isCopyConfirmed}
+            onCopy={() => copyToClipboard(textContent)}
+            onRetryMessage={onRetryMessage}
+            onEditMessage={onEditMessage}
+          />
         </div>
       </div>
     </div>

@@ -3,6 +3,12 @@ import type { ChatSkillDraft } from "@/features/chat/types";
 
 type SkillLike = Pick<SkillInfo, "name">;
 type SkillDraftLike = Pick<ChatSkillDraft, "name">;
+export type SkillCommandMatch<TSkill extends SkillLike = SkillLike> = {
+  skill: TSkill;
+  promptText: string;
+  displayText: string;
+};
+const SKILL_INSTRUCTION_PREFIX = "Use these skills for this request:";
 
 const RESERVED_SLASH_COMMANDS = new Set([
   "clear",
@@ -52,6 +58,29 @@ export function formatSkillDraftsChatPrompt(
   return `Use the ${skillNames} skills to ${task}`;
 }
 
+export function formatSkillInstructionPrompt(skills: SkillDraftLike[]): string {
+  const skillNames = skills
+    .map((skill) => skill.name.trim())
+    .filter(Boolean)
+    .join(", ");
+  return `${SKILL_INSTRUCTION_PREFIX} ${skillNames}.`;
+}
+
+export function parseSkillInstructionPrompt(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith(SKILL_INSTRUCTION_PREFIX)) {
+    return [];
+  }
+
+  return trimmed
+    .slice(SKILL_INSTRUCTION_PREFIX.length)
+    .trim()
+    .replace(/[.。]+$/, "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 export function toChatSkillDraft(
   skill: Pick<SkillInfo, "id" | "name" | "description" | "sourceLabel">,
 ): ChatSkillDraft {
@@ -67,6 +96,14 @@ export function expandSkillSlashCommand(
   text: string,
   skills: SkillLike[],
 ): string | null {
+  const match = resolveSkillSlashCommand(text, skills);
+  return match?.promptText ?? null;
+}
+
+export function resolveSkillSlashCommand<TSkill extends SkillLike>(
+  text: string,
+  skills: TSkill[],
+): SkillCommandMatch<TSkill> | null {
   const match = text
     .trimStart()
     .match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/);
@@ -86,5 +123,10 @@ export function expandSkillSlashCommand(
     return null;
   }
 
-  return formatSkillChatPrompt(skill.name, match[2] ?? "");
+  const displayText = match[2]?.trimStart() ?? "";
+  return {
+    skill,
+    promptText: formatSkillChatPrompt(skill.name, displayText),
+    displayText,
+  };
 }
