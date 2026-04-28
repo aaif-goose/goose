@@ -34,6 +34,7 @@ use crate::utils::sanitize_unicode_tags;
 use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, Either};
+use futures::stream::{self, StreamExt};
 use futures::FutureExt;
 use goose_acp_macros::custom_methods;
 use rmcp::model::{
@@ -119,6 +120,7 @@ const ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "ELEVENLABS_TRANSCRIPTIO
 const OPENAI_TRANSCRIPTION_MODEL: &str = "whisper-1";
 const GROQ_TRANSCRIPTION_MODEL: &str = "whisper-large-v3-turbo";
 const ELEVENLABS_TRANSCRIPTION_MODEL: &str = "scribe_v1";
+const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 
 async fn ensure_refresh_identity_current(
     provider_id: &str,
@@ -2473,8 +2475,6 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Error getting agent reply")?;
 
-        use futures::StreamExt;
-
         let mut was_cancelled = false;
         let mut first_event_logged = false;
         let mut event_count: u32 = 0;
@@ -3165,21 +3165,31 @@ impl GooseAcpAgent {
         })
     }
 
-    async fn provider_config_status(&self, provider_id: &str) -> ProviderConfigStatusDto {
-        let is_configured = crate::providers::get_from_registry(provider_id)
-            .await
-            .map(|entry| entry.inventory_configured())
-            .unwrap_or(false);
+    async fn provider_config_status(provider_id: String) -> ProviderConfigStatusDto {
+        let is_configured = match crate::providers::get_from_registry(&provider_id).await {
+            Ok(entry) => {
+                match tokio::task::spawn_blocking(move || entry.inventory_configured()).await {
+                    Ok(is_configured) => is_configured,
+                    Err(error) => {
+                        warn!(
+                            provider = %provider_id,
+                            error = %error,
+                            "provider config status check failed"
+                        );
+                        false
+                    }
+                }
+            }
+            Err(_) => false,
+        };
+
         ProviderConfigStatusDto {
-            provider_id: provider_id.to_string(),
+            provider_id,
             is_configured,
         }
     }
 
-    async fn provider_config_statuses(
-        &self,
-        provider_ids: &[String],
-    ) -> Vec<ProviderConfigStatusDto> {
+    async fn provider_config_statuses(provider_ids: &[String]) -> Vec<ProviderConfigStatusDto> {
         let mut ids = if provider_ids.is_empty() {
             crate::providers::providers()
                 .await
@@ -3192,10 +3202,12 @@ impl GooseAcpAgent {
         ids.sort();
         ids.dedup();
 
-        let mut statuses = Vec::with_capacity(ids.len());
-        for provider_id in ids {
-            statuses.push(self.provider_config_status(&provider_id).await);
-        }
+        let mut statuses = stream::iter(ids)
+            .map(Self::provider_config_status)
+            .buffer_unordered(PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY)
+            .collect::<Vec<_>>()
+            .await;
+        statuses.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
         statuses
     }
 
@@ -3323,7 +3335,7 @@ impl GooseAcpAgent {
         req: ProviderConfigStatusRequest,
     ) -> Result<ProviderConfigStatusResponse, sacp::Error> {
         Ok(ProviderConfigStatusResponse {
-            statuses: self.provider_config_statuses(&req.provider_ids).await,
+            statuses: Self::provider_config_statuses(&req.provider_ids).await,
         })
     }
 
@@ -3379,7 +3391,7 @@ impl GooseAcpAgent {
         Config::global().invalidate_secrets_cache();
 
         let provider_ids = [req.provider_id.clone()];
-        let status = self.provider_config_status(&req.provider_id).await;
+        let status = Self::provider_config_status(req.provider_id.clone()).await;
         let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
         Ok(ProviderConfigChangeResponse { status, refresh })
     }
@@ -3415,7 +3427,7 @@ impl GooseAcpAgent {
         Config::global().invalidate_secrets_cache();
 
         let provider_ids = [req.provider_id.clone()];
-        let status = self.provider_config_status(&req.provider_id).await;
+        let status = Self::provider_config_status(req.provider_id.clone()).await;
         let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
         Ok(ProviderConfigChangeResponse { status, refresh })
     }
