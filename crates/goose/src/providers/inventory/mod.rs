@@ -144,15 +144,34 @@ pub struct RefreshSkip {
 }
 
 #[derive(Debug, Clone)]
-pub struct RefreshJob {
+pub(crate) struct RefreshJob {
     pub provider_id: String,
     pub identity: InventoryIdentity,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct RefreshPlan {
+    pub started: Vec<String>,
+    pub skipped: Vec<RefreshSkip>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RefreshJobPlan {
     pub started: Vec<RefreshJob>,
     pub skipped: Vec<RefreshSkip>,
+}
+
+impl RefreshJobPlan {
+    pub(crate) fn into_public_plan(self) -> RefreshPlan {
+        RefreshPlan {
+            started: self
+                .started
+                .into_iter()
+                .map(|job| job.provider_id)
+                .collect(),
+            skipped: self.skipped,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -161,7 +180,7 @@ pub struct ProviderInventoryService {
     refreshing_keys: Arc<RwLock<HashSet<String>>>,
 }
 
-pub struct RefreshGuard {
+pub(crate) struct RefreshGuard {
     inventory_key: String,
     refreshing_keys: Arc<RwLock<HashSet<String>>>,
     completed: bool,
@@ -298,8 +317,17 @@ impl ProviderInventoryService {
     }
 
     pub async fn plan_refresh(&self, provider_ids: &[String]) -> Result<RefreshPlan> {
+        self.plan_refresh_jobs(provider_ids)
+            .await
+            .map(RefreshJobPlan::into_public_plan)
+    }
+
+    pub(crate) async fn plan_refresh_jobs(
+        &self,
+        provider_ids: &[String],
+    ) -> Result<RefreshJobPlan> {
         let ids = self.resolve_provider_ids(provider_ids).await;
-        let mut plan = RefreshPlan::default();
+        let mut plan = RefreshJobPlan::default();
         let mut inserted_refreshing = Vec::new();
 
         for provider_id in ids {
@@ -363,7 +391,19 @@ impl ProviderInventoryService {
         Ok(plan)
     }
 
-    pub async fn store_refreshed_models_for_identity(
+    pub async fn store_refreshed_models(
+        &self,
+        provider_id: &str,
+        model_ids: &[String],
+    ) -> Result<()> {
+        let descriptor = self.require_provider(provider_id).await?;
+        self.store_refreshed_models_for_identity(&descriptor.identity, model_ids)
+            .await?;
+        self.clear_refreshing_many(std::slice::from_ref(&descriptor.identity));
+        Ok(())
+    }
+
+    pub(crate) async fn store_refreshed_models_for_identity(
         &self,
         identity: &InventoryIdentity,
         model_ids: &[String],
@@ -437,7 +477,19 @@ impl ProviderInventoryService {
         Ok(())
     }
 
-    pub async fn store_refresh_error_for_identity(
+    pub async fn store_refresh_error(
+        &self,
+        provider_id: &str,
+        error: impl Into<String>,
+    ) -> Result<()> {
+        let descriptor = self.require_provider(provider_id).await?;
+        self.store_refresh_error_for_identity(&descriptor.identity, error)
+            .await?;
+        self.clear_refreshing_many(std::slice::from_ref(&descriptor.identity));
+        Ok(())
+    }
+
+    pub(crate) async fn store_refresh_error_for_identity(
         &self,
         identity: &InventoryIdentity,
         error: impl Into<String>,
@@ -487,7 +539,7 @@ impl ProviderInventoryService {
         }
     }
 
-    pub fn refresh_guard(&self, identity: &InventoryIdentity) -> RefreshGuard {
+    pub(crate) fn refresh_guard(&self, identity: &InventoryIdentity) -> RefreshGuard {
         RefreshGuard {
             inventory_key: identity.inventory_key.clone(),
             refreshing_keys: Arc::clone(&self.refreshing_keys),
@@ -527,6 +579,12 @@ impl ProviderInventoryService {
             static_models: metadata.known_models,
             model_selection_hint: metadata.model_selection_hint,
         }))
+    }
+
+    async fn require_provider(&self, provider_id: &str) -> Result<ProviderDescriptor> {
+        self.describe_provider(provider_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", provider_id))
     }
 
     async fn mark_refresh_started(&self, identity: &InventoryIdentity) -> Result<()> {
@@ -1044,6 +1102,40 @@ mod tests {
         service.clear_refreshing_many(&[left, right]);
 
         assert!(service.refreshing_keys.read().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn identity_store_writes_to_captured_inventory_key() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let service = ProviderInventoryService::new(Arc::new(SessionStorage::new(
+            temp_dir.path().to_path_buf(),
+        )));
+        let plan_time_identity = test_identity("openai", "plan-time-key");
+        let current_identity = test_identity("openai", "current-key");
+        let sentinel_model = "stark-plan-time-model".to_string();
+
+        service
+            .store_refreshed_models_for_identity(
+                &plan_time_identity,
+                std::slice::from_ref(&sentinel_model),
+            )
+            .await
+            .unwrap();
+
+        let plan_time_snapshot = service
+            .read_snapshot(&plan_time_identity)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(plan_time_snapshot
+            .models
+            .iter()
+            .any(|model| model.id == sentinel_model));
+        assert!(service
+            .read_snapshot(&current_identity)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[test]

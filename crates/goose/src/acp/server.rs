@@ -25,8 +25,8 @@ use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
 use crate::providers::inventory::{
-    InventoryIdentity, ProviderInventoryEntry, ProviderInventoryService, RefreshPlan,
-    RefreshSkipReason,
+    InventoryIdentity, ProviderInventoryEntry, ProviderInventoryService, RefreshJobPlan,
+    RefreshPlan, RefreshSkipReason,
 };
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
@@ -710,11 +710,7 @@ fn refresh_skip_reason_to_dto(reason: RefreshSkipReason) -> RefreshProviderInven
 
 fn refresh_plan_to_response(refresh_plan: RefreshPlan) -> RefreshProviderInventoryResponse {
     RefreshProviderInventoryResponse {
-        started: refresh_plan
-            .started
-            .into_iter()
-            .map(|job| job.provider_id)
-            .collect(),
+        started: refresh_plan.started,
         skipped: refresh_plan
             .skipped
             .into_iter()
@@ -1044,7 +1040,7 @@ impl GooseAcpAgent {
                             prebuilt_provider = Some(provider.clone());
                             match self
                                 .provider_inventory
-                                .plan_refresh(std::slice::from_ref(&provider_id))
+                                .plan_refresh_jobs(std::slice::from_ref(&provider_id))
                                 .await
                             {
                                 Ok(plan)
@@ -3211,7 +3207,7 @@ impl GooseAcpAgent {
         statuses
     }
 
-    fn spawn_provider_inventory_refresh_jobs(&self, refresh_plan: &RefreshPlan) {
+    fn spawn_provider_inventory_refresh_jobs(&self, refresh_plan: &RefreshJobPlan) {
         for refresh_job in refresh_plan.started.iter().cloned() {
             let provider_inventory = self.provider_inventory.clone();
             let provider_factory = Arc::clone(&self.provider_factory);
@@ -3286,13 +3282,15 @@ impl GooseAcpAgent {
         &self,
         provider_ids: &[String],
     ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
-        let refresh_plan = self
+        let refresh_job_plan = self
             .provider_inventory
-            .plan_refresh(provider_ids)
+            .plan_refresh_jobs(provider_ids)
             .await
             .internal_err()?;
-        self.spawn_provider_inventory_refresh_jobs(&refresh_plan);
-        Ok(refresh_plan_to_response(refresh_plan))
+        self.spawn_provider_inventory_refresh_jobs(&refresh_job_plan);
+        Ok(refresh_plan_to_response(
+            refresh_job_plan.into_public_plan(),
+        ))
     }
 
     #[custom_method(RefreshProviderInventoryRequest)]
@@ -4235,7 +4233,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                 let provider_id = value_id.0.to_string();
                                 agent
                                     .provider_inventory
-                                    .plan_refresh(std::slice::from_ref(&provider_id))
+                                    .plan_refresh_jobs(std::slice::from_ref(&provider_id))
                                     .await
                                     .ok()
                                     .and_then(|plan| {
@@ -4257,21 +4255,21 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                         agent_bg.provider_inventory.refresh_guard(&refresh_identity);
                                     let provider_result: Result<Arc<dyn Provider>> =
                                         AssertUnwindSafe(async {
-                                        let session_agent =
-                                            agent_bg.get_session_agent(&session_id_bg.0, None).await?;
-                                        let provider = session_agent
-                                            .provider()
-                                            .await
-                                            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                                        let provider_name = provider.get_name().to_string();
-                                        if provider_name != refresh_provider_id {
-                                            return Err(anyhow::anyhow!(
-                                                "provider changed before inventory refresh completed"
-                                            ));
-                                        }
-                                        Ok(provider)
-                                    })
-                                    .catch_unwind()
+                                            let session_agent =
+                                                agent_bg.get_session_agent(&session_id_bg.0, None).await?;
+                                            let provider = session_agent
+                                                .provider()
+                                                .await
+                                                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                                            let provider_name = provider.get_name().to_string();
+                                            if provider_name != refresh_provider_id {
+                                                return Err(anyhow::anyhow!(
+                                                    "provider changed before inventory refresh completed"
+                                                ));
+                                            }
+                                            Ok(provider)
+                                        })
+                                        .catch_unwind()
                                 .await
                                 .map_err(|_| {
                                     anyhow::anyhow!("provider inventory refresh task panicked")

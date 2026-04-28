@@ -276,13 +276,7 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
             .plan_refresh(&["openai".to_string()])
             .await
             .expect("plan refresh should start for configured OpenAI provider");
-        assert_eq!(plan.started.len(), 1);
-        let job = plan
-            .started
-            .into_iter()
-            .next()
-            .expect("started refresh job should capture inventory identity");
-        let mut refresh_guard = inventory.refresh_guard(&job.identity);
+        assert_eq!(plan.started, vec!["openai".to_string()]);
 
         let entry_during_refresh = inventory
             .entry_for_provider("openai")
@@ -294,34 +288,11 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
             "plan refresh should mark the plan-time identity as refreshing"
         );
 
-        write_secrets(&config_dir, "OPENAI_API_KEY: current-key\n");
-        Config::global().invalidate_secrets_cache();
-
         let sentinel_model = "stark-plan-time-model".to_string();
         inventory
-            .store_refreshed_models_for_identity(
-                &job.identity,
-                std::slice::from_ref(&sentinel_model),
-            )
+            .store_refreshed_models("openai", std::slice::from_ref(&sentinel_model))
             .await
-            .expect("storing with captured identity should succeed even after credentials change");
-        refresh_guard.complete();
-
-        let current_identity_entry = inventory
-            .entry_for_provider("openai")
-            .await
-            .expect("entry should load for current credentials")
-            .expect("OpenAI inventory entry should exist for current credentials");
-        assert!(
-            !current_identity_entry
-                .models
-                .iter()
-                .any(|model| model.id == sentinel_model),
-            "models fetched for the plan-time identity must not be attributed to current credentials"
-        );
-
-        write_secrets(&config_dir, "OPENAI_API_KEY: plan-time-key\n");
-        Config::global().invalidate_secrets_cache();
+            .expect("public store_refreshed_models compatibility wrapper should succeed");
 
         let plan_time_entry = inventory
             .entry_for_provider("openai")
