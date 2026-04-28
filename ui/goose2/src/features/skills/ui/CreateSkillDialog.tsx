@@ -12,45 +12,8 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog";
 import { createSkill, updateSkill } from "../api/skills";
-
-const MAX_SKILL_NAME_LENGTH = 64;
-
-function isValidSkillName(name: string): boolean {
-  return (
-    name.length > 0 &&
-    name.length <= MAX_SKILL_NAME_LENGTH &&
-    !name.startsWith("-") &&
-    !name.endsWith("-") &&
-    [...name].every(
-      (char) =>
-        (char >= "a" && char <= "z") ||
-        (char >= "0" && char <= "9") ||
-        char === "-",
-    )
-  );
-}
-
-function formatSkillName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/^-/, "")
-    .slice(0, MAX_SKILL_NAME_LENGTH);
-}
-
-function getRenamedSkillFileLocation(
-  fileLocation: string,
-  name: string,
-): string {
-  const separator = fileLocation.includes("\\") ? "\\" : "/";
-  const parts = fileLocation.split(separator);
-
-  if (parts.length >= 2) {
-    parts[parts.length - 2] = name;
-  }
-
-  return parts.join(separator);
-}
+import { formatSkillName, isValidSkillName } from "../lib/skillsHelpers";
+import { getRenamedSkillFileLocation } from "../lib/skillsPath";
 
 interface CreateSkillDialogProps {
   isOpen: boolean;

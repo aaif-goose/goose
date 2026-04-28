@@ -1,26 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Upload } from "lucide-react";
-import {
-  IconAdjustmentsHorizontal,
-  IconChevronDown,
-} from "@tabler/icons-react";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button } from "@/shared/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/shared/ui/dropdown-menu";
 import { FilterRow, PageHeader, PageShell } from "@/shared/ui/page-shell";
 import { useFileImportZone } from "@/shared/hooks/useFileImportZone";
 import { revealInFileManager } from "@/shared/lib/fileManager";
+import { SkillCategoryFilter } from "./SkillCategoryFilter";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { SkillsDialogs } from "./SkillsDialogs";
 import { SkillsEmptyState } from "./SkillsEmptyState";
@@ -46,80 +34,6 @@ import {
 } from "../lib/skillCategories";
 
 type SkillsFilter = "all" | "global" | `project:${string}`;
-
-function SkillCategoryFilter({
-  categories,
-  selectedCategories,
-  onSelectedCategoriesChange,
-}: {
-  categories: SkillCategory[];
-  selectedCategories: SkillCategory[];
-  onSelectedCategoriesChange: (categories: SkillCategory[]) => void;
-}) {
-  const { t } = useTranslation(["skills"]);
-
-  const toggleCategory = useCallback(
-    (category: SkillCategory) => {
-      onSelectedCategoriesChange(
-        selectedCategories.includes(category)
-          ? selectedCategories.filter((value) => value !== category)
-          : [...selectedCategories, category],
-      );
-    },
-    [onSelectedCategoriesChange, selectedCategories],
-  );
-
-  const buttonLabel =
-    selectedCategories.length === 0
-      ? t("view.categories.label")
-      : selectedCategories.length === 1
-        ? t(`view.categories.options.${selectedCategories[0]}`)
-        : t("view.categories.count", { count: selectedCategories.length });
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          size="xs"
-          variant={selectedCategories.length > 0 ? "default" : "outline-flat"}
-          leftIcon={<IconAdjustmentsHorizontal />}
-          rightIcon={<IconChevronDown />}
-          aria-label={t("view.categories.filter")}
-        >
-          {buttonLabel}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>{t("view.categories.label")}</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {categories.map((category) => (
-          <DropdownMenuCheckboxItem
-            key={category}
-            checked={selectedCategories.includes(category)}
-            onSelect={(event) => event.preventDefault()}
-            onCheckedChange={() => toggleCategory(category)}
-          >
-            {t(`view.categories.options.${category}`)}
-          </DropdownMenuCheckboxItem>
-        ))}
-        {selectedCategories.length > 0 ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={(event) => {
-                event.preventDefault();
-                onSelectedCategoriesChange([]);
-              }}
-            >
-              {t("view.categories.clear")}
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 interface SkillsViewProps {
   onStartChatWithSkill?: (skillName: string, projectId?: string | null) => void;

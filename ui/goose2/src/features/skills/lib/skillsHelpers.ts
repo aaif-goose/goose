@@ -1,5 +1,32 @@
 import type { SkillInfo } from "../api/skills";
 
+// Mirrors crates/goose/src/skills/mod.rs::validate_skill_name.
+// Keep in sync with the Rust rule.
+const MAX_SKILL_NAME_LENGTH = 64;
+
+export function isValidSkillName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    name.length <= MAX_SKILL_NAME_LENGTH &&
+    !name.startsWith("-") &&
+    !name.endsWith("-") &&
+    [...name].every(
+      (char) =>
+        (char >= "a" && char <= "z") ||
+        (char >= "0" && char <= "9") ||
+        char === "-",
+    )
+  );
+}
+
+export function formatSkillName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/^-/, "")
+    .slice(0, MAX_SKILL_NAME_LENGTH);
+}
+
 export function uniqueProjectFilters(skills: SkillInfo[]) {
   const seen = new Map<string, string>();
   for (const skill of skills) {
