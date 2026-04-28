@@ -57,12 +57,18 @@ pub async fn run_list_sessions<C: Connection>() {
     let mut response = conn.list_sessions().await.unwrap();
     for s in &mut response.sessions {
         s.updated_at = None;
+        // createdAt is a dynamic timestamp — verify it exists then remove for comparison.
+        if let Some(ref mut meta) = s.meta {
+            assert!(meta.get("createdAt").and_then(|v| v.as_str()).is_some());
+            meta.remove("createdAt");
+        }
     }
     let mut expected_meta = serde_json::Map::new();
     expected_meta.insert(
         "messageCount".to_string(),
         serde_json::Value::Number(2.into()),
     );
+    expected_meta.insert("userSetName".to_string(), serde_json::Value::Bool(false));
     assert_eq!(
         response,
         ListSessionsResponse::new(vec![SessionInfo::new(

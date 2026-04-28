@@ -743,6 +743,24 @@
       "x-side": "agent",
       "x-method": "_goose/session/update_project"
     },
+    "RenameSessionRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "title"
+      ],
+      "description": "Rename a session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/rename"
+    },
     "ArchiveSessionRequest": {
       "type": "object",
       "properties": {
@@ -804,14 +822,18 @@
         "content",
         "global"
       ],
-      "description": "Create a new source (global or project-scoped).",
+      "description": "Create a new source in an explicit target scope (global or project-scoped).",
       "x-side": "agent",
       "x-method": "_goose/sources/create"
     },
     "SourceType": {
       "type": "string",
       "enum": [
-        "skill"
+        "skill",
+        "builtinSkill",
+        "recipe",
+        "subrecipe",
+        "agent"
       ],
       "description": "The type of source entity."
     },
@@ -845,11 +867,18 @@
         },
         "directory": {
           "type": "string",
-          "description": "Absolute path to the source's directory on disk."
+          "description": "Absolute path to the source on disk. A directory for skills, a file for\nrecipes and agents."
         },
         "global": {
           "type": "boolean",
           "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
+        },
+        "supportingFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Paths (absolute) of additional files that live alongside the source.\nOnly skills currently populate this; empty for other source types."
         }
       },
       "required": [
@@ -860,7 +889,7 @@
         "directory",
         "global"
       ],
-      "description": "A source — a user-editable entity backed by an on-disk directory. Sources\nmay be either `global` (shared across all projects) or project-specific."
+      "description": "A source discovered by Goose and backed by an on-disk path. Sources may be\neither `global` (shared across all projects) or project-specific."
     },
     "ListSourcesRequest": {
       "type": "object",
@@ -882,7 +911,7 @@
           ]
         }
       },
-      "description": "List sources. If `type` is omitted, sources of all known types are returned.\nBoth global and project-scoped sources are included when `project_dir` is set.",
+      "description": "List discovered sources.\n\nToday this endpoint only returns skills. If `type` is omitted, it defaults\nto listing skill sources. Both global and project-scoped skills are included\nwhen `project_dir` is set.",
       "x-side": "agent",
       "x-method": "_goose/sources/list"
     },
@@ -908,6 +937,9 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
+        "path": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -916,25 +948,16 @@
         },
         "content": {
           "type": "string"
-        },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
         "type",
+        "path",
         "name",
         "description",
-        "content",
-        "global"
+        "content"
       ],
-      "description": "Update an existing source's description and content.",
+      "description": "Update an existing source's name, description, and content by absolute path.",
       "x-side": "agent",
       "x-method": "_goose/sources/update"
     },
@@ -957,25 +980,15 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
-        "name": {
+        "path": {
           "type": "string"
-        },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
         "type",
-        "name",
-        "global"
+        "path"
       ],
-      "description": "Delete a source and its on-disk directory.",
+      "description": "Delete a source and its on-disk directory by absolute path.",
       "x-side": "agent",
       "x-method": "_goose/sources/delete"
     },
@@ -985,25 +998,15 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
-        "name": {
+        "path": {
           "type": "string"
-        },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
         "type",
-        "name",
-        "global"
+        "path"
       ],
-      "description": "Export a source as a portable JSON payload.",
+      "description": "Export a source at an absolute path as a portable JSON payload.",
       "x-side": "agent",
       "x-method": "_goose/sources/export"
     },
@@ -1044,7 +1047,7 @@
         "data",
         "global"
       ],
-      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written under the given scope; on name collisions a\n`-imported` suffix is appended.",
+      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
       "x-side": "agent",
       "x-method": "_goose/sources/import"
     },
@@ -1596,6 +1599,15 @@
                   ],
                   "description": "Params for _goose/session/update_project",
                   "title": "UpdateSessionProjectRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RenameSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/rename",
+                  "title": "RenameSessionRequest"
                 },
                 {
                   "allOf": [

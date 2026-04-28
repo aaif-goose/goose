@@ -1,200 +1,18 @@
-use super::{parse_frontmatter, Source, SourceKind};
-use crate::agents::builtin_skills;
+use super::discover_skills;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::tool_execution::ToolCallContext;
-use crate::config::paths::Paths;
+use crate::agents::ToolCallContext;
 use async_trait::async_trait;
+use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult,
     ServerCapabilities, ServerNotification, Tool,
 };
-use serde::Deserialize;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 
 pub static EXTENSION_NAME: &str = "skills";
-
-#[derive(Debug, Deserialize)]
-struct SkillMetadata {
-    name: String,
-    description: String,
-}
-
-fn parse_skill_content(content: &str, path: PathBuf) -> Option<Source> {
-    let (metadata, body): (SkillMetadata, String) = match parse_frontmatter(content) {
-        Ok(Some(parsed)) => parsed,
-        Ok(None) => return None,
-        Err(e) => {
-            warn!("Failed to parse skill frontmatter: {}", e);
-            return None;
-        }
-    };
-
-    if metadata.name.contains('/') {
-        warn!("Skill name '{}' contains '/', skipping", metadata.name);
-        return None;
-    }
-
-    Some(Source {
-        name: metadata.name,
-        kind: SourceKind::Skill,
-        description: metadata.description,
-        path,
-        content: body,
-        supporting_files: Vec::new(),
-    })
-}
-
-fn should_skip_dir(path: &Path) -> bool {
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some(".git") | Some(".hg") | Some(".svn")
-    )
-}
-
-fn walk_files_recursively<F, G>(
-    dir: &Path,
-    visited_dirs: &mut HashSet<PathBuf>,
-    should_descend: &mut G,
-    visit_file: &mut F,
-) where
-    F: FnMut(&Path),
-    G: FnMut(&Path) -> bool,
-{
-    let canonical_dir = match std::fs::canonicalize(dir) {
-        Ok(path) => path,
-        Err(_) => return,
-    };
-
-    if !visited_dirs.insert(canonical_dir) {
-        return;
-    }
-
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if should_descend(&path) {
-                walk_files_recursively(&path, visited_dirs, should_descend, visit_file);
-            }
-        } else if path.is_file() {
-            visit_file(&path);
-        }
-    }
-}
-
-fn scan_skills_from_dir(dir: &Path, seen: &mut HashSet<String>) -> Vec<Source> {
-    let mut skill_files = Vec::new();
-    let mut visited_dirs = HashSet::new();
-
-    walk_files_recursively(
-        dir,
-        &mut visited_dirs,
-        &mut |path| !should_skip_dir(path),
-        &mut |path| {
-            if path.file_name().and_then(|name| name.to_str()) == Some("SKILL.md") {
-                skill_files.push(path.to_path_buf());
-            }
-        },
-    );
-
-    let mut sources = Vec::new();
-    for skill_file in skill_files {
-        let Some(skill_dir) = skill_file.parent() else {
-            continue;
-        };
-        let content = match std::fs::read_to_string(&skill_file) {
-            Ok(c) => c,
-            Err(e) => {
-                warn!("Failed to read skill file {}: {}", skill_file.display(), e);
-                continue;
-            }
-        };
-
-        if let Some(mut source) = parse_skill_content(&content, skill_dir.to_path_buf()) {
-            if !seen.contains(&source.name) {
-                // Find supporting files in the skill directory
-                let mut files = Vec::new();
-                let mut visited_support_dirs = HashSet::new();
-                walk_files_recursively(
-                    skill_dir,
-                    &mut visited_support_dirs,
-                    &mut |path| !should_skip_dir(path) && !path.join("SKILL.md").is_file(),
-                    &mut |path| {
-                        if path.file_name().and_then(|n| n.to_str()) != Some("SKILL.md") {
-                            files.push(path.to_path_buf());
-                        }
-                    },
-                );
-                source.supporting_files = files;
-
-                seen.insert(source.name.clone());
-                sources.push(source);
-            }
-        }
-    }
-    sources
-}
-
-fn discover_skills(working_dir: &Path) -> Vec<Source> {
-    let mut sources = Vec::new();
-    let mut seen = HashSet::new();
-
-    let home = dirs::home_dir();
-    let config = Paths::config_dir();
-
-    let local_dirs = vec![
-        working_dir.join(".goose/skills"),
-        working_dir.join(".claude/skills"),
-        working_dir.join(".agents/skills"),
-    ];
-
-    let global_dirs: Vec<PathBuf> = [
-        home.as_ref().map(|h| h.join(".agents/skills")),
-        Some(config.join("skills")),
-        home.as_ref().map(|h| h.join(".claude/skills")),
-        home.as_ref().map(|h| h.join(".config/agents/skills")),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-
-    for dir in local_dirs {
-        sources.extend(scan_skills_from_dir(&dir, &mut seen));
-    }
-    for dir in global_dirs {
-        sources.extend(scan_skills_from_dir(&dir, &mut seen));
-    }
-
-    for content in builtin_skills::get_all() {
-        if let Some(source) = parse_skill_content(content, PathBuf::new()) {
-            if !seen.contains(&source.name) {
-                seen.insert(source.name.clone());
-                sources.push(Source {
-                    kind: SourceKind::BuiltinSkill,
-                    ..source
-                });
-            }
-        }
-    }
-
-    sources
-}
-
-pub fn list_installed_skills(working_dir: Option<&Path>) -> Vec<Source> {
-    let dir = working_dir
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    discover_skills(&dir)
-}
 
 pub struct SkillsClient {
     info: InitializeResult,
@@ -211,12 +29,14 @@ impl SkillsClient {
 
         let mut instructions = String::new();
         if context.session.is_some() {
-            let sources = discover_skills(&working_dir);
-            let mut skills: Vec<&Source> = sources
+            let sources = discover_skills(Some(&working_dir));
+            let mut skills: Vec<&SourceEntry> = sources
                 .iter()
-                .filter(|s| s.kind == SourceKind::Skill || s.kind == SourceKind::BuiltinSkill)
+                .filter(|s| {
+                    s.source_type == SourceType::Skill || s.source_type == SourceType::BuiltinSkill
+                })
                 .collect();
-            skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
+            skills.sort_by(|a, b| (&a.name, &a.directory).cmp(&(&b.name, &b.directory)));
 
             if !skills.is_empty() {
                 instructions.push_str(
@@ -300,24 +120,24 @@ impl McpClientTrait for SkillsClient {
             )]));
         }
 
-        let skills = discover_skills(&self.working_dir);
+        let skills = discover_skills(Some(&self.working_dir));
 
-        // Direct skill match
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
             let mut output = format!(
                 "# Loaded Skill: {} ({})\n\n{}\n",
                 skill.name,
-                skill.kind,
+                skill.source_type,
                 skill.to_load_text()
             );
 
             if !skill.supporting_files.is_empty() {
+                let skill_dir = Path::new(&skill.directory);
                 output.push_str(&format!(
                     "\n## Supporting Files\n\nSkill directory: {}\n\n",
-                    skill.path.display()
+                    skill.directory
                 ));
                 for file in &skill.supporting_files {
-                    if let Ok(relative) = file.strip_prefix(&skill.path) {
+                    if let Ok(relative) = Path::new(file).strip_prefix(skill_dir) {
                         let rel_str = relative.to_string_lossy().replace('\\', "/");
                         output.push_str(&format!(
                             "- {} → load_skill(name: \"{}/{}\")\n",
@@ -331,27 +151,27 @@ impl McpClientTrait for SkillsClient {
             return Ok(CallToolResult::success(vec![Content::text(output)]));
         }
 
-        // Supporting file match (skill_name contains '/')
         if let Some((parent_skill_name, raw_relative_path)) = skill_name.split_once('/') {
             let relative_path = raw_relative_path.replace('\\', "/");
             if let Some(skill) = skills.iter().find(|s| {
                 s.name == parent_skill_name
-                    && matches!(s.kind, SourceKind::Skill | SourceKind::BuiltinSkill)
+                    && matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill)
             }) {
-                let canonical_skill_dir = skill
-                    .path
+                let skill_dir = PathBuf::from(&skill.directory);
+                let canonical_skill_dir = skill_dir
                     .canonicalize()
-                    .unwrap_or_else(|_| skill.path.clone());
+                    .unwrap_or_else(|_| skill_dir.clone());
 
                 for file_path in &skill.supporting_files {
-                    let Ok(rel) = file_path.strip_prefix(&skill.path) else {
+                    let file_path_buf = Path::new(file_path);
+                    let Ok(rel) = file_path_buf.strip_prefix(&skill_dir) else {
                         continue;
                     };
                     if rel.to_string_lossy().replace('\\', "/") != relative_path {
                         continue;
                     }
 
-                    return Ok(match file_path.canonicalize() {
+                    return Ok(match file_path_buf.canonicalize() {
                         Ok(canonical) if canonical.starts_with(&canonical_skill_dir) => {
                             match std::fs::read_to_string(&canonical) {
                                 Ok(content) => {
@@ -381,7 +201,8 @@ impl McpClientTrait for SkillsClient {
                     .supporting_files
                     .iter()
                     .filter_map(|f| {
-                        f.strip_prefix(&skill.path)
+                        Path::new(f)
+                            .strip_prefix(&skill_dir)
                             .ok()
                             .map(|r| r.to_string_lossy().replace('\\', "/"))
                     })
@@ -403,7 +224,6 @@ impl McpClientTrait for SkillsClient {
             }
         }
 
-        // No match — suggest similar skills
         let suggestions: Vec<&str> = skills
             .iter()
             .filter(|s| {

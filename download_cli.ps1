@@ -16,6 +16,7 @@
 #   $env:GOOSE_VERSION  - Optional: specific version to install (e.g., "v1.0.25"). Can be in the format vX.Y.Z, vX.Y.Z-suffix, or X.Y.Z
 #   $env:GOOSE_PROVIDER - Optional: provider for goose
 #   $env:GOOSE_MODEL    - Optional: model for goose
+#   $env:GOOSE_WINDOWS_VARIANT - Optional: Windows package variant to install ("standard" or "cuda")
 #   $env:CANARY         - Optional: if set to "true", downloads from canary release instead of stable
 #   $env:CONFIGURE      - Optional: if set to "false", disables running goose configure interactively
 ##############################################################################
@@ -35,6 +36,7 @@ if (-not $env:GOOSE_BIN_DIR) {
 # Determine release type
 $RELEASE = if ($env:CANARY -eq "true") { "true" } else { "false" }
 $CONFIGURE = if ($env:CONFIGURE -eq "false") { "false" } else { "true" }
+$WINDOWS_VARIANT = if ($env:GOOSE_WINDOWS_VARIANT) { $env:GOOSE_WINDOWS_VARIANT.ToLowerInvariant() } else { "standard" }
 
 # Determine release tag
 if ($env:GOOSE_VERSION) {
@@ -62,8 +64,13 @@ if ($ARCH -eq "AMD64") {
     exit 1
 }
 
+if ($WINDOWS_VARIANT -ne "standard" -and $WINDOWS_VARIANT -ne "cuda") {
+    Write-Error "Unsupported GOOSE_WINDOWS_VARIANT '$WINDOWS_VARIANT'. Expected 'standard' or 'cuda'."
+    exit 1
+}
+
 # --- 3) Build download URL ---
-$FILE = "goose-$ARCH-pc-windows-msvc.zip"
+$FILE = if ($WINDOWS_VARIANT -eq "cuda") { "goose-$ARCH-pc-windows-msvc-cuda.zip" } else { "goose-$ARCH-pc-windows-msvc.zip" }
 $DOWNLOAD_URL = "https://github.com/$REPO/releases/download/$RELEASE_TAG/$FILE"
 
 Write-Host "Downloading $RELEASE_TAG release: $FILE..." -ForegroundColor Green

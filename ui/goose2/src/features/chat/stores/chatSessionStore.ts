@@ -7,19 +7,17 @@ import {
 import type { Session } from "@/shared/types/chat";
 import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
 import {
-  loadSessionMetadataOverlay,
-  persistSessionMetadataOverlay,
-  upsertSessionMetadataOverlayRecord,
-  type SessionMetadataOverlayRecord,
-} from "@/features/chat/lib/sessionMetadataOverlay";
-import { updateSessionProject } from "@/shared/api/acpApi";
+  archiveSession as acpArchiveSession,
+  unarchiveSession as acpUnarchiveSession,
+  renameSession as acpRenameSession,
+  updateSessionProject,
+} from "@/shared/api/acpApi";
 
 export interface ChatSession {
   id: string;
   acpSessionId?: string;
   title: string;
   projectId?: string | null;
-  agentId?: string;
   providerId?: string;
   personaId?: string;
   modelId?: string;
@@ -66,7 +64,6 @@ interface ChatSessionStoreState {
 interface CreateSessionOpts {
   title?: string;
   projectId?: string;
-  agentId?: string;
   providerId?: string;
   personaId?: string;
   workingDir?: string;
@@ -74,18 +71,10 @@ interface CreateSessionOpts {
   modelName?: string;
 }
 
-interface UpdateSessionOptions {
-  persistOverlay?: boolean;
-}
-
 interface ChatSessionStoreActions {
   createSession: (opts?: CreateSessionOpts) => Promise<ChatSession>;
   loadSessions: () => Promise<void>;
-  updateSession: (
-    id: string,
-    patch: Partial<ChatSession>,
-    opts?: UpdateSessionOptions,
-  ) => void;
+  updateSession: (id: string, patch: Partial<ChatSession>) => void;
   addSession: (session: ChatSession) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
@@ -103,99 +92,22 @@ interface ChatSessionStoreActions {
 
 export type ChatSessionStore = ChatSessionStoreState & ChatSessionStoreActions;
 
-function overlayKeyForSession(
-  session: Pick<ChatSession, "id" | "acpSessionId">,
-) {
-  return session.acpSessionId ?? session.id;
-}
-
-function buildOverlayRecord(
-  session: ChatSession,
-  existing?: SessionMetadataOverlayRecord,
-): SessionMetadataOverlayRecord {
-  return {
-    sessionId: overlayKeyForSession(session),
-    userSetTitle: session.userSetName ? session.title : null,
-    projectId: session.projectId ?? null,
-    providerId: session.providerId ?? null,
-    personaId: session.personaId ?? null,
-    modelId: session.modelId ?? null,
-    modelName: session.modelName ?? null,
-    archivedAt: session.archivedAt ?? null,
-    createdAt: session.createdAt ?? existing?.createdAt ?? null,
-    agentId: session.agentId ?? existing?.agentId ?? null,
-    lastKnownTitle: session.title,
-    lastKnownUpdatedAt: session.updatedAt,
-    lastKnownMessageCount: session.messageCount,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function overlayToFallbackSession(
-  overlay: SessionMetadataOverlayRecord,
-): ChatSession {
-  const updatedAt =
-    overlay.lastKnownUpdatedAt ?? overlay.createdAt ?? overlay.updatedAt;
-  return {
-    id: overlay.sessionId,
-    acpSessionId: overlay.sessionId,
-    title: overlay.userSetTitle ?? overlay.lastKnownTitle ?? "Untitled",
-    projectId: overlay.projectId ?? undefined,
-    agentId: overlay.agentId ?? undefined,
-    providerId: overlay.providerId ?? undefined,
-    personaId: overlay.personaId ?? undefined,
-    modelId: overlay.modelId ?? undefined,
-    modelName: overlay.modelName ?? undefined,
-    createdAt: overlay.createdAt ?? updatedAt,
-    updatedAt,
-    archivedAt: overlay.archivedAt ?? undefined,
-    messageCount: overlay.lastKnownMessageCount ?? 0,
-    userSetName: Boolean(overlay.userSetTitle),
-  };
-}
-
-function mergeAcpSessionWithOverlay(
-  session: AcpSessionInfo,
-  overlay?: SessionMetadataOverlayRecord,
-): ChatSession {
-  const updatedAt = session.updatedAt ?? overlay?.lastKnownUpdatedAt;
+function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
+  const now = new Date().toISOString();
   return {
     id: session.sessionId,
     acpSessionId: session.sessionId,
-    title:
-      overlay?.userSetTitle ??
-      session.title ??
-      overlay?.lastKnownTitle ??
-      "Untitled",
+    title: session.title ?? "Untitled",
     projectId: session.projectId ?? undefined,
-    agentId: overlay?.agentId ?? undefined,
-    providerId: overlay?.providerId ?? undefined,
-    personaId: overlay?.personaId ?? undefined,
-    modelId: overlay?.modelId ?? undefined,
-    modelName: overlay?.modelName ?? undefined,
-    createdAt: overlay?.createdAt ?? updatedAt ?? new Date().toISOString(),
-    updatedAt: updatedAt ?? new Date().toISOString(),
-    archivedAt: overlay?.archivedAt ?? undefined,
+    providerId: session.providerId ?? undefined,
+    personaId: session.personaId ?? undefined,
+    modelId: session.modelId ?? undefined,
+    createdAt: session.createdAt ?? session.updatedAt ?? now,
+    updatedAt: session.updatedAt ?? now,
+    archivedAt: session.archivedAt ?? undefined,
     messageCount: session.messageCount,
-    userSetName: Boolean(overlay?.userSetTitle),
+    userSetName: session.userSetName,
   };
-}
-
-function syncOverlaySnapshots(
-  sessions: ChatSession[],
-  existingOverlays = loadSessionMetadataOverlay(),
-): void {
-  const overlays = new Map(existingOverlays);
-  for (const session of sessions) {
-    overlays.set(
-      overlayKeyForSession(session),
-      buildOverlayRecord(
-        session,
-        existingOverlays.get(overlayKeyForSession(session)),
-      ),
-    );
-  }
-  persistSessionMetadataOverlay(overlays.values());
 }
 
 function sortByUpdatedAtDesc(sessions: ChatSession[]): ChatSession[] {
@@ -209,7 +121,6 @@ export function sessionToChatSession(session: Session): ChatSession {
     id: session.id,
     acpSessionId: session.id,
     title: session.title,
-    agentId: session.agentId,
     projectId: session.projectId,
     providerId: session.providerId,
     personaId: session.personaId,
@@ -247,7 +158,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       acpSessionId: sessionId,
       title: opts.title ?? DEFAULT_CHAT_TITLE,
       projectId: opts.projectId,
-      agentId: opts.agentId,
       providerId,
       personaId: opts.personaId,
       modelId: opts.modelId,
@@ -257,48 +167,32 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       messageCount: 0,
     };
     set((state) => ({ sessions: [chatSession, ...state.sessions] }));
-    const existing = loadSessionMetadataOverlay().get(
-      overlayKeyForSession(chatSession),
-    );
-    upsertSessionMetadataOverlayRecord(
-      buildOverlayRecord(chatSession, existing),
-    );
     return chatSession;
   },
 
   loadSessions: async () => {
     set({ isLoading: true });
     try {
-      const overlays = loadSessionMetadataOverlay();
       const acpSessions = await acpListSessions();
-      const mergedAcpSessions = sortByUpdatedAtDesc(
-        acpSessions.map((session) =>
-          mergeAcpSessionWithOverlay(session, overlays.get(session.sessionId)),
-        ),
+      const sessions = sortByUpdatedAtDesc(
+        acpSessions.map(acpSessionToChatSession),
       );
-      const merged = mergedAcpSessions;
       const activeSessionId = get().activeSessionId;
       const activeSessionStillExists =
         activeSessionId == null ||
-        merged.some((session) => session.id === activeSessionId);
+        sessions.some((session) => session.id === activeSessionId);
       set({
-        sessions: merged,
+        sessions,
         activeSessionId: activeSessionStillExists ? activeSessionId : null,
       });
-      syncOverlaySnapshots(mergedAcpSessions, overlays);
     } catch (error) {
       console.error("Failed to load sessions from ACP:", error);
-      const overlays = loadSessionMetadataOverlay();
-      const fallbackSessions = sortByUpdatedAtDesc(
-        [...overlays.values()].map(overlayToFallbackSession),
-      );
-      set({ sessions: fallbackSessions });
     } finally {
       set({ isLoading: false, hasHydratedSessions: true });
     }
   },
 
-  updateSession: (id, patch, opts) => {
+  updateSession: (id, patch) => {
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id
@@ -312,17 +206,22 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }));
 
     const updatedSession = get().sessions.find((session) => session.id === id);
+    const acpSessionId = updatedSession?.acpSessionId;
 
-    if (updatedSession && opts?.persistOverlay !== false) {
-      const key = overlayKeyForSession(updatedSession);
-      const existing = loadSessionMetadataOverlay().get(key);
-      upsertSessionMetadataOverlayRecord(
-        buildOverlayRecord(updatedSession, existing),
+    // Persist title rename to backend
+    if (
+      "title" in patch &&
+      "userSetName" in patch &&
+      patch.userSetName &&
+      acpSessionId &&
+      patch.title
+    ) {
+      acpRenameSession(acpSessionId, patch.title).catch((err: unknown) =>
+        console.error("Failed to rename session in backend:", err),
       );
     }
 
-    // Persist projectId change to ACP backend
-    const acpSessionId = updatedSession?.acpSessionId;
+    // Persist projectId change to backend
     if ("projectId" in patch && acpSessionId) {
       updateSessionProject(acpSessionId, patch.projectId ?? null).catch(
         (err: unknown) =>
@@ -347,12 +246,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       }
       return { sessions: [normalizedSession, ...state.sessions] };
     });
-    const existing = loadSessionMetadataOverlay().get(
-      overlayKeyForSession(normalizedSession),
-    );
-    upsertSessionMetadataOverlayRecord(
-      buildOverlayRecord(normalizedSession, existing),
-    );
   },
 
   archiveSession: async (id) => {
@@ -366,11 +259,10 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         state.activeSessionId === id ? null : state.activeSessionId,
     }));
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session) {
-      const existing = loadSessionMetadataOverlay().get(
-        overlayKeyForSession(session),
+    if (session?.acpSessionId) {
+      acpArchiveSession(session.acpSessionId).catch((err: unknown) =>
+        console.error("Failed to archive session in backend:", err),
       );
-      upsertSessionMetadataOverlayRecord(buildOverlayRecord(session, existing));
     }
   },
 
@@ -381,11 +273,10 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       ),
     }));
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session) {
-      const existing = loadSessionMetadataOverlay().get(
-        overlayKeyForSession(session),
+    if (session?.acpSessionId) {
+      acpUnarchiveSession(session.acpSessionId).catch((err: unknown) =>
+        console.error("Failed to unarchive session in backend:", err),
       );
-      upsertSessionMetadataOverlayRecord(buildOverlayRecord(session, existing));
     }
   },
 
@@ -433,15 +324,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
           : session,
       ),
     }));
-    const session = get().sessions.find(
-      (candidate) => candidate.id === sessionId,
-    );
-    if (session) {
-      const existing = loadSessionMetadataOverlay().get(
-        overlayKeyForSession(session),
-      );
-      upsertSessionMetadataOverlayRecord(buildOverlayRecord(session, existing));
-    }
   },
 
   getSession: (id) => get().sessions.find((session) => session.id === id),

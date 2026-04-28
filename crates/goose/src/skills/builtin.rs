@@ -1,7 +1,6 @@
 use include_dir::{include_dir, Dir};
 
-static BUILTIN_SKILLS_DIR: Dir =
-    include_dir!("$CARGO_MANIFEST_DIR/src/agents/builtin_skills/skills");
+static BUILTIN_SKILLS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/skills/builtins");
 
 pub fn get_all() -> Vec<&'static str> {
     BUILTIN_SKILLS_DIR

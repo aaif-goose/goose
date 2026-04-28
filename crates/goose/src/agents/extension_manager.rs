@@ -34,7 +34,9 @@ use super::tool_execution::{ToolCallContext, ToolCallResult};
 use super::types::SharedProvider;
 use crate::agents::extension::{Envs, ProcessExit};
 use crate::agents::extension_malware_check;
-use crate::agents::mcp_client::{GooseMcpClientCapabilities, McpClient, McpClientTrait};
+use crate::agents::mcp_client::{
+    GooseMcpClientCapabilities, GooseMcpHostInfo, McpClient, McpClientTrait,
+};
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
@@ -116,6 +118,7 @@ impl Extension {
 
 pub struct ExtensionManagerCapabilities {
     pub mcpui: bool,
+    pub host_info: Option<GooseMcpHostInfo>,
 }
 
 /// Manages goose extensions / MCP clients and their interactions
@@ -591,6 +594,13 @@ async fn create_unix_socket_http_client(
 }
 
 impl ExtensionManager {
+    fn mcp_client_capabilities(&self) -> GooseMcpClientCapabilities {
+        GooseMcpClientCapabilities {
+            mcpui: self.capabilities.mcpui,
+            host_info: self.capabilities.host_info.clone(),
+        }
+    }
+
     pub fn new(
         provider: SharedProvider,
         session_manager: Arc<crate::session::SessionManager>,
@@ -618,7 +628,10 @@ impl ExtensionManager {
             Arc::new(Mutex::new(None)),
             session_manager,
             "goose-cli".to_string(),
-            ExtensionManagerCapabilities { mcpui: false },
+            ExtensionManagerCapabilities {
+                mcpui: false,
+                host_info: None,
+            },
         )
     }
 
@@ -697,10 +710,6 @@ impl ExtensionManager {
                     .map(|(k, v)| (k.clone(), substitute_env_vars(v, &all_envs)))
                     .collect();
                 let resolved_socket = socket.as_ref().map(|s| substitute_env_vars(s, &all_envs));
-                let capability = GooseMcpClientCapabilities {
-                    mcpui: self.capabilities.mcpui,
-                };
-
                 create_streamable_http_client(
                     &resolved_uri,
                     *timeout,
@@ -709,7 +718,7 @@ impl ExtensionManager {
                     resolved_socket.as_deref(),
                     self.provider.clone(),
                     self.client_name.clone(),
-                    capability,
+                    self.mcp_client_capabilities(),
                     &effective_working_dir,
                 )
                 .await?
@@ -760,10 +769,6 @@ impl ExtensionManager {
                                 .arg(&normalized_name);
                         });
 
-                        let capabilities = GooseMcpClientCapabilities {
-                            mcpui: self.capabilities.mcpui,
-                        };
-
                         let client = child_process_client(
                             command,
                             &Some(timeout_secs),
@@ -771,7 +776,7 @@ impl ExtensionManager {
                             &effective_working_dir,
                             Some(container_id.to_string()),
                             self.client_name.clone(),
-                            capabilities,
+                            self.mcp_client_capabilities(),
                         )
                         .await?;
                         Box::new(client)
@@ -780,17 +785,13 @@ impl ExtensionManager {
                         let (client_read, server_write) = tokio::io::duplex(65536);
                         extension_fn(server_read, server_write);
 
-                        let capabilities = GooseMcpClientCapabilities {
-                            mcpui: self.capabilities.mcpui,
-                        };
-
                         Box::new(
                             McpClient::connect(
                                 (client_read, client_write),
                                 Duration::from_secs(timeout_secs),
                                 self.provider.clone(),
                                 self.client_name.clone(),
-                                capabilities,
+                                self.mcp_client_capabilities(),
                                 effective_working_dir.clone(),
                             )
                             .await?,
@@ -840,9 +841,6 @@ impl ExtensionManager {
                     })
                 };
 
-                let capabilities = GooseMcpClientCapabilities {
-                    mcpui: self.capabilities.mcpui,
-                };
                 let client = child_process_client(
                     command,
                     timeout,
@@ -850,7 +848,7 @@ impl ExtensionManager {
                     &effective_working_dir,
                     container.map(|c| c.id().to_string()),
                     self.client_name.clone(),
-                    capabilities,
+                    self.mcp_client_capabilities(),
                 )
                 .await?;
                 Box::new(client)
@@ -875,10 +873,6 @@ impl ExtensionManager {
                     command.arg("python").arg(file_path.to_str().unwrap());
                 });
 
-                let capabilities = GooseMcpClientCapabilities {
-                    mcpui: self.capabilities.mcpui,
-                };
-
                 let client = child_process_client(
                     command,
                     timeout,
@@ -886,7 +880,7 @@ impl ExtensionManager {
                     &effective_working_dir,
                     container.map(|c| c.id().to_string()),
                     self.client_name.clone(),
-                    capabilities,
+                    self.mcp_client_capabilities(),
                 )
                 .await?;
 

@@ -648,6 +648,9 @@ importers:
 
   sdk:
     dependencies:
+      '@modelcontextprotocol/ext-apps':
+        specifier: ^0.3.1
+        version: 0.3.1(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@3.25.76)
       zod:
         specifier: ^3.25.76
         version: 3.25.76

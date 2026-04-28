@@ -1,4 +1,4 @@
-use super::base::{ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
+use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
 use super::inventory::InventoryIdentityInput;
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use crate::model::ModelConfig;
@@ -165,28 +165,32 @@ impl ProviderRegistry {
             })
             .collect();
 
-        let mut config_keys = base_metadata.config_keys.clone();
-
-        if let Some(api_key_index) = config_keys.iter().position(|key| key.secret) {
-            if !config.requires_auth {
-                config_keys.remove(api_key_index);
-            } else if !config.api_key_env.is_empty() {
-                let api_key_required = provider_type == ProviderType::Declarative;
-                config_keys[api_key_index] = super::base::ConfigKey::new(
-                    &config.api_key_env,
-                    api_key_required,
-                    true,
-                    None,
-                    true,
-                );
+        let mut config_keys = if provider_type == ProviderType::Declarative {
+            if config.requires_auth && !config.api_key_env.is_empty() {
+                vec![ConfigKey::new(&config.api_key_env, true, true, None, true)]
+            } else {
+                Vec::new()
             }
-        }
+        } else {
+            let mut config_keys = base_metadata.config_keys.clone();
+
+            if let Some(api_key_index) = config_keys.iter().position(|key| key.secret) {
+                if !config.requires_auth {
+                    config_keys.remove(api_key_index);
+                } else if !config.api_key_env.is_empty() {
+                    config_keys[api_key_index] =
+                        ConfigKey::new(&config.api_key_env, false, true, None, true);
+                }
+            }
+
+            config_keys
+        };
 
         if let Some(ref env_vars) = config.env_vars {
             for ev in env_vars {
                 // Default primary to `required` so required fields show prominently in the UI
                 let primary = ev.primary.unwrap_or(ev.required);
-                config_keys.push(super::base::ConfigKey::new(
+                config_keys.push(ConfigKey::new(
                     &ev.name,
                     ev.required,
                     ev.secret,
@@ -202,9 +206,12 @@ impl ProviderRegistry {
             description,
             default_model,
             known_models,
-            model_doc_link: base_metadata.model_doc_link,
+            model_doc_link: config
+                .model_doc_link
+                .clone()
+                .unwrap_or(base_metadata.model_doc_link),
             config_keys,
-            setup_steps: vec![],
+            setup_steps: config.setup_steps.clone(),
             model_selection_hint: None,
         };
         let inventory_config_keys = custom_metadata.config_keys.clone();

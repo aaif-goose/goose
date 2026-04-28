@@ -62,10 +62,10 @@ pub struct InferenceRuntime {
 static RUNTIME: StdMutex<Weak<InferenceRuntime>> = StdMutex::new(Weak::new());
 
 impl InferenceRuntime {
-    pub fn get_or_init() -> Arc<Self> {
+    pub fn get_or_init() -> Result<Arc<Self>> {
         let mut guard = RUNTIME.lock().expect("runtime lock poisoned");
         if let Some(runtime) = guard.upgrade() {
-            return runtime;
+            return Ok(runtime);
         }
         // Safety invariant: the Weak::upgrade() check and LlamaBackend::init()
         // both execute inside this same mutex guard, so there is no window where
@@ -80,7 +80,10 @@ impl InferenceRuntime {
                      the mutex guard prevents concurrent re-init"
                 )
             }
-            Err(e) => panic!("Failed to init llama backend: {}", e),
+            Err(e) => {
+                tracing::error!(error = %e, "failed to initialize local inference runtime");
+                return Err(anyhow::anyhow!("Failed to init llama backend: {}", e));
+            }
         };
         llama_cpp_2::send_logs_to_tracing(LogOptions::default());
         let runtime = Arc::new(Self {
@@ -88,7 +91,7 @@ impl InferenceRuntime {
             backend,
         });
         *guard = Arc::downgrade(&runtime);
-        runtime
+        Ok(runtime)
     }
 
     pub fn backend(&self) -> &LlamaBackend {
@@ -357,7 +360,7 @@ pub struct LocalInferenceProvider {
 
 impl LocalInferenceProvider {
     pub async fn from_env(model: ModelConfig, _extensions: Vec<ExtensionConfig>) -> Result<Self> {
-        let runtime = InferenceRuntime::get_or_init();
+        let runtime = InferenceRuntime::get_or_init()?;
         let model_slot = runtime.get_or_create_model_slot(&model.model_name);
         Ok(Self {
             runtime,

@@ -10,6 +10,7 @@ vi.mock("../../api/skills", () => ({
     description: "test",
     instructions: "",
     path: "",
+    fileLocation: "/mock/.agents/skills/test/SKILL.md",
   }),
 }));
 
@@ -53,6 +54,8 @@ describe("CreateSkillDialog", () => {
             name: "my-skill",
             description: "desc",
             instructions: "instr",
+            path: "/mock/.agents/skills/my-skill",
+            fileLocation: "/mock/.agents/skills/my-skill/SKILL.md",
           }}
         />,
       );
@@ -63,14 +66,24 @@ describe("CreateSkillDialog", () => {
   // ── Name validation ────────────────────────────────────────────────
 
   describe("name validation", () => {
-    it("allows valid kebab-case names", async () => {
+    it("allows consecutive hyphens to match backend validation", async () => {
       const user = userEvent.setup();
       render(<CreateSkillDialog {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
+      const descriptionInput = screen.getByPlaceholderText(
+        "What it does and when to use it...",
+      );
 
-      await user.type(nameInput, "my-skill");
-      expect(nameInput).toHaveValue("my-skill");
-      expect(screen.queryByText(/must be kebab-case/i)).not.toBeInTheDocument();
+      await user.type(nameInput, "double--hyphen");
+      await user.type(descriptionInput, "A valid description");
+
+      expect(nameInput).toHaveValue("double--hyphen");
+      expect(
+        screen.queryByText(/cannot start or end with a hyphen/i),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /create skill/i }),
+      ).toBeEnabled();
     });
 
     it("auto-formats input (uppercase to lowercase, spaces to hyphens)", async () => {
@@ -82,28 +95,30 @@ describe("CreateSkillDialog", () => {
       expect(nameInput).toHaveValue("my-skill");
     });
 
-    it("allows typing hyphens", async () => {
-      const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
-      const nameInput = screen.getByPlaceholderText("my-skill-name");
-
-      await user.type(nameInput, "code-review");
-      expect(nameInput).toHaveValue("code-review");
-    });
-
     it("shows validation error for invalid name with trailing hyphen", async () => {
       const user = userEvent.setup();
       render(<CreateSkillDialog {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
 
-      // Type a single hyphen — the formatter strips leading hyphens,
-      // but we can produce an invalid state by clearing and typing a
-      // non-kebab string. Actually the formatter is aggressive, so let's
-      // just check that when name is non-empty but invalid, the error shows.
-      // We type "a-" which gives "a-" — valid prefix but trailing hyphen fails regex.
       await user.type(nameInput, "a-");
       expect(nameInput).toHaveValue("a-");
-      expect(screen.getByText(/must be kebab-case/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/cannot start or end with a hyphen/i),
+      ).toBeInTheDocument();
+    });
+
+    it("truncates names at 64 characters", async () => {
+      const user = userEvent.setup();
+      render(<CreateSkillDialog {...defaultProps} />);
+      const nameInput = screen.getByPlaceholderText("my-skill-name");
+      const longName = "a".repeat(65);
+
+      await user.type(nameInput, longName);
+
+      expect(nameInput).toHaveValue("a".repeat(64));
+      expect(
+        screen.queryByText(/cannot start or end with a hyphen/i),
+      ).not.toBeInTheDocument();
     });
 
     it("save button is disabled when name is empty", () => {
@@ -120,6 +135,8 @@ describe("CreateSkillDialog", () => {
       name: "code-review",
       description: "Reviews code",
       instructions: "Review the code carefully",
+      path: "/mock/.agents/skills/code-review",
+      fileLocation: "/mock/.agents/skills/code-review/SKILL.md",
     };
 
     it("pre-fills fields with existing skill data", () => {
@@ -139,12 +156,46 @@ describe("CreateSkillDialog", () => {
       ).toHaveValue("Review the code carefully");
     });
 
-    it("name field is read-only in edit mode", () => {
+    it("name field is editable in edit mode", async () => {
+      const user = userEvent.setup();
       render(
         <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
       );
       const nameInput = screen.getByPlaceholderText("my-skill-name");
-      expect(nameInput).toHaveAttribute("readOnly");
+
+      await user.clear(nameInput);
+      await user.type(nameInput, "renamed-skill");
+
+      expect(nameInput).toHaveValue("renamed-skill");
+    });
+
+    it("shows the skill path on disk as minimal helper text in edit mode", () => {
+      render(
+        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
+      );
+
+      expect(
+        screen.getByText(
+          "Path on disk: /mock/.agents/skills/code-review/SKILL.md",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("updates the path helper text when the name changes in edit mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
+      );
+
+      const nameInput = screen.getByPlaceholderText("my-skill-name");
+      await user.clear(nameInput);
+      await user.type(nameInput, "renamed-skill");
+
+      expect(
+        screen.getByText(
+          "Path on disk: /mock/.agents/skills/renamed-skill/SKILL.md",
+        ),
+      ).toBeInTheDocument();
     });
 
     it('save button text is "Save Changes" in edit mode', () => {
@@ -154,6 +205,28 @@ describe("CreateSkillDialog", () => {
       expect(
         screen.getByRole("button", { name: /save changes/i }),
       ).toBeInTheDocument();
+    });
+
+    it("allows editing skills whose names contain consecutive hyphens", () => {
+      render(
+        <CreateSkillDialog
+          {...defaultProps}
+          editingSkill={{
+            name: "double--hyphen",
+            description: "Existing description",
+            instructions: "Existing instructions",
+            path: "/mock/.agents/skills/double--hyphen",
+            fileLocation: "/mock/.agents/skills/double--hyphen/SKILL.md",
+          }}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: /save changes/i }),
+      ).toBeEnabled();
+      expect(
+        screen.queryByText(/cannot start or end with a hyphen/i),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -193,6 +266,8 @@ describe("CreateSkillDialog", () => {
             name: "code-review",
             description: "Reviews code",
             instructions: "Review carefully",
+            path: "/mock/.agents/skills/code-review",
+            fileLocation: "/mock/.agents/skills/code-review/SKILL.md",
           }}
         />,
       );
@@ -207,8 +282,38 @@ describe("CreateSkillDialog", () => {
       await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       expect(updateSkill).toHaveBeenCalledWith(
+        "/mock/.agents/skills/code-review",
         "code-review",
         "Updated description",
+        "Review carefully",
+      );
+    });
+
+    it("calls updateSkill API with the renamed skill name in edit mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <CreateSkillDialog
+          {...defaultProps}
+          editingSkill={{
+            name: "code-review",
+            description: "Reviews code",
+            instructions: "Review carefully",
+            path: "/mock/.agents/skills/code-review",
+            fileLocation: "/mock/.agents/skills/code-review/SKILL.md",
+          }}
+        />,
+      );
+
+      const nameInput = screen.getByPlaceholderText("my-skill-name");
+      await user.clear(nameInput);
+      await user.type(nameInput, "renamed-skill");
+
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      expect(updateSkill).toHaveBeenCalledWith(
+        "/mock/.agents/skills/code-review",
+        "renamed-skill",
+        "Reviews code",
         "Review carefully",
       );
     });
