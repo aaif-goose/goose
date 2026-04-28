@@ -207,9 +207,21 @@
   "providers": {
     "agents": {
       "description": "Agents handle your requests using their own tools and models",
+      "errors": {
+        "installVerificationFailed": "Install finished but the CLI was not found on PATH. You may need to restart your terminal."
+      },
       "installLabel": "Install {{name}}",
+      "progress": {
+        "installing": "Installing {{name}}...",
+        "step": "Step {{step}} of {{total}}",
+        "verifyingInstallation": "Verifying installation..."
+      },
       "signIn": "Sign in",
       "signInLabel": "Sign in to {{name}}",
+      "status": {
+        "checking": "Checking...",
+        "setupFailed": "Setup failed"
+      },
       "title": "Agents"
     },
     "description": "Connect agents and AI models to use with Goose",

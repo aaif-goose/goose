@@ -31,11 +31,21 @@ interface AgentProviderCardProps {
 
 export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   const { t } = useTranslation(["settings", "common"]);
+  const isBuiltIn = provider.status === "built_in";
+  const hasInstallCommand = !!provider.installCommand;
+  const hasAuthCommand = !!provider.authCommand;
+  const hasBinary = !!provider.binaryName;
   const [setupPhase, setSetupPhase] = useState<SetupPhase>("idle");
   const [setupOutput, setSetupOutput] = useState<OutputLine[]>([]);
   const [setupError, setSetupError] = useState<string | null>(null);
-  const [installStatus, setInstallStatus] = useState<InstallStatus>("checking");
-  const [authStatus, setAuthStatus] = useState<AuthStatus>("checking");
+  const [installStatus, setInstallStatus] = useState<InstallStatus>(
+    hasBinary && !isBuiltIn ? "checking" : "installed",
+  );
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(
+    provider.authStatusCommand && hasBinary && !isBuiltIn
+      ? "checking"
+      : "unknown",
+  );
   const outputRef = useRef<HTMLDivElement>(null);
   const outputLengthRef = useRef(0);
   const lineCounterRef = useRef(0);
@@ -43,11 +53,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   const unlistenRef = useRef<(() => void) | null>(null);
 
   const icon = getProviderIcon(provider.id, "size-6");
-  const isBuiltIn = provider.status === "built_in";
   const isActive = setupPhase !== "idle";
-  const hasInstallCommand = !!provider.installCommand;
-  const hasAuthCommand = !!provider.authCommand;
-  const hasBinary = !!provider.binaryName;
   const authStorageKey = `agent-provider-auth:${provider.id}`;
 
   const setAuthHint = useCallback(
@@ -163,15 +169,13 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
 
       if (hasBinary && provider.binaryName) {
         setSetupPhase("checking");
-        const installed = await checkAgentInstalled(provider.binaryName);
+        const installed = await checkAgentInstalled(provider.id);
         if (!isMountedRef.current) return;
         setInstallStatus(installed ? "installed" : "missing");
         if (!installed) {
           setAuthStatus("unknown");
           setAuthHint(false);
-          setSetupError(
-            "Install finished but the CLI was not found on PATH. You may need to restart your terminal.",
-          );
+          setSetupError(t("providers.agents.errors.installVerificationFailed"));
           setSetupPhase("idle");
           return;
         }
@@ -294,11 +298,12 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
 
   function renderStatusText() {
     if (isBuiltIn || isReady) return null;
-    if (setupError) return "Setup failed";
+    if (setupError) return t("providers.agents.status.setupFailed");
 
-    if (installStatus === "checking" && hasBinary) return "Checking...";
+    if (installStatus === "checking" && hasBinary)
+      return t("providers.agents.status.checking");
     if (installStatus === "installed" && authStatus === "checking")
-      return "Checking...";
+      return t("providers.agents.status.checking");
 
     return null;
   }
@@ -319,21 +324,38 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     return null;
   }
 
+  function renderSetupOutput(scrollToEnd = false) {
+    if (setupOutput.length === 0) return null;
+
+    return (
+      <div
+        ref={scrollToEnd ? outputRef : undefined}
+        className="max-h-24 overflow-y-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xxs leading-relaxed text-muted-foreground"
+      >
+        {setupOutput.map((entry) => (
+          <div key={entry.id}>{entry.text || "\u00A0"}</div>
+        ))}
+      </div>
+    );
+  }
+
   function renderSetupProgress() {
     if (!isActive) return null;
 
     const phaseLabel =
       setupPhase === "installing"
-        ? `Installing ${provider.displayName}...`
+        ? t("providers.agents.progress.installing", {
+            name: provider.displayName,
+          })
         : setupPhase === "authenticating"
-          ? "Waiting for sign-in..."
-          : "Verifying installation...";
+          ? t("providers.waitingForSignIn")
+          : t("providers.agents.progress.verifyingInstallation");
 
     const stepInfo =
       setupPhase === "installing" && hasAuthCommand
-        ? "Step 1 of 2"
+        ? t("providers.agents.progress.step", { step: 1, total: 2 })
         : setupPhase === "authenticating" && hasInstallCommand
-          ? "Step 2 of 2"
+          ? t("providers.agents.progress.step", { step: 2, total: 2 })
           : null;
 
     return (
@@ -350,19 +372,13 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
           </div>
         </div>
 
-        {setupOutput.length > 0 && (
-          <div
-            ref={outputRef}
-            className="max-h-24 overflow-y-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xxs leading-relaxed text-muted-foreground"
-          >
-            {setupOutput.map((entry) => (
-              <div key={entry.id}>{entry.text || "\u00A0"}</div>
-            ))}
-          </div>
-        )}
+        {renderSetupOutput(true)}
       </div>
     );
   }
+
+  const statusText = renderStatusText();
+  const action = renderAction();
 
   return (
     <div
@@ -384,48 +400,37 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
         {renderStatusIndicator()}
       </div>
 
-      {(() => {
-        const statusText = renderStatusText();
-        const action = renderAction();
-        if (!statusText && !action) return null;
-        return (
-          <div className="mt-3 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              {statusText && (
-                <>
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      setupError
-                        ? "bg-danger"
-                        : isActive
-                          ? "bg-accent animate-pulse"
-                          : "bg-muted-foreground/40",
-                    )}
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    {statusText}
-                  </span>
-                </>
-              )}
-            </div>
-            {action}
+      {(statusText || action) && (
+        <div className="mt-3 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            {statusText && (
+              <>
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    setupError
+                      ? "bg-danger"
+                      : isActive
+                        ? "bg-accent animate-pulse"
+                        : "bg-muted-foreground/40",
+                  )}
+                />
+                <span className="text-xs text-muted-foreground">
+                  {statusText}
+                </span>
+              </>
+            )}
           </div>
-        );
-      })()}
+          {action}
+        </div>
+      )}
 
       {renderSetupProgress()}
 
       {setupError && !isActive && (
         <div className="mt-3 space-y-2 border-t pt-3">
           <p className="text-xs text-danger">{setupError}</p>
-          {setupOutput.length > 0 && (
-            <div className="max-h-24 overflow-y-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xxs leading-relaxed text-muted-foreground">
-              {setupOutput.map((entry) => (
-                <div key={entry.id}>{entry.text || "\u00A0"}</div>
-              ))}
-            </div>
-          )}
+          {renderSetupOutput()}
         </div>
       )}
     </div>

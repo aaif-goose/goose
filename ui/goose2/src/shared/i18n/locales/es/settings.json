@@ -207,9 +207,21 @@
   "providers": {
     "agents": {
       "description": "Los agentes manejan tus solicitudes usando sus propias herramientas y modelos",
+      "errors": {
+        "installVerificationFailed": "La instalación terminó, pero no se encontró la CLI en PATH. Puede que tengas que reiniciar tu terminal."
+      },
       "installLabel": "Instalar {{name}}",
+      "progress": {
+        "installing": "Instalando {{name}}...",
+        "step": "Paso {{step}} de {{total}}",
+        "verifyingInstallation": "Verificando instalación..."
+      },
       "signIn": "Iniciar sesión",
       "signInLabel": "Iniciar sesión en {{name}}",
+      "status": {
+        "checking": "Comprobando...",
+        "setupFailed": "La configuración falló"
+      },
       "title": "Agentes"
     },
     "description": "Conecta agentes y modelos de IA para usar con Goose",
