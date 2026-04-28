@@ -135,6 +135,8 @@ pub struct GooseMcpAppToolAttachment {
     pub read_error: Option<String>,
 }
 
+pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta";
+
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     extensions: Mutex<HashMap<String, Extension>>,
@@ -242,25 +244,51 @@ fn get_tool_resource_uri(tool: &Tool) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn merge_mcp_app_attachment_meta(
+fn remove_untrusted_mcp_app_meta(result: &mut CallToolResult) {
+    let Some(meta) = result.meta.as_mut() else {
+        return;
+    };
+
+    meta.0.remove(TRUSTED_TOOL_UPDATE_META_KEY);
+
+    let remove_goose = meta
+        .0
+        .get_mut("goose")
+        .and_then(Value::as_object_mut)
+        .map(|goose_meta| {
+            goose_meta.remove("mcpApp");
+            goose_meta.is_empty()
+        })
+        .unwrap_or(false);
+
+    if remove_goose {
+        meta.0.remove("goose");
+    }
+
+    if meta.0.is_empty() {
+        result.meta = None;
+    }
+}
+
+fn insert_trusted_tool_update_meta(
     result: &mut CallToolResult,
     attachment: &GooseMcpAppToolAttachment,
 ) {
+    let Ok(attachment_value) = serde_json::to_value(attachment) else {
+        return;
+    };
+
     let mut meta_map = result
         .meta
         .as_ref()
         .map(|meta| meta.0.clone())
         .unwrap_or_default();
-    let mut goose_value = meta_map
-        .remove("goose")
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
-
-    goose_value.insert(
-        "mcpApp".to_string(),
-        serde_json::to_value(attachment).unwrap_or(Value::Null),
+    let mut trusted_meta = serde_json::Map::new();
+    trusted_meta.insert("mcpApp".to_string(), attachment_value);
+    meta_map.insert(
+        TRUSTED_TOOL_UPDATE_META_KEY.to_string(),
+        Value::Object(trusted_meta),
     );
-    meta_map.insert("goose".to_string(), Value::Object(goose_value));
     result.meta = Some(Meta(meta_map));
 }
 
@@ -1131,14 +1159,9 @@ impl ExtensionManager {
         session_id: &str,
         resolved_tool: &ResolvedTool,
         cancellation_token: CancellationToken,
-        result: &mut CallToolResult,
-    ) {
-        if result.is_error == Some(true) {
-            return;
-        }
-
+    ) -> Option<GooseMcpAppToolAttachment> {
         let Some(resource_uri) = resolved_tool.resource_uri.clone() else {
-            return;
+            return None;
         };
 
         let mut attachment = GooseMcpAppToolAttachment {
@@ -1162,7 +1185,7 @@ impl ExtensionManager {
             }
         }
 
-        merge_mcp_app_attachment_meta(result, &attachment);
+        Some(attachment)
     }
 
     async fn invalidate_tools_cache_and_bump_version(&self) {
@@ -1659,15 +1682,19 @@ impl ExtensionManager {
                     }
                 })?;
 
-            if should_hydrate_mcp_app {
-                Self::hydrate_mcp_app_attachment(
+            remove_untrusted_mcp_app_meta(&mut result);
+
+            if should_hydrate_mcp_app && result.is_error != Some(true) {
+                if let Some(attachment) = Self::hydrate_mcp_app_attachment(
                     &hydration_client,
                     &session_id,
                     &resolved_tool,
                     read_cancellation_token,
-                    &mut result,
                 )
-                .await;
+                .await
+                {
+                    insert_trusted_tool_update_meta(&mut result, &attachment);
+                }
             }
 
             Ok(result)
@@ -2448,6 +2475,80 @@ mod tests {
 
         assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
         assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
+    }
+
+    #[test]
+    fn test_remove_untrusted_mcp_app_meta_strips_spoofed_payload() {
+        let mut result = CallToolResult::success(vec![]);
+        result.meta = Some(Meta(
+            serde_json::from_value(serde_json::json!({
+                "goose": {
+                    "mcpApp": {
+                        "resourceUri": "ui://spoofed/app",
+                    },
+                    "other": true,
+                },
+                TRUSTED_TOOL_UPDATE_META_KEY: {
+                    "mcpApp": {
+                        "resourceUri": "ui://spoofed/internal",
+                    },
+                },
+            }))
+            .unwrap(),
+        ));
+
+        remove_untrusted_mcp_app_meta(&mut result);
+
+        let meta = result.meta.expect("expected remaining meta");
+        assert_eq!(meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY), None);
+        assert_eq!(
+            meta.0.get("goose"),
+            Some(&serde_json::json!({ "other": true }))
+        );
+    }
+
+    #[test]
+    fn test_insert_trusted_tool_update_meta_stores_backend_payload() {
+        let mut result = CallToolResult::success(vec![]);
+        let attachment = GooseMcpAppToolAttachment {
+            tool_name: "weather__render".to_string(),
+            extension_name: "weather".to_string(),
+            resource_uri: "ui://weather/app".to_string(),
+            tool_meta: None,
+            resource_result: Some(serde_json::json!({
+                "contents": [
+                    {
+                        "uri": "ui://weather/app",
+                        "mimeType": "text/html;profile=mcp-app",
+                        "text": "<div>Hello</div>",
+                    },
+                ],
+            })),
+            read_error: None,
+        };
+
+        insert_trusted_tool_update_meta(&mut result, &attachment);
+
+        let meta = result.meta.expect("expected trusted meta");
+        assert_eq!(
+            meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY),
+            Some(&serde_json::json!({
+                "mcpApp": {
+                    "toolName": "weather__render",
+                    "extensionName": "weather",
+                    "resourceUri": "ui://weather/app",
+                    "resourceResult": {
+                        "contents": [
+                            {
+                                "uri": "ui://weather/app",
+                                "mimeType": "text/html;profile=mcp-app",
+                                "text": "<div>Hello</div>",
+                            },
+                        ],
+                    },
+                },
+            })),
+        );
     }
 
     #[tokio::test]

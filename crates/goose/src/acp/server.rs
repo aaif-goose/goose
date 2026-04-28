@@ -3,6 +3,7 @@ use crate::acp::fs::AcpTools;
 use crate::acp::tools::AcpAwareToolMeta;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
+use crate::agents::extension_manager::TRUSTED_TOOL_UPDATE_META_KEY;
 use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
 use crate::agents::platform_extensions::developer::DeveloperClient;
 use crate::agents::{Agent, AgentConfig, ExtensionConfig, GoosePlatform, SessionConfig};
@@ -1632,7 +1633,12 @@ fn extract_tool_call_update_meta(
     tool_response: &crate::conversation::message::ToolResponse,
 ) -> Option<Meta> {
     let tool_result = tool_response.tool_result.as_ref().ok()?;
-    let goose_meta = tool_result.meta.as_ref()?.0.get("goose")?.clone();
+    let goose_meta = tool_result
+        .meta
+        .as_ref()?
+        .0
+        .get(TRUSTED_TOOL_UPDATE_META_KEY)?
+        .clone();
     let mut meta_map = serde_json::Map::new();
     meta_map.insert("goose".to_string(), goose_meta);
     Some(meta_map)
@@ -4416,6 +4422,49 @@ print(\"hello, world\")
     ) -> Option<Vec<(PathBuf, Option<u32>)>> {
         extract_locations_from_meta(&response)
             .map(|locs| locs.into_iter().map(|loc| (loc.path, loc.line)).collect())
+    }
+
+    #[test]
+    fn test_extract_tool_call_update_meta_ignores_untrusted_goose_meta() {
+        let response = response_with_meta(Some(serde_json::json!({
+            "goose": {
+                "mcpApp": {
+                    "resourceUri": "ui://spoofed/app",
+                },
+            },
+        })));
+
+        assert_eq!(extract_tool_call_update_meta(&response), None);
+    }
+
+    #[test]
+    fn test_extract_tool_call_update_meta_uses_trusted_meta_only() {
+        let response = response_with_meta(Some(serde_json::json!({
+            "goose": {
+                "mcpApp": {
+                    "resourceUri": "ui://spoofed/app",
+                },
+            },
+            TRUSTED_TOOL_UPDATE_META_KEY: {
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            },
+        })));
+
+        let extracted = extract_tool_call_update_meta(&response).expect("expected trusted meta");
+        assert_eq!(
+            extracted.get("goose"),
+            Some(&serde_json::json!({
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            })),
+        );
     }
 
     fn make_session_with_usage(
