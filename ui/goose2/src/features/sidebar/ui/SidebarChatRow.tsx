@@ -18,9 +18,9 @@ import { Input } from "@/shared/ui/input";
 import { SessionActivityIndicator } from "@/shared/ui/SessionActivityIndicator";
 
 const INACTIVE_CHAT_ROW_CLASS =
-  "text-muted-foreground hover:bg-transparent hover:text-foreground group-hover:text-foreground";
+  "text-muted-foreground hover:bg-transparent hover:text-foreground";
 const ACTIVE_CHAT_ROW_CLASS =
-  "font-medium text-foreground hover:bg-transparent hover:text-foreground";
+  "font-normal text-foreground hover:bg-transparent hover:text-foreground";
 
 interface SidebarChatRowProps {
   id: string;
@@ -32,8 +32,6 @@ interface SidebarChatRowProps {
   onSelect?: (id: string) => void;
   onRename?: (id: string, nextTitle: string) => void;
   onArchive?: (id: string) => void;
-  onMouseEnter?: (e: React.MouseEvent<HTMLElement>) => void;
-  activeRef?: (el: HTMLElement | null) => void;
 }
 
 export function SidebarChatRow({
@@ -46,15 +44,12 @@ export function SidebarChatRow({
   onSelect,
   onRename,
   onArchive,
-  onMouseEnter,
-  activeRef,
 }: SidebarChatRowProps) {
   const { t } = useTranslation(["sidebar", "common"]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
   const displayTitle = getDisplaySessionTitle(
     title,
     t("common:session.defaultTitle"),
@@ -75,20 +70,6 @@ export function SidebarChatRow({
     inputRef.current?.focus();
     inputRef.current?.select();
   }, [editing]);
-
-  useEffect(() => {
-    if (!activeRef || !isActive || !rowRef.current) {
-      return;
-    }
-
-    const frame = requestAnimationFrame(() => {
-      if (rowRef.current) {
-        activeRef(rowRef.current);
-      }
-    });
-
-    return () => cancelAnimationFrame(frame);
-  }, [activeRef, isActive]);
 
   const startRename = () => {
     setDraftTitle(editableTitle);
@@ -142,7 +123,7 @@ export function SidebarChatRow({
               cancelRename();
             }
           }}
-          className="flex-1 min-w-0 px-3 text-[13px] font-light"
+          className="flex-1 min-w-0 px-3 text-sm font-normal"
           style={{ height: 32 }}
         />
       </div>
@@ -150,9 +131,8 @@ export function SidebarChatRow({
   }
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: wrapper div for hover detection, interactive content is the inner Button
+    // biome-ignore lint/a11y/noStaticElementInteractions: wrapper handles drag and context menu, interactive content is the inner Button
     <div
-      ref={rowRef}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData("text/x-session-id", id);
@@ -165,11 +145,10 @@ export function SidebarChatRow({
         setMenuOpen(true);
       }}
       className={cn(
-        "relative flex items-center group rounded-md transition-colors duration-200 active:cursor-grabbing",
+        "relative flex items-center group/chat-row rounded-md transition-colors duration-200 active:cursor-grabbing",
         dragging && "opacity-40 bg-accent/30",
         className,
       )}
-      onMouseEnter={onMouseEnter}
     >
       <Button
         type="button"
@@ -183,7 +162,7 @@ export function SidebarChatRow({
         }}
         title={t("actions.renameHint")}
         className={cn(
-          "flex-1 min-w-0 justify-start gap-2 rounded-md pl-3 pr-8 py-2 text-[13px] font-light active:cursor-grabbing",
+          "flex-1 min-w-0 justify-start gap-2 rounded-md pl-3 pr-8 py-2 text-sm font-normal active:cursor-grabbing",
           isActive ? ACTIVE_CHAT_ROW_CLASS : INACTIVE_CHAT_ROW_CLASS,
         )}
       >
@@ -209,10 +188,10 @@ export function SidebarChatRow({
             aria-label={t("menu.optionsFor", { label: displayTitle })}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              "absolute right-1 size-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50",
+              "absolute right-1 size-6 rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               menuOpen
                 ? "visible opacity-100"
-                : "invisible group-hover:visible opacity-0 group-hover:opacity-100",
+                : "invisible group-hover/chat-row:visible opacity-0 group-hover/chat-row:opacity-100",
             )}
           >
             <MoreHorizontal className="size-3.5" />

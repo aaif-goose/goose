@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   IconHistory,
@@ -28,7 +28,6 @@ import { useSessionSearch } from "@/features/sessions/hooks/useSessionSearch";
 import { SidebarProjectsSection } from "./SidebarProjectsSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSearchResults } from "./SidebarSearchResults";
-import { useSidebarHighlight } from "./useSidebarHighlight";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -259,47 +258,10 @@ export function Sidebar({
   const toggleProject = (projectId: string) =>
     setExpandedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
 
-  const navRef = useRef<HTMLElement>(null);
-  const homeRef = useRef<HTMLButtonElement>(null);
-  const navItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-
-  const {
-    currentRect,
-    isHovering,
-    isResizing: isHighlightResizing,
-    onItemMouseEnter,
-    onNavMouseLeave,
-    updateActiveRect,
-  } = useSidebarHighlight(navRef);
-
   const activeProjectId =
     activeSessionId && activeView === "chat"
       ? (sessions.find((s) => s.id === activeSessionId)?.projectId ?? null)
       : null;
-
-  useEffect(() => {
-    if (activeSessionId && activeView === "chat") return;
-    if (activeView === "home") {
-      updateActiveRect(homeRef.current);
-    } else if (activeView && navItemRefs.current[activeView]) {
-      updateActiveRect(navItemRefs.current[activeView]);
-    } else {
-      updateActiveRect(null);
-    }
-  }, [activeSessionId, activeView, updateActiveRect]);
-
-  const activeSessionRefCallback = useCallback(
-    (el: HTMLElement | null) => {
-      if (activeSessionId && el) updateActiveRect(el);
-    },
-    [activeSessionId, updateActiveRect],
-  );
-  const activeProjectRefCallback = useCallback(
-    (el: HTMLElement | null) => {
-      if (activeProjectId && el) updateActiveRect(el);
-    },
-    [activeProjectId, updateActiveRect],
-  );
 
   return (
     <div
@@ -310,7 +272,7 @@ export function Sidebar({
       )}
       style={{ width: collapsed ? 54 : width }}
     >
-      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background [--muted-foreground:var(--text-subtle)]">
+      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background">
         <div
           className={cn(
             "flex-shrink-0 pt-3",
@@ -342,34 +304,18 @@ export function Sidebar({
 
         <div className="relative flex-1 min-h-0 overflow-hidden">
           <nav
-            ref={navRef}
             className={cn(
-              "relative h-full overflow-y-auto overflow-x-hidden px-1.5 py-1 pt-1.5 scrollbar-none",
+              "relative h-full overflow-y-auto overflow-x-hidden px-1.5 py-1 pt-1 scrollbar-none",
               collapsed ? "pb-16" : "pb-[72px]",
             )}
-            onMouseLeave={onNavMouseLeave}
           >
-            {currentRect && !collapsed && (
-              <div
-                className="absolute left-1.5 right-1.5 rounded-lg bg-accent/50 pointer-events-none z-0"
-                style={{
-                  top: currentRect.top,
-                  height: currentRect.height,
-                  transition:
-                    isHovering || isHighlightResizing
-                      ? "top 0ms, height 0ms"
-                      : "top 200ms ease, height 200ms ease, opacity 200ms ease",
-                }}
-              />
-            )}
-
             <div className="relative z-10 space-y-0.5">
               {collapsed && (
                 <button
                   type="button"
                   onClick={onCollapse}
                   title={t("actions.expand")}
-                  className="flex w-full items-center gap-2.5 rounded-md p-3 text-[13px] text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                  className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-base text-muted-foreground transition-colors duration-200 hover:text-foreground"
                   aria-label={t("actions.expand")}
                 >
                   <IconLayoutSidebar className="size-4 flex-shrink-0" />
@@ -379,7 +325,7 @@ export function Sidebar({
 
               <div
                 className={cn(
-                  "mb-4 flex items-center w-full rounded-md transition-all duration-300 ease-out",
+                  "mb-3 flex items-center w-full rounded-md transition-all duration-300 ease-out",
                   collapsed
                     ? "justify-center p-3 text-muted-foreground"
                     : "gap-2 border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent",
@@ -413,7 +359,6 @@ export function Sidebar({
               </div>
 
               <SidebarNavItem
-                ref={homeRef}
                 testId="nav-home"
                 icon={IconHome}
                 label={t("navigation.home")}
@@ -422,7 +367,6 @@ export function Sidebar({
                 labelVisible={labelVisible}
                 isActive={activeView === "home"}
                 onClick={() => onNavigate?.("home")}
-                onMouseEnter={onItemMouseEnter}
               />
 
               {navItems.map((item, index) => {
@@ -430,9 +374,6 @@ export function Sidebar({
                 return (
                   <SidebarNavItem
                     key={item.id}
-                    ref={(el) => {
-                      navItemRefs.current[item.id] = el;
-                    }}
                     icon={item.icon}
                     label={item.label}
                     collapsed={collapsed}
@@ -440,7 +381,6 @@ export function Sidebar({
                     labelVisible={labelVisible}
                     isActive={isActive}
                     onClick={() => onNavigate?.(item.id)}
-                    onMouseEnter={onItemMouseEnter}
                     itemTransitionDelay={
                       !collapsed && expanded ? `${index * 30}ms` : "0ms"
                     }
@@ -511,9 +451,6 @@ export function Sidebar({
                   onRenameChat={onRenameChat}
                   onMoveToProject={onMoveToProject}
                   onReorderProject={onReorderProject}
-                  onItemMouseEnter={onItemMouseEnter}
-                  activeSessionRefCallback={activeSessionRefCallback}
-                  activeProjectRefCallback={activeProjectRefCallback}
                 />
               ))}
           </nav>
@@ -530,8 +467,10 @@ export function Sidebar({
               size={collapsed ? "icon-sm" : "default"}
               onClick={onSettingsClick}
               className={cn(
-                "h-10 w-full rounded-md bg-transparent text-muted-foreground hover:text-foreground",
-                collapsed ? "justify-center p-3" : "justify-start gap-2.5 p-3",
+                "h-10 w-full rounded-md bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+                collapsed
+                  ? "justify-center p-3"
+                  : "justify-start gap-2.5 px-3 py-2.5",
               )}
               title={t("settings:title")}
               aria-label={t("settings:title")}
@@ -540,7 +479,7 @@ export function Sidebar({
               {!collapsed && (
                 <span
                   className={cn(
-                    "whitespace-nowrap text-[13px]",
+                    "whitespace-nowrap text-base",
                     labelTransition,
                     labelVisible
                       ? "opacity-100 w-auto"

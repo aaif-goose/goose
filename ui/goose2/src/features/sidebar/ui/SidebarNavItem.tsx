@@ -1,4 +1,4 @@
-import { forwardRef, type ComponentType, type MouseEventHandler } from "react";
+import type { ComponentType } from "react";
 import { cn } from "@/shared/lib/cn";
 
 interface SidebarNavItemProps {
@@ -9,46 +9,36 @@ interface SidebarNavItemProps {
   labelVisible: boolean;
   isActive: boolean;
   onClick: () => void;
-  onMouseEnter: MouseEventHandler<HTMLElement>;
   testId?: string;
   itemTransitionDelay?: string;
   labelTransitionDelay?: string;
 }
 
-export const SidebarNavItem = forwardRef<
-  HTMLButtonElement,
-  SidebarNavItemProps
->(function SidebarNavItem(
-  {
-    icon: Icon,
-    label,
-    collapsed,
-    labelTransition,
-    labelVisible,
-    isActive,
-    onClick,
-    onMouseEnter,
-    testId,
-    itemTransitionDelay,
-    labelTransitionDelay,
-  },
-  ref,
-) {
+export function SidebarNavItem({
+  icon: Icon,
+  label,
+  collapsed,
+  labelTransition,
+  labelVisible,
+  isActive,
+  onClick,
+  testId,
+  itemTransitionDelay,
+  labelTransitionDelay,
+}: SidebarNavItemProps) {
   return (
     <button
-      ref={ref}
       type="button"
       data-testid={testId}
       onClick={onClick}
-      onMouseEnter={onMouseEnter}
       title={collapsed ? label : undefined}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "flex items-center w-full text-[13px] transition-colors duration-200 rounded-md",
-        "gap-2.5 p-3",
+        "flex items-center w-full text-base transition-colors duration-200 rounded-md",
+        "gap-2.5 px-3 py-2",
         isActive
-          ? "font-medium text-foreground"
+          ? "font-normal text-foreground"
           : "text-muted-foreground hover:text-foreground",
       )}
       style={{ transitionDelay: itemTransitionDelay }}
@@ -66,4 +56,4 @@ export const SidebarNavItem = forwardRef<
       </span>
     </button>
   );
-});
+}

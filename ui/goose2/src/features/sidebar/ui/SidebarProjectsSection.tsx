@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import {
   IconChevronDown,
   IconChevronRight,
-  IconLibraryPlusFilled,
   IconMessage,
   IconPlus,
 } from "@tabler/icons-react";
@@ -18,7 +17,7 @@ import { SidebarChatRow } from "./SidebarChatRow";
 
 const MAX_VISIBLE_CHATS = 5;
 const PROJECT_ROW_TEXT_CLASS =
-  "text-muted-foreground hover:bg-transparent hover:text-foreground group-hover:text-foreground";
+  "text-muted-foreground hover:bg-transparent hover:text-foreground";
 
 interface TabInfo {
   id: string;
@@ -51,9 +50,6 @@ interface SidebarProjectsSectionProps {
   onRenameChat?: (sessionId: string, nextTitle: string) => void;
   onMoveToProject?: (sessionId: string, projectId: string | null) => void;
   onReorderProject?: (fromId: string, toId: string) => void;
-  onItemMouseEnter?: (e: React.MouseEvent<HTMLElement>) => void;
-  activeSessionRefCallback?: (el: HTMLElement | null) => void;
-  activeProjectRefCallback?: (el: HTMLElement | null) => void;
 }
 
 function ProjectSection({
@@ -71,9 +67,6 @@ function ProjectSection({
   onArchiveChat,
   onRenameChat,
   onMoveToProject,
-  onItemMouseEnter,
-  activeSessionRefCallback,
-  activeProjectRefCallback,
 }: {
   project: ProjectInfo;
   projectChats: TabInfo[];
@@ -89,9 +82,6 @@ function ProjectSection({
   onArchiveChat?: (sessionId: string) => void;
   onRenameChat?: (sessionId: string, nextTitle: string) => void;
   onMoveToProject?: (sessionId: string, projectId: string | null) => void;
-  onItemMouseEnter?: (e: React.MouseEvent<HTMLElement>) => void;
-  activeSessionRefCallback?: (el: HTMLElement | null) => void;
-  activeProjectRefCallback?: (el: HTMLElement | null) => void;
 }) {
   const { t } = useTranslation(["sidebar", "common"]);
   const [showAll, setShowAll] = useState(false);
@@ -135,34 +125,28 @@ function ProjectSection({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div
-        ref={
-          activeProjectId === project.id ? activeProjectRefCallback : undefined
-        }
-        className="relative flex items-center group rounded-md transition-colors duration-200"
-      >
+      <div className="relative flex items-center group rounded-md transition-colors duration-200">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           onClick={() => toggleProject(project.id)}
-          onMouseEnter={onItemMouseEnter}
           className={cn(
-            "flex-1 min-w-0 justify-start gap-2 rounded-md px-3 py-2 text-[13px] font-light",
+            "flex-1 min-w-0 justify-start gap-2 rounded-md px-3 py-2 text-base font-normal",
             activeProjectId === project.id
-              ? "font-medium text-foreground hover:bg-transparent hover:text-foreground group-hover:text-foreground"
+              ? "font-normal text-foreground hover:bg-transparent hover:text-foreground"
               : PROJECT_ROW_TEXT_CLASS,
           )}
         >
           <span className="relative flex h-3 w-3 flex-shrink-0 items-center justify-center">
             <span
-              className="absolute inline-block h-2 w-2 rounded-full transition-opacity duration-150 group-hover:opacity-0"
+              className="absolute inline-block h-2 w-2 rounded-full group-hover:opacity-0"
               style={{ backgroundColor: project.color }}
             />
             {isExpanded ? (
-              <IconChevronDown className="absolute h-3 w-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+              <IconChevronDown className="absolute h-3 w-3 opacity-0 group-hover:opacity-100" />
             ) : (
-              <IconChevronRight className="absolute h-3 w-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+              <IconChevronRight className="absolute h-3 w-3 opacity-0 group-hover:opacity-100" />
             )}
           </span>
           <span className="flex-1 min-w-0 truncate text-left">
@@ -209,8 +193,6 @@ function ProjectSection({
                 onSelect={onSelectSession}
                 onRename={onRenameChat}
                 onArchive={onArchiveChat}
-                onMouseEnter={onItemMouseEnter}
-                activeRef={isActive ? activeSessionRefCallback : undefined}
               />
             );
           })}
@@ -280,9 +262,6 @@ export function SidebarProjectsSection({
   onRenameChat,
   onMoveToProject,
   onReorderProject,
-  onItemMouseEnter,
-  activeSessionRefCallback,
-  activeProjectRefCallback,
 }: SidebarProjectsSectionProps) {
   const { t } = useTranslation(["sidebar", "common"]);
   const [recentsDragOver, setRecentsDragOver] = useState(false);
@@ -332,13 +311,13 @@ export function SidebarProjectsSection({
     >
       <div
         className={cn(
-          "group flex items-center transition-all duration-300",
-          collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-4 pb-1",
+          "group/projects-header flex items-center transition-all duration-300",
+          collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-5 pb-1.5",
         )}
       >
         <span
           className={cn(
-            "text-xs font-light uppercase tracking-wider text-muted-foreground flex-1 pl-3",
+            "text-[12px] font-medium text-muted-foreground/80 flex-1 pl-3",
             labelTransition,
             labelVisible
               ? "opacity-100 w-auto"
@@ -351,15 +330,15 @@ export function SidebarProjectsSection({
           <Button
             type="button"
             variant="ghost"
-            size="icon-xs"
+            size="xs"
             onClick={onCreateProject}
             title={t("actions.newProject")}
             className={cn(
-              "mr-1 size-6 flex-shrink-0 rounded-md text-muted-foreground hover:text-foreground",
-              "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+              "mr-1 h-6 flex-shrink-0 rounded-full bg-muted px-2 text-[11px] text-foreground opacity-0 transition-opacity duration-150 ease-out hover:bg-muted/80 hover:text-foreground",
+              "pointer-events-none group-hover/projects-header:pointer-events-auto group-hover/projects-header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100",
             )}
           >
-            <IconLibraryPlusFilled className="size-3.5" />
+            {t("actions.newProject")}
           </Button>
         )}
       </div>
@@ -374,7 +353,7 @@ export function SidebarProjectsSection({
               key={project.id}
               title={project.name}
               onClick={() => onNavigate?.("projects")}
-              className="rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              className="rounded-lg text-muted-foreground hover:bg-transparent hover:text-foreground"
             >
               <span
                 className="inline-block size-2.5 rounded-full"
@@ -451,9 +430,6 @@ export function SidebarProjectsSection({
                 onArchiveChat={onArchiveChat}
                 onRenameChat={onRenameChat}
                 onMoveToProject={onMoveToProject}
-                onItemMouseEnter={onItemMouseEnter}
-                activeSessionRefCallback={activeSessionRefCallback}
-                activeProjectRefCallback={activeProjectRefCallback}
               />
             </div>
           ))}
@@ -470,12 +446,12 @@ export function SidebarProjectsSection({
         <div
           className={cn(
             "relative group flex items-center transition-all duration-300",
-            collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-4 pb-1",
+            collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-5 pb-1.5",
           )}
         >
           <span
             className={cn(
-              "text-xs font-light uppercase tracking-wider text-muted-foreground flex-1 pl-3",
+              "text-[12px] font-medium text-muted-foreground/80 flex-1 pl-3",
               labelTransition,
               labelVisible
                 ? "opacity-100 w-auto"
@@ -520,7 +496,7 @@ export function SidebarProjectsSection({
                   className={cn(
                     "relative rounded-lg",
                     activeSessionId === session.id
-                      ? "bg-accent/70 text-foreground hover:bg-accent/70"
+                      ? "bg-transparent text-foreground hover:bg-transparent"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -548,8 +524,6 @@ export function SidebarProjectsSection({
                     onSelect={onSelectSession}
                     onRename={onRenameChat}
                     onArchive={onArchiveChat}
-                    onMouseEnter={onItemMouseEnter}
-                    activeRef={isActive ? activeSessionRefCallback : undefined}
                   />
                 );
               })}
