@@ -29,7 +29,6 @@ import { hydrateProjectNames } from "../lib/projectHydration";
 import {
   compareSkillsByName,
   downloadExport,
-  uniqueSkillCategories,
   uniqueProjectFilters,
 } from "../lib/skillsHelpers";
 import {
@@ -40,6 +39,7 @@ import {
   type SkillInfo,
 } from "../api/skills";
 import {
+  uniqueSkillCategories,
   withInferredSkillCategories,
   type SkillCategory,
   type SkillViewInfo,
