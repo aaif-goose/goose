@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   checkAllProviderStatus: vi.fn(),
   deleteProviderConfig: vi.fn(),
   getProviderConfig: vi.fn(),
+  refreshProviderInventory: vi.fn(),
   saveProviderConfig: vi.fn(),
   syncProviderInventory: vi.fn(),
 }));
@@ -19,6 +20,10 @@ vi.mock("@/features/providers/api/credentials", () => ({
 
 vi.mock("@/features/providers/api/inventorySync", () => ({
   syncProviderInventory: mocks.syncProviderInventory,
+}));
+
+vi.mock("@/features/providers/api/inventory", () => ({
+  refreshProviderInventory: mocks.refreshProviderInventory,
 }));
 
 describe("useCredentials", () => {
@@ -58,6 +63,10 @@ describe("useCredentials", () => {
     ]);
     mocks.saveProviderConfig.mockResolvedValue(saveResponse);
     mocks.deleteProviderConfig.mockResolvedValue(deleteResponse);
+    mocks.refreshProviderInventory.mockResolvedValue({
+      started: ["anthropic"],
+      skipped: [],
+    });
     mocks.syncProviderInventory.mockResolvedValue({
       entries: [],
       refresh: {
@@ -128,5 +137,48 @@ describe("useCredentials", () => {
         "model list failed",
       ),
     );
+  });
+
+  it("invalidates native OAuth secrets before refreshing provider status", async () => {
+    const refreshResponse = {
+      started: ["chatgpt_codex"],
+      skipped: [],
+    };
+    mocks.checkAllProviderStatus
+      .mockResolvedValueOnce([
+        {
+          providerId: "chatgpt_codex",
+          isConfigured: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          providerId: "chatgpt_codex",
+          isConfigured: true,
+        },
+      ]);
+    mocks.refreshProviderInventory.mockResolvedValueOnce(refreshResponse);
+
+    const { result } = renderHook(() => useCredentials());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.configuredIds.has("chatgpt_codex")).toBe(false);
+
+    await act(async () => {
+      await result.current.completeNativeSetup("chatgpt_codex");
+    });
+
+    expect(mocks.refreshProviderInventory).toHaveBeenCalledWith([
+      "chatgpt_codex",
+    ]);
+    expect(
+      mocks.refreshProviderInventory.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.checkAllProviderStatus.mock.invocationCallOrder[1]);
+    expect(mocks.syncProviderInventory).toHaveBeenCalledWith(
+      ["chatgpt_codex"],
+      expect.objectContaining({
+        initialRefresh: refreshResponse,
+      }),
+    );
+    expect(result.current.configuredIds.has("chatgpt_codex")).toBe(true);
   });
 });

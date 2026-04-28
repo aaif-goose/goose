@@ -10,6 +10,7 @@ import {
   syncProviderInventory,
   type SyncProviderInventoryResult,
 } from "@/features/providers/api/inventorySync";
+import { refreshProviderInventory } from "@/features/providers/api/inventory";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import type { ProviderFieldValue } from "@/shared/types/providers";
 
@@ -229,9 +230,10 @@ export function useCredentials(): UseCredentialsReturn {
   const completeNativeSetup = useCallback(
     async (providerId: string) => {
       // Native OAuth returns only after the subprocess writes credentials.
-      // The ACP refresh then invalidates its cache before reading them.
+      // Inventory refresh invalidates ACP's secret cache before status reads it.
+      const initialRefresh = await refreshProviderInventory([providerId]);
       await refreshStatuses();
-      startInventorySync(providerId);
+      startInventorySync(providerId, initialRefresh);
     },
     [refreshStatuses, startInventorySync],
   );
