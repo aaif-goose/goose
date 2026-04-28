@@ -47,46 +47,44 @@ export function useAppStartup() {
         }
       };
 
-      const loadProviders = async () => {
+      const loadProvidersAndInventory = async () => {
         const t0 = performance.now();
         store.setProvidersLoading(true);
-        try {
-          const { discoverAcpProviders } = await import("@/shared/api/acp");
-          const providers = await discoverAcpProviders();
-          store.setProviders(providers);
-          perfLog(
-            `[perf:startup] loadProviders done in ${(performance.now() - t0).toFixed(1)}ms (n=${providers.length})`,
-          );
-        } catch (err) {
-          console.error("Failed to load ACP providers on startup:", err);
-        } finally {
-          store.setProvidersLoading(false);
-        }
-      };
-
-      const loadProviderInventory = async () => {
-        const t0 = performance.now();
         inventoryStore.setLoading(true);
         try {
           const { getProviderInventory } = await import(
             "@/features/providers/api/inventory"
           );
           const entries = await getProviderInventory();
+
+          // Populate inventory store
           inventoryStore.setEntries(entries);
+
+          // Derive ACP providers from the same response
+          const { discoverAcpProvidersFromEntries } = await import(
+            "@/shared/api/acp"
+          );
+          const providers = discoverAcpProvidersFromEntries(entries);
+          store.setProviders(providers);
+
           perfLog(
-            `[perf:startup] loadProviderInventory done in ${(performance.now() - t0).toFixed(1)}ms (n=${entries.length})`,
+            `[perf:startup] loadProvidersAndInventory done in ${(performance.now() - t0).toFixed(1)}ms (entries=${entries.length}, providers=${providers.length})`,
           );
           return entries;
         } catch (err) {
-          console.error("Failed to load provider inventory on startup:", err);
+          console.error(
+            "Failed to load providers and inventory on startup:",
+            err,
+          );
           return [];
         } finally {
+          store.setProvidersLoading(false);
           inventoryStore.setLoading(false);
         }
       };
 
       const refreshConfiguredProviderInventory = async (
-        initialEntries?: Awaited<ReturnType<typeof loadProviderInventory>>,
+        initialEntries?: Awaited<ReturnType<typeof loadProvidersAndInventory>>,
       ) => {
         try {
           const entries =
@@ -146,15 +144,14 @@ export function useAppStartup() {
         setActiveSession(null);
       };
 
-      const inventoryLoad = loadProviderInventory();
+      const providersAndInventoryLoad = loadProvidersAndInventory();
 
       await Promise.allSettled([
         loadPersonas(),
-        loadProviders(),
-        inventoryLoad,
+        providersAndInventoryLoad,
         loadSessionState(),
       ]);
-      void inventoryLoad.then((entries) =>
+      void providersAndInventoryLoad.then((entries) =>
         refreshConfiguredProviderInventory(entries),
       );
       perfLog(
