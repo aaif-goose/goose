@@ -15,6 +15,8 @@ import {
 import type { ProviderDisplayInfo } from "@/shared/types/providers";
 
 type SetupPhase = "idle" | "checking" | "installing" | "authenticating";
+type InstallStatus = "checking" | "installed" | "missing";
+type AuthStatus = "checking" | "authenticated" | "unauthenticated" | "unknown";
 
 interface OutputLine {
   id: number;
@@ -32,8 +34,8 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   const [setupPhase, setSetupPhase] = useState<SetupPhase>("idle");
   const [setupOutput, setSetupOutput] = useState<OutputLine[]>([]);
   const [setupError, setSetupError] = useState<string | null>(null);
-  const [isInstalled, setIsInstalled] = useState<boolean | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [installStatus, setInstallStatus] = useState<InstallStatus>("checking");
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("checking");
   const outputRef = useRef<HTMLDivElement>(null);
   const outputLengthRef = useRef(0);
   const lineCounterRef = useRef(0);
@@ -45,7 +47,6 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   const isActive = setupPhase !== "idle";
   const hasInstallCommand = !!provider.installCommand;
   const hasAuthCommand = !!provider.authCommand;
-  const hasAuthStatusCheck = !!provider.authStatusCommand;
   const hasBinary = !!provider.binaryName;
   const authStorageKey = `agent-provider-auth:${provider.id}`;
 
@@ -83,24 +84,25 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     checkAgentInstalled(provider.id)
       .then((installed) => {
         if (!isMountedRef.current) return;
-        setIsInstalled(installed);
+        setInstallStatus(installed ? "installed" : "missing");
         if (installed && provider.authStatusCommand) {
           return checkAgentAuth(provider.id).then((authenticated) => {
             if (!isMountedRef.current) return;
-            setIsAuthenticated(authenticated);
+            setAuthStatus(authenticated ? "authenticated" : "unauthenticated");
           });
         }
         if (installed && !provider.authStatusCommand) {
-          setIsAuthenticated(getAuthHint() ? true : null);
+          setAuthStatus(getAuthHint() ? "authenticated" : "unknown");
         }
         if (!installed) {
-          setIsAuthenticated(null);
+          setAuthStatus("unknown");
           setAuthHint(false);
         }
       })
       .catch(() => {
         if (!isMountedRef.current) return;
-        setIsInstalled(false);
+        setInstallStatus("missing");
+        setAuthStatus("unknown");
       });
   }, [
     getAuthHint,
@@ -135,7 +137,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     setSetupOutput([]);
     lineCounterRef.current = 0;
 
-    if (hasInstallCommand && isInstalled === false) {
+    if (hasInstallCommand && installStatus === "missing") {
       await runInstall();
     } else if (hasAuthCommand) {
       await runAuth();
@@ -163,8 +165,9 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
         setSetupPhase("checking");
         const installed = await checkAgentInstalled(provider.binaryName);
         if (!isMountedRef.current) return;
-        setIsInstalled(installed);
+        setInstallStatus(installed ? "installed" : "missing");
         if (!installed) {
+          setAuthStatus("unknown");
           setAuthHint(false);
           setSetupError(
             "Install finished but the CLI was not found on PATH. You may need to restart your terminal.",
@@ -206,7 +209,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
       clearListener();
       if (!isMountedRef.current) return;
       setAuthHint(true);
-      setIsAuthenticated(true);
+      setAuthStatus("authenticated");
       setSetupPhase("idle");
     } catch (err) {
       clearListener();
@@ -221,15 +224,19 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     void handleConnect();
   }
 
-  if (provider.showOnlyWhenInstalled && isInstalled !== true) return null;
+  if (provider.showOnlyWhenInstalled && installStatus !== "installed")
+    return null;
 
   const isReady =
     isBuiltIn ||
-    (isInstalled === true && !hasAuthCommand) ||
-    (isInstalled === true && isAuthenticated === true);
+    (installStatus === "installed" && !hasAuthCommand) ||
+    (installStatus === "installed" && authStatus === "authenticated");
   const needsAuth =
-    isInstalled === true && hasAuthCommand && isAuthenticated !== true;
-  const needsInstall = isInstalled === false && hasInstallCommand;
+    installStatus === "installed" &&
+    hasAuthCommand &&
+    authStatus !== "checking" &&
+    authStatus !== "authenticated";
+  const needsInstall = installStatus === "missing" && hasInstallCommand;
 
   function renderStatusIndicator() {
     if (isBuiltIn || isReady) {
@@ -272,7 +279,6 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
           variant="ghost"
           size="icon-xs"
           onClick={() => void handleConnect()}
-          disabled={isInstalled === null && hasBinary}
           className="flex-shrink-0 text-muted-foreground"
           aria-label={t("providers.agents.installLabel", {
             name: provider.displayName,
@@ -290,8 +296,8 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     if (isBuiltIn || isReady) return null;
     if (setupError) return "Setup failed";
 
-    if (isInstalled === null && hasBinary) return "Checking...";
-    if (isInstalled === true && hasAuthStatusCheck && isAuthenticated === null)
+    if (installStatus === "checking" && hasBinary) return "Checking...";
+    if (installStatus === "installed" && authStatus === "checking")
       return "Checking...";
 
     return null;
