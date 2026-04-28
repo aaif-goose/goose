@@ -36,28 +36,26 @@ export function ComposerChip({
   return (
     <span
       className={cn(
-        "group inline-flex h-6 max-w-64 items-center rounded-full pl-[9px] pr-2 text-xs font-normal transition-[background-color,color,padding-right] hover:pr-1 focus-within:pr-1",
+        "group inline-flex h-6 max-w-64 items-center gap-1.5 rounded-full pl-[9px] pr-2 text-xs font-normal transition-colors",
         toneClasses[tone],
         className,
       )}
       title={title ?? label}
     >
-      <span className="flex min-w-0 items-center gap-1.5">
-        {leading ? (
-          <span className="flex shrink-0 items-center justify-center">
-            {leading}
-          </span>
-        ) : null}
-        <span className="min-w-0 truncate">{label}</span>
-      </span>
       <button
         type="button"
         onClick={onRemove}
-        className="-mr-px flex h-5 w-0 shrink-0 items-center justify-center overflow-hidden rounded-full text-current opacity-0 transition-[width,opacity] hover:bg-transparent hover:opacity-100 focus-visible:w-5 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:w-5 group-hover:opacity-45 group-focus-within:w-5 group-focus-within:opacity-45"
+        className="group/remove relative flex size-3.5 shrink-0 items-center justify-center rounded-full text-current focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         aria-label={removeLabel}
       >
-        <X className="size-3.5" />
+        {leading ? (
+          <span className="flex items-center justify-center opacity-100 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
+            {leading}
+          </span>
+        ) : null}
+        <X className="absolute size-3.5 opacity-0 transition-opacity group-hover:opacity-45 group-focus-within:opacity-45 group-hover/remove:opacity-100 group-focus-visible/remove:opacity-100" />
       </button>
+      <span className="min-w-0 truncate">{label}</span>
     </span>
   );
 }
