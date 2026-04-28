@@ -377,7 +377,11 @@ export function SettingsModal({
       >
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("deleteProject.title")}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("deleteProject.title", {
+                name: deletingProject?.name ?? "",
+              })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("deleteProject.description", {
                 name: deletingProject?.name ?? "",

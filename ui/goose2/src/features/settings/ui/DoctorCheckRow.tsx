@@ -127,9 +127,9 @@ export function DoctorCheckRow({ check, onFixed }: DoctorCheckRowProps) {
             <AlertDialogDescription>
               {t("settings:doctor.runFixDescription")}
             </AlertDialogDescription>
-            <p className="break-all font-mono text-xs text-muted-foreground">
+            <code className="block break-all rounded bg-muted px-3 py-2 font-mono text-xs">
               {check.fixCommand}
-            </p>
+            </code>
           </AlertDialogHeader>
           {fixError && <p className="text-xs text-destructive">{fixError}</p>}
           <AlertDialogFooter>

@@ -34,8 +34,8 @@
         "writing": "Redacción"
       }
     },
-    "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
-    "deleteTitle": "¿Eliminar skill?",
+    "deleteDescription": "Esta habilidad y su configuración se eliminarán de forma permanente.",
+    "deleteTitle": "¿Eliminar \"{{name}}\" de forma permanente?",
     "description": "Las skills son instrucciones reutilizables que ayudan a un agente a manejar tareas, flujos de trabajo o herramientas específicas.",
     "detailEmptyDescription": "Selecciona una skill para inspeccionar su origen, ubicación e instrucciones.",
     "detailEmptyTitle": "Elige una skill",

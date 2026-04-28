@@ -1,6 +1,6 @@
 {
   "about": {
-    "description": "About information will appear here.",
+    "description": "View app version, build info, and licenses.",
     "title": "About"
   },
   "appearance": {
@@ -27,7 +27,7 @@
         "spacious": "Spacious"
       }
     },
-    "description": "Customize how Goose looks",
+    "description": "Customize how Goose looks.",
     "theme": {
       "description": "Choose your preferred color scheme",
       "label": "Theme",
@@ -40,7 +40,7 @@
     "title": "Appearance"
   },
   "chats": {
-    "description": "Restore archived chats.",
+    "description": "View and restore your archived chats.",
     "empty": "No archived chats.",
     "messageCount_one": "{{displayCount}} message",
     "messageCount_other": "{{displayCount}} messages",
@@ -70,8 +70,8 @@
     "title": "Compaction"
   },
   "deleteProject": {
-    "description": "Are you sure you want to permanently delete \"{{name}}\"? This can't be undone.",
-    "title": "Delete project permanently?"
+    "description": "This project and all its data will be permanently removed.",
+    "title": "Delete \"{{name}}\" permanently?"
   },
   "extensions": {
     "title": "Extensions",
@@ -125,10 +125,10 @@
     "agents": "Agents",
     "copied": "Copied",
     "copyDetails": "Copy details",
-    "description": "Verify required tools and agent availability for Goose.",
+    "description": "Check the status and fix issues with required tools and agents.",
     "empty": "No checks are available yet.",
-    "rerun": "Re-run",
-    "runFix": "Run fix?",
+    "rerun": "Try again",
+    "runFix": "Run fix command?",
     "runFixDescription": "This will run the following command:",
     "running": "Running checks...",
     "title": "Doctor",
@@ -207,7 +207,7 @@
   },
   "providers": {
     "agents": {
-      "description": "Choose which agents you want to use. You can switch between agents at any time.",
+      "description": "Goose is built in to your workspace. Install others to extend your setup.",
       "errors": {
         "installVerificationFailed": "Install finished but the CLI was not found on PATH. You may need to restart your terminal."
       },
@@ -229,7 +229,7 @@
     "description": "Configure your agents and model providers.",
     "disconnect": "Disconnect",
     "models": {
-      "description": "You need at least one model provider to power the Goose agent. Some agents may bring their own model connections.",
+      "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",
       "notSet": "Not set",
       "setup": {
         "connected": {

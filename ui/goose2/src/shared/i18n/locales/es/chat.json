@@ -99,10 +99,10 @@
   "files": {
     "empty": "Los archivos aparecerán aquí después de asignar un proyecto.",
     "folderEmpty": "La carpeta está vacía",
-    "loadError": "No se pudo cargar esta carpeta.",
+    "loadError": "No se pudo cargar esta carpeta. Inténtalo de nuevo.",
     "loading": "Cargando archivos...",
     "openFolder": "Abrir carpeta: {{path}}",
-    "rootLoadError": "No se pudo cargar esta carpeta."
+    "rootLoadError": "No se pudo cargar esta carpeta. Inténtalo de nuevo."
   },
   "image": {
     "view": "Ver {{label}}"

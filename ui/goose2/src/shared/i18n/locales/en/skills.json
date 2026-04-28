@@ -16,8 +16,8 @@
   },
   "view": {
     "backToSkills": "Back to skills",
-    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This can't be undone.",
-    "deleteTitle": "Delete skill?",
+    "deleteDescription": "This skill and its configuration will be permanently removed.",
+    "deleteTitle": "Delete \"{{name}}\" permanently?",
     "category": "Category",
     "categories": {
       "clear": "Clear categories",

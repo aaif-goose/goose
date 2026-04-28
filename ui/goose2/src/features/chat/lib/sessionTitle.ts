@@ -17,6 +17,14 @@ function attachmentKindLabel(kind: ChatAttachmentDraft["kind"], count: number) {
   }
 }
 
+// The goose ACP backend uses "New Chat" (title case) as its default — normalize to ours.
+export function normalizeAcpTitle(
+  title: string | null | undefined,
+): string | undefined {
+  if (!title) return undefined;
+  return title === "New Chat" ? DEFAULT_CHAT_TITLE : title;
+}
+
 export function getSessionTitleFromDraft(
   text: string,
   attachments?: ChatAttachmentDraft[],
