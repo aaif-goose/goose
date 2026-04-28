@@ -1160,9 +1160,7 @@ impl ExtensionManager {
         resolved_tool: &ResolvedTool,
         cancellation_token: CancellationToken,
     ) -> Option<GooseMcpAppToolAttachment> {
-        let Some(resource_uri) = resolved_tool.resource_uri.clone() else {
-            return None;
-        };
+        let resource_uri = resolved_tool.resource_uri.clone()?;
 
         let mut attachment = GooseMcpAppToolAttachment {
             tool_name: resolved_tool.tool_name.clone(),
