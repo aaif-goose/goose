@@ -28,7 +28,7 @@ describe("homeWidgetStore", () => {
       .addWidget("clock", 130, 66, undefined, { width: 400, height: 300 });
 
     expect(useHomeWidgetStore.getState().instances).toMatchObject([
-      { type: "clock", x: 0, y: 0, z: 1 },
+      { type: "clock", x: 10, y: 0, z: 1 },
     ]);
   });
 
@@ -43,8 +43,8 @@ describe("homeWidgetStore", () => {
       .moveWidget(id, 500, 500, { width: 400, height: 300 });
 
     expect(useHomeWidgetStore.getState().instances[0]).toMatchObject({
-      x: 140,
-      y: 168,
+      x: 160,
+      y: 60,
     });
   });
 

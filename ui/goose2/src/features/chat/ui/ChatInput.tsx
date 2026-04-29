@@ -368,6 +368,7 @@ export function ChatInput({
             {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for file attachments */}
             <div
               ref={containerRef}
+              data-testid="chat-input-drop-target"
               className={cn(
                 "relative bg-transparent px-4 pb-2 pt-4 transition-colors",
                 isAttachmentDragOver && "bg-muted/20",

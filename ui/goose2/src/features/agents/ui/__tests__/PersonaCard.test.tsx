@@ -22,9 +22,17 @@ describe("PersonaCard", () => {
     expect(screen.getByText("Coder")).toBeInTheDocument();
   });
 
-  it("shows built-in badge", () => {
-    render(<PersonaCard persona={makePersona({ isBuiltin: true })} />);
-    expect(screen.getByText("Built-in")).toBeInTheDocument();
+  it("hides custom-only edit action for built-in personas", async () => {
+    const user = userEvent.setup();
+    render(
+      <PersonaCard
+        persona={makePersona({ isBuiltin: true })}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /agent options/i }));
+    expect(screen.queryByRole("menuitem", { name: /edit/i })).toBeNull();
   });
 
   it("does not show built-in badge for custom personas", () => {
@@ -32,9 +40,12 @@ describe("PersonaCard", () => {
     expect(screen.queryByText("Built-in")).not.toBeInTheDocument();
   });
 
-  it("shows avatar with initial", () => {
-    render(<PersonaCard persona={makePersona({ displayName: "Alpha" })} />);
-    expect(screen.getByText("A")).toBeInTheDocument();
+  it("shows persona figure artwork", () => {
+    const { container } = render(
+      <PersonaCard persona={makePersona({ displayName: "Alpha" })} />,
+    );
+
+    expect(container.querySelector('img[aria-hidden="true"]')).not.toBeNull();
   });
 
   it("shows system prompt preview", () => {

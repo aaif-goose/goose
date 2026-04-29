@@ -19,6 +19,8 @@ const mockSkills = [
 ];
 
 vi.mock("../../api/skills", () => ({
+  getCachedSkills: vi.fn(() => []),
+  primeSkillsCache: vi.fn(),
   listSkills: vi.fn().mockResolvedValue([]),
   createSkill: vi.fn().mockResolvedValue(undefined),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
@@ -43,27 +45,27 @@ beforeEach(() => {
 
 describe("SkillsView", () => {
   describe("Rendering", () => {
-    it("shows Skills heading and subtitle", async () => {
-      render(<SkillsView />);
-      expect(screen.getByText("Skills")).toBeInTheDocument();
+    it("shows the new skill tile", async () => {
+      const { container } = render(<SkillsView />);
+
+      await waitFor(() => {
+        expect(container.querySelector(".animate-pulse")).toBeNull();
+      });
+
       expect(
-        screen.getByText("Reusable instructions for your AI agents"),
+        screen.getByRole("button", { name: "New Skill" }),
       ).toBeInTheDocument();
     });
 
-    it("shows New Skill and Import buttons", async () => {
+    it("opens the create dialog from the new skill tile", async () => {
+      const user = userEvent.setup();
       render(<SkillsView />);
-      expect(screen.getByText("New Skill")).toBeInTheDocument();
-      expect(screen.getByText("Import")).toBeInTheDocument();
-    });
 
-    it("shows empty state when no skills exist", async () => {
-      render(<SkillsView />);
-      await waitFor(() => {
-        expect(screen.getByText("No skills yet")).toBeInTheDocument();
-      });
+      await user.click(screen.getByRole("button", { name: "New Skill" }));
+
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
       expect(
-        screen.getByText("Create a skill or drop a .skill.json file here."),
+        screen.getByRole("heading", { name: "New Skill" }),
       ).toBeInTheDocument();
     });
 
@@ -77,51 +79,24 @@ describe("SkillsView", () => {
     });
   });
 
-  describe("Search", () => {
-    it("filters skills by name when searching", async () => {
+  describe("Skill grid", () => {
+    it("renders every returned skill", async () => {
       listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
       render(<SkillsView />);
-      await screen.findByText("code-review");
 
-      await user.type(
-        screen.getByPlaceholderText("Search skills by name or description..."),
-        "code",
-      );
-
-      expect(screen.getByText("code-review")).toBeInTheDocument();
-      expect(screen.queryByText("test-writer")).not.toBeInTheDocument();
-    });
-
-    it("filters skills by description when searching", async () => {
-      listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
-      render(<SkillsView />);
-      await screen.findByText("code-review");
-
-      await user.type(
-        screen.getByPlaceholderText("Search skills by name or description..."),
-        "Writes tests",
-      );
-
-      expect(screen.queryByText("code-review")).not.toBeInTheDocument();
+      expect(await screen.findByText("code-review")).toBeInTheDocument();
       expect(screen.getByText("test-writer")).toBeInTheDocument();
     });
 
-    it("shows empty state when search has no results", async () => {
+    it("shows install placeholders for returned skills", async () => {
       listSkills.mockResolvedValue(mockSkills);
-      const user = userEvent.setup();
       render(<SkillsView />);
-      await screen.findByText("code-review");
 
-      await user.type(
-        screen.getByPlaceholderText("Search skills by name or description..."),
-        "nonexistent",
-      );
-
-      expect(screen.getByText("No matching skills")).toBeInTheDocument();
       expect(
-        screen.getByText("Try a different search term."),
+        await screen.findByLabelText("Install code-review (placeholder)"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText("Install test-writer (placeholder)"),
       ).toBeInTheDocument();
     });
   });

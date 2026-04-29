@@ -179,7 +179,7 @@ describe("HomeScreen", () => {
   it("renders the chat input placeholder with default agent name when no persona selected", () => {
     renderHome();
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention agents"),
+      screen.getByPlaceholderText("Type / for skill and @ to mention"),
     ).toBeInTheDocument();
   });
 

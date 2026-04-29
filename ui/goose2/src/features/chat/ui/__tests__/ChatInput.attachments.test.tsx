@@ -136,11 +136,7 @@ describe("ChatInput attachments", () => {
   it("shows the generic attachment drop overlay for file drags", () => {
     render(<ChatInput onSend={vi.fn()} />);
 
-    const textbox = screen.getByRole("textbox");
-    const composer = textbox.closest("div.rounded-2xl");
-    if (!composer) {
-      throw new Error("Expected composer container");
-    }
+    const composer = screen.getByTestId("chat-input-drop-target");
     const dataTransfer = {
       files: [new File(["hello"], "report.txt", { type: "text/plain" })],
       items: [{ kind: "file" }],
@@ -158,11 +154,7 @@ describe("ChatInput attachments", () => {
   it("does not cancel non-file drops into the composer", () => {
     render(<ChatInput onSend={vi.fn()} />);
 
-    const textbox = screen.getByRole("textbox");
-    const composer = textbox.closest("div.rounded-2xl");
-    if (!composer) {
-      throw new Error("Expected composer container");
-    }
+    const composer = screen.getByTestId("chat-input-drop-target");
 
     const dropEvent = createEvent.drop(composer, {
       dataTransfer: {

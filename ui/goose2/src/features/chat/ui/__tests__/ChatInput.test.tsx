@@ -90,7 +90,7 @@ describe("ChatInput", () => {
   it("renders with default placeholder", () => {
     render(<ChatInput onSend={vi.fn()} />);
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention agents"),
+      screen.getByPlaceholderText("Type / for skill and @ to mention"),
     ).toBeInTheDocument();
   });
 
