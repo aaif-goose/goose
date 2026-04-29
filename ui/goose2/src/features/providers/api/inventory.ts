@@ -33,8 +33,12 @@ export async function refreshProviderInventory(
 
 /**
  * Refresh configured provider inventories in the background, polling until
- * all providers finish refreshing. Does NOT set the store's `loading` flag,
- * so the UI keeps showing cached data during the refresh.
+ * all providers finish refreshing. If no entries are supplied, fetch and merge
+ * the current inventory snapshot first so the UI sees fresh cached data even
+ * when no refresh starts.
+ *
+ * Does NOT set the store's `loading` flag, so the UI keeps showing cached data
+ * during the refresh.
  */
 export async function backgroundRefreshInventory(
   inventoryStore: {
@@ -42,10 +46,13 @@ export async function backgroundRefreshInventory(
   },
   initialEntries?: ProviderInventoryEntryDto[],
 ): Promise<void> {
-  const entries =
-    initialEntries && initialEntries.length > 0
-      ? initialEntries
-      : await getProviderInventory();
+  const entries = initialEntries?.length
+    ? initialEntries
+    : await getProviderInventory();
+
+  if (!initialEntries?.length) {
+    inventoryStore.mergeEntries(entries);
+  }
 
   const configuredProviderIds = entries
     .filter((entry) => entry.configured)
