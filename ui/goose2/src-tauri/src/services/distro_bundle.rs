@@ -20,7 +20,6 @@ pub struct DistroSecurityManifest {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DistroManifest {
-    pub version: Option<String>,
     pub feature_toggles: Option<HashMap<String, bool>>,
     pub security: Option<DistroSecurityManifest>,
 }
@@ -29,7 +28,6 @@ pub struct DistroManifest {
 #[serde(rename_all = "camelCase")]
 pub struct DistroBundleInfo {
     pub present: bool,
-    pub version: Option<String>,
     pub feature_toggles: Option<HashMap<String, bool>>,
     pub security: Option<DistroSecurityManifest>,
 }
@@ -63,7 +61,6 @@ impl DistroBundleState {
         let Some(bundle) = &self.bundle else {
             return DistroBundleInfo {
                 present: false,
-                version: None,
                 feature_toggles: None,
                 security: None,
             };
@@ -71,7 +68,6 @@ impl DistroBundleState {
 
         DistroBundleInfo {
             present: true,
-            version: bundle.manifest.version.clone(),
             feature_toggles: bundle.manifest.feature_toggles.clone(),
             security: bundle.manifest.security.clone(),
         }
@@ -149,13 +145,11 @@ mod tests {
     fn parses_partial_manifest() {
         let manifest = serde_json::from_str::<DistroManifest>(
             r#"{
-                "featureToggles": {"foo": true},
-                "version": "1.2.3"
+                "featureToggles": {"foo": true}
             }"#,
         )
         .expect("manifest should parse");
 
-        assert_eq!(manifest.version.as_deref(), Some("1.2.3"));
         assert_eq!(
             manifest
                 .feature_toggles
