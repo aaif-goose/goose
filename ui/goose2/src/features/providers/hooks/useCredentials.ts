@@ -42,15 +42,18 @@ function inventoryWarning(
   result: SyncProviderInventoryResult,
 ): string | null {
   const entry = result.entries.find((item) => item.providerId === providerId);
-  if (entry?.lastRefreshError) {
-    return entry.lastRefreshError;
-  }
-
   const skipped = result.refresh.skipped?.find(
     (item) => item.providerId === providerId,
   );
+  if (skipped?.reason === "not_configured") {
+    return null;
+  }
   if (skipped?.reason === "unknown_provider") {
     return "Provider inventory is unavailable.";
+  }
+
+  if (entry?.lastRefreshError) {
+    return entry.lastRefreshError;
   }
 
   if (!result.settled && entry?.refreshing) {
@@ -231,11 +234,16 @@ export function useCredentials(): UseCredentialsReturn {
     async (providerId: string) => {
       // Native OAuth returns only after the subprocess writes credentials.
       // Inventory refresh invalidates ACP's secret cache before status reads it.
-      const initialRefresh = await refreshProviderInventory([providerId]);
+      let initialRefresh: SyncProviderInventoryResult["refresh"] | undefined;
+      try {
+        initialRefresh = await refreshProviderInventory([providerId]);
+      } catch (error) {
+        setProviderInventoryWarning(providerId, errorMessage(error));
+      }
       await refreshStatuses();
       startInventorySync(providerId, initialRefresh);
     },
-    [refreshStatuses, startInventorySync],
+    [refreshStatuses, setProviderInventoryWarning, startInventorySync],
   );
 
   return {

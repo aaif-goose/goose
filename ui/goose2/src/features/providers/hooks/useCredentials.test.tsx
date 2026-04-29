@@ -139,6 +139,32 @@ describe("useCredentials", () => {
     );
   });
 
+  it("suppresses stale refresh errors after deleting provider config", async () => {
+    mocks.syncProviderInventory.mockResolvedValueOnce({
+      entries: [
+        {
+          providerId: "anthropic",
+          lastRefreshError: "old refresh failure",
+          refreshing: false,
+        },
+      ],
+      refresh: deleteResponse.refresh,
+      settled: true,
+      polledProviderIds: ["anthropic"],
+    });
+    const { result } = renderHook(() => useCredentials());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.remove("anthropic");
+    });
+
+    await waitFor(() =>
+      expect(result.current.syncingProviderIds.has("anthropic")).toBe(false),
+    );
+    expect(result.current.inventoryWarnings.has("anthropic")).toBe(false);
+  });
+
   it("invalidates native OAuth secrets before refreshing provider status", async () => {
     const refreshResponse = {
       started: ["chatgpt_codex"],
@@ -180,5 +206,43 @@ describe("useCredentials", () => {
       }),
     );
     expect(result.current.configuredIds.has("chatgpt_codex")).toBe(true);
+  });
+
+  it("refreshes native OAuth status when initial inventory refresh fails", async () => {
+    mocks.checkAllProviderStatus
+      .mockResolvedValueOnce([
+        {
+          providerId: "chatgpt_codex",
+          isConfigured: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          providerId: "chatgpt_codex",
+          isConfigured: true,
+        },
+      ]);
+    mocks.refreshProviderInventory.mockRejectedValueOnce(
+      new Error("refresh unavailable"),
+    );
+
+    const { result } = renderHook(() => useCredentials());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.configuredIds.has("chatgpt_codex")).toBe(false);
+
+    await act(async () => {
+      await result.current.completeNativeSetup("chatgpt_codex");
+    });
+
+    expect(mocks.refreshProviderInventory).toHaveBeenCalledWith([
+      "chatgpt_codex",
+    ]);
+    expect(result.current.configuredIds.has("chatgpt_codex")).toBe(true);
+    expect(mocks.syncProviderInventory).toHaveBeenCalledWith(
+      ["chatgpt_codex"],
+      expect.objectContaining({
+        initialRefresh: undefined,
+      }),
+    );
   });
 });
