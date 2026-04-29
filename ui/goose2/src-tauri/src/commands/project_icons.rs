@@ -11,7 +11,6 @@ const MAX_PROJECT_ICON_BYTES: u64 = 512 * 1024;
 pub struct ProjectIconCandidate {
     pub id: String,
     pub label: String,
-    pub path: String,
     pub icon: String,
     pub source_dir: String,
 }
@@ -263,7 +262,6 @@ pub fn scan_project_icons(working_dirs: Vec<String>) -> Result<Vec<ProjectIconCa
         icons.push(ProjectIconCandidate {
             id: candidate.path_string.clone(),
             label: candidate.label,
-            path: candidate.path_string,
             icon,
             source_dir: candidate.source_dir,
         });

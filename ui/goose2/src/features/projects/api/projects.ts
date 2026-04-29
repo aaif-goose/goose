@@ -21,7 +21,6 @@ export interface ProjectInfo {
 export interface ProjectIconCandidate {
   id: string;
   label: string;
-  path: string;
   icon: string;
   sourceDir: string;
 }
