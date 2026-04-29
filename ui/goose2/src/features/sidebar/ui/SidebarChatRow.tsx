@@ -147,7 +147,8 @@ export function SidebarChatRow({
         setMenuOpen(true);
       }}
       className={cn(
-        "relative flex items-center group/chat-row rounded-md transition-colors duration-200 active:cursor-grabbing",
+        "relative flex items-center group/chat-row rounded-md transition-colors duration-200 hover:bg-background-alt focus-within:bg-background-alt active:cursor-grabbing",
+        (isActive || menuOpen) && "bg-background-alt",
         dragging && "opacity-40 bg-accent/30",
         className,
       )}
@@ -205,7 +206,7 @@ export function SidebarChatRow({
                 : "invisible group-hover/chat-row:visible opacity-0 group-hover/chat-row:opacity-100",
             )}
           >
-            <MoreHorizontal className="size-3.5" />
+            <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4}>

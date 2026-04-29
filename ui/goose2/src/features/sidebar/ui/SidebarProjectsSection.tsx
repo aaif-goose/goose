@@ -124,7 +124,12 @@ function ProjectSection({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="relative flex items-center group rounded-md transition-colors duration-200">
+      <div
+        className={cn(
+          "relative flex items-center group rounded-md transition-colors duration-200 hover:bg-background-alt focus-within:bg-background-alt",
+          menuOpen && "bg-background-alt",
+        )}
+      >
         <Button
           type="button"
           variant="ghost"
@@ -175,7 +180,7 @@ function ProjectSection({
               : "invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100",
           )}
         >
-          <IconEdit className="size-3.5" />
+          <IconEdit className="size-4" />
         </Button>
 
         {dragOver && (
