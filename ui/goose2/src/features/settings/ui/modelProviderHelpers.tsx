@@ -49,7 +49,7 @@ export function createDraftValues(
       if (field.secret) {
         return [field.key, ""];
       }
-      return [field.key, currentValue?.value ?? ""];
+      return [field.key, currentValue?.value ?? field.defaultValue ?? ""];
     }),
   );
 }

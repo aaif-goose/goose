@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { resolveAgentProviderCatalogId } from "./providerCatalog";
+import {
+  getCatalogEntry,
+  resolveAgentProviderCatalogId,
+} from "./providerCatalog";
+
+describe("provider catalog", () => {
+  it("exposes Ollama host configuration", () => {
+    const ollama = getCatalogEntry("ollama");
+
+    expect(ollama?.setupMethod).toBe("config_fields");
+    expect(ollama?.fields).toEqual([
+      {
+        key: "OLLAMA_HOST",
+        label: "Host",
+        secret: false,
+        required: true,
+        placeholder: "localhost or http://localhost:11434",
+        defaultValue: "http://localhost:11434",
+      },
+    ]);
+  });
+});
 
 describe("resolveAgentProviderCatalogId", () => {
   it("matches direct catalog ids", () => {

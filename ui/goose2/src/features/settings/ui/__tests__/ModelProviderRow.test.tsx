@@ -73,6 +73,37 @@ describe("ModelProviderRow", () => {
     ]);
   });
 
+  it("pre-fills and saves provider field defaults", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ModelProviderRow
+        provider={modelProvider("ollama", "not_configured")}
+        onGetConfig={onGetConfig}
+        onSaveFields={onSaveFields}
+        onRemoveConfig={onRemoveConfig}
+        onCompleteNativeSetup={onCompleteNativeSetup}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /ollama/i }));
+
+    expect(
+      await screen.findByDisplayValue("http://localhost:11434"),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(onSaveFields).toHaveBeenCalledTimes(1));
+    expect(onSaveFields).toHaveBeenCalledWith([
+      {
+        key: "OLLAMA_HOST",
+        value: "http://localhost:11434",
+        isSecret: false,
+      },
+    ]);
+  });
+
   it("shows the connected row while model inventory is still loading", async () => {
     const user = userEvent.setup();
 
