@@ -6,7 +6,13 @@
     "colorAria": "Color {{color}}",
     "createProject": "Create Project",
     "creating": "Creating...",
+    "customIcon": "Custom icon",
+    "customIconDialogTitle": "Select Icon",
     "editTitle": "Edit Project",
+    "icon": "Icon",
+    "iconAria": "Icon {{icon}}",
+    "iconCandidateTitle": "{{sourceDir}}: {{label}}",
+    "iconFileFilter": "Image files",
     "instructions": "Instructions",
     "instructionsPlaceholder": "System prompt or context for agents working in this project...",
     "name": "Name",
@@ -15,6 +21,8 @@
     "noneUseDefault": "None (use default)",
     "provider": "Provider",
     "saving": "Saving...",
+    "scanningIcons": "Scanning...",
+    "uploadIcon": "Upload",
     "useWorktrees": "Use git worktrees for branch isolation"
   },
   "view": {

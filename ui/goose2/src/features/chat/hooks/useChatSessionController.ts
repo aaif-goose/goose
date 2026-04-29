@@ -135,6 +135,7 @@ export function useChatSessionController({
           id: projectInfo.id,
           name: projectInfo.name,
           workingDirs: projectInfo.workingDirs,
+          icon: projectInfo.icon,
           color: projectInfo.color,
         })),
     [projects],

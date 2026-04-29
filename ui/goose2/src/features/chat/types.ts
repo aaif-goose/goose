@@ -18,6 +18,7 @@ export interface ProjectOption {
   id: string;
   name: string;
   workingDirs: string[];
+  icon?: string | null;
   color?: string | null;
 }
 

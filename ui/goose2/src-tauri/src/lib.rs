@@ -54,6 +54,8 @@ pub fn run() {
             commands::projects::list_archived_projects,
             commands::projects::archive_project,
             commands::projects::restore_project,
+            commands::project_icons::scan_project_icons,
+            commands::project_icons::read_project_icon,
             commands::doctor::run_doctor,
             commands::doctor::run_doctor_fix,
             commands::git::get_git_state,

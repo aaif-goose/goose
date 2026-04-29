@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
+import { IconFolderOpen } from "@tabler/icons-react";
 import { getHomeDir } from "@/shared/api/system";
 import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
@@ -23,7 +22,10 @@ import {
 } from "@/shared/ui/select";
 import {
   createProject,
+  readProjectIcon,
+  scanProjectIcons,
   updateProject,
+  type ProjectIconCandidate,
   type ProjectInfo,
 } from "../api/projects";
 import { discoverAcpProviders, type AcpProvider } from "@/shared/api/acp";
@@ -34,23 +36,10 @@ import {
   parseEditorText,
 } from "../lib/projectPromptText";
 import { PromptEditor } from "./PromptEditor";
+import { DEFAULT_PROJECT_ICON, normalizeProjectIcon } from "./ProjectIcon";
+import { ProjectIconPicker } from "./ProjectIconPicker";
 
-const COLOR_OPTIONS = [
-  "#64748b",
-  "#ef4444",
-  "#f97316",
-  "#f59e0b",
-  "#22c55e",
-  "#10b981",
-  "#14b8a6",
-  "#06b6d4",
-  "#3b82f6",
-  "#6366f1",
-  "#8b5cf6",
-  "#a855f7",
-  "#ec4899",
-  "#f43f5e",
-];
+const DEFAULT_PROJECT_COLOR = "#64748b";
 
 function getDefaultProjectName(path: string | null | undefined): string {
   const trimmed = path?.trim();
@@ -92,8 +81,8 @@ export function CreateProjectDialog({
   const { t } = useTranslation(["projects", "common"]);
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const icon = "\u{1F4C1}";
-  const [color, setColor] = useState(COLOR_OPTIONS[0]);
+  const [icon, setIcon] = useState(DEFAULT_PROJECT_ICON);
+  const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
   const [preferredProvider, setPreferredProvider] = useState<string | null>(
     null,
   );
@@ -102,6 +91,10 @@ export function CreateProjectDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [acpProviders, setAcpProviders] = useState<AcpProvider[]>([]);
+  const [iconCandidates, setIconCandidates] = useState<ProjectIconCandidate[]>(
+    [],
+  );
+  const [iconScanPending, setIconScanPending] = useState(false);
 
   const isEditing = !!editingProject;
 
@@ -135,6 +128,69 @@ export function CreateProjectDialog({
     }
   };
 
+  const handleChooseCustomIcon = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: false,
+        multiple: false,
+        title: t("dialog.customIconDialogTitle"),
+        filters: [
+          {
+            name: t("dialog.iconFileFilter"),
+            extensions: ["svg", "png", "ico", "jpg", "jpeg", "webp"],
+          },
+        ],
+      });
+      if (selected && typeof selected === "string") {
+        const iconData = await readProjectIcon(selected);
+        setIcon(iconData.icon);
+      }
+    } catch {
+      // Dialog plugin not available
+    }
+  };
+
+  const scannedWorkingDirKey = useMemo(
+    () => parseEditorText(prompt).workingDirs.join("\n"),
+    [prompt],
+  );
+
+  useEffect(() => {
+    const workingDirs = scannedWorkingDirKey.split("\n").filter(Boolean);
+    if (!isOpen || workingDirs.length === 0) {
+      setIconCandidates([]);
+      setIconScanPending(false);
+      return;
+    }
+
+    let active = true;
+    setIconScanPending(true);
+    const timeout = window.setTimeout(() => {
+      scanProjectIcons(workingDirs)
+        .then((candidates) => {
+          if (active) {
+            setIconCandidates(candidates);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setIconCandidates([]);
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setIconScanPending(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [isOpen, scannedWorkingDirKey]);
+
   // Pre-fill fields when the dialog opens or when the project identity changes,
   // but NOT on every parent re-render (which would reset user edits mid-typing).
   const prevOpenRef = useRef(false);
@@ -154,6 +210,7 @@ export function CreateProjectDialog({
       setPrompt(
         buildEditorText(editingProject.workingDirs, editingProject.prompt),
       );
+      setIcon(normalizeProjectIcon(editingProject.icon));
       setColor(editingProject.color);
       setPreferredProvider(editingProject.preferredProvider ?? null);
       setUseWorktrees(editingProject.useWorktrees);
@@ -166,7 +223,8 @@ export function CreateProjectDialog({
           "",
         ),
       );
-      setColor(COLOR_OPTIONS[0]);
+      setIcon(DEFAULT_PROJECT_ICON);
+      setColor(DEFAULT_PROJECT_COLOR);
       setPreferredProvider(null);
       setUseWorktrees(false);
       setError(null);
@@ -178,14 +236,15 @@ export function CreateProjectDialog({
   const handleClose = () => {
     setName("");
     setPrompt("");
-    setColor(COLOR_OPTIONS[0]);
+    setIcon(DEFAULT_PROJECT_ICON);
+    setColor(DEFAULT_PROJECT_COLOR);
     setPreferredProvider(null);
     setUseWorktrees(false);
     setError(null);
     onClose();
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     if (!canSave) return;
     setSaving(true);
@@ -257,7 +316,6 @@ export function CreateProjectDialog({
             />
           </div>
 
-          {/* Instructions */}
           <div className="space-y-1">
             <Label className="text-xs font-medium text-muted-foreground">
               {t("dialog.instructions")}
@@ -275,34 +333,18 @@ export function CreateProjectDialog({
               onClick={handleAddDirectory}
               className="mt-1.5"
             >
-              <FolderOpen className="size-3.5" />
+              <IconFolderOpen className="size-3.5" />
               {t("dialog.addDirectory")}
             </Button>
           </div>
 
-          {/* Color */}
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-muted-foreground">
-              {t("dialog.color")}
-            </Label>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {COLOR_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={cn(
-                    "h-6 w-6 rounded-full border-2 transition-transform",
-                    color === c
-                      ? "border-foreground scale-110"
-                      : "border-transparent hover:scale-105",
-                  )}
-                  style={{ backgroundColor: c }}
-                  aria-label={t("dialog.colorAria", { color: c })}
-                />
-              ))}
-            </div>
-          </div>
+          <ProjectIconPicker
+            icon={icon}
+            iconCandidates={iconCandidates}
+            iconScanPending={iconScanPending}
+            onChooseIcon={setIcon}
+            onChooseCustomIcon={handleChooseCustomIcon}
+          />
 
           {/* Provider */}
           <div className="space-y-1.5">

@@ -29,7 +29,7 @@ vi.mock("../../api/projects", () => ({
     name: "Test",
     description: "",
     prompt: "",
-    icon: "\u{1F4C1}",
+    icon: "tabler:folder-code",
     color: "#64748b",
     preferredProvider: null,
     preferredModel: null,
@@ -45,7 +45,7 @@ vi.mock("../../api/projects", () => ({
     name: "Updated",
     description: "",
     prompt: "",
-    icon: "\u{1F4C1}",
+    icon: "tabler:folder-code",
     color: "#ef4444",
     preferredProvider: null,
     preferredModel: null,
@@ -55,6 +55,10 @@ vi.mock("../../api/projects", () => ({
     archivedAt: null,
     createdAt: "2024-01-01",
     updatedAt: "2024-01-01",
+  }),
+  scanProjectIcons: vi.fn().mockResolvedValue([]),
+  readProjectIcon: vi.fn().mockResolvedValue({
+    icon: "data:image/png;base64,aWNvbg==",
   }),
 }));
 
@@ -90,7 +94,7 @@ function makeEditingProject(overrides: Record<string, unknown> = {}) {
     name: "My Project",
     description: "A test project",
     prompt: "Do the thing",
-    icon: "\u{1F4C1}",
+    icon: "tabler:folder-code",
     color: "#ef4444",
     preferredProvider: null,
     preferredModel: null,
@@ -170,8 +174,8 @@ describe("CreateProjectDialog", () => {
       );
     });
 
-    it("selects the correct color from editingProject", () => {
-      const editingProject = makeEditingProject({ color: "#ef4444" });
+    it("selects the correct icon from editingProject", () => {
+      const editingProject = makeEditingProject({ icon: "tabler:code" });
 
       render(
         <CreateProjectDialog
@@ -181,11 +185,10 @@ describe("CreateProjectDialog", () => {
         />,
       );
 
-      const colorButton = screen.getByRole("button", {
-        name: "Color #ef4444",
+      const iconButton = screen.getByRole("button", {
+        name: "Icon Code",
       });
-      // The selected color has border-foreground in its class
-      expect(colorButton.className).toContain("border-foreground");
+      expect(iconButton.className).toContain("border-foreground");
     });
   });
 
@@ -268,9 +271,9 @@ describe("CreateProjectDialog", () => {
       expect(promptEditor).toHaveValue("New instructions");
     });
 
-    it("preserves changed color when editingProject reference changes but dialog stays open", async () => {
+    it("preserves changed icon when editingProject reference changes but dialog stays open", async () => {
       const user = userEvent.setup();
-      const editingProject1 = makeEditingProject({ color: "#ef4444" });
+      const editingProject1 = makeEditingProject({ icon: "tabler:code" });
 
       const { rerender } = render(
         <CreateProjectDialog
@@ -280,22 +283,20 @@ describe("CreateProjectDialog", () => {
         />,
       );
 
-      // Verify initial color is selected
-      const redButton = screen.getByRole("button", {
-        name: "Color #ef4444",
+      const codeButton = screen.getByRole("button", {
+        name: "Icon Code",
       });
-      expect(redButton.className).toContain("border-foreground");
+      expect(codeButton.className).toContain("border-foreground");
 
-      // User clicks a different color
-      const blueButton = screen.getByRole("button", {
-        name: "Color #3b82f6",
+      const terminalButton = screen.getByRole("button", {
+        name: "Icon Terminal",
       });
-      await user.click(blueButton);
-      expect(blueButton.className).toContain("border-foreground");
-      expect(redButton.className).not.toContain("border-foreground");
+      await user.click(terminalButton);
+      expect(terminalButton.className).toContain("border-foreground");
+      expect(codeButton.className).not.toContain("border-foreground");
 
       // Re-render with new reference, same values
-      const editingProject2 = makeEditingProject({ color: "#ef4444" });
+      const editingProject2 = makeEditingProject({ icon: "tabler:code" });
 
       rerender(
         <CreateProjectDialog
@@ -305,9 +306,8 @@ describe("CreateProjectDialog", () => {
         />,
       );
 
-      // The user-selected blue color should be preserved, not reset to red
-      expect(blueButton.className).toContain("border-foreground");
-      expect(redButton.className).not.toContain("border-foreground");
+      expect(terminalButton.className).toContain("border-foreground");
+      expect(codeButton.className).not.toContain("border-foreground");
     });
   });
 
@@ -317,7 +317,7 @@ describe("CreateProjectDialog", () => {
     it("re-populates fields when dialog closes and reopens with a different project", async () => {
       const project1 = makeEditingProject({
         name: "Project Alpha",
-        color: "#ef4444",
+        icon: "tabler:code",
         prompt: "Alpha instructions",
         workingDirs: ["/alpha"],
       });
@@ -347,7 +347,7 @@ describe("CreateProjectDialog", () => {
       // Reopen with a different project
       const project2 = makeEditingProject({
         name: "Project Beta",
-        color: "#3b82f6",
+        icon: "tabler:database",
         prompt: "Beta instructions",
         workingDirs: ["/beta"],
       });
@@ -367,10 +367,10 @@ describe("CreateProjectDialog", () => {
       const promptEditor = screen.getByTestId("prompt-editor");
       expect(promptEditor).toHaveValue("Beta instructions\n\ninclude: /beta");
 
-      const blueButton = screen.getByRole("button", {
-        name: "Color #3b82f6",
+      const databaseButton = screen.getByRole("button", {
+        name: "Icon Database",
       });
-      expect(blueButton.className).toContain("border-foreground");
+      expect(databaseButton.className).toContain("border-foreground");
     });
 
     it("re-populates with same project data after close and reopen (discards user edits)", async () => {

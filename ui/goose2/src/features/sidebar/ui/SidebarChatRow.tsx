@@ -165,11 +165,11 @@ export function SidebarChatRow({
         title={t("actions.renameHint")}
         className={cn(
           "flex-1 min-w-0 justify-start gap-2 rounded-md pr-8 py-2 text-sm font-normal active:cursor-grabbing",
-          nested ? "pl-8" : "pl-3",
+          nested ? "pl-9" : "pl-3",
           isActive ? ACTIVE_CHAT_ROW_CLASS : INACTIVE_CHAT_ROW_CLASS,
         )}
       >
-        {showActivityIndicator && (
+        {showActivityIndicator && !nested && (
           <span className="flex h-3 w-3 shrink-0 items-center justify-center">
             <SessionActivityIndicator
               isRunning={isRunning}
@@ -181,6 +181,14 @@ export function SidebarChatRow({
           {displayTitle}
         </span>
       </Button>
+      {showActivityIndicator && nested && (
+        <SessionActivityIndicator
+          isRunning={isRunning}
+          hasUnread={hasUnread}
+          variant="overlay"
+          className="left-4 right-auto top-1/2 -translate-y-1/2"
+        />
+      )}
 
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>

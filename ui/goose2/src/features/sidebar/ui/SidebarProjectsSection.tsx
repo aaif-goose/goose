@@ -11,6 +11,7 @@ import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
+import { ProjectIcon } from "@/features/projects/ui/ProjectIcon";
 import { SessionActivityIndicator } from "@/shared/ui/SessionActivityIndicator";
 import { SidebarItemMenu } from "./SidebarItemMenu";
 import { SidebarChatRow } from "./SidebarChatRow";
@@ -134,15 +135,18 @@ function ProjectSection({
             PROJECT_ROW_TEXT_CLASS,
           )}
         >
-          <span className="relative flex h-3 w-3 flex-shrink-0 items-center justify-center">
-            <span
-              className="absolute inline-block h-2 w-2 rounded-full group-hover:opacity-0"
-              style={{ backgroundColor: project.color }}
-            />
+          <span className="relative flex h-4 w-4 flex-shrink-0 items-center justify-center text-foreground">
+            <span className="absolute group-hover:opacity-0">
+              <ProjectIcon
+                icon={project.icon}
+                className="size-3.5"
+                imageClassName="size-3.5 rounded-[3px]"
+              />
+            </span>
             {isExpanded ? (
-              <IconChevronDown className="absolute h-3 w-3 opacity-0 group-hover:opacity-100" />
+              <IconChevronDown className="absolute size-3 opacity-0 group-hover:opacity-100" />
             ) : (
-              <IconChevronRight className="absolute h-3 w-3 opacity-0 group-hover:opacity-100" />
+              <IconChevronRight className="absolute size-3 opacity-0 group-hover:opacity-100" />
             )}
           </span>
           <span className="flex-1 min-w-0 truncate text-left">
@@ -356,9 +360,10 @@ export function SidebarProjectsSection({
               onClick={() => onNavigate?.("projects")}
               className="rounded-lg text-foreground hover:bg-transparent hover:text-foreground"
             >
-              <span
-                className="inline-block size-2.5 rounded-full"
-                style={{ backgroundColor: project.color }}
+              <ProjectIcon
+                icon={project.icon}
+                className="size-4"
+                imageClassName="size-4 rounded-[4px]"
               />
             </Button>
           ))}
