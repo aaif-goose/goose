@@ -42,6 +42,7 @@ pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
 pub mod openrouter;
+pub mod perplexity;
 pub mod pi_acp;
 pub mod provider_registry;
 pub mod provider_test;

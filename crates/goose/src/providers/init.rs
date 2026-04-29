@@ -31,6 +31,7 @@ use super::{
     ollama::OllamaProvider,
     openai::OpenAiProvider,
     openrouter::OpenRouterProvider,
+    perplexity::PerplexityProvider,
     pi_acp::PiAcpProvider,
     provider_registry::ProviderRegistry,
     snowflake::SnowflakeProvider,
@@ -79,6 +80,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<OllamaProvider>(true);
         registry.register::<OpenAiProvider>(true);
         registry.register::<OpenRouterProvider>(true);
+        registry.register::<PerplexityProvider>(false);
         registry.register::<PiAcpProvider>(false);
         #[cfg(feature = "aws-providers")]
         registry.register::<SageMakerTgiProvider>(false);

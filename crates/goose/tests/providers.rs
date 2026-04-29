@@ -20,6 +20,7 @@ use goose::providers::errors::ProviderError;
 use goose::providers::google::GOOGLE_DEFAULT_MODEL;
 use goose::providers::litellm::LITELLM_DEFAULT_MODEL;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
+use goose::providers::perplexity::PERPLEXITY_DEFAULT_MODEL;
 #[cfg(feature = "aws-providers")]
 use goose::providers::sagemaker_tgi::SAGEMAKER_TGI_DEFAULT_MODEL;
 use goose::providers::snowflake::SNOWFLAKE_DEFAULT_MODEL;
@@ -870,6 +871,17 @@ async fn test_xai_provider() -> Result<()> {
     ProviderTestConfig::with_llm_provider("Xai", XAI_DEFAULT_MODEL, &["XAI_API_KEY"])
         .run()
         .await
+}
+
+#[tokio::test]
+async fn test_perplexity_provider() -> Result<()> {
+    ProviderTestConfig::with_llm_provider(
+        "Perplexity",
+        PERPLEXITY_DEFAULT_MODEL,
+        &["PERPLEXITY_API_KEY"],
+    )
+    .run()
+    .await
 }
 
 #[tokio::test]
