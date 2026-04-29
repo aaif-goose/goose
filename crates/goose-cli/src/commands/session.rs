@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use cliclack::{confirm, multiselect, select};
 use etcetera::home_dir;
 use goose::config::Config;
-use goose::session::{generate_diagnostics, nostr_share, Session, SessionManager};
+use goose::session::{generate_diagnostics, nostr_share, Session, SessionManager, SessionType};
 use goose::utils::safe_truncate;
 use regex::Regex;
 use std::fs;
@@ -275,6 +275,25 @@ pub async fn handle_session_export(
     } else {
         println!("{}", output);
     }
+
+    Ok(())
+}
+
+pub async fn handle_session_import(input: String, nostr: bool) -> Result<()> {
+    let json = if nostr || input.starts_with("goose://sessions/nostr") {
+        nostr_share::import_session_json_from_deeplink(&input).await?
+    } else {
+        fs::read_to_string(&input)
+            .with_context(|| format!("Failed to read session import file: {input}"))?
+    };
+
+    let session_manager = SessionManager::instance();
+    let session = session_manager
+        .import_session(&json, Some(SessionType::User))
+        .await?;
+
+    println!("Session imported:");
+    println!("{} - {}", session.id, session.name);
 
     Ok(())
 }

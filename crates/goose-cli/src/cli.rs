@@ -88,6 +88,23 @@ mod tests {
             _ => panic!("expected session export command"),
         }
     }
+
+    #[test]
+    fn parses_session_import_nostr_link() {
+        let deeplink = "goose://sessions/nostr?nevent=nevent1abc&key=secret";
+        let cli = Cli::try_parse_from(["goose", "session", "import", "--nostr", deeplink]).unwrap();
+
+        match cli.command {
+            Some(Command::Session {
+                command: Some(SessionCommand::Import { input, nostr }),
+                ..
+            }) => {
+                assert_eq!(input, deeplink);
+                assert!(nostr);
+            }
+            _ => panic!("expected session import command"),
+        }
+    }
 }
 
 #[derive(Args, Debug, Clone)]
@@ -590,6 +607,14 @@ enum SessionCommand {
             action = clap::ArgAction::Append
         )]
         relays: Vec<String>,
+    },
+    #[command(about = "Import a session from JSON or an encrypted Nostr share link")]
+    Import {
+        #[arg(help = "Path to a JSON session export, or a goose://sessions/nostr share link")]
+        input: String,
+
+        #[arg(long = "nostr", help = "Treat input as an encrypted Nostr share link")]
+        nostr: bool,
     },
     #[command(name = "diagnostics")]
     Diagnostics {
@@ -1207,6 +1232,9 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                 relays,
             )
             .await?;
+        }
+        SessionCommand::Import { input, nostr } => {
+            crate::commands::session::handle_session_import(input, nostr).await?;
         }
         SessionCommand::Diagnostics { identifier, output } => {
             let session_manager = SessionManager::instance();
