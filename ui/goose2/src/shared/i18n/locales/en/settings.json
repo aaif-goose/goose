@@ -220,9 +220,10 @@
       "signInLabel": "Sign in to {{name}}",
       "status": {
         "checking": "Checking...",
+        "inProgress": "Setup in progress",
         "setupFailed": "Setup failed"
       },
-      "title": "Agents"
+      "title": "Agent harnesses"
     },
     "description": "Connect agents and AI models to use with Goose",
     "disconnect": "Disconnect",

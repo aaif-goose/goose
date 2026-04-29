@@ -220,9 +220,10 @@
       "signInLabel": "Iniciar sesión en {{name}}",
       "status": {
         "checking": "Comprobando...",
+        "inProgress": "Configuración en curso",
         "setupFailed": "La configuración falló"
       },
-      "title": "Agentes"
+      "title": "Arneses de agentes"
     },
     "description": "Conecta agentes y modelos de IA para usar con Goose",
     "disconnect": "Desconectar",

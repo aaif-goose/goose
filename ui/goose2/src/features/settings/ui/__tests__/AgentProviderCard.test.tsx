@@ -1,6 +1,6 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/render";
 import { AgentProviderCard } from "../AgentProviderCard";
 import type { ProviderDisplayInfo } from "@/shared/types/providers";
@@ -37,7 +37,12 @@ describe("AgentProviderCard", () => {
     vi.clearAllMocks();
   });
 
-  it("does not show sign in while auth status is checking", async () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("delays the checking indicator and does not show sign in while auth status is checking", async () => {
+    vi.useFakeTimers();
     let resolveAuth!: (authenticated: boolean) => void;
     const authPromise = new Promise<boolean>((resolve) => {
       resolveAuth = resolve;
@@ -48,21 +53,53 @@ describe("AgentProviderCard", () => {
 
     renderWithProviders(<AgentProviderCard provider={createProvider()} />);
 
-    expect(await screen.findByText("Checking...")).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(checkAgentAuth).toHaveBeenCalled();
+
+    expect(screen.queryByRole("status", { name: "Checking..." })).toBeNull();
+    expect(screen.queryByText("Checking...")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /sign in/i }),
     ).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(
+      screen.getByRole("status", { name: "Checking..." }),
+    ).toBeInTheDocument();
 
     await act(async () => {
       resolveAuth(false);
       await authPromise;
     });
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: /sign in/i }),
-      ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /sign in/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the checking indicator when auth resolves quickly", async () => {
+    vi.useFakeTimers();
+    checkAgentInstalled.mockResolvedValue(true);
+    checkAgentAuth.mockResolvedValue(true);
+
+    renderWithProviders(<AgentProviderCard provider={createProvider()} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(screen.queryByRole("status", { name: "Checking..." })).toBeNull();
   });
 
   it("checks installation by provider id after installing", async () => {

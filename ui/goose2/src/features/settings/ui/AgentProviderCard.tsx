@@ -24,6 +24,7 @@ interface OutputLine {
 }
 
 const MAX_OUTPUT_LINES = 50;
+const CHECKING_INDICATOR_DELAY_MS = 2000;
 
 interface AgentProviderCardProps {
   provider: ProviderDisplayInfo;
@@ -38,6 +39,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   const [setupPhase, setSetupPhase] = useState<SetupPhase>("idle");
   const [setupOutput, setSetupOutput] = useState<OutputLine[]>([]);
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [showCheckingIndicator, setShowCheckingIndicator] = useState(false);
   const [installStatus, setInstallStatus] = useState<InstallStatus>(
     hasBinary && !isBuiltIn ? "checking" : "installed",
   );
@@ -228,9 +230,6 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     void handleConnect();
   }
 
-  if (provider.showOnlyWhenInstalled && installStatus !== "installed")
-    return null;
-
   const isReady =
     isBuiltIn ||
     (installStatus === "installed" && !hasAuthCommand) ||
@@ -241,12 +240,34 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     authStatus !== "checking" &&
     authStatus !== "authenticated";
   const needsInstall = installStatus === "missing" && hasInstallCommand;
+  const isChecking =
+    (installStatus === "checking" && hasBinary) ||
+    (installStatus === "installed" && authStatus === "checking");
+
+  useEffect(() => {
+    if (!isChecking) {
+      setShowCheckingIndicator(false);
+      return;
+    }
+
+    setShowCheckingIndicator(false);
+    const timeoutId = window.setTimeout(() => {
+      if (isMountedRef.current) {
+        setShowCheckingIndicator(true);
+      }
+    }, CHECKING_INDICATOR_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isChecking]);
+
+  if (provider.showOnlyWhenInstalled && installStatus !== "installed")
+    return null;
 
   function renderStatusIndicator() {
     if (isBuiltIn || isReady) {
       return (
         <div className="flex h-6 flex-shrink-0 items-center">
-          <IconCheck className="size-4 text-success" />
+          <IconCheck className="size-4 text-success duration-200 motion-safe:animate-in motion-safe:fade-in" />
         </div>
       );
     }
@@ -255,6 +276,26 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
       return (
         <div className="flex h-6 flex-shrink-0 items-center">
           <IconAlertTriangle className="size-4 text-danger" />
+        </div>
+      );
+    }
+
+    if ((isChecking && showCheckingIndicator) || isActive) {
+      return (
+        <div
+          role="status"
+          aria-label={
+            isChecking
+              ? t("providers.agents.status.checking")
+              : t("providers.agents.status.inProgress")
+          }
+          className="flex h-6 flex-shrink-0 items-center"
+        >
+          <Spinner
+            role="presentation"
+            aria-hidden="true"
+            className="size-4 text-foreground"
+          />
         </div>
       );
     }
@@ -299,11 +340,6 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   function renderStatusText() {
     if (isBuiltIn || isReady) return null;
     if (setupError) return t("providers.agents.status.setupFailed");
-
-    if (installStatus === "checking" && hasBinary)
-      return t("providers.agents.status.checking");
-    if (installStatus === "installed" && authStatus === "checking")
-      return t("providers.agents.status.checking");
 
     return null;
   }
