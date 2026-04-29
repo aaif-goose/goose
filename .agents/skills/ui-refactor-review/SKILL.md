@@ -169,7 +169,7 @@ Before finalizing the review, explicitly ask:
 - Prefer straight-line render logic, guard clauses, and early returns over deep nesting.
 - Prefer controlled components where practical.
 - Use semantic HTML like `<main>`, `<nav>`, `<header>`, and `<aside>`.
-- Every plain `<button>` must include `type="button"`.
+- Every plain `<button>` must include an explicit `type` attribute. Use `type="button"` unless the control is intentionally submitting or resetting a form.
 - Use `cn()` from `@/shared/lib/cn` for Tailwind class merging.
 - Prefer existing shared UI primitives before creating new one-off markup patterns.
 - Avoid inline styles except for truly dynamic values.
