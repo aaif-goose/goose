@@ -22,7 +22,7 @@ existing architecture and patterns over generic frontend advice.
 - Review the final shape of the changed code, not whether it is better than what came before.
 - Judge changes by whether they leave the code easier to maintain and extend in future work, not just whether they are correct today.
 - Produce an actionable checklist instead of vague feedback.
-- Fix issues in a safe order by default.
+- Ask for approval before making code changes unless the user explicitly asks for fixes.
 - Preserve `ui/goose2` boundaries: `ui/`, `hooks/`, `api/`, `lib/`, `stores/`, and `shared/`.
 
 ## Workflow
@@ -66,11 +66,12 @@ existing architecture and patterns over generic frontend advice.
    - `Issues`
    - one ordered `Checklist` for the whole reviewed scope
    - Do not stop after the findings until the ordered checklist is complete.
-9. Fix checklist items in order, using the `Rules` below as the quality bar for the implementation.
+9. Stop after the checklist and ask for approval before making code changes, unless the user explicitly asked to implement fixes.
+10. Fix approved checklist items in order, using the `Rules` below as the quality bar for the implementation.
    - State the main maintainability problem in one sentence.
    - Fix the highest-value items first.
    - Make the smallest behavior-preserving change that clearly improves the code.
-10. Summarize what changed, what remains, and what verification ran.
+11. Summarize what changed, what remains, and what verification ran.
 
 ## Strict Mode
 
@@ -169,7 +170,9 @@ Before finalizing the review, explicitly ask:
 - Prefer straight-line render logic, guard clauses, and early returns over deep nesting.
 - Prefer controlled components where practical.
 - Use semantic HTML like `<main>`, `<nav>`, `<header>`, and `<aside>`.
-- Every plain `<button>` must include an explicit `type` attribute. Use `type="button"` unless the control is intentionally submitting or resetting a form.
+- Prefer existing shared UI button primitives over plain `<button>` elements.
+- Treat new plain `<button>` usage as a refactor smell unless there is a specific semantic or integration reason.
+- If a plain `<button>` is genuinely necessary, it must use `type="button"` in goose2.
 - Use `cn()` from `@/shared/lib/cn` for Tailwind class merging.
 - Prefer existing shared UI primitives before creating new one-off markup patterns.
 - Avoid inline styles except for truly dynamic values.
