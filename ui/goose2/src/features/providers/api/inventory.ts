@@ -59,8 +59,14 @@ export async function backgroundRefreshInventory(
     .map((entry) => entry.providerId);
   if (configuredProviderIds.length === 0) return;
 
+  const refresh = await refreshProviderInventory(configuredProviderIds);
+  if (refresh.started.length === 0 && (refresh.skipped ?? []).length === 0) {
+    return;
+  }
+
   const { syncProviderInventory } = await import("./inventorySync");
   await syncProviderInventory(configuredProviderIds, {
+    initialRefresh: refresh,
     onEntries: (entries) => inventoryStore.mergeEntries(entries),
   });
 }
