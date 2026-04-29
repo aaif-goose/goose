@@ -47,6 +47,22 @@ const i18n = defineMessages({
     id: 'switchModelModal.claudeEffortMax',
     defaultMessage: 'Max - No constraints on thinking depth',
   },
+  codexIntelligenceLow: {
+    id: 'switchModelModal.codexIntelligenceLow',
+    defaultMessage: 'Low - Fast responses with lighter reasoning',
+  },
+  codexIntelligenceMedium: {
+    id: 'switchModelModal.codexIntelligenceMedium',
+    defaultMessage: 'Medium - Balanced reasoning',
+  },
+  codexIntelligenceHigh: {
+    id: 'switchModelModal.codexIntelligenceHigh',
+    defaultMessage: 'High - Deeper reasoning',
+  },
+  codexIntelligenceXHigh: {
+    id: 'switchModelModal.codexIntelligenceXHigh',
+    defaultMessage: 'Extra High - Maximum reasoning',
+  },
   selectModel: {
     id: 'switchModelModal.selectModel',
     defaultMessage: 'Please select a model',
@@ -101,7 +117,8 @@ const i18n = defineMessages({
   },
   localModelsDescription: {
     id: 'switchModelModal.localModelsDescription',
-    defaultMessage: 'To use local inference, you need to download a model to your computer first. Go to Settings → Models to manage local models.',
+    defaultMessage:
+      'To use local inference, you need to download a model to your computer first. Go to Settings → Models to manage local models.',
   },
   goToSettings: {
     id: 'switchModelModal.goToSettings',
@@ -155,6 +172,14 @@ const i18n = defineMessages({
     id: 'switchModelModal.thinkingBudget',
     defaultMessage: 'Thinking Budget (tokens)',
   },
+  codexIntelligence: {
+    id: 'switchModelModal.codexIntelligence',
+    defaultMessage: 'Intelligence',
+  },
+  selectIntelligenceLevel: {
+    id: 'switchModelModal.selectIntelligenceLevel',
+    defaultMessage: 'Select intelligence level',
+  },
   quickStartGuide: {
     id: 'switchModelModal.quickStartGuide',
     defaultMessage: 'Quick start guide',
@@ -185,7 +210,7 @@ const i18n = defineMessages({
   },
 });
 
-// THINKING_LEVEL_OPTIONS and CLAUDE_THINKING_EFFORT_OPTIONS are created inside the component to support i18n.
+// Options are created inside the component to support i18n.
 
 function isClaudeModel(name: string | null | undefined): boolean {
   return !!name && name.toLowerCase().startsWith('claude-');
@@ -194,6 +219,14 @@ function isClaudeModel(name: string | null | undefined): boolean {
 function supportsAdaptiveThinking(name: string): boolean {
   const lower = name.toLowerCase();
   return lower.includes('claude-opus-4-6') || lower.includes('claude-sonnet-4-6');
+}
+
+function isChatGptCodexProvider(name: string | null | undefined): boolean {
+  return name === 'chatgpt_codex';
+}
+
+function supportsExtraHighChatGptCodexIntelligence(name: string | null | undefined): boolean {
+  return name === 'gpt-5.4' || name === 'gpt-5.3-codex';
 }
 
 const PREFERRED_MODEL_PATTERNS = [
@@ -268,6 +301,13 @@ export const SwitchModelModal = ({
     { value: 'max', label: intl.formatMessage(i18n.claudeEffortMax) },
   ];
 
+  const chatGptCodexIntelligenceOptions = [
+    { value: 'low', label: intl.formatMessage(i18n.codexIntelligenceLow) },
+    { value: 'medium', label: intl.formatMessage(i18n.codexIntelligenceMedium) },
+    { value: 'high', label: intl.formatMessage(i18n.codexIntelligenceHigh) },
+    { value: 'xhigh', label: intl.formatMessage(i18n.codexIntelligenceXHigh) },
+  ];
+
   const { getProviders, read, upsert } = useConfig();
   const {
     changeModel,
@@ -308,11 +348,25 @@ export const SwitchModelModal = ({
   const [claudeThinkingType, setClaudeThinkingType] = useState<string>('disabled');
   const [claudeThinkingEffort, setClaudeThinkingEffort] = useState<string>('high');
   const [claudeThinkingBudget, setClaudeThinkingBudget] = useState<string>('16000');
+  const [chatGptCodexReasoningEffort, setChatGptCodexReasoningEffort] = useState<string>('medium');
 
   const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
+  const selectedProvider = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
   const isGemini3Model = modelName?.toLowerCase().startsWith('gemini-3') ?? false;
   const showClaudeThinking = isClaudeModel(modelName);
+  const showChatGptCodexIntelligence = isChatGptCodexProvider(selectedProvider);
   const modelSupportsAdaptive = modelName ? supportsAdaptiveThinking(modelName) : false;
+  const visibleChatGptCodexIntelligenceOptions =
+    !modelName || supportsExtraHighChatGptCodexIntelligence(modelName)
+      ? chatGptCodexIntelligenceOptions
+      : chatGptCodexIntelligenceOptions.filter((option) =>
+          ['medium', 'high'].includes(option.value)
+        );
+  const selectedChatGptCodexReasoningEffort = visibleChatGptCodexIntelligenceOptions.some(
+    (option) => option.value === chatGptCodexReasoningEffort
+  )
+    ? chatGptCodexReasoningEffort
+    : 'medium';
 
   useEffect(() => {
     if (!showClaudeThinking) return;
@@ -338,6 +392,8 @@ export const SwitchModelModal = ({
       if (effort) setClaudeThinkingEffort(effort);
       const budget = await readConfig('CLAUDE_THINKING_BUDGET');
       if (budget) setClaudeThinkingBudget(budget);
+      const codexEffort = await readConfig('CHATGPT_CODEX_REASONING_EFFORT');
+      if (codexEffort) setChatGptCodexReasoningEffort(codexEffort);
     })();
   }, [read]);
 
@@ -399,6 +455,10 @@ export const SwitchModelModal = ({
           ...modelObj,
           request_params: { ...modelObj.request_params, thinking_level: thinkingLevel },
         };
+      }
+
+      if (showChatGptCodexIntelligence) {
+        await upsert('CHATGPT_CODEX_REASONING_EFFORT', selectedChatGptCodexReasoningEffort, false);
       }
 
       if (showClaudeThinking) {
@@ -681,10 +741,31 @@ export const SwitchModelModal = ({
     { value: 'disabled', label: intl.formatMessage(i18n.claudeDisabled) },
   ];
 
+  const chatGptCodexIntelligenceControls = showChatGptCodexIntelligence && (
+    <div className="mt-2">
+      <label className="text-sm text-textSubtle mb-1 block">
+        {intl.formatMessage(i18n.codexIntelligence)}
+      </label>
+      <Select
+        options={visibleChatGptCodexIntelligenceOptions}
+        value={visibleChatGptCodexIntelligenceOptions.find(
+          (o) => o.value === selectedChatGptCodexReasoningEffort
+        )}
+        onChange={(newValue: unknown) => {
+          const option = newValue as { value: string; label: string } | null;
+          setChatGptCodexReasoningEffort(option?.value || 'medium');
+        }}
+        placeholder={intl.formatMessage(i18n.selectIntelligenceLevel)}
+      />
+    </div>
+  );
+
   const claudeThinkingControls = showClaudeThinking && (
     <div className="mt-2 flex flex-col gap-3">
       <div>
-        <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.extendedThinking)}</label>
+        <label className="text-sm text-textSubtle mb-1 block">
+          {intl.formatMessage(i18n.extendedThinking)}
+        </label>
         <Select
           options={claudeThinkingTypeOptions}
           value={claudeThinkingTypeOptions.find((o) => o.value === claudeThinkingType)}
@@ -697,7 +778,9 @@ export const SwitchModelModal = ({
       </div>
       {claudeThinkingType === 'adaptive' && (
         <div>
-          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingEffort)}</label>
+          <label className="text-sm text-textSubtle mb-1 block">
+            {intl.formatMessage(i18n.thinkingEffort)}
+          </label>
           <Select
             options={CLAUDE_THINKING_EFFORT_OPTIONS}
             value={CLAUDE_THINKING_EFFORT_OPTIONS.find((o) => o.value === claudeThinkingEffort)}
@@ -711,7 +794,9 @@ export const SwitchModelModal = ({
       )}
       {claudeThinkingType === 'enabled' && (
         <div>
-          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingBudget)}</label>
+          <label className="text-sm text-textSubtle mb-1 block">
+            {intl.formatMessage(i18n.thinkingBudget)}
+          </label>
           <Input
             className="border-2 px-4 py-2"
             type="number"
@@ -732,16 +817,16 @@ export const SwitchModelModal = ({
             <Bot size={24} className="text-text-primary" />
             {titleOverride || intl.formatMessage(i18n.title)}
           </DialogTitle>
-          <DialogDescription>
-            {intl.formatMessage(i18n.description)}
-          </DialogDescription>
+          <DialogDescription>{intl.formatMessage(i18n.description)}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-4">
           {usePredefinedModels ? (
             <div className="w-full flex flex-col gap-4">
               <div className="flex justify-between items-center">
-                <label className="text-sm font-medium text-text-primary">{intl.formatMessage(i18n.chooseModel)}</label>
+                <label className="text-sm font-medium text-text-primary">
+                  {intl.formatMessage(i18n.chooseModel)}
+                </label>
               </div>
 
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -802,7 +887,9 @@ export const SwitchModelModal = ({
                 <div className="mt-2">
                   <label className="text-sm text-textSubtle mb-1 block">
                     {intl.formatMessage(i18n.thinkingLevel)}
-                    <span className="text-xs text-textMuted ml-2">{intl.formatMessage(i18n.geminiOnly)}</span>
+                    <span className="text-xs text-textMuted ml-2">
+                      {intl.formatMessage(i18n.geminiOnly)}
+                    </span>
                   </label>
                   <Select
                     options={THINKING_LEVEL_OPTIONS}
@@ -815,6 +902,8 @@ export const SwitchModelModal = ({
                   />
                 </div>
               )}
+
+              {chatGptCodexIntelligenceControls}
 
               {claudeThinkingControls}
             </div>
@@ -894,7 +983,9 @@ export const SwitchModelModal = ({
                           </div>
                         </div>
                       </div>
-                      <label className="text-sm text-text-secondary">{intl.formatMessage(i18n.customModelName)}</label>
+                      <label className="text-sm text-text-secondary">
+                        {intl.formatMessage(i18n.customModelName)}
+                      </label>
                       <Input
                         className="border-2 px-4 py-5"
                         placeholder={intl.formatMessage(i18n.typeModelName)}
@@ -919,7 +1010,11 @@ export const SwitchModelModal = ({
                         onInputChange={handleInputChange}
                         value={
                           loadingModels
-                            ? { value: '', label: intl.formatMessage(i18n.loadingModels), isDisabled: true }
+                            ? {
+                                value: '',
+                                label: intl.formatMessage(i18n.loadingModels),
+                                isDisabled: true,
+                              }
                             : model
                               ? { value: model, label: model }
                               : null
@@ -943,7 +1038,9 @@ export const SwitchModelModal = ({
                   ) : (
                     <div className="flex flex-col gap-2">
                       <div className="flex justify-between">
-                        <label className="text-sm text-text-secondary">{intl.formatMessage(i18n.customModelName)}</label>
+                        <label className="text-sm text-text-secondary">
+                          {intl.formatMessage(i18n.customModelName)}
+                        </label>
                         <button
                           onClick={() => setIsCustomModel(false)}
                           className="text-sm text-text-secondary"
@@ -980,6 +1077,8 @@ export const SwitchModelModal = ({
                       />
                     </div>
                   )}
+
+                  {chatGptCodexIntelligenceControls}
 
                   {claudeThinkingControls}
                 </>

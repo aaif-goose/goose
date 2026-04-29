@@ -4322,6 +4322,21 @@
   "switchModelModal.claudeEnabled": {
     "defaultMessage": "Enabled - Fixed token budget for thinking"
   },
+  "switchModelModal.codexIntelligence": {
+    "defaultMessage": "Intelligence"
+  },
+  "switchModelModal.codexIntelligenceHigh": {
+    "defaultMessage": "High - Deeper reasoning"
+  },
+  "switchModelModal.codexIntelligenceLow": {
+    "defaultMessage": "Low - Fast responses with lighter reasoning"
+  },
+  "switchModelModal.codexIntelligenceMedium": {
+    "defaultMessage": "Medium - Balanced reasoning"
+  },
+  "switchModelModal.codexIntelligenceXHigh": {
+    "defaultMessage": "Extra High - Maximum reasoning"
+  },
   "switchModelModal.couldNotContactProvider": {
     "defaultMessage": "Could not contact provider"
   },
@@ -4363,6 +4378,9 @@
   },
   "switchModelModal.selectEffortLevel": {
     "defaultMessage": "Select effort level"
+  },
+  "switchModelModal.selectIntelligenceLevel": {
+    "defaultMessage": "Select intelligence level"
   },
   "switchModelModal.selectModel": {
     "defaultMessage": "Please select a model"
