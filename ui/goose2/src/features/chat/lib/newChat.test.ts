@@ -8,7 +8,7 @@ function makeSession(
 ): ChatSession {
   return {
     id,
-    title: "New Chat",
+    title: "New chat",
     createdAt: "2026-04-01T00:00:00.000Z",
     updatedAt: "2026-04-01T00:00:00.000Z",
     messageCount: 0,
@@ -30,7 +30,7 @@ describe("findExistingDraft", () => {
         draftsBySession: { "alpha-draft": "alpha draft" },
         messagesBySession: {},
         request: {
-          title: "New Chat",
+          title: "New chat",
           projectId: "alpha",
         },
       }),

@@ -155,13 +155,13 @@ describe("CreateProjectDialog", () => {
         />,
       );
 
-      expect(screen.getByText("Edit Project")).toBeInTheDocument();
+      expect(screen.getByText("Edit project")).toBeInTheDocument();
     });
 
     it("shows New Project title without editingProject", () => {
       render(<CreateProjectDialog {...defaultProps} isOpen={true} />);
 
-      expect(screen.getByText("New Project")).toBeInTheDocument();
+      expect(screen.getByText("New project")).toBeInTheDocument();
     });
 
     it("populates the prompt editor with working dirs and prompt text", () => {

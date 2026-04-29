@@ -115,7 +115,7 @@ describe("SkillsView", () => {
     render(<SkillsView />);
     expect(screen.getByText("Skills")).toBeInTheDocument();
     expect(
-      screen.getByText(/Skills are reusable instructions/),
+      screen.getByText(/Use skills to add specific instructions/),
     ).toBeInTheDocument();
   });
 
@@ -356,7 +356,9 @@ describe("SkillsView", () => {
     await user.keyboard("{Enter}");
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
-    expect(screen.getByText("Delete skill?")).toBeInTheDocument();
+    expect(
+      screen.getByText('Delete "code-review" permanently?'),
+    ).toBeInTheDocument();
 
     const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
     await user.click(deleteButtons[deleteButtons.length - 1]);
