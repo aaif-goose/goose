@@ -4523,6 +4523,7 @@ dependencies = [
  "reqwest 0.13.2",
  "rmcp",
  "rubato",
+ "rustls",
  "sacp",
  "schemars 1.2.1",
  "sec1",

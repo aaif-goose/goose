@@ -48,6 +48,7 @@ pub struct LiveNostrClient;
 #[async_trait]
 impl NostrPublisher for LiveNostrClient {
     async fn publish(&self, event: Event, relays: &[String]) -> Result<()> {
+        install_rustls_crypto_provider();
         let client = Client::default();
         for relay in relays {
             client
@@ -77,6 +78,7 @@ impl NostrPublisher for LiveNostrClient {
 #[async_trait]
 impl NostrFetcher for LiveNostrClient {
     async fn fetch(&self, event_id: EventId, relays: &[String]) -> Result<Event> {
+        install_rustls_crypto_provider();
         let client = Client::default();
         for relay in relays {
             client
@@ -106,6 +108,14 @@ impl NostrFetcher for LiveNostrClient {
             .ok_or_else(|| anyhow!("Shared session event not found"))
     }
 }
+
+#[cfg(feature = "rustls-tls")]
+fn install_rustls_crypto_provider() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
+#[cfg(not(feature = "rustls-tls"))]
+fn install_rustls_crypto_provider() {}
 
 pub fn default_relays() -> Vec<String> {
     DEFAULT_RELAYS
