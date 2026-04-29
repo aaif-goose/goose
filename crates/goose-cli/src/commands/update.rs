@@ -26,11 +26,7 @@ fn asset_name() -> &'static str {
     {
         "goose-aarch64-unknown-linux-gnu.tar.bz2"
     }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64", feature = "cuda"))]
-    {
-        "goose-x86_64-pc-windows-msvc-cuda.zip"
-    }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64", not(feature = "cuda")))]
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     {
         "goose-x86_64-pc-windows-msvc.zip"
     }
@@ -556,6 +552,12 @@ mod tests {
         assert!(name.ends_with(".zip"));
         #[cfg(not(target_os = "windows"))]
         assert!(name.ends_with(".tar.bz2"));
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[test]
+    fn test_windows_updates_use_standard_asset() {
+        assert_eq!(asset_name(), "goose-x86_64-pc-windows-msvc.zip");
     }
 
     #[test]
