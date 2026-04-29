@@ -43,6 +43,53 @@ pub struct Cli {
     command: Option<Command>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_session_export_nostr_relays() {
+        let cli = Cli::try_parse_from([
+            "goose",
+            "session",
+            "export",
+            "--session-id",
+            "session-id",
+            "--format",
+            "json",
+            "--nostr",
+            "--relay",
+            "wss://relay.one",
+            "--relay",
+            "wss://relay.two",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Command::Session {
+                command:
+                    Some(SessionCommand::Export {
+                        identifier,
+                        format,
+                        nostr,
+                        relays,
+                        ..
+                    }),
+                ..
+            }) => {
+                assert_eq!(
+                    identifier.unwrap().session_id.as_deref(),
+                    Some("session-id")
+                );
+                assert_eq!(format, "json");
+                assert!(nostr);
+                assert_eq!(relays, vec!["wss://relay.one", "wss://relay.two"]);
+            }
+            _ => panic!("expected session export command"),
+        }
+    }
+}
+
 #[derive(Args, Debug, Clone)]
 #[group(required = false, multiple = false)]
 pub struct Identifier {
@@ -529,6 +576,20 @@ enum SessionCommand {
             default_value = "markdown"
         )]
         format: String,
+
+        #[arg(
+            long = "nostr",
+            help = "Publish the JSON session export as an encrypted Nostr event and print a Goose share link"
+        )]
+        nostr: bool,
+
+        #[arg(
+            long = "relay",
+            value_name = "RELAY",
+            help = "Nostr relay URL to publish to (can be specified multiple times)",
+            action = clap::ArgAction::Append
+        )]
+        relays: Vec<String>,
     },
     #[command(name = "diagnostics")]
     Diagnostics {
@@ -1119,6 +1180,8 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             identifier,
             output,
             format,
+            nostr,
+            relays,
         } => {
             let session_manager = SessionManager::instance();
             let session_identifier = if let Some(id) = identifier {
@@ -1136,8 +1199,14 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                     }
                 }
             };
-            crate::commands::session::handle_session_export(session_identifier, output, format)
-                .await?;
+            crate::commands::session::handle_session_export(
+                session_identifier,
+                output,
+                format,
+                nostr,
+                relays,
+            )
+            .await?;
         }
         SessionCommand::Diagnostics { identifier, output } => {
             let session_manager = SessionManager::instance();
