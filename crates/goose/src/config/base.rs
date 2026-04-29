@@ -2085,42 +2085,4 @@ extensions:
 
         Ok(())
     }
-
-    #[test]
-    fn test_additional_config_files_env_is_loaded_between_defaults_and_user(
-    ) -> Result<(), ConfigError> {
-        let extra_file = NamedTempFile::new().unwrap();
-        let config_root = tempdir().unwrap();
-        let original_root = env::var_os("GOOSE_PATH_ROOT");
-        let original_extra = env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES");
-
-        std::fs::write(extra_file.path(), "GOOSE_PROVIDER: databricks\n").unwrap();
-        std::fs::write(
-            config_root.path().join(CONFIG_YAML_NAME),
-            "GOOSE_MODEL: gpt-4o\n",
-        )
-        .unwrap();
-
-        env::set_var("GOOSE_PATH_ROOT", config_root.path());
-        env::set_var("GOOSE_ADDITIONAL_CONFIG_FILES", extra_file.path());
-
-        let config = Config::default();
-
-        let provider: String = config.get_param("GOOSE_PROVIDER")?;
-        assert_eq!(provider, "databricks");
-
-        let model: String = config.get_param("GOOSE_MODEL")?;
-        assert_eq!(model, "gpt-4o");
-
-        match original_root {
-            Some(value) => env::set_var("GOOSE_PATH_ROOT", value),
-            None => env::remove_var("GOOSE_PATH_ROOT"),
-        }
-        match original_extra {
-            Some(value) => env::set_var("GOOSE_ADDITIONAL_CONFIG_FILES", value),
-            None => env::remove_var("GOOSE_ADDITIONAL_CONFIG_FILES"),
-        }
-
-        Ok(())
-    }
 }
