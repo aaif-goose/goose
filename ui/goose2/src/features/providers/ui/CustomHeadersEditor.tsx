@@ -2,9 +2,10 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
+import { createCustomProviderHeaderDraft } from "@/features/providers/lib/customProviderHeaders";
 
 export interface CustomHeader {
-  id?: string;
+  id: string;
   key: string;
   value: string;
 }
@@ -13,14 +14,6 @@ interface CustomHeadersEditorProps {
   headers: CustomHeader[];
   onChange: (headers: CustomHeader[]) => void;
   disabled?: boolean;
-}
-
-function emptyHeader(): CustomHeader {
-  return {
-    id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()),
-    key: "",
-    value: "",
-  };
 }
 
 export function CustomHeadersEditor({
@@ -52,7 +45,7 @@ export function CustomHeadersEditor({
         <div className="space-y-2">
           {headers.map((header, index) => (
             <div
-              key={header.id ?? header.key}
+              key={header.id}
               className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2"
             >
               <Input
@@ -98,7 +91,9 @@ export function CustomHeadersEditor({
         type="button"
         variant="outline"
         size="sm"
-        onClick={() => onChange([...headers, emptyHeader()])}
+        onClick={() =>
+          onChange([...headers, createCustomProviderHeaderDraft()])
+        }
         disabled={disabled}
         leftIcon={<IconPlus />}
       >

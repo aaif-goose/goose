@@ -12,6 +12,19 @@ export interface CustomProviderHeaderIssue {
 }
 
 const HEADER_TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+let nextHeaderId = 0;
+
+export function createCustomProviderHeaderDraft(
+  key = "",
+  value = "",
+): CustomProviderHeaderDraft {
+  nextHeaderId += 1;
+  return {
+    id: `header-${nextHeaderId}`,
+    key,
+    value,
+  };
+}
 
 export function normalizeHeaderName(name: string): string {
   return name.trim();
@@ -24,7 +37,8 @@ export function normalizeHeaderValue(value: string): string {
 export function recordToHeaderDrafts(
   headers?: Record<string, string> | null,
 ): CustomProviderHeaderDraft[] {
-  return Object.entries(headers ?? {}).map(([key, value]) => ({
+  return Object.entries(headers ?? {}).map(([key, value], index) => ({
+    id: `server-header-${index}`,
     key,
     value,
   }));

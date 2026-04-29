@@ -485,5 +485,12 @@ export function getProviderIcon(
     return NORMALIZED_PROVIDER_ICON_MAP[normalizedId](className);
   }
 
+  const fallback = Object.entries(NORMALIZED_PROVIDER_ICON_MAP).find(
+    ([providerFamily]) => normalizedId.includes(providerFamily),
+  )?.[1];
+  if (fallback) {
+    return fallback(className);
+  }
+
   return null;
 }

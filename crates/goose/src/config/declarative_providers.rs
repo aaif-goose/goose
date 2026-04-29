@@ -9,6 +9,7 @@ use anyhow::Result;
 use include_dir::{include_dir, Dir};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::str::FromStr;
 
 /// Deserialize an optional string, treating empty/whitespace-only values as None.
 fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
@@ -35,6 +36,19 @@ pub enum ProviderEngine {
     OpenAI,
     Ollama,
     Anthropic,
+}
+
+impl FromStr for ProviderEngine {
+    type Err = anyhow::Error;
+
+    fn from_str(engine: &str) -> Result<Self> {
+        match engine.trim().to_lowercase().as_str() {
+            "openai" | "openai_compatible" => Ok(Self::OpenAI),
+            "anthropic" | "anthropic_compatible" => Ok(Self::Anthropic),
+            "ollama" | "ollama_compatible" => Ok(Self::Ollama),
+            _ => Err(anyhow::anyhow!("Invalid provider type: {}", engine)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -147,7 +161,19 @@ static ID_GENERATION_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 pub fn generate_id(display_name: &str) -> String {
     let _guard = ID_GENERATION_LOCK.lock().unwrap();
 
-    let normalized = display_name.to_lowercase().replace(' ', "_");
+    let normalized = display_name
+        .to_lowercase()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
     let base_id = format!("custom_{}", normalized);
 
     let custom_dir = custom_providers_dir();
@@ -162,6 +188,25 @@ pub fn generate_id(display_name: &str) -> String {
     candidate_id
 }
 
+pub fn validate_provider_id(id: &str) -> Result<()> {
+    let mut chars = id.chars();
+    let Some(first) = chars.next() else {
+        return Err(anyhow::anyhow!(
+            "Invalid provider id: provider id cannot be empty"
+        ));
+    };
+
+    if !(first.is_ascii_lowercase() || first.is_ascii_digit() || first == '_') {
+        return Err(anyhow::anyhow!("Invalid provider id: {}", id));
+    }
+
+    if chars.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-') {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Invalid provider id: {}", id))
+    }
+}
+
 pub fn generate_api_key_name(id: &str) -> String {
     format!("{}_API_KEY", id.to_uppercase())
 }
@@ -171,7 +216,7 @@ pub struct CreateCustomProviderParams {
     pub engine: String,
     pub display_name: String,
     pub api_url: String,
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub models: Vec<String>,
     pub supports_streaming: Option<bool>,
     pub headers: Option<HashMap<String, String>>,
@@ -186,7 +231,7 @@ pub struct UpdateCustomProviderParams {
     pub engine: String,
     pub display_name: String,
     pub api_url: String,
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub models: Vec<String>,
     pub supports_streaming: Option<bool>,
     pub headers: Option<HashMap<String, String>>,
@@ -199,11 +244,17 @@ pub fn create_custom_provider(
     params: CreateCustomProviderParams,
 ) -> Result<DeclarativeProviderConfig> {
     let id = generate_id(&params.display_name);
+    validate_provider_id(&id)?;
 
     let api_key_env = if params.requires_auth {
+        let api_key = params
+            .api_key
+            .as_deref()
+            .filter(|api_key| !api_key.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("apiKey cannot be empty"))?;
         let api_key_name = generate_api_key_name(&id);
         let config = Config::global();
-        config.set_secret(&api_key_name, &params.api_key)?;
+        config.set_secret(&api_key_name, &api_key)?;
         api_key_name
     } else {
         String::new()
@@ -217,12 +268,7 @@ pub fn create_custom_provider(
 
     let provider_config = DeclarativeProviderConfig {
         name: id.clone(),
-        engine: match params.engine.as_str() {
-            "openai_compatible" => ProviderEngine::OpenAI,
-            "anthropic_compatible" => ProviderEngine::Anthropic,
-            "ollama_compatible" => ProviderEngine::Ollama,
-            _ => return Err(anyhow::anyhow!("Invalid provider type: {}", params.engine)),
-        },
+        engine: ProviderEngine::from_str(&params.engine)?,
         display_name: params.display_name.clone(),
         description: Some(format!("Custom {} provider", params.display_name)),
         api_key_env,
@@ -253,6 +299,7 @@ pub fn create_custom_provider(
 }
 
 pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> {
+    validate_provider_id(&params.id)?;
     let loaded_provider = load_provider(&params.id)?;
     let existing_config = loaded_provider.config;
     let editable = loaded_provider.is_editable;
@@ -264,12 +311,16 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
         } else {
             existing_config.api_key_env.clone()
         };
-        if !params.api_key.is_empty() {
-            config.set_secret(&api_key_name, &params.api_key)?;
+        if let Some(api_key) = params.api_key.as_deref() {
+            config.set_secret(&api_key_name, &api_key)?;
+        } else if config.get_secret::<String>(&api_key_name).is_err() {
+            return Err(anyhow::anyhow!(
+                "apiKey is required when auth is enabled and no secret is stored"
+            ));
         }
         api_key_name
     } else {
-        if !existing_config.api_key_env.is_empty() {
+        if existing_config.api_key_env == generate_api_key_name(&params.id) {
             config.delete_secret(&existing_config.api_key_env)?;
         }
         String::new()
@@ -284,12 +335,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
 
         let updated_config = DeclarativeProviderConfig {
             name: params.id.clone(),
-            engine: match params.engine.as_str() {
-                "openai_compatible" => ProviderEngine::OpenAI,
-                "anthropic_compatible" => ProviderEngine::Anthropic,
-                "ollama_compatible" => ProviderEngine::Ollama,
-                _ => return Err(anyhow::anyhow!("Invalid provider type: {}", params.engine)),
-            },
+            engine: ProviderEngine::from_str(&params.engine)?,
             display_name: params.display_name,
             description: existing_config.description,
             api_key_env,
@@ -321,9 +367,13 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
 }
 
 pub fn remove_custom_provider(id: &str) -> Result<()> {
+    validate_provider_id(id)?;
     let config = Config::global();
-    let api_key_name = generate_api_key_name(id);
-    let _ = config.delete_secret(&api_key_name);
+    let loaded_provider = load_provider(id)?;
+    let api_key_env = loaded_provider.config.api_key_env;
+    if api_key_env == generate_api_key_name(id) {
+        let _ = config.delete_secret(&api_key_env);
+    }
 
     let custom_providers_dir = custom_providers_dir();
     let file_path = custom_providers_dir.join(format!("{}.json", id));
@@ -336,6 +386,7 @@ pub fn remove_custom_provider(id: &str) -> Result<()> {
 }
 
 pub fn load_provider(id: &str) -> Result<LoadedProvider> {
+    validate_provider_id(id)?;
     let custom_file_path = custom_providers_dir().join(format!("{}.json", id));
 
     if custom_file_path.exists() {

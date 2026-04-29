@@ -132,9 +132,27 @@ describe("custom provider API", () => {
     expect(mocks.customCreate).toHaveBeenCalledWith(input);
     expect(mocks.customRead).toHaveBeenCalledWith({ providerId: "acme_ai" });
     expect(mocks.customUpdate).toHaveBeenCalledWith({
-      providerId: "acme_ai",
       ...input,
+      providerId: "acme_ai",
     });
     expect(mocks.customDelete).toHaveBeenCalledWith({ providerId: "acme_ai" });
+  });
+
+  it("lets the explicit update target override a conflicting runtime provider id", async () => {
+    mocks.customUpdate.mockResolvedValue({
+      providerId: "acme_ai",
+      status: { providerId: "acme_ai", isConfigured: true },
+      refresh: { started: [], skipped: [] },
+    });
+
+    await updateCustomProvider("acme_ai", {
+      ...input,
+      providerId: "wrong_id",
+    } as typeof input & { providerId: string });
+
+    expect(mocks.customUpdate).toHaveBeenCalledWith({
+      ...input,
+      providerId: "acme_ai",
+    });
   });
 });

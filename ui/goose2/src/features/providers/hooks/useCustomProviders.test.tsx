@@ -159,9 +159,11 @@ describe("useCustomProviders", () => {
         providerId: "acme_ai",
         editable: true,
         ...input,
+        apiKeySet: false,
         basePath: "",
         modelsInput: "acme-large",
         headers: [],
+        authInitiallyEnabled: true,
       });
     });
 

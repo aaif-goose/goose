@@ -30,12 +30,17 @@ function modelMatchesSelection(
   currentModelId: string | null,
   currentModelProviderId: string | null,
 ) {
-  return (
-    model.id === currentModelId &&
-    (!currentModelProviderId ||
-      !model.providerId ||
-      model.providerId === currentModelProviderId)
-  );
+  if (model.id !== currentModelId) {
+    return false;
+  }
+
+  if (currentModelProviderId) {
+    return model.providerId === currentModelProviderId;
+  }
+
+  // Providerless selections are ambiguous legacy/incomplete state, so fall back
+  // to model-ID-only matching until the user selects a concrete provider row.
+  return true;
 }
 
 function sortModels(

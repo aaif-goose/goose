@@ -492,8 +492,8 @@ pub struct CustomProviderUpsertDto {
     pub engine: String,
     pub display_name: String,
     pub api_url: String,
-    #[serde(default)]
-    pub api_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
     #[serde(default)]
     pub models: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

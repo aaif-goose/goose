@@ -123,6 +123,48 @@ describe("AgentModelPicker", () => {
     );
   });
 
+  it("does not select providerless duplicate rows when the current provider is known", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="goose"
+        onAgentChange={vi.fn()}
+        currentModelId="llama3.2"
+        currentModelProviderId="custom_ollama"
+        currentModelName="llama3.2"
+        availableModels={[
+          {
+            id: "llama3.2",
+            name: "llama3.2",
+            recommended: true,
+          },
+          {
+            id: "llama3.2",
+            name: "llama3.2",
+            providerId: "custom_ollama",
+            providerName: "Custom Ollama",
+            recommended: true,
+          },
+        ]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    );
+
+    const duplicateModelRows = screen.getAllByRole("button", {
+      name: "llama3.2",
+    });
+
+    expect(
+      duplicateModelRows.filter((row) => row.classList.contains("bg-muted/60")),
+    ).toHaveLength(1);
+  });
+
   it("auto-expands the group containing the selected model", async () => {
     const user = userEvent.setup();
 

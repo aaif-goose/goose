@@ -40,10 +40,6 @@ export function CustomProviderChoice({
             </span>
           ) : null}
         </div>
-        <p className="truncate text-xs text-muted-foreground">
-          {provider.description ??
-            t("providers.custom.modelCount", { count: provider.modelCount })}
-        </p>
       </div>
 
       <Button

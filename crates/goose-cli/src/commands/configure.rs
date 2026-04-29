@@ -2093,7 +2093,7 @@ fn add_provider() -> anyhow::Result<()> {
         engine: provider_type.to_string(),
         display_name: display_name.clone(),
         api_url,
-        api_key,
+        api_key: requires_auth.then_some(api_key),
         models,
         supports_streaming: Some(supports_streaming),
         headers,

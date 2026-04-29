@@ -29,10 +29,24 @@ const ENGINE_MAP: Record<string, CustomProviderEngine> = {
   ollama_compatible: "ollama_compatible",
 };
 
+export function isCustomProviderEngine(
+  engine: string | undefined,
+): engine is CustomProviderEngine {
+  if (!engine) {
+    return false;
+  }
+  const normalized = engine.trim().toLowerCase();
+  return Boolean(ENGINE_MAP[normalized]);
+}
+
 export function normalizeCustomProviderEngine(
   engine: string | undefined,
-): CustomProviderEngine {
-  return ENGINE_MAP[engine ?? ""] ?? "openai_compatible";
+): string {
+  if (!engine) {
+    return "";
+  }
+  const normalized = engine.trim().toLowerCase();
+  return ENGINE_MAP[normalized] ?? normalized;
 }
 
 export function engineForCustomProviderFormat(
@@ -49,8 +63,10 @@ export function createEmptyCustomProviderDraft(): CustomProviderDraft {
     apiUrl: "",
     basePath: "",
     apiKey: "",
+    apiKeySet: false,
     modelsInput: "",
     models: [],
+    authInitiallyEnabled: true,
     requiresAuth: true,
     supportsStreaming: true,
     headers: [],
@@ -71,8 +87,10 @@ export function templateToCustomProviderDraft(
     apiUrl: template.apiUrl,
     basePath: "",
     apiKey: "",
+    apiKeySet: false,
     modelsInput: formatCustomProviderModels(models),
     models,
+    authInitiallyEnabled: true,
     requiresAuth: true,
     supportsStreaming: template.supportsStreaming,
     headers: [],
@@ -94,8 +112,10 @@ export function readToCustomProviderDraft(
     apiUrl: provider.apiUrl,
     basePath: provider.basePath ?? "",
     apiKey: "",
+    apiKeySet: provider.apiKeySet,
     modelsInput: formatCustomProviderModels(models),
     models,
+    authInitiallyEnabled: provider.requiresAuth,
     requiresAuth: provider.requiresAuth,
     supportsStreaming: provider.supportsStreaming ?? true,
     headers: recordToHeaderDrafts(provider.headers),
@@ -110,11 +130,11 @@ export function customProviderDraftToUpsertRequest(
     draft.models.length > 0 ? draft.models : draft.modelsInput,
   );
 
-  return {
-    engine: normalizeCustomProviderEngine(draft.engine),
+  const apiKey = draft.requiresAuth ? draft.apiKey.trim() : "";
+  const request: CustomProviderUpsertRequest = {
+    engine: normalizeCustomProviderEngine(draft.engine) as CustomProviderEngine,
     displayName: draft.displayName.trim(),
     apiUrl: draft.apiUrl.trim(),
-    apiKey: draft.requiresAuth ? draft.apiKey.trim() : "",
     models,
     supportsStreaming: draft.supportsStreaming,
     headers: headerDraftsToRecord(draft.headers),
@@ -122,4 +142,10 @@ export function customProviderDraftToUpsertRequest(
     catalogProviderId: draft.catalogProviderId,
     basePath: draft.basePath.trim() || undefined,
   };
+
+  if (apiKey) {
+    request.apiKey = apiKey;
+  }
+
+  return request;
 }

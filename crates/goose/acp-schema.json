@@ -670,8 +670,10 @@
           "type": "string"
         },
         "apiKey": {
-          "type": "string",
-          "default": ""
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "models": {
           "type": "array",
@@ -925,8 +927,10 @@
           "type": "string"
         },
         "apiKey": {
-          "type": "string",
-          "default": ""
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "models": {
           "type": "array",

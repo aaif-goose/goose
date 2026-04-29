@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -38,7 +38,7 @@ interface CustomProviderDialogProps {
     providerId: string,
     input: CustomProviderMutationInput,
   ) => Promise<void>;
-  onDelete?: (providerId: string) => Promise<void>;
+  onDelete?: (providerId: string) => Promise<boolean | undefined>;
 }
 
 const EMPTY_FORM: CustomProviderFormValues = {
@@ -48,7 +48,9 @@ const EMPTY_FORM: CustomProviderFormValues = {
   basePath: "",
   requiresAuth: true,
   apiKey: "",
+  apiKeySet: false,
   models: [],
+  authInitiallyEnabled: true,
   supportsStreaming: true,
   headers: [],
 };
@@ -65,6 +67,7 @@ function valueFromTemplate(
     apiUrl: template.apiUrl,
     basePath: template.basePath ?? "",
     requiresAuth: template.requiresAuth,
+    authInitiallyEnabled: template.requiresAuth,
     models: template.models,
     supportsStreaming: template.supportsStreaming,
     headers: template.headers,
@@ -91,13 +94,22 @@ export function CustomProviderDialog({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const openStateKeyRef = useRef<string | null>(null);
   const templateById = useMemo(
     () => new Map(templates.map((template) => [template.id, template])),
     [templates],
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      openStateKeyRef.current = null;
+      return;
+    }
+    const openStateKey = `${mode}:${provider?.providerId ?? "new"}`;
+    if (openStateKeyRef.current === openStateKey) {
+      return;
+    }
+    openStateKeyRef.current = openStateKey;
     setValue(provider ?? EMPTY_FORM);
     setSelectedTemplateId(provider?.catalogProviderId ?? null);
     setCreateStep(mode === "create" ? "choice" : "form");
@@ -161,7 +173,10 @@ export function CustomProviderDialog({
     setDeleting(true);
     setError("");
     try {
-      await onDelete(value.providerId);
+      const deleted = await onDelete(value.providerId);
+      if (deleted === false) {
+        return;
+      }
       onOpenChange(false);
     } catch (nextError) {
       setError(

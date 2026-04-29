@@ -40,6 +40,7 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         "GOOSE_MODEL: gpt-4o\nGOOSE_PROVIDER: openai\nGOOSE_DISABLE_KEYRING: true\nXAI_HOST: https://api.x.ai/v1\n",
     );
     write_secrets(&config_dir, "XAI_API_KEY: xai-configured-key\n");
+    Config::global().invalidate_secrets_cache();
 
     run_test(async move {
         let openai = common_tests::fixtures::OpenAiFixture::new(
@@ -367,14 +368,12 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
             }),
         )
         .await
-        .expect("re-enabling auth without a key should keep existing compatibility");
-        assert_eq!(
-            auth_reenabled_without_key.get("status"),
-            Some(&serde_json::json!({
-                "providerId": provider_id,
-                "isConfigured": true,
-            })),
-            "blank re-enable keeps existing provider-status compatibility"
+        .expect_err("re-enabling auth without a stored secret should fail");
+        assert!(
+            auth_reenabled_without_key
+                .to_string()
+                .contains("apiKey is required"),
+            "unexpected error: {auth_reenabled_without_key}"
         );
         assert!(
             matches!(
@@ -427,6 +426,179 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
                 "providerId": provider_id,
                 "isConfigured": false,
             }))
+        );
+
+        for invalid_id in [
+            "../escape",
+            "foo/bar",
+            ".hidden",
+            "-bad",
+            "",
+            "Uppercase",
+            "has space",
+        ] {
+            let read = send_custom(
+                conn.cx(),
+                "_goose/providers/custom/read",
+                serde_json::json!({ "providerId": invalid_id }),
+            )
+            .await;
+            assert!(
+                read.is_err(),
+                "invalid provider id should fail: {invalid_id:?}"
+            );
+        }
+
+        for valid_id in ["custom_openai", "openai-compat", "a1"] {
+            assert!(
+                goose::config::declarative_providers::validate_provider_id(valid_id).is_ok(),
+                "provider id should be valid: {valid_id}"
+            );
+        }
+
+        for (name, patch) in [
+            (
+                "ftp URL",
+                serde_json::json!({ "apiUrl": "ftp://example.com" }),
+            ),
+            ("relative URL", serde_json::json!({ "apiUrl": "/v1" })),
+            ("empty models", serde_json::json!({ "models": [] })),
+            ("blank models", serde_json::json!({ "models": [" ", "\n"] })),
+            (
+                "invalid header name",
+                serde_json::json!({ "headers": { "Bad Header": "value" } }),
+            ),
+            (
+                "invalid header value",
+                serde_json::json!({ "headers": { "X-Test": "bad\r\nvalue" } }),
+            ),
+            (
+                "unsupported engine",
+                serde_json::json!({ "engine": "future_engine" }),
+            ),
+        ] {
+            let mut payload = serde_json::json!({
+                "engine": "openai_compatible",
+                "displayName": format!("Invalid {name}"),
+                "apiUrl": "https://api.example.test/v1",
+                "apiKey": "secret",
+                "models": ["model-a"],
+                "headers": {},
+                "requiresAuth": true
+            });
+            let payload_obj = payload.as_object_mut().unwrap();
+            for (key, value) in patch.as_object().unwrap() {
+                payload_obj.insert(key.clone(), value.clone());
+            }
+
+            let result = send_custom(conn.cx(), "_goose/providers/custom/create", payload).await;
+            assert!(result.is_err(), "{name} should be rejected");
+        }
+
+        Config::global()
+            .set_secret("SHARED_API_KEY", &"shared-secret")
+            .unwrap();
+
+        let shared = send_custom(
+            conn.cx(),
+            "_goose/providers/custom/create",
+            serde_json::json!({
+                "engine": "openai_compatible",
+                "displayName": "Shared Secret Test",
+                "apiUrl": "https://api.example.test/v1",
+                "apiKey": "owned-secret",
+                "models": ["model-a"],
+                "headers": {},
+                "requiresAuth": true
+            }),
+        )
+        .await
+        .expect("shared-secret provider create should succeed");
+        let shared_id = shared
+            .get("providerId")
+            .and_then(|provider_id| provider_id.as_str())
+            .unwrap()
+            .to_string();
+        let shared_path = Paths::config_dir()
+            .join("custom_providers")
+            .join(format!("{shared_id}.json"));
+        let mut shared_config: DeclarativeProviderConfig =
+            serde_json::from_str(&std::fs::read_to_string(&shared_path).unwrap()).unwrap();
+        shared_config.api_key_env = "SHARED_API_KEY".to_string();
+        std::fs::write(
+            &shared_path,
+            serde_json::to_string_pretty(&shared_config).unwrap(),
+        )
+        .unwrap();
+        Config::global().invalidate_secrets_cache();
+
+        send_custom(
+            conn.cx(),
+            "_goose/providers/custom/update",
+            serde_json::json!({
+                "providerId": shared_id,
+                "engine": "openai_compatible",
+                "displayName": "Shared Secret Test",
+                "apiUrl": "https://api.example.test/v1",
+                "models": ["model-a"],
+                "headers": {},
+                "requiresAuth": false
+            }),
+        )
+        .await
+        .expect("disabling auth should preserve shared secrets");
+        assert_eq!(
+            Config::global()
+                .get_secret::<String>("SHARED_API_KEY")
+                .unwrap(),
+            "shared-secret"
+        );
+
+        let shared_delete = send_custom(
+            conn.cx(),
+            "_goose/providers/custom/create",
+            serde_json::json!({
+                "engine": "openai_compatible",
+                "displayName": "Shared Secret Delete",
+                "apiUrl": "https://api.example.test/v1",
+                "apiKey": "owned-secret",
+                "models": ["model-a"],
+                "headers": {},
+                "requiresAuth": true
+            }),
+        )
+        .await
+        .expect("shared-delete provider create should succeed");
+        let shared_delete_id = shared_delete
+            .get("providerId")
+            .and_then(|provider_id| provider_id.as_str())
+            .unwrap()
+            .to_string();
+        let shared_delete_path = Paths::config_dir()
+            .join("custom_providers")
+            .join(format!("{shared_delete_id}.json"));
+        let mut shared_delete_config: DeclarativeProviderConfig =
+            serde_json::from_str(&std::fs::read_to_string(&shared_delete_path).unwrap()).unwrap();
+        shared_delete_config.api_key_env = "SHARED_API_KEY".to_string();
+        std::fs::write(
+            &shared_delete_path,
+            serde_json::to_string_pretty(&shared_delete_config).unwrap(),
+        )
+        .unwrap();
+        Config::global().invalidate_secrets_cache();
+
+        send_custom(
+            conn.cx(),
+            "_goose/providers/custom/delete",
+            serde_json::json!({ "providerId": shared_delete_id }),
+        )
+        .await
+        .expect("deleting provider should preserve shared secrets");
+        assert_eq!(
+            Config::global()
+                .get_secret::<String>("SHARED_API_KEY")
+                .unwrap(),
+            "shared-secret"
         );
     });
 }

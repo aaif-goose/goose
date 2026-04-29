@@ -234,13 +234,17 @@
         "deleteProvider": "Delete {{name}}",
         "deleting": "Deleting...",
         "editProvider": "Edit {{name}}",
+        "hideApiKey": "Hide API key",
         "removeHeader": "Remove header",
         "removeModel": "Remove {{model}}",
         "save": "Save changes",
-        "saving": "Saving..."
+        "saving": "Saving...",
+        "showApiKey": "Show API key"
       },
       "addButton": "Add custom provider",
       "addTitle": "Add custom provider",
+      "confirmDelete": "This removes {{name}} and any API key owned by it.",
+      "confirmDeleteTitle": "Delete {{name}}?",
       "description": "Connect an OpenAI-compatible, Anthropic-compatible, or local model endpoint.",
       "editTitle": "Edit custom provider",
       "emptyHeaders": "No custom headers.",
@@ -253,7 +257,8 @@
       "errors": {
         "deleteFailed": "Failed to delete custom provider.",
         "loadFailed": "Failed to load custom provider.",
-        "saveFailed": "Failed to save custom provider."
+        "saveFailed": "Failed to save custom provider.",
+        "templatesFailed": "Failed to load provider templates."
       },
       "fields": {
         "apiKey": "API key",
@@ -279,6 +284,18 @@
       "modelCount_one": "{{count}} model",
       "modelCount_other": "{{count}} models",
       "notConfigured": "Not configured",
+      "validation": {
+        "apiKeyRequired": "API key is required.",
+        "apiUrlInvalid": "Enter a valid HTTP or HTTPS URL.",
+        "apiUrlRequired": "API URL is required.",
+        "displayNameRequired": "Display name is required.",
+        "engineRequired": "Choose a provider engine.",
+        "headerDuplicate": "Header names must be unique.",
+        "headerNameInvalid": "Header names can only contain valid HTTP token characters.",
+        "headerNameRequired": "Header name is required.",
+        "headerValueRequired": "Header value is required.",
+        "modelsRequired": "Add at least one model."
+      },
       "sections": {
         "template": "Start from template"
       },

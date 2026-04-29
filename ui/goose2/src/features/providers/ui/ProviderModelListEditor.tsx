@@ -14,6 +14,10 @@ function normalizeModels(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function splitModelInput(value: string) {
+  return value.split(/[\n,]/);
+}
+
 export function ProviderModelListEditor({
   models,
   onChange,
@@ -23,7 +27,7 @@ export function ProviderModelListEditor({
   const [draft, setDraft] = useState("");
 
   function addModels(value: string) {
-    const nextModels = normalizeModels([...models, ...value.split(",")]);
+    const nextModels = normalizeModels([...models, ...splitModelInput(value)]);
     onChange(nextModels);
     setDraft("");
   }
@@ -39,9 +43,19 @@ export function ProviderModelListEditor({
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
             if (event.key === "Enter" || event.key === ",") {
               event.preventDefault();
               addModels(draft);
+            }
+          }}
+          onPaste={(event) => {
+            const pasted = event.clipboardData.getData("text");
+            if (/[\n,]/.test(pasted)) {
+              event.preventDefault();
+              addModels(pasted);
             }
           }}
           placeholder={t("providers.custom.fields.modelsPlaceholder")}
@@ -83,11 +97,7 @@ export function ProviderModelListEditor({
             </span>
           ))}
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {t("providers.custom.emptyModels")}
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }

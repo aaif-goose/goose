@@ -234,13 +234,17 @@
         "deleteProvider": "Eliminar {{name}}",
         "deleting": "Eliminando...",
         "editProvider": "Editar {{name}}",
+        "hideApiKey": "Ocultar clave API",
         "removeHeader": "Eliminar encabezado",
         "removeModel": "Eliminar {{model}}",
         "save": "Guardar cambios",
-        "saving": "Guardando..."
+        "saving": "Guardando...",
+        "showApiKey": "Mostrar clave API"
       },
       "addButton": "Agregar proveedor personalizado",
       "addTitle": "Agregar proveedor personalizado",
+      "confirmDelete": "Esto elimina {{name}} y cualquier clave API que le pertenezca.",
+      "confirmDeleteTitle": "¿Eliminar {{name}}?",
       "description": "Conecta un endpoint de modelo compatible con OpenAI, Anthropic o local.",
       "editTitle": "Editar proveedor personalizado",
       "emptyHeaders": "No hay encabezados personalizados.",
@@ -253,7 +257,8 @@
       "errors": {
         "deleteFailed": "No se pudo eliminar el proveedor personalizado.",
         "loadFailed": "No se pudo cargar el proveedor personalizado.",
-        "saveFailed": "No se pudo guardar el proveedor personalizado."
+        "saveFailed": "No se pudo guardar el proveedor personalizado.",
+        "templatesFailed": "No se pudieron cargar las plantillas de proveedores."
       },
       "fields": {
         "apiKey": "Clave API",
@@ -279,6 +284,18 @@
       "modelCount_one": "{{count}} modelo",
       "modelCount_other": "{{count}} modelos",
       "notConfigured": "No configurado",
+      "validation": {
+        "apiKeyRequired": "La clave API es obligatoria.",
+        "apiUrlInvalid": "Introduce una URL HTTP o HTTPS válida.",
+        "apiUrlRequired": "La URL de API es obligatoria.",
+        "displayNameRequired": "El nombre visible es obligatorio.",
+        "engineRequired": "Elige un motor de proveedor.",
+        "headerDuplicate": "Los nombres de encabezado deben ser únicos.",
+        "headerNameInvalid": "Los nombres de encabezado solo pueden contener caracteres HTTP token válidos.",
+        "headerNameRequired": "El nombre del encabezado es obligatorio.",
+        "headerValueRequired": "El valor del encabezado es obligatorio.",
+        "modelsRequired": "Agrega al menos un modelo."
+      },
       "sections": {
         "template": "Comenzar con plantilla"
       },

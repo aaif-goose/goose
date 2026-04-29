@@ -27,14 +27,15 @@ describe("custom provider helper functions", () => {
   it("converts header records to drafts and ignores blank draft rows on submit", () => {
     expect(recordToHeaderDrafts({ Authorization: "Bearer token" })).toEqual([
       {
+        id: "server-header-0",
         key: "Authorization",
         value: "Bearer token",
       },
     ]);
     expect(
       headerDraftsToRecord([
-        { key: " X-Test ", value: " enabled " },
-        { key: "", value: "" },
+        { id: "a", key: " X-Test ", value: " enabled " },
+        { id: "b", key: "", value: "" },
       ]),
     ).toEqual({
       "X-Test": "enabled",
@@ -43,9 +44,9 @@ describe("custom provider helper functions", () => {
 
   it("reports header validation issues with stable i18n keys", () => {
     const issues = validateCustomProviderHeaders([
-      { key: "Bad Header", value: "value" },
-      { key: "X-Test", value: "" },
-      { key: "x-test", value: "duplicate" },
+      { id: "a", key: "Bad Header", value: "value" },
+      { id: "b", key: "X-Test", value: "" },
+      { id: "c", key: "x-test", value: "duplicate" },
     ]);
 
     expect(issues.map((issue) => issue.key)).toEqual([
@@ -124,7 +125,7 @@ describe("custom provider helper functions", () => {
 
     expect(draft).toMatchObject({
       providerId: "acme_ai",
-      headers: [{ key: "X-Test", value: "enabled" }],
+      headers: [{ id: "server-header-0", key: "X-Test", value: "enabled" }],
       basePath: "/v1",
     });
   });
@@ -143,7 +144,7 @@ describe("custom provider helper functions", () => {
       apiUrl: " https://api.acme.test/v1 ",
       apiKey: " secret ",
       modelsInput: "acme-large, acme-small",
-      headers: [{ key: " X-Test ", value: " enabled " }],
+      headers: [{ id: "a", key: " X-Test ", value: " enabled " }],
       basePath: " /v1 ",
       catalogProviderId: "acme",
     };
@@ -163,5 +164,45 @@ describe("custom provider helper functions", () => {
       catalogProviderId: "acme",
       basePath: "/v1",
     });
+  });
+
+  it("omits unchanged API keys and preserves stable header ids", () => {
+    const draft = {
+      ...createEmptyCustomProviderDraft(),
+      providerId: "acme_ai",
+      displayName: "Acme AI",
+      apiUrl: "https://api.acme.test/v1",
+      apiKeySet: true,
+      models: ["acme-large"],
+      headers: [
+        { id: "stable", key: "X-Original", value: "enabled" },
+        { id: "empty", key: "", value: "" },
+      ],
+    };
+
+    expect(validateCustomProviderDraft(draft)).toEqual([]);
+    expect(customProviderDraftToUpsertRequest(draft)).not.toHaveProperty(
+      "apiKey",
+    );
+
+    const nextHeaders = draft.headers.map((header) =>
+      header.id === "stable" ? { ...header, key: "X-Renamed" } : header,
+    );
+    expect(nextHeaders[0].id).toBe("stable");
+  });
+
+  it("surfaces unknown engines as invalid instead of normalizing them", () => {
+    const draft = {
+      ...createEmptyCustomProviderDraft(),
+      engine: "future_engine",
+      displayName: "Future AI",
+      apiUrl: "https://api.future.test/v1",
+      apiKey: "secret",
+      models: ["future-large"],
+    };
+
+    expect(
+      validateCustomProviderDraft(draft).map((issue) => issue.field),
+    ).toContain("engine");
   });
 });

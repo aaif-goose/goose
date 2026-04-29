@@ -1,9 +1,10 @@
 import { parseCustomProviderModels } from "./customProviderModels";
 import { validateCustomProviderHeaders } from "./customProviderHeaders";
-import type {
-  CustomProviderDraft,
-  CustomProviderEngine,
-} from "./customProviderTypes";
+import {
+  isCustomProviderEngine,
+  normalizeCustomProviderEngine,
+} from "./customProviderDraft";
+import type { CustomProviderDraft } from "./customProviderTypes";
 
 export type CustomProviderValidationField =
   | "displayName"
@@ -34,12 +35,6 @@ export interface CustomProviderValidationOptions {
   requireApiKey?: boolean;
 }
 
-const VALID_ENGINES = new Set<CustomProviderEngine>([
-  "openai_compatible",
-  "anthropic_compatible",
-  "ollama_compatible",
-]);
-
 export class CustomProviderValidationError extends Error {
   readonly issues: CustomProviderValidationIssue[];
 
@@ -69,7 +64,8 @@ export function validateCustomProviderDraft(
     draft.models.length > 0 ? draft.models : draft.modelsInput,
   );
   const requireApiKey =
-    options.requireApiKey ?? (draft.requiresAuth && !draft.providerId);
+    options.requireApiKey ?? (draft.requiresAuth && !draft.apiKeySet);
+  const engine = normalizeCustomProviderEngine(draft.engine);
 
   if (!draft.displayName.trim()) {
     issues.push({
@@ -79,7 +75,7 @@ export function validateCustomProviderDraft(
     });
   }
 
-  if (!VALID_ENGINES.has(draft.engine)) {
+  if (!isCustomProviderEngine(engine)) {
     issues.push({
       field: "engine",
       key: "settings.providers.custom.validation.engineRequired",

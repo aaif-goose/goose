@@ -325,7 +325,7 @@ export type CustomProviderCreateRequest = {
     engine: string;
     displayName: string;
     apiUrl: string;
-    apiKey?: string;
+    apiKey?: string | null;
     models?: Array<string>;
     supportsStreaming?: boolean | null;
     headers?: {
@@ -406,7 +406,7 @@ export type CustomProviderUpdateRequest = {
     engine: string;
     displayName: string;
     apiUrl: string;
-    apiKey?: string;
+    apiKey?: string | null;
     models?: Array<string>;
     supportsStreaming?: boolean | null;
     headers?: {

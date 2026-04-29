@@ -54,7 +54,7 @@ export async function updateCustomProvider(
   input: CustomProviderUpsertRequest,
 ): Promise<CustomProviderUpdateResponse> {
   const client = await getProviderClient();
-  return client.GooseProvidersCustomUpdate({ providerId, ...input });
+  return client.GooseProvidersCustomUpdate({ ...input, providerId });
 }
 
 export async function deleteCustomProvider(

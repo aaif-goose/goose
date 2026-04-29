@@ -263,7 +263,10 @@ export const zCustomProviderCreateRequest = z.object({
     engine: z.string(),
     displayName: z.string(),
     apiUrl: z.string(),
-    apiKey: z.string().optional().default(''),
+    apiKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
     models: z.array(z.string()).optional().default([]),
     supportsStreaming: z.union([
         z.boolean(),
@@ -360,7 +363,10 @@ export const zCustomProviderUpdateRequest = z.object({
     engine: z.string(),
     displayName: z.string(),
     apiUrl: z.string(),
-    apiKey: z.string().optional().default(''),
+    apiKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
     models: z.array(z.string()).optional().default([]),
     supportsStreaming: z.union([
         z.boolean(),

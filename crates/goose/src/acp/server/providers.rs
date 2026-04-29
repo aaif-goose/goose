@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::declarative_providers;
+use std::str::FromStr;
 
 fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEntryDto {
     let stale = ProviderInventoryService::is_stale(&entry);
@@ -164,12 +165,17 @@ fn custom_provider_engine_to_dto(engine: &declarative_providers::ProviderEngine)
 }
 
 fn normalize_custom_provider_engine(engine: &str) -> Result<String, sacp::Error> {
-    match engine.trim().to_lowercase().as_str() {
+    let engine = engine.trim().to_lowercase();
+    if declarative_providers::ProviderEngine::from_str(&engine).is_err() {
+        return Err(sacp::Error::invalid_params()
+            .data(format!("Unsupported custom provider engine: {engine}")));
+    }
+
+    match engine.as_str() {
         "openai" | "openai_compatible" => Ok("openai_compatible".to_string()),
         "anthropic" | "anthropic_compatible" => Ok("anthropic_compatible".to_string()),
         "ollama" | "ollama_compatible" => Ok("ollama_compatible".to_string()),
-        other => Err(sacp::Error::invalid_params()
-            .data(format!("Unsupported custom provider engine: {other}"))),
+        _ => unreachable!("provider engine was validated above"),
     }
 }
 
@@ -195,8 +201,17 @@ fn normalize_custom_provider_upsert(
     provider.engine = normalize_custom_provider_engine(&provider.engine)?;
     provider.display_name = non_empty_trimmed(provider.display_name, "displayName")?;
     provider.api_url = non_empty_trimmed(provider.api_url, "apiUrl")?;
-    provider.api_key = provider.api_key.trim().to_string();
-    if require_api_key && provider.requires_auth && provider.api_key.is_empty() {
+    let url = url::Url::parse(&provider.api_url)
+        .map_err(|_| sacp::Error::invalid_params().data("apiUrl must be a valid URL"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(sacp::Error::invalid_params().data("apiUrl must use HTTP or HTTPS"));
+    }
+
+    provider.api_key = provider.api_key.and_then(|api_key| {
+        let api_key = api_key.trim().to_string();
+        (!api_key.is_empty()).then_some(api_key)
+    });
+    if require_api_key && provider.requires_auth && provider.api_key.is_none() {
         return Err(sacp::Error::invalid_params().data("apiKey cannot be empty"));
     }
     provider.models = provider
@@ -207,14 +222,30 @@ fn normalize_custom_provider_upsert(
             (!model.is_empty()).then_some(model)
         })
         .collect();
+    if provider.models.is_empty() {
+        return Err(sacp::Error::invalid_params().data("models cannot be empty"));
+    }
+
     provider.headers = provider
         .headers
         .into_iter()
-        .filter_map(|(key, value)| {
+        .map(|(key, value)| {
             let key = key.trim().to_string();
             let value = value.trim().to_string();
-            (!key.is_empty()).then_some((key, value))
+            if key.is_empty() {
+                return Ok(None);
+            }
+            reqwest::header::HeaderName::from_bytes(key.as_bytes()).map_err(|_| {
+                sacp::Error::invalid_params().data(format!("Invalid header name: {key}"))
+            })?;
+            reqwest::header::HeaderValue::from_str(&value).map_err(|_| {
+                sacp::Error::invalid_params().data(format!("Invalid header value for: {key}"))
+            })?;
+            Ok(Some((key, value)))
         })
+        .collect::<Result<Vec<_>, sacp::Error>>()?
+        .into_iter()
+        .flatten()
         .collect();
     provider.catalog_provider_id = normalize_optional_string(provider.catalog_provider_id);
     provider.base_path = normalize_optional_string(provider.base_path);
@@ -228,9 +259,14 @@ fn custom_provider_headers(headers: HashMap<String, String>) -> Option<HashMap<S
 fn load_declarative_provider_for_client(
     provider_id: &str,
 ) -> Result<declarative_providers::LoadedProvider, sacp::Error> {
+    declarative_providers::validate_provider_id(provider_id)
+        .map_err(|error| sacp::Error::invalid_params().data(error.to_string()))?;
+
     declarative_providers::load_provider(provider_id).map_err(|error| {
         if error.to_string().contains("Provider not found") {
             sacp::Error::invalid_params().data(format!("Unknown provider: {provider_id}"))
+        } else if error.to_string().contains("Invalid provider id") {
+            sacp::Error::invalid_params().data(error.to_string())
         } else {
             sacp::Error::internal_error().data(error.to_string())
         }
@@ -422,6 +458,17 @@ impl GooseAcpAgent {
         }
 
         let provider = normalize_custom_provider_upsert(req.provider, false)?;
+        if provider.requires_auth && provider.api_key.is_none() {
+            let api_key_env = if loaded.config.api_key_env.is_empty() {
+                declarative_providers::generate_api_key_name(&req.provider_id)
+            } else {
+                loaded.config.api_key_env.clone()
+            };
+            if Config::global().get_secret::<String>(&api_key_env).is_err() {
+                return Err(sacp::Error::invalid_params()
+                    .data("apiKey is required when auth is enabled and no secret is stored"));
+            }
+        }
         declarative_providers::update_custom_provider(
             declarative_providers::UpdateCustomProviderParams {
                 id: req.provider_id.clone(),

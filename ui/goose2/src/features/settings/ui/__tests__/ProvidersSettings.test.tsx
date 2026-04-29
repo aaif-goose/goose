@@ -7,10 +7,15 @@ import { ProvidersSettings } from "../ProvidersSettings";
 
 const mocks = vi.hoisted(() => ({
   useCredentials: vi.fn(),
+  useCustomProviders: vi.fn(),
 }));
 
 vi.mock("@/features/providers/hooks/useCredentials", () => ({
   useCredentials: () => mocks.useCredentials(),
+}));
+
+vi.mock("@/features/providers/hooks/useCustomProviders", () => ({
+  useCustomProviders: () => mocks.useCustomProviders(),
 }));
 
 function providerEntry(
@@ -35,6 +40,7 @@ function providerEntry(
 
 describe("ProvidersSettings", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     useProviderInventoryStore.getState().setEntries([]);
     mocks.useCredentials.mockReturnValue({
@@ -48,6 +54,27 @@ describe("ProvidersSettings", () => {
       save: vi.fn(),
       remove: vi.fn(),
       completeNativeSetup: vi.fn(),
+    });
+    mocks.useCustomProviders.mockReturnValue({
+      catalog: [],
+      catalogLoading: false,
+      saving: false,
+      savingProviderIds: new Set<string>(),
+      deletingProviderIds: new Set<string>(),
+      syncingProviderIds: new Set<string>(),
+      inventoryWarnings: new Map<string, string>(),
+      statusByProviderId: new Map(),
+      configuredIds: new Set<string>(),
+      loadCatalog: vi.fn().mockResolvedValue([]),
+      getTemplate: vi.fn(),
+      read: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn().mockResolvedValue({
+        providerId: "custom_acme",
+        refresh: { started: [], skipped: [] },
+      }),
+      saveDraft: vi.fn(),
     });
   });
 
@@ -145,12 +172,70 @@ describe("ProvidersSettings", () => {
     render(<ProvidersSettings />);
 
     expect(screen.getByText("Acme Models")).toBeInTheDocument();
-    expect(screen.getByText("1 model")).toBeInTheDocument();
+    expect(screen.queryByText("1 model")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /edit acme models/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /delete acme models/i }),
     ).toBeInTheDocument();
+  });
+
+  it("confirms before deleting a custom provider", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockResolvedValue({
+      providerId: "custom_acme",
+      refresh: { started: [], skipped: [] },
+    });
+    mocks.useCustomProviders.mockReturnValue({
+      ...mocks.useCustomProviders(),
+      remove,
+    });
+    useProviderInventoryStore.getState().setEntries([
+      providerEntry({
+        providerId: "custom_acme",
+        providerName: "Acme Models",
+      }),
+    ]);
+
+    render(<ProvidersSettings />);
+
+    await user.click(
+      screen.getByRole("button", { name: /delete acme models/i }),
+    );
+    expect(
+      screen.getByRole("alertdialog", { name: /delete acme models/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("keeps a provider visible and shows an error when delete fails", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockRejectedValue(new Error("delete exploded"));
+    mocks.useCustomProviders.mockReturnValue({
+      ...mocks.useCustomProviders(),
+      remove,
+    });
+    useProviderInventoryStore.getState().setEntries([
+      providerEntry({
+        providerId: "custom_acme",
+        providerName: "Acme Models",
+      }),
+    ]);
+
+    render(<ProvidersSettings />);
+
+    await user.click(
+      screen.getByRole("button", { name: /delete acme models/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "delete exploded",
+    );
+    expect(screen.getByText("Acme Models")).toBeInTheDocument();
   });
 });

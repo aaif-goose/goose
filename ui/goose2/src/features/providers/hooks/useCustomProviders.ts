@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ProviderConfigStatusDto } from "@aaif/goose-sdk";
 import {
   createCustomProvider,
@@ -110,6 +110,9 @@ function useSetMembershipState() {
 }
 
 export function useCustomProviders(): UseCustomProvidersReturn {
+  const catalogRequestIdRef = useRef(0);
+  const operationIdRef = useRef(0);
+  const deletedProviderIdsRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<ProviderCatalogEntryDto[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [savingProviderIds, setProviderSaving] = useSetMembershipState();
@@ -173,8 +176,14 @@ export function useCustomProviders(): UseCustomProvidersReturn {
 
       void syncProviderInventory([providerId], {
         initialRefresh: result,
-        onEntries: (entries) =>
-          useProviderInventoryStore.getState().mergeEntries(entries),
+        onEntries: (entries) => {
+          const visibleEntries = entries.filter(
+            (entry) => !deletedProviderIdsRef.current.has(entry.providerId),
+          );
+          if (visibleEntries.length > 0) {
+            useProviderInventoryStore.getState().mergeEntries(visibleEntries);
+          }
+        },
       })
         .then((syncResult) => {
           setProviderInventoryWarning(
@@ -191,13 +200,19 @@ export function useCustomProviders(): UseCustomProvidersReturn {
   );
 
   const loadCatalog = useCallback(async (format?: CustomProviderFormat) => {
+    const requestId = catalogRequestIdRef.current + 1;
+    catalogRequestIdRef.current = requestId;
     setCatalogLoading(true);
     try {
       const nextCatalog = await listCustomProviderCatalog(format);
-      setCatalog(nextCatalog);
+      if (catalogRequestIdRef.current === requestId) {
+        setCatalog(nextCatalog);
+      }
       return nextCatalog;
     } finally {
-      setCatalogLoading(false);
+      if (catalogRequestIdRef.current === requestId) {
+        setCatalogLoading(false);
+      }
     }
   }, []);
 
@@ -212,10 +227,12 @@ export function useCustomProviders(): UseCustomProvidersReturn {
 
   const create = useCallback(
     async (input: CustomProviderUpsertRequest) => {
-      const pendingId = input.displayName;
+      const pendingId = `create-${operationIdRef.current + 1}`;
+      operationIdRef.current += 1;
       setProviderSaving(pendingId, true);
       try {
         const result = await createCustomProvider(input);
+        deletedProviderIdsRef.current.delete(result.providerId);
         updateStatus(result.status);
         startInventorySync(result.providerId, result.refresh);
         return result;
@@ -231,6 +248,7 @@ export function useCustomProviders(): UseCustomProvidersReturn {
       setProviderSaving(providerId, true);
       try {
         const result = await updateCustomProvider(providerId, input);
+        deletedProviderIdsRef.current.delete(result.providerId);
         updateStatus(result.status);
         startInventorySync(result.providerId, result.refresh);
         return result;
@@ -244,6 +262,7 @@ export function useCustomProviders(): UseCustomProvidersReturn {
   const remove = useCallback(
     async (providerId: string) => {
       setProviderDeleting(providerId, true);
+      deletedProviderIdsRef.current.add(providerId);
       try {
         const result = await deleteCustomProvider(providerId);
         setStatusByProviderId((current) => {
@@ -252,13 +271,15 @@ export function useCustomProviders(): UseCustomProvidersReturn {
           return next;
         });
         removeInventoryEntry(providerId);
-        startInventorySync(providerId, result.refresh);
         return result;
+      } catch (error) {
+        deletedProviderIdsRef.current.delete(providerId);
+        throw error;
       } finally {
         setProviderDeleting(providerId, false);
       }
     },
-    [removeInventoryEntry, setProviderDeleting, startInventorySync],
+    [removeInventoryEntry, setProviderDeleting],
   );
 
   const saveDraft = useCallback(
