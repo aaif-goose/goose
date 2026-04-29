@@ -1,6 +1,7 @@
 import { fetchSharedSessionDetails, SharedSessionDetails } from './sharedSessions';
 import { View, ViewOptions } from './utils/navigationUtils';
 import { errorMessage } from './utils/conversionUtils';
+import { importSessionNostr } from './api';
 
 /**
  * Handles opening a shared session from a deep link
@@ -17,6 +18,15 @@ export async function openSharedSessionFromDeepLink(
   try {
     if (!url.startsWith('goose://sessions/')) {
       throw new Error('Invalid URL: URL must use the goose://sessions/ scheme');
+    }
+
+    if (url.startsWith('goose://sessions/nostr')) {
+      await importSessionNostr({
+        body: { deeplink: url },
+        throwOnError: true,
+      });
+      setView('sessions');
+      return null;
     }
 
     // Extract the share token from the URL
