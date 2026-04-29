@@ -440,13 +440,21 @@ const PROVIDER_ICON_MAP: Record<string, (className: string) => ReactNode> = {
   amp: (className) => <AmpIcon className={className} />,
   "amp-acp": (className) => <AmpIcon className={className} />,
   azure: (className) => <AzureOpenAIIcon className={className} />,
+  azure_openai: (className) => <AzureOpenAIIcon className={className} />,
   bedrock: (className) => <BedrockIcon className={className} />,
+  aws_bedrock: (className) => <BedrockIcon className={className} />,
   databricks: (className) => <DatabricksIcon className={className} />,
   gcp_vertex_ai: (className) => <VertexAIIcon className={className} />,
   ollama: (className) => <OllamaIcon className={className} />,
   openrouter: (className) => <OpenRouterIcon className={className} />,
   snowflake: (className) => <SnowflakeIcon className={className} />,
   xai: (className) => <XAIIcon className={className} />,
+  mistral: (className) => <OpenAIIcon className={className} />,
+  groq: (className) => <OpenAIIcon className={className} />,
+  custom_deepseek: (className) => <OpenAIIcon className={className} />,
+  lmstudio: (className) => <OllamaIcon className={className} />,
+  nvidia: (className) => <OpenAIIcon className={className} />,
+  cerebras: (className) => <OpenAIIcon className={className} />,
 };
 
 function normalizeProviderId(providerId: string) {
@@ -488,5 +496,5 @@ export function getProviderIcon(
     }
   }
 
-  return null;
+  return <OpenAIIcon className={className} />;
 }

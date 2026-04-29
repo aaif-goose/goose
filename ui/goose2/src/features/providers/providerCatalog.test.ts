@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getCatalogEntry,
+  getModelProviders,
   resolveAgentProviderCatalogId,
 } from "./providerCatalog";
 
@@ -18,6 +19,55 @@ describe("provider catalog", () => {
         placeholder: "localhost or http://localhost:11434",
         defaultValue: "http://localhost:11434",
       },
+    ]);
+  });
+
+  it("uses backend model provider ids for the curated catalog", () => {
+    const ids = getModelProviders().map((provider) => provider.id);
+
+    expect(ids).toEqual([
+      "anthropic",
+      "google",
+      "chatgpt_codex",
+      "openai",
+      "mistral",
+      "ollama",
+      "openrouter",
+      "databricks",
+      "github_copilot",
+      "custom_deepseek",
+      "xai",
+      "groq",
+      "azure_openai",
+      "aws_bedrock",
+      "gcp_vertex_ai",
+      "litellm",
+      "lmstudio",
+      "nvidia",
+      "cerebras",
+      "snowflake",
+    ]);
+    expect(ids).not.toContain("azure");
+    expect(ids).not.toContain("bedrock");
+    expect(ids).not.toContain("deepseek");
+    expect(ids).not.toContain("local_inference");
+  });
+
+  it("marks the planned promoted model providers", () => {
+    const promotedIds = getModelProviders()
+      .filter((provider) => provider.tier === "promoted")
+      .map((provider) => provider.id);
+
+    expect(promotedIds).toEqual([
+      "anthropic",
+      "google",
+      "chatgpt_codex",
+      "openai",
+      "mistral",
+      "ollama",
+      "openrouter",
+      "databricks",
+      "github_copilot",
     ]);
   });
 });
