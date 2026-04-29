@@ -349,6 +349,7 @@ export const SwitchModelModal = ({
   const [claudeThinkingEffort, setClaudeThinkingEffort] = useState<string>('high');
   const [claudeThinkingBudget, setClaudeThinkingBudget] = useState<string>('16000');
   const [chatGptCodexReasoningEffort, setChatGptCodexReasoningEffort] = useState<string>('medium');
+  const userSelectedChatGptCodexReasoningEffort = useRef(false);
 
   const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
   const selectedProvider = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
@@ -393,7 +394,9 @@ export const SwitchModelModal = ({
       const budget = await readConfig('CLAUDE_THINKING_BUDGET');
       if (budget) setClaudeThinkingBudget(budget);
       const codexEffort = await readConfig('CHATGPT_CODEX_REASONING_EFFORT');
-      if (codexEffort) setChatGptCodexReasoningEffort(codexEffort);
+      if (codexEffort && !userSelectedChatGptCodexReasoningEffort.current) {
+        setChatGptCodexReasoningEffort(codexEffort);
+      }
     })();
   }, [read]);
 
@@ -761,6 +764,7 @@ export const SwitchModelModal = ({
         )}
         onChange={(newValue: unknown) => {
           const option = newValue as { value: string; label: string } | null;
+          userSelectedChatGptCodexReasoningEffort.current = true;
           setChatGptCodexReasoningEffort(option?.value || 'medium');
         }}
         placeholder={intl.formatMessage(i18n.selectIntelligenceLevel)}
