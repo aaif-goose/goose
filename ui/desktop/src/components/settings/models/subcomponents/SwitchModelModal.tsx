@@ -458,9 +458,15 @@ export const SwitchModelModal = ({
       }
 
       if (showChatGptCodexIntelligence) {
-        upsert('CHATGPT_CODEX_REASONING_EFFORT', selectedChatGptCodexReasoningEffort, false).catch(
-          console.warn
-        );
+        try {
+          await upsert(
+            'CHATGPT_CODEX_REASONING_EFFORT',
+            selectedChatGptCodexReasoningEffort,
+            false
+          );
+        } catch (error) {
+          console.warn(error);
+        }
       }
 
       if (showClaudeThinking) {
