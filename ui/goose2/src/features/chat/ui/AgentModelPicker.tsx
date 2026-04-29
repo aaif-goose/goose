@@ -32,6 +32,7 @@ interface AgentModelPickerProps {
   loading?: boolean;
   isCompact?: boolean;
   showSelectedModelInTrigger?: boolean;
+  onOpen?: () => void;
 }
 
 function getModelDisplayName(model: ModelOption) {
@@ -319,6 +320,7 @@ export function AgentModelPicker({
   loading = false,
   isCompact = false,
   showSelectedModelInTrigger = true,
+  onOpen,
 }: AgentModelPickerProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
@@ -356,7 +358,13 @@ export function AgentModelPicker({
   const isAllView = modelView === "all";
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) onOpen?.();
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"

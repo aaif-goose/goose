@@ -63,6 +63,7 @@ interface ChatInputToolbarProps {
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
+  onPickerOpen?: () => void;
   // Project
   selectedProjectId: string | null;
   availableProjects: ProjectOption[];
@@ -108,6 +109,7 @@ export function ChatInputToolbar({
   modelsLoading = false,
   modelStatusMessage = null,
   onModelChange,
+  onPickerOpen,
   selectedProjectId,
   availableProjects,
   onProjectChange,
@@ -231,6 +233,7 @@ export function ChatInputToolbar({
             modelsLoading={modelsLoading}
             modelStatusMessage={modelStatusMessage}
             onModelChange={onModelChange}
+            onOpen={onPickerOpen}
             loading={providersLoading}
             isCompact={isCompact}
             showSelectedModelInTrigger={selectedPersonaId === null}

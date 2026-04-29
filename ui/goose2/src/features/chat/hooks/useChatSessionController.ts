@@ -230,6 +230,7 @@ export function useChatSessionController({
     modelStatusMessage,
     handleProviderChange,
     handleModelChange,
+    handlePickerOpen,
     effectiveModelSelection,
   } = useResolvedAgentModelPicker({
     providers,
@@ -819,6 +820,7 @@ export function useChatSessionController({
     modelsLoading,
     modelStatusMessage,
     handleModelChange: handleModelChangeWithContextReset,
+    handlePickerOpen,
     selectedProjectId: effectiveProjectId,
     availableProjects,
     handleProjectChange,

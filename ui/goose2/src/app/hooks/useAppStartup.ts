@@ -75,40 +75,6 @@ export function useAppStartup() {
         }
       };
 
-      const refreshConfiguredProviderInventory = async (
-        initialEntries?: Awaited<ReturnType<typeof loadProvidersAndInventory>>,
-      ) => {
-        try {
-          const entries =
-            initialEntries && initialEntries.length > 0
-              ? initialEntries
-              : await (async () => {
-                  const { getProviderInventory } = await import(
-                    "@/features/providers/api/inventory"
-                  );
-                  return getProviderInventory();
-                })();
-          const configuredProviderIds = entries
-            .filter((entry) => entry.configured)
-            .map((entry) => entry.providerId);
-          if (configuredProviderIds.length === 0) {
-            return;
-          }
-
-          const { syncProviderInventory } = await import(
-            "@/features/providers/api/inventorySync"
-          );
-          await syncProviderInventory(configuredProviderIds, {
-            onEntries: (entries) => inventoryStore.mergeEntries(entries),
-          });
-        } catch (err) {
-          console.error(
-            "Failed to refresh provider inventory on startup:",
-            err,
-          );
-        }
-      };
-
       const loadSessionState = async () => {
         const t0 = performance.now();
         perfLog("[perf:startup] loadSessionState start");
@@ -128,9 +94,19 @@ export function useAppStartup() {
         providersAndInventoryLoad,
         loadSessionState(),
       ]);
-      void providersAndInventoryLoad.then((entries) =>
-        refreshConfiguredProviderInventory(entries),
-      );
+      void providersAndInventoryLoad.then(async (entries) => {
+        try {
+          const { backgroundRefreshInventory } = await import(
+            "@/features/providers/api/inventory"
+          );
+          await backgroundRefreshInventory(inventoryStore, entries);
+        } catch (err) {
+          console.error(
+            "Failed to refresh provider inventory on startup:",
+            err,
+          );
+        }
+      });
       perfLog(
         `[perf:startup] useAppStartup complete in ${(performance.now() - tStartup).toFixed(1)}ms`,
       );

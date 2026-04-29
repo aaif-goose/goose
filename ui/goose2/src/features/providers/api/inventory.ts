@@ -30,3 +30,30 @@ export async function refreshProviderInventory(
   );
   return response;
 }
+
+/**
+ * Refresh configured provider inventories in the background, polling until
+ * all providers finish refreshing. Does NOT set the store's `loading` flag,
+ * so the UI keeps showing cached data during the refresh.
+ */
+export async function backgroundRefreshInventory(
+  inventoryStore: {
+    mergeEntries: (entries: ProviderInventoryEntryDto[]) => void;
+  },
+  initialEntries?: ProviderInventoryEntryDto[],
+): Promise<void> {
+  const entries =
+    initialEntries && initialEntries.length > 0
+      ? initialEntries
+      : await getProviderInventory();
+
+  const configuredProviderIds = entries
+    .filter((entry) => entry.configured)
+    .map((entry) => entry.providerId);
+  if (configuredProviderIds.length === 0) return;
+
+  const { syncProviderInventory } = await import("./inventorySync");
+  await syncProviderInventory(configuredProviderIds, {
+    onEntries: (entries) => inventoryStore.mergeEntries(entries),
+  });
+}

@@ -92,6 +92,7 @@ function HomeComposer({
       modelsLoading={controller.modelsLoading}
       modelStatusMessage={controller.modelStatusMessage}
       onModelChange={controller.handleModelChange}
+      onPickerOpen={controller.handlePickerOpen}
       selectedProjectId={controller.selectedProjectId}
       availableProjects={controller.availableProjects}
       onProjectChange={controller.handleProjectChange}

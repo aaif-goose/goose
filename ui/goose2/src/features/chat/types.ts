@@ -64,6 +64,7 @@ export interface ChatInputProps {
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
+  onPickerOpen?: () => void;
   selectedProjectId?: string | null;
   availableProjects?: ProjectOption[];
   onProjectChange?: (projectId: string | null) => void;
