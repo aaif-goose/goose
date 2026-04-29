@@ -252,6 +252,7 @@
           "oauthTerminal": "Ejecuta `goose configure` en tu terminal para terminar de iniciar sesión."
         }
       },
+      "checkingStatus": "Comprobando estado del proveedor...",
       "title": "Modelos"
     },
     "loadingModels": "Cargando modelos...",

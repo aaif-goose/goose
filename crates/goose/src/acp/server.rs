@@ -3311,7 +3311,7 @@ impl GooseAcpAgent {
         let entry = crate::providers::get_from_registry(&req.provider_id)
             .await
             .invalid_params_err_ctx("Unknown provider")?;
-        let config = self.config()?;
+        let config = Config::global();
         let config_keys = &entry.metadata().config_keys;
         let secrets = if config_keys.iter().any(|key| key.secret) {
             Some(config.all_secrets().internal_err()?)
@@ -3322,7 +3322,7 @@ impl GooseAcpAgent {
         Ok(ProviderConfigReadResponse {
             fields: config_keys
                 .iter()
-                .map(|key| provider_config_field_value(&config, key, secrets.as_ref()))
+                .map(|key| provider_config_field_value(config, key, secrets.as_ref()))
                 .collect(),
         })
     }
@@ -3346,7 +3346,7 @@ impl GooseAcpAgent {
             .await
             .invalid_params_err_ctx("Unknown provider")?;
         let metadata = entry.metadata().clone();
-        let config = self.config()?;
+        let config = Config::global();
         let mut config_updates = Vec::new();
         let mut secret_updates = Vec::new();
 
@@ -3386,7 +3386,6 @@ impl GooseAcpAgent {
         config
             .set_secret_values(&secret_updates)
             .internal_err_ctx("Failed to save provider secret fields")?;
-        Config::global().invalidate_secrets_cache();
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
@@ -3403,7 +3402,7 @@ impl GooseAcpAgent {
             .await
             .invalid_params_err_ctx("Unknown provider")?;
         let metadata = entry.metadata().clone();
-        let config = self.config()?;
+        let config = Config::global();
         let mut secret_keys = Vec::new();
 
         for config_key in &metadata.config_keys {
@@ -3422,7 +3421,6 @@ impl GooseAcpAgent {
         crate::providers::cleanup_provider(&req.provider_id)
             .await
             .internal_err_ctx("Failed to clean up provider state")?;
-        Config::global().invalidate_secrets_cache();
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
