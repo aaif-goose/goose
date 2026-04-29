@@ -63,12 +63,6 @@ jobs:
             build-on: windows-latest
             use-cross: false
             variant: standard
-          - os: windows
-            architecture: x86_64
-            target-suffix: pc-windows-msvc
-            build-on: windows-latest
-            use-cross: false
-            variant: cuda
 
     steps:
       - name: Checkout code

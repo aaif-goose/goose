@@ -111,21 +111,13 @@ jobs:
       version: ${{ needs.prepare-version.outputs.version }}
       signing: false
 
-  bundle-desktop-windows-cuda:
-    needs: [prepare-version]
-    uses: ./.github/workflows/bundle-desktop-windows.yml
-    with:
-      version: ${{ needs.prepare-version.outputs.version }}
-      signing: false
-      windows_variant: cuda
-
   # ------------------------------------
   # 7) Create/Update GitHub Release
   # ------------------------------------
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [build-cli, install-script, bundle-desktop, bundle-desktop-intel, bundle-desktop-linux, bundle-desktop-windows, bundle-desktop-windows-cuda]
+    needs: [build-cli, install-script, bundle-desktop, bundle-desktop-intel, bundle-desktop-linux, bundle-desktop-windows]
     permissions:
       contents: write
       id-token: write      # Required for Sigstore OIDC signing
