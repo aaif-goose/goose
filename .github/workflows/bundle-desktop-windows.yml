@@ -112,6 +112,7 @@ jobs:
         shell: pwsh
         env:
           CUDA_COMPUTE_CAP: ${{ inputs.windows_variant == 'cuda' && '80' || '' }}
+          LLAMA_STATIC_CRT: ${{ inputs.windows_variant == 'cuda' && '1' || '' }}
         run: |
           Write-Output "Building Windows executable..."
           if ("${{ inputs.windows_variant }}" -eq "cuda") {
