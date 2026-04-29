@@ -395,7 +395,7 @@ export function AgentModelPicker({
           variant="toolbar"
           size="sm"
           aria-label={t("toolbar.chooseAgentModel")}
-          disabled={loading}
+          disabled={loading && !selectedAgentLabel}
           leftIcon={getProviderIcon(selectedAgentId, "size-3.5")}
           rightIcon={<IconChevronDown className="opacity-50" />}
           className="min-w-0"
