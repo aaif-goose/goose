@@ -3,11 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
-import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { PageHeader, PageShell } from "@/shared/ui/page-shell";
-import { useFileImportZone } from "@/shared/hooks/useFileImportZone";
 import { revealInFileManager } from "@/shared/lib/fileManager";
+import { useSkillImportExport } from "../hooks/useSkillImportExport";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { SkillsDialogs } from "./SkillsDialogs";
 import { SkillsEmptyState } from "./SkillsEmptyState";
@@ -16,13 +15,10 @@ import { SkillsToolbar, type SkillsFilter } from "./SkillsToolbar";
 import { hydrateProjectNames } from "../lib/projectHydration";
 import {
   compareSkillsByName,
-  downloadExport,
   uniqueProjectFilters,
 } from "../lib/skillsHelpers";
 import {
   deleteSkill,
-  exportSkill,
-  importSkills,
   listSkills,
   type EditingSkill,
   type SkillInfo,
@@ -237,16 +233,6 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     setDialogOpen(true);
   };
 
-  const handleExport = async (skill: SkillInfo) => {
-    try {
-      const result = await exportSkill(skill.path);
-      downloadExport(result.json, result.filename);
-      toast.success(t("view.exportedTo", { filename: result.filename }));
-    } catch {
-      toast.error(t("view.exportError"));
-    }
-  };
-
   const handleReveal = useCallback((skill: SkillInfo) => {
     void revealInFileManager(skill.path);
   }, []);
@@ -268,26 +254,14 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     setDialogOpen(true);
   };
 
-  const handleImport = useCallback(
-    async (fileBytes: number[], fileName: string) => {
-      try {
-        await importSkills(fileBytes, fileName);
-        await loadSkills();
-        toast.success(t("view.importSuccess"));
-      } catch {
-        toast.error(t("view.importError"));
-      }
-    },
-    [loadSkills, t],
-  );
-
   const {
     fileInputRef,
     isDragOver,
     dropHandlers,
     handleFileChange,
     openFilePicker,
-  } = useFileImportZone({ onImportFile: handleImport });
+    handleExport,
+  } = useSkillImportExport(loadSkills);
 
   const handleSelectSkill = (skill: SkillViewInfo) => {
     setActiveSkillId(skill.id);
@@ -352,24 +326,18 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
         }
       />
 
-      <div
-        {...dropHandlers}
-        className={cn(
-          "rounded-2xl transition-colors",
-          isDragOver && "bg-muted/50",
-        )}
-      >
-        <SkillsToolbar
-          search={search}
-          onSearchChange={setSearch}
-          activeFilter={activeFilter}
-          onActiveFilterChange={setActiveFilter}
-          projectFilters={projectFilters}
-          categoryFilters={categoryFilters}
-          selectedCategories={selectedCategories}
-          onSelectedCategoriesChange={setSelectedCategories}
-        />
-      </div>
+      <SkillsToolbar
+        search={search}
+        onSearchChange={setSearch}
+        activeFilter={activeFilter}
+        onActiveFilterChange={setActiveFilter}
+        projectFilters={projectFilters}
+        categoryFilters={categoryFilters}
+        selectedCategories={selectedCategories}
+        onSelectedCategoriesChange={setSelectedCategories}
+        dropHandlers={dropHandlers}
+        isDragOver={isDragOver}
+      />
 
       {!loading && filteredSkills.length > 0 ? (
         <SkillsListSections

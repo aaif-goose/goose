@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button } from "@/shared/ui/button";
 import { FilterRow } from "@/shared/ui/page-shell";
@@ -16,6 +17,8 @@ interface SkillsToolbarProps {
   categoryFilters: SkillCategory[];
   selectedCategories: SkillCategory[];
   onSelectedCategoriesChange: (categories: SkillCategory[]) => void;
+  dropHandlers?: React.HTMLAttributes<HTMLDivElement>;
+  isDragOver?: boolean;
 }
 
 function FilterButton({
@@ -48,11 +51,19 @@ export function SkillsToolbar({
   categoryFilters,
   selectedCategories,
   onSelectedCategoriesChange,
+  dropHandlers,
+  isDragOver,
 }: SkillsToolbarProps) {
   const { t } = useTranslation(["skills"]);
 
   return (
-    <div className="space-y-3">
+    <div
+      {...dropHandlers}
+      className={cn(
+        "space-y-3 rounded-2xl transition-colors",
+        isDragOver && "bg-muted/50",
+      )}
+    >
       <SearchBar
         value={search}
         onChange={onSearchChange}
