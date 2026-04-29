@@ -11,7 +11,6 @@ use sqlx::{Pool, Row, Sqlite, Transaction};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use futures::future::join_all;
 
 const STALE_AFTER_HOURS: i64 = 24;
 
@@ -232,10 +231,13 @@ impl ProviderInventoryService {
 
     pub async fn entries(&self, provider_ids: &[String]) -> Result<Vec<ProviderInventoryEntry>> {
         let ids = self.resolve_provider_ids(provider_ids).await;
-        let results = join_all(ids.iter().map(|id| self.entry_for_provider(id))).await;
-        let entries: Vec<_> = results
+        let handles: Vec<_> = ids.into_iter().map(|id| {
+            let this = self.clone();
+            tokio::spawn(async move { this.entry_for_provider(&id).await })
+        }).collect();
+        let entries: Vec<_> = futures::future::join_all(handles).await
             .into_iter()
-            .filter_map(|r| r.ok().flatten())
+            .filter_map(|r| r.ok().and_then(|r| r.ok()).flatten())
             .collect();
         Ok(entries)
     }
