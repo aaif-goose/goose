@@ -139,8 +139,7 @@ fn project_icon_group_key(path: &Path) -> String {
     let normalized = file_stem
         .replace("goose-logo", "logo")
         .replace("logo-codename-goose", "logo")
-        .replace("codename-goose", "logo")
-        .replace("favicon", "favicon");
+        .replace("codename-goose", "logo");
 
     if normalized.contains("favicon") {
         "favicon".to_string()
