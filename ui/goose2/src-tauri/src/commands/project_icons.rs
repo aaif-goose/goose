@@ -40,8 +40,14 @@ fn is_project_icon_extension(path: &Path) -> bool {
     )
 }
 
-fn is_ignored_icon_search_dir(path: &Path) -> bool {
-    path.components().any(|component| {
+fn is_ignored_icon_search_dir(root: &Path, path: &Path) -> bool {
+    let relative_parent = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .parent()
+        .unwrap_or_else(|| Path::new(""));
+
+    relative_parent.components().any(|component| {
         let name = component.as_os_str().to_string_lossy().to_ascii_lowercase();
         matches!(
             name.as_str(),
@@ -214,7 +220,7 @@ pub fn scan_project_icons(working_dirs: Vec<String>) -> Result<Vec<ProjectIconCa
         for entry in walker.flatten() {
             let path = entry.path();
             if !path.is_file()
-                || is_ignored_icon_search_dir(path)
+                || is_ignored_icon_search_dir(&root, path)
                 || is_generated_icon_variant(path)
                 || !is_project_icon_extension(path)
                 || !is_likely_project_icon(path)
@@ -277,4 +283,25 @@ pub fn read_project_icon(path: String) -> Result<ProjectIconData, String> {
     }
     let icon = read_project_icon_data_url(&path)?;
     Ok(ProjectIconData { icon })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignored_icon_search_dirs_do_not_match_root_ancestors() {
+        let root = Path::new("/Users/alice/build/myapp");
+        let icon = root.join("public/logo.svg");
+
+        assert!(!is_ignored_icon_search_dir(root, &icon));
+    }
+
+    #[test]
+    fn ignored_icon_search_dirs_match_descendant_dirs() {
+        let root = Path::new("/Users/alice/projects/myapp");
+        let icon = root.join("dist/logo.svg");
+
+        assert!(is_ignored_icon_search_dir(root, &icon));
+    }
 }

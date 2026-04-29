@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readProjectIcon } from "../../api/projects";
+import { readProjectIcon, type ProjectInfo } from "../../api/projects";
 import { CreateProjectDialog } from "../CreateProjectDialog";
 
 // ── ResizeObserver polyfill (needed by Radix Select in jsdom) ────────
@@ -90,7 +90,7 @@ vi.mock("../PromptEditor", () => ({
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function makeEditingProject(overrides: Record<string, unknown> = {}) {
+function makeEditingProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
   return {
     id: "proj-1",
     name: "My Project",
@@ -102,6 +102,11 @@ function makeEditingProject(overrides: Record<string, unknown> = {}) {
     preferredModel: null,
     workingDirs: ["/home/user/code"],
     useWorktrees: false,
+    order: 0,
+    archivedAt: null,
+    createdAt: "2024-01-01",
+    updatedAt: "2024-01-01",
+    artifactsDir: "/home/user/code/.goose",
     ...overrides,
   };
 }

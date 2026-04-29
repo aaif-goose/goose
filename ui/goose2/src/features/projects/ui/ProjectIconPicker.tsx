@@ -2,11 +2,8 @@ import { IconLoader2, IconUpload } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/cn";
 import type { ProjectIconCandidate } from "../api/projects";
-import {
-  PROJECT_TABLER_ICONS,
-  ProjectIcon,
-  isImageProjectIcon,
-} from "./ProjectIcon";
+import { PROJECT_TABLER_ICONS, isImageProjectIcon } from "../lib/projectIcons";
+import { ProjectIcon } from "./ProjectIcon";
 
 interface ProjectIconPickerProps {
   icon: string;

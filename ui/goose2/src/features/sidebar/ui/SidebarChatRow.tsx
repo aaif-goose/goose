@@ -200,7 +200,7 @@ export function SidebarChatRow({
             aria-label={t("menu.optionsFor", { label: displayTitle })}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              "absolute right-1 size-6 rounded-md text-foreground hover:bg-transparent hover:text-foreground",
+              "absolute right-1 size-6 rounded-md",
               menuOpen
                 ? "visible opacity-100"
                 : "invisible group-hover/chat-row:visible opacity-0 group-hover/chat-row:opacity-100",

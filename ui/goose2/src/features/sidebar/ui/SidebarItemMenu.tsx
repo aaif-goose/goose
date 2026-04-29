@@ -42,7 +42,7 @@ export function SidebarItemMenu({
           aria-label={t("menu.optionsFor", { label })}
           onClick={(e) => e.stopPropagation()}
           className={cn(
-            "size-6 rounded-md text-foreground hover:bg-transparent hover:text-foreground",
+            "size-6 rounded-md",
             open
               ? "visible opacity-100"
               : "invisible group-hover:visible group-focus-within:visible opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",

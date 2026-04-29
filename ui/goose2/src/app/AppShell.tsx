@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
@@ -637,25 +637,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     return () => window.removeEventListener("keydown", handler);
   }, [clearActiveSession, sessionStore]);
 
-  const editingProjectProp = useMemo(
-    () =>
-      editingProject
-        ? {
-            id: editingProject.id,
-            name: editingProject.name,
-            description: editingProject.description,
-            prompt: editingProject.prompt,
-            icon: editingProject.icon,
-            color: editingProject.color,
-            preferredProvider: editingProject.preferredProvider,
-            preferredModel: editingProject.preferredModel,
-            workingDirs: editingProject.workingDirs,
-            useWorktrees: editingProject.useWorktrees,
-          }
-        : undefined,
-    [editingProject],
-  );
-
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <TopBar />
@@ -749,7 +730,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           setCreateProjectInitialWorkingDir(null);
         }}
         initialWorkingDir={createProjectInitialWorkingDir}
-        editingProject={editingProjectProp}
+        editingProject={editingProject ?? undefined}
       />
     </div>
   );

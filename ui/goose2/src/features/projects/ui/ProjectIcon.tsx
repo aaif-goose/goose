@@ -22,118 +22,38 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import { cn } from "@/shared/lib/cn";
-
-export const DEFAULT_PROJECT_ICON = "tabler:folder-code";
+import {
+  DEFAULT_PROJECT_ICON,
+  isFileProjectIcon,
+  isImageProjectIcon,
+  normalizeProjectIcon,
+} from "../lib/projectIcons";
 
 type TablerIconComponent = ComponentType<{
   className?: string;
   stroke?: number;
 }>;
 
-export const PROJECT_TABLER_ICONS = [
-  {
-    value: DEFAULT_PROJECT_ICON,
-    labelKey: "dialog.iconPresets.folderCode",
-    Icon: IconFolderCode,
-  },
-  { value: "tabler:code", labelKey: "dialog.iconPresets.code", Icon: IconCode },
-  {
-    value: "tabler:git-branch",
-    labelKey: "dialog.iconPresets.gitBranch",
-    Icon: IconGitBranch,
-  },
-  {
-    value: "tabler:brand-github",
-    labelKey: "dialog.iconPresets.github",
-    Icon: IconBrandGithub,
-  },
-  {
-    value: "tabler:terminal",
-    labelKey: "dialog.iconPresets.terminal",
-    Icon: IconTerminal2,
-  },
-  {
-    value: "tabler:server",
-    labelKey: "dialog.iconPresets.server",
-    Icon: IconServer,
-  },
-  {
-    value: "tabler:database",
-    labelKey: "dialog.iconPresets.database",
-    Icon: IconDatabase,
-  },
-  { value: "tabler:api", labelKey: "dialog.iconPresets.api", Icon: IconApi },
-  {
-    value: "tabler:app-window",
-    labelKey: "dialog.iconPresets.app",
-    Icon: IconAppWindow,
-  },
-  {
-    value: "tabler:components",
-    labelKey: "dialog.iconPresets.components",
-    Icon: IconComponents,
-  },
-  {
-    value: "tabler:package",
-    labelKey: "dialog.iconPresets.package",
-    Icon: IconPackage,
-  },
-  {
-    value: "tabler:world",
-    labelKey: "dialog.iconPresets.website",
-    Icon: IconWorld,
-  },
-  { value: "tabler:book", labelKey: "dialog.iconPresets.docs", Icon: IconBook },
-  {
-    value: "tabler:palette",
-    labelKey: "dialog.iconPresets.design",
-    Icon: IconPalette,
-  },
-  { value: "tabler:brain", labelKey: "dialog.iconPresets.ai", Icon: IconBrain },
-  {
-    value: "tabler:bolt",
-    labelKey: "dialog.iconPresets.automation",
-    Icon: IconBolt,
-  },
-  {
-    value: "tabler:rocket",
-    labelKey: "dialog.iconPresets.launch",
-    Icon: IconRocket,
-  },
-  {
-    value: "tabler:settings",
-    labelKey: "dialog.iconPresets.settings",
-    Icon: IconSettings,
-  },
-] satisfies Array<{
-  value: string;
-  labelKey: string;
-  Icon: TablerIconComponent;
-}>;
-
-const tablerIconsByValue = new Map(
-  PROJECT_TABLER_ICONS.map((icon) => [icon.value, icon]),
-);
-
-export function normalizeProjectIcon(icon: string | null | undefined): string {
-  if (!icon || icon === "\u{1F4C1}") {
-    return DEFAULT_PROJECT_ICON;
-  }
-
-  return icon;
-}
-
-export function isFileProjectIcon(icon: string): boolean {
-  return icon.startsWith("file:");
-}
-
-export function isImageProjectIcon(icon: string): boolean {
-  return icon.startsWith("data:image/") || isFileProjectIcon(icon);
-}
-
-export function fileProjectIconValue(path: string): string {
-  return `file:${path}`;
-}
+const tablerIconsByValue = new Map<string, TablerIconComponent>([
+  [DEFAULT_PROJECT_ICON, IconFolderCode],
+  ["tabler:code", IconCode],
+  ["tabler:git-branch", IconGitBranch],
+  ["tabler:brand-github", IconBrandGithub],
+  ["tabler:terminal", IconTerminal2],
+  ["tabler:server", IconServer],
+  ["tabler:database", IconDatabase],
+  ["tabler:api", IconApi],
+  ["tabler:app-window", IconAppWindow],
+  ["tabler:components", IconComponents],
+  ["tabler:package", IconPackage],
+  ["tabler:world", IconWorld],
+  ["tabler:book", IconBook],
+  ["tabler:palette", IconPalette],
+  ["tabler:brain", IconBrain],
+  ["tabler:bolt", IconBolt],
+  ["tabler:rocket", IconRocket],
+  ["tabler:settings", IconSettings],
+]);
 
 export function ProjectIcon({
   icon,
@@ -168,8 +88,7 @@ export function ProjectIcon({
     );
   }
 
-  const tablerIcon = tablerIconsByValue.get(normalizedIcon);
-  const Icon = tablerIcon?.Icon ?? IconFolder;
+  const Icon = tablerIconsByValue.get(normalizedIcon) ?? IconFolder;
 
   return <Icon className={cn("size-4", className)} stroke={1.8} />;
 }

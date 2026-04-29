@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { IconFolderOpen } from "@tabler/icons-react";
 import { getHomeDir } from "@/shared/api/system";
@@ -22,13 +22,11 @@ import {
 } from "@/shared/ui/select";
 import {
   createProject,
-  readProjectIcon,
-  scanProjectIcons,
   updateProject,
-  type ProjectIconCandidate,
   type ProjectInfo,
 } from "../api/projects";
 import { discoverAcpProviders, type AcpProvider } from "@/shared/api/acp";
+import { useProjectIconSelection } from "../hooks/useProjectIconSelection";
 import {
   buildEditorText,
   hasEquivalentWorkingDir,
@@ -36,7 +34,7 @@ import {
   parseEditorText,
 } from "../lib/projectPromptText";
 import { PromptEditor } from "./PromptEditor";
-import { DEFAULT_PROJECT_ICON, normalizeProjectIcon } from "./ProjectIcon";
+import { DEFAULT_PROJECT_ICON } from "../lib/projectIcons";
 import { ProjectIconPicker } from "./ProjectIconPicker";
 
 const DEFAULT_PROJECT_COLOR = "#64748b";
@@ -57,18 +55,7 @@ interface CreateProjectDialogProps {
   onClose: () => void;
   onCreated: (project: ProjectInfo) => void;
   initialWorkingDir?: string | null;
-  editingProject?: {
-    id: string;
-    name: string;
-    description: string;
-    prompt: string;
-    icon: string;
-    color: string;
-    preferredProvider: string | null;
-    preferredModel: string | null;
-    workingDirs: string[];
-    useWorktrees: boolean;
-  };
+  editingProject?: ProjectInfo;
 }
 
 export function CreateProjectDialog({
@@ -81,7 +68,15 @@ export function CreateProjectDialog({
   const { t } = useTranslation(["projects", "common"]);
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [icon, setIcon] = useState(DEFAULT_PROJECT_ICON);
+  const {
+    icon,
+    iconCandidates,
+    iconScanPending,
+    iconError,
+    chooseIcon,
+    chooseCustomIcon,
+    resetIcon,
+  } = useProjectIconSelection({ isOpen, prompt });
   const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
   const [preferredProvider, setPreferredProvider] = useState<string | null>(
     null,
@@ -90,12 +85,7 @@ export function CreateProjectDialog({
   const [useWorktrees, setUseWorktrees] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [iconError, setIconError] = useState<string | null>(null);
   const [acpProviders, setAcpProviders] = useState<AcpProvider[]>([]);
-  const [iconCandidates, setIconCandidates] = useState<ProjectIconCandidate[]>(
-    [],
-  );
-  const [iconScanPending, setIconScanPending] = useState(false);
 
   const isEditing = !!editingProject;
 
@@ -130,68 +120,11 @@ export function CreateProjectDialog({
   };
 
   const handleChooseCustomIcon = async () => {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: false,
-        multiple: false,
-        title: t("dialog.customIconDialogTitle"),
-        filters: [
-          {
-            name: t("dialog.iconFileFilter"),
-            extensions: ["svg", "png", "ico", "jpg", "jpeg", "webp"],
-          },
-        ],
-      });
-      if (selected && typeof selected === "string") {
-        const iconData = await readProjectIcon(selected);
-        setIcon(iconData.icon);
-        setIconError(null);
-      }
-    } catch (err) {
-      setIconError(String(err));
-    }
+    await chooseCustomIcon({
+      title: t("dialog.customIconDialogTitle"),
+      filterName: t("dialog.iconFileFilter"),
+    });
   };
-
-  const scannedWorkingDirKey = useMemo(
-    () => parseEditorText(prompt).workingDirs.join("\n"),
-    [prompt],
-  );
-
-  useEffect(() => {
-    const workingDirs = scannedWorkingDirKey.split("\n").filter(Boolean);
-    if (!isOpen || workingDirs.length === 0) {
-      setIconCandidates([]);
-      setIconScanPending(false);
-      return;
-    }
-
-    let active = true;
-    setIconScanPending(true);
-    const timeout = window.setTimeout(() => {
-      scanProjectIcons(workingDirs)
-        .then((candidates) => {
-          if (active) {
-            setIconCandidates(candidates);
-          }
-        })
-        .catch(() => {
-          if (active) {
-            setIconCandidates([]);
-          }
-        })
-        .finally(() => {
-          if (active) {
-            setIconScanPending(false);
-          }
-        });
-    }, 250);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timeout);
-    };
-  }, [isOpen, scannedWorkingDirKey]);
 
   // Pre-fill fields when the dialog opens or when the project identity changes,
   // but NOT on every parent re-render (which would reset user edits mid-typing).
@@ -212,12 +145,11 @@ export function CreateProjectDialog({
       setPrompt(
         buildEditorText(editingProject.workingDirs, editingProject.prompt),
       );
-      setIcon(normalizeProjectIcon(editingProject.icon));
+      resetIcon(editingProject.icon);
       setColor(editingProject.color);
       setPreferredProvider(editingProject.preferredProvider ?? null);
       setUseWorktrees(editingProject.useWorktrees);
       setError(null);
-      setIconError(null);
     } else {
       setName(getDefaultProjectName(initialWorkingDir));
       setPrompt(
@@ -226,32 +158,25 @@ export function CreateProjectDialog({
           "",
         ),
       );
-      setIcon(DEFAULT_PROJECT_ICON);
+      resetIcon(DEFAULT_PROJECT_ICON);
       setColor(DEFAULT_PROJECT_COLOR);
       setPreferredProvider(null);
       setUseWorktrees(false);
       setError(null);
-      setIconError(null);
     }
-  }, [isOpen, editingProject, initialWorkingDir]);
+  }, [isOpen, editingProject, initialWorkingDir, resetIcon]);
 
   const canSave = name.trim().length > 0 && !saving;
 
   const handleClose = () => {
     setName("");
     setPrompt("");
-    setIcon(DEFAULT_PROJECT_ICON);
+    resetIcon(DEFAULT_PROJECT_ICON);
     setColor(DEFAULT_PROJECT_COLOR);
     setPreferredProvider(null);
     setUseWorktrees(false);
     setError(null);
-    setIconError(null);
     onClose();
-  };
-
-  const handleChooseIcon = (nextIcon: string) => {
-    setIcon(nextIcon);
-    setIconError(null);
   };
 
   const handleSave = async (e: FormEvent) => {
@@ -353,7 +278,7 @@ export function CreateProjectDialog({
             iconCandidates={iconCandidates}
             iconScanPending={iconScanPending}
             error={iconError}
-            onChooseIcon={handleChooseIcon}
+            onChooseIcon={chooseIcon}
             onChooseCustomIcon={handleChooseCustomIcon}
           />
 

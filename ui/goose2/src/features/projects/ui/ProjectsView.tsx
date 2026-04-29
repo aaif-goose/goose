@@ -89,21 +89,9 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<
-    | {
-        id: string;
-        name: string;
-        description: string;
-        prompt: string;
-        icon: string;
-        color: string;
-        preferredProvider: string | null;
-        preferredModel: string | null;
-        workingDirs: string[];
-        useWorktrees: boolean;
-      }
-    | undefined
-  >(undefined);
+  const [editingProject, setEditingProject] = useState<ProjectInfo | undefined>(
+    undefined,
+  );
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingProject, setDeletingProject] = useState<ProjectInfo | null>(
@@ -142,18 +130,7 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
   };
 
   const handleEdit = (project: ProjectInfo) => {
-    setEditingProject({
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      prompt: project.prompt,
-      icon: project.icon,
-      color: project.color,
-      preferredProvider: project.preferredProvider,
-      preferredModel: project.preferredModel,
-      workingDirs: project.workingDirs,
-      useWorktrees: project.useWorktrees,
-    });
+    setEditingProject(project);
     setDialogOpen(true);
   };
 
