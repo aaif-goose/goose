@@ -850,8 +850,6 @@ impl GooseAcpAgent {
         let session_manager = Arc::new(SessionManager::new(data_dir));
 
         // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
-        // The pool uses connect_lazy_with, so initialization only happens on first use.
-        // By spawning this now, the ~1.6s schema check overlaps with provider resolution.
         let storage_clone = session_manager.storage().clone();
         tokio::spawn(async move {
             let _ = storage_clone.pool().await;

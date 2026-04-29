@@ -231,11 +231,15 @@ impl ProviderInventoryService {
 
     pub async fn entries(&self, provider_ids: &[String]) -> Result<Vec<ProviderInventoryEntry>> {
         let ids = self.resolve_provider_ids(provider_ids).await;
-        let handles: Vec<_> = ids.into_iter().map(|id| {
-            let this = self.clone();
-            tokio::spawn(async move { this.entry_for_provider(&id).await })
-        }).collect();
-        let entries: Vec<_> = futures::future::join_all(handles).await
+        let handles: Vec<_> = ids
+            .into_iter()
+            .map(|id| {
+                let this = self.clone();
+                tokio::spawn(async move { this.entry_for_provider(&id).await })
+            })
+            .collect();
+        let entries: Vec<_> = futures::future::join_all(handles)
+            .await
             .into_iter()
             .filter_map(|r| r.ok().and_then(|r| r.ok()).flatten())
             .collect();
