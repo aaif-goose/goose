@@ -4527,78 +4527,16 @@
     }
   },
   {
-    "id": "aihubmix/Kimi-K2",
-    "name": "Kimi K2 0905",
-    "family": "kimi",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2025-09-05",
-    "last_updated": "2025-09-05",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.55,
-      "output": 2.19
-    },
-    "limit": {
-      "context": 262144,
-      "output": 262144
-    }
-  },
-  {
-    "id": "aihubmix/claude-haiku-4.5",
-    "name": "Claude Haiku 4.5",
-    "family": "claude-haiku",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-07-31",
-    "release_date": "2025-09-29",
-    "last_updated": "2025-09-29",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "pdf"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 1.1,
-      "output": 5.5,
-      "cache_read": 0.11,
-      "cache_write": 1.25
-    },
-    "limit": {
-      "context": 200000,
-      "output": 64000
-    }
-  },
-  {
-    "id": "aihubmix/claude-opus-4.1",
-    "name": "Claude Opus 4.1",
+    "id": "aihubmix/claude-opus-4.6",
+    "name": "Claude Opus 4.6",
     "family": "claude-opus",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-03-31",
-    "release_date": "2025-08-05",
-    "last_updated": "2025-08-05",
+    "knowledge": "2025-05-31",
+    "release_date": "2026-02-05",
+    "last_updated": "2026-03-13",
     "modalities": {
       "input": [
         "text",
@@ -4611,30 +4549,32 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 16.5,
-      "output": 82.5,
-      "cache_read": 1.5,
-      "cache_write": 18.75
+      "input": 5.0,
+      "output": 25.0,
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
-      "context": 200000,
-      "output": 32000
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
-    "id": "aihubmix/claude-opus-4.5",
-    "name": "Claude Opus 4.5",
+    "id": "aihubmix/claude-opus-4.6-think",
+    "name": "Claude Opus 4.6",
+    "family": "claude-opus",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-03",
-    "release_date": "2025-11-25",
-    "last_updated": "2025-11-25",
+    "knowledge": "2025-05-31",
+    "release_date": "2026-02-05",
+    "last_updated": "2026-03-13",
     "modalities": {
       "input": [
         "text",
-        "image"
+        "image",
+        "pdf"
       ],
       "output": [
         "text"
@@ -4653,16 +4593,16 @@
     }
   },
   {
-    "id": "aihubmix/claude-opus-4.6",
-    "name": "Claude Opus 4.6",
+    "id": "aihubmix/claude-opus-4.7",
+    "name": "Claude Opus 4.7",
     "family": "claude-opus",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-05-31",
-    "release_date": "2026-02-05",
-    "last_updated": "2026-02-05",
+    "temperature": false,
+    "knowledge": "2026-01-31",
+    "release_date": "2026-04-16",
+    "last_updated": "2026-04-16",
     "modalities": {
       "input": [
         "text",
@@ -4677,78 +4617,12 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.3,
-      "cache_write": 3.75
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
-      "context": 200000,
+      "context": 1000000,
       "output": 128000
-    }
-  },
-  {
-    "id": "aihubmix/claude-opus-4.6-think",
-    "name": "Claude Opus 4.6 Think",
-    "family": "claude-opus",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-05-31",
-    "release_date": "2026-02-05",
-    "last_updated": "2026-02-05",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "pdf"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 5.0,
-      "output": 25.0,
-      "cache_read": 0.3,
-      "cache_write": 3.75
-    },
-    "limit": {
-      "context": 200000,
-      "output": 128000
-    }
-  },
-  {
-    "id": "aihubmix/claude-sonnet-4.5",
-    "name": "Claude Sonnet 4.5",
-    "family": "claude-sonnet",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-07-31",
-    "release_date": "2025-09-29",
-    "last_updated": "2025-09-29",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "pdf"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 3.3,
-      "output": 16.5,
-      "cache_read": 0.3,
-      "cache_write": 3.75
-    },
-    "limit": {
-      "context": 200000,
-      "output": 64000
     }
   },
   {
@@ -4818,67 +4692,6 @@
     }
   },
   {
-    "id": "aihubmix/coding-glm-4.7",
-    "name": "Coding-GLM-4.7",
-    "family": "glm",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-12-22",
-    "last_updated": "2025-12-22",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.06,
-      "output": 0.22,
-      "cache_read": 0.01
-    },
-    "limit": {
-      "context": 204800,
-      "output": 131072
-    }
-  },
-  {
-    "id": "aihubmix/coding-glm-4.7-free",
-    "name": "Coding GLM 4.7 Free",
-    "family": "glm",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-12-22",
-    "last_updated": "2025-12-22",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.0,
-      "output": 0.0,
-      "cache_read": 0.0,
-      "cache_write": 0.0
-    },
-    "limit": {
-      "context": 204800,
-      "output": 131072
-    }
-  },
-  {
     "id": "aihubmix/coding-glm-5-free",
     "name": "Coding-GLM-5-Free",
     "family": "glm",
@@ -4935,15 +4748,15 @@
     }
   },
   {
-    "id": "aihubmix/coding-minimax-m2.1-free",
-    "name": "Coding MiniMax M2.1 Free",
+    "id": "aihubmix/coding-minimax-m2.7-free",
+    "name": "Coding-MiniMax-M2.7-Free",
     "family": "minimax",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2025-12-23",
-    "last_updated": "2025-12-23",
+    "release_date": "2026-03-18",
+    "last_updated": "2026-03-18",
     "modalities": {
       "input": [
         "text"
@@ -4959,20 +4772,50 @@
     },
     "limit": {
       "context": 204800,
-      "output": 131072
+      "output": 13100
     }
   },
   {
-    "id": "aihubmix/deepseek-v3.2",
-    "name": "DeepSeek-V3.2",
+    "id": "aihubmix/deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash",
+    "family": "deepseek-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.154,
+      "output": 0.308,
+      "cache_read": 0.0308
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 384000
+    }
+  },
+  {
+    "id": "aihubmix/deepseek-v4-flash-think",
+    "name": "DeepSeek V4 Flash Think",
     "family": "deepseek",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-07",
-    "release_date": "2025-12-01",
-    "last_updated": "2025-12-01",
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
     "modalities": {
       "input": [
         "text"
@@ -4983,53 +4826,26 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.3,
-      "output": 0.45
+      "input": 0.154,
+      "output": 0.308,
+      "cache_read": 0.0308
     },
     "limit": {
-      "context": 131000,
-      "output": 64000
+      "context": 1000000,
+      "output": 384000
     }
   },
   {
-    "id": "aihubmix/deepseek-v3.2-fast",
-    "name": "DeepSeek-V3.2-Fast",
-    "family": "deepseek",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": false,
-    "knowledge": "2024-07",
-    "release_date": "2025-12-01",
-    "last_updated": "2025-12-01",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 1.1,
-      "output": 3.29
-    },
-    "limit": {
-      "context": 128000,
-      "output": 128000
-    }
-  },
-  {
-    "id": "aihubmix/deepseek-v3.2-think",
-    "name": "DeepSeek-V3.2-Think",
-    "family": "deepseek",
+    "id": "aihubmix/deepseek-v4-pro",
+    "name": "DeepSeek V4 Pro",
+    "family": "deepseek-thinking",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-07",
-    "release_date": "2025-12-01",
-    "last_updated": "2025-12-01",
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
     "modalities": {
       "input": [
         "text"
@@ -5040,12 +4856,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.3,
-      "output": 0.45
+      "input": 0.478,
+      "output": 0.956,
+      "cache_read": 0.004302
     },
     "limit": {
-      "context": 131000,
-      "output": 64000
+      "context": 1000000,
+      "output": 384000
     }
   },
   {
@@ -5053,18 +4870,19 @@
     "name": "Gemini 2.5 Flash",
     "family": "gemini-flash",
     "attachment": true,
-    "reasoning": false,
+    "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
+    "knowledge": "2025-01",
+    "release_date": "2025-03-20",
+    "last_updated": "2025-06-05",
     "modalities": {
       "input": [
         "text",
         "image",
         "audio",
-        "video"
+        "video",
+        "pdf"
       ],
       "output": [
         "text"
@@ -5072,13 +4890,13 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.075,
-      "output": 0.3,
-      "cache_read": 0.02
+      "input": 0.3,
+      "output": 2.499,
+      "cache_read": 0.03
     },
     "limit": {
-      "context": 1000000,
-      "output": 65000
+      "context": 1048576,
+      "output": 65536
     }
   },
   {
@@ -5089,15 +4907,16 @@
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
+    "knowledge": "2025-01",
+    "release_date": "2025-03-20",
+    "last_updated": "2025-06-05",
     "modalities": {
       "input": [
         "text",
         "image",
         "audio",
-        "video"
+        "video",
+        "pdf"
       ],
       "output": [
         "text"
@@ -5106,31 +4925,100 @@
     "open_weights": false,
     "cost": {
       "input": 1.25,
-      "output": 5.0,
-      "cache_read": 0.31
+      "output": 10.0,
+      "cache_read": 0.125
     },
     "limit": {
-      "context": 2000000,
-      "output": 65000
+      "context": 1048576,
+      "output": 65536
     }
   },
   {
-    "id": "aihubmix/gemini-3-pro-preview",
-    "name": "Gemini 3 Pro Preview",
-    "family": "gemini-pro",
+    "id": "aihubmix/gemini-3-flash-preview",
+    "name": "Gemini 3 Flash Preview",
+    "family": "gemini-flash",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-11",
-    "release_date": "2025-11-19",
-    "last_updated": "2025-11-19",
+    "knowledge": "2025-01",
+    "release_date": "2025-12-17",
+    "last_updated": "2025-12-17",
     "modalities": {
       "input": [
         "text",
         "image",
         "audio",
-        "video"
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.5,
+      "output": 3.0,
+      "cache_read": 0.05
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "aihubmix/gemini-3.1-flash-lite-preview",
+    "name": "Gemini 3.1 Flash Lite Preview",
+    "family": "gemini-flash-lite",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-03-03",
+    "last_updated": "2026-03-03",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.25,
+      "output": 1.5,
+      "cache_read": 0.25
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
+    "id": "aihubmix/gemini-3.1-pro-preview",
+    "name": "Gemini 3.1 Pro Preview",
+    "family": "gemini-pro",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-02-19",
+    "last_updated": "2026-02-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
       ],
       "output": [
         "text"
@@ -5140,105 +5028,11 @@
     "cost": {
       "input": 2.0,
       "output": 12.0,
-      "cache_read": 0.5
+      "cache_read": 0.2
     },
     "limit": {
-      "context": 1000000,
-      "output": 65000
-    }
-  },
-  {
-    "id": "aihubmix/gemini-3-pro-preview-search",
-    "name": "Gemini 3 Pro Preview Search",
-    "family": "gemini-pro",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-11",
-    "release_date": "2025-11-19",
-    "last_updated": "2025-11-19",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "audio",
-        "video"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 2.0,
-      "output": 12.0,
-      "cache_read": 0.5
-    },
-    "limit": {
-      "context": 1000000,
-      "output": 65000
-    }
-  },
-  {
-    "id": "aihubmix/glm-4.6v",
-    "name": "GLM-4.6V",
-    "family": "glm",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-12-08",
-    "last_updated": "2025-12-08",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "video"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.14,
-      "output": 0.41
-    },
-    "limit": {
-      "context": 128000,
-      "output": 32768
-    }
-  },
-  {
-    "id": "aihubmix/glm-4.7",
-    "name": "GLM-4.7",
-    "family": "glm",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-12-22",
-    "last_updated": "2025-12-22",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.27,
-      "output": 1.1,
-      "cache_read": 0.548
-    },
-    "limit": {
-      "context": 204800,
-      "output": 131072
+      "context": 1048576,
+      "output": 65536
     }
   },
   {
@@ -5259,14 +5053,15 @@
         "text"
       ]
     },
-    "open_weights": false,
+    "open_weights": true,
     "cost": {
       "input": 0.88,
-      "output": 2.82
+      "output": 2.816,
+      "cache_read": 0.176
     },
     "limit": {
-      "context": 204800,
-      "output": 131072
+      "context": 202752,
+      "output": 0
     }
   },
   {
@@ -5277,8 +5072,8 @@
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2026-04-11",
-    "last_updated": "2026-04-11",
+    "release_date": "2026-03-27",
+    "last_updated": "2026-03-27",
     "modalities": {
       "input": [
         "text"
@@ -5289,8 +5084,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.84,
-      "output": 3.38
+      "input": 0.845,
+      "output": 3.38,
+      "cache_read": 0.183112
     },
     "limit": {
       "context": 200000,
@@ -5360,223 +5156,6 @@
     }
   },
   {
-    "id": "aihubmix/gpt-4.1-nano",
-    "name": "GPT-4.1 nano",
-    "family": "gpt-nano",
-    "attachment": true,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-04",
-    "release_date": "2025-04-14",
-    "last_updated": "2025-04-14",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.1,
-      "output": 0.4,
-      "cache_read": 0.03
-    },
-    "limit": {
-      "context": 1047576,
-      "output": 32768
-    }
-  },
-  {
-    "id": "aihubmix/gpt-4o",
-    "name": "GPT-4o",
-    "family": "gpt",
-    "attachment": true,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2023-09",
-    "release_date": "2024-05-13",
-    "last_updated": "2024-08-06",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 2.5,
-      "output": 10.0,
-      "cache_read": 1.25
-    },
-    "limit": {
-      "context": 128000,
-      "output": 16384
-    }
-  },
-  {
-    "id": "aihubmix/gpt-5",
-    "name": "GPT-5",
-    "family": "gpt",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-09-30",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 5.0,
-      "output": 20.0,
-      "cache_read": 2.5
-    },
-    "limit": {
-      "context": 400000,
-      "output": 128000
-    }
-  },
-  {
-    "id": "aihubmix/gpt-5-codex",
-    "name": "GPT-5-Codex",
-    "family": "gpt-codex",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": false,
-    "knowledge": "2024-09-30",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 1.25,
-      "output": 10.0,
-      "cache_read": 0.13
-    },
-    "limit": {
-      "context": 400000,
-      "output": 128000
-    }
-  },
-  {
-    "id": "aihubmix/gpt-5-mini",
-    "name": "GPT-5-Mini",
-    "family": "gpt-mini",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-09-30",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 1.5,
-      "output": 6.0,
-      "cache_read": 0.75
-    },
-    "limit": {
-      "context": 200000,
-      "output": 64000
-    }
-  },
-  {
-    "id": "aihubmix/gpt-5-nano",
-    "name": "GPT-5-Nano",
-    "family": "gpt-nano",
-    "attachment": true,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-09-30",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.5,
-      "output": 2.0,
-      "cache_read": 0.25
-    },
-    "limit": {
-      "context": 128000,
-      "output": 16384
-    }
-  },
-  {
-    "id": "aihubmix/gpt-5-pro",
-    "name": "GPT-5-Pro",
-    "family": "gpt-pro",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2024-09-30",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 7.0,
-      "output": 28.0,
-      "cache_read": 3.5
-    },
-    "limit": {
-      "context": 400000,
-      "output": 128000
-    }
-  },
-  {
     "id": "aihubmix/gpt-5.1",
     "name": "GPT-5.1",
     "family": "gpt",
@@ -5614,36 +5193,6 @@
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-11",
-    "release_date": "2025-11-15",
-    "last_updated": "2025-11-15",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 1.25,
-      "output": 10.0,
-      "cache_read": 0.13
-    },
-    "limit": {
-      "context": 400000,
-      "output": 128000
-    }
-  },
-  {
-    "id": "aihubmix/gpt-5.1-codex-max",
-    "name": "GPT-5.1-Codex-Max",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
     "temperature": false,
     "knowledge": "2024-09-30",
     "release_date": "2025-11-13",
@@ -5670,15 +5219,15 @@
   },
   {
     "id": "aihubmix/gpt-5.1-codex-mini",
-    "name": "GPT-5.1 Codex Mini",
+    "name": "GPT-5.1 Codex mini",
     "family": "gpt-codex",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-11",
-    "release_date": "2025-11-15",
-    "last_updated": "2025-11-15",
+    "temperature": false,
+    "knowledge": "2024-09-30",
+    "release_date": "2025-11-13",
+    "last_updated": "2025-11-13",
     "modalities": {
       "input": [
         "text",
@@ -5692,7 +5241,7 @@
     "cost": {
       "input": 0.25,
       "output": 2.0,
-      "cache_read": 0.03
+      "cache_read": 0.025
     },
     "limit": {
       "context": 400000,
@@ -5744,6 +5293,38 @@
       "input": [
         "text",
         "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.175
+    },
+    "limit": {
+      "context": 400000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "aihubmix/gpt-5.3-codex",
+    "name": "GPT-5.3 Codex",
+    "family": "gpt-codex",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2025-08-31",
+    "release_date": "2026-02-05",
+    "last_updated": "2026-02-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
       ],
       "output": [
         "text"
@@ -5821,16 +5402,48 @@
     }
   },
   {
-    "id": "aihubmix/kimi-k2.5",
-    "name": "Kimi K2.5",
-    "family": "kimi",
+    "id": "aihubmix/gpt-5.5",
+    "name": "GPT-5.5",
+    "family": "gpt",
     "attachment": true,
     "reasoning": true,
     "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-07",
-    "release_date": "2026-01-27",
-    "last_updated": "2026-01-27",
+    "temperature": false,
+    "knowledge": "2025-12-01",
+    "release_date": "2026-04-23",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 5.0,
+      "output": 30.0,
+      "cache_read": 0.5
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "aihubmix/kimi-k2.5",
+    "name": "Kimi K2.5",
+    "family": "kimi-k2.5",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2025-01",
+    "release_date": "2026-01",
+    "last_updated": "2026-01",
     "modalities": {
       "input": [
         "text",
@@ -5845,7 +5458,39 @@
     "cost": {
       "input": 0.6,
       "output": 3.0,
-      "cache_read": 0.1
+      "cache_read": 0.105
+    },
+    "limit": {
+      "context": 256000,
+      "output": 0
+    }
+  },
+  {
+    "id": "aihubmix/kimi-k2.6",
+    "name": "Kimi K2.6",
+    "family": "kimi-k2.6",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2026-04-21",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.95,
+      "output": 3.9995,
+      "cache_read": 0.160835
     },
     "limit": {
       "context": 262144,
@@ -5854,7 +5499,7 @@
   },
   {
     "id": "aihubmix/minimax-m2.1",
-    "name": "MiniMax M2.1",
+    "name": "MiniMax-M2.1",
     "family": "minimax",
     "attachment": false,
     "reasoning": true,
@@ -5872,24 +5517,24 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.29,
-      "output": 1.15
+      "input": 0.288,
+      "output": 1.152
     },
     "limit": {
       "context": 204800,
-      "output": 131072
+      "output": 192000
     }
   },
   {
-    "id": "aihubmix/minimax-m2.5",
-    "name": "MiniMax-M2.5",
+    "id": "aihubmix/minimax-m2.7",
+    "name": "MiniMax-M2.7",
     "family": "minimax",
     "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2026-02-12",
-    "last_updated": "2026-02-12",
+    "release_date": "2026-03-18",
+    "last_updated": "2026-03-18",
     "modalities": {
       "input": [
         "text"
@@ -5900,28 +5545,30 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.29,
-      "output": 1.15
+      "input": 0.2958,
+      "output": 1.1832,
+      "cache_read": 0.05916
     },
     "limit": {
-      "context": 204800,
-      "output": 131072
+      "context": 200000,
+      "output": 128000
     }
   },
   {
     "id": "aihubmix/o4-mini",
     "name": "o4-mini",
     "family": "o-mini",
-    "attachment": false,
+    "attachment": true,
     "reasoning": true,
-    "tool_call": false,
+    "tool_call": true,
     "temperature": false,
-    "knowledge": "2024-09",
-    "release_date": "2025-09-15",
-    "last_updated": "2025-09-15",
+    "knowledge": "2024-05",
+    "release_date": "2025-04-16",
+    "last_updated": "2025-04-16",
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "output": [
         "text"
@@ -5929,111 +5576,26 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.5,
-      "output": 6.0,
-      "cache_read": 0.75
+      "input": 1.1,
+      "output": 4.4,
+      "cache_read": 0.275
     },
     "limit": {
       "context": 200000,
-      "output": 65536
-    }
-  },
-  {
-    "id": "aihubmix/qwen3-235b-a22b-instruct",
-    "name": "Qwen3 235B A22B Instruct 2507",
-    "family": "qwen",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-07-30",
-    "last_updated": "2025-07-30",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.28,
-      "output": 1.12
-    },
-    "limit": {
-      "context": 262144,
-      "output": 262144
-    }
-  },
-  {
-    "id": "aihubmix/qwen3-235b-a22b-thinking",
-    "name": "Qwen3 235B A22B Thinking 2507",
-    "family": "qwen",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-04",
-    "release_date": "2025-07-30",
-    "last_updated": "2025-07-30",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.28,
-      "output": 2.8
-    },
-    "limit": {
-      "context": 262144,
-      "output": 262144
-    }
-  },
-  {
-    "id": "aihubmix/qwen3-coder-480b-a35b-instruct",
-    "name": "Qwen3 Coder 480B A35B Instruct",
-    "family": "qwen",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "release_date": "2025-08-01",
-    "last_updated": "2025-08-01",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.82,
-      "output": 3.29
-    },
-    "limit": {
-      "context": 262144,
-      "output": 131000
+      "output": 100000
     }
   },
   {
     "id": "aihubmix/qwen3-coder-next",
-    "name": "Qwen3 Coder Next",
+    "name": "Qwen3 Coder Plus",
     "family": "qwen",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2026-02-04",
-    "last_updated": "2026-02-04",
+    "knowledge": "2025-04",
+    "release_date": "2025-07-23",
+    "last_updated": "2025-07-23",
     "modalities": {
       "input": [
         "text"
@@ -6044,12 +5606,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.14,
-      "output": 0.55
+      "input": 0.137,
+      "output": 0.548,
+      "cache_read": 0.137
     },
     "limit": {
-      "context": 262144,
-      "output": 65536
+      "context": 2000000,
+      "output": 64000
     }
   },
   {
@@ -6073,17 +5636,18 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.34,
-      "output": 1.37
+      "input": 0.34246,
+      "output": 1.36984,
+      "cache_read": 0.34246
     },
     "limit": {
-      "context": 262144,
-      "output": 65536
+      "context": 252000,
+      "output": 32000
     }
   },
   {
     "id": "aihubmix/qwen3.5-plus",
-    "name": "Qwen 3.5 Plus",
+    "name": "Qwen3.5 Plus",
     "family": "qwen",
     "attachment": false,
     "reasoning": true,
@@ -6104,8 +5668,43 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.11,
-      "output": 0.66
+      "input": 0.1096,
+      "output": 0.6576,
+      "cache_read": 0.01096,
+      "cache_write": 0.137
+    },
+    "limit": {
+      "context": 991000,
+      "output": 64000
+    }
+  },
+  {
+    "id": "aihubmix/qwen3.6-flash",
+    "name": "Qwen3.6 Plus",
+    "family": "qwen",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-04-02",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.169,
+      "output": 1.014,
+      "cache_read": 0.0169,
+      "cache_write": 0.21125
     },
     "limit": {
       "context": 1000000,
