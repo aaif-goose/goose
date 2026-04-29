@@ -76,7 +76,7 @@ Today it uses that manifest to:
 When the Tauri shell launches the long-lived `goose serve` process, it applies the distro bundle like this:
 
 - prepends `distro/bin` to `PATH` when present
-- sets `GOOSE_DISTRO_CONFIG` to `distro/config.yaml` when present
+- adds `distro/config.yaml` to `GOOSE_ADDITIONAL_CONFIG_FILES` when present
 - sets `GOOSE_DISTRO_DIR` to the resolved distro root
 
 This is shell-level behavior, so it is implemented as Tauri-side setup rather than an ACP method.

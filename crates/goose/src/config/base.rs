@@ -161,6 +161,12 @@ fn bundled_defaults_path() -> Option<PathBuf> {
     }
 }
 
+fn additional_config_paths_from_env() -> Vec<PathBuf> {
+    env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES")
+        .map(|value| env::split_paths(&value).collect())
+        .unwrap_or_default()
+}
+
 impl Default for Config {
     fn default() -> Self {
         let config_dir = Paths::config_dir();
@@ -170,6 +176,7 @@ impl Default for Config {
         if let Some(defaults) = bundled_defaults_path() {
             config_paths.insert(0, defaults);
         }
+        config_paths.extend(additional_config_paths_from_env());
         config_paths.push(user_config_path.clone());
 
         let no_secrets_config = Self {
@@ -2028,6 +2035,44 @@ extensions:
 
         let value: String = config.get_param("key")?;
         assert_eq!(value, "base");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_additional_config_files_env_is_loaded_between_defaults_and_user(
+    ) -> Result<(), ConfigError> {
+        let extra_file = NamedTempFile::new().unwrap();
+        let config_root = tempdir().unwrap();
+        let original_root = env::var_os("GOOSE_PATH_ROOT");
+        let original_extra = env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES");
+
+        std::fs::write(extra_file.path(), "GOOSE_PROVIDER: databricks\n").unwrap();
+        std::fs::write(
+            config_root.path().join(CONFIG_YAML_NAME),
+            "GOOSE_MODEL: gpt-4o\n",
+        )
+        .unwrap();
+
+        env::set_var("GOOSE_PATH_ROOT", config_root.path());
+        env::set_var("GOOSE_ADDITIONAL_CONFIG_FILES", extra_file.path());
+
+        let config = Config::default();
+
+        let provider: String = config.get_param("GOOSE_PROVIDER")?;
+        assert_eq!(provider, "databricks");
+
+        let model: String = config.get_param("GOOSE_MODEL")?;
+        assert_eq!(model, "gpt-4o");
+
+        match original_root {
+            Some(value) => env::set_var("GOOSE_PATH_ROOT", value),
+            None => env::remove_var("GOOSE_PATH_ROOT"),
+        }
+        match original_extra {
+            Some(value) => env::set_var("GOOSE_ADDITIONAL_CONFIG_FILES", value),
+            None => env::remove_var("GOOSE_ADDITIONAL_CONFIG_FILES"),
+        }
 
         Ok(())
     }

@@ -66,7 +66,7 @@ impl GooseServeProcess {
                     prepend_path_env(&mut command, bin_dir);
                 }
                 if let Some(config_path) = &bundle.config_path {
-                    command.env("GOOSE_DISTRO_CONFIG", config_path);
+                    command.env("GOOSE_ADDITIONAL_CONFIG_FILES", config_path);
                 }
                 command.env("GOOSE_DISTRO_DIR", &bundle.root_dir);
             }
