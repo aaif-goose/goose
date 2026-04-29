@@ -1,10 +1,11 @@
 ---
-name: ui-pr-quality
+name: ui-refactor-review
 description: >-
-  Review and improve ui/goose2 frontend pull requests. Use when the user asks
-  to review a PR, assess code quality, make a cleanup plan, or fix readability,
-  layering, naming, type hygiene, duplication, or dead-code issues in goose2
-  React + TypeScript + Tauri UI code.
+  Review ui/goose2 frontend changes specifically for refactoring opportunities
+  and long-term maintainability. Use when the user wants cleanup feedback or
+  wants to improve structure, decomposition, layering, type hygiene,
+  duplication, dead code, readability, and extensibility in goose2 React +
+  TypeScript + Tauri UI code.
 ---
 
 # UI Refactor Quality
