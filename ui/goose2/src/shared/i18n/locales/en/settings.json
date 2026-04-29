@@ -224,6 +224,70 @@
       },
       "title": "Agent harnesses"
     },
+    "custom": {
+      "actions": {
+        "addHeader": "Add header",
+        "addModel": "Add model",
+        "create": "Create provider",
+        "delete": "Delete",
+        "deleteProvider": "Delete {{name}}",
+        "deleting": "Deleting...",
+        "editProvider": "Edit {{name}}",
+        "removeHeader": "Remove header",
+        "removeModel": "Remove {{model}}",
+        "save": "Save changes",
+        "saving": "Saving..."
+      },
+      "addButton": "Add custom provider",
+      "addTitle": "Add custom provider",
+      "description": "Connect an OpenAI-compatible, Anthropic-compatible, or local model endpoint.",
+      "editTitle": "Edit custom provider",
+      "emptyHeaders": "No custom headers.",
+      "emptyModels": "Add at least one model.",
+      "engines": {
+        "anthropic_compatible": "Anthropic-compatible",
+        "ollama_compatible": "Ollama-compatible",
+        "openai_compatible": "OpenAI-compatible"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete custom provider.",
+        "loadFailed": "Failed to load custom provider.",
+        "saveFailed": "Failed to save custom provider."
+      },
+      "fields": {
+        "apiKey": "API key",
+        "apiKeyEditPlaceholder": "Leave blank to keep the saved key",
+        "apiKeyPlaceholder": "Paste your API key",
+        "apiUrl": "API URL",
+        "apiUrlPlaceholder": "https://api.example.com/v1",
+        "basePath": "Base path",
+        "basePathPlaceholder": "/v1/chat/completions",
+        "displayName": "Display name",
+        "displayNamePlaceholder": "My provider",
+        "engine": "Engine",
+        "headerKey": "Header",
+        "headerValue": "Value",
+        "headers": "Custom headers",
+        "models": "Models",
+        "modelsPlaceholder": "gpt-4.1, claude-3-5-sonnet",
+        "requiresAuth": "Requires authentication",
+        "requiresAuthDescription": "Store an API key for requests to this provider.",
+        "supportsStreaming": "Supports streaming",
+        "supportsStreamingDescription": "Stream responses as the model generates tokens."
+      },
+      "modelCount_one": "{{count}} model",
+      "modelCount_other": "{{count}} models",
+      "notConfigured": "Not configured",
+      "sections": {
+        "template": "Start from template"
+      },
+      "templates": {
+        "clear": "Clear template",
+        "empty": "No templates available yet.",
+        "manual": "Manual setup",
+        "manualDescription": "Enter the endpoint details yourself."
+      }
+    },
     "disconnect": "Disconnect",
     "models": {
       "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",

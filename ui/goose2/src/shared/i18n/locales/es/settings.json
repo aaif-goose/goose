@@ -224,6 +224,70 @@
       },
       "title": "Arneses de agentes"
     },
+    "custom": {
+      "actions": {
+        "addHeader": "Agregar encabezado",
+        "addModel": "Agregar modelo",
+        "create": "Crear proveedor",
+        "delete": "Eliminar",
+        "deleteProvider": "Eliminar {{name}}",
+        "deleting": "Eliminando...",
+        "editProvider": "Editar {{name}}",
+        "removeHeader": "Eliminar encabezado",
+        "removeModel": "Eliminar {{model}}",
+        "save": "Guardar cambios",
+        "saving": "Guardando..."
+      },
+      "addButton": "Agregar proveedor personalizado",
+      "addTitle": "Agregar proveedor personalizado",
+      "description": "Conecta un endpoint de modelo compatible con OpenAI, Anthropic o local.",
+      "editTitle": "Editar proveedor personalizado",
+      "emptyHeaders": "No hay encabezados personalizados.",
+      "emptyModels": "Agrega al menos un modelo.",
+      "engines": {
+        "anthropic_compatible": "Compatible con Anthropic",
+        "ollama_compatible": "Compatible con Ollama",
+        "openai_compatible": "Compatible con OpenAI"
+      },
+      "errors": {
+        "deleteFailed": "No se pudo eliminar el proveedor personalizado.",
+        "loadFailed": "No se pudo cargar el proveedor personalizado.",
+        "saveFailed": "No se pudo guardar el proveedor personalizado."
+      },
+      "fields": {
+        "apiKey": "Clave API",
+        "apiKeyEditPlaceholder": "Déjalo en blanco para conservar la clave guardada",
+        "apiKeyPlaceholder": "Pega tu clave API",
+        "apiUrl": "URL de API",
+        "apiUrlPlaceholder": "https://api.example.com/v1",
+        "basePath": "Ruta base",
+        "basePathPlaceholder": "/v1/chat/completions",
+        "displayName": "Nombre visible",
+        "displayNamePlaceholder": "Mi proveedor",
+        "engine": "Motor",
+        "headerKey": "Encabezado",
+        "headerValue": "Valor",
+        "headers": "Encabezados personalizados",
+        "models": "Modelos",
+        "modelsPlaceholder": "gpt-4.1, claude-3-5-sonnet",
+        "requiresAuth": "Requiere autenticación",
+        "requiresAuthDescription": "Guarda una clave API para las solicitudes a este proveedor.",
+        "supportsStreaming": "Admite streaming",
+        "supportsStreamingDescription": "Transmite respuestas mientras el modelo genera tokens."
+      },
+      "modelCount_one": "{{count}} modelo",
+      "modelCount_other": "{{count}} modelos",
+      "notConfigured": "No configurado",
+      "sections": {
+        "template": "Comenzar con plantilla"
+      },
+      "templates": {
+        "clear": "Borrar plantilla",
+        "empty": "Todavía no hay plantillas disponibles.",
+        "manual": "Configuración manual",
+        "manualDescription": "Ingresa los detalles del endpoint."
+      }
+    },
     "disconnect": "Desconectar",
     "models": {
       "description": "Necesitas al menos un proveedor de modelos para usar el agente Goose. Algunos agentes pueden traer sus propias conexiones de modelo.",
