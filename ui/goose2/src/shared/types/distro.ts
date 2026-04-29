@@ -5,6 +5,7 @@ export interface DistroSecurityManifest {
 
 export interface DistroBundleInfo {
   present: boolean;
+  appVersion?: string;
   featureToggles?: Record<string, boolean>;
   security?: DistroSecurityManifest;
 }
