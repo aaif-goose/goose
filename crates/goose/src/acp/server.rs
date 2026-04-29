@@ -3796,10 +3796,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                 .await
                 .if_notification(|notif: CancelNotification| async {
                     let agent = agent.clone();
-                    cx.spawn(async move {
-                        agent.on_cancel(notif).await?;
-                        Ok(())
-                    })?;
+                    agent.on_cancel(notif).await?;
                     Ok(())
                 })
                 .await
