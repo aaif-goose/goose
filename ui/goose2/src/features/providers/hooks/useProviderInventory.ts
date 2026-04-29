@@ -8,6 +8,27 @@ import type {
 import { getModelProviders } from "../providerCatalog";
 
 const MODEL_PROVIDER_IDS = new Set(getModelProviders().map((p) => p.id));
+const HIDDEN_MODEL_PROVIDER_IDS = new Set(["local", "local_inference"]);
+
+function isVisibleConfiguredModelProvider(
+  entry: ProviderInventoryEntryDto,
+): boolean {
+  if (!entry.configured || HIDDEN_MODEL_PROVIDER_IDS.has(entry.providerId)) {
+    return false;
+  }
+
+  const isCuratedModelProvider = MODEL_PROVIDER_IDS.has(entry.providerId);
+
+  if (entry.providerType === "Custom") {
+    return true;
+  }
+
+  if (entry.providerType === "Declarative") {
+    return isCuratedModelProvider;
+  }
+
+  return isCuratedModelProvider;
+}
 
 function inventoryModelToOption(
   model: ProviderInventoryModelDto,
@@ -44,10 +65,7 @@ export function useProviderInventory() {
   );
 
   const configuredModelProviderEntries = useMemo(
-    () =>
-      [...entries.values()].filter(
-        (entry) => entry.configured && MODEL_PROVIDER_IDS.has(entry.providerId),
-      ),
+    () => [...entries.values()].filter(isVisibleConfiguredModelProvider),
     [entries],
   );
 
