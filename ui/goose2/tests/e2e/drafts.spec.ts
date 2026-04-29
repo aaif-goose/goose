@@ -1,5 +1,20 @@
 import { test, expect, waitForHome } from "./fixtures/tauri-mock";
 
+async function clickNewChatInProject(
+  page: Parameters<typeof waitForHome>[0],
+  projectName: string,
+) {
+  const projectButton = page.getByRole("button", {
+    name: projectName,
+    exact: true,
+  });
+  await projectButton.hover();
+  await projectButton
+    .locator("xpath=..")
+    .getByTitle("New chat in project")
+    .click();
+}
+
 test.describe("Draft persistence", () => {
   test("home screen draft persists across navigation", async ({
     tauriMocked: page,
@@ -51,7 +66,7 @@ test.describe("Draft persistence", () => {
 
     // Create a new chat in project Alpha
     await page.getByRole("button", { name: "Alpha" }).click();
-    await page.getByTitle("New chat in project").first().click();
+    await clickNewChatInProject(page, "Alpha");
 
     // Type a draft
     const chatInput = page.getByLabel("Chat message input");
@@ -65,11 +80,11 @@ test.describe("Draft persistence", () => {
     await waitForHome(page);
 
     await page.getByRole("button", { name: "Beta" }).click();
-    await page.getByTitle("New chat in project").last().click();
+    await clickNewChatInProject(page, "Beta");
     await expect(page.getByLabel("Chat message input")).toHaveValue("");
 
     // Go back to project Alpha's draft via its + button
-    await page.getByTitle("New chat in project").first().click();
+    await clickNewChatInProject(page, "Alpha");
 
     // Draft should be restored
     await expect(page.getByLabel("Chat message input")).toHaveValue(
@@ -87,7 +102,7 @@ test.describe("Draft persistence", () => {
     await page.getByRole("button", { name: "Alpha" }).click();
 
     // Click the "+" for Alpha to create a new chat
-    await page.getByTitle("New chat in project").first().click();
+    await clickNewChatInProject(page, "Alpha");
 
     // We should be in chat view now
     const chatInput = page.getByLabel("Chat message input");
@@ -95,7 +110,9 @@ test.describe("Draft persistence", () => {
 
     // The draft session should NOT appear in the sidebar
     const sidebar = page.locator("nav");
-    await expect(sidebar.getByText("New Chat")).not.toBeVisible();
+    await expect(
+      sidebar.getByRole("button", { name: "New Chat", exact: true }),
+    ).not.toBeVisible();
   });
 
   test("empty draft cleans up when navigating away", async ({
@@ -106,7 +123,7 @@ test.describe("Draft persistence", () => {
 
     // Open project and create a new chat
     await page.getByRole("button", { name: "Alpha" }).click();
-    await page.getByTitle("New chat in project").first().click();
+    await clickNewChatInProject(page, "Alpha");
 
     // Don't type anything — leave it empty
     await expect(page.getByLabel("Chat message input")).toBeVisible();
@@ -116,7 +133,7 @@ test.describe("Draft persistence", () => {
     await waitForHome(page);
 
     // Create another new chat in the same project
-    await page.getByTitle("New chat in project").first().click();
+    await clickNewChatInProject(page, "Alpha");
 
     // Should get a fresh chat (the old empty one was cleaned up)
     await expect(page.getByLabel("Chat message input")).toHaveValue("");
@@ -130,7 +147,7 @@ test.describe("Draft persistence", () => {
 
     // Open project and create a new chat
     await page.getByRole("button", { name: "Alpha" }).click();
-    await page.getByTitle("New chat in project").first().click();
+    await clickNewChatInProject(page, "Alpha");
 
     // Type a draft
     const chatInput = page.getByLabel("Chat message input");
@@ -140,7 +157,7 @@ test.describe("Draft persistence", () => {
     await page.waitForTimeout(500);
 
     // Click new chat in the same project again
-    await page.getByTitle("New chat in project").first().click();
+    await clickNewChatInProject(page, "Alpha");
 
     // Should reuse the existing draft instead of creating a new one
     await expect(page.getByLabel("Chat message input")).toHaveValue(
