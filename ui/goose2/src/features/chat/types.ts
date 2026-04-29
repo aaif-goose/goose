@@ -60,11 +60,12 @@ export interface ChatInputProps {
   selectedProvider?: string;
   onProviderChange?: (providerId: string) => void;
   currentModelId?: string | null;
+  currentModelProviderId?: string | null;
   currentModel?: string;
   availableModels?: ModelOption[];
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: (modelId: string, model?: ModelOption) => void;
   onPickerOpen?: () => void;
   selectedProjectId?: string | null;
   availableProjects?: ProjectOption[];

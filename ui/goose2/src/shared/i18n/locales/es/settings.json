@@ -228,6 +228,7 @@
       "actions": {
         "addHeader": "Agregar encabezado",
         "addModel": "Agregar modelo",
+        "back": "Atrás",
         "create": "Crear proveedor",
         "delete": "Eliminar",
         "deleteProvider": "Eliminar {{name}}",
@@ -282,10 +283,16 @@
         "template": "Comenzar con plantilla"
       },
       "templates": {
+        "compatibility": {
+          "all": "Todos los tipos de compatibilidad"
+        },
         "clear": "Borrar plantilla",
         "empty": "Todavía no hay plantillas disponibles.",
-        "manual": "Configuración manual",
-        "manualDescription": "Ingresa los detalles del endpoint."
+        "manual": "Totalmente personalizado",
+        "manualDescription": "Comienza con una configuración de proveedor en blanco.",
+        "searchPlaceholder": "Buscar plantillas",
+        "useTemplate": "Usar una plantilla",
+        "useTemplateDescription": "Comienza con valores predeterminados de endpoint y modelos para un proveedor conocido."
       }
     },
     "disconnect": "Desconectar",

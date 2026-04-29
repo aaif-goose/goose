@@ -42,7 +42,7 @@ describe("useProviderInventory", () => {
         providerType: "Preferred",
       }),
       providerEntry({
-        providerId: "acme_openai",
+        providerId: "custom_acme_openai",
         providerName: "Acme OpenAI",
         providerType: "Custom",
       }),
@@ -80,13 +80,13 @@ describe("useProviderInventory", () => {
       result.current.configuredModelProviderEntries.map(
         (entry) => entry.providerId,
       ),
-    ).toEqual(["openai", "acme_openai", "custom_deepseek"]);
+    ).toEqual(["openai", "custom_acme_openai", "custom_deepseek"]);
   });
 
   it("aggregates custom provider models under Goose", () => {
     useProviderInventoryStore.getState().setEntries([
       providerEntry({
-        providerId: "acme_openai",
+        providerId: "custom_acme_openai",
         providerName: "Acme OpenAI",
         providerType: "Custom",
         models: [
@@ -109,7 +109,7 @@ describe("useProviderInventory", () => {
         name: "Acme GPT-5",
         displayName: "Acme GPT-5",
         provider: "acme",
-        providerId: "acme_openai",
+        providerId: "custom_acme_openai",
         providerName: "Acme OpenAI",
         contextLimit: 128000,
         recommended: true,

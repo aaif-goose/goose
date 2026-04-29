@@ -7,11 +7,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
+import { Button } from "@/shared/ui/button";
+import {
+  IconArrowLeft,
+  IconLayoutGrid,
+  IconSettings,
+} from "@tabler/icons-react";
 import {
   CustomProviderForm,
   type CustomProviderFormValues,
   type ProviderTemplate,
 } from "./CustomProviderForm";
+import { ProviderTemplatePicker } from "./ProviderTemplatePicker";
 
 export type CustomProviderMutationInput = Omit<
   CustomProviderFormValues,
@@ -46,6 +53,8 @@ const EMPTY_FORM: CustomProviderFormValues = {
   headers: [],
 };
 
+type CreateStep = "choice" | "template" | "form";
+
 function valueFromTemplate(
   template: ProviderTemplate,
 ): CustomProviderFormValues {
@@ -78,6 +87,7 @@ export function CustomProviderDialog({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     null,
   );
+  const [createStep, setCreateStep] = useState<CreateStep>("choice");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -90,15 +100,36 @@ export function CustomProviderDialog({
     if (!open) return;
     setValue(provider ?? EMPTY_FORM);
     setSelectedTemplateId(provider?.catalogProviderId ?? null);
+    setCreateStep(mode === "create" ? "choice" : "form");
     setSaving(false);
     setDeleting(false);
     setError("");
-  }, [open, provider]);
+  }, [mode, open, provider]);
 
-  function handleSelectTemplate(templateId: string | null) {
+  function handleStartManual() {
+    setSelectedTemplateId(null);
+    setValue(EMPTY_FORM);
+    setCreateStep("form");
+  }
+
+  function handleSelectTemplate(templateId: string) {
     setSelectedTemplateId(templateId);
-    const template = templateId ? templateById.get(templateId) : null;
+    const template = templateById.get(templateId);
     setValue(template ? valueFromTemplate(template) : EMPTY_FORM);
+    setCreateStep("form");
+  }
+
+  function handleBack() {
+    setError("");
+    if (createStep === "template") {
+      setCreateStep("choice");
+      return;
+    }
+    if (selectedTemplateId) {
+      setCreateStep("template");
+      return;
+    }
+    setCreateStep("choice");
   }
 
   async function handleSubmit() {
@@ -143,6 +174,102 @@ export function CustomProviderDialog({
     }
   }
 
+  function renderCreateChoice() {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={handleStartManual}
+          className="flex min-h-24 items-start gap-3 rounded-lg border border-border px-3 py-3 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <IconSettings className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">
+              {t("providers.custom.templates.manual")}
+            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {t("providers.custom.templates.manualDescription")}
+            </span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCreateStep("template")}
+          className="flex min-h-24 items-start gap-3 rounded-lg border border-border px-3 py-3 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <IconLayoutGrid className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">
+              {t("providers.custom.templates.useTemplate")}
+            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {t("providers.custom.templates.useTemplateDescription")}
+            </span>
+          </span>
+        </button>
+      </div>
+    );
+  }
+
+  function renderBackButton() {
+    if (mode !== "create" || createStep === "choice") {
+      return null;
+    }
+
+    return (
+      <div className="-mt-1 mb-2 flex justify-start">
+        <Button
+          type="button"
+          variant="inline-subtle"
+          size="xs"
+          onClick={handleBack}
+          leftIcon={<IconArrowLeft />}
+          className="px-1.5"
+        >
+          {t("providers.custom.actions.back")}
+        </Button>
+      </div>
+    );
+  }
+
+  function renderContent() {
+    if (mode === "create" && createStep === "choice") {
+      return renderCreateChoice();
+    }
+
+    if (mode === "create" && createStep === "template") {
+      return (
+        <>
+          {renderBackButton()}
+          <ProviderTemplatePicker
+            templates={templates}
+            onSelect={handleSelectTemplate}
+            disabled={saving || deleting}
+          />
+        </>
+      );
+    }
+
+    return (
+      <>
+        {renderBackButton()}
+        <CustomProviderForm
+          value={value}
+          mode={mode}
+          saving={saving}
+          deleting={deleting}
+          error={error}
+          onChange={setValue}
+          onSubmit={() => void handleSubmit()}
+          onDelete={
+            mode === "edit" && onDelete ? () => void handleDelete() : undefined
+          }
+        />
+      </>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[min(760px,calc(100vh-2rem))] overflow-y-auto sm:max-w-2xl">
@@ -157,21 +284,7 @@ export function CustomProviderDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <CustomProviderForm
-          value={value}
-          mode={mode}
-          templates={templates}
-          selectedTemplateId={selectedTemplateId}
-          saving={saving}
-          deleting={deleting}
-          error={error}
-          onChange={setValue}
-          onSelectTemplate={handleSelectTemplate}
-          onSubmit={() => void handleSubmit()}
-          onDelete={
-            mode === "edit" && onDelete ? () => void handleDelete() : undefined
-          }
-        />
+        {renderContent()}
       </DialogContent>
     </Dialog>
   );

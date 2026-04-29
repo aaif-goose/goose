@@ -15,7 +15,6 @@ import { IconDeviceFloppy, IconTrash } from "@tabler/icons-react";
 import type { CustomProviderEngine } from "@/features/providers/lib/customProviderTypes";
 import { CustomHeadersEditor, type CustomHeader } from "./CustomHeadersEditor";
 import { ProviderModelListEditor } from "./ProviderModelListEditor";
-import { ProviderTemplatePicker } from "./ProviderTemplatePicker";
 
 export interface ProviderTemplate {
   id: string;
@@ -47,13 +46,10 @@ export interface CustomProviderFormValues {
 interface CustomProviderFormProps {
   value: CustomProviderFormValues;
   mode: "create" | "edit";
-  templates: ProviderTemplate[];
-  selectedTemplateId: string | null;
   saving?: boolean;
   deleting?: boolean;
   error?: string;
   onChange: (value: CustomProviderFormValues) => void;
-  onSelectTemplate: (templateId: string | null) => void;
   onSubmit: () => void;
   onDelete?: () => void;
 }
@@ -80,13 +76,10 @@ export function customProviderFormIsValid(value: CustomProviderFormValues) {
 export function CustomProviderForm({
   value,
   mode,
-  templates,
-  selectedTemplateId,
   saving = false,
   deleting = false,
   error = "",
   onChange,
-  onSelectTemplate,
   onSubmit,
   onDelete,
 }: CustomProviderFormProps) {
@@ -106,18 +99,6 @@ export function CustomProviderForm({
         onSubmit();
       }}
     >
-      {mode === "create" ? (
-        <section className="space-y-2">
-          <Label>{t("providers.custom.sections.template")}</Label>
-          <ProviderTemplatePicker
-            templates={templates}
-            selectedTemplateId={selectedTemplateId}
-            onSelect={onSelectTemplate}
-            disabled={disabled}
-          />
-        </section>
-      ) : null}
-
       <section className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="custom-provider-name">
@@ -129,6 +110,7 @@ export function CustomProviderForm({
             onChange={(event) => update({ displayName: event.target.value })}
             placeholder={t("providers.custom.fields.displayNamePlaceholder")}
             disabled={disabled}
+            spellCheck={false}
             className="h-8 text-xs"
           />
         </div>
@@ -165,6 +147,7 @@ export function CustomProviderForm({
             onChange={(event) => update({ apiUrl: event.target.value })}
             placeholder={t("providers.custom.fields.apiUrlPlaceholder")}
             disabled={disabled}
+            spellCheck={false}
             className="h-8 text-xs"
           />
         </div>
@@ -179,6 +162,7 @@ export function CustomProviderForm({
             onChange={(event) => update({ basePath: event.target.value })}
             placeholder={t("providers.custom.fields.basePathPlaceholder")}
             disabled={disabled}
+            spellCheck={false}
             className="h-8 text-xs"
           />
         </div>
@@ -218,6 +202,7 @@ export function CustomProviderForm({
                   : t("providers.custom.fields.apiKeyPlaceholder")
               }
               disabled={disabled}
+              spellCheck={false}
               className="h-8 text-xs"
             />
           </div>

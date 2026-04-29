@@ -62,6 +62,7 @@ export function CustomHeadersEditor({
                 }
                 placeholder={t("providers.custom.fields.headerKey")}
                 disabled={disabled}
+                spellCheck={false}
                 className="h-8 text-xs"
               />
               <Input
@@ -71,6 +72,7 @@ export function CustomHeadersEditor({
                 }
                 placeholder={t("providers.custom.fields.headerValue")}
                 disabled={disabled}
+                spellCheck={false}
                 className="h-8 text-xs"
               />
               <Button

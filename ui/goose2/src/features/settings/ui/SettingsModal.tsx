@@ -142,7 +142,7 @@ export function SettingsModal({
     <div
       role="dialog"
       className={cn(
-        "fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm transition-opacity duration-300",
+        "fixed inset-0 z-50 flex items-center justify-center bg-background/80 transition-opacity duration-300",
         isLoaded ? "opacity-100" : "opacity-0",
       )}
       onClick={onClose}
@@ -154,9 +154,8 @@ export function SettingsModal({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: click handler only prevents backdrop dismiss propagation */}
       <div
         className={cn(
-          "flex h-[600px] w-full max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-all duration-500 ease-out",
-          isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-95",
-          isTransitioning ? "scale-[0.98]" : "scale-100",
+          "flex h-[600px] w-full max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-opacity duration-300 ease-out",
+          isLoaded ? "opacity-100" : "opacity-0",
         )}
         onClick={(e) => e.stopPropagation()}
       >

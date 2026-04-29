@@ -228,6 +228,7 @@
       "actions": {
         "addHeader": "Add header",
         "addModel": "Add model",
+        "back": "Back",
         "create": "Create provider",
         "delete": "Delete",
         "deleteProvider": "Delete {{name}}",
@@ -282,10 +283,16 @@
         "template": "Start from template"
       },
       "templates": {
+        "compatibility": {
+          "all": "All compatibility types"
+        },
         "clear": "Clear template",
         "empty": "No templates available yet.",
-        "manual": "Manual setup",
-        "manualDescription": "Enter the endpoint details yourself."
+        "manual": "Fully custom",
+        "manualDescription": "Start from a blank provider configuration.",
+        "searchPlaceholder": "Search templates",
+        "useTemplate": "Use a template",
+        "useTemplateDescription": "Start with endpoint and model defaults for a known provider."
       }
     },
     "disconnect": "Disconnect",

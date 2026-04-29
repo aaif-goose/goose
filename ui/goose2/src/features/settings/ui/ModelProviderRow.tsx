@@ -468,13 +468,17 @@ export function ModelProviderRow({
         disabled={authenticating}
         className="flex w-full items-center gap-3 rounded-lg border border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent"
       >
-        <div className="flex size-6 flex-shrink-0 items-center justify-center">
-          {icon || (
+        {icon ? (
+          <div className="flex size-6 flex-shrink-0 items-center justify-center">
+            {icon}
+          </div>
+        ) : (
+          <div className="flex size-6 flex-shrink-0 items-center justify-center">
             <span className="text-xs font-medium text-muted-foreground">
               {formatProviderLabel(provider.id).charAt(0)}
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         <span className="min-w-0 flex-1 text-sm">{provider.displayName}</span>
 

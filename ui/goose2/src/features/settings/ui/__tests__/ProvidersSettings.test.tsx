@@ -124,7 +124,8 @@ describe("ProvidersSettings", () => {
     expect(
       screen.getByRole("dialog", { name: /add custom provider/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/manual setup/i)).toBeInTheDocument();
+    expect(screen.getByText(/fully custom/i)).toBeInTheDocument();
+    expect(screen.getByText(/use a template/i)).toBeInTheDocument();
   });
 
   it("shows custom inventory providers with edit and delete actions", () => {

@@ -46,11 +46,12 @@ interface ChatInputToolbarProps {
   onProviderChange: (providerId: string) => void;
   // Model
   currentModelId?: string | null;
+  currentModelProviderId?: string | null;
   currentModel?: string;
   availableModels: ModelOption[];
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: (modelId: string, model?: ModelOption) => void;
   onPickerOpen?: () => void;
   // Project
   selectedProjectId: string | null;
@@ -92,6 +93,7 @@ export function ChatInputToolbar({
   selectedProvider,
   onProviderChange,
   currentModelId,
+  currentModelProviderId,
   currentModel,
   availableModels,
   modelsLoading = false,
@@ -216,6 +218,7 @@ export function ChatInputToolbar({
             selectedAgentId={selectedProvider}
             onAgentChange={onProviderChange}
             currentModelId={currentModelId}
+            currentModelProviderId={currentModelProviderId}
             currentModelName={currentModel ?? null}
             availableModels={availableModels}
             modelsLoading={modelsLoading}

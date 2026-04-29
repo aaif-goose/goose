@@ -449,12 +449,7 @@ const PROVIDER_ICON_MAP: Record<string, (className: string) => ReactNode> = {
   openrouter: (className) => <OpenRouterIcon className={className} />,
   snowflake: (className) => <SnowflakeIcon className={className} />,
   xai: (className) => <XAIIcon className={className} />,
-  mistral: (className) => <OpenAIIcon className={className} />,
-  groq: (className) => <OpenAIIcon className={className} />,
-  custom_deepseek: (className) => <OpenAIIcon className={className} />,
   lmstudio: (className) => <OllamaIcon className={className} />,
-  nvidia: (className) => <OpenAIIcon className={className} />,
-  cerebras: (className) => <OpenAIIcon className={className} />,
 };
 
 function normalizeProviderId(providerId: string) {
@@ -490,11 +485,5 @@ export function getProviderIcon(
     return NORMALIZED_PROVIDER_ICON_MAP[normalizedId](className);
   }
 
-  for (const [key, render] of Object.entries(NORMALIZED_PROVIDER_ICON_MAP)) {
-    if (normalizedId.includes(key)) {
-      return render(className);
-    }
-  }
-
-  return <OpenAIIcon className={className} />;
+  return null;
 }

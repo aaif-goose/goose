@@ -46,6 +46,7 @@ export function ProviderModelListEditor({
           }}
           placeholder={t("providers.custom.fields.modelsPlaceholder")}
           disabled={disabled}
+          spellCheck={false}
           className="h-8 text-xs"
         />
         <Button

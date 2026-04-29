@@ -8,19 +8,18 @@ import type {
 import { getModelProviders } from "../providerCatalog";
 
 const MODEL_PROVIDER_IDS = new Set(getModelProviders().map((p) => p.id));
-const HIDDEN_MODEL_PROVIDER_IDS = new Set(["local", "local_inference"]);
 
-function isVisibleConfiguredModelProvider(
+function isConfiguredGooseModelProvider(
   entry: ProviderInventoryEntryDto,
 ): boolean {
-  if (!entry.configured || HIDDEN_MODEL_PROVIDER_IDS.has(entry.providerId)) {
+  if (!entry.configured) {
     return false;
   }
 
   const isCuratedModelProvider = MODEL_PROVIDER_IDS.has(entry.providerId);
 
   if (entry.providerType === "Custom") {
-    return true;
+    return entry.providerId.startsWith("custom_");
   }
 
   if (entry.providerType === "Declarative") {
@@ -65,7 +64,7 @@ export function useProviderInventory() {
   );
 
   const configuredModelProviderEntries = useMemo(
-    () => [...entries.values()].filter(isVisibleConfiguredModelProvider),
+    () => [...entries.values()].filter(isConfiguredGooseModelProvider),
     [entries],
   );
 
