@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
+import { IconFolderOpen } from "@tabler/icons-react";
 import { getHomeDir } from "@/shared/api/system";
 import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
@@ -27,6 +26,7 @@ import {
   type ProjectInfo,
 } from "../api/projects";
 import { discoverAcpProviders, type AcpProvider } from "@/shared/api/acp";
+import { useProjectIconSelection } from "../hooks/useProjectIconSelection";
 import {
   buildEditorText,
   hasEquivalentWorkingDir,
@@ -34,23 +34,10 @@ import {
   parseEditorText,
 } from "../lib/projectPromptText";
 import { PromptEditor } from "./PromptEditor";
+import { DEFAULT_PROJECT_ICON } from "../lib/projectIcons";
+import { ProjectIconPicker } from "./ProjectIconPicker";
 
-const COLOR_OPTIONS = [
-  "#64748b",
-  "#ef4444",
-  "#f97316",
-  "#f59e0b",
-  "#22c55e",
-  "#10b981",
-  "#14b8a6",
-  "#06b6d4",
-  "#3b82f6",
-  "#6366f1",
-  "#8b5cf6",
-  "#a855f7",
-  "#ec4899",
-  "#f43f5e",
-];
+const DEFAULT_PROJECT_COLOR = "#64748b";
 
 function getDefaultProjectName(path: string | null | undefined): string {
   const trimmed = path?.trim();
@@ -68,18 +55,7 @@ interface CreateProjectDialogProps {
   onClose: () => void;
   onCreated: (project: ProjectInfo) => void;
   initialWorkingDir?: string | null;
-  editingProject?: {
-    id: string;
-    name: string;
-    description: string;
-    prompt: string;
-    icon: string;
-    color: string;
-    preferredProvider: string | null;
-    preferredModel: string | null;
-    workingDirs: string[];
-    useWorktrees: boolean;
-  };
+  editingProject?: ProjectInfo;
 }
 
 export function CreateProjectDialog({
@@ -92,8 +68,16 @@ export function CreateProjectDialog({
   const { t } = useTranslation(["projects", "common"]);
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const icon = "\u{1F4C1}";
-  const [color, setColor] = useState(COLOR_OPTIONS[0]);
+  const {
+    icon,
+    iconCandidates,
+    iconScanPending,
+    iconError,
+    chooseIcon,
+    chooseCustomIcon,
+    resetIcon,
+  } = useProjectIconSelection({ isOpen, prompt });
+  const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
   const [preferredProvider, setPreferredProvider] = useState<string | null>(
     null,
   );
@@ -135,6 +119,13 @@ export function CreateProjectDialog({
     }
   };
 
+  const handleChooseCustomIcon = async () => {
+    await chooseCustomIcon({
+      title: t("dialog.customIconDialogTitle"),
+      filterName: t("dialog.iconFileFilter"),
+    });
+  };
+
   // Pre-fill fields when the dialog opens or when the project identity changes,
   // but NOT on every parent re-render (which would reset user edits mid-typing).
   const prevOpenRef = useRef(false);
@@ -154,6 +145,7 @@ export function CreateProjectDialog({
       setPrompt(
         buildEditorText(editingProject.workingDirs, editingProject.prompt),
       );
+      resetIcon(editingProject.icon);
       setColor(editingProject.color);
       setPreferredProvider(editingProject.preferredProvider ?? null);
       setUseWorktrees(editingProject.useWorktrees);
@@ -166,26 +158,28 @@ export function CreateProjectDialog({
           "",
         ),
       );
-      setColor(COLOR_OPTIONS[0]);
+      resetIcon(DEFAULT_PROJECT_ICON);
+      setColor(DEFAULT_PROJECT_COLOR);
       setPreferredProvider(null);
       setUseWorktrees(false);
       setError(null);
     }
-  }, [isOpen, editingProject, initialWorkingDir]);
+  }, [isOpen, editingProject, initialWorkingDir, resetIcon]);
 
   const canSave = name.trim().length > 0 && !saving;
 
   const handleClose = () => {
     setName("");
     setPrompt("");
-    setColor(COLOR_OPTIONS[0]);
+    resetIcon(DEFAULT_PROJECT_ICON);
+    setColor(DEFAULT_PROJECT_COLOR);
     setPreferredProvider(null);
     setUseWorktrees(false);
     setError(null);
     onClose();
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     if (!canSave) return;
     setSaving(true);
@@ -257,7 +251,6 @@ export function CreateProjectDialog({
             />
           </div>
 
-          {/* Instructions */}
           <div className="space-y-1">
             <Label className="text-xs font-medium text-muted-foreground">
               {t("dialog.instructions")}
@@ -275,34 +268,19 @@ export function CreateProjectDialog({
               onClick={handleAddDirectory}
               className="mt-1.5"
             >
-              <FolderOpen className="size-3.5" />
+              <IconFolderOpen className="size-3.5" />
               {t("dialog.addDirectory")}
             </Button>
           </div>
 
-          {/* Color */}
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-muted-foreground">
-              {t("dialog.color")}
-            </Label>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {COLOR_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={cn(
-                    "h-6 w-6 rounded-full border-2 transition-transform",
-                    color === c
-                      ? "border-foreground scale-110"
-                      : "border-transparent hover:scale-105",
-                  )}
-                  style={{ backgroundColor: c }}
-                  aria-label={t("dialog.colorAria", { color: c })}
-                />
-              ))}
-            </div>
-          </div>
+          <ProjectIconPicker
+            icon={icon}
+            iconCandidates={iconCandidates}
+            iconScanPending={iconScanPending}
+            error={iconError}
+            onChooseIcon={chooseIcon}
+            onChooseCustomIcon={handleChooseCustomIcon}
+          />
 
           {/* Provider */}
           <div className="space-y-1.5">

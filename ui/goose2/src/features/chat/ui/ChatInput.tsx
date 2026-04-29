@@ -48,6 +48,7 @@ export function ChatInput({
   modelsLoading = false,
   modelStatusMessage = null,
   onModelChange,
+  onPickerOpen,
   selectedProjectId = null,
   availableProjects = [],
   onProjectChange,
@@ -455,6 +456,7 @@ export function ChatInput({
                 modelsLoading={modelsLoading}
                 modelStatusMessage={modelStatusMessage}
                 onModelChange={onModelChange}
+                onPickerOpen={onPickerOpen}
                 selectedProjectId={selectedProjectId}
                 availableProjects={availableProjects}
                 onProjectChange={onProjectChange}

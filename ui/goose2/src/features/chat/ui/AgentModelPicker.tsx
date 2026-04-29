@@ -7,8 +7,6 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import type { AcpProvider } from "@/shared/api/acp";
-import { getProviderInventory } from "@/features/providers/api/inventory";
-import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
@@ -34,6 +32,7 @@ interface AgentModelPickerProps {
   loading?: boolean;
   isCompact?: boolean;
   showSelectedModelInTrigger?: boolean;
+  onOpen?: () => void;
 }
 
 function getModelDisplayName(model: ModelOption) {
@@ -321,14 +320,11 @@ export function AgentModelPicker({
   loading = false,
   isCompact = false,
   showSelectedModelInTrigger = true,
+  onOpen,
 }: AgentModelPickerProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
   const [modelView, setModelView] = useState<ModelView>("recommended");
-  const mergeInventoryEntries = useProviderInventoryStore(
-    (s) => s.mergeEntries,
-  );
-
   const selectedAgentLabel =
     agents.find((agent) => agent.id === selectedAgentId)?.label ??
     formatProviderLabel(selectedAgentId);
@@ -358,52 +354,32 @@ export function AgentModelPicker({
     }
   }, [open]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const syncInventory = async () => {
-      try {
-        const entries = await getProviderInventory();
-        if (cancelled) {
-          return;
-        }
-        mergeInventoryEntries(entries);
-      } catch (error) {
-        console.error("Failed to sync provider inventory from picker:", error);
-      }
-    };
-
-    void syncInventory();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, mergeInventoryEntries]);
-
   // When in "all" view, expand the popover to full width for the search experience.
   const isAllView = modelView === "all";
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) onOpen?.();
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
           variant="toolbar"
           size="sm"
           aria-label={t("toolbar.chooseAgentModel")}
-          disabled={loading}
+          disabled={loading && !selectedAgentLabel}
           leftIcon={getProviderIcon(selectedAgentId, "size-3.5")}
           rightIcon={<IconChevronDown className="opacity-50" />}
           className="min-w-0"
         >
           <span className={cn("truncate", isCompact ? "max-w-32" : "max-w-56")}>
-            {loading
-              ? t("toolbar.loading")
-              : (triggerModelLabel ?? selectedAgentLabel)}
+            {triggerModelLabel ??
+              selectedAgentLabel ??
+              (loading ? t("toolbar.loading") : null)}
           </span>
         </Button>
       </PopoverTrigger>
@@ -512,9 +488,25 @@ export function AgentModelPicker({
             className="flex min-h-0 min-w-0 overflow-hidden p-1"
           >
             {modelsLoading ? (
-              <div className="flex min-h-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
-                <Spinner className="size-4" />
-                <span>{t("toolbar.loadingModels")}</span>
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="shrink-0 px-2 py-1.5 text-sm font-semibold">
+                  {t("toolbar.model")}
+                </div>
+                {currentModelName || currentModelId ? (
+                  <div className="space-y-0.5 p-1">
+                    <PickerItem selected disabled>
+                      <div className="min-w-0 flex-1 truncate">
+                        {currentModelName ?? currentModelId}
+                      </div>
+                      <Spinner className="size-3.5 shrink-0" />
+                    </PickerItem>
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+                    <Spinner className="size-4" />
+                    <span>{t("toolbar.loadingModels")}</span>
+                  </div>
+                )}
               </div>
             ) : availableModels.length > 0 ? (
               modelView === "recommended" ? (

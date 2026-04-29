@@ -68,25 +68,25 @@ const buttonVariants = cva(
         variant: "ghost",
         size: "icon-xs",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
       {
         variant: "ghost",
         size: "icon-sm",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
       {
         variant: "ghost",
         size: "icon",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
       {
         variant: "ghost",
         size: "icon-lg",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
     ],
     defaultVariants: {

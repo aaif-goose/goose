@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { CreateProjectDialog } from "./CreateProjectDialog";
+import { ProjectIcon } from "./ProjectIcon";
 import { deleteProject, type ProjectInfo } from "../api/projects";
 import { useProjectStore } from "../stores/projectStore";
 
@@ -88,21 +89,9 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<
-    | {
-        id: string;
-        name: string;
-        description: string;
-        prompt: string;
-        icon: string;
-        color: string;
-        preferredProvider: string | null;
-        preferredModel: string | null;
-        workingDirs: string[];
-        useWorktrees: boolean;
-      }
-    | undefined
-  >(undefined);
+  const [editingProject, setEditingProject] = useState<ProjectInfo | undefined>(
+    undefined,
+  );
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingProject, setDeletingProject] = useState<ProjectInfo | null>(
@@ -141,18 +130,7 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
   };
 
   const handleEdit = (project: ProjectInfo) => {
-    setEditingProject({
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      prompt: project.prompt,
-      icon: project.icon,
-      color: project.color,
-      preferredProvider: project.preferredProvider,
-      preferredModel: project.preferredModel,
-      workingDirs: project.workingDirs,
-      useWorktrees: project.useWorktrees,
-    });
+    setEditingProject(project);
     setDialogOpen(true);
   };
 
@@ -215,9 +193,10 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
                   className="flex items-start justify-between gap-3 rounded-lg border border-border px-4 py-3"
                 >
                   <div className="min-w-0 flex-1 flex items-start gap-3">
-                    <span
-                      className="inline-block w-2.5 h-2.5 rounded-full mt-1.5 shrink-0"
-                      style={{ backgroundColor: project.color }}
+                    <ProjectIcon
+                      icon={project.icon}
+                      className="mt-0.5 size-4 shrink-0 text-foreground"
+                      imageClassName="mt-0.5 size-4 shrink-0 rounded-[4px]"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{project.name}</p>

@@ -957,6 +957,13 @@ impl GooseAcpAgent {
         goose_platform: GoosePlatform,
     ) -> Result<Self> {
         let session_manager = Arc::new(SessionManager::new(data_dir));
+
+        // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
+        let storage_clone = session_manager.storage().clone();
+        tokio::spawn(async move {
+            let _ = storage_clone.pool().await;
+        });
+
         let thread_manager = Arc::new(crate::session::ThreadManager::new(
             session_manager.storage().clone(),
         ));

@@ -37,6 +37,7 @@ import {
   deleteProject,
   type ProjectInfo,
 } from "@/features/projects/api/projects";
+import { ProjectIcon } from "@/features/projects/ui/ProjectIcon";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
@@ -270,9 +271,10 @@ export function SettingsModal({
                         className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: project.color }}
+                          <ProjectIcon
+                            icon={project.icon}
+                            className="size-4 shrink-0 text-foreground"
+                            imageClassName="size-4 shrink-0 rounded-[4px]"
                           />
                           <span className="text-sm truncate">
                             {project.name}

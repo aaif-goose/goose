@@ -18,6 +18,7 @@ export interface ProjectOption {
   id: string;
   name: string;
   workingDirs: string[];
+  icon?: string | null;
   color?: string | null;
 }
 
@@ -64,6 +65,7 @@ export interface ChatInputProps {
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
+  onPickerOpen?: () => void;
   selectedProjectId?: string | null;
   availableProjects?: ProjectOption[];
   onProjectChange?: (projectId: string | null) => void;

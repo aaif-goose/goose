@@ -10,7 +10,6 @@ export const TRANSLATION_NAMESPACES = [
   "settings",
   "skills",
   "sidebar",
-  "status",
   "sessions",
 ] as const;
 export const LOCALE_STORAGE_KEY = "goose:locale";

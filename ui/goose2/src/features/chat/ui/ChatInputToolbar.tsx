@@ -32,22 +32,10 @@ import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { getCatalogEntry } from "@/features/providers/providerCatalog";
 import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
+import { ProjectSelectorIcon } from "./ProjectSelectorIcon";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
-
-function ProjectDot({ color }: { color?: string | null }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-block size-2 rounded-full",
-        color ? "" : "bg-muted-foreground/40",
-      )}
-      style={color ? { backgroundColor: color } : undefined}
-    />
-  );
-}
 
 interface ChatInputToolbarProps {
   selectedPersonaId: string | null;
@@ -63,6 +51,7 @@ interface ChatInputToolbarProps {
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
+  onPickerOpen?: () => void;
   // Project
   selectedProjectId: string | null;
   availableProjects: ProjectOption[];
@@ -108,6 +97,7 @@ export function ChatInputToolbar({
   modelsLoading = false,
   modelStatusMessage = null,
   onModelChange,
+  onPickerOpen,
   selectedProjectId,
   availableProjects,
   onProjectChange,
@@ -231,6 +221,7 @@ export function ChatInputToolbar({
             modelsLoading={modelsLoading}
             modelStatusMessage={modelStatusMessage}
             onModelChange={onModelChange}
+            onOpen={onPickerOpen}
             loading={providersLoading}
             isCompact={isCompact}
             showSelectedModelInTrigger={selectedPersonaId === null}
@@ -242,7 +233,7 @@ export function ChatInputToolbar({
           value={selectedProjectId ?? NO_PROJECT_VALUE}
           triggerLabel={projectLabel}
           triggerTitle={projectTitle}
-          icon={<ProjectDot color={selectedProject?.color} />}
+          icon={<ProjectSelectorIcon icon={selectedProject?.icon} />}
           triggerVariant="toolbar"
           triggerSize="sm"
           menuLabel={t("toolbar.chooseProject")}
@@ -254,7 +245,7 @@ export function ChatInputToolbar({
                   value: NO_PROJECT_VALUE,
                   label: t("toolbar.noProject"),
                   description: t("toolbar.generalChatWithoutProject"),
-                  icon: <ProjectDot />,
+                  icon: <ProjectSelectorIcon />,
                 },
                 ...availableProjects.map((project) => ({
                   value: project.id,
@@ -262,7 +253,7 @@ export function ChatInputToolbar({
                   description: project.workingDirs.length
                     ? project.workingDirs.join(", ")
                     : undefined,
-                  icon: <ProjectDot color={project.color} />,
+                  icon: <ProjectSelectorIcon icon={project.icon} />,
                 })),
               ],
             },
