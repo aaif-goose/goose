@@ -702,7 +702,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         <div
           onMouseDown={handleResizeStart}
           onDoubleClick={handleResizeDoubleClick}
-          className="flex-shrink-0 w-2 h-full cursor-col-resize group flex items-center justify-center"
+          className="flex-shrink-0 w-4 h-full cursor-col-resize group flex items-center justify-center"
         >
           <div className="w-px h-8 rounded-full bg-transparent group-hover:bg-border transition-colors" />
         </div>

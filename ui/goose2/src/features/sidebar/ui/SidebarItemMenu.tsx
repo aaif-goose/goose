@@ -14,20 +14,26 @@ import {
 
 interface SidebarItemMenuProps {
   label: string;
+  onOpenChange?: (open: boolean) => void;
   onEdit?: () => void;
   onArchive?: () => void;
 }
 
 export function SidebarItemMenu({
   label,
+  onOpenChange,
   onEdit,
   onArchive,
 }: SidebarItemMenuProps) {
   const { t } = useTranslation(["sidebar", "common"]);
   const [open, setOpen] = useState(false);
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"

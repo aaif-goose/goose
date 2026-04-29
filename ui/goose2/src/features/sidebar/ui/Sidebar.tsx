@@ -258,11 +258,6 @@ export function Sidebar({
   const toggleProject = (projectId: string) =>
     setExpandedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
 
-  const activeProjectId =
-    activeSessionId && activeView === "chat"
-      ? (sessions.find((s) => s.id === activeSessionId)?.projectId ?? null)
-      : null;
-
   return (
     <div
       className={cn(
@@ -292,7 +287,7 @@ export function Sidebar({
                 variant="ghost"
                 size="icon-sm"
                 onClick={onCollapse}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-foreground hover:text-foreground"
                 aria-label={t("actions.collapse")}
                 title={t("actions.collapse")}
               >
@@ -315,7 +310,7 @@ export function Sidebar({
                   type="button"
                   onClick={onCollapse}
                   title={t("actions.expand")}
-                  className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-base text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                  className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-foreground transition-colors duration-200 hover:text-foreground"
                   aria-label={t("actions.expand")}
                 >
                   <IconLayoutSidebar className="size-4 flex-shrink-0" />
@@ -327,8 +322,8 @@ export function Sidebar({
                 className={cn(
                   "mb-3 flex items-center w-full rounded-md transition-all duration-300 ease-out",
                   collapsed
-                    ? "justify-center p-3 text-muted-foreground"
-                    : "gap-2 border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent",
+                    ? "justify-center p-3 text-foreground"
+                    : "gap-2 border border-border px-2.5 py-1.5 text-xs text-foreground hover:text-foreground hover:bg-transparent",
                 )}
               >
                 <IconSearch className="size-3.5 flex-shrink-0 text-placeholder" />
@@ -439,7 +434,6 @@ export function Sidebar({
                   labelTransition={labelTransition}
                   labelVisible={labelVisible}
                   activeSessionId={activeSessionId}
-                  activeProjectId={activeProjectId}
                   onNavigate={onNavigate}
                   onSelectSession={onSelectSession}
                   onNewChatInProject={onNewChatInProject}
@@ -467,7 +461,7 @@ export function Sidebar({
               size={collapsed ? "icon-sm" : "default"}
               onClick={onSettingsClick}
               className={cn(
-                "h-10 w-full rounded-md bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+                "h-10 w-full rounded-md bg-transparent text-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
                 collapsed
                   ? "justify-center p-3"
                   : "justify-start gap-2.5 px-3 py-2.5",
@@ -479,7 +473,7 @@ export function Sidebar({
               {!collapsed && (
                 <span
                   className={cn(
-                    "whitespace-nowrap text-base",
+                    "whitespace-nowrap text-sm",
                     labelTransition,
                     labelVisible
                       ? "opacity-100 w-auto"

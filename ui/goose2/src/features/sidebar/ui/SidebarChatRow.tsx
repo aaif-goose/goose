@@ -18,9 +18,9 @@ import { Input } from "@/shared/ui/input";
 import { SessionActivityIndicator } from "@/shared/ui/SessionActivityIndicator";
 
 const INACTIVE_CHAT_ROW_CLASS =
-  "text-muted-foreground hover:bg-transparent hover:text-foreground";
+  "text-foreground hover:bg-background-alt hover:text-foreground";
 const ACTIVE_CHAT_ROW_CLASS =
-  "font-normal text-foreground hover:bg-transparent hover:text-foreground";
+  "bg-background-alt font-normal text-foreground hover:bg-background-alt hover:text-foreground";
 
 interface SidebarChatRowProps {
   id: string;
@@ -29,6 +29,7 @@ interface SidebarChatRowProps {
   isRunning?: boolean;
   hasUnread?: boolean;
   className?: string;
+  nested?: boolean;
   onSelect?: (id: string) => void;
   onRename?: (id: string, nextTitle: string) => void;
   onArchive?: (id: string) => void;
@@ -41,6 +42,7 @@ export function SidebarChatRow({
   isRunning = false,
   hasUnread = false,
   className,
+  nested = false,
   onSelect,
   onRename,
   onArchive,
@@ -162,7 +164,8 @@ export function SidebarChatRow({
         }}
         title={t("actions.renameHint")}
         className={cn(
-          "flex-1 min-w-0 justify-start gap-2 rounded-md pl-3 pr-8 py-2 text-sm font-normal active:cursor-grabbing",
+          "flex-1 min-w-0 justify-start gap-2 rounded-md pr-8 py-2 text-sm font-normal active:cursor-grabbing",
+          nested ? "pl-8" : "pl-3",
           isActive ? ACTIVE_CHAT_ROW_CLASS : INACTIVE_CHAT_ROW_CLASS,
         )}
       >
@@ -188,7 +191,7 @@ export function SidebarChatRow({
             aria-label={t("menu.optionsFor", { label: displayTitle })}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              "absolute right-1 size-6 rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              "absolute right-1 size-6 rounded-md text-foreground hover:bg-transparent hover:text-foreground",
               menuOpen
                 ? "visible opacity-100"
                 : "invisible group-hover/chat-row:visible opacity-0 group-hover/chat-row:opacity-100",

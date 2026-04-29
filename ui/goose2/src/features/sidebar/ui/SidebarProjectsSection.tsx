@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import {
   IconChevronDown,
   IconChevronRight,
+  IconEdit,
   IconMessage,
-  IconPlus,
 } from "@tabler/icons-react";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
 import { cn } from "@/shared/lib/cn";
@@ -17,7 +17,7 @@ import { SidebarChatRow } from "./SidebarChatRow";
 
 const MAX_VISIBLE_CHATS = 5;
 const PROJECT_ROW_TEXT_CLASS =
-  "text-muted-foreground hover:bg-transparent hover:text-foreground";
+  "text-foreground hover:bg-transparent hover:text-foreground";
 
 interface TabInfo {
   id: string;
@@ -38,7 +38,6 @@ interface SidebarProjectsSectionProps {
   labelTransition: string;
   labelVisible: boolean;
   activeSessionId?: string | null;
-  activeProjectId?: string | null;
   onNavigate?: (view: AppView) => void;
   onSelectSession?: (sessionId: string) => void;
   onNewChatInProject?: (projectId: string) => void;
@@ -58,7 +57,6 @@ function ProjectSection({
   isExpanded,
   toggleProject,
   activeSessionId,
-  activeProjectId,
   onSelectSession,
   onNewChatInProject,
   onNavigate,
@@ -73,7 +71,6 @@ function ProjectSection({
   isExpanded: boolean;
   toggleProject: (projectId: string) => void;
   activeSessionId?: string | null;
-  activeProjectId?: string | null;
   onSelectSession?: (sessionId: string) => void;
   onNewChatInProject?: (projectId: string) => void;
   onNavigate?: (view: AppView) => void;
@@ -86,6 +83,7 @@ function ProjectSection({
   const { t } = useTranslation(["sidebar", "common"]);
   const [showAll, setShowAll] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes("text/x-session-id")) {
@@ -132,10 +130,8 @@ function ProjectSection({
           size="sm"
           onClick={() => toggleProject(project.id)}
           className={cn(
-            "flex-1 min-w-0 justify-start gap-2 rounded-md px-3 py-2 text-base font-normal",
-            activeProjectId === project.id
-              ? "font-normal text-foreground hover:bg-transparent hover:text-foreground"
-              : PROJECT_ROW_TEXT_CLASS,
+            "flex-1 min-w-0 justify-start gap-2 rounded-md px-3 py-2 text-sm font-normal",
+            PROJECT_ROW_TEXT_CLASS,
           )}
         >
           <span className="relative flex h-3 w-3 flex-shrink-0 items-center justify-center">
@@ -155,6 +151,7 @@ function ProjectSection({
         </Button>
         <SidebarItemMenu
           label={project.name}
+          onOpenChange={setMenuOpen}
           onEdit={() => onEditProject?.(project.id)}
           onArchive={() => onArchiveProject?.(project.id)}
         />
@@ -167,9 +164,14 @@ function ProjectSection({
             onNewChatInProject?.(project.id);
           }}
           title={t("actions.newChatInProject")}
-          className="mr-1 size-6 flex-shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+          className={cn(
+            "mr-1 size-6 flex-shrink-0 rounded-md",
+            menuOpen
+              ? "visible opacity-100"
+              : "invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100",
+          )}
         >
-          <IconPlus className="size-3.5" />
+          <IconEdit className="size-3.5" />
         </Button>
 
         {dragOver && (
@@ -189,7 +191,7 @@ function ProjectSection({
                 isActive={isActive}
                 isRunning={session.isRunning ?? false}
                 hasUnread={session.hasUnread ?? false}
-                className="pl-5"
+                nested
                 onSelect={onSelectSession}
                 onRename={onRenameChat}
                 onArchive={onArchiveChat}
@@ -212,7 +214,7 @@ function ProjectSection({
                   }
                 }
               }}
-              className="h-auto w-full justify-start gap-1.5 rounded-md py-1 pl-8 pr-3 text-[11px] text-muted-foreground hover:text-muted-foreground"
+              className="h-auto w-full justify-start gap-1.5 rounded-md py-1 pl-8 pr-3 text-[11px] text-foreground hover:text-foreground"
             >
               {showAll ? (
                 <>
@@ -250,7 +252,6 @@ export function SidebarProjectsSection({
   labelTransition,
   labelVisible,
   activeSessionId,
-  activeProjectId,
   onNavigate,
   onSelectSession,
   onNewChatInProject,
@@ -317,7 +318,7 @@ export function SidebarProjectsSection({
       >
         <span
           className={cn(
-            "text-[12px] font-medium text-muted-foreground/80 flex-1 pl-3",
+            "text-[12px] font-normal text-muted-foreground/80 flex-1 pl-3",
             labelTransition,
             labelVisible
               ? "opacity-100 w-auto"
@@ -353,7 +354,7 @@ export function SidebarProjectsSection({
               key={project.id}
               title={project.name}
               onClick={() => onNavigate?.("projects")}
-              className="rounded-lg text-muted-foreground hover:bg-transparent hover:text-foreground"
+              className="rounded-lg text-foreground hover:bg-transparent hover:text-foreground"
             >
               <span
                 className="inline-block size-2.5 rounded-full"
@@ -421,7 +422,6 @@ export function SidebarProjectsSection({
                 isExpanded={expandedProjects[project.id] ?? false}
                 toggleProject={toggleProject}
                 activeSessionId={activeSessionId}
-                activeProjectId={activeProjectId}
                 onSelectSession={onSelectSession}
                 onNewChatInProject={onNewChatInProject}
                 onNavigate={onNavigate}
@@ -445,13 +445,13 @@ export function SidebarProjectsSection({
       >
         <div
           className={cn(
-            "relative group flex items-center transition-all duration-300",
+            "relative group/chats-header flex items-center transition-all duration-300",
             collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-5 pb-1.5",
           )}
         >
           <span
             className={cn(
-              "text-[12px] font-medium text-muted-foreground/80 flex-1 pl-3",
+              "text-[12px] font-normal text-muted-foreground/80 flex-1 pl-3",
               labelTransition,
               labelVisible
                 ? "opacity-100 w-auto"
@@ -464,13 +464,16 @@ export function SidebarProjectsSection({
             <Button
               type="button"
               variant="ghost"
-              size="icon-xs"
+              size="xs"
               onClick={onNewChat}
               aria-label={t("actions.newChat")}
               title={t("actions.newChat")}
-              className="mr-1 size-6 flex-shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+              className={cn(
+                "mr-1 h-6 flex-shrink-0 rounded-full bg-muted px-2 text-[11px] text-foreground opacity-0 transition-opacity duration-150 ease-out hover:bg-muted/80 hover:text-foreground",
+                "pointer-events-none group-hover/chats-header:pointer-events-auto group-hover/chats-header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100",
+              )}
             >
-              <IconPlus className="size-3.5" />
+              {t("actions.newChat")}
             </Button>
           )}
 
@@ -497,7 +500,7 @@ export function SidebarProjectsSection({
                     "relative rounded-lg",
                     activeSessionId === session.id
                       ? "bg-transparent text-foreground hover:bg-transparent"
-                      : "text-muted-foreground hover:text-foreground",
+                      : "text-foreground hover:text-foreground",
                   )}
                 >
                   <IconMessage className="size-4" />

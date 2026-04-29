@@ -35,11 +35,11 @@ export function SidebarNavItem({
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "flex items-center w-full text-base transition-colors duration-200 rounded-md",
-        "gap-2.5 px-3 py-2",
+        "flex items-center w-full text-sm transition-colors duration-200 rounded-md",
+        "gap-2.5 px-3 py-1.5",
         isActive
-          ? "font-normal text-foreground"
-          : "text-muted-foreground hover:text-foreground",
+          ? "bg-background-alt font-normal text-foreground"
+          : "font-normal text-foreground hover:bg-background-alt hover:text-foreground",
       )}
       style={{ transitionDelay: itemTransitionDelay }}
     >
