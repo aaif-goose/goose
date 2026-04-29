@@ -193,13 +193,6 @@ pub struct GooseAcpAgent {
     disable_session_naming: bool,
     provider_inventory: ProviderInventoryService,
     goose_platform: GoosePlatform,
-    pool_warmup: tokio::task::JoinHandle<()>,
-}
-
-impl Drop for GooseAcpAgent {
-    fn drop(&mut self) {
-        self.pool_warmup.abort();
-    }
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -858,10 +851,8 @@ impl GooseAcpAgent {
 
         // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
         let storage_clone = session_manager.storage().clone();
-        let pool_warmup = tokio::spawn(async move {
-            if let Err(e) = storage_clone.pool().await {
-                tracing::warn!("Eager pool init failed (will retry on first use): {e}");
-            }
+        tokio::spawn(async move {
+            let _ = storage_clone.pool().await;
         });
 
         let thread_manager = Arc::new(crate::session::ThreadManager::new(
@@ -885,7 +876,6 @@ impl GooseAcpAgent {
             disable_session_naming,
             provider_inventory,
             goose_platform,
-            pool_warmup,
         })
     }
 
