@@ -12,6 +12,7 @@ import { useProviderInventoryStore } from "@/features/providers/stores/providerI
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import { SearchBar } from "@/shared/ui/SearchBar";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { Spinner } from "@/shared/ui/spinner";
 import {
@@ -244,17 +245,14 @@ function AllModelsList({
         >
           <IconChevronLeft className="size-4" />
         </button>
-        <div className="relative min-w-0 flex-1">
-          <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("toolbar.searchModels")}
-            className="h-7 w-full rounded-sm border bg-transparent pl-7 pr-2 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
-          />
-        </div>
+        <SearchBar
+          inputRef={inputRef}
+          size="small"
+          value={query}
+          onChange={setQuery}
+          placeholder={t("toolbar.searchModels")}
+          className="min-w-0 flex-1"
+        />
       </div>
       {filtered.length > 0 ? (
         <ScrollArea className="min-h-0 min-w-0 flex-1">
