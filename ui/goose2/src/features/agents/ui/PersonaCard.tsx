@@ -1,25 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MoreVertical, Copy, Pencil, Trash2, Download } from "lucide-react";
-import figureUrl from "@/assets/agents/figure.png";
-import ralphUrl from "@/assets/agents/ralph.png";
-import scoutUrl from "@/assets/agents/scout.png";
-import soloUrl from "@/assets/agents/solo.png";
-import tulsiUrl from "@/assets/agents/tulsi.png";
-
-// Name-based persona avatars — Tulsi-personal placeholder.
-// Real per-persona avatar storage on the data model is a separate spec;
-// unknown displayNames fall back to the shared cutout figure.
-const PERSONA_FIGURES: Record<string, string> = {
-  ralph: ralphUrl,
-  scout: scoutUrl,
-  solo: soloUrl,
-  tulsi: tulsiUrl,
-};
-
-function resolvePersonaFigure(displayName: string): string {
-  return PERSONA_FIGURES[displayName.toLowerCase()] ?? figureUrl;
-}
+import { resolvePersonaFigure } from "@/features/agents/lib/personaFigure";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import {

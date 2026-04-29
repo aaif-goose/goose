@@ -5,6 +5,7 @@ import { DEFAULT_CHAT_TITLE } from "./sessionTitle";
 interface NewChatRequest {
   title: string;
   projectId?: string;
+  personaId?: string;
 }
 
 interface FindExistingDraftArgs {
@@ -19,7 +20,10 @@ function isMatchingContext(
   session: ChatSession,
   request: Omit<NewChatRequest, "title">,
 ): boolean {
-  return session.projectId === request.projectId;
+  return (
+    session.projectId === request.projectId &&
+    session.personaId === request.personaId
+  );
 }
 
 function isReusableDraft(

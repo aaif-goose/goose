@@ -58,6 +58,26 @@ describe("findExistingDraft", () => {
     ).toBeUndefined();
   });
 
+  it("does not reuse a draft from a different persona", () => {
+    const draft = makeSession("goose-draft", {
+      personaId: "goose",
+      providerId: "goose",
+    });
+
+    expect(
+      findExistingDraft({
+        sessions: [draft],
+        activeSessionId: null,
+        draftsBySession: { "goose-draft": "goose draft" },
+        messagesBySession: {},
+        request: {
+          title: "New Chat",
+          personaId: "scout",
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it("does not reuse an abandoned empty draft", () => {
     const draft = makeSession("alpha-draft", {
       projectId: "alpha",

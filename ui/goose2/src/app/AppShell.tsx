@@ -16,9 +16,9 @@ import {
 } from "@/features/chat/stores/chatSessionStore";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
-import { findExistingDraft } from "@/features/chat/lib/newChat";
 import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
 import { useAppStartup } from "./hooks/useAppStartup";
+import { useCreateChatTab } from "./hooks/useCreateChatTab";
 import { useGlobalAppShortcuts } from "./hooks/useGlobalAppShortcuts";
 import { useHomeSessionStateSync } from "./hooks/useHomeSessionStateSync";
 import { useSettingsModal } from "./hooks/useSettingsModal";
@@ -277,97 +277,26 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     });
   }, [activeView, ensureHomeSession]);
 
-  const createNewTab = useCallback(
-    async (
-      title = DEFAULT_CHAT_TITLE,
-      project?: ProjectInfo | null,
-      composeOptions?: GlobalComposeOptions,
-    ) => {
-      const tStart = performance.now();
-      perfLog(
-        `[perf:newtab] createNewTab start (project=${project?.id ?? "none"})`,
-      );
-      const effectiveProject = project ?? null;
-      const agentId = agentStore.activeAgentId ?? undefined;
-      const providerId =
-        composeOptions?.providerId ??
-        effectiveProject?.preferredProvider ??
-        agentStore.selectedProvider ??
-        "goose";
-      const preferredModel =
-        composeOptions?.modelId ??
-        (composeOptions?.providerId &&
-        effectiveProject?.preferredProvider &&
-        composeOptions.providerId !== effectiveProject.preferredProvider
-          ? undefined
-          : (effectiveProject?.preferredModel ?? undefined));
-      const sessionModelPreference =
-        await resolveSupportedSessionModelPreference(
-          providerId,
-          providerInventoryEntries,
-          preferredModel,
-        );
-      const sessionState = useChatSessionStore.getState();
-      const chatState = useChatStore.getState();
-      const existingDraft = findExistingDraft({
-        sessions: sessionState.sessions,
-        activeSessionId: sessionState.activeSessionId,
-        draftsBySession: chatState.draftsBySession,
-        messagesBySession: chatState.messagesBySession,
-        request: {
-          title,
-          projectId: effectiveProject?.id,
-        },
-      });
-
-      const draftMatchesSelection =
-        existingDraft &&
-        existingDraft.providerId === sessionModelPreference.providerId &&
-        (existingDraft.modelId ?? null) ===
-          (sessionModelPreference.modelId ?? null);
-
-      if (draftMatchesSelection) {
-        sessionStore.setActiveSession(existingDraft.id);
-        setActiveView("chat");
-        chatStore.setActiveSession(existingDraft.id);
-        perfLog(
-          `[perf:newtab] ${existingDraft.id.slice(0, 8)} reused draft in ${(performance.now() - tStart).toFixed(1)}ms`,
-        );
-        return existingDraft;
-      }
-
-      const workingDir = await resolveSessionCwd(effectiveProject);
-      const session = await sessionStore.createSession({
-        title,
-        projectId: effectiveProject?.id,
-        agentId,
-        providerId: sessionModelPreference.providerId,
-        workingDir,
-        modelId: sessionModelPreference.modelId,
-        modelName: sessionModelPreference.modelId
-          ? (composeOptions?.modelName ?? sessionModelPreference.modelName)
-          : undefined,
-      });
-      sessionStore.setActiveSession(session.id);
-      setActiveView("chat");
-      chatStore.setActiveSession(session.id);
-      perfLog(
-        `[perf:newtab] ${session.id.slice(0, 8)} created session in ${(performance.now() - tStart).toFixed(1)}ms`,
-      );
-      return session;
-    },
-    [
-      agentStore.activeAgentId,
-      agentStore.selectedProvider,
-      chatStore,
-      providerInventoryEntries,
-      sessionStore,
-    ],
-  );
+  const createNewTab = useCreateChatTab(setActiveView);
 
   const handleStartChatFromProject = useCallback(
     (project: ProjectInfo) => {
       void createNewTab(DEFAULT_CHAT_TITLE, project);
+    },
+    [createNewTab],
+  );
+
+  const handleStartChatWithPersona = useCallback(
+    (personaId: string) => {
+      const personas = useAgentStore.getState().personas;
+      const persona =
+        personas.find((candidate) => candidate.id === personaId) ??
+        personas.find((candidate) => candidate.isBuiltin);
+      void createNewTab(DEFAULT_CHAT_TITLE, null, {
+        personaId: persona?.id,
+        providerId: persona?.provider,
+        modelId: persona?.model,
+      });
     },
     [createNewTab],
   );
@@ -765,6 +694,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
                 onExitSearch={handleExitSearch}
                 onOpenExtension={handleOpenExtensionFromSearch}
                 onOpenAgent={handleOpenAgentFromSearch}
+                onStartChatWithPersona={handleStartChatWithPersona}
                 onOpenSkill={handleOpenSkillFromSearch}
                 onStartChatFromProject={handleStartChatFromProject}
                 openAgentId={pendingAgentId}

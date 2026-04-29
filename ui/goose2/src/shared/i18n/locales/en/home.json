@@ -3,5 +3,89 @@
     "afternoon": "Good afternoon",
     "evening": "Good evening",
     "morning": "Good morning"
+  },
+  "widgets": {
+    "actions": {
+      "remove": "Remove"
+    },
+    "picker": {
+      "sections": {
+        "app": "App",
+        "pin": "Pin",
+        "tile": "Tile"
+      }
+    },
+    "agentPin": {
+      "action": "Start chat",
+      "description": "Start a new chat with a saved agent.",
+      "fallbackName": "Scout",
+      "label": "Pin an agent",
+      "openAria": "Start a chat with {{name}}"
+    },
+    "chatPin": {
+      "description": "Jump back into a recent chat.",
+      "emptyDescription": "No recent chat yet",
+      "emptyTitle": "Recent chat",
+      "kicker": "Pinned chat",
+      "label": "Pin a chat",
+      "openAria": "Open {{title}}"
+    },
+    "clock": {
+      "current": "Local time",
+      "description": "A live clock for your canvas.",
+      "label": "Clock"
+    },
+    "cube": {
+      "ariaLabel": "Animated cube",
+      "description": "A continuously animated canvas object.",
+      "label": "Cube"
+    },
+    "mondayBrief": {
+      "description": "A static preview of an agent-generated morning brief.",
+      "focus": "Focus",
+      "kicker": "Monday brief",
+      "label": "Monday morning brief",
+      "meetings": "Meetings",
+      "priorities": "Priorities",
+      "title": "Plan the week before the week plans you."
+    },
+    "stickyNote": {
+      "ariaLabel": "Sticky note",
+      "defaultText": "Follow up on the demo flow.",
+      "description": "A simple editable note.",
+      "label": "Sticky note",
+      "placeholder": "Write a note..."
+    },
+    "weather": {
+      "description": "A mock three-day forecast.",
+      "forecast": {
+        "friday": "Fri",
+        "today": "Today",
+        "tomorrow": "Thu"
+      },
+      "label": "Weather",
+      "location": "San Francisco",
+      "summary": "Clear afternoon, light breeze, good window for a walk."
+    },
+    "weeklyHighlights": {
+      "description": "A static summary tile for weekly progress.",
+      "items": {
+        "briefs": {
+          "label": "Briefs sent",
+          "value": "4"
+        },
+        "docs": {
+          "label": "Docs updated",
+          "value": "7"
+        },
+        "prs": {
+          "label": "PRs reviewed",
+          "value": "11"
+        }
+      },
+      "kicker": "Highlights",
+      "label": "Weekly highlights",
+      "title": "Small wins are stacking up."
+    }
   }
 }

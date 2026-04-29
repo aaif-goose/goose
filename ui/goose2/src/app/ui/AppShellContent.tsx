@@ -33,6 +33,7 @@ interface AppShellContentProps {
   onExitSearch: () => void;
   onOpenExtension: (entry: ExtensionEntry) => void;
   onOpenAgent: (agentId: string) => void;
+  onStartChatWithPersona: (personaId: string) => void;
   onOpenSkill: (skill: SkillInfo) => void;
   onStartChatFromProject: (project: ProjectInfo) => void;
   openAgentId?: string | null;
@@ -55,6 +56,7 @@ export function AppShellContent({
   onExitSearch,
   onOpenExtension,
   onOpenAgent,
+  onStartChatWithPersona,
   onOpenSkill,
   onStartChatFromProject,
   openAgentId,
@@ -105,7 +107,13 @@ export function AppShellContent({
         />
       );
     case "home":
-      return <HomeView />;
+      return (
+        <HomeView
+          onOpenAgent={onOpenAgent}
+          onStartChatWithPersona={onStartChatWithPersona}
+          onSelectSession={onSelectSession}
+        />
+      );
     case "search":
       return (
         <SearchView

@@ -3,5 +3,89 @@
     "afternoon": "Buenas tardes",
     "evening": "Buenas noches",
     "morning": "Buenos días"
+  },
+  "widgets": {
+    "actions": {
+      "remove": "Quitar"
+    },
+    "picker": {
+      "sections": {
+        "app": "App",
+        "pin": "Pin",
+        "tile": "Mosaico"
+      }
+    },
+    "agentPin": {
+      "action": "Iniciar chat",
+      "description": "Inicia un chat nuevo con un agente guardado.",
+      "fallbackName": "Scout",
+      "label": "Fijar un agente",
+      "openAria": "Iniciar un chat con {{name}}"
+    },
+    "chatPin": {
+      "description": "Vuelve a un chat reciente.",
+      "emptyDescription": "Aún no hay chat reciente",
+      "emptyTitle": "Chat reciente",
+      "kicker": "Chat fijado",
+      "label": "Fijar un chat",
+      "openAria": "Abrir {{title}}"
+    },
+    "clock": {
+      "current": "Hora local",
+      "description": "Un reloj en vivo para tu lienzo.",
+      "label": "Reloj"
+    },
+    "cube": {
+      "ariaLabel": "Cubo animado",
+      "description": "Un objeto animado para el lienzo.",
+      "label": "Cubo"
+    },
+    "mondayBrief": {
+      "description": "Vista previa estática de un resumen matutino generado por un agente.",
+      "focus": "Enfoque",
+      "kicker": "Resumen del lunes",
+      "label": "Resumen del lunes",
+      "meetings": "Reuniones",
+      "priorities": "Prioridades",
+      "title": "Planifica la semana antes de que la semana te planifique."
+    },
+    "stickyNote": {
+      "ariaLabel": "Nota adhesiva",
+      "defaultText": "Dar seguimiento al flujo de demo.",
+      "description": "Una nota editable sencilla.",
+      "label": "Nota adhesiva",
+      "placeholder": "Escribe una nota..."
+    },
+    "weather": {
+      "description": "Un pronóstico simulado de tres días.",
+      "forecast": {
+        "friday": "Vie",
+        "today": "Hoy",
+        "tomorrow": "Jue"
+      },
+      "label": "Clima",
+      "location": "San Francisco",
+      "summary": "Tarde despejada, brisa ligera y buen momento para caminar."
+    },
+    "weeklyHighlights": {
+      "description": "Un mosaico estático con el progreso semanal.",
+      "items": {
+        "briefs": {
+          "label": "Resúmenes enviados",
+          "value": "4"
+        },
+        "docs": {
+          "label": "Docs actualizados",
+          "value": "7"
+        },
+        "prs": {
+          "label": "PRs revisados",
+          "value": "11"
+        }
+      },
+      "kicker": "Destacados",
+      "label": "Destacados semanales",
+      "title": "Las pequeñas victorias se van acumulando."
+    }
   }
 }
