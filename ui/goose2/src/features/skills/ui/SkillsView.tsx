@@ -10,12 +10,14 @@ import { useSkillImportExport } from "../hooks/useSkillImportExport";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { SkillsDialogs } from "./SkillsDialogs";
 import { SkillsEmptyState } from "./SkillsEmptyState";
-import { SkillsListSections, type SkillsSection } from "./SkillsListSections";
-import { SkillsToolbar, type SkillsFilter } from "./SkillsToolbar";
+import { SkillsListSections } from "./SkillsListSections";
+import { SkillsToolbar } from "./SkillsToolbar";
 import { hydrateProjectNames } from "../lib/projectHydration";
 import {
-  compareSkillsByName,
+  filterSkills,
+  groupSkills,
   uniqueProjectFilters,
+  type SkillsFilter,
 } from "../lib/skillsHelpers";
 import {
   deleteSkill,
@@ -106,90 +108,24 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     );
   }, [categoryFilters]);
 
-  const filteredSkills = useMemo(() => {
-    const searchTerm = search.trim().toLowerCase();
-    return skills.filter((skill) => {
-      const matchesSearch =
-        searchTerm.length === 0 ||
-        skill.name.toLowerCase().includes(searchTerm) ||
-        skill.description.toLowerCase().includes(searchTerm) ||
-        skill.sourceLabel.toLowerCase().includes(searchTerm) ||
-        t(`view.categories.options.${skill.inferredCategory}`)
-          .toLowerCase()
-          .includes(searchTerm);
+  const filteredSkills = useMemo(
+    () =>
+      filterSkills(
+        skills,
+        { search, activeFilter, selectedCategories },
+        (category) => t(`view.categories.options.${category}`),
+      ),
+    [skills, search, activeFilter, selectedCategories, t],
+  );
 
-      const matchesFilter =
-        activeFilter === "all"
-          ? true
-          : activeFilter === "global"
-            ? skill.sourceKind === "global"
-            : skill.projectLinks.some(
-                (project) => `project:${project.id}` === activeFilter,
-              );
-
-      const matchesCategory =
-        selectedCategories.length === 0 ||
-        selectedCategories.includes(skill.inferredCategory);
-
-      return matchesSearch && matchesFilter && matchesCategory;
-    });
-  }, [activeFilter, search, selectedCategories, skills, t]);
-
-  const groupedSkills = useMemo<SkillsSection[]>(() => {
-    if (activeFilter === "global") {
-      return [
-        {
-          id: "personal",
-          title: t("view.filtersGlobal"),
-          skills: [...filteredSkills].sort(compareSkillsByName),
-        },
-      ];
-    }
-
-    if (activeFilter.startsWith("project:")) {
-      const projectId = activeFilter.slice("project:".length);
-      const projectName =
-        projectFilters.find((project) => project.id === projectId)?.name ??
-        t("view.projects");
-
-      return [
-        {
-          id: activeFilter,
-          title: projectName,
-          skills: [...filteredSkills].sort(compareSkillsByName),
-        },
-      ];
-    }
-
-    const personalSkills = filteredSkills
-      .filter((skill) => skill.sourceKind === "global")
-      .sort(compareSkillsByName);
-
-    const projectSections = projectFilters
-      .map((project) => ({
-        id: `project:${project.id}`,
-        title: project.name,
-        skills: filteredSkills
-          .filter((skill) =>
-            skill.projectLinks.some((link) => link.id === project.id),
-          )
-          .sort(compareSkillsByName),
-      }))
-      .filter((section) => section.skills.length > 0);
-
-    return [
-      ...(personalSkills.length > 0
-        ? [
-            {
-              id: "personal",
-              title: t("view.filtersGlobal"),
-              skills: personalSkills,
-            },
-          ]
-        : []),
-      ...projectSections,
-    ];
-  }, [activeFilter, filteredSkills, projectFilters, t]);
+  const groupedSkills = useMemo(
+    () =>
+      groupSkills(filteredSkills, activeFilter, projectFilters, {
+        personalTitle: t("view.filtersGlobal"),
+        projectsFallback: t("view.projects"),
+      }),
+    [filteredSkills, activeFilter, projectFilters, t],
+  );
 
   useEffect(() => {
     const nextIds = groupedSkills.map((section) => section.id);

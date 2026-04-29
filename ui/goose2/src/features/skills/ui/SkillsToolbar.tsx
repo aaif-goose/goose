@@ -5,8 +5,7 @@ import { Button } from "@/shared/ui/button";
 import { FilterRow } from "@/shared/ui/page-shell";
 import { SkillCategoryFilter } from "./SkillCategoryFilter";
 import type { SkillCategory } from "../lib/skillCategories";
-
-export type SkillsFilter = "all" | "global" | `project:${string}`;
+import type { SkillsFilter } from "../lib/skillsHelpers";
 
 interface SkillsToolbarProps {
   search: string;

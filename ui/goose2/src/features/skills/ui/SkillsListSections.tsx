@@ -7,12 +7,7 @@ import {
 } from "@/shared/ui/accordion";
 import { Button } from "@/shared/ui/button";
 import type { SkillViewInfo } from "../lib/skillCategories";
-
-export interface SkillsSection {
-  id: string;
-  title: string;
-  skills: SkillViewInfo[];
-}
+import type { SkillsSection } from "../lib/skillsHelpers";
 
 interface SkillsListSectionsProps {
   sections: SkillsSection[];
