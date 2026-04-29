@@ -1091,4 +1091,200 @@ mod tests {
             Ok(())
         }
     }
+
+    #[cfg(test)]
+    mod cumulative_token_tests {
+        use super::*;
+        use async_trait::async_trait;
+        use goose::agents::{AgentConfig, SessionConfig};
+        use goose::config::permission::PermissionManager;
+        use goose::config::GooseMode;
+        use goose::conversation::message::Message;
+        use goose::model::ModelConfig;
+        use goose::providers::base::{
+            stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
+            ProviderUsage, Usage,
+        };
+        use goose::providers::errors::ProviderError;
+        use goose::session::session_manager::SessionType;
+        use goose::session::SessionManager;
+        use rmcp::model::Tool;
+        use std::path::PathBuf;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        /// Mock provider that reports fixed token usage on every turn.
+        struct FixedUsageProvider {
+            call_count: AtomicUsize,
+            input_tokens: i32,
+            output_tokens: i32,
+        }
+
+        impl FixedUsageProvider {
+            fn new(input_tokens: i32, output_tokens: i32) -> Self {
+                Self {
+                    call_count: AtomicUsize::new(0),
+                    input_tokens,
+                    output_tokens,
+                }
+            }
+        }
+
+        impl ProviderDef for FixedUsageProvider {
+            type Provider = Self;
+
+            fn metadata() -> ProviderMetadata {
+                ProviderMetadata {
+                    name: "fixed-usage-mock".to_string(),
+                    display_name: "Fixed Usage Mock".to_string(),
+                    description: "Mock provider with fixed token usage for cumulative tests".to_string(),
+                    default_model: "mock-model".to_string(),
+                    known_models: vec![],
+                    model_doc_link: "".to_string(),
+                    config_keys: vec![],
+                    setup_steps: vec![],
+                    model_selection_hint: None,
+                }
+            }
+
+            fn from_env(
+                _model: ModelConfig,
+                _extensions: Vec<goose::config::ExtensionConfig>,
+            ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
+                Box::pin(async { Ok(Self::new(10, 5)) })
+            }
+        }
+
+        #[async_trait]
+        impl Provider for FixedUsageProvider {
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _session_id: &str,
+                _system_prompt: &str,
+                _messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                let _call = self.call_count.fetch_add(1, Ordering::SeqCst);
+                let total = self.input_tokens + self.output_tokens;
+                let usage = ProviderUsage::new(
+                    "mock-model".to_string(),
+                    Usage::new(Some(self.input_tokens), Some(self.output_tokens), Some(total)),
+                );
+                let message = Message::assistant().with_text("Hello");
+                Ok(stream_from_single_message(message, usage))
+            }
+
+            fn get_model_config(&self) -> ModelConfig {
+                ModelConfig::new("mock-model").unwrap()
+            }
+
+            fn get_name(&self) -> &str {
+                "fixed-usage-mock"
+            }
+        }
+
+        #[tokio::test]
+        async fn test_accumulated_total_tokens_across_multiple_turns() -> Result<()> {
+            let temp_dir = tempfile::tempdir()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+            let config = AgentConfig::new(
+                session_manager.clone(),
+                PermissionManager::instance(),
+                None,
+                GooseMode::Auto,
+                true, // disable session naming
+                GoosePlatform::GooseCli,
+            );
+            let agent = Agent::with_config(config);
+            let provider = Arc::new(FixedUsageProvider::new(10, 5));
+
+            let session = session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "cumulative-token-test".to_string(),
+                    SessionType::Hidden,
+                    GooseMode::default(),
+                )
+                .await?;
+
+            let session_id = session.id.clone();
+            agent.update_provider(provider.clone(), &session_id).await?;
+
+            // Turn 1
+            let session_config1 = SessionConfig {
+                id: session_id.clone(),
+                schedule_id: None,
+                max_turns: Some(1),
+                retry_config: None,
+            };
+            let reply_stream1 = agent
+                .reply(Message::user().with_text("Turn 1"), session_config1, None)
+                .await?;
+            tokio::pin!(reply_stream1);
+            while let Some(event) = reply_stream1.next().await {
+                let _ = event?;
+            }
+
+            let session_after_1 = session_manager.get_session(&session_id, false).await?;
+            assert_eq!(
+                session_after_1.accumulated_total_tokens,
+                Some(15),
+                "After turn 1, accumulated_total_tokens should be 15"
+            );
+
+            // Turn 2
+            let session_config2 = SessionConfig {
+                id: session_id.clone(),
+                schedule_id: None,
+                max_turns: Some(1),
+                retry_config: None,
+            };
+            let reply_stream2 = agent
+                .reply(Message::user().with_text("Turn 2"), session_config2, None)
+                .await?;
+            tokio::pin!(reply_stream2);
+            while let Some(event) = reply_stream2.next().await {
+                let _ = event?;
+            }
+
+            let session_after_2 = session_manager.get_session(&session_id, false).await?;
+            assert_eq!(
+                session_after_2.accumulated_total_tokens,
+                Some(30),
+                "After turn 2, accumulated_total_tokens should be 30"
+            );
+
+            // Turn 3
+            let session_config3 = SessionConfig {
+                id: session_id.clone(),
+                schedule_id: None,
+                max_turns: Some(1),
+                retry_config: None,
+            };
+            let reply_stream3 = agent
+                .reply(Message::user().with_text("Turn 3"), session_config3, None)
+                .await?;
+            tokio::pin!(reply_stream3);
+            while let Some(event) = reply_stream3.next().await {
+                let _ = event?;
+            }
+
+            let session_after_3 = session_manager.get_session(&session_id, false).await?;
+            assert_eq!(
+                session_after_3.accumulated_total_tokens,
+                Some(45),
+                "After turn 3, accumulated_total_tokens should be 45"
+            );
+
+            // total_tokens should still reflect the last turn only
+            assert_eq!(
+                session_after_3.total_tokens,
+                Some(15),
+                "total_tokens should reflect last turn only (15)"
+            );
+
+            Ok(())
+        }
+    }
 }

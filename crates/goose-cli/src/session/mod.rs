@@ -1265,7 +1265,7 @@ impl CliSession {
                 .await
             {
                 Ok(session) => JsonMetadata {
-                    total_tokens: session.total_tokens,
+                    total_tokens: session.accumulated_total_tokens,
                     status: "completed".to_string(),
                 },
                 Err(_) => JsonMetadata {
@@ -1286,7 +1286,7 @@ impl CliSession {
                 .get_session(&self.session_id, false)
                 .await
                 .ok()
-                .and_then(|s| s.total_tokens);
+                .and_then(|s| s.accumulated_total_tokens);
             emit_stream_event(&StreamEvent::Complete { total_tokens });
         } else {
             println!();
@@ -1445,7 +1445,7 @@ impl CliSession {
     // Get the session's total token usage
     pub async fn get_total_token_usage(&self) -> Result<Option<i32>> {
         let metadata = self.get_session().await?;
-        Ok(metadata.total_tokens)
+        Ok(metadata.accumulated_total_tokens)
     }
 
     /// Display enhanced context usage with session totals
