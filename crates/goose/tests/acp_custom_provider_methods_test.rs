@@ -311,6 +311,79 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
             vec!["stark-3"]
         );
 
+        let auth_disabled = send_custom(
+            conn.cx(),
+            "_goose/providers/custom/update",
+            serde_json::json!({
+                "providerId": provider_id,
+                "engine": "openai_compatible",
+                "displayName": "Stark ACP Provider No Auth",
+                "apiUrl": "https://stark.example/openai",
+                "apiKey": "",
+                "models": ["stark-3"],
+                "supportsStreaming": false,
+                "headers": {},
+                "requiresAuth": false,
+                "catalogProviderId": "zai"
+            }),
+        )
+        .await
+        .expect("custom provider auth disable should succeed");
+        assert_eq!(
+            auth_disabled.get("status"),
+            Some(&serde_json::json!({
+                "providerId": provider_id,
+                "isConfigured": true,
+            })),
+            "auth disable should invalidate the secret cache before status checks"
+        );
+        let no_auth_provider: DeclarativeProviderConfig =
+            serde_json::from_str(&std::fs::read_to_string(&custom_provider_path).unwrap())
+                .expect("no-auth provider should remain core-compatible");
+        assert!(!no_auth_provider.requires_auth);
+        assert_eq!(no_auth_provider.api_key_env, "");
+        assert!(
+            matches!(
+                Config::global().get_secret::<String>("CUSTOM_STARK_ACP_PROVIDER_API_KEY"),
+                Err(ConfigError::NotFound(_))
+            ),
+            "disabling auth should delete the previously stored API key"
+        );
+
+        let auth_reenabled_without_key = send_custom(
+            conn.cx(),
+            "_goose/providers/custom/update",
+            serde_json::json!({
+                "providerId": provider_id,
+                "engine": "openai_compatible",
+                "displayName": "Stark ACP Provider Reauth",
+                "apiUrl": "https://stark.example/openai",
+                "apiKey": "",
+                "models": ["stark-3"],
+                "supportsStreaming": false,
+                "headers": {},
+                "requiresAuth": true,
+                "catalogProviderId": "zai"
+            }),
+        )
+        .await
+        .expect("re-enabling auth without a key should keep existing compatibility");
+        assert_eq!(
+            auth_reenabled_without_key.get("status"),
+            Some(&serde_json::json!({
+                "providerId": provider_id,
+                "isConfigured": true,
+            })),
+            "blank re-enable keeps existing provider-status compatibility"
+        );
+        assert!(
+            matches!(
+                Config::global().get_secret::<String>("CUSTOM_STARK_ACP_PROVIDER_API_KEY"),
+                Err(ConfigError::NotFound(_))
+            ),
+            "blank re-enable should not recreate the previous API key"
+        );
+
         let deleted = send_custom(
             conn.cx(),
             "_goose/providers/custom/delete",

@@ -2,66 +2,19 @@ import { getClient } from "@/shared/api/acpConnection";
 import type {
   CustomProviderCreateResponse,
   CustomProviderDeleteResponse,
-  CustomProviderFormat,
   CustomProviderReadResponse,
   CustomProviderUpdateResponse,
-  CustomProviderUpsertRequest,
   ProviderCatalogEntryDto,
   ProviderTemplateDto,
+} from "@aaif/goose-sdk";
+import type {
+  CustomProviderFormat,
+  CustomProviderUpsertRequest,
 } from "../lib/customProviderTypes";
 
-interface ProviderCatalogListRequest {
-  format?: CustomProviderFormat;
-}
-
-interface ProviderCatalogListResponse {
-  providers: ProviderCatalogEntryDto[];
-}
-
-interface ProviderCatalogTemplateRequest {
-  providerId: string;
-}
-
-interface ProviderCatalogTemplateResponse {
-  template: ProviderTemplateDto;
-}
-
-interface CustomProviderReadRequest {
-  providerId: string;
-}
-
-interface CustomProviderUpdateRequest extends CustomProviderUpsertRequest {
-  providerId: string;
-}
-
-interface CustomProviderDeleteRequest {
-  providerId: string;
-}
-
-interface PlannedCustomProviderMethods {
-  GooseProvidersCatalogList(
-    params: ProviderCatalogListRequest,
-  ): Promise<ProviderCatalogListResponse>;
-  GooseProvidersCatalogTemplate(
-    params: ProviderCatalogTemplateRequest,
-  ): Promise<ProviderCatalogTemplateResponse>;
-  GooseProvidersCustomCreate(
-    params: CustomProviderUpsertRequest,
-  ): Promise<CustomProviderCreateResponse>;
-  GooseProvidersCustomRead(
-    params: CustomProviderReadRequest,
-  ): Promise<CustomProviderReadResponse>;
-  GooseProvidersCustomUpdate(
-    params: CustomProviderUpdateRequest,
-  ): Promise<CustomProviderUpdateResponse>;
-  GooseProvidersCustomDelete(
-    params: CustomProviderDeleteRequest,
-  ): Promise<CustomProviderDeleteResponse>;
-}
-
-async function getProviderClient(): Promise<PlannedCustomProviderMethods> {
+async function getProviderClient() {
   const client = await getClient();
-  return client.goose as unknown as PlannedCustomProviderMethods;
+  return client.goose;
 }
 
 export async function listCustomProviderCatalog(

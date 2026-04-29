@@ -258,7 +258,6 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
     let editable = loaded_provider.is_editable;
 
     let config = Config::global();
-
     let api_key_env = if params.requires_auth {
         let api_key_name = if existing_config.api_key_env.is_empty() {
             generate_api_key_name(&params.id)
@@ -270,6 +269,9 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
         }
         api_key_name
     } else {
+        if !existing_config.api_key_env.is_empty() {
+            config.delete_secret(&existing_config.api_key_env)?;
+        }
         String::new()
     };
 
