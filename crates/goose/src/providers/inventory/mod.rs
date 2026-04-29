@@ -3,7 +3,7 @@ use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModel
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
 use crate::session::session_manager::SessionStorage;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -238,11 +238,14 @@ impl ProviderInventoryService {
                 tokio::spawn(async move { this.entry_for_provider(&id).await })
             })
             .collect();
-        let entries: Vec<_> = futures::future::join_all(handles)
-            .await
-            .into_iter()
-            .filter_map(|r| r.ok().and_then(|r| r.ok()).flatten())
-            .collect();
+        let results = futures::future::join_all(handles).await;
+        let mut entries = Vec::with_capacity(results.len());
+        for result in results {
+            let inner = result.context("provider inventory task panicked")?;
+            if let Some(entry) = inner? {
+                entries.push(entry);
+            }
+        }
         Ok(entries)
     }
 
