@@ -123,7 +123,7 @@ fn apply_ollama_options(payload: &mut Value, model_config: &ModelConfig) {
 }
 
 fn ollama_host_configured(config: &crate::config::Config) -> bool {
-    std::env::var("OLLAMA_HOST").is_ok() || config.get("OLLAMA_HOST", false).is_ok()
+    config.get_param::<String>("OLLAMA_HOST").is_ok()
 }
 
 impl OllamaProvider {
