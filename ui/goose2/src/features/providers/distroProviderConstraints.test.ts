@@ -1,7 +1,68 @@
 import { describe, expect, it } from "vitest";
+import { filterModelProvidersForDistro } from "./distroProviderConstraints";
 
-describe("distroProviderConstraints", () => {
-  it("is currently a placeholder module", () => {
-    expect(true).toBe(true);
+describe("filterModelProvidersForDistro", () => {
+  const providers = [
+    {
+      id: "anthropic",
+      displayName: "Anthropic",
+      category: "model",
+      description: "Claude models",
+      setupMethod: "single_api_key",
+      tier: "promoted",
+    },
+    {
+      id: "openai",
+      displayName: "OpenAI",
+      category: "model",
+      description: "GPT models",
+      setupMethod: "single_api_key",
+      tier: "promoted",
+    },
+    {
+      id: "ollama",
+      displayName: "Ollama",
+      category: "model",
+      description: "Local models",
+      setupMethod: "local",
+      tier: "promoted",
+    },
+  ] as const;
+
+  it("returns all providers when no distro is present", () => {
+    expect(
+      filterModelProvidersForDistro([...providers], { present: false }),
+    ).toEqual(providers);
+  });
+
+  it("returns all providers when no allowlist is configured", () => {
+    expect(
+      filterModelProvidersForDistro([...providers], {
+        present: true,
+        security: {},
+      }),
+    ).toEqual(providers);
+  });
+
+  it("filters providers to the configured allowlist", () => {
+    expect(
+      filterModelProvidersForDistro([...providers], {
+        present: true,
+        security: {
+          providerAllowlist: "openai, ollama",
+        },
+      }),
+    ).toEqual([providers[1], providers[2]]);
+  });
+
+  it("ignores whitespace and empty allowlist items", () => {
+    expect(
+      filterModelProvidersForDistro([...providers], {
+        present: true,
+        security: {
+          providerAllowlist: "  anthropic ,, openai  ",
+        },
+      }),
+    ).toEqual([providers[0], providers[1]]);
   });
 });

@@ -9,6 +9,8 @@ import {
   getModelProviders,
 } from "@/features/providers/providerCatalog";
 import { useCredentials } from "@/features/providers/hooks/useCredentials";
+import { useDistroStore } from "@/features/settings/stores/distroStore";
+import { filterModelProvidersForDistro } from "@/features/providers/distroProviderConstraints";
 import { AgentProviderCard } from "./AgentProviderCard";
 import { ModelProviderRow } from "./ModelProviderRow";
 import type {
@@ -39,6 +41,7 @@ function toDisplayInfo(
 
 export function ProvidersSettings() {
   const { t } = useTranslation(["settings", "common"]);
+  const distro = useDistroStore((state) => state.manifest);
   const [showAllModels, setShowAllModels] = useState(false);
   const [modelOrder, setModelOrder] = useState<string[] | null>(null);
 
@@ -60,8 +63,12 @@ export function ProvidersSettings() {
   );
 
   const allModels = useMemo(
-    () => toDisplayInfo(getModelProviders(), configuredIds),
-    [configuredIds],
+    () =>
+      toDisplayInfo(
+        filterModelProvidersForDistro(getModelProviders(), distro),
+        configuredIds,
+      ),
+    [configuredIds, distro],
   );
 
   const sortedModels = useMemo(() => {

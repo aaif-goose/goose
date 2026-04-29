@@ -1,1 +1,34 @@
-export {};
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
+import type { DistroBundleInfo } from "@/shared/types/distro";
+
+function parseProviderAllowlist(
+  distro: DistroBundleInfo | null | undefined,
+): Set<string> | null {
+  if (!distro?.present) {
+    return null;
+  }
+
+  const raw = distro.security?.providerAllowlist?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const providerIds = raw
+    .split(",")
+    .map((providerId) => providerId.trim())
+    .filter(Boolean);
+
+  return providerIds.length > 0 ? new Set(providerIds) : null;
+}
+
+export function filterModelProvidersForDistro(
+  providers: ProviderCatalogEntry[],
+  distro: DistroBundleInfo | null | undefined,
+): ProviderCatalogEntry[] {
+  const allowlist = parseProviderAllowlist(distro);
+  if (!allowlist) {
+    return providers;
+  }
+
+  return providers.filter((provider) => allowlist.has(provider.id));
+}
