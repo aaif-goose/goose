@@ -162,6 +162,18 @@ fn project_icon_group_key(path: &Path) -> String {
     }
 }
 
+fn project_icon_root_key(root: &Path) -> String {
+    root.to_string_lossy().into_owned()
+}
+
+fn project_icon_candidate_group_key(root: &Path, path: &Path) -> String {
+    format!(
+        "{}:{}",
+        project_icon_root_key(root),
+        project_icon_group_key(path)
+    )
+}
+
 fn read_project_icon_data_url(path: &Path) -> Result<String, String> {
     let metadata = fs::metadata(path).map_err(|e| format!("Failed to inspect icon: {}", e))?;
     if !metadata.is_file() {
@@ -236,7 +248,7 @@ pub fn scan_project_icons(working_dirs: Vec<String>) -> Result<Vec<ProjectIconCa
             let relative = path.strip_prefix(&root).unwrap_or(path);
             let label = relative.to_string_lossy().into_owned();
             let score = project_icon_score(&root, path);
-            let group_key = format!("{}:{}", source_dir, project_icon_group_key(path));
+            let group_key = project_icon_candidate_group_key(&root, path);
             candidates.push(ScoredProjectIconPath {
                 score,
                 path: path.to_path_buf(),
@@ -303,5 +315,18 @@ mod tests {
         let icon = root.join("dist/logo.svg");
 
         assert!(is_ignored_icon_search_dir(root, &icon));
+    }
+
+    #[test]
+    fn project_icon_group_keys_distinguish_roots_with_same_basename() {
+        let first_root = Path::new("/work/client");
+        let second_root = Path::new("/archive/client");
+        let first_icon = first_root.join("public/logo.svg");
+        let second_icon = second_root.join("public/logo.svg");
+
+        assert_ne!(
+            project_icon_candidate_group_key(first_root, &first_icon),
+            project_icon_candidate_group_key(second_root, &second_icon)
+        );
     }
 }
