@@ -136,10 +136,7 @@ export function DoctorCheckRow({ check, onFixed }: DoctorCheckRowProps) {
             <AlertDialogCancel disabled={fixing}>
               {t("common:actions.cancel")}
             </AlertDialogCancel>
-            <Button
-              disabled={fixing}
-              onClick={confirmFix}
-            >
+            <Button disabled={fixing} onClick={confirmFix}>
               {fixing && <Loader2 className="h-3 w-3 animate-spin" />}
               {fixing
                 ? t("common:actions.running")
