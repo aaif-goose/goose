@@ -14,7 +14,7 @@ const DISTRO_OVERRIDE_ENV: &str = "GOOSE_DISTRO_DIR";
 #[serde(rename_all = "camelCase")]
 pub struct DistroSecurityManifest {
     pub extension_allowlist: Option<String>,
-    pub models: Option<String>,
+    pub provider_allowlist: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
