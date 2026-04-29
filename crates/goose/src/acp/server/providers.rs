@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::declarative_providers;
 
 fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEntryDto {
     let stale = ProviderInventoryService::is_stale(&entry);
@@ -110,6 +111,165 @@ fn provider_config_field_value(
     }
 }
 
+fn provider_catalog_entry_to_dto(
+    entry: crate::providers::catalog::ProviderCatalogEntry,
+) -> ProviderCatalogEntryDto {
+    ProviderCatalogEntryDto {
+        provider_id: entry.id,
+        name: entry.name,
+        format: entry.format,
+        api_url: entry.api_url,
+        model_count: entry.model_count,
+        doc_url: entry.doc_url,
+        env_var: entry.env_var,
+    }
+}
+
+fn provider_template_to_dto(
+    template: crate::providers::catalog::ProviderTemplate,
+) -> ProviderTemplateDto {
+    ProviderTemplateDto {
+        provider_id: template.id,
+        name: template.name,
+        format: template.format,
+        api_url: template.api_url,
+        models: template
+            .models
+            .into_iter()
+            .map(|model| ProviderTemplateModelDto {
+                id: model.id,
+                name: model.name,
+                context_limit: model.context_limit,
+                capabilities: ProviderTemplateCapabilitiesDto {
+                    tool_call: model.capabilities.tool_call,
+                    reasoning: model.capabilities.reasoning,
+                    attachment: model.capabilities.attachment,
+                    temperature: model.capabilities.temperature,
+                },
+                deprecated: model.deprecated,
+            })
+            .collect(),
+        supports_streaming: template.supports_streaming,
+        env_var: template.env_var,
+        doc_url: template.doc_url,
+    }
+}
+
+fn custom_provider_engine_to_dto(engine: &declarative_providers::ProviderEngine) -> &'static str {
+    match engine {
+        declarative_providers::ProviderEngine::OpenAI => "openai_compatible",
+        declarative_providers::ProviderEngine::Anthropic => "anthropic_compatible",
+        declarative_providers::ProviderEngine::Ollama => "ollama_compatible",
+    }
+}
+
+fn normalize_custom_provider_engine(engine: &str) -> Result<String, sacp::Error> {
+    match engine.trim().to_lowercase().as_str() {
+        "openai" | "openai_compatible" => Ok("openai_compatible".to_string()),
+        "anthropic" | "anthropic_compatible" => Ok("anthropic_compatible".to_string()),
+        "ollama" | "ollama_compatible" => Ok("ollama_compatible".to_string()),
+        other => Err(sacp::Error::invalid_params()
+            .data(format!("Unsupported custom provider engine: {other}"))),
+    }
+}
+
+fn non_empty_trimmed(value: String, field: &str) -> Result<String, sacp::Error> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        return Err(sacp::Error::invalid_params().data(format!("{field} cannot be empty")));
+    }
+    Ok(value)
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let value = value.trim().to_string();
+        (!value.is_empty()).then_some(value)
+    })
+}
+
+fn normalize_custom_provider_upsert(
+    mut provider: CustomProviderUpsertDto,
+    require_api_key: bool,
+) -> Result<CustomProviderUpsertDto, sacp::Error> {
+    provider.engine = normalize_custom_provider_engine(&provider.engine)?;
+    provider.display_name = non_empty_trimmed(provider.display_name, "displayName")?;
+    provider.api_url = non_empty_trimmed(provider.api_url, "apiUrl")?;
+    provider.api_key = provider.api_key.trim().to_string();
+    if require_api_key && provider.requires_auth && provider.api_key.is_empty() {
+        return Err(sacp::Error::invalid_params().data("apiKey cannot be empty"));
+    }
+    provider.models = provider
+        .models
+        .into_iter()
+        .filter_map(|model| {
+            let model = model.trim().to_string();
+            (!model.is_empty()).then_some(model)
+        })
+        .collect();
+    provider.headers = provider
+        .headers
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let key = key.trim().to_string();
+            let value = value.trim().to_string();
+            (!key.is_empty()).then_some((key, value))
+        })
+        .collect();
+    provider.catalog_provider_id = normalize_optional_string(provider.catalog_provider_id);
+    provider.base_path = normalize_optional_string(provider.base_path);
+    Ok(provider)
+}
+
+fn custom_provider_headers(headers: HashMap<String, String>) -> Option<HashMap<String, String>> {
+    (!headers.is_empty()).then_some(headers)
+}
+
+fn load_declarative_provider_for_client(
+    provider_id: &str,
+) -> Result<declarative_providers::LoadedProvider, sacp::Error> {
+    declarative_providers::load_provider(provider_id).map_err(|error| {
+        if error.to_string().contains("Provider not found") {
+            sacp::Error::invalid_params().data(format!("Unknown provider: {provider_id}"))
+        } else {
+            sacp::Error::internal_error().data(error.to_string())
+        }
+    })
+}
+
+fn custom_provider_config_to_dto(
+    config: &declarative_providers::DeclarativeProviderConfig,
+) -> CustomProviderConfigDto {
+    let api_key_env = normalize_optional_string(Some(config.api_key_env.clone()));
+    let api_key_set = api_key_env
+        .as_ref()
+        .map(|key| {
+            Config::global()
+                .get_secret::<serde_json::Value>(key)
+                .is_ok()
+        })
+        .unwrap_or(false);
+
+    CustomProviderConfigDto {
+        provider_id: config.name.clone(),
+        engine: custom_provider_engine_to_dto(&config.engine).to_string(),
+        display_name: config.display_name.clone(),
+        api_url: config.base_url.clone(),
+        models: config
+            .models
+            .iter()
+            .map(|model| model.name.clone())
+            .collect(),
+        supports_streaming: config.supports_streaming,
+        headers: config.headers.clone().unwrap_or_default(),
+        requires_auth: config.requires_auth,
+        catalog_provider_id: config.catalog_provider_id.clone(),
+        base_path: config.base_path.clone(),
+        api_key_env,
+        api_key_set,
+    }
+}
+
 fn refresh_skip_reason_to_dto(reason: RefreshSkipReason) -> RefreshProviderInventorySkipReasonDto {
     match reason {
         RefreshSkipReason::UnknownProvider => {
@@ -151,6 +311,185 @@ impl GooseAcpAgent {
             .internal_err()?;
         Ok(ListProvidersResponse {
             entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
+        })
+    }
+
+    pub(super) async fn on_list_provider_catalog(
+        &self,
+        req: ProviderCatalogListRequest,
+    ) -> Result<ProviderCatalogListResponse, sacp::Error> {
+        let formats = match req.format {
+            Some(format) => vec![format
+                .parse::<crate::providers::catalog::ProviderFormat>()
+                .map_err(|error| sacp::Error::invalid_params().data(error))?],
+            None => vec![
+                crate::providers::catalog::ProviderFormat::OpenAI,
+                crate::providers::catalog::ProviderFormat::Anthropic,
+                crate::providers::catalog::ProviderFormat::Ollama,
+            ],
+        };
+
+        let mut providers = Vec::new();
+        for format in formats {
+            providers.extend(
+                crate::providers::catalog::get_providers_by_format(format)
+                    .await
+                    .into_iter()
+                    .map(provider_catalog_entry_to_dto),
+            );
+        }
+        providers.sort_by(|a, b| {
+            a.name
+                .cmp(&b.name)
+                .then_with(|| a.provider_id.cmp(&b.provider_id))
+        });
+
+        Ok(ProviderCatalogListResponse { providers })
+    }
+
+    pub(super) async fn on_get_provider_catalog_template(
+        &self,
+        req: ProviderCatalogTemplateRequest,
+    ) -> Result<ProviderCatalogTemplateResponse, sacp::Error> {
+        let template = crate::providers::catalog::get_provider_template(&req.provider_id)
+            .ok_or_else(|| {
+                sacp::Error::invalid_params()
+                    .data(format!("Unknown catalog provider: {}", req.provider_id))
+            })?;
+        Ok(ProviderCatalogTemplateResponse {
+            template: provider_template_to_dto(template),
+        })
+    }
+
+    pub(super) async fn on_create_custom_provider(
+        &self,
+        req: CustomProviderCreateRequest,
+    ) -> Result<CustomProviderCreateResponse, sacp::Error> {
+        let provider = normalize_custom_provider_upsert(req.provider, true)?;
+        let config = declarative_providers::create_custom_provider(
+            declarative_providers::CreateCustomProviderParams {
+                engine: provider.engine,
+                display_name: provider.display_name,
+                api_url: provider.api_url,
+                api_key: provider.api_key,
+                models: provider.models,
+                supports_streaming: provider.supports_streaming,
+                headers: custom_provider_headers(provider.headers),
+                requires_auth: provider.requires_auth,
+                catalog_provider_id: provider.catalog_provider_id,
+                base_path: provider.base_path,
+            },
+        )
+        .internal_err_ctx("Failed to create custom provider")?;
+
+        Config::global().invalidate_secrets_cache();
+        crate::providers::refresh_custom_providers()
+            .await
+            .internal_err_ctx("Failed to refresh custom providers")?;
+
+        let provider_id = config.name;
+        let provider_ids = [provider_id.clone()];
+        let status = Self::provider_config_status(provider_id.clone()).await;
+        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(CustomProviderCreateResponse {
+            provider_id,
+            status,
+            refresh,
+        })
+    }
+
+    pub(super) async fn on_read_custom_provider(
+        &self,
+        req: CustomProviderReadRequest,
+    ) -> Result<CustomProviderReadResponse, sacp::Error> {
+        let loaded = load_declarative_provider_for_client(&req.provider_id)?;
+        let status = Self::provider_config_status(req.provider_id).await;
+        Ok(CustomProviderReadResponse {
+            provider: custom_provider_config_to_dto(&loaded.config),
+            editable: loaded.is_editable,
+            status,
+        })
+    }
+
+    pub(super) async fn on_update_custom_provider(
+        &self,
+        req: CustomProviderUpdateRequest,
+    ) -> Result<CustomProviderUpdateResponse, sacp::Error> {
+        let loaded = load_declarative_provider_for_client(&req.provider_id)?;
+        if !loaded.is_editable {
+            return Err(sacp::Error::invalid_params()
+                .data(format!("Provider is not editable: {}", req.provider_id)));
+        }
+
+        let provider = normalize_custom_provider_upsert(req.provider, false)?;
+        declarative_providers::update_custom_provider(
+            declarative_providers::UpdateCustomProviderParams {
+                id: req.provider_id.clone(),
+                engine: provider.engine,
+                display_name: provider.display_name,
+                api_url: provider.api_url,
+                api_key: provider.api_key,
+                models: provider.models,
+                supports_streaming: provider.supports_streaming,
+                headers: Some(provider.headers),
+                requires_auth: provider.requires_auth,
+                catalog_provider_id: provider.catalog_provider_id,
+                base_path: provider.base_path,
+            },
+        )
+        .internal_err_ctx("Failed to update custom provider")?;
+
+        Config::global().invalidate_secrets_cache();
+        crate::providers::refresh_custom_providers()
+            .await
+            .internal_err_ctx("Failed to refresh custom providers")?;
+
+        let provider_ids = [req.provider_id.clone()];
+        let status = Self::provider_config_status(req.provider_id.clone()).await;
+        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(CustomProviderUpdateResponse {
+            provider_id: req.provider_id,
+            status,
+            refresh,
+        })
+    }
+
+    pub(super) async fn on_delete_custom_provider(
+        &self,
+        req: CustomProviderDeleteRequest,
+    ) -> Result<CustomProviderDeleteResponse, sacp::Error> {
+        let loaded = load_declarative_provider_for_client(&req.provider_id)?;
+        if !loaded.is_editable {
+            return Err(sacp::Error::invalid_params()
+                .data(format!("Provider is not editable: {}", req.provider_id)));
+        }
+
+        if Config::global()
+            .get_param::<String>("GOOSE_PROVIDER")
+            .ok()
+            .as_deref()
+            == Some(req.provider_id.as_str())
+        {
+            return Err(sacp::Error::invalid_params().data(format!(
+                "Cannot delete active provider: {}",
+                req.provider_id
+            )));
+        }
+
+        declarative_providers::remove_custom_provider(&req.provider_id)
+            .internal_err_ctx("Failed to delete custom provider")?;
+
+        Config::global().invalidate_secrets_cache();
+        crate::providers::refresh_custom_providers()
+            .await
+            .internal_err_ctx("Failed to refresh custom providers")?;
+
+        Ok(CustomProviderDeleteResponse {
+            provider_id: req.provider_id,
+            refresh: RefreshProviderInventoryResponse {
+                started: Vec::new(),
+                skipped: Vec::new(),
+            },
         })
     }
 

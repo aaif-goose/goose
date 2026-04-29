@@ -104,6 +104,54 @@ impl GooseAcpAgent {
         self.on_list_providers(req).await
     }
 
+    #[custom_method(ProviderCatalogListRequest)]
+    async fn dispatch_list_provider_catalog(
+        &self,
+        req: ProviderCatalogListRequest,
+    ) -> Result<ProviderCatalogListResponse, sacp::Error> {
+        self.on_list_provider_catalog(req).await
+    }
+
+    #[custom_method(ProviderCatalogTemplateRequest)]
+    async fn dispatch_get_provider_catalog_template(
+        &self,
+        req: ProviderCatalogTemplateRequest,
+    ) -> Result<ProviderCatalogTemplateResponse, sacp::Error> {
+        self.on_get_provider_catalog_template(req).await
+    }
+
+    #[custom_method(CustomProviderCreateRequest)]
+    async fn dispatch_create_custom_provider(
+        &self,
+        req: CustomProviderCreateRequest,
+    ) -> Result<CustomProviderCreateResponse, sacp::Error> {
+        self.on_create_custom_provider(req).await
+    }
+
+    #[custom_method(CustomProviderReadRequest)]
+    async fn dispatch_read_custom_provider(
+        &self,
+        req: CustomProviderReadRequest,
+    ) -> Result<CustomProviderReadResponse, sacp::Error> {
+        self.on_read_custom_provider(req).await
+    }
+
+    #[custom_method(CustomProviderUpdateRequest)]
+    async fn dispatch_update_custom_provider(
+        &self,
+        req: CustomProviderUpdateRequest,
+    ) -> Result<CustomProviderUpdateResponse, sacp::Error> {
+        self.on_update_custom_provider(req).await
+    }
+
+    #[custom_method(CustomProviderDeleteRequest)]
+    async fn dispatch_delete_custom_provider(
+        &self,
+        req: CustomProviderDeleteRequest,
+    ) -> Result<CustomProviderDeleteResponse, sacp::Error> {
+        self.on_delete_custom_provider(req).await
+    }
+
     #[custom_method(RefreshProviderInventoryRequest)]
     async fn dispatch_refresh_provider_inventory(
         &self,
