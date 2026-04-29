@@ -60,7 +60,7 @@ impl ProviderEntry {
                 .metadata
                 .known_models
                 .iter()
-                .find(|m| m.name == model.model_name && m.context_limit > 0)
+                .find(|m| m.name.eq_ignore_ascii_case(&model.model_name) && m.context_limit > 0)
             {
                 model.context_limit = Some(info.context_limit);
             }
@@ -278,5 +278,68 @@ impl ProviderRegistry {
 
     pub fn remove_custom_providers(&mut self) {
         self.entries.retain(|name, _| !name.starts_with("custom_"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::inventory::InventoryIdentityInput;
+
+    fn make_test_entry(known_models: Vec<ModelInfo>) -> ProviderEntry {
+        let metadata = ProviderMetadata {
+            name: "test_provider".to_string(),
+            display_name: "Test Provider".to_string(),
+            description: "Test".to_string(),
+            default_model: "test-model".to_string(),
+            known_models,
+            model_doc_link: "https://example.com".to_string(),
+            config_keys: vec![],
+            setup_steps: vec![],
+            model_selection_hint: None,
+        };
+
+        ProviderEntry {
+            metadata,
+            constructor: Arc::new(|_, _| Box::pin(async { unimplemented!() })),
+            inventory_identity: Arc::new(|| Ok(InventoryIdentityInput::default())),
+            inventory_configured: Arc::new(|| true),
+            cleanup: None,
+            provider_type: ProviderType::Builtin,
+            supports_inventory_refresh: false,
+        }
+    }
+
+    #[test]
+    fn test_normalize_model_config_case_mismatch() {
+        // Registry has uppercase model name; GOOSE_MODEL is lowercase.
+        let entry = make_test_entry(vec![ModelInfo::new("GLM-5.1", 32_000)]);
+        let model = ModelConfig::new_or_fail("glm-5.1");
+        assert!(model.context_limit.is_none());
+
+        let normalized = entry.normalize_model_config(model);
+        assert_eq!(normalized.context_limit, Some(32_000));
+    }
+
+    #[test]
+    fn test_normalize_model_config_exact_case_match() {
+        // Exact case match should continue to work (no regression).
+        let entry = make_test_entry(vec![ModelInfo::new("gpt-4o", 128_000)]);
+        let model = ModelConfig::new_or_fail("gpt-4o");
+        assert!(model.context_limit.is_none());
+
+        let normalized = entry.normalize_model_config(model);
+        assert_eq!(normalized.context_limit, Some(128_000));
+    }
+
+    #[test]
+    fn test_normalize_model_config_no_match_falls_back() {
+        // Unknown model should not get a context_limit from known_models.
+        let entry = make_test_entry(vec![ModelInfo::new("GLM-5.1", 32_000)]);
+        let model = ModelConfig::new_or_fail("unknown-model");
+        assert!(model.context_limit.is_none());
+
+        let normalized = entry.normalize_model_config(model);
+        assert!(normalized.context_limit.is_none());
     }
 }
