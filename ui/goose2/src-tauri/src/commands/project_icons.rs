@@ -22,6 +22,15 @@ pub struct ProjectIconData {
     pub icon: String,
 }
 
+struct ScoredProjectIconPath {
+    score: i32,
+    path: PathBuf,
+    path_string: String,
+    label: String,
+    source_dir: String,
+    group_key: String,
+}
+
 fn is_project_icon_extension(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -184,15 +193,10 @@ fn read_project_icon_data_url(path: &Path) -> Result<String, String> {
 
 #[tauri::command]
 pub fn scan_project_icons(working_dirs: Vec<String>) -> Result<Vec<ProjectIconCandidate>, String> {
-    let mut candidates: Vec<(i32, ProjectIconCandidate)> = Vec::new();
+    let mut candidates: Vec<ScoredProjectIconPath> = Vec::new();
     let mut seen = HashSet::new();
-    let mut seen_groups = HashSet::new();
 
     for dir in working_dirs {
-        if candidates.len() >= MAX_ICON_CANDIDATES {
-            break;
-        }
-
         let root = PathBuf::from(dir.trim());
         if !root.is_dir() {
             continue;
@@ -210,10 +214,6 @@ pub fn scan_project_icons(working_dirs: Vec<String>) -> Result<Vec<ProjectIconCa
             .build();
 
         for entry in walker.flatten() {
-            if candidates.len() >= MAX_ICON_CANDIDATES {
-                break;
-            }
-
             let path = entry.path();
             if !path.is_file()
                 || is_ignored_icon_search_dir(path)
@@ -229,38 +229,47 @@ pub fn scan_project_icons(working_dirs: Vec<String>) -> Result<Vec<ProjectIconCa
                 continue;
             }
 
-            let group_key = format!("{}:{}", source_dir, project_icon_group_key(path));
-            if !seen_groups.insert(group_key) {
-                continue;
-            }
-
-            let icon = match read_project_icon_data_url(path) {
-                Ok(icon) => icon,
-                Err(_) => continue,
-            };
-
             let relative = path.strip_prefix(&root).unwrap_or(path);
             let label = relative.to_string_lossy().into_owned();
             let score = project_icon_score(&root, path);
-            candidates.push((
+            let group_key = format!("{}:{}", source_dir, project_icon_group_key(path));
+            candidates.push(ScoredProjectIconPath {
                 score,
-                ProjectIconCandidate {
-                    id: path_string.clone(),
-                    label,
-                    path: path_string,
-                    icon,
-                    source_dir: source_dir.clone(),
-                },
-            ));
+                path: path.to_path_buf(),
+                path_string,
+                label,
+                source_dir: source_dir.clone(),
+                group_key,
+            });
         }
     }
 
-    candidates.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.label.cmp(&b.1.label)));
-    Ok(candidates
-        .into_iter()
-        .take(MAX_ICON_CANDIDATES)
-        .map(|(_, candidate)| candidate)
-        .collect())
+    candidates.sort_by(|a, b| a.score.cmp(&b.score).then_with(|| a.label.cmp(&b.label)));
+
+    let mut seen_groups = HashSet::new();
+    let mut icons = Vec::new();
+    for candidate in candidates {
+        if icons.len() >= MAX_ICON_CANDIDATES {
+            break;
+        }
+        if seen_groups.contains(&candidate.group_key) {
+            continue;
+        }
+        let icon = match read_project_icon_data_url(&candidate.path) {
+            Ok(icon) => icon,
+            Err(_) => continue,
+        };
+        seen_groups.insert(candidate.group_key);
+        icons.push(ProjectIconCandidate {
+            id: candidate.path_string.clone(),
+            label: candidate.label,
+            path: candidate.path_string,
+            icon,
+            source_dir: candidate.source_dir,
+        });
+    }
+
+    Ok(icons)
 }
 
 #[tauri::command]

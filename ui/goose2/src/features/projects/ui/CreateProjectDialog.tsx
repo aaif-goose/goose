@@ -90,6 +90,7 @@ export function CreateProjectDialog({
   const [useWorktrees, setUseWorktrees] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [iconError, setIconError] = useState<string | null>(null);
   const [acpProviders, setAcpProviders] = useState<AcpProvider[]>([]);
   const [iconCandidates, setIconCandidates] = useState<ProjectIconCandidate[]>(
     [],
@@ -145,9 +146,10 @@ export function CreateProjectDialog({
       if (selected && typeof selected === "string") {
         const iconData = await readProjectIcon(selected);
         setIcon(iconData.icon);
+        setIconError(null);
       }
-    } catch {
-      // Dialog plugin not available
+    } catch (err) {
+      setIconError(String(err));
     }
   };
 
@@ -215,6 +217,7 @@ export function CreateProjectDialog({
       setPreferredProvider(editingProject.preferredProvider ?? null);
       setUseWorktrees(editingProject.useWorktrees);
       setError(null);
+      setIconError(null);
     } else {
       setName(getDefaultProjectName(initialWorkingDir));
       setPrompt(
@@ -228,6 +231,7 @@ export function CreateProjectDialog({
       setPreferredProvider(null);
       setUseWorktrees(false);
       setError(null);
+      setIconError(null);
     }
   }, [isOpen, editingProject, initialWorkingDir]);
 
@@ -241,7 +245,13 @@ export function CreateProjectDialog({
     setPreferredProvider(null);
     setUseWorktrees(false);
     setError(null);
+    setIconError(null);
     onClose();
+  };
+
+  const handleChooseIcon = (nextIcon: string) => {
+    setIcon(nextIcon);
+    setIconError(null);
   };
 
   const handleSave = async (e: FormEvent) => {
@@ -342,7 +352,8 @@ export function CreateProjectDialog({
             icon={icon}
             iconCandidates={iconCandidates}
             iconScanPending={iconScanPending}
-            onChooseIcon={setIcon}
+            error={iconError}
+            onChooseIcon={handleChooseIcon}
             onChooseCustomIcon={handleChooseCustomIcon}
           />
 

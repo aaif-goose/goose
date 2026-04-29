@@ -31,27 +31,83 @@ type TablerIconComponent = ComponentType<{
 }>;
 
 export const PROJECT_TABLER_ICONS = [
-  { value: DEFAULT_PROJECT_ICON, label: "Folder code", Icon: IconFolderCode },
-  { value: "tabler:code", label: "Code", Icon: IconCode },
-  { value: "tabler:git-branch", label: "Git branch", Icon: IconGitBranch },
-  { value: "tabler:brand-github", label: "GitHub", Icon: IconBrandGithub },
-  { value: "tabler:terminal", label: "Terminal", Icon: IconTerminal2 },
-  { value: "tabler:server", label: "Server", Icon: IconServer },
-  { value: "tabler:database", label: "Database", Icon: IconDatabase },
-  { value: "tabler:api", label: "API", Icon: IconApi },
-  { value: "tabler:app-window", label: "App", Icon: IconAppWindow },
-  { value: "tabler:components", label: "Components", Icon: IconComponents },
-  { value: "tabler:package", label: "Package", Icon: IconPackage },
-  { value: "tabler:world", label: "Website", Icon: IconWorld },
-  { value: "tabler:book", label: "Docs", Icon: IconBook },
-  { value: "tabler:palette", label: "Design", Icon: IconPalette },
-  { value: "tabler:brain", label: "AI", Icon: IconBrain },
-  { value: "tabler:bolt", label: "Automation", Icon: IconBolt },
-  { value: "tabler:rocket", label: "Launch", Icon: IconRocket },
-  { value: "tabler:settings", label: "Settings", Icon: IconSettings },
+  {
+    value: DEFAULT_PROJECT_ICON,
+    labelKey: "dialog.iconPresets.folderCode",
+    Icon: IconFolderCode,
+  },
+  { value: "tabler:code", labelKey: "dialog.iconPresets.code", Icon: IconCode },
+  {
+    value: "tabler:git-branch",
+    labelKey: "dialog.iconPresets.gitBranch",
+    Icon: IconGitBranch,
+  },
+  {
+    value: "tabler:brand-github",
+    labelKey: "dialog.iconPresets.github",
+    Icon: IconBrandGithub,
+  },
+  {
+    value: "tabler:terminal",
+    labelKey: "dialog.iconPresets.terminal",
+    Icon: IconTerminal2,
+  },
+  {
+    value: "tabler:server",
+    labelKey: "dialog.iconPresets.server",
+    Icon: IconServer,
+  },
+  {
+    value: "tabler:database",
+    labelKey: "dialog.iconPresets.database",
+    Icon: IconDatabase,
+  },
+  { value: "tabler:api", labelKey: "dialog.iconPresets.api", Icon: IconApi },
+  {
+    value: "tabler:app-window",
+    labelKey: "dialog.iconPresets.app",
+    Icon: IconAppWindow,
+  },
+  {
+    value: "tabler:components",
+    labelKey: "dialog.iconPresets.components",
+    Icon: IconComponents,
+  },
+  {
+    value: "tabler:package",
+    labelKey: "dialog.iconPresets.package",
+    Icon: IconPackage,
+  },
+  {
+    value: "tabler:world",
+    labelKey: "dialog.iconPresets.website",
+    Icon: IconWorld,
+  },
+  { value: "tabler:book", labelKey: "dialog.iconPresets.docs", Icon: IconBook },
+  {
+    value: "tabler:palette",
+    labelKey: "dialog.iconPresets.design",
+    Icon: IconPalette,
+  },
+  { value: "tabler:brain", labelKey: "dialog.iconPresets.ai", Icon: IconBrain },
+  {
+    value: "tabler:bolt",
+    labelKey: "dialog.iconPresets.automation",
+    Icon: IconBolt,
+  },
+  {
+    value: "tabler:rocket",
+    labelKey: "dialog.iconPresets.launch",
+    Icon: IconRocket,
+  },
+  {
+    value: "tabler:settings",
+    labelKey: "dialog.iconPresets.settings",
+    Icon: IconSettings,
+  },
 ] satisfies Array<{
   value: string;
-  label: string;
+  labelKey: string;
   Icon: TablerIconComponent;
 }>;
 
@@ -65,11 +121,6 @@ export function normalizeProjectIcon(icon: string | null | undefined): string {
   }
 
   return icon;
-}
-
-export function getProjectIconLabel(icon: string): string {
-  const normalizedIcon = normalizeProjectIcon(icon);
-  return tablerIconsByValue.get(normalizedIcon)?.label ?? "Custom icon";
 }
 
 export function isFileProjectIcon(icon: string): boolean {

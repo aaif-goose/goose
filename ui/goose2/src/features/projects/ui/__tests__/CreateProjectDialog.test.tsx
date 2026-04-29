@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readProjectIcon } from "../../api/projects";
 import { CreateProjectDialog } from "../CreateProjectDialog";
 
 // ── ResizeObserver polyfill (needed by Radix Select in jsdom) ────────
@@ -115,6 +117,10 @@ const defaultProps = {
 describe("CreateProjectDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(open).mockResolvedValue(null);
+    vi.mocked(readProjectIcon).mockResolvedValue({
+      icon: "data:image/png;base64,aWNvbg==",
+    });
   });
 
   // ── Form populates on open ──────────────────────────────────────────
@@ -189,6 +195,20 @@ describe("CreateProjectDialog", () => {
         name: "Icon Code",
       });
       expect(iconButton.className).toContain("border-foreground");
+    });
+
+    it("shows custom icon upload errors", async () => {
+      const user = userEvent.setup();
+      vi.mocked(open).mockResolvedValueOnce("/tmp/large-icon.png");
+      vi.mocked(readProjectIcon).mockRejectedValueOnce(
+        "Icon file is too large",
+      );
+
+      render(<CreateProjectDialog {...defaultProps} isOpen={true} />);
+
+      await user.click(screen.getByRole("button", { name: "Custom icon" }));
+
+      expect(await screen.findByText("Icon file is too large")).toBeVisible();
     });
   });
 

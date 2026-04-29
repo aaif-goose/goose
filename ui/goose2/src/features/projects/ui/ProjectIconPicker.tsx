@@ -5,7 +5,6 @@ import type { ProjectIconCandidate } from "../api/projects";
 import {
   PROJECT_TABLER_ICONS,
   ProjectIcon,
-  getProjectIconLabel,
   isImageProjectIcon,
 } from "./ProjectIcon";
 
@@ -13,6 +12,7 @@ interface ProjectIconPickerProps {
   icon: string;
   iconCandidates: ProjectIconCandidate[];
   iconScanPending: boolean;
+  error?: string | null;
   onChooseIcon: (icon: string) => void;
   onChooseCustomIcon: () => void;
 }
@@ -21,6 +21,7 @@ export function ProjectIconPicker({
   icon,
   iconCandidates,
   iconScanPending,
+  error,
   onChooseIcon,
   onChooseCustomIcon,
 }: ProjectIconPickerProps) {
@@ -43,7 +44,7 @@ export function ProjectIconPicker({
         )}
       </div>
       <div className="max-h-36 overflow-y-auto rounded-md border border-border bg-muted/20 p-2">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(2.5rem,1fr))] justify-items-center gap-2">
           {iconCandidates.map((candidate) => (
             <button
               key={candidate.id}
@@ -67,34 +68,37 @@ export function ProjectIconPicker({
               />
             </button>
           ))}
-          {PROJECT_TABLER_ICONS.map((tablerIcon) => (
-            <button
-              key={tablerIcon.value}
-              type="button"
-              onClick={() => onChooseIcon(tablerIcon.value)}
-              className={cn(
-                "flex size-9 items-center justify-center rounded-md border bg-background text-foreground transition-colors hover:bg-muted",
-                icon === tablerIcon.value
-                  ? "border-foreground"
-                  : "border-border-soft",
-              )}
-              title={tablerIcon.label}
-              aria-label={t("dialog.iconAria", { icon: tablerIcon.label })}
-            >
-              <ProjectIcon icon={tablerIcon.value} />
-            </button>
-          ))}
+          {PROJECT_TABLER_ICONS.map((tablerIcon) => {
+            const label = t(tablerIcon.labelKey);
+            return (
+              <button
+                key={tablerIcon.value}
+                type="button"
+                onClick={() => onChooseIcon(tablerIcon.value)}
+                className={cn(
+                  "flex size-9 items-center justify-center rounded-md border bg-background text-foreground transition-colors hover:bg-muted",
+                  icon === tablerIcon.value
+                    ? "border-foreground"
+                    : "border-border-soft",
+                )}
+                title={label}
+                aria-label={t("dialog.iconAria", { icon: label })}
+              >
+                <ProjectIcon icon={tablerIcon.value} />
+              </button>
+            );
+          })}
           <button
             type="button"
             onClick={onChooseCustomIcon}
             className={cn(
-              "flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-md border bg-background px-3 text-xs text-foreground transition-colors hover:bg-muted",
+              "col-span-2 flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-md border bg-background px-3 text-xs text-foreground transition-colors hover:bg-muted",
               selectedCustomIcon ? "border-foreground" : "border-border-soft",
             )}
             title={
               selectedCustomIcon
-                ? getProjectIconLabel(icon)
-                : t("dialog.customIcon")
+                ? t("dialog.customIcon")
+                : t("dialog.uploadIcon")
             }
             aria-label={t("dialog.customIcon")}
           >
@@ -107,6 +111,7 @@ export function ProjectIconPicker({
           </button>
         </div>
       </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
