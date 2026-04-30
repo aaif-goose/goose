@@ -1103,7 +1103,11 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
     info!("Starting ACP server on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, router).await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

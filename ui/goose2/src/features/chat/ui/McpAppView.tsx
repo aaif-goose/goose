@@ -4,7 +4,6 @@ import {
   type McpUiHostContext,
 } from "@mcp-ui/client";
 import type { GooseToolCallResponse } from "@aaif/goose-sdk";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import packageJson from "../../../../package.json";
@@ -15,9 +14,11 @@ import type {
   McpAppPayload,
   ToolResponseContent,
 } from "@/shared/types/messages";
+import { LinkSafetyModal } from "@/shared/ui/ai-elements/link-safety-modal";
 import type { McpAppMessageHandler } from "./mcpAppTypes";
 import { extractRenderableMcpAppDocument } from "./mcpAppPayload";
 import { useIframeColorScheme } from "./useIframeColorScheme";
+import { useMcpAppOpenLink } from "./useMcpAppOpenLink";
 import { useMcpAppSandbox } from "./useMcpAppSandbox";
 
 interface McpAppViewProps {
@@ -128,6 +129,12 @@ export function McpAppView({
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
   const autoScrollTimersRef = useRef<number[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
+  const {
+    handleConfirmOpenLink,
+    handleOpenLink,
+    handleOpenLinkModalClose,
+    pendingOpenLinkUrl,
+  } = useMcpAppOpenLink();
   useIframeColorScheme(rootRef, resolvedTheme);
 
   const renderableDocument = useMemo(
@@ -280,11 +287,6 @@ export function McpAppView({
     }),
     [containerWidth, inlineHeight, payload, resolvedTheme],
   );
-
-  const handleOpenLink = useCallback(async ({ url }: { url: string }) => {
-    await openUrl(url);
-    return { status: "success" as const };
-  }, []);
 
   const handleMessage = useCallback(
     async ({ role, content }: MessageParams) => {
@@ -447,6 +449,12 @@ export function McpAppView({
           )}
         </div>
       )}
+      <LinkSafetyModal
+        isOpen={pendingOpenLinkUrl !== null}
+        onClose={handleOpenLinkModalClose}
+        onOpenLink={handleConfirmOpenLink}
+        url={pendingOpenLinkUrl ?? ""}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { AppRendererProps, RequestHandlerExtra } from "@mcp-ui/client";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpAppView } from "../McpAppView";
@@ -136,6 +137,8 @@ describe("McpAppView nested tool calls", () => {
     mocks.extMethod.mockReset();
     mocks.getClient.mockReset();
     mocks.resolvedTheme = "dark";
+    vi.mocked(openUrl).mockReset();
+    vi.mocked(openUrl).mockResolvedValue(undefined);
     mocks.getClient.mockResolvedValue({
       extMethod: mocks.extMethod,
     });
@@ -269,6 +272,69 @@ describe("McpAppView nested tool calls", () => {
     });
 
     expect(getLatestAppRendererProps().onFallbackRequest).toBeUndefined();
+  });
+
+  it("confirms safe app open-link requests before opening the URL", async () => {
+    render(
+      <McpAppView
+        payload={createPayload()}
+        toolResponse={createToolResponse()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-app-renderer")).toBeInTheDocument();
+    });
+
+    const promise = getLatestAppRendererProps().onOpenLink?.(
+      { url: "https://example.com" },
+      {} as RequestHandlerExtra,
+    );
+
+    if (!promise) {
+      throw new Error("Expected onOpenLink to be registered");
+    }
+
+    expect(openUrl).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getByText("https://example.com/")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open link" }));
+
+    await waitFor(() => {
+      expect(openUrl).toHaveBeenCalledWith("https://example.com/");
+    });
+    await expect(promise).resolves.toEqual({});
+  });
+
+  it("blocks app open-link requests for non-web URL schemes", async () => {
+    render(
+      <McpAppView
+        payload={createPayload()}
+        toolResponse={createToolResponse()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-app-renderer")).toBeInTheDocument();
+    });
+
+    const result = await getLatestAppRendererProps().onOpenLink?.(
+      { url: "file:///private/tmp/secrets.txt" },
+      {} as RequestHandlerExtra,
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        isError: true,
+      }),
+    );
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("file:///private/tmp/secrets.txt"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the iframe color scheme aligned with the host theme", async () => {

@@ -1,12 +1,13 @@
 use axum::{
-    extract::{Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    extract::{ConnectInfo, Query, State},
+    http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -147,35 +148,8 @@ fn is_valid_dns_label(label: &str) -> bool {
         && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
-fn request_host_is_loopback(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::HOST)
-        .and_then(|host| host.to_str().ok())
-        .is_some_and(authority_is_loopback)
-}
-
-fn authority_is_loopback(authority: &str) -> bool {
-    if authority.contains('@') {
-        return false;
-    }
-
-    let host = if let Some(remainder) = authority.strip_prefix('[') {
-        remainder
-            .split_once(']')
-            .map(|(host, _)| host)
-            .unwrap_or(remainder)
-    } else {
-        authority.split(':').next().unwrap_or(authority)
-    };
-
-    let host = host.to_ascii_lowercase();
-    host == "localhost"
-        || host
-            .parse::<std::net::Ipv4Addr>()
-            .is_ok_and(|addr| addr.is_loopback())
-        || host
-            .parse::<std::net::Ipv6Addr>()
-            .is_ok_and(|addr| addr.is_loopback())
+fn peer_addr_is_loopback(peer_addr: &SocketAddr) -> bool {
+    peer_addr.ip().is_loopback()
 }
 
 fn parse_domains(domains: Option<&String>) -> Vec<String> {
@@ -248,16 +222,16 @@ fn build_outer_csp(
 
 async fn mcp_app_proxy(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ProxyQuery>,
 ) -> Response {
     if params.secret != state.secret_key {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
-    if !request_host_is_loopback(&headers) {
+    if !peer_addr_is_loopback(&peer_addr) {
         return (
             StatusCode::BAD_REQUEST,
-            "MCP app proxy is only available from a loopback host",
+            "MCP app proxy is only available to loopback clients",
         )
             .into_response();
     }
@@ -289,16 +263,16 @@ async fn mcp_app_proxy(
 
 async fn store_guest_html(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     Json(body): Json<StoreGuestBody>,
 ) -> Response {
     if body.secret != state.secret_key {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
-    if !request_host_is_loopback(&headers) {
+    if !peer_addr_is_loopback(&peer_addr) {
         return (
             StatusCode::BAD_REQUEST,
-            "MCP app guest storage is only available from a loopback host",
+            "MCP app guest storage is only available to loopback clients",
         )
             .into_response();
     }
@@ -414,7 +388,8 @@ pub(crate) fn routes(secret_key: String) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::{authority_is_loopback, normalize_csp_source, parse_domains};
+    use super::{normalize_csp_source, parse_domains, peer_addr_is_loopback};
+    use std::net::SocketAddr;
 
     #[test]
     fn normalizes_url_sources_to_origins() {
@@ -470,10 +445,15 @@ mod tests {
     }
 
     #[test]
-    fn detects_loopback_authorities() {
-        assert!(authority_is_loopback("127.0.0.1:12345"));
-        assert!(authority_is_loopback("localhost:12345"));
-        assert!(authority_is_loopback("[::1]:12345"));
-        assert!(!authority_is_loopback("example.test"));
+    fn detects_loopback_peer_addresses() {
+        assert!(peer_addr_is_loopback(
+            &"127.0.0.1:12345".parse::<SocketAddr>().unwrap()
+        ));
+        assert!(peer_addr_is_loopback(
+            &"[::1]:12345".parse::<SocketAddr>().unwrap()
+        ));
+        assert!(!peer_addr_is_loopback(
+            &"192.168.1.10:12345".parse::<SocketAddr>().unwrap()
+        ));
     }
 }
