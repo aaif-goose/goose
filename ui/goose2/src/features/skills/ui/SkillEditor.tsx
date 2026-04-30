@@ -11,21 +11,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
-import { createSkill, updateSkill, type EditingSkill } from "../api/skills";
+import {
+  createSkill,
+  updateSkill,
+  type EditingSkill,
+  type SkillInfo,
+} from "../api/skills";
 import { formatSkillName, isValidSkillName } from "../lib/skillsHelpers";
 import { getRenamedSkillFileLocation } from "../lib/skillsPath";
 
 interface SkillEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated?: () => void;
+  onSaved?: (savedSkill?: SkillInfo) => void | Promise<void>;
   editingSkill?: EditingSkill;
 }
 
 export function SkillEditor({
   isOpen,
   onClose,
-  onCreated,
+  onSaved,
   editingSkill,
 }: SkillEditorProps) {
   const { t } = useTranslation(["skills", "common"]);
@@ -74,8 +79,9 @@ export function SkillEditor({
     setSaving(true);
     setError(null);
     try {
+      let savedSkill: SkillInfo | undefined;
       if (isEditing) {
-        await updateSkill(
+        savedSkill = await updateSkill(
           editingSkill.path,
           name,
           description.trim(),
@@ -87,7 +93,7 @@ export function SkillEditor({
       setName("");
       setDescription("");
       setInstructions("");
-      onCreated?.();
+      await onSaved?.(savedSkill);
       onClose();
     } catch (err) {
       setError(String(err));

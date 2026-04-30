@@ -62,6 +62,18 @@ const mockSkills: SkillInfo[] = [
 
 vi.mock("../../api/skills", () => ({
   listSkills: vi.fn().mockResolvedValue([]),
+  createSkill: vi.fn().mockResolvedValue(undefined),
+  updateSkill: vi.fn().mockResolvedValue({
+    id: "global:/path/renamed-review",
+    name: "renamed-review",
+    description: "Reviews code",
+    instructions: "Review the code...",
+    path: "/path/renamed-review",
+    fileLocation: "/path/renamed-review/SKILL.md",
+    sourceKind: "global",
+    sourceLabel: "Personal",
+    projectLinks: [],
+  }),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
   exportSkill: vi
     .fn()
@@ -75,11 +87,12 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
   ) => selector({ projects: mockProjects }),
 }));
 
-const { listSkills, deleteSkill } = (await import(
+const { listSkills, deleteSkill, updateSkill } = (await import(
   "../../api/skills"
 )) as unknown as {
   listSkills: ReturnType<typeof vi.fn>;
   deleteSkill: ReturnType<typeof vi.fn>;
+  updateSkill: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
@@ -286,6 +299,54 @@ describe("SkillsView", () => {
 
     expect(screen.getByText("test-writer")).toBeInTheDocument();
     expect(screen.queryByText("code-review")).not.toBeInTheDocument();
+  });
+
+  it("stays on the detail page after renaming a skill", async () => {
+    const renamedSkill: SkillInfo = {
+      ...mockSkills[1],
+      id: "global:/path/renamed-review",
+      name: "renamed-review",
+      path: "/path/renamed-review",
+      fileLocation: "/path/renamed-review/SKILL.md",
+    };
+    listSkills
+      .mockResolvedValueOnce(mockSkills)
+      .mockResolvedValueOnce([mockSkills[0], renamedSkill, mockSkills[2]]);
+    updateSkill.mockResolvedValueOnce(renamedSkill);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("code-review");
+
+    await user.click(
+      screen.getByRole("button", { name: "Open code-review details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const nameInput = screen.getByPlaceholderText("my-skill-name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "renamed-review");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(updateSkill).toHaveBeenCalledWith(
+        "/path/code-review",
+        "renamed-review",
+        "Reviews code",
+        "Review the code...",
+      );
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Back to skills" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "renamed-review" }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByPlaceholderText("my-skill-name"),
+    ).not.toBeInTheDocument();
   });
 
   it("filters skills by search text", async () => {
