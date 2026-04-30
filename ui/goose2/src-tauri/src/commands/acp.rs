@@ -65,12 +65,10 @@ fn goose_serve_http_base_url(goose_serve_url: &str) -> Result<String, String> {
         .ok_or_else(|| format!("{GOOSE_SERVE_URL_ENV} must include a URL scheme"))?;
     let http_scheme = match scheme {
         "ws" => "http",
-        "wss" => "https",
         "http" => "http",
-        "https" => "https",
         _ => {
             return Err(format!(
-                "{GOOSE_SERVE_URL_ENV} must use ws, wss, http, or https"
+                "{GOOSE_SERVE_URL_ENV} must use ws or http for inline MCP apps because the app guest origin is served over local http"
             ));
         }
     };
@@ -104,6 +102,12 @@ fn goose_serve_http_path_prefix(path: &str) -> String {
 }
 
 fn ensure_configured_goose_serve_supports_inline_apps(goose_serve_url: &str) -> Result<(), String> {
+    if !goose_serve_url_uses_plaintext_http(goose_serve_url)? {
+        return Err(format!(
+            "{GOOSE_SERVE_URL_ENV} must use ws or http for inline MCP apps because the app guest origin is served over local http"
+        ));
+    }
+
     if goose_serve_url_is_loopback(goose_serve_url)? {
         return Ok(());
     }
@@ -111,6 +115,14 @@ fn ensure_configured_goose_serve_supports_inline_apps(goose_serve_url: &str) -> 
     Err(format!(
         "{GOOSE_SERVE_URL_ENV} must point to localhost for inline MCP apps because the app guest origin is served from a loopback-only sandbox"
     ))
+}
+
+fn goose_serve_url_uses_plaintext_http(goose_serve_url: &str) -> Result<bool, String> {
+    let (scheme, _) = goose_serve_url
+        .trim()
+        .split_once("://")
+        .ok_or_else(|| format!("{GOOSE_SERVE_URL_ENV} must include a URL scheme"))?;
+    Ok(matches!(scheme, "ws" | "http"))
 }
 
 fn goose_serve_url_is_loopback(goose_serve_url: &str) -> Result<bool, String> {
@@ -160,20 +172,20 @@ mod tests {
             "http://127.0.0.1:12345"
         );
         assert_eq!(
-            goose_serve_http_base_url("wss://example.test/acp").unwrap(),
-            "https://example.test"
+            goose_serve_http_base_url("http://localhost:3000/acp").unwrap(),
+            "http://localhost:3000"
         );
     }
 
     #[test]
     fn preserves_path_prefix_from_websocket_url() {
         assert_eq!(
-            goose_serve_http_base_url("wss://example.test/goose/acp").unwrap(),
-            "https://example.test/goose"
+            goose_serve_http_base_url("ws://localhost:3000/goose/acp").unwrap(),
+            "http://localhost:3000/goose"
         );
         assert_eq!(
-            goose_serve_http_base_url("wss://example.test/goose/acp?token=abc").unwrap(),
-            "https://example.test/goose"
+            goose_serve_http_base_url("http://localhost:3000/goose/acp?token=abc").unwrap(),
+            "http://localhost:3000/goose"
         );
     }
 
@@ -183,16 +195,14 @@ mod tests {
             goose_serve_http_base_url("http://localhost:3000").unwrap(),
             "http://localhost:3000"
         );
-        assert_eq!(
-            goose_serve_http_base_url("https://localhost:3000/goose").unwrap(),
-            "https://localhost:3000/goose"
-        );
     }
 
     #[test]
     fn rejects_invalid_goose_serve_url() {
         assert!(goose_serve_http_base_url("localhost:3000").is_err());
         assert!(goose_serve_http_base_url("ftp://localhost:3000/acp").is_err());
+        assert!(goose_serve_http_base_url("wss://localhost:3000/acp").is_err());
+        assert!(goose_serve_http_base_url("https://localhost:3000/acp").is_err());
         assert!(goose_serve_http_base_url("ws:///acp").is_err());
     }
 
@@ -211,6 +221,10 @@ mod tests {
         );
         assert!(
             ensure_configured_goose_serve_supports_inline_apps("wss://example.test/acp").is_err()
+        );
+        assert!(
+            ensure_configured_goose_serve_supports_inline_apps("wss://localhost:12345/acp")
+                .is_err()
         );
     }
 }
