@@ -208,10 +208,14 @@ pub fn parse_recipe_content(
     // Pre-process template variables to handle invalid variable names
     let preprocessed_content = preprocess_template_variables(content)?;
 
+    // Chainable allows attribute access on undefined values (e.g., {{ signal.name }})
+    // to return undefined instead of erroring. This is needed because structured
+    // parameters (object/array) use dot-notation in templates, and during this
+    // parsing phase the template is rendered with no parameters to discover variables.
     let (env, template_variables) = get_env_with_template_variables(
         &preprocessed_content,
         recipe_dir,
-        UndefinedBehavior::Lenient,
+        UndefinedBehavior::Chainable,
     )?;
     let template = env.get_template(CURRENT_TEMPLATE_NAME).unwrap();
 
