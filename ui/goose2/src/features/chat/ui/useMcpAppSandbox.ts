@@ -38,7 +38,10 @@ function buildProxyUrl(
   appendDomains(params, "frame_domains", csp?.frameDomains);
   appendDomains(params, "base_uri_domains", csp?.baseUriDomains);
   appendDomains(params, "script_domains", csp?.scriptDomains);
-  return new URL(`/mcp-app-proxy?${params.toString()}`, httpBaseUrl);
+  const proxyBaseUrl = httpBaseUrl.endsWith("/")
+    ? httpBaseUrl
+    : `${httpBaseUrl}/`;
+  return new URL(`mcp-app-proxy?${params.toString()}`, proxyBaseUrl);
 }
 
 export function useMcpAppSandbox({

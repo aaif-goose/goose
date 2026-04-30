@@ -36,6 +36,15 @@ use std::io::Read;
 use std::path::PathBuf;
 use tracing::warn;
 
+fn generate_serve_secret_key() -> String {
+    use rand::distributions::{Alphanumeric, DistString};
+
+    format!(
+        "goose-acp-{}",
+        Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
+    )
+}
+
 #[derive(Parser)]
 #[command(name = "goose", author, version, display_name = "", about, long_about = None)]
 pub struct Cli {
@@ -1087,7 +1096,7 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         goose_platform: GoosePlatform::GooseCli,
     }));
     let secret_key =
-        std::env::var("GOOSE_SERVER__SECRET_KEY").unwrap_or_else(|_| "goose-acp-local".into());
+        std::env::var("GOOSE_SERVER__SECRET_KEY").unwrap_or_else(|_| generate_serve_secret_key());
     let router = create_router(server, secret_key);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;

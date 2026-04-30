@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use url::Url;
 use uuid::Uuid;
 
 const GUEST_HTML_TTL_SECS: u64 = 300;
@@ -78,12 +77,105 @@ fn normalize_csp_source(source: &str) -> Option<String> {
         return None;
     }
 
-    let url = Url::parse(source).ok()?;
-    if !matches!(url.scheme(), "http" | "https" | "ws" | "wss") {
-        return None;
+    if let Some((scheme, rest)) = source.split_once("://") {
+        let scheme = scheme.to_ascii_lowercase();
+        if !matches!(scheme.as_str(), "http" | "https" | "ws" | "wss") {
+            return None;
+        }
+
+        let authority = rest.split(['/', '?', '#']).next()?;
+        if !is_valid_csp_host_source(authority) {
+            return None;
+        }
+
+        return Some(format!("{scheme}://{}", authority.to_ascii_lowercase()));
     }
-    url.host_str()?;
-    Some(url.origin().ascii_serialization())
+
+    if is_valid_csp_host_source(source) {
+        return Some(source.to_ascii_lowercase());
+    }
+
+    None
+}
+
+fn is_valid_csp_host_source(source: &str) -> bool {
+    if source.is_empty() || source == "*" || source.contains('@') {
+        return false;
+    }
+
+    let (host, port) = split_host_and_port(source);
+    if host.is_empty() {
+        return false;
+    }
+    if port.is_some_and(|port| port.is_empty() || port.parse::<u16>().is_err()) {
+        return false;
+    }
+
+    let host = host.strip_prefix("*.").unwrap_or(host);
+    if host.eq_ignore_ascii_case("localhost")
+        || host.parse::<std::net::Ipv4Addr>().is_ok()
+        || host.parse::<std::net::Ipv6Addr>().is_ok()
+    {
+        return true;
+    }
+
+    !host.is_empty()
+        && host.contains('.')
+        && host
+            .split('.')
+            .all(|label| is_valid_dns_label(label) && label != "*")
+}
+
+fn split_host_and_port(source: &str) -> (&str, Option<&str>) {
+    if let Some(remainder) = source.strip_prefix('[') {
+        if let Some((host, tail)) = remainder.split_once(']') {
+            let port = tail.strip_prefix(':');
+            return (host, port);
+        }
+    }
+
+    match source.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host, Some(port)),
+        _ => (source, None),
+    }
+}
+
+fn is_valid_dns_label(label: &str) -> bool {
+    !label.is_empty()
+        && !label.starts_with('-')
+        && !label.ends_with('-')
+        && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+fn request_host_is_loopback(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::HOST)
+        .and_then(|host| host.to_str().ok())
+        .is_some_and(authority_is_loopback)
+}
+
+fn authority_is_loopback(authority: &str) -> bool {
+    if authority.contains('@') {
+        return false;
+    }
+
+    let host = if let Some(remainder) = authority.strip_prefix('[') {
+        remainder
+            .split_once(']')
+            .map(|(host, _)| host)
+            .unwrap_or(remainder)
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    };
+
+    let host = host.to_ascii_lowercase();
+    host == "localhost"
+        || host
+            .parse::<std::net::Ipv4Addr>()
+            .is_ok_and(|addr| addr.is_loopback())
+        || host
+            .parse::<std::net::Ipv6Addr>()
+            .is_ok_and(|addr| addr.is_loopback())
 }
 
 fn parse_domains(domains: Option<&String>) -> Vec<String> {
@@ -156,10 +248,18 @@ fn build_outer_csp(
 
 async fn mcp_app_proxy(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<ProxyQuery>,
 ) -> Response {
     if params.secret != state.secret_key {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+    if !request_host_is_loopback(&headers) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "MCP app proxy is only available from a loopback host",
+        )
+            .into_response();
     }
 
     let html = MCP_APP_PROXY_HTML.replace(
@@ -189,10 +289,18 @@ async fn mcp_app_proxy(
 
 async fn store_guest_html(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<StoreGuestBody>,
 ) -> Response {
     if body.secret != state.secret_key {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+    if !request_host_is_loopback(&headers) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "MCP app guest storage is only available from a loopback host",
+        )
+            .into_response();
     }
 
     let nonce = Uuid::new_v4().to_string();
@@ -302,4 +410,70 @@ pub(crate) fn routes(secret_key: String) -> Router {
         .route("/mcp-app-proxy", get(mcp_app_proxy))
         .route("/mcp-app-guest", post(store_guest_html))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{authority_is_loopback, normalize_csp_source, parse_domains};
+
+    #[test]
+    fn normalizes_url_sources_to_origins() {
+        assert_eq!(
+            normalize_csp_source("https://cdn.example.com/assets/app.js"),
+            Some("https://cdn.example.com".to_string())
+        );
+        assert_eq!(
+            normalize_csp_source("wss://api.example.com/socket"),
+            Some("wss://api.example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn accepts_wildcard_and_host_sources() {
+        assert_eq!(
+            normalize_csp_source("https://*.cloudflare.com"),
+            Some("https://*.cloudflare.com".to_string())
+        );
+        assert_eq!(
+            normalize_csp_source("cdn.example.com"),
+            Some("cdn.example.com".to_string())
+        );
+        assert_eq!(
+            normalize_csp_source("localhost:3000"),
+            Some("localhost:3000".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_csp_sources() {
+        assert_eq!(normalize_csp_source("*"), None);
+        assert_eq!(normalize_csp_source("'unsafe-inline'"), None);
+        assert_eq!(normalize_csp_source("javascript:alert(1)"), None);
+        assert_eq!(normalize_csp_source("https://example.com;"), None);
+        assert_eq!(normalize_csp_source("https://user@example.com"), None);
+    }
+
+    #[test]
+    fn parse_domains_filters_invalid_sources() {
+        let domains =
+            "https://cdn.example.com/app.js, https://*.cloudflare.com, *, cdn.example.com"
+                .to_string();
+
+        assert_eq!(
+            parse_domains(Some(&domains)),
+            vec![
+                "https://cdn.example.com".to_string(),
+                "https://*.cloudflare.com".to_string(),
+                "cdn.example.com".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn detects_loopback_authorities() {
+        assert!(authority_is_loopback("127.0.0.1:12345"));
+        assert!(authority_is_loopback("localhost:12345"));
+        assert!(authority_is_loopback("[::1]:12345"));
+        assert!(!authority_is_loopback("example.test"));
+    }
 }

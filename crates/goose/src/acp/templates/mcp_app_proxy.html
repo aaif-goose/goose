@@ -34,9 +34,17 @@
           var colorScheme = params.get('color_scheme');
           return {
             secret: params.get('secret') || '',
-            baseUrl: window.location.origin,
+            baseUrl: getProxyBaseUrl(),
             colorScheme: colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : null
           };
+        }
+
+        function getProxyBaseUrl() {
+          var marker = '/mcp-app-proxy';
+          var path = window.location.pathname || '';
+          var markerIndex = path.lastIndexOf(marker);
+          var prefix = markerIndex === -1 ? '' : path.slice(0, markerIndex);
+          return window.location.origin + prefix;
         }
 
         function applyProxyColorScheme(nextColorScheme) {
