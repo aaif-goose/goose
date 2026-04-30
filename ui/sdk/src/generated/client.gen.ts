@@ -136,18 +136,18 @@ export class GooseExtClient {
     return zGetToolsResponse.parse(raw) as GetToolsResponse;
   }
 
-  async GooseResourceRead(
-    params: ReadResourceRequest,
-  ): Promise<ReadResourceResponse> {
-    const raw = await this.conn.extMethod("_goose/resource/read", params);
-    return zReadResourceResponse.parse(raw) as ReadResourceResponse;
-  }
-
   async GooseToolCall(
     params: GooseToolCallRequest,
   ): Promise<GooseToolCallResponse> {
     const raw = await this.conn.extMethod("_goose/tool/call", params);
     return zGooseToolCallResponse.parse(raw) as GooseToolCallResponse;
+  }
+
+  async GooseResourceRead(
+    params: ReadResourceRequest,
+  ): Promise<ReadResourceResponse> {
+    const raw = await this.conn.extMethod("_goose/resource/read", params);
+    return zReadResourceResponse.parse(raw) as ReadResourceResponse;
   }
 
   async GooseWorkingDirUpdate(params: UpdateWorkingDirRequest): Promise<void> {

@@ -19,14 +19,14 @@ export const GOOSE_EXT_METHODS = [
     responseType: "GetToolsResponse",
   },
   {
-    method: "_goose/resource/read",
-    requestType: "ReadResourceRequest",
-    responseType: "ReadResourceResponse",
-  },
-  {
     method: "_goose/tool/call",
     requestType: "GooseToolCallRequest",
     responseType: "GooseToolCallResponse",
+  },
+  {
+    method: "_goose/resource/read",
+    requestType: "ReadResourceRequest",
+    responseType: "ReadResourceResponse",
   },
   {
     method: "_goose/working_dir/update",

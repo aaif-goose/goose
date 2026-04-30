@@ -45,25 +45,6 @@ export type GetToolsResponse = {
 };
 
 /**
- * Read a resource from an extension.
- */
-export type ReadResourceRequest = {
-    sessionId: string;
-    uri: string;
-    extensionName: string;
-};
-
-/**
- * Resource read response.
- */
-export type ReadResourceResponse = {
-    /**
-     * The resource result from the extension (MCP ReadResourceResult).
-     */
-    result?: unknown;
-};
-
-/**
  * Call a tool from an extension.
  */
 export type GooseToolCallRequest = {
@@ -80,6 +61,25 @@ export type GooseToolCallResponse = {
     structuredContent?: unknown;
     isError: boolean;
     _meta?: unknown;
+};
+
+/**
+ * Read a resource from an extension.
+ */
+export type ReadResourceRequest = {
+    sessionId: string;
+    uri: string;
+    extensionName: string;
+};
+
+/**
+ * Resource read response.
+ */
+export type ReadResourceResponse = {
+    /**
+     * The resource result from the extension (MCP ReadResourceResult).
+     */
+    result?: unknown;
 };
 
 /**
@@ -895,14 +895,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | GooseToolCallRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | GooseToolCallRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GooseToolCallResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | GooseToolCallResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

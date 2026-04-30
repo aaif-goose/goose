@@ -73,40 +73,6 @@
       "x-side": "agent",
       "x-method": "_goose/tools"
     },
-    "ReadResourceRequest": {
-      "type": "object",
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "uri": {
-          "type": "string"
-        },
-        "extensionName": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "sessionId",
-        "uri",
-        "extensionName"
-      ],
-      "description": "Read a resource from an extension.",
-      "x-side": "agent",
-      "x-method": "_goose/resource/read"
-    },
-    "ReadResourceResponse": {
-      "type": "object",
-      "properties": {
-        "result": {
-          "description": "The resource result from the extension (MCP ReadResourceResult).",
-          "default": null
-        }
-      },
-      "description": "Resource read response.",
-      "x-side": "agent",
-      "x-method": "_goose/resource/read"
-    },
     "GooseToolCallRequest": {
       "type": "object",
       "properties": {
@@ -148,6 +114,40 @@
       "description": "Tool call response.",
       "x-side": "agent",
       "x-method": "_goose/tool/call"
+    },
+    "ReadResourceRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "extensionName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "uri",
+        "extensionName"
+      ],
+      "description": "Read a resource from an extension.",
+      "x-side": "agent",
+      "x-method": "_goose/resource/read"
+    },
+    "ReadResourceResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "description": "The resource result from the extension (MCP ReadResourceResult).",
+          "default": null
+        }
+      },
+      "description": "Resource read response.",
+      "x-side": "agent",
+      "x-method": "_goose/resource/read"
     },
     "UpdateWorkingDirRequest": {
       "type": "object",
@@ -2141,20 +2141,20 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ReadResourceRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/resource/read",
-                  "title": "ReadResourceRequest"
-                },
-                {
-                  "allOf": [
-                    {
                       "$ref": "#/$defs/GooseToolCallRequest"
                     }
                   ],
                   "description": "Params for _goose/tool/call",
                   "title": "GooseToolCallRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ReadResourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/resource/read",
+                  "title": "ReadResourceRequest"
                 },
                 {
                   "allOf": [
@@ -2610,18 +2610,18 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ReadResourceResponse"
-                        }
-                      ],
-                      "title": "ReadResourceResponse"
-                    },
-                    {
-                      "allOf": [
-                        {
                           "$ref": "#/$defs/GooseToolCallResponse"
                         }
                       ],
                       "title": "GooseToolCallResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ReadResourceResponse"
+                        }
+                      ],
+                      "title": "ReadResourceResponse"
                     },
                     {
                       "allOf": [

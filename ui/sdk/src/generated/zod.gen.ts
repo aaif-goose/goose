@@ -38,22 +38,6 @@ export const zGetToolsResponse = z.object({
 });
 
 /**
- * Read a resource from an extension.
- */
-export const zReadResourceRequest = z.object({
-    sessionId: z.string(),
-    uri: z.string(),
-    extensionName: z.string()
-});
-
-/**
- * Resource read response.
- */
-export const zReadResourceResponse = z.object({
-    result: z.unknown().optional().default(null)
-});
-
-/**
  * Call a tool from an extension.
  */
 export const zGooseToolCallRequest = z.object({
@@ -70,6 +54,22 @@ export const zGooseToolCallResponse = z.object({
     structuredContent: z.unknown().optional(),
     isError: z.boolean(),
     _meta: z.unknown().optional()
+});
+
+/**
+ * Read a resource from an extension.
+ */
+export const zReadResourceRequest = z.object({
+    sessionId: z.string(),
+    uri: z.string(),
+    extensionName: z.string()
+});
+
+/**
+ * Resource read response.
+ */
+export const zReadResourceResponse = z.object({
+    result: z.unknown().optional().default(null)
 });
 
 /**
@@ -882,8 +882,8 @@ export const zExtRequest = z.object({
             zAddExtensionRequest,
             zRemoveExtensionRequest,
             zGetToolsRequest,
-            zReadResourceRequest,
             zGooseToolCallRequest,
+            zReadResourceRequest,
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
             zGetExtensionsRequest,
@@ -944,8 +944,8 @@ export const zExtResponse = z.union([
             z.union([
                 zEmptyResponse,
                 zGetToolsResponse,
-                zReadResourceResponse,
                 zGooseToolCallResponse,
+                zReadResourceResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
