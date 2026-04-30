@@ -111,6 +111,7 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
+  viewportClassName?: string;
 };
 
 interface TokenizedCode {
@@ -375,10 +376,12 @@ export const CodeBlockContent = ({
   code,
   language,
   showLineNumbers = false,
+  viewportClassName,
 }: {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
+  viewportClassName?: string;
 }) => {
   // Memoized raw tokens for immediate display
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
@@ -419,7 +422,7 @@ export const CodeBlockContent = ({
   const tokenized = highlightedTokens ?? rawTokens;
 
   return (
-    <div className="relative overflow-auto">
+    <div className={cn("relative overflow-auto", viewportClassName)}>
       <CodeBlockBody showLineNumbers={showLineNumbers} tokenized={tokenized} />
     </div>
   );
@@ -429,6 +432,7 @@ export const CodeBlock = ({
   code,
   language,
   showLineNumbers = false,
+  viewportClassName,
   className,
   children,
   ...props
@@ -443,6 +447,7 @@ export const CodeBlock = ({
           code={code}
           language={language}
           showLineNumbers={showLineNumbers}
+          viewportClassName={viewportClassName}
         />
       </CodeBlockContainer>
     </CodeBlockContext.Provider>

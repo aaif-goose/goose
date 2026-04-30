@@ -49,6 +49,20 @@ export function extractToolResultText(update: {
   return "";
 }
 
+export function extractToolStructuredContent(update: {
+  rawOutput?: unknown;
+}): unknown | undefined {
+  if (
+    update.rawOutput !== null &&
+    typeof update.rawOutput === "object" &&
+    update.rawOutput !== undefined
+  ) {
+    return update.rawOutput;
+  }
+
+  return undefined;
+}
+
 export function attachMcpAppPayload(
   sessionId: string,
   toolCallId: string,

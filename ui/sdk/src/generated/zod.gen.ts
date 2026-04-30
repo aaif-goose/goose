@@ -54,6 +54,25 @@ export const zReadResourceResponse = z.object({
 });
 
 /**
+ * Call a tool from an extension.
+ */
+export const zGooseToolCallRequest = z.object({
+    sessionId: z.string(),
+    name: z.string(),
+    arguments: z.unknown().optional().default(null)
+});
+
+/**
+ * Tool call response.
+ */
+export const zGooseToolCallResponse = z.object({
+    content: z.array(z.unknown()).optional().default([]),
+    structuredContent: z.unknown().optional(),
+    isError: z.boolean(),
+    _meta: z.unknown().optional()
+});
+
+/**
  * Update the working directory for a session.
  */
 export const zUpdateWorkingDirRequest = z.object({
@@ -864,6 +883,7 @@ export const zExtRequest = z.object({
             zRemoveExtensionRequest,
             zGetToolsRequest,
             zReadResourceRequest,
+            zGooseToolCallRequest,
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
             zGetExtensionsRequest,
@@ -925,6 +945,7 @@ export const zExtResponse = z.union([
                 zEmptyResponse,
                 zGetToolsResponse,
                 zReadResourceResponse,
+                zGooseToolCallResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,

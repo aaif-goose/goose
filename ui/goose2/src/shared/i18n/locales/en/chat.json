@@ -124,7 +124,9 @@
   "message": {
     "copied": "Copied",
     "defaultImageAlt": "Attached",
-    "mcpAppUnderConstruction": "🚧 MCP App Rendering is under construction",
+    "mcpApp": "MCP App",
+    "mcpAppLoading": "Loading MCP App…",
+    "mcpAppRenderError": "Unable to render MCP App inline.",
     "redactedThinking": "(thinking redacted)"
   },
   "persona": {
@@ -194,6 +196,8 @@
     "openFile": "Open file",
     "openFolder": "Open folder",
     "openPath": "Open path",
-    "pathOutsideRoots": "Path is outside allowed project/artifacts roots."
+    "pathOutsideRoots": "Path is outside allowed project/artifacts roots.",
+    "structuredOutput": "Structured output",
+    "structuredOutputLines": "{{count}} lines"
   }
 }

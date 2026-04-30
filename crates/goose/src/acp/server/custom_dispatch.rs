@@ -35,6 +35,14 @@ impl GooseAcpAgent {
         self.on_get_tools(req).await
     }
 
+    #[custom_method(GooseToolCallRequest)]
+    async fn dispatch_call_tool(
+        &self,
+        req: GooseToolCallRequest,
+    ) -> Result<GooseToolCallResponse, sacp::Error> {
+        self.on_call_tool(req).await
+    }
+
     #[custom_method(ReadResourceRequest)]
     async fn dispatch_read_resource(
         &self,

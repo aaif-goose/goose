@@ -131,12 +131,16 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
 export type ToolOutputProps = ComponentProps<"div"> & {
   output: ToolPart["output"];
   errorText: ToolPart["errorText"];
+  label?: string;
+  contentClassName?: string;
 };
 
 export const ToolOutput = ({
   className,
   output,
   errorText,
+  label,
+  contentClassName,
   ...props
 }: ToolOutputProps) => {
   if (!(output || errorText)) {
@@ -144,26 +148,42 @@ export const ToolOutput = ({
   }
 
   let Output = <div>{output as ReactNode}</div>;
+  let isCodeBlockOutput = false;
 
   if (typeof output === "object" && !isValidElement(output)) {
+    isCodeBlockOutput = true;
     Output = (
-      <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
+      <CodeBlock
+        code={JSON.stringify(output, null, 2)}
+        language="json"
+        viewportClassName={contentClassName}
+      />
     );
   } else if (typeof output === "string") {
-    Output = <CodeBlock code={output} language="json" />;
+    isCodeBlockOutput = true;
+    Output = (
+      <CodeBlock
+        code={output}
+        language="json"
+        viewportClassName={contentClassName}
+      />
+    );
   }
 
   return (
     <div className={cn("space-y-2", className)} {...props}>
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-        {errorText ? "Error" : "Result"}
+        {label ?? (errorText ? "Error" : "Result")}
       </h4>
       <div
         className={cn(
-          "overflow-x-auto rounded-md text-xs [&_table]:w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words",
-          errorText
-            ? "bg-destructive/10 text-destructive"
-            : "bg-muted/50 text-foreground",
+          "rounded-md text-xs [&_table]:w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words",
+          !isCodeBlockOutput && "overflow-x-auto",
+          !isCodeBlockOutput &&
+            (errorText
+              ? "bg-destructive/10 text-destructive"
+              : "bg-muted/50 text-foreground"),
+          !isCodeBlockOutput && contentClassName,
         )}
       >
         {errorText && <div>{errorText}</div>}

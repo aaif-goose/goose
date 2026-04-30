@@ -151,6 +151,60 @@ describe("acpNotificationHandler", () => {
     ).toBe("assistant-1");
   });
 
+  it("preserves structured tool output when ACP provides rawOutput", async () => {
+    registerSession(
+      "local-session",
+      "goose-session",
+      "goose",
+      "/Users/aharvard/.goose/artifacts",
+    );
+    setActiveMessageId("goose-session", "assistant-1");
+
+    await handleSessionNotification({
+      sessionId: "goose-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-1",
+        title: "mcp_app_bench__inspect_host_info",
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "goose-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-1",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "Opened the Host Info inspector.",
+            },
+          },
+        ],
+        rawOutput: {
+          inspector: "host-info",
+          supported: true,
+        },
+      },
+    } as never);
+
+    const [message] =
+      useChatStore.getState().messagesBySession["local-session"];
+    expect(message.content[1]).toMatchObject({
+      type: "toolResponse",
+      id: "tool-1",
+      result: "Opened the Host Info inspector.",
+      structuredContent: {
+        inspector: "host-info",
+        supported: true,
+      },
+      isError: false,
+    });
+  });
+
   it("replay keeps tool and MCP app content on an assistant message when tool events arrive before text", async () => {
     const replaySessionId = "replay-goose-session";
     useChatStore.setState({

@@ -43,6 +43,7 @@ pub fn run() {
             commands::agents::save_persona_avatar_bytes,
             commands::agents::get_avatars_dir,
             commands::acp::get_goose_serve_url,
+            commands::acp::get_goose_serve_host_info,
             commands::projects::list_projects,
             commands::projects::create_project,
             commands::projects::update_project,

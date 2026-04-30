@@ -74,6 +74,31 @@ pub struct ReadResourceResponse {
     pub result: serde_json::Value,
 }
 
+/// Call a tool from an extension.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/tool/call", response = GooseToolCallResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GooseToolCallRequest {
+    pub session_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub arguments: serde_json::Value,
+}
+
+/// Tool call response.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GooseToolCallResponse {
+    #[serde(default)]
+    pub content: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<serde_json::Value>,
+    pub is_error: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "_meta")]
+    pub meta: Option<serde_json::Value>,
+}
+
 /// Update the working directory for a session.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/working_dir/update", response = EmptyResponse)]
