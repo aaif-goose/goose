@@ -421,7 +421,7 @@ check-2: failed
 
         #[test]
         fn test_render_with_optional_object_field() {
-            let content = "{% if enrichment.owner_chain %}Chain: {{ enrichment.owner_chain }}{% else %}No chain{% endif %}";
+            let content = "{% if enrichment.owner_chain is defined %}Chain: {{ enrichment.owner_chain }}{% else %}No chain{% endif %}";
             let params = HashMap::from([
                 ("recipe_dir".to_string(), str_val("some_dir")),
                 ("enrichment".to_string(), json!({})),
