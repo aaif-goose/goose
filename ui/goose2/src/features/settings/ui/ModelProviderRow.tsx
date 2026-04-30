@@ -331,7 +331,7 @@ export function ModelProviderRow({
     const fieldSetupDescription = getFieldSetupDescription(
       provider.setupMethod,
       t,
-      provider.id,
+      provider.fields,
     );
 
     if (loadingConfig && hasFields) {
