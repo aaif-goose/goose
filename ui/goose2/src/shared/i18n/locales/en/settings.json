@@ -27,7 +27,6 @@
         "spacious": "Spacious"
       }
     },
-    "description": "Customize how Goose looks.",
     "theme": {
       "description": "Choose your preferred color scheme",
       "label": "Theme",
@@ -125,7 +124,6 @@
     "agents": "Agents",
     "copied": "Copied",
     "copyDetails": "Copy details",
-    "description": "Check the status and fix issues with required tools and agents.",
     "empty": "No checks are available yet.",
     "rerun": "Try again",
     "runFix": "Run fix command?",
@@ -226,7 +224,6 @@
       },
       "title": "Agent harnesses"
     },
-    "description": "Configure your agents and model providers.",
     "disconnect": "Disconnect",
     "models": {
       "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",

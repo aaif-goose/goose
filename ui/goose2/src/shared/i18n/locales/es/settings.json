@@ -27,7 +27,6 @@
         "spacious": "Espaciosa"
       }
     },
-    "description": "Personaliza el aspecto de Goose",
     "theme": {
       "description": "Elige tu esquema de color preferido",
       "label": "Tema",
@@ -125,7 +124,6 @@
     "agents": "Agentes",
     "copied": "Copiado",
     "copyDetails": "Copiar detalles",
-    "description": "Verifica las herramientas necesarias y la disponibilidad de agentes para Goose.",
     "empty": "Todavía no hay comprobaciones disponibles.",
     "rerun": "Volver a intentar",
     "runFix": "¿Ejecutar corrección?",
@@ -226,7 +224,6 @@
       },
       "title": "Arneses de agentes"
     },
-    "description": "Configura tus agentes y proveedores de modelos.",
     "disconnect": "Desconectar",
     "models": {
       "description": "Necesitas al menos un proveedor de modelos para usar el agente Goose. Algunos agentes pueden traer sus propias conexiones de modelo.",
