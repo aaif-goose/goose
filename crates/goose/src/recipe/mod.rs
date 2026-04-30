@@ -181,6 +181,12 @@ pub enum RecipeParameterInputType {
     /// Cannot have default values to prevent importing sensitive user files.
     File,
     Select,
+    /// Structured object parameter passed as JSON.
+    /// Enables dot-notation access in templates: `{{ param.field }}`
+    Object,
+    /// Array parameter passed as a JSON array.
+    /// Enables iteration in templates: `{% for item in param %}`
+    Array,
 }
 
 impl fmt::Display for RecipeParameterInputType {

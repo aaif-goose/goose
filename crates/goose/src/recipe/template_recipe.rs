@@ -7,6 +7,7 @@ use crate::recipe::{Recipe, BUILT_IN_RECIPE_DIR_PARAM};
 use anyhow::Result;
 use minijinja::{Environment, UndefinedBehavior};
 use regex::Regex;
+use serde_json::Value;
 
 const CURRENT_TEMPLATE_NAME: &str = "recipe";
 const OPEN_BRACE: &str = "{{";
@@ -105,6 +106,41 @@ pub fn render_recipe_content_with_params(
     let env = add_template_in_env(
         &content_with_safe_variables,
         params.get(BUILT_IN_RECIPE_DIR_PARAM).cloned(),
+        UndefinedBehavior::Strict,
+    )?;
+    let template = env.get_template(CURRENT_TEMPLATE_NAME).unwrap();
+    let rendered_content = template
+        .render(params)
+        .map_err(|e| anyhow::anyhow!("Failed to render the recipe {}", e))?;
+    Ok(rendered_content)
+}
+
+/// Renders recipe content with structured parameters (objects, arrays, scalars).
+///
+/// This is the structured counterpart to `render_recipe_content_with_params`.
+/// It accepts `serde_json::Value` parameters, enabling dot-notation access
+/// for objects (`{{ signal.namespace }}`) and iteration for arrays
+/// (`{% for item in findings %}`).
+///
+/// Existing scalar string parameters work identically via `Value::String`.
+pub fn render_recipe_content_with_structured_params(
+    content: &str,
+    params: &HashMap<String, Value>,
+) -> Result<String> {
+    let re = Regex::new(r#":\s*"""#).unwrap();
+    let content_with_empty_quotes_replaced = re.replace_all(content, ": ''");
+
+    let content_with_safe_variables =
+        preprocess_template_variables(&content_with_empty_quotes_replaced)?;
+
+    let recipe_dir = params
+        .get(BUILT_IN_RECIPE_DIR_PARAM)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let env = add_template_in_env(
+        &content_with_safe_variables,
+        recipe_dir,
         UndefinedBehavior::Strict,
     )?;
     let template = env.get_template(CURRENT_TEMPLATE_NAME).unwrap();
@@ -297,6 +333,116 @@ description: "A test recipe"
             let params = HashMap::from([("recipe_dir".to_string(), "test_dir".to_string())]);
             let result = render_recipe_content_with_params(content, &params).unwrap();
             assert_eq!(result, "{{param_key}}");
+        }
+    }
+
+    mod render_structured_params_tests {
+        use std::collections::HashMap;
+
+        use crate::recipe::template_recipe::render_recipe_content_with_structured_params;
+        use serde_json::{json, Value};
+
+        fn str_val(s: &str) -> Value {
+            Value::String(s.to_string())
+        }
+
+        #[test]
+        fn test_render_with_string_values_unchanged() {
+            let content = "Hello {{ name }}!";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                ("name".to_string(), str_val("World")),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "Hello World!");
+        }
+
+        #[test]
+        fn test_render_with_object_parameter() {
+            let content = "Signal: {{ signal.name }} in {{ signal.namespace }}";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                (
+                    "signal".to_string(),
+                    json!({"name": "OOMKilled", "namespace": "production"}),
+                ),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "Signal: OOMKilled in production");
+        }
+
+        #[test]
+        fn test_render_with_object_conditional() {
+            let content = r#"{% if signal.severity == "critical" %}CRITICAL{% else %}normal{% endif %}"#;
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                (
+                    "signal".to_string(),
+                    json!({"severity": "critical", "name": "OOMKilled"}),
+                ),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "CRITICAL");
+        }
+
+        #[test]
+        fn test_render_with_array_parameter() {
+            let content = "{% for item in findings %}{{ item.name }}: {{ item.output }}
+{% endfor %}";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                (
+                    "findings".to_string(),
+                    json!([
+                        {"name": "check-1", "output": "passed"},
+                        {"name": "check-2", "output": "failed"}
+                    ]),
+                ),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "check-1: passed
+check-2: failed
+");
+        }
+
+        #[test]
+        fn test_render_with_nested_object_access() {
+            let content = "Owner: {{ enrichment.owner_chain }}";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                (
+                    "enrichment".to_string(),
+                    json!({"owner_chain": "Pod > ReplicaSet > Deployment", "labels": {"app": "api"}}),
+                ),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "Owner: Pod > ReplicaSet > Deployment");
+        }
+
+        #[test]
+        fn test_render_with_optional_object_field() {
+            let content = "{% if enrichment.owner_chain %}Chain: {{ enrichment.owner_chain }}{% else %}No chain{% endif %}";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                ("enrichment".to_string(), json!({})),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "No chain");
+        }
+
+        #[test]
+        fn test_render_mixed_scalar_and_object_params() {
+            let content = "Alert {{ alert_name }} for {{ signal.resource_kind }}/{{ signal.resource_name }}";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                ("alert_name".to_string(), str_val("HighMemory")),
+                (
+                    "signal".to_string(),
+                    json!({"resource_kind": "Pod", "resource_name": "api-server-abc"}),
+                ),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "Alert HighMemory for Pod/api-server-abc");
         }
     }
 }
