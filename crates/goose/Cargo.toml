@@ -204,7 +204,7 @@ keyring = { version = "3.6.2", features = ["windows-native"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.10.2", default-features = false, features = ["metal"], optional = true }
 candle-nn = { version = "0.10.2", default-features = false, features = ["metal"], optional = true }
-llama-cpp-2 = { version = "0.1.143", features = ["sampler", "metal", "mtmd"], optional = true }
+llama-cpp-2 = { version = "0.1.145", features = ["sampler", "metal", "mtmd"], optional = true }
 keyring = { version = "3.6.2", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
