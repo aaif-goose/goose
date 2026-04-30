@@ -790,3 +790,68 @@ parameters:
         other => panic!("Expected Invalid error, got: {:?}", other),
     }
 }
+
+#[test]
+fn test_build_recipe_with_object_param_receives_array() {
+    let yaml = r#"instructions: "Signal: {{ signal.name }}"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Signal data""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![("signal".to_string(), r#"[1, 2, 3]"#.to_string())];
+    let result = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    );
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        RecipeError::Invalid { source } => {
+            let msg = source.to_string();
+            assert!(
+                msg.contains("input_type object") && msg.contains("an array"),
+                "Expected type mismatch error, got: {}",
+                msg
+            );
+        }
+        other => panic!("Expected Invalid error, got: {:?}", other),
+    }
+}
+
+#[test]
+fn test_build_recipe_with_array_param_receives_object() {
+    let yaml = r#"instructions: |
+  {% for item in findings %}{{ item }}{% endfor %}
+parameters:
+  - key: findings
+    input_type: array
+    requirement: required
+    description: "Findings list""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![("findings".to_string(), r#"{"key": "value"}"#.to_string())];
+    let result = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    );
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        RecipeError::Invalid { source } => {
+            let msg = source.to_string();
+            assert!(
+                msg.contains("input_type array") && msg.contains("an object"),
+                "Expected type mismatch error, got: {}",
+                msg
+            );
+        }
+        other => panic!("Expected Invalid error, got: {:?}", other),
+    }
+}

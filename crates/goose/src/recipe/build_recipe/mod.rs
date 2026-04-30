@@ -70,7 +70,7 @@ fn to_structured_params(
     string_map: &HashMap<String, String>,
     recipe_parameters: Option<&[RecipeParameter]>,
 ) -> Result<HashMap<String, Value>> {
-    let structured_keys: std::collections::HashSet<&str> = recipe_parameters
+    let structured_keys: HashMap<&str, &RecipeParameterInputType> = recipe_parameters
         .unwrap_or_default()
         .iter()
         .filter(|p| {
@@ -79,26 +79,55 @@ fn to_structured_params(
                 RecipeParameterInputType::Object | RecipeParameterInputType::Array
             )
         })
-        .map(|p| p.key.as_str())
+        .map(|p| (p.key.as_str(), &p.input_type))
         .collect();
 
     string_map
         .iter()
         .map(|(k, v)| {
-            let value = if structured_keys.contains(k.as_str()) {
-                serde_json::from_str(v).map_err(|e| {
+            let value = if let Some(input_type) = structured_keys.get(k.as_str()) {
+                let parsed: Value = serde_json::from_str(v).map_err(|e| {
                     anyhow::anyhow!(
-                        "Parameter '{}' has input_type object/array but value is not valid JSON: {}",
+                        "Parameter '{}' has input_type {} but value is not valid JSON: {}",
                         k,
+                        input_type,
                         e
                     )
-                })?
+                })?;
+                match input_type {
+                    RecipeParameterInputType::Object if !parsed.is_object() => {
+                        anyhow::bail!(
+                            "Parameter '{}' has input_type object but received {}",
+                            k,
+                            json_type_name(&parsed)
+                        )
+                    }
+                    RecipeParameterInputType::Array if !parsed.is_array() => {
+                        anyhow::bail!(
+                            "Parameter '{}' has input_type array but received {}",
+                            k,
+                            json_type_name(&parsed)
+                        )
+                    }
+                    _ => parsed,
+                }
             } else {
                 Value::String(v.clone())
             };
             Ok((k.clone(), value))
         })
         .collect()
+}
+
+fn json_type_name(v: &Value) -> &'static str {
+    match v {
+        Value::Null => "null",
+        Value::Bool(_) => "a boolean",
+        Value::Number(_) => "a number",
+        Value::String(_) => "a string",
+        Value::Array(_) => "an array",
+        Value::Object(_) => "an object",
+    }
 }
 
 pub fn build_recipe_from_template<F>(
