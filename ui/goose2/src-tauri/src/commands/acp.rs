@@ -53,9 +53,7 @@ fn configured_goose_serve_secret_key() -> Result<String, String> {
         .map(|secret| secret.trim().to_string())
         .filter(|secret| !secret.is_empty())
         .ok_or_else(|| {
-            format!(
-                "{GOOSE_SERVER_SECRET_KEY_ENV} must be set when {GOOSE_SERVE_URL_ENV} is set"
-            )
+            format!("{GOOSE_SERVER_SECRET_KEY_ENV} must be set when {GOOSE_SERVE_URL_ENV} is set")
         })
 }
 
