@@ -5,7 +5,10 @@ import {
   attachmentSnapshotsMatch,
   skillDraftSnapshotsMatch,
 } from "../lib/chatInputSnapshots";
-import { getChatInputPlaceholder } from "../lib/chatInputPlaceholder";
+import {
+  getChatInputAgentLabel,
+  getChatInputPlaceholder,
+} from "../lib/chatInputPlaceholder";
 import { cn } from "@/shared/lib/cn";
 import { Badge } from "@/shared/ui/badge";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
@@ -330,9 +333,10 @@ export function ChatInput({
   const providerDisplayName =
     providers.find((provider) => provider.id === selectedProvider)?.label ??
     formatProviderLabel(selectedProvider);
-  const agentDisplayName = (
-    activePersona?.displayName ?? providerDisplayName
-  ).replace(/ \(Default\)$/, "");
+  const agentDisplayName = getChatInputAgentLabel(
+    activePersona?.displayName,
+    providerDisplayName,
+  );
   const resolvedCurrentModel = useMemo(() => {
     if (currentModel) {
       return currentModel;
