@@ -48,14 +48,14 @@ impl RiskLevel {
 pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     ThreatPattern {
         name: "rm_rf_root_bare",
-        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/['\x22]?(\s|$)",
+        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/(\*)?['\x22]?(\s|$)",
         description: "Recursive deletion of root filesystem",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
     },
     ThreatPattern {
         name: "rm_rf_system",
-        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force).*/(bin|etc|usr|var|sys|proc|dev|boot|lib|opt|srv)\b",
+        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force)\s+[^\s;|&]*/?(bin|etc|usr|var|sys|proc|dev|boot|lib|opt|srv)\b",
         description: "Recursive deletion of system directories",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
