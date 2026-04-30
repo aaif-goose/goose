@@ -298,7 +298,7 @@ Parameter substitution uses Jinja-style template syntax with `{{ parameter_name 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `key` | String | ✅ | Unique identifier for the parameter |
-| `input_type` | String | ✅ | Type of input: `"string"` (default), `"number"`, `"boolean"`, `"date"`, `"file"`, or `"select"` |
+| `input_type` | String | ✅ | Type of input: `"string"` (default), `"number"`, `"boolean"`, `"date"`, `"file"`, `"select"`, `"object"`, or `"array"` |
 | `requirement` | String | ✅ | One of: "required", "optional", or "user_prompt" |
 | `description` | String | ✅ | Human-readable description of the parameter |
 | `default` | String | - | Default value for optional parameters |
@@ -320,6 +320,8 @@ The `required` and `optional` parameters work best for recipes opened in goose D
 - `date`: Date values. Currently renders as text input
 - `file`: The parameter value should be a file path. goose reads the file contents and substitutes the actual content (not the path) into the template
 - `select`: Dropdown selection with predefined options. Requires `options` field
+- `object`: Structured JSON object. Enables dot-notation access in templates (e.g., `{{ signal.namespace }}`). Values are passed as JSON
+- `array`: JSON array. Enables iteration in templates (e.g., `{% for item in findings %}{{ item.name }}{% endfor %}`). Values are passed as JSON
 
 **Example:**
 ```yaml
@@ -350,7 +352,23 @@ parameters:
     requirement: required
     description: "Path to the source code file to analyze"
 
-prompt: "Process {{ max_files }} files in {{ output_format }} format. Debug: {{ enable_debug }}. Code:\n\n{{ source_code }}"
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Signal data with name and namespace fields"
+
+  - key: findings
+    input_type: array
+    requirement: optional
+    description: "List of diagnostic findings"
+
+prompt: |
+  Process {{ max_files }} files in {{ output_format }} format. Debug: {{ enable_debug }}.
+  Signal: {{ signal.name }} in {{ signal.namespace }}
+  {% for item in findings %}Finding: {{ item.name }}
+  {% endfor %}
+  Code:
+  {{ source_code }}
 ```
 
 :::important
@@ -358,6 +376,7 @@ prompt: "Process {{ max_files }} files in {{ output_format }} format. Debug: {{ 
 - Required parameters cannot have default values
 - File parameters cannot have default values regardless of requirement type to prevent unintended importing of sensitive files
 - Select parameters MUST have an `options` field with available choices
+- Object and array parameter values must be valid JSON when provided via CLI `--params` or API
 - Parameter keys must match any template variables used in instructions, prompt, or activities
 :::
 
