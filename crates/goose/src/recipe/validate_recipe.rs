@@ -94,19 +94,43 @@ fn validate_parameters_in_template(
     let mut template_variables = template_variables.clone();
     template_variables.remove(BUILT_IN_RECIPE_DIR_PARAM);
 
-    let param_keys: HashSet<String> = recipe_parameters
-        .as_ref()
-        .unwrap_or(&vec![])
+    let params = recipe_parameters.as_deref().unwrap_or_default();
+
+    let param_keys: HashSet<String> = params.iter().map(|p| p.key.clone()).collect();
+
+    // Structured parameters (object/array) use dot-notation in templates
+    // (e.g., {{ signal.name }}), which undeclared_variables reports as
+    // "signal.name". Normalize these to their root key so they match the
+    // parameter definition.
+    let structured_keys: HashSet<&str> = params
         .iter()
-        .map(|p| p.key.clone())
+        .filter(|p| {
+            matches!(
+                p.input_type,
+                RecipeParameterInputType::Object | RecipeParameterInputType::Array
+            )
+        })
+        .map(|p| p.key.as_str())
         .collect();
 
-    let missing_keys = template_variables
+    let normalized_template_vars: HashSet<String> = template_variables
+        .iter()
+        .map(|var| {
+            let root = var.split('.').next().unwrap_or(var);
+            if structured_keys.contains(root) {
+                root.to_string()
+            } else {
+                var.clone()
+            }
+        })
+        .collect();
+
+    let missing_keys = normalized_template_vars
         .difference(&param_keys)
         .collect::<Vec<_>>();
 
     let extra_keys = param_keys
-        .difference(&template_variables)
+        .difference(&normalized_template_vars)
         .collect::<Vec<_>>();
 
     if missing_keys.is_empty() && extra_keys.is_empty() {
