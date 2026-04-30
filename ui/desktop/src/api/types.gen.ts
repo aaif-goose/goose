@@ -1092,7 +1092,7 @@ export type RecipeParameter = {
     requirement: RecipeParameterRequirement;
 };
 
-export type RecipeParameterInputType = 'string' | 'number' | 'boolean' | 'date' | 'file' | 'select';
+export type RecipeParameterInputType = 'string' | 'number' | 'boolean' | 'date' | 'file' | 'select' | 'object' | 'array';
 
 export type RecipeParameterRequirement = 'required' | 'optional' | 'user_prompt';
 

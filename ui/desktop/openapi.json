@@ -7193,7 +7193,9 @@
           "boolean",
           "date",
           "file",
-          "select"
+          "select",
+          "object",
+          "array"
         ]
       },
       "RecipeParameterRequirement": {
