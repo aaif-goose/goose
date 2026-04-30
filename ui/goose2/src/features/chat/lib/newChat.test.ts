@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Message } from "@/shared/types/messages";
 import { findExistingDraft } from "./newChat";
 import type { ChatSession } from "../stores/chatSessionStore";
 
@@ -111,7 +112,12 @@ describe("findExistingDraft", () => {
         draftsBySession: {},
         messagesBySession: {
           "alpha-session": [
-            { id: "msg-1", role: "user", content: "hello" } as any,
+            {
+              id: "msg-1",
+              role: "user",
+              created: 1,
+              content: [{ type: "text", text: "hello" }],
+            } satisfies Message,
           ],
         },
         request: {

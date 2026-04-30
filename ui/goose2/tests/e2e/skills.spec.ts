@@ -13,10 +13,10 @@ test.describe("Skills view", () => {
 
     await expect(page.locator("h1", { hasText: "Skills" })).toBeVisible();
     await expect(
-      page.getByText(/Skills are reusable instructions/),
+      page.getByText(/Use skills to add specific instructions/),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Import" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "New Skill" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New skill" })).toBeVisible();
   });
 
   test("shows skills in the list and opens a dedicated detail page", async ({
