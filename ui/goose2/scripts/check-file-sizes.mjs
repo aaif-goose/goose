@@ -30,6 +30,11 @@ const EXCEPTIONS = {
     justification:
       "Workspace widget integration tests cover branch switching, worktree creation, dirty-state dialogs, and picker interactions.",
   },
+  "src/features/settings/ui/ModelProviderRow.tsx": {
+    limit: 515,
+    justification:
+      "Multi-line i18n calls for error messages (fieldsMissing interpolation, exhaustive useCallback deps) push marginally past 500. Splitting would create a thin wrapper with no structural benefit.",
+  },
   "src/features/sidebar/ui/Sidebar.tsx": {
     limit: 580,
     justification:
