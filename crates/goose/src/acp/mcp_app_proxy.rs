@@ -1,22 +1,31 @@
 use axum::{
-    extract::Query,
-    http::{header, StatusCode},
+    extract::{Query, State},
+    http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::RwLock;
+use url::Url;
 use uuid::Uuid;
 
 const GUEST_HTML_TTL_SECS: u64 = 300;
 const GUEST_HTML_MAX_ENTRIES: usize = 64;
 const MCP_APP_PROXY_HTML: &str = include_str!("templates/mcp_app_proxy.html");
 
-type GuestHtmlStore = Arc<RwLock<HashMap<String, (String, String, Instant)>>>;
+type GuestHtmlStore = Arc<RwLock<HashMap<String, GuestHtmlEntry>>>;
+
+#[derive(Clone)]
+struct GuestHtmlEntry {
+    html: String,
+    csp: String,
+    created: Instant,
+}
 
 #[derive(Deserialize)]
 struct ProxyQuery {
@@ -30,7 +39,6 @@ struct ProxyQuery {
 
 #[derive(Deserialize)]
 struct GuestQuery {
-    secret: String,
     nonce: String,
 }
 
@@ -41,10 +49,41 @@ struct StoreGuestBody {
     csp: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoreGuestResponse {
+    nonce: String,
+    guest_url: String,
+}
+
 #[derive(Clone)]
 struct AppState {
     secret_key: String,
     guest_store: GuestHtmlStore,
+    guest_base_url: String,
+}
+
+#[derive(Clone)]
+struct GuestState {
+    guest_store: GuestHtmlStore,
+}
+
+fn normalize_csp_source(source: &str) -> Option<String> {
+    let source = source.trim();
+    if source.is_empty()
+        || source
+            .chars()
+            .any(|c| c.is_ascii_whitespace() || matches!(c, ';' | ',' | '"' | '\''))
+    {
+        return None;
+    }
+
+    let url = Url::parse(source).ok()?;
+    if !matches!(url.scheme(), "http" | "https" | "ws" | "wss") {
+        return None;
+    }
+    url.host_str()?;
+    Some(url.origin().ascii_serialization())
 }
 
 fn parse_domains(domains: Option<&String>) -> Vec<String> {
@@ -52,8 +91,7 @@ fn parse_domains(domains: Option<&String>) -> Vec<String> {
         .map(|domains| {
             domains
                 .split(',')
-                .map(|domain| domain.trim().to_string())
-                .filter(|domain| !domain.is_empty())
+                .filter_map(normalize_csp_source)
                 .collect()
         })
         .unwrap_or_default()
@@ -65,6 +103,7 @@ fn build_outer_csp(
     frame_domains: &[String],
     base_uri_domains: &[String],
     script_domains: &[String],
+    guest_origin: &str,
 ) -> String {
     let resources = if resource_domains.is_empty() {
         String::new()
@@ -85,9 +124,12 @@ fn build_outer_csp(
     };
 
     let frame_src = if frame_domains.is_empty() {
-        "frame-src 'self'".to_string()
+        format!("frame-src 'self' {guest_origin}")
     } else {
-        format!("frame-src 'self' {}", frame_domains.join(" "))
+        format!(
+            "frame-src 'self' {guest_origin} {}",
+            frame_domains.join(" ")
+        )
     };
 
     let base_uris = if base_uri_domains.is_empty() {
@@ -113,7 +155,7 @@ fn build_outer_csp(
 }
 
 async fn mcp_app_proxy(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<ProxyQuery>,
 ) -> Response {
     if params.secret != state.secret_key {
@@ -128,6 +170,7 @@ async fn mcp_app_proxy(
             &parse_domains(params.frame_domains.as_ref()),
             &parse_domains(params.base_uri_domains.as_ref()),
             &parse_domains(params.script_domains.as_ref()),
+            &state.guest_base_url,
         ),
     );
 
@@ -145,7 +188,7 @@ async fn mcp_app_proxy(
 }
 
 async fn store_guest_html(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Json(body): Json<StoreGuestBody>,
 ) -> Response {
     if body.secret != state.secret_key {
@@ -154,76 +197,109 @@ async fn store_guest_html(
 
     let nonce = Uuid::new_v4().to_string();
     let csp = body.csp.unwrap_or_default();
+    let guest_url = format!("{}/mcp-app-guest?nonce={}", state.guest_base_url, nonce);
 
     {
         let mut store = state.guest_store.write().await;
-        let cutoff = Instant::now() - std::time::Duration::from_secs(GUEST_HTML_TTL_SECS);
-        store.retain(|_, (_, _, created)| *created > cutoff);
+        let cutoff = Instant::now() - Duration::from_secs(GUEST_HTML_TTL_SECS);
+        store.retain(|_, entry| entry.created > cutoff);
 
         if store.len() >= GUEST_HTML_MAX_ENTRIES {
             if let Some(oldest_key) = store
                 .iter()
-                .min_by_key(|(_, (_, _, created))| *created)
+                .min_by_key(|(_, entry)| entry.created)
                 .map(|(key, _)| key.clone())
             {
                 store.remove(&oldest_key);
             }
         }
 
-        store.insert(nonce.clone(), (body.html, csp, Instant::now()));
+        store.insert(
+            nonce.clone(),
+            GuestHtmlEntry {
+                html: body.html,
+                csp,
+                created: Instant::now(),
+            },
+        );
     }
 
     (
         StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        format!(r#"{{"nonce":"{}"}}"#, nonce),
+        Json(StoreGuestResponse { nonce, guest_url }),
     )
         .into_response()
 }
 
 async fn serve_guest_html(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<GuestState>,
     Query(params): Query<GuestQuery>,
 ) -> Response {
-    if params.secret != state.secret_key {
-        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-    }
-
     let entry = {
         let mut store = state.guest_store.write().await;
-        store.remove(&params.nonce)
+        let cutoff = Instant::now() - Duration::from_secs(GUEST_HTML_TTL_SECS);
+        store.retain(|_, entry| entry.created > cutoff);
+        store.get(&params.nonce).cloned()
     };
 
     match entry {
-        Some((html, csp, _created)) => {
-            let mut response = Html(html).into_response();
+        Some(entry) => {
+            let mut response = Html(entry.html).into_response();
             let headers = response.headers_mut();
             headers.insert(
                 header::HeaderName::from_static("referrer-policy"),
                 "strict-origin".parse().unwrap(),
             );
-            if !csp.is_empty() {
-                headers.insert(header::CONTENT_SECURITY_POLICY, csp.parse().unwrap());
+            if !entry.csp.is_empty() {
+                match HeaderValue::from_str(&entry.csp) {
+                    Ok(csp) => {
+                        headers.insert(header::CONTENT_SECURITY_POLICY, csp);
+                    }
+                    Err(_) => return (StatusCode::BAD_REQUEST, "Invalid CSP").into_response(),
+                }
             }
             response
         }
-        None => (
-            StatusCode::NOT_FOUND,
-            "Guest content not found or already consumed",
-        )
-            .into_response(),
+        None => (StatusCode::NOT_FOUND, "Guest content not found").into_response(),
     }
 }
 
+fn spawn_guest_server(guest_store: GuestHtmlStore) -> String {
+    let listener =
+        std::net::TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind MCP app guest server");
+    let addr = listener
+        .local_addr()
+        .expect("failed to read MCP app guest server address");
+    listener
+        .set_nonblocking(true)
+        .expect("failed to configure MCP app guest server");
+    let listener = tokio::net::TcpListener::from_std(listener)
+        .expect("failed to create MCP app guest listener");
+
+    let app = Router::new()
+        .route("/mcp-app-guest", get(serve_guest_html))
+        .with_state(GuestState { guest_store });
+
+    tokio::spawn(async move {
+        if let Err(error) = axum::serve(listener, app).await {
+            tracing::error!(%error, "MCP app guest server stopped");
+        }
+    });
+
+    format!("http://{addr}")
+}
+
 pub(crate) fn routes(secret_key: String) -> Router {
+    let guest_store = Arc::new(RwLock::new(HashMap::new()));
+    let guest_base_url = spawn_guest_server(guest_store.clone());
     let state = AppState {
         secret_key,
-        guest_store: Arc::new(RwLock::new(HashMap::new())),
+        guest_store,
+        guest_base_url,
     };
 
     Router::new()
         .route("/mcp-app-proxy", get(mcp_app_proxy))
-        .route("/mcp-app-guest", get(serve_guest_html))
         .route("/mcp-app-guest", post(store_guest_html))
         .with_state(state)
 }

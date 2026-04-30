@@ -93,12 +93,14 @@
 
         async function storeGuestHtml(html) {
           var proxyParams = getProxyParams();
+          var cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
           var response = await fetch(proxyParams.baseUrl + '/mcp-app-guest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               secret: proxyParams.secret,
-              html: html
+              html: html,
+              csp: cspMeta ? cspMeta.content : ''
             })
           });
 
@@ -107,7 +109,10 @@
           }
 
           var data = await response.json();
-          return data.nonce;
+          if (typeof data.guestUrl !== 'string') {
+            throw new Error('Guest URL missing from store response');
+          }
+          return data.guestUrl;
         }
 
         async function createGuestIframe(html, permissions) {
@@ -117,6 +122,7 @@
 
           guestIframe = document.createElement('iframe');
           guestIframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+          guestIframe.referrerPolicy = 'no-referrer';
 
           var allowList = [];
           if (permissions && permissions.camera) allowList.push('camera');
@@ -133,8 +139,7 @@
           var guestHtml = injectGuestColorScheme(html, proxyParams.colorScheme);
 
           try {
-            var nonce = await storeGuestHtml(guestHtml);
-            guestIframe.src = proxyParams.baseUrl + '/mcp-app-guest?secret=' + encodeURIComponent(proxyParams.secret) + '&nonce=' + encodeURIComponent(nonce);
+            guestIframe.src = await storeGuestHtml(guestHtml);
           } catch (e) {
             console.warn('Failed to use /mcp-app-guest endpoint, falling back to srcdoc:', e);
             guestIframe.srcdoc = guestHtml;
