@@ -384,6 +384,207 @@ pub struct ProviderConfigChangeResponse {
     pub refresh: RefreshProviderInventoryResponse,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCatalogEntryDto {
+    pub provider_id: String,
+    pub name: String,
+    pub format: String,
+    pub api_url: String,
+    pub model_count: usize,
+    pub doc_url: String,
+    pub env_var: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderTemplateCapabilitiesDto {
+    pub tool_call: bool,
+    pub reasoning: bool,
+    pub attachment: bool,
+    pub temperature: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderTemplateModelDto {
+    pub id: String,
+    pub name: String,
+    pub context_limit: usize,
+    pub capabilities: ProviderTemplateCapabilitiesDto,
+    pub deprecated: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderTemplateDto {
+    pub provider_id: String,
+    pub name: String,
+    pub format: String,
+    pub api_url: String,
+    pub models: Vec<ProviderTemplateModelDto>,
+    pub supports_streaming: bool,
+    pub env_var: String,
+    pub doc_url: String,
+}
+
+/// List custom-provider catalog entries. Omit `format` to list all formats.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/catalog/list",
+    response = ProviderCatalogListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCatalogListRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCatalogListResponse {
+    pub providers: Vec<ProviderCatalogEntryDto>,
+}
+
+/// Return the editable template for one catalog provider.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/catalog/template",
+    response = ProviderCatalogTemplateResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCatalogTemplateRequest {
+    pub provider_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCatalogTemplateResponse {
+    pub template: ProviderTemplateDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderConfigDto {
+    pub provider_id: String,
+    pub engine: String,
+    pub display_name: String,
+    pub api_url: String,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_streaming: Option<bool>,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    pub requires_auth: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_env: Option<String>,
+    pub api_key_set: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderUpsertDto {
+    pub engine: String,
+    pub display_name: String,
+    pub api_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_streaming: Option<bool>,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    pub requires_auth: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_path: Option<String>,
+}
+
+/// Create a custom provider backed by Goose's declarative provider store.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/custom/create",
+    response = CustomProviderCreateResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderCreateRequest {
+    #[serde(flatten)]
+    pub provider: CustomProviderUpsertDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderCreateResponse {
+    pub provider_id: String,
+    pub status: ProviderConfigStatusDto,
+    pub refresh: RefreshProviderInventoryResponse,
+}
+
+/// Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/custom/read",
+    response = CustomProviderReadResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderReadRequest {
+    pub provider_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderReadResponse {
+    pub provider: CustomProviderConfigDto,
+    pub editable: bool,
+    pub status: ProviderConfigStatusDto,
+}
+
+/// Update a custom provider backed by Goose's declarative provider store.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/custom/update",
+    response = CustomProviderUpdateResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderUpdateRequest {
+    pub provider_id: String,
+    #[serde(flatten)]
+    pub provider: CustomProviderUpsertDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderUpdateResponse {
+    pub provider_id: String,
+    pub status: ProviderConfigStatusDto,
+    pub refresh: RefreshProviderInventoryResponse,
+}
+
+/// Delete a custom provider from Goose's declarative provider store.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/custom/delete",
+    response = CustomProviderDeleteResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderDeleteRequest {
+    pub provider_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderDeleteResponse {
+    pub provider_id: String,
+    pub refresh: RefreshProviderInventoryResponse,
+}
+
 /// The type of source entity.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,

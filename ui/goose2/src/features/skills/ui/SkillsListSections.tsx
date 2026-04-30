@@ -9,12 +9,7 @@ import { Button } from "@/shared/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { IconMessagePlus } from "@tabler/icons-react";
 import type { SkillViewInfo } from "../lib/skillCategories";
-
-export interface SkillsSection {
-  id: string;
-  title: string;
-  skills: SkillViewInfo[];
-}
+import type { SkillsSection } from "../lib/skillsHelpers";
 
 interface SkillsListSectionsProps {
   sections: SkillsSection[];

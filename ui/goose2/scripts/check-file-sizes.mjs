@@ -41,9 +41,9 @@ const EXCEPTIONS = {
       "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, home-session restoration, app-level chat routing, restored project-draft reuse, and app-level compaction settings deep links. Includes gated [perf:load]/[perf:newtab] logging via perfLog (dev-only by default).",
   },
   "src/features/chat/hooks/useChatSessionController.ts": {
-    limit: 840,
+    limit: 850,
     justification:
-      "Controller now centralizes home-to-chat pending state transfer, workspace/project preparation, provider/model/persona handoff, Goose cross-provider model selection sequencing with rollback, context-usage readiness resets, queued-target compaction gating, and auto-compaction-aware send orchestration pending a later decomposition pass.",
+      "Controller now centralizes home-to-chat pending state transfer, workspace/project preparation (including ACP _goose/session/update_project sync for backend system-prompt injection), provider/model/persona handoff, Goose cross-provider model selection sequencing with rollback, context-usage readiness resets, queued-target compaction gating, and auto-compaction-aware send orchestration pending a later decomposition pass.",
   },
   "src/features/chat/hooks/__tests__/useChatSessionController.test.ts": {
     limit: 520,

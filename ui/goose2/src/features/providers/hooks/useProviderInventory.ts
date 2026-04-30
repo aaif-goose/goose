@@ -9,6 +9,26 @@ import { getModelProviders } from "../providerCatalog";
 
 const MODEL_PROVIDER_IDS = new Set(getModelProviders().map((p) => p.id));
 
+function isConfiguredGooseModelProvider(
+  entry: ProviderInventoryEntryDto,
+): boolean {
+  if (!entry.configured) {
+    return false;
+  }
+
+  const isCuratedModelProvider = MODEL_PROVIDER_IDS.has(entry.providerId);
+
+  if (entry.providerType === "Custom") {
+    return entry.providerId.startsWith("custom_");
+  }
+
+  if (entry.providerType === "Declarative") {
+    return isCuratedModelProvider;
+  }
+
+  return isCuratedModelProvider;
+}
+
 function inventoryModelToOption(
   model: ProviderInventoryModelDto,
   provider?: Pick<ProviderInventoryEntryDto, "providerId" | "providerName">,
@@ -44,10 +64,7 @@ export function useProviderInventory() {
   );
 
   const configuredModelProviderEntries = useMemo(
-    () =>
-      [...entries.values()].filter(
-        (entry) => entry.configured && MODEL_PROVIDER_IDS.has(entry.providerId),
-      ),
+    () => [...entries.values()].filter(isConfiguredGooseModelProvider),
     [entries],
   );
 

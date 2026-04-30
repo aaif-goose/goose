@@ -45,7 +45,7 @@
     "empty": {
       "folderNotSet": "Carpeta no configurada",
       "noChanges": "No hay cambios sin confirmar",
-      "noProjectAssigned": "No hay proyecto asignado.",
+      "noProjectAssigned": "No hay proyecto asignado",
       "noExtensions": "No hay extensiones habilitadas",
       "noMatchingExtensions": "No hay extensiones que coincidan"
     },
@@ -59,7 +59,8 @@
       "checkedOutBranch": "{{branch}}",
       "currentBranch": "Rama actual",
       "dirtyTitle": "Cambios sin confirmar",
-      "dirtyDescription": "Tienes {{count}} cambio(s) sin confirmar. ¿Cómo deseas proceder?",
+      "dirtyDescription_one": "Tienes {{count}} cambio sin confirmar. ¿Cómo deseas proceder?",
+      "dirtyDescription_other": "Tienes {{count}} cambios sin confirmar. ¿Cómo deseas proceder?",
       "stashAndSwitch": "Guardar y cambiar",
       "carryChanges": "Llevar a la rama",
       "cancel": "Cancelar",
@@ -96,19 +97,19 @@
     }
   },
   "files": {
-    "empty": "Los archivos del proyecto no están disponibles hasta que se asigne un proyecto con directorios de trabajo.",
+    "empty": "Los archivos aparecerán aquí después de asignar un proyecto.",
     "folderEmpty": "La carpeta está vacía",
-    "loadError": "No se pudo cargar el contenido de la carpeta.",
+    "loadError": "No se pudo cargar esta carpeta. Inténtalo de nuevo.",
     "loading": "Cargando archivos...",
     "openFolder": "Abrir carpeta: {{path}}",
-    "rootLoadError": "No se pudo cargar esta carpeta."
+    "rootLoadError": "No se pudo cargar esta carpeta. Inténtalo de nuevo."
   },
   "image": {
     "view": "Ver {{label}}"
   },
   "input": {
     "ariaLabel": "Entrada de mensaje del chat",
-    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar agentes o habilidades"
+    "placeholder": "Chatea con {{agent}} o usa @ para mencionar un agente"
   },
   "loading": {
     "compacting": "Compactando conversación...",

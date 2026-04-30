@@ -5,7 +5,10 @@ import {
   type AcpSessionInfo,
 } from "@/shared/api/acp";
 import type { Session } from "@/shared/types/chat";
-import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
+import {
+  DEFAULT_CHAT_TITLE,
+  normalizeAcpTitle,
+} from "@/features/chat/lib/sessionTitle";
 import {
   archiveSession as acpArchiveSession,
   unarchiveSession as acpUnarchiveSession,
@@ -97,7 +100,7 @@ function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
   return {
     id: session.sessionId,
     acpSessionId: session.sessionId,
-    title: session.title ?? "Untitled",
+    title: normalizeAcpTitle(session.title) ?? "Untitled",
     projectId: session.projectId ?? undefined,
     providerId: session.providerId ?? undefined,
     personaId: session.personaId ?? undefined,

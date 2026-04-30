@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { CreateSkillDialog } from "../CreateSkillDialog";
+import { SkillEditor } from "../SkillEditor";
 
 vi.mock("../../api/skills", () => ({
   createSkill: vi.fn().mockResolvedValue(undefined),
@@ -20,10 +20,10 @@ const { createSkill, updateSkill } = await import("../../api/skills");
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
-  onCreated: vi.fn(),
+  onSaved: vi.fn(),
 };
 
-describe("CreateSkillDialog", () => {
+describe("SkillEditor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -32,23 +32,23 @@ describe("CreateSkillDialog", () => {
 
   describe("rendering", () => {
     it("does not render when isOpen is false", () => {
-      render(<CreateSkillDialog {...defaultProps} isOpen={false} />);
+      render(<SkillEditor {...defaultProps} isOpen={false} />);
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
     it("renders dialog when isOpen is true", () => {
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
 
     it('shows "New Skill" title in create mode', () => {
-      render(<CreateSkillDialog {...defaultProps} />);
-      expect(screen.getByText("New Skill")).toBeInTheDocument();
+      render(<SkillEditor {...defaultProps} />);
+      expect(screen.getByText("New skill")).toBeInTheDocument();
     });
 
     it('shows "Edit Skill" title when editingSkill is provided', () => {
       render(
-        <CreateSkillDialog
+        <SkillEditor
           {...defaultProps}
           editingSkill={{
             name: "my-skill",
@@ -59,7 +59,7 @@ describe("CreateSkillDialog", () => {
           }}
         />,
       );
-      expect(screen.getByText("Edit Skill")).toBeInTheDocument();
+      expect(screen.getByText("Edit skill")).toBeInTheDocument();
     });
   });
 
@@ -68,7 +68,7 @@ describe("CreateSkillDialog", () => {
   describe("name validation", () => {
     it("allows consecutive hyphens to match backend validation", async () => {
       const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
       const descriptionInput = screen.getByPlaceholderText(
         "What it does and when to use it...",
@@ -88,7 +88,7 @@ describe("CreateSkillDialog", () => {
 
     it("auto-formats input (uppercase to lowercase, spaces to hyphens)", async () => {
       const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
 
       await user.type(nameInput, "My Skill");
@@ -97,7 +97,7 @@ describe("CreateSkillDialog", () => {
 
     it("shows validation error for invalid name with trailing hyphen", async () => {
       const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
 
       await user.type(nameInput, "a-");
@@ -109,7 +109,7 @@ describe("CreateSkillDialog", () => {
 
     it("truncates names at 64 characters", async () => {
       const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
       const longName = "a".repeat(65);
 
@@ -122,7 +122,7 @@ describe("CreateSkillDialog", () => {
     });
 
     it("save button is disabled when name is empty", () => {
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
       const saveButton = screen.getByRole("button", { name: /create skill/i });
       expect(saveButton).toBeDisabled();
     });
@@ -140,9 +140,7 @@ describe("CreateSkillDialog", () => {
     };
 
     it("pre-fills fields with existing skill data", () => {
-      render(
-        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
-      );
+      render(<SkillEditor {...defaultProps} editingSkill={editingSkill} />);
       expect(screen.getByPlaceholderText("my-skill-name")).toHaveValue(
         "code-review",
       );
@@ -158,9 +156,7 @@ describe("CreateSkillDialog", () => {
 
     it("name field is editable in edit mode", async () => {
       const user = userEvent.setup();
-      render(
-        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
-      );
+      render(<SkillEditor {...defaultProps} editingSkill={editingSkill} />);
       const nameInput = screen.getByPlaceholderText("my-skill-name");
 
       await user.clear(nameInput);
@@ -170,9 +166,7 @@ describe("CreateSkillDialog", () => {
     });
 
     it("shows the skill path on disk as minimal helper text in edit mode", () => {
-      render(
-        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
-      );
+      render(<SkillEditor {...defaultProps} editingSkill={editingSkill} />);
 
       expect(
         screen.getByText(
@@ -183,9 +177,7 @@ describe("CreateSkillDialog", () => {
 
     it("updates the path helper text when the name changes in edit mode", async () => {
       const user = userEvent.setup();
-      render(
-        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
-      );
+      render(<SkillEditor {...defaultProps} editingSkill={editingSkill} />);
 
       const nameInput = screen.getByPlaceholderText("my-skill-name");
       await user.clear(nameInput);
@@ -199,9 +191,7 @@ describe("CreateSkillDialog", () => {
     });
 
     it('save button text is "Save Changes" in edit mode', () => {
-      render(
-        <CreateSkillDialog {...defaultProps} editingSkill={editingSkill} />,
-      );
+      render(<SkillEditor {...defaultProps} editingSkill={editingSkill} />);
       expect(
         screen.getByRole("button", { name: /save changes/i }),
       ).toBeInTheDocument();
@@ -209,7 +199,7 @@ describe("CreateSkillDialog", () => {
 
     it("allows editing skills whose names contain consecutive hyphens", () => {
       render(
-        <CreateSkillDialog
+        <SkillEditor
           {...defaultProps}
           editingSkill={{
             name: "double--hyphen",
@@ -235,7 +225,7 @@ describe("CreateSkillDialog", () => {
   describe("form submission", () => {
     it("calls createSkill API on save in create mode", async () => {
       const user = userEvent.setup();
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
 
       await user.type(screen.getByPlaceholderText("my-skill-name"), "my-skill");
       await user.type(
@@ -261,7 +251,7 @@ describe("CreateSkillDialog", () => {
     it("calls updateSkill API on save in edit mode", async () => {
       const user = userEvent.setup();
       render(
-        <CreateSkillDialog
+        <SkillEditor
           {...defaultProps}
           editingSkill={{
             name: "code-review",
@@ -293,7 +283,7 @@ describe("CreateSkillDialog", () => {
     it("calls updateSkill API with the renamed skill name in edit mode", async () => {
       const user = userEvent.setup();
       render(
-        <CreateSkillDialog
+        <SkillEditor
           {...defaultProps}
           editingSkill={{
             name: "code-review",
@@ -319,10 +309,10 @@ describe("CreateSkillDialog", () => {
       );
     });
 
-    it("calls onCreated callback after successful save", async () => {
+    it("calls onSaved callback after successful save", async () => {
       const user = userEvent.setup();
-      const onCreated = vi.fn();
-      render(<CreateSkillDialog {...defaultProps} onCreated={onCreated} />);
+      const onSaved = vi.fn();
+      render(<SkillEditor {...defaultProps} onSaved={onSaved} />);
 
       await user.type(screen.getByPlaceholderText("my-skill-name"), "my-skill");
       await user.type(
@@ -331,13 +321,13 @@ describe("CreateSkillDialog", () => {
       );
       await user.click(screen.getByRole("button", { name: /create skill/i }));
 
-      expect(onCreated).toHaveBeenCalled();
+      expect(onSaved).toHaveBeenCalled();
     });
 
     it("clears fields after save", async () => {
       const user = userEvent.setup();
       // Re-render with isOpen toggling to verify fields are cleared
-      const { rerender } = render(<CreateSkillDialog {...defaultProps} />);
+      const { rerender } = render(<SkillEditor {...defaultProps} />);
 
       await user.type(screen.getByPlaceholderText("my-skill-name"), "my-skill");
       await user.type(
@@ -347,7 +337,7 @@ describe("CreateSkillDialog", () => {
       await user.click(screen.getByRole("button", { name: /create skill/i }));
 
       // Dialog closes after save; reopen to check fields are cleared
-      rerender(<CreateSkillDialog {...defaultProps} />);
+      rerender(<SkillEditor {...defaultProps} />);
 
       expect(screen.getByPlaceholderText("my-skill-name")).toHaveValue("");
       expect(
@@ -359,7 +349,7 @@ describe("CreateSkillDialog", () => {
       const user = userEvent.setup();
       vi.mocked(createSkill).mockRejectedValueOnce(new Error("Network error"));
 
-      render(<CreateSkillDialog {...defaultProps} />);
+      render(<SkillEditor {...defaultProps} />);
 
       await user.type(screen.getByPlaceholderText("my-skill-name"), "my-skill");
       await user.type(

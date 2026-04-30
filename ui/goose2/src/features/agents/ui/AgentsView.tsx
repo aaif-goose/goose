@@ -299,7 +299,11 @@ export function AgentsView() {
       >
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("view.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("view.deleteTitle", {
+                name: deletingPersona?.displayName ?? "",
+              })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("view.deleteDescription", {
                 name: deletingPersona?.displayName ?? "",

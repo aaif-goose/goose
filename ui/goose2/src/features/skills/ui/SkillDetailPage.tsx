@@ -128,14 +128,12 @@ export function SkillDetailPage({
                   onClick={() => onStartChat(skill)}
                 />
               ) : null}
-              {skill.editable ? (
-                <SkillHeaderActionButton
-                  label={editLabel}
-                  icon={<IconPencil className="size-3.5" />}
-                  tooltipSide="top"
-                  onClick={() => onEdit(skill)}
-                />
-              ) : null}
+              <SkillHeaderActionButton
+                label={editLabel}
+                icon={<IconPencil className="size-3.5" />}
+                tooltipSide="top"
+                onClick={() => onEdit(skill)}
+              />
               <SkillHeaderActionButton
                 label={revealLabel}
                 icon={<IconFolderOpen className="size-3.5" />}
@@ -159,15 +157,13 @@ export function SkillDetailPage({
                     <IconShare className="size-3.5" />
                     {t("view.share")}
                   </DropdownMenuItem>
-                  {skill.editable ? (
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={() => onDelete(skill)}
-                    >
-                      <IconTrash className="size-3.5" />
-                      {t("common:actions.delete")}
-                    </DropdownMenuItem>
-                  ) : null}
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => onDelete(skill)}
+                  >
+                    <IconTrash className="size-3.5" />
+                    {t("common:actions.delete")}
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </>

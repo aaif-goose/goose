@@ -99,9 +99,6 @@ export function DoctorSettings() {
           <h3 className="text-lg font-semibold font-display tracking-tight">
             {t("doctor.title")}
           </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("doctor.description")}
-          </p>
         </div>
 
         <div className="flex flex-shrink-0 items-center gap-2">
