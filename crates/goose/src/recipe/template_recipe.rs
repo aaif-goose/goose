@@ -449,5 +449,47 @@ check-2: failed
             let result = render_recipe_content_with_structured_params(content, &params).unwrap();
             assert_eq!(result, "Alert HighMemory for Pod/api-server-abc");
         }
+
+        #[test]
+        fn test_render_with_empty_array_iteration() {
+            let content = "Items:{% for item in findings %} {{ item.name }}{% endfor %} done";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                ("findings".to_string(), json!([])),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "Items: done");
+        }
+
+        #[test]
+        fn test_render_with_deeply_nested_object() {
+            let content = "Owner: {{ signal.metadata.labels.app }}";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                (
+                    "signal".to_string(),
+                    json!({"metadata": {"labels": {"app": "api-server", "env": "prod"}}}),
+                ),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params).unwrap();
+            assert_eq!(result, "Owner: api-server");
+        }
+
+        #[test]
+        fn test_render_dot_access_on_scalar_fails() {
+            let content = "Value: {{ name.field }}";
+            let params = HashMap::from([
+                ("recipe_dir".to_string(), str_val("some_dir")),
+                ("name".to_string(), str_val("just-a-string")),
+            ]);
+            let result = render_recipe_content_with_structured_params(content, &params);
+            assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
+            assert!(
+                err_msg.contains("Failed to render"),
+                "Expected render failure, got: {}",
+                err_msg
+            );
+        }
     }
 }

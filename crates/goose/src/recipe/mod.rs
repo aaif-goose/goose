@@ -879,4 +879,132 @@ isGlobal: true"#;
             "settings.temperature: invalid type: string \"not_a_number\", expected f32"
         );
     }
+
+    #[test]
+    fn test_from_content_json_with_object_parameter() {
+        let content = r#"{
+            "version": "1.0.0",
+            "title": "Object Param Recipe",
+            "description": "Recipe with object parameter",
+            "instructions": "Analyze {{ signal.name }} in {{ signal.namespace }}",
+            "parameters": [
+                {
+                    "key": "signal",
+                    "input_type": "object",
+                    "requirement": "required",
+                    "description": "Signal data with name and namespace"
+                }
+            ]
+        }"#;
+
+        let recipe = Recipe::from_content(content).unwrap();
+        assert!(recipe.parameters.is_some());
+        let params = recipe.parameters.unwrap();
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].key, "signal");
+        assert!(matches!(
+            params[0].input_type,
+            RecipeParameterInputType::Object
+        ));
+        assert!(matches!(
+            params[0].requirement,
+            RecipeParameterRequirement::Required
+        ));
+    }
+
+    #[test]
+    fn test_from_content_json_with_array_parameter() {
+        let content = r#"{
+            "version": "1.0.0",
+            "title": "Array Param Recipe",
+            "description": "Recipe with array parameter",
+            "instructions": "Process findings",
+            "parameters": [
+                {
+                    "key": "findings",
+                    "input_type": "array",
+                    "requirement": "required",
+                    "description": "List of diagnostic findings"
+                }
+            ]
+        }"#;
+
+        let recipe = Recipe::from_content(content).unwrap();
+        assert!(recipe.parameters.is_some());
+        let params = recipe.parameters.unwrap();
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].key, "findings");
+        assert!(matches!(
+            params[0].input_type,
+            RecipeParameterInputType::Array
+        ));
+    }
+
+    #[test]
+    fn test_from_content_yaml_with_object_and_array_parameters() {
+        let content = r#"version: 1.0.0
+title: Mixed Structured Params
+description: Recipe with object and array parameters
+instructions: Analyze signal and findings
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: Signal data
+  - key: findings
+    input_type: array
+    requirement: optional
+    description: Diagnostic findings
+  - key: cluster_name
+    input_type: string
+    requirement: required
+    description: Target cluster"#;
+
+        let recipe = Recipe::from_content(content).unwrap();
+        assert!(recipe.parameters.is_some());
+        let params = recipe.parameters.unwrap();
+        assert_eq!(params.len(), 3);
+
+        assert_eq!(params[0].key, "signal");
+        assert!(matches!(
+            params[0].input_type,
+            RecipeParameterInputType::Object
+        ));
+        assert!(matches!(
+            params[0].requirement,
+            RecipeParameterRequirement::Required
+        ));
+
+        assert_eq!(params[1].key, "findings");
+        assert!(matches!(
+            params[1].input_type,
+            RecipeParameterInputType::Array
+        ));
+        assert!(matches!(
+            params[1].requirement,
+            RecipeParameterRequirement::Optional
+        ));
+
+        assert_eq!(params[2].key, "cluster_name");
+        assert!(matches!(
+            params[2].input_type,
+            RecipeParameterInputType::String
+        ));
+    }
+
+    #[test]
+    fn test_object_array_input_type_serde_roundtrip() {
+        let object_type = RecipeParameterInputType::Object;
+        let array_type = RecipeParameterInputType::Array;
+
+        let object_json = serde_json::to_string(&object_type).unwrap();
+        let array_json = serde_json::to_string(&array_type).unwrap();
+        assert_eq!(object_json, "\"object\"");
+        assert_eq!(array_json, "\"array\"");
+
+        let deser_object: RecipeParameterInputType = serde_json::from_str(&object_json).unwrap();
+        let deser_array: RecipeParameterInputType = serde_json::from_str(&array_json).unwrap();
+        assert!(matches!(deser_object, RecipeParameterInputType::Object));
+        assert!(matches!(deser_array, RecipeParameterInputType::Array));
+    }
 }
