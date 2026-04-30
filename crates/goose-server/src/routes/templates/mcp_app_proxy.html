@@ -39,64 +39,10 @@
          */
         function getProxyParams() {
           var params = new URLSearchParams(window.location.search);
-          var colorScheme = params.get('color_scheme');
           return {
             secret: params.get('secret') || '',
-            baseUrl: window.location.origin,
-            colorScheme: colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : null
+            baseUrl: window.location.origin
           };
-        }
-
-        function applyProxyColorScheme(nextColorScheme) {
-          var proxyParams = getProxyParams();
-          var colorScheme = nextColorScheme || proxyParams.colorScheme || 'light dark';
-          document.documentElement.style.colorScheme = colorScheme;
-          document.body.style.colorScheme = colorScheme;
-          if (guestIframe) {
-            guestIframe.style.setProperty('color-scheme', colorScheme);
-          }
-        }
-
-        function createColorSchemePrelude(colorScheme) {
-          var hostColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
-          var matchMediaScript = [
-            '<scr' + 'ipt>',
-            '(function(){',
-            'var nativeMatchMedia=window.matchMedia&&window.matchMedia.bind(window);',
-            'function normalizeColorScheme(value){return value==="dark"?"dark":"light";}',
-            'function setHostColorScheme(value){window.__mcpHostColorScheme=normalizeColorScheme(value);document.documentElement.style.colorScheme=window.__mcpHostColorScheme;if(document.body){document.body.style.colorScheme=window.__mcpHostColorScheme;}var meta=document.querySelector("meta[name=\\"color-scheme\\"]");if(meta){meta.setAttribute("content",window.__mcpHostColorScheme);}}',
-            'setHostColorScheme(' + JSON.stringify(hostColorScheme) + ');',
-            'document.addEventListener("DOMContentLoaded",function(){setHostColorScheme(window.__mcpHostColorScheme);});',
-            'if(nativeMatchMedia){window.matchMedia=function(query){var normalized=String(query).replace(/\\s+/g," ").trim().toLowerCase();var isDark=normalized==="(prefers-color-scheme: dark)";var isLight=normalized==="(prefers-color-scheme: light)";if(!isDark&&!isLight){return nativeMatchMedia(query);}return {matches:isDark?window.__mcpHostColorScheme==="dark":window.__mcpHostColorScheme==="light",media:String(query),onchange:null,addListener:function(){},removeListener:function(){},addEventListener:function(){},removeEventListener:function(){},dispatchEvent:function(){return false;}};};}',
-            'window.addEventListener("message",function(event){var data=event.data;if(!data||data.method!=="ui/notifications/host-context-changed"){return;}var theme=data.params&&data.params.theme;if(theme==="light"||theme==="dark"){setHostColorScheme(theme);}});',
-            '})();',
-            '</scr' + 'ipt>'
-          ].join('');
-
-          return '<meta name="color-scheme" content="' + hostColorScheme + '"><style id="mcp-app-host-color-scheme">:root{color-scheme:' + hostColorScheme + ';}html,body{background-color:transparent;}</style>' + matchMediaScript;
-        }
-
-        function injectGuestColorScheme(html, colorScheme) {
-          if (!colorScheme) {
-            return html;
-          }
-
-          var prelude = createColorSchemePrelude(colorScheme);
-          var cleanedHtml = html.replace(/<meta\s+[^>]*name\s*=\s*["']color-scheme["'][^>]*>/gi, '');
-
-          if (/<head\b[^>]*>/i.test(cleanedHtml)) {
-            return cleanedHtml.replace(/<head\b[^>]*>/i, function (match) {
-              return match + prelude;
-            });
-          }
-
-          if (/<html\b[^>]*>/i.test(cleanedHtml)) {
-            return cleanedHtml.replace(/<html\b[^>]*>/i, function (match) {
-              return match + '<head>' + prelude + '</head>';
-            });
-          }
-
-          return prelude + cleanedHtml;
         }
 
         /**
@@ -147,22 +93,20 @@
             guestIframe.setAttribute('allow', allowList.join('; '));
           }
 
-          var proxyParams = getProxyParams();
-          var colorScheme = proxyParams.colorScheme || 'light dark';
-          guestIframe.style.cssText = 'width:100%; height:100%; border:none; background-color:transparent; color-scheme:' + colorScheme + ';';
-          var guestHtml = injectGuestColorScheme(html, proxyParams.colorScheme);
+          guestIframe.style.cssText = 'width:100%; height:100%; border:none;';
 
           // Store the HTML server-side and load via real URL.
           // This gives the guest iframe a real https:// URL instead of about:srcdoc,
           // which is required by SDKs (like Square Web Payments) that check
           // window.location.protocol for secure context verification.
           try {
-            var nonce = await storeGuestHtml(guestHtml);
+            var nonce = await storeGuestHtml(html);
+            var proxyParams = getProxyParams();
             guestIframe.src = proxyParams.baseUrl + '/mcp-app-guest?secret=' + encodeURIComponent(proxyParams.secret) + '&nonce=' + encodeURIComponent(nonce);
           } catch (e) {
             // Fallback to srcdoc if the store endpoint is not available
             console.warn('Failed to use /mcp-app-guest endpoint, falling back to srcdoc:', e);
-            guestIframe.srcdoc = guestHtml;
+            guestIframe.srcdoc = html;
           }
 
           document
@@ -184,13 +128,6 @@
           }
 
           var method = data.method;
-
-          if (method === 'ui/notifications/host-context-changed') {
-            var theme = data.params && data.params.theme;
-            if (theme === 'light' || theme === 'dark') {
-              applyProxyColorScheme(theme);
-            }
-          }
 
           // Handle sandbox-specific notifications from Host
           if (method === 'ui/notifications/sandbox-resource-ready') {
@@ -244,7 +181,6 @@
 
         // Set up message listener
         window.addEventListener('message', handleMessage);
-        applyProxyColorScheme();
 
         // Notify Host that Sandbox is ready
         window
