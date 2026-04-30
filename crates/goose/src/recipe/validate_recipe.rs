@@ -168,14 +168,7 @@ fn validate_parameters_in_template(
 /// Handles dot-notation (`signal.name`) and bracket notation
 /// (`findings[0].name`, `signal["ns"]`).
 fn extract_root_identifier(var: &str) -> &str {
-    let dot_pos = var.find('.');
-    let bracket_pos = var.find('[');
-    match (dot_pos, bracket_pos) {
-        (Some(d), Some(b)) => &var[..d.min(b)],
-        (Some(d), None) => &var[..d],
-        (None, Some(b)) => &var[..b],
-        (None, None) => var,
-    }
+    var.split(['.', '[']).next().unwrap_or(var)
 }
 
 fn validate_optional_parameters(parameters: &Option<Vec<RecipeParameter>>) -> Result<()> {
