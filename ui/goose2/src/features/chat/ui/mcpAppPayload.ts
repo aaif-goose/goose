@@ -26,6 +26,13 @@ type TextContentWithMeta = GooseTextResourceContents & {
 };
 
 const MCP_APP_RESOURCE_MIME_TYPE = UI_EXTENSION_CONFIG.mimeTypes[0];
+const MCP_APP_CSP_FIELDS = [
+  "connectDomains",
+  "resourceDomains",
+  "frameDomains",
+  "baseUriDomains",
+  "scriptDomains",
+] satisfies readonly (keyof McpAppResourceCsp)[];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -59,6 +66,33 @@ function getContentPriority(content: TextContentWithMeta): number {
   return 2;
 }
 
+function normalizeCspDomains(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const domains = value.filter(
+    (domain): domain is string => typeof domain === "string",
+  );
+  return domains.length > 0 ? domains : undefined;
+}
+
+function normalizeResourceCsp(csp: unknown): McpAppResourceCsp | null {
+  if (!isRecord(csp)) {
+    return null;
+  }
+
+  const normalized: McpAppResourceCsp = {};
+  for (const field of MCP_APP_CSP_FIELDS) {
+    const domains = normalizeCspDomains(csp[field]);
+    if (domains) {
+      normalized[field] = domains;
+    }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
 export function extractRenderableMcpAppDocument(
   payload: McpAppPayload,
 ): RenderableMcpAppDocument | null {
@@ -84,7 +118,7 @@ export function extractRenderableMcpAppDocument(
   return {
     html: bestContent.text,
     resourceUri: bestContent.uri ?? payload.tool.resourceUri,
-    csp: isRecord(csp) ? (csp as McpAppResourceCsp) : null,
+    csp: normalizeResourceCsp(csp),
     prefersBorder: metadata?.prefersBorder ?? true,
   };
 }
