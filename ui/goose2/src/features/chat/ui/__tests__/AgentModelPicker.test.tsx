@@ -129,6 +129,34 @@ describe("AgentModelPicker", () => {
     expect(longModelButton).toHaveClass("overflow-hidden");
   });
 
+  it("disables spellcheck in the all-models search field", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="goose"
+        onAgentChange={vi.fn()}
+        currentModelId="claude-sonnet-4"
+        currentModelName="Claude Sonnet 4"
+        availableModels={[
+          { id: "claude-sonnet-4", name: "Claude Sonnet 4", recommended: true },
+          { id: "gpt-4o-mini-2024-07-18", name: "GPT-4o mini" },
+        ]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "Browse all models" }));
+
+    const search = screen.getByPlaceholderText("Search models...");
+
+    expect(search).toHaveAttribute("spellcheck", "false");
+  });
+
   it("shows only agent name when no model info is available", () => {
     render(
       <AgentModelPicker

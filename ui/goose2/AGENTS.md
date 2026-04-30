@@ -150,7 +150,7 @@ React UI  ──►  @aaif/goose-sdk (TS)  ──►  goose-acp  (WebSocket, ACP
 
 The skills → sources migration in [#8675](https://github.com/block/goose/pull/8675) is the clearest illustration of the rule. **It deleted 319 lines of Tauri-command code in `src-tauri/src/commands/skills.rs` and replaced them with ACP custom methods.** If you find yourself wanting to add an `invoke()` command that proxies to `goose`, that PR is what "doing it the other way" looks like. Copy this shape when adding new endpoints:
 
-1. **Define the request/response in `crates/goose-sdk/src/custom_requests.rs`.** Use the `JsonRpcRequest` / `JsonRpcResponse` derives and the `#[request(method = "_goose/<area>/<action>", response = ...)]` attribute. Sources uses namespaced methods like `_goose/sources/create`, `_goose/sources/list`, `_goose/sources/update`, `_goose/sources/delete`, `_goose/sources/export`, `_goose/sources/import` with paired request/response structs (`CreateSourceRequest` / `CreateSourceResponse`, etc.).
+1. **Define the request/response in `crates/goose-sdk/src/custom_requests.rs`.** Use the `JsonRpcRequest` / `JsonRpcResponse` derives and the `#[request(method = "_goose/<area>/<action>", response = ...)]` attribute. Sources uses namespaced methods like `_goose/sources/create`, `_goose/sources/list`, `_goose/sources/update`, `_goose/sources/delete`, `_goose/sources/export`, `_goose/sources/import` with paired request/response structs (`CreateSourceRequest` / `CreateSourceResponse`, etc.). Keep the docs on those structs aligned with the implementation: today `_goose/sources/list` is still skill-only; create/import take an explicit target scope (`global`, plus `projectDir` for project sources), while update/delete/export operate on an existing skill by absolute `path`.
 2. **Implement the handler in `crates/goose-acp/src/server.rs`** with `#[custom_method(YourRequest)]`. Keep it thin: unpack the request, call into the `goose` crate, wrap the result. The sources handlers are ~5 lines each — e.g. `on_list_sources` just calls `goose::sources::list_sources(...)` and returns the typed response. Errors map to `sacp::Error::invalid_params()` / `internal_error()`.
 3. **Put the real logic in the `goose` crate.** Sources lives in `crates/goose/src/sources.rs` — filesystem CRUD, frontmatter parsing, scope resolution, all of it. `goose-acp` knows nothing about where skills are stored on disk; it just forwards typed arguments. This separation is the point.
 4. **Regenerate the SDK.** The TS methods on `GooseClient` are generated into `ui/sdk/src/generated/`. Do not hand-edit generated files.
@@ -171,11 +171,14 @@ For a minimal frontend `api/` wrapper using the typed shape, see `ui/goose2/src/
 
 ### When `invoke()` is still appropriate
 
-Tauri commands (`invoke()` from `@tauri-apps/api/core`) are reserved for things that genuinely belong to the desktop shell, not to `goose` core. In practice that means:
+Tauri commands (`invoke()` from `@tauri-apps/api/core`) are reserved for things that genuinely belong to the desktop shell, not to `goose` core. Provider config or secret mutations that affect the Goose runtime must flow through React → SDK → ACP → goose core so core can validate provider metadata, invalidate secret caches, refresh inventory, and apply provider changes consistently. In practice, Tauri is limited to:
 
 - `get_goose_serve_url` — bootstrapping the ACP connection.
-- Secret storage owned by the OS keychain (e.g. `save_provider_field`, `delete_provider_config` — note dictation still uses these for writing API keys into the OS keychain, because that's a shell concern).
+- Native auth subprocesses and desktop-shell side effects.
 - Window state, filesystem dialogs, and other Tauri-plugin-backed capabilities.
+- Transitional provider cleanup such as `delete_provider_config` while local OAuth/cache side effects still live in the shell. `get_provider_config`, `check_all_provider_status`, and provider deletion duplicate provider/config knowledge in Tauri today and should move behind provider-scoped ACP methods.
+
+The long-term provider-config API should be provider-scoped rather than a frontend composition of generic config/secret writes. Prefer methods such as `_goose/providers/config/read`, `_goose/providers/config/status`, `_goose/providers/config/save`, and `_goose/providers/config/delete`; inventory refresh can be part of the result, but active provider reload belongs in the config mutation/apply path, not in `_goose/providers/inventory/refresh`.
 
 If the thing you're building is "get data from goose" or "tell goose to do something," it is **not** one of these cases. Add a custom ACP method instead.
 

@@ -14,6 +14,7 @@ vi.mock("@/shared/api/pathResolver", () => ({
 function makeProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
   return {
     id: "project-1",
+    path: "/tmp/projects/project-1.md",
     name: "Project",
     description: "",
     prompt: "",

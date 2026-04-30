@@ -23,7 +23,7 @@
   },
   "sections": {
     "projects": "Projects",
-    "recents": "Recents"
+    "recents": "Chats"
   },
   "showLess": "Show less",
   "viewAllChats_one": "View all {{displayCount}} chat",

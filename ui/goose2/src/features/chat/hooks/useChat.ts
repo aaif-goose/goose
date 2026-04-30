@@ -28,6 +28,8 @@ import {
 } from "../lib/attachments";
 import { sanitizeReplayMessages } from "../lib/replaySanitizer";
 import { i18n } from "@/shared/i18n";
+import type { ChatSendOptions } from "../types";
+import { buildSkillRetryOptions } from "../lib/skillSendPayload";
 
 // TODO: Remove this fallback once goose2 has first-class /-commands.
 const MANUAL_COMPACT_TRIGGER = "/compact";
@@ -146,16 +148,18 @@ export function useChat(
       text: string,
       overridePersona?: { id: string; name?: string },
       attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
     ) => {
       const sid = sessionId.slice(0, 8);
       const tSendStart = performance.now();
       const images = buildAcpImages(attachments);
       const hasAttachments = (attachments?.length ?? 0) > 0;
+      const hasAssistantPrompt = Boolean(sendOptions?.assistantPrompt?.trim());
       const currentChatState = useChatStore
         .getState()
         .getSessionRuntime(sessionId).chatState;
       if (
-        (!text.trim() && !hasAttachments) ||
+        (!text.trim() && !hasAttachments && !hasAssistantPrompt) ||
         currentChatState === "streaming" ||
         currentChatState === "thinking" ||
         currentChatState === "compacting"
@@ -180,8 +184,9 @@ export function useChat(
 
       // Create and add user message
       const userMessage = createUserMessage(
-        text,
+        sendOptions?.displayText ?? text,
         buildMessageAttachments(attachments),
+        sendOptions?.chips,
       );
       if (effectivePersonaInfo) {
         userMessage.metadata = {
@@ -250,6 +255,9 @@ export function useChat(
         );
         await acpSendMessage(sessionId, acpPrompt, {
           systemPrompt,
+          ...(sendOptions?.assistantPrompt
+            ? { assistantPrompt: sendOptions.assistantPrompt }
+            : {}),
           personaId: effectivePersonaInfo?.id,
           personaName: effectivePersonaInfo?.name,
           images: images?.map(
@@ -350,11 +358,17 @@ export function useChat(
     if (textContent && "text" in textContent) {
       const targetPersonaId = lastUserMessage.metadata?.targetPersonaId;
       const targetPersonaName = lastUserMessage.metadata?.targetPersonaName;
-      await sendMessage(
+      const retryOptions = buildSkillRetryOptions(
         textContent.text,
+        lastUserMessage.metadata?.chips,
+      );
+      await sendMessage(
+        textContent.text || (retryOptions ? " " : ""),
         targetPersonaId
           ? { id: targetPersonaId, name: targetPersonaName }
           : undefined,
+        undefined,
+        retryOptions,
       );
     }
   }, [sessionId, store, sendMessage]);

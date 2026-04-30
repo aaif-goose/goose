@@ -20,6 +20,7 @@ export interface AcpProvider {
 
 export interface AcpSendMessageOptions {
   systemPrompt?: string;
+  assistantPrompt?: string;
   personaId?: string;
   personaName?: string;
   /** Image attachments as [base64Data, mimeType] pairs. */
@@ -38,6 +39,22 @@ export interface AcpCreateSessionOptions extends AcpPrepareSessionOptions {
 /** Discover ACP providers installed on the system. */
 export async function discoverAcpProviders(): Promise<AcpProvider[]> {
   const providers = await directAcp.listProviders();
+  return resolveProvidersCatalog(providers);
+}
+
+/**
+ * Derive ACP providers from already-fetched inventory entries,
+ * avoiding a duplicate `_goose/providers/list` RPC.
+ */
+export function discoverAcpProvidersFromEntries(
+  entries: Array<{ providerId: string; providerName: string }>,
+): AcpProvider[] {
+  return resolveProvidersCatalog(
+    directAcp.buildProviderListFromEntries(entries),
+  );
+}
+
+function resolveProvidersCatalog(providers: AcpProvider[]): AcpProvider[] {
   const seen = new Set<string>();
 
   return providers
@@ -64,7 +81,7 @@ export async function acpSendMessage(
   prompt: string,
   options: AcpSendMessageOptions = {},
 ): Promise<void> {
-  const { systemPrompt, personaId, images } = options;
+  const { systemPrompt, assistantPrompt, personaId, images } = options;
   const sid = sessionId.slice(0, 8);
   const tStart = performance.now();
 
@@ -73,12 +90,22 @@ export async function acpSendMessage(
     throw new Error("Session not prepared. Call acpPrepareSession first.");
   }
 
-  const hasSystem = systemPrompt && systemPrompt.trim().length > 0;
-  const effectivePrompt = hasSystem
-    ? `<persona-instructions>\n${systemPrompt}\n</persona-instructions>\n\n<user-message>\n${prompt}\n</user-message>`
-    : prompt;
-
-  const content: ContentBlock[] = [{ type: "text", text: effectivePrompt }];
+  const content: ContentBlock[] = [];
+  if (systemPrompt?.trim()) {
+    content.push({
+      type: "text",
+      text: systemPrompt,
+      annotations: { audience: ["assistant"] },
+    });
+  }
+  if (assistantPrompt?.trim()) {
+    content.push({
+      type: "text",
+      text: assistantPrompt,
+      annotations: { audience: ["assistant"] },
+    });
+  }
+  content.push({ type: "text", text: prompt });
   if (images) {
     for (const [data, mimeType] of images) {
       content.push({ type: "image", data, mimeType } as ContentBlock);
@@ -92,13 +119,21 @@ export async function acpSendMessage(
     `[perf:send] ${sid} acpSendMessage → prompt(len=${prompt.length}, imgs=${images?.length ?? 0})`,
   );
   const tPrompt = performance.now();
-  await directAcp.prompt(gooseSessionId, content);
-  const tDone = performance.now();
-  perfLog(
-    `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
-  );
-
-  clearActiveMessageId(gooseSessionId);
+  const meta: Record<string, unknown> = {};
+  if (personaId) meta.personaId = personaId;
+  try {
+    await directAcp.prompt(
+      gooseSessionId,
+      content,
+      Object.keys(meta).length > 0 ? meta : undefined,
+    );
+    const tDone = performance.now();
+    perfLog(
+      `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
+    );
+  } finally {
+    clearActiveMessageId(gooseSessionId);
+  }
 }
 
 /** Prepare or warm an ACP session ahead of the first prompt. */

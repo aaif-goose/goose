@@ -36,6 +36,10 @@ vi.mock("@/shared/api/system", () => ({
     mockListFilesForMentions(roots, maxResults),
 }));
 
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
+}));
+
 const TEST_PERSONAS: Persona[] = [
   {
     id: "builtin-solo",
@@ -90,7 +94,9 @@ describe("ChatInput", () => {
   it("renders with default placeholder", () => {
     render(<ChatInput onSend={vi.fn()} />);
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention agents"),
+      screen.getByPlaceholderText(
+        "Message Goose, @ to mention agents or skills",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -385,7 +391,7 @@ describe("ChatInput", () => {
     await user.click(screen.getByRole("option", { name: /reviewer/i }));
 
     expect(input).toHaveValue("");
-    expect(screen.getByText("@Reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
   });
 
   it("shows project files in @mention results and inserts the selected path", async () => {
@@ -518,7 +524,6 @@ describe("ChatInput", () => {
   it("keeps the mic toggle enabled while recording even if voice input becomes unavailable", () => {
     render(
       <ChatInputToolbar
-        personas={[]}
         selectedPersonaId={null}
         providers={[]}
         selectedProvider="goose"
@@ -556,6 +561,6 @@ describe("ChatInput", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).toHaveBeenCalledWith("hello", "reviewer", undefined);
-    expect(screen.getByText("@Reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
   });
 });

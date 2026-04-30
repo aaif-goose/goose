@@ -216,7 +216,7 @@ export default function SkillsView() {
                 variant="outline"
                 size="sm"
                 className="flex items-center gap-2"
-                disabled
+                hidden
                 title={intl.formatMessage(i18n.comingSoon)}
               >
                 <Plus className="w-4 h-4" />

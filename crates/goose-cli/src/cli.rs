@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
+use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
@@ -709,6 +710,8 @@ enum Command {
         /// Show verbose information including current configuration
         #[arg(short, long, help = "Show verbose information including config.yaml")]
         verbose: bool,
+        #[arg(long, help = "Test provider connection and show status")]
+        check: bool,
     },
 
     #[command(about = "Check that your Goose setup is working")]
@@ -1081,6 +1084,7 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         builtins,
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
+        goose_platform: GoosePlatform::GooseCli,
     }));
     let router = create_router(server);
 
@@ -1765,7 +1769,7 @@ pub async fn cli() -> anyhow::Result<()> {
         }
         Some(Command::Configure {}) => handle_configure().await,
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
-        Some(Command::Info { verbose }) => handle_info(verbose),
+        Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
         Some(Command::Acp { builtins }) => goose::acp::server::run(builtins).await,
         Some(Command::Serve {

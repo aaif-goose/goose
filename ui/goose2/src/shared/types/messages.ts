@@ -1,3 +1,8 @@
+import type {
+  GooseReadResourceResult,
+  GooseToolMetadata,
+} from "@aaif/goose-sdk";
+
 export type ChatAttachmentKind = "image" | "file" | "directory";
 
 export interface ChatImageAttachmentDraft {
@@ -33,10 +38,19 @@ export type ChatAttachmentDraft =
 // Message roles
 export type MessageRole = "user" | "assistant" | "system";
 
+/** ACP audience restriction — which roles may see a content block. */
+export type Audience = ("user" | "assistant")[];
+
+/** ACP content-block annotations (mirrors the SDK's Annotations shape). */
+export interface ContentAnnotations {
+  audience?: Audience;
+}
+
 // Content block types
 export interface TextContent {
   type: "text";
   text: string;
+  annotations?: ContentAnnotations;
 }
 
 export interface ImageContent {
@@ -44,6 +58,7 @@ export interface ImageContent {
   source:
     | { type: "base64"; mediaType: string; data: string }
     | { type: "url"; url: string };
+  annotations?: ContentAnnotations;
 }
 
 export type ToolCallStatus =
@@ -67,6 +82,7 @@ export interface ToolRequestContent {
   status: ToolCallStatus;
   /** Epoch ms when the tool call started executing (set on event receipt). */
   startedAt?: number;
+  annotations?: ContentAnnotations;
 }
 
 export interface ToolResponseContent {
@@ -75,20 +91,48 @@ export interface ToolResponseContent {
   name: string;
   result: string;
   isError: boolean;
+  annotations?: ContentAnnotations;
+}
+
+export interface McpAppPayload {
+  sessionId: string;
+  gooseSessionId: string | null;
+  toolCallId: string;
+  toolCallTitle: string;
+  source: "toolCallUpdateMeta";
+  tool: {
+    name: string;
+    extensionName: string;
+    resourceUri: string;
+    meta?: GooseToolMetadata;
+  };
+  resource: {
+    result: GooseReadResourceResult | null;
+    readError?: string;
+  };
+}
+
+export interface McpAppContent {
+  type: "mcpApp";
+  id: string;
+  payload: McpAppPayload;
 }
 
 export interface ThinkingContent {
   type: "thinking";
   text: string;
+  annotations?: ContentAnnotations;
 }
 
 export interface RedactedThinkingContent {
   type: "redactedThinking";
+  annotations?: ContentAnnotations;
 }
 
 export interface ReasoningContent {
   type: "reasoning";
   text: string;
+  annotations?: ContentAnnotations;
 }
 
 export interface ActionRequiredContent {
@@ -99,12 +143,14 @@ export interface ActionRequiredContent {
   toolName?: string;
   arguments?: Record<string, unknown>;
   schema?: Record<string, unknown>;
+  annotations?: ContentAnnotations;
 }
 
 export interface SystemNotificationContent {
   type: "systemNotification";
   notificationType: "compaction" | "info" | "warning" | "error";
   text: string;
+  annotations?: ContentAnnotations;
 }
 
 export type MessageContent =
@@ -112,6 +158,7 @@ export type MessageContent =
   | ImageContent
   | ToolRequestContent
   | ToolResponseContent
+  | McpAppContent
   | ThinkingContent
   | RedactedThinkingContent
   | ReasoningContent
@@ -164,6 +211,9 @@ export function isToolRequest(c: MessageContent): c is ToolRequestContent {
 export function isToolResponse(c: MessageContent): c is ToolResponseContent {
   return c.type === "toolResponse";
 }
+export function isMcpApp(c: MessageContent): c is McpAppContent {
+  return c.type === "mcpApp";
+}
 export function isThinking(c: MessageContent): c is ThinkingContent {
   return c.type === "thinking";
 }
@@ -192,6 +242,7 @@ export function getTextContent(message: Message): string {
 export function createUserMessage(
   text: string,
   attachments?: MessageAttachment[],
+  chips?: MessageChip[],
 ): Message {
   return {
     id: crypto.randomUUID(),
@@ -202,6 +253,7 @@ export function createUserMessage(
       userVisible: true,
       agentVisible: true,
       ...(attachments ? { attachments } : {}),
+      ...(chips && chips.length > 0 ? { chips } : {}),
     },
   };
 }

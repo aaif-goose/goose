@@ -113,6 +113,12 @@
   "cardButtons.launch": {
     "defaultMessage": "Launch"
   },
+  "chat.notification.taskComplete.body": {
+    "defaultMessage": "Click here to bring Goose back into focus."
+  },
+  "chat.notification.taskComplete.title": {
+    "defaultMessage": "Goose finished the task."
+  },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
   },
@@ -1449,7 +1455,7 @@
     "defaultMessage": "Downloaded"
   },
   "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "Downloading\u2026"
+    "defaultMessage": "Downloading…"
   },
   "huggingFaceModelSearch.loadingVariants": {
     "defaultMessage": "Loading variants..."
@@ -1845,7 +1851,7 @@
     "defaultMessage": "Vision"
   },
   "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "Vision encoder downloading\u2026"
+    "defaultMessage": "Vision encoder downloading…"
   },
   "localInferenceSettings.visionEncoderNotDownloaded": {
     "defaultMessage": "Vision encoder not downloaded"
@@ -4051,6 +4057,12 @@
   },
   "settings.notifications.openSettings": {
     "defaultMessage": "Open Settings"
+  },
+  "settings.notifications.task.description": {
+    "defaultMessage": "Notify when Goose finishes a task while the window is in the background"
+  },
+  "settings.notifications.task.title": {
+    "defaultMessage": "Task completion notifications"
   },
   "settings.notifications.title": {
     "defaultMessage": "Notifications"

@@ -86,9 +86,9 @@ uuid = { workspace = true, features = ["v7"] }
 regex = { workspace = true }
 async-trait = { workspace = true }
 async-stream = { workspace = true }
-minijinja = { version = "2.12.0", features = ["loader"] }
+minijinja = { version = "2.19.0", features = ["loader"] }
 include_dir = { workspace = true }
-tiktoken-rs = "0.6.0"
+tiktoken-rs = "0.11.0"
 chrono = { workspace = true }
 clap = { workspace = true }
 indoc = { workspace = true }
@@ -130,7 +130,7 @@ sqlx = { version = "0.8", default-features = false, features = [
 
 # For Bedrock provider (optional, behind "aws-providers" feature)
 aws-config = { version = "=1.8.12", features = ["behavior-version-latest"], optional = true }
-aws-smithy-types = { version = "=1.3.5", optional = true }
+aws-smithy-types = { version = "=1.4.7", optional = true }
 aws-sdk-bedrockruntime = { version = "=1.120.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
 
 # For SageMaker TGI provider (optional, behind "aws-providers" feature)
@@ -139,7 +139,7 @@ aws-sdk-sagemakerruntime = { version = "1.62.0", default-features = false, featu
 # For GCP Vertex AI provider auth
 jsonwebtoken = { version = "10.3.0", default-features = false, features = ["use_pem"] }
 
-blake3 = "1.5"
+blake3 = "1.8"
 fs2 = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
 tempfile = { workspace = true }
@@ -164,9 +164,9 @@ sys-info = "0.9"
 schemars = { workspace = true, features = [
     "derive",
 ] }
-insta = "1.43.2"
+insta = "1.47.2"
 shellexpand = { workspace = true }
-indexmap = "2.12.0"
+indexmap = "2.14.0"
 ignore = { workspace = true }
 rayon = { workspace = true }
 tree-sitter = { workspace = true }
@@ -182,17 +182,18 @@ tree-sitter-typescript = { workspace = true }
 which = { workspace = true }
 pctx_code_mode = { version = "^0.3.0", optional = true }
 pulldown-cmark = "0.13.0"
-llama-cpp-2 = { version = "0.1.143", features = ["sampler", "mtmd"], optional = true }
+llama-cpp-2 = { version = "0.1.145", features = ["sampler", "mtmd"], optional = true }
 encoding_rs = "0.8.35"
-pastey = "0.2.1"
+pastey = "0.2.2"
 shell-words = { workspace = true }
 pem = { version = "3", optional = true }
 pkcs1 = { version = "0.7", default-features = false, features = ["pkcs8"], optional = true }
 pkcs8 = { version = "0.10", default-features = false, features = ["alloc"], optional = true }
 sec1 = { version = "0.7", default-features = false, features = ["der", "pkcs8"], optional = true }
-goose-acp-macros = { version = "1.31.0", path = "../goose-acp-macros" }
+goose-acp-macros = { path = "../goose-acp-macros" }
 tower-http = { workspace = true, features = ["cors"] }
 http-body-util = "0.1.3"
+process-wrap = { version = "9.1.0", features = ["std"] }
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -208,7 +209,7 @@ keyring = { version = "3.6.2", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.2", features = ["sync-secret-service"] }
-libc = "0.2.184"
+libc = "0.2.186"
 
 [dev-dependencies]
 serial_test = { workspace = true }

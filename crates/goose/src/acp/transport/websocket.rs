@@ -1,75 +1,29 @@
-use anyhow::Result;
+use std::sync::Arc;
+
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
 use futures::{SinkExt, StreamExt};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
-use super::{TransportSession, HEADER_SESSION_ID};
-use crate::acp::adapters::{ReceiverToAsyncRead, SenderToAsyncWrite};
-use crate::acp::server_factory::AcpServer;
+use super::connection::ConnectionRegistry;
+use super::HEADER_CONNECTION_ID;
 
-pub(crate) struct WsState {
-    server: Arc<AcpServer>,
-    // Keyed by acp_session_id: a connection-scoped UUID serving many Goose sessions.
-    sessions: RwLock<HashMap<String, TransportSession>>,
-}
-
-impl WsState {
-    pub fn new(server: Arc<AcpServer>) -> Self {
-        Self {
-            server,
-            sessions: RwLock::new(HashMap::new()),
-        }
-    }
-
-    async fn create_connection(&self) -> Result<String> {
-        let (to_agent_tx, to_agent_rx) = mpsc::channel::<String>(256);
-        let (from_agent_tx, from_agent_rx) = mpsc::unbounded_channel::<String>();
-
-        let agent = self.server.create_agent().await?;
-
-        let acp_session_id = uuid::Uuid::new_v4().to_string();
-
-        let read_stream = ReceiverToAsyncRead::new(to_agent_rx);
-        let write_stream = SenderToAsyncWrite::new(from_agent_tx);
-        let fut =
-            crate::acp::server::serve(agent, read_stream.compat(), write_stream.compat_write());
-        let handle = tokio::spawn(async move {
-            if let Err(e) = fut.await {
-                error!("ACP WebSocket session error: {}", e);
-            }
-        });
-
-        self.sessions.write().await.insert(
-            acp_session_id.clone(),
-            TransportSession {
-                to_agent_tx,
-                from_agent_rx: Arc::new(Mutex::new(from_agent_rx)),
-                handle,
-            },
-        );
-
-        info!(acp_session_id = %acp_session_id, "WebSocket connection created");
-        Ok(acp_session_id)
-    }
-
-    async fn remove_connection(&self, acp_session_id: &str) {
-        if let Some(session) = self.sessions.write().await.remove(acp_session_id) {
-            session.handle.abort();
-            info!(acp_session_id = %acp_session_id, "WebSocket connection removed");
-        }
-    }
-}
-
-pub(crate) async fn handle_get(state: Arc<WsState>, ws: WebSocketUpgrade) -> Response {
-    let acp_session_id = match state.create_connection().await {
-        Ok(id) => id,
+/// GET /acp with `Upgrade: websocket`
+///
+/// Creates a new connection (same lifecycle as Streamable HTTP), upgrades to a
+/// WebSocket, and runs a bidirectional message loop. The client still sends
+/// `initialize` as the first WS text frame — unlike the HTTP path, the
+/// initialize response is streamed back over the same WebSocket rather than
+/// returned synchronously.
+pub(crate) async fn handle_ws_upgrade(
+    registry: Arc<ConnectionRegistry>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let (connection_id, connection) = match registry.create_connection().await {
+        Ok(pair) => pair,
         Err(e) => {
             error!("Failed to create WebSocket connection: {}", e);
             return (
@@ -80,80 +34,102 @@ pub(crate) async fn handle_get(state: Arc<WsState>, ws: WebSocketUpgrade) -> Res
         }
     };
 
-    let mut response = ws.on_upgrade({
-        let acp_session_id = acp_session_id.clone();
-        move |socket| handle_ws(socket, state, acp_session_id)
+    // WebSocket does not need the synchronous initialize split — start the
+    // broadcast fan-out immediately so the WS sink reads from the same stream
+    // of server→client messages as any HTTP SSE subscribers would.
+    connection.start_fanout().await;
+
+    let conn_id_for_handler = connection_id.clone();
+    let registry_for_handler = registry.clone();
+    let mut response = ws.on_upgrade(move |socket| async move {
+        run_ws(
+            socket,
+            registry_for_handler,
+            conn_id_for_handler,
+            connection,
+        )
+        .await
     });
-    response
-        .headers_mut()
-        .insert(HEADER_SESSION_ID, acp_session_id.parse().unwrap());
+
+    if let Ok(v) = HeaderValue::from_str(&connection_id) {
+        response.headers_mut().insert(HEADER_CONNECTION_ID, v);
+    }
+    info!(connection_id = %connection_id, "WebSocket connection created");
     response
 }
 
-pub(crate) async fn handle_ws(socket: WebSocket, state: Arc<WsState>, acp_session_id: String) {
+async fn run_ws(
+    socket: WebSocket,
+    registry: Arc<ConnectionRegistry>,
+    connection_id: String,
+    connection: Arc<super::connection::Connection>,
+) {
     let (mut ws_tx, mut ws_rx) = socket.split();
+    let (replay, mut outbound_rx) = connection.subscribe_with_replay().await;
 
-    let (to_agent, from_agent) = {
-        let sessions = state.sessions.read().await;
-        match sessions.get(&acp_session_id) {
-            Some(session) => (session.to_agent_tx.clone(), session.from_agent_rx.clone()),
-            None => {
-                error!(acp_session_id = %acp_session_id, "Session not found after creation");
-                return;
+    debug!(connection_id = %connection_id, "Starting WebSocket message loop");
+
+    for text in replay {
+        trace!(connection_id = %connection_id, payload = %text, "Agent → Client (replay): {} bytes", text.len());
+        if ws_tx.send(Message::Text(text.into())).await.is_err() {
+            error!(connection_id = %connection_id, "WebSocket send failed during replay");
+            if let Some(conn) = registry.remove(&connection_id).await {
+                conn.shutdown().await;
             }
+            return;
         }
-    };
-
-    debug!(acp_session_id = %acp_session_id, "Starting bidirectional message loop");
-
-    let mut from_agent_rx = from_agent.lock().await;
+    }
 
     loop {
         tokio::select! {
-            Some(msg_result) = ws_rx.next() => {
+            msg_result = ws_rx.next() => {
                 match msg_result {
-                    Ok(Message::Text(text)) => {
+                    Some(Ok(Message::Text(text))) => {
                         let text_str = text.to_string();
-                        debug!(acp_session_id = %acp_session_id, "Client → Agent: {} bytes", text_str.len());
-                        if let Err(e) = to_agent.send(text_str).await {
-                            error!(acp_session_id = %acp_session_id, "Failed to send to agent: {}", e);
+                        trace!(connection_id = %connection_id, payload = %text_str, "Client → Agent: {} bytes", text_str.len());
+                        if connection.to_agent_tx.send(text_str).await.is_err() {
+                            error!(connection_id = %connection_id, "Agent channel closed");
                             break;
                         }
                     }
-                    Ok(Message::Close(frame)) => {
-                        debug!(acp_session_id = %acp_session_id, "Client closed connection: {:?}", frame);
+                    Some(Ok(Message::Close(frame))) => {
+                        debug!(connection_id = %connection_id, "Client closed connection: {:?}", frame);
                         break;
                     }
-                    Ok(Message::Ping(_)) | Ok(Message::Pong(_)) => {
-                        // Axum handles ping/pong automatically
+                    Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => continue,
+                    Some(Ok(Message::Binary(_))) => {
+                        warn!(connection_id = %connection_id, "Ignoring binary message (ACP uses text)");
                         continue;
                     }
-                    Ok(Message::Binary(_)) => {
-                        warn!(acp_session_id = %acp_session_id, "Ignoring binary message (ACP uses text)");
-                        continue;
-                    }
-                    Err(e) => {
-                        error!(acp_session_id = %acp_session_id, "WebSocket error: {}", e);
+                    Some(Err(e)) => {
+                        error!(connection_id = %connection_id, "WebSocket error: {}", e);
                         break;
                     }
+                    None => break,
                 }
             }
 
-            Some(text) = from_agent_rx.recv() => {
-                debug!(acp_session_id = %acp_session_id, "Agent → Client: {} bytes", text.len());
-                if let Err(e) = ws_tx.send(Message::Text(text.into())).await {
-                    error!(acp_session_id = %acp_session_id, "Failed to send to client: {}", e);
-                    break;
+            recv = outbound_rx.recv() => {
+                match recv {
+                    Ok(text) => {
+                        trace!(connection_id = %connection_id, payload = %text, "Agent → Client: {} bytes", text.len());
+                        if ws_tx.send(Message::Text(text.into())).await.is_err() {
+                            error!(connection_id = %connection_id, "WebSocket send failed");
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        warn!(connection_id = %connection_id, "WebSocket lagged {} messages", n);
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
-            }
-
-            else => {
-                debug!(acp_session_id = %acp_session_id, "Both channels closed");
-                break;
             }
         }
     }
 
-    debug!(acp_session_id = %acp_session_id, "Cleaning up connection");
-    state.remove_connection(&acp_session_id).await;
+    debug!(connection_id = %connection_id, "Cleaning up WebSocket connection");
+    if let Some(conn) = registry.remove(&connection_id).await {
+        conn.shutdown().await;
+    }
 }

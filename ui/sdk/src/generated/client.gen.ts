@@ -8,6 +8,7 @@ export interface ExtMethodProvider {
 }
 
 import type {
+  AddConfigExtensionRequest,
   AddExtensionRequest,
   ArchiveSessionRequest,
   CheckSecretRequest,
@@ -46,16 +47,25 @@ import type {
   ListProvidersResponse,
   ListSourcesRequest,
   ListSourcesResponse,
+  ProviderConfigChangeResponse,
+  ProviderConfigDeleteRequest,
+  ProviderConfigReadRequest,
+  ProviderConfigReadResponse,
+  ProviderConfigSaveRequest,
+  ProviderConfigStatusRequest,
+  ProviderConfigStatusResponse,
   ReadConfigRequest,
   ReadConfigResponse,
   ReadResourceRequest,
   ReadResourceResponse,
   RefreshProviderInventoryRequest,
   RefreshProviderInventoryResponse,
+  RemoveConfigExtensionRequest,
   RemoveConfigRequest,
   RemoveExtensionRequest,
   RemoveSecretRequest,
-  SetSessionProjectRequest,
+  RenameSessionRequest,
+  ToggleConfigExtensionRequest,
   UnarchiveSessionRequest,
   UpdateSessionProjectRequest,
   UpdateSourceRequest,
@@ -80,6 +90,9 @@ import {
   zImportSourcesResponse,
   zListProvidersResponse,
   zListSourcesResponse,
+  zProviderConfigChangeResponse,
+  zProviderConfigReadResponse,
+  zProviderConfigStatusResponse,
   zReadConfigResponse,
   zReadResourceResponse,
   zRefreshProviderInventoryResponse,
@@ -124,6 +137,24 @@ export class GooseExtClient {
     return zGetExtensionsResponse.parse(raw) as GetExtensionsResponse;
   }
 
+  async GooseConfigExtensionsAdd(
+    params: AddConfigExtensionRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/config/extensions/add", params);
+  }
+
+  async GooseConfigExtensionsRemove(
+    params: RemoveConfigExtensionRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/config/extensions/remove", params);
+  }
+
+  async GooseConfigExtensionsToggle(
+    params: ToggleConfigExtensionRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/config/extensions/toggle", params);
+  }
+
   async GooseSessionExtensions(
     params: GetSessionExtensionsRequest,
   ): Promise<GetSessionExtensionsResponse> {
@@ -150,6 +181,52 @@ export class GooseExtClient {
     return zRefreshProviderInventoryResponse.parse(
       raw,
     ) as RefreshProviderInventoryResponse;
+  }
+
+  async GooseProvidersConfigRead(
+    params: ProviderConfigReadRequest,
+  ): Promise<ProviderConfigReadResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/read",
+      params,
+    );
+    return zProviderConfigReadResponse.parse(raw) as ProviderConfigReadResponse;
+  }
+
+  async GooseProvidersConfigStatus(
+    params: ProviderConfigStatusRequest,
+  ): Promise<ProviderConfigStatusResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/status",
+      params,
+    );
+    return zProviderConfigStatusResponse.parse(
+      raw,
+    ) as ProviderConfigStatusResponse;
+  }
+
+  async GooseProvidersConfigSave(
+    params: ProviderConfigSaveRequest,
+  ): Promise<ProviderConfigChangeResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/save",
+      params,
+    );
+    return zProviderConfigChangeResponse.parse(
+      raw,
+    ) as ProviderConfigChangeResponse;
+  }
+
+  async GooseProvidersConfigDelete(
+    params: ProviderConfigDeleteRequest,
+  ): Promise<ProviderConfigChangeResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/delete",
+      params,
+    );
+    return zProviderConfigChangeResponse.parse(
+      raw,
+    ) as ProviderConfigChangeResponse;
   }
 
   async GooseConfigRead(
@@ -202,18 +279,16 @@ export class GooseExtClient {
     await this.conn.extMethod("_goose/session/update_project", params);
   }
 
+  async GooseSessionRename(params: RenameSessionRequest): Promise<void> {
+    await this.conn.extMethod("_goose/session/rename", params);
+  }
+
   async GooseSessionArchive(params: ArchiveSessionRequest): Promise<void> {
     await this.conn.extMethod("_goose/session/archive", params);
   }
 
   async GooseSessionUnarchive(params: UnarchiveSessionRequest): Promise<void> {
     await this.conn.extMethod("_goose/session/unarchive", params);
-  }
-
-  async GooseSessionSetProject(
-    params: SetSessionProjectRequest,
-  ): Promise<void> {
-    await this.conn.extMethod("_goose/session/set_project", params);
   }
 
   async GooseSourcesCreate(

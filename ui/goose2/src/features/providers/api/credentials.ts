@@ -1,32 +1,44 @@
-import { invoke } from "@tauri-apps/api/core";
+import type {
+  ProviderConfigChangeResponse,
+  ProviderConfigFieldUpdate,
+  ProviderConfigStatusDto,
+} from "@aaif/goose-sdk";
 import type { ProviderFieldValue } from "@/shared/types/providers";
+import { getClient } from "@/shared/api/acpConnection";
 
-export interface ProviderStatus {
-  providerId: string;
-  isConfigured: boolean;
-}
+export type ProviderStatus = ProviderConfigStatusDto;
+export type ProviderFieldSaveInput = ProviderConfigFieldUpdate;
 
 export async function getProviderConfig(
   providerId: string,
 ): Promise<ProviderFieldValue[]> {
-  return invoke("get_provider_config", { providerId });
+  const client = await getClient();
+  const response = await client.goose.GooseProvidersConfigRead({ providerId });
+  return response.fields.map((field) => ({
+    ...field,
+    value: field.value ?? null,
+  }));
 }
 
-export async function saveProviderField(
-  key: string,
-  value: string,
-): Promise<void> {
-  return invoke("save_provider_field", { key, value });
+export async function saveProviderConfig(
+  providerId: string,
+  fields: ProviderFieldSaveInput[],
+): Promise<ProviderConfigChangeResponse> {
+  const client = await getClient();
+  return client.goose.GooseProvidersConfigSave({ providerId, fields });
 }
 
-export async function deleteProviderConfig(providerId: string): Promise<void> {
-  return invoke("delete_provider_config", { providerId });
+export async function deleteProviderConfig(
+  providerId: string,
+): Promise<ProviderConfigChangeResponse> {
+  const client = await getClient();
+  return client.goose.GooseProvidersConfigDelete({ providerId });
 }
 
 export async function checkAllProviderStatus(): Promise<ProviderStatus[]> {
-  return invoke("check_all_provider_status");
-}
-
-export async function restartApp(): Promise<void> {
-  return invoke("restart_app");
+  const client = await getClient();
+  const response = await client.goose.GooseProvidersConfigStatus({
+    providerIds: [],
+  });
+  return response.statuses;
 }

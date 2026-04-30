@@ -36,6 +36,21 @@
       "responseType": "GetExtensionsResponse"
     },
     {
+      "method": "_goose/config/extensions/add",
+      "requestType": "AddConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/extensions/remove",
+      "requestType": "RemoveConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/extensions/toggle",
+      "requestType": "ToggleConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_goose/session/extensions",
       "requestType": "GetSessionExtensionsRequest",
       "responseType": "GetSessionExtensionsResponse"
@@ -49,6 +64,26 @@
       "method": "_goose/providers/inventory/refresh",
       "requestType": "RefreshProviderInventoryRequest",
       "responseType": "RefreshProviderInventoryResponse"
+    },
+    {
+      "method": "_goose/providers/config/read",
+      "requestType": "ProviderConfigReadRequest",
+      "responseType": "ProviderConfigReadResponse"
+    },
+    {
+      "method": "_goose/providers/config/status",
+      "requestType": "ProviderConfigStatusRequest",
+      "responseType": "ProviderConfigStatusResponse"
+    },
+    {
+      "method": "_goose/providers/config/save",
+      "requestType": "ProviderConfigSaveRequest",
+      "responseType": "ProviderConfigChangeResponse"
+    },
+    {
+      "method": "_goose/providers/config/delete",
+      "requestType": "ProviderConfigDeleteRequest",
+      "responseType": "ProviderConfigChangeResponse"
     },
     {
       "method": "_goose/config/read",
@@ -96,6 +131,11 @@
       "responseType": "EmptyResponse"
     },
     {
+      "method": "_goose/session/rename",
+      "requestType": "RenameSessionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_goose/session/archive",
       "requestType": "ArchiveSessionRequest",
       "responseType": "EmptyResponse"
@@ -103,11 +143,6 @@
     {
       "method": "_goose/session/unarchive",
       "requestType": "UnarchiveSessionRequest",
-      "responseType": "EmptyResponse"
-    },
-    {
-      "method": "_goose/session/set_project",
-      "requestType": "SetSessionProjectRequest",
       "responseType": "EmptyResponse"
     },
     {

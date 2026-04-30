@@ -1,13 +1,6 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Copy,
-  Check,
-  RotateCcw,
-  Pencil,
-  FileText,
-  FolderClosed,
-} from "lucide-react";
+import { Check, FileText, FolderClosed } from "lucide-react";
 import { IconRobot } from "@tabler/icons-react";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { cn } from "@/shared/lib/cn";
@@ -20,11 +13,7 @@ import {
   formatProviderLabel,
 } from "@/shared/ui/icons/ProviderIcons";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import {
-  MessageActions,
-  MessageAction,
-  MessageResponse,
-} from "@/shared/ui/ai-elements/message";
+import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import {
   Reasoning,
   ReasoningTrigger,
@@ -32,6 +21,7 @@ import {
 } from "@/shared/ui/ai-elements/reasoning";
 import { ToolChainCards, type ToolChainItem } from "./ToolChainCards";
 import { ClickableImage } from "./ClickableImage";
+import { McpAppView } from "./McpAppView";
 import { useArtifactLinkHandler } from "@/features/chat/hooks/useArtifactLinkHandler";
 import type {
   Message,
@@ -44,6 +34,8 @@ import type {
   ReasoningContent as ReasoningContentType,
   SystemNotificationContent,
 } from "@/shared/types/messages";
+import { MessageBubbleActions } from "./MessageBubbleActions";
+import { MessageMetadataChip } from "./MessageMetadataChip";
 
 function MessageAttachmentRow({
   attachment,
@@ -95,6 +87,13 @@ interface ContentSection {
   key: string;
   type: "single" | "toolChain";
   items: MessageContent[] | ToolChainItem[];
+}
+
+function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
+  return content.filter((b) => {
+    const aud = "annotations" in b ? b.annotations?.audience : undefined;
+    return !aud || aud.length === 0 || aud.includes("user");
+  });
 }
 
 function findMatchingToolChainIndex(
@@ -194,6 +193,9 @@ function renderContentBlock(
     case "text": {
       const tc = content as TextContent;
       if (isUserMessage) {
+        if (!tc.text.trim()) {
+          return null;
+        }
         return (
           <p key={`text-${index}`} className="whitespace-pre-wrap break-words">
             {tc.text}
@@ -224,29 +226,19 @@ function renderContentBlock(
     case "toolResponse":
       // Handled by groupContentSections toolChain rendering
       return null;
-    case "thinking": {
-      const th = content as ThinkingContent;
-      return (
-        <Reasoning
-          key={`thinking-${index}`}
-          isStreaming={isStreamingMsg}
-          defaultOpen={false}
-        >
-          <ReasoningTrigger />
-          <ReasoningContent>{th.text}</ReasoningContent>
-        </Reasoning>
-      );
-    }
+    case "mcpApp":
+      return <McpAppView key={`mcp-app-${index}`} payload={content.payload} />;
+    case "thinking":
     case "reasoning": {
-      const r = content as ReasoningContentType;
+      const text = (content as ThinkingContent | ReasoningContentType).text;
       return (
         <Reasoning
-          key={`reasoning-${index}`}
+          key={`${content.type}-${index}`}
           isStreaming={isStreamingMsg}
           defaultOpen={false}
         >
           <ReasoningTrigger />
-          <ReasoningContent>{r.text}</ReasoningContent>
+          <ReasoningContent>{text}</ReasoningContent>
         </Reasoning>
       );
     }
@@ -285,31 +277,6 @@ function renderContentBlock(
   }
 }
 
-function CopyAction({
-  copied,
-  onCopy,
-}: {
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  const { t } = useTranslation(["chat", "common"]);
-
-  return (
-    <MessageAction
-      size="xs"
-      variant="ghost-light"
-      className={cn(
-        "text-muted-foreground",
-        copied && "bg-accent text-foreground hover:bg-accent active:bg-accent",
-      )}
-      tooltip={copied ? t("message.copied") : t("common:actions.copy")}
-      onClick={onCopy}
-    >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-    </MessageAction>
-  );
-}
-
 export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming,
@@ -318,7 +285,10 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation(["chat", "common"]);
   const { formatDate } = useLocaleFormatting();
-  const { role, content, created } = message;
+  const { role, content: rawContent, created } = message;
+  // Only user messages carry annotated blocks; skip the filter for others.
+  const content =
+    role === "user" ? filterUserVisibleContent(rawContent) : rawContent;
   const { handleContentClick, pathNotice } = useArtifactLinkHandler();
   const persona = useAgentStore((state) =>
     message.metadata?.personaId
@@ -327,6 +297,9 @@ export const MessageBubble = memo(function MessageBubble({
   );
   const { isCopied: isCopyConfirmed, copyToClipboard } = useCopyToClipboard();
   const personaAvatarUrl = useAvatarSrc(persona?.avatar);
+
+  // Skip empty user bubbles (all blocks filtered as assistant-only).
+  if (role === "user" && content.length === 0) return null;
 
   const textContent = content
     .filter((c): c is TextContent => c.type === "text")
@@ -347,7 +320,6 @@ export const MessageBubble = memo(function MessageBubble({
       </div>
     );
   }
-
   const isUser = role === "user";
   const assistantProviderId = message.metadata?.providerId;
   const assistantProviderName = assistantProviderId
@@ -366,6 +338,7 @@ export const MessageBubble = memo(function MessageBubble({
       (assistantDisplayName || personaAvatarUrl || assistantProviderIcon),
   );
   const messageAttachments = message.metadata?.attachments ?? [];
+  const messageChips = message.metadata?.chips ?? [];
   const timestamp = (
     <span
       data-role="message-timestamp"
@@ -390,7 +363,7 @@ export const MessageBubble = memo(function MessageBubble({
       <div
         className={cn(
           "group relative min-w-0 flex flex-col gap-1 pb-8",
-          isUser ? "max-w-[640px] items-end" : "max-w-[85%] items-start",
+          isUser ? "max-w-[640px] items-end" : "w-full items-start",
         )}
       >
         {showAssistantIdentity ? (
@@ -422,11 +395,21 @@ export const MessageBubble = memo(function MessageBubble({
         {/* biome-ignore lint/a11y/noStaticElementInteractions: delegated link handler */}
         <div
           className={cn(
-            "w-full min-w-0 text-[13px] leading-relaxed",
+            "w-full min-w-0 text-sm leading-relaxed",
             isUser && "rounded-2xl bg-muted p-3",
           )}
           onClick={handleContentClick}
         >
+          {isUser && messageChips.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1.5">
+              {messageChips.map((chip) => (
+                <MessageMetadataChip
+                  key={`${chip.type}-${chip.label}`}
+                  chip={chip}
+                />
+              ))}
+            </div>
+          )}
           {messageAttachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {messageAttachments.map((attachment) => (
@@ -477,38 +460,16 @@ export const MessageBubble = memo(function MessageBubble({
             isUser ? "right-0" : "left-0",
           )}
         >
-          <MessageActions className="pt-0">
-            {isUser && timestamp}
-            {textContent && (
-              <CopyAction
-                copied={isCopyConfirmed}
-                onCopy={() => copyToClipboard(textContent)}
-              />
-            )}
-            {!isUser && onRetryMessage && (
-              <MessageAction
-                size="xs"
-                variant="ghost-light"
-                className="text-muted-foreground"
-                tooltip={t("common:actions.retry")}
-                onClick={() => onRetryMessage(message.id)}
-              >
-                <RotateCcw className="size-3.5" />
-              </MessageAction>
-            )}
-            {isUser && onEditMessage && (
-              <MessageAction
-                size="xs"
-                variant="ghost-light"
-                className="text-muted-foreground"
-                tooltip={t("common:actions.edit")}
-                onClick={() => onEditMessage(message.id)}
-              >
-                <Pencil className="size-3.5" />
-              </MessageAction>
-            )}
-            {!isUser && timestamp}
-          </MessageActions>
+          <MessageBubbleActions
+            isUser={isUser}
+            messageId={message.id}
+            timestamp={timestamp}
+            textContent={textContent}
+            copied={isCopyConfirmed}
+            onCopy={() => copyToClipboard(textContent)}
+            onRetryMessage={onRetryMessage}
+            onEditMessage={onEditMessage}
+          />
         </div>
       </div>
     </div>

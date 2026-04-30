@@ -84,6 +84,11 @@ export function ChatContextPanel({
           variant="ghost"
           size="icon-sm"
           onClick={() => setOpen(activeSessionId, !isOpen)}
+          className={
+            isOpen
+              ? "text-muted-foreground transition-opacity duration-150 hover:text-foreground"
+              : "h-9 w-11 rounded-sm border border-border bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm transition-opacity duration-150 hover:bg-accent/50 hover:text-foreground"
+          }
           aria-label={label}
           title={label}
         >

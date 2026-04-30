@@ -12,7 +12,7 @@ pub mod signup_openrouter;
 pub mod signup_tetrate;
 
 pub use crate::agents::ExtensionConfig;
-pub use base::{Config, ConfigError};
+pub use base::{merge_config_values, Config, ConfigError};
 pub use declarative_providers::DeclarativeProviderConfig;
 pub use experiments::ExperimentManager;
 pub use extensions::{

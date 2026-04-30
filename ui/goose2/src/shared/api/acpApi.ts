@@ -17,33 +17,50 @@ export interface AcpSessionInfo {
   sessionId: string;
   title: string | null;
   updatedAt: string | null;
+  createdAt: string | null;
+  archivedAt: string | null;
+  userSetName: boolean;
   messageCount: number;
   projectId?: string | null;
+  providerId: string | null;
+  modelId: string | null;
+  personaId: string | null;
 }
 
-const DEPRECATED_PROVIDER_IDS = new Set(["claude-code", "codex", "gemini-cli"]);
-const DEFAULT_PROVIDER: AcpProvider = {
+export const DEPRECATED_PROVIDER_IDS = new Set([
+  "claude-code",
+  "codex",
+  "gemini-cli",
+]);
+export const DEFAULT_PROVIDER: AcpProvider = {
   id: "goose",
   label: "Goose (Default)",
 };
+
+/**
+ * Build the ACP provider list from raw inventory entries.
+ *
+ * Shared by both `listProviders` (which fetches entries via RPC) and
+ * `discoverAcpProvidersFromEntries` in acp.ts (which reuses
+ * already-fetched entries at startup).
+ */
+export function buildProviderListFromEntries(
+  entries: Array<{ providerId: string; providerName: string }>,
+): AcpProvider[] {
+  return [
+    DEFAULT_PROVIDER,
+    ...entries
+      .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+      .map((entry) => ({ id: entry.providerId, label: entry.providerName })),
+  ];
+}
 
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
   const result = await client.goose.GooseProvidersList({
     providerIds: [],
   });
-
-  const providers = result.entries
-    .filter(
-      (entry: { providerId: string }) =>
-        !DEPRECATED_PROVIDER_IDS.has(entry.providerId),
-    )
-    .map((entry: { providerId: string; providerName: string }) => ({
-      id: entry.providerId,
-      label: entry.providerName,
-    }));
-
-  return [DEFAULT_PROVIDER, ...providers];
+  return buildProviderListFromEntries(result.entries);
 }
 
 export async function listSessions(): Promise<AcpSessionInfo[]> {
@@ -53,8 +70,14 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
     sessionId: info.sessionId,
     title: info.title ?? null,
     updatedAt: info.updatedAt ?? null,
+    createdAt: (info._meta?.createdAt as string) ?? null,
+    archivedAt: (info._meta?.archivedAt as string) ?? null,
+    userSetName: info._meta?.userSetName === true,
     messageCount: (info._meta?.messageCount as number) ?? 0,
     projectId: (info._meta?.projectId as string) ?? null,
+    providerId: (info._meta?.providerId as string) ?? null,
+    modelId: (info._meta?.modelId as string) ?? null,
+    personaId: (info._meta?.personaId as string) ?? null,
   }));
 }
 
@@ -81,7 +104,14 @@ export async function forkSession(sessionId: string): Promise<AcpSessionInfo> {
     sessionId: response.sessionId,
     title: (response._meta?.title as string) ?? null,
     updatedAt: null,
+    createdAt: (response._meta?.createdAt as string) ?? null,
+    archivedAt: (response._meta?.archivedAt as string) ?? null,
+    userSetName: response._meta?.userSetName === true,
     messageCount: (response._meta?.messageCount as number) ?? 0,
+    projectId: (response._meta?.projectId as string) ?? null,
+    providerId: (response._meta?.providerId as string) ?? null,
+    modelId: (response._meta?.modelId as string) ?? null,
+    personaId: (response._meta?.personaId as string) ?? null,
   };
 }
 
@@ -126,7 +156,10 @@ export async function updateWorkingDir(
   workingDir: string,
 ): Promise<void> {
   const client = await getClient();
-  await client.extMethod("goose/working_dir/update", { sessionId, workingDir });
+  await client.extMethod("_goose/working_dir/update", {
+    sessionId,
+    workingDir,
+  });
 }
 
 export async function updateSessionProject(
@@ -140,6 +173,24 @@ export async function updateSessionProject(
   });
 }
 
+export async function archiveSession(sessionId: string): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/archive", { sessionId });
+}
+
+export async function unarchiveSession(sessionId: string): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/unarchive", { sessionId });
+}
+
+export async function renameSession(
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/rename", { sessionId, title });
+}
+
 export async function cancelSession(sessionId: string): Promise<void> {
   const client = await getClient();
   await client.cancel({ sessionId });
@@ -149,12 +200,11 @@ export async function newSession(
   workingDir: string,
   providerId?: string,
   projectId?: string,
+  personaId?: string,
 ): Promise<NewSessionResponse> {
   const tClient = performance.now();
   const client = await getClient();
-  const request: Parameters<typeof client.newSession>[0] & {
-    meta?: Record<string, string>;
-  } = {
+  const request: Parameters<typeof client.newSession>[0] = {
     cwd: workingDir,
     mcpServers: [],
   };
@@ -162,7 +212,8 @@ export async function newSession(
   const meta: Record<string, string> = {};
   if (providerId) meta.provider = providerId;
   if (projectId) meta.projectId = projectId;
-  if (Object.keys(meta).length > 0) request.meta = meta;
+  if (personaId) meta.personaId = personaId;
+  if (Object.keys(meta).length > 0) request._meta = meta;
 
   const tCall = performance.now();
   const response = await client.newSession(request);
@@ -195,18 +246,8 @@ export async function loadSession(
 export async function prompt(
   sessionId: string,
   content: ContentBlock[],
+  meta?: Record<string, unknown>,
 ): Promise<PromptResponse> {
   const client = await getClient();
-  return client.prompt({ sessionId, prompt: content });
-}
-
-export async function setSessionProject(
-  sessionId: string,
-  projectId: string | null,
-): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/session/set_project", {
-    sessionId,
-    projectId,
-  });
+  return client.prompt({ sessionId, prompt: content, _meta: meta });
 }

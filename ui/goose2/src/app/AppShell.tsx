@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
-import { StatusBar } from "@/features/status/ui/StatusBar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
 import type { ProjectInfo } from "@/features/projects/api/projects";
@@ -32,6 +31,8 @@ import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { perfLog } from "@/shared/lib/perfLog";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { sanitizeReplayMessages } from "@/features/chat/lib/replaySanitizer";
+import type { SkillInfo } from "@/features/skills/api/skills";
+import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
 
 export type AppView =
   | "home"
@@ -150,17 +151,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     }
   }, [activeSessionId, activeView]);
 
-  const isHome = activeView === "home";
-
   const activeSession = activeSessionId
     ? sessionStore.getSession(activeSessionId)
     : undefined;
-  const modelName =
-    activeView === "chat" ? activeSession?.modelName : undefined;
-  const tokenCount =
-    activeView === "chat" && activeSessionId
-      ? chatStore.getSessionRuntime(activeSessionId).tokenState.totalTokens
-      : 0;
   const homeSession = homeSessionId
     ? sessionStore.getSession(homeSessionId)
     : undefined;
@@ -276,7 +269,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       perfLog(
         `[perf:newtab] createNewTab start (project=${project?.id ?? "none"})`,
       );
-      const agentId = agentStore.activeAgentId ?? undefined;
       const providerId =
         project?.preferredProvider ?? agentStore.selectedProvider ?? "goose";
       const sessionModelPreference =
@@ -312,7 +304,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const session = await sessionStore.createSession({
         title,
         projectId: project?.id,
-        agentId,
         providerId: sessionModelPreference.providerId,
         workingDir,
         modelId: sessionModelPreference.modelId,
@@ -327,7 +318,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       return session;
     },
     [
-      agentStore.activeAgentId,
       agentStore.selectedProvider,
       chatStore,
       providerInventoryEntries,
@@ -340,6 +330,25 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       void createNewTab(DEFAULT_CHAT_TITLE, project);
     },
     [createNewTab],
+  );
+
+  const handleStartChatWithSkill = useCallback(
+    (skill: SkillInfo, projectId?: string | null) => {
+      const project = projectId
+        ? projectStore.projects.find((candidate) => candidate.id === projectId)
+        : undefined;
+
+      void createNewTab(DEFAULT_CHAT_TITLE, project)
+        .then((session) => {
+          useChatStore
+            .getState()
+            .setSkillDrafts(session.id, [toChatSkillDraft(skill)]);
+        })
+        .catch((error) => {
+          console.error("Failed to start chat with skill:", error);
+        });
+    },
+    [createNewTab, projectStore.projects],
   );
 
   const handleNewChatInProject = useCallback(
@@ -628,11 +637,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     return () => window.removeEventListener("keydown", handler);
   }, [clearActiveSession, sessionStore]);
 
-  const editingProjectProp = editingProject ?? undefined;
-
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-      <TopBar onSettingsClick={() => openSettings()} />
+      <TopBar />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div
@@ -649,6 +656,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             width={sidebarWidth}
             isResizing={isResizing}
             onCollapse={toggleSidebar}
+            onSettingsClick={() => openSettings()}
             onNavigate={handleNavigate}
             onNewChatInProject={handleNewChatInProject}
             onNewChat={() => {
@@ -675,7 +683,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         <div
           onMouseDown={handleResizeStart}
           onDoubleClick={handleResizeDoubleClick}
-          className="flex-shrink-0 w-2 h-full cursor-col-resize group flex items-center justify-center"
+          className="flex-shrink-0 w-4 h-full cursor-col-resize group flex items-center justify-center"
         >
           <div className="w-px h-8 rounded-full bg-transparent group-hover:bg-border transition-colors" />
         </div>
@@ -694,21 +702,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
               onSelectSession={handleSelectSession}
               onSelectSearchResult={handleSelectSearchResult}
               onStartChatFromProject={handleStartChatFromProject}
+              onStartChatWithSkill={handleStartChatWithSkill}
             />
           )}
         </main>
-      </div>
-
-      <div
-        className={`overflow-hidden transition-all duration-300 ease-in-out ${
-          isHome ? "max-h-0 opacity-0" : "max-h-8 opacity-100"
-        }`}
-      >
-        <StatusBar
-          modelName={modelName}
-          sessionId={activeSessionId ?? undefined}
-          tokenCount={tokenCount}
-        />
       </div>
 
       {settingsOpen && (
@@ -733,7 +730,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           setCreateProjectInitialWorkingDir(null);
         }}
         initialWorkingDir={createProjectInitialWorkingDir}
-        editingProject={editingProjectProp}
+        editingProject={editingProject ?? undefined}
       />
     </div>
   );

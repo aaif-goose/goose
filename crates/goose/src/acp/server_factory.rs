@@ -1,4 +1,5 @@
 use crate::acp::server::{AcpProviderFactory, GooseAcpAgent};
+use crate::agents::GoosePlatform;
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::info;
@@ -7,6 +8,7 @@ pub struct AcpServerFactoryConfig {
     pub builtins: Vec<String>,
     pub data_dir: std::path::PathBuf,
     pub config_dir: std::path::PathBuf,
+    pub goose_platform: GoosePlatform,
 }
 
 pub struct AcpServer {
@@ -44,6 +46,7 @@ impl AcpServer {
             self.config.config_dir.clone(),
             goose_mode,
             disable_session_naming,
+            self.config.goose_platform.clone(),
         )
         .await?;
         info!("Created new ACP agent");

@@ -207,10 +207,23 @@
   "providers": {
     "agents": {
       "description": "Agents handle your requests using their own tools and models",
+      "errors": {
+        "installVerificationFailed": "Install finished but the CLI was not found on PATH. You may need to restart your terminal."
+      },
       "installLabel": "Install {{name}}",
+      "progress": {
+        "installing": "Installing {{name}}...",
+        "step": "Step {{step}} of {{total}}",
+        "verifyingInstallation": "Verifying installation..."
+      },
       "signIn": "Sign in",
       "signInLabel": "Sign in to {{name}}",
-      "title": "Agents"
+      "status": {
+        "checking": "Checking...",
+        "inProgress": "Setup in progress",
+        "setupFailed": "Setup failed"
+      },
+      "title": "Agent harnesses"
     },
     "description": "Connect agents and AI models to use with Goose",
     "disconnect": "Disconnect",
@@ -239,10 +252,11 @@
           "oauthTerminal": "Run `goose configure` in your terminal to finish sign-in."
         }
       },
+      "checkingStatus": "Checking provider status...",
       "title": "Models"
     },
-    "restartButton": "Restart now",
-    "restartMessage": "Restart to apply credential changes.",
+    "loadingModels": "Loading models...",
+    "modelRefreshWarning": "Credentials saved. Model refresh needs attention: {{message}}",
     "saved": "Saved",
     "showFewer": "Show fewer",
     "showMore": "Show {{count}} more providers",

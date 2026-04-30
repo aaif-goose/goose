@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/shared/ui/button";
 import { Separator } from "@/shared/ui/separator";
-import { Skeleton } from "@/shared/ui/skeleton";
-import { IconChevronDown, IconRefresh } from "@tabler/icons-react";
+import { Spinner } from "@/shared/ui/spinner";
+import { IconChevronDown } from "@tabler/icons-react";
 import {
   getAgentProviders,
   getModelProviders,
@@ -45,12 +45,12 @@ export function ProvidersSettings() {
   const {
     configuredIds,
     loading,
-    saving,
-    needsRestart,
+    savingProviderIds,
+    syncingProviderIds,
+    inventoryWarnings,
     getConfig,
     save,
     remove,
-    restart,
     completeNativeSetup,
   } = useCredentials();
 
@@ -112,23 +112,6 @@ export function ProvidersSettings() {
   const advancedModels = orderedModels.filter((m) => m.tier === "advanced");
   const visibleModels = showAllModels ? orderedModels : promotedModels;
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="mt-2 h-4 w-64" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
       <h3 className="text-lg font-semibold font-display tracking-tight">
@@ -137,16 +120,6 @@ export function ProvidersSettings() {
       <p className="mt-1 text-sm text-muted-foreground">
         {t("providers.description")}
       </p>
-
-      {needsRestart && (
-        <div className="mt-3 flex items-center gap-3 rounded-lg border border-accent bg-background-accent/30 px-3 py-2.5">
-          <p className="flex-1 text-sm">{t("providers.restartMessage")}</p>
-          <Button type="button" size="sm" onClick={() => void restart()}>
-            <IconRefresh className="size-3.5" />
-            {t("providers.restartButton")}
-          </Button>
-        </div>
-      )}
 
       <Separator className="my-4" />
 
@@ -171,9 +144,17 @@ export function ProvidersSettings() {
 
       <section>
         <div className="mb-3">
-          <h4 className="text-sm font-semibold">
-            {t("providers.models.title")}
-          </h4>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold">
+              {t("providers.models.title")}
+            </h4>
+            {loading ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Spinner className="size-3 text-accent" />
+                {t("providers.models.checkingStatus")}
+              </span>
+            ) : null}
+          </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {t("providers.models.description")}
           </p>
@@ -185,10 +166,12 @@ export function ProvidersSettings() {
               key={model.id}
               provider={model}
               onGetConfig={getConfig}
-              onSaveField={save}
+              onSaveFields={(fields) => save(model.id, fields)}
               onRemoveConfig={() => remove(model.id)}
               onCompleteNativeSetup={completeNativeSetup}
-              saving={saving}
+              saving={savingProviderIds.has(model.id)}
+              inventorySyncing={syncingProviderIds.has(model.id)}
+              inventoryWarning={inventoryWarnings.get(model.id)}
             />
           ))}
         </div>

@@ -1,6 +1,6 @@
 import type { AcpProvider } from "@/shared/api/acp";
 import type { Persona } from "@/shared/types/agents";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
+import type { ChatAttachmentDraft, MessageChip } from "@/shared/types/messages";
 
 export interface ModelOption {
   id: string;
@@ -18,7 +18,21 @@ export interface ProjectOption {
   id: string;
   name: string;
   workingDirs: string[];
+  icon?: string | null;
   color?: string | null;
+}
+
+export interface ChatSkillDraft {
+  id: string;
+  name: string;
+  description?: string;
+  sourceLabel?: string;
+}
+
+export interface ChatSendOptions {
+  displayText?: string;
+  assistantPrompt?: string;
+  chips?: MessageChip[];
 }
 
 export interface ChatInputProps {
@@ -26,6 +40,7 @@ export interface ChatInputProps {
     text: string,
     personaId?: string,
     attachments?: ChatAttachmentDraft[],
+    options?: ChatSendOptions,
   ) => boolean | Promise<boolean>;
   onStop?: () => void;
   isStreaming?: boolean;
@@ -34,11 +49,12 @@ export interface ChatInputProps {
   onDismissQueue?: () => void;
   initialValue?: string;
   onDraftChange?: (text: string) => void;
+  selectedSkills?: ChatSkillDraft[];
+  onSkillsChange?: (skills: ChatSkillDraft[]) => void;
   className?: string;
   personas?: Persona[];
   selectedPersonaId?: string | null;
   onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
   providers?: AcpProvider[];
   providersLoading?: boolean;
   selectedProvider?: string;
@@ -49,6 +65,7 @@ export interface ChatInputProps {
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
+  onPickerOpen?: () => void;
   selectedProjectId?: string | null;
   availableProjects?: ProjectOption[];
   onProjectChange?: (projectId: string | null) => void;

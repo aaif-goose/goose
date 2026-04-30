@@ -230,7 +230,8 @@ pub async fn sync_featured_models() -> Result<StatusCode, ErrorResponse> {
 pub async fn list_local_models(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Result<Json<Vec<LocalModelResponse>>, ErrorResponse> {
-    let recommended_id = recommend_local_model(&state.inference_runtime);
+    let runtime = state.get_inference_runtime()?;
+    let recommended_id = recommend_local_model(&runtime);
 
     let registry = get_registry()
         .lock()
@@ -360,7 +361,8 @@ pub async fn get_repo_files(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to fetch repo files: {}", e)))?;
 
-    let available_memory = available_inference_memory_bytes(&state.inference_runtime);
+    let runtime = state.get_inference_runtime()?;
+    let available_memory = available_inference_memory_bytes(&runtime);
     let recommended_index = hf_models::recommend_variant(&variants, available_memory);
 
     let downloaded_quants = {

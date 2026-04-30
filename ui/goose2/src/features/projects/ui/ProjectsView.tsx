@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { CreateProjectDialog } from "./CreateProjectDialog";
+import { ProjectIcon } from "./ProjectIcon";
 import { deleteProject, type ProjectInfo } from "../api/projects";
 import { useProjectStore } from "../stores/projectStore";
 
@@ -192,9 +193,10 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
                   className="flex items-start justify-between gap-3 rounded-lg border border-border px-4 py-3"
                 >
                   <div className="min-w-0 flex-1 flex items-start gap-3">
-                    <span
-                      className="inline-block w-2.5 h-2.5 rounded-full mt-1.5 shrink-0"
-                      style={{ backgroundColor: project.color }}
+                    <ProjectIcon
+                      icon={project.icon}
+                      className="mt-0.5 size-4 shrink-0 text-foreground"
+                      imageClassName="mt-0.5 size-4 shrink-0 rounded-[4px]"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{project.name}</p>

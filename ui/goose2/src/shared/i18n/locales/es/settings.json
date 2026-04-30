@@ -207,10 +207,23 @@
   "providers": {
     "agents": {
       "description": "Los agentes manejan tus solicitudes usando sus propias herramientas y modelos",
+      "errors": {
+        "installVerificationFailed": "La instalación terminó, pero no se encontró la CLI en PATH. Puede que tengas que reiniciar tu terminal."
+      },
       "installLabel": "Instalar {{name}}",
+      "progress": {
+        "installing": "Instalando {{name}}...",
+        "step": "Paso {{step}} de {{total}}",
+        "verifyingInstallation": "Verificando instalación..."
+      },
       "signIn": "Iniciar sesión",
       "signInLabel": "Iniciar sesión en {{name}}",
-      "title": "Agentes"
+      "status": {
+        "checking": "Comprobando...",
+        "inProgress": "Configuración en curso",
+        "setupFailed": "La configuración falló"
+      },
+      "title": "Arneses de agentes"
     },
     "description": "Conecta agentes y modelos de IA para usar con Goose",
     "disconnect": "Desconectar",
@@ -239,10 +252,11 @@
           "oauthTerminal": "Ejecuta `goose configure` en tu terminal para terminar de iniciar sesión."
         }
       },
+      "checkingStatus": "Comprobando estado del proveedor...",
       "title": "Modelos"
     },
-    "restartButton": "Reiniciar ahora",
-    "restartMessage": "Reinicia para aplicar los cambios de credenciales.",
+    "loadingModels": "Cargando modelos...",
+    "modelRefreshWarning": "Credenciales guardadas. La actualización de modelos necesita atención: {{message}}",
     "saved": "Guardado",
     "showFewer": "Mostrar menos",
     "showMore": "Mostrar {{count}} proveedores más",

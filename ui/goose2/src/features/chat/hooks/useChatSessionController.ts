@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChatSkillDraft } from "../types";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
+import type { ChatSendOptions } from "../types";
 import { INITIAL_TOKEN_STATE } from "@/shared/types/chat";
 import { useChat } from "./useChat";
 import { useAutoCompactPreferences } from "./useAutoCompactPreferences";
@@ -27,7 +29,7 @@ import {
   useResolvedAgentModelPicker,
   type PreferredModelSelection,
 } from "./useResolvedAgentModelPicker";
-import { setSessionProject } from "@/shared/api/acpApi";
+import { updateSessionProject } from "@/shared/api/acpApi";
 
 interface UseChatSessionControllerOptions {
   sessionId: string | null;
@@ -36,6 +38,7 @@ interface UseChatSessionControllerOptions {
 }
 
 const PENDING_HOME_SESSION_ID = "__home_pending__";
+const EMPTY_SKILL_DRAFTS: ChatSkillDraft[] = [];
 
 export function useChatSessionController({
   sessionId,
@@ -70,6 +73,10 @@ export function useChatSessionController({
     useState<PreferredModelSelection | null>();
   const pendingDraftValue = useChatStore(
     (s) => s.draftsBySession[PENDING_HOME_SESSION_ID] ?? "",
+  );
+  const pendingSkillDrafts = useChatStore(
+    (s) =>
+      s.skillDraftsBySession[PENDING_HOME_SESSION_ID] ?? EMPTY_SKILL_DRAFTS,
   );
   const pendingQueuedMessage = useChatStore(
     (s) => s.queuedMessageBySession[PENDING_HOME_SESSION_ID] ?? null,
@@ -128,6 +135,7 @@ export function useChatSessionController({
           id: projectInfo.id,
           name: projectInfo.name,
           workingDirs: projectInfo.workingDirs,
+          icon: projectInfo.icon,
           color: projectInfo.color,
         })),
     [projects],
@@ -218,6 +226,7 @@ export function useChatSessionController({
     modelStatusMessage,
     handleProviderChange,
     handleModelChange,
+    handlePickerOpen,
     effectiveModelSelection,
   } = useResolvedAgentModelPicker({
     providers,
@@ -299,7 +308,7 @@ export function useChatSessionController({
 
       useChatSessionStore.getState().updateSession(sessionId, { projectId });
 
-      void setSessionProject(sessionId, projectId).catch(console.error);
+      void updateSessionProject(sessionId, projectId).catch(console.error);
 
       if (!selectedProvider) {
         return;
@@ -476,9 +485,14 @@ export function useChatSessionController({
       text: string,
       overridePersona?: { id: string; name?: string },
       attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
     ) => {
       if (!canAutoCompactBeforeSend(overridePersona)) {
-        void sendMessage(text, overridePersona, attachments);
+        if (sendOptions) {
+          void sendMessage(text, overridePersona, attachments, sendOptions);
+        } else {
+          void sendMessage(text, overridePersona, attachments);
+        }
         return true;
       }
 
@@ -488,7 +502,11 @@ export function useChatSessionController({
           return false;
         }
 
-        void sendMessage(text, overridePersona, attachments);
+        if (sendOptions) {
+          void sendMessage(text, overridePersona, attachments, sendOptions);
+        } else {
+          void sendMessage(text, overridePersona, attachments);
+        }
         return true;
       })();
     },
@@ -503,6 +521,7 @@ export function useChatSessionController({
   const deferredSend = useRef<{
     text: string;
     attachments?: ChatAttachmentDraft[];
+    sendOptions?: ChatSendOptions;
     resolve?: (accepted: boolean) => void;
   } | null>(null);
   const queue = useMessageQueue(
@@ -512,10 +531,15 @@ export function useChatSessionController({
   );
 
   const handleSend = useCallback(
-    (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {
+    (
+      text: string,
+      personaId?: string,
+      attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
+    ) => {
       if (!sessionId) {
         if (!queue.queuedMessage) {
-          queue.enqueue(text, personaId, attachments);
+          queue.enqueue(text, personaId, attachments, sendOptions);
         }
         return true;
       }
@@ -523,16 +547,16 @@ export function useChatSessionController({
       if (personaId && personaId !== selectedPersonaId) {
         handlePersonaChange(personaId);
         return new Promise<boolean>((resolve) => {
-          deferredSend.current = { text, attachments, resolve };
+          deferredSend.current = { text, attachments, sendOptions, resolve };
         });
       }
 
       if (chatState !== "idle" && !queue.queuedMessage) {
-        queue.enqueue(text, personaId, attachments);
+        queue.enqueue(text, personaId, attachments, sendOptions);
         return true;
       }
 
-      return sendWithAutoCompact(text, undefined, attachments);
+      return sendWithAutoCompact(text, undefined, attachments, sendOptions);
     },
     [
       chatState,
@@ -546,9 +570,14 @@ export function useChatSessionController({
 
   useEffect(() => {
     if (deferredSend.current && selectedPersona) {
-      const { text, attachments, resolve } = deferredSend.current;
+      const { text, attachments, sendOptions, resolve } = deferredSend.current;
       deferredSend.current = null;
-      const sendResult = sendWithAutoCompact(text, undefined, attachments);
+      const sendResult = sendWithAutoCompact(
+        text,
+        undefined,
+        attachments,
+        sendOptions,
+      );
       if (sendResult instanceof Promise) {
         void sendResult.then((accepted) => {
           if (accepted === false) {
@@ -573,10 +602,22 @@ export function useChatSessionController({
   const sessionDraftValue = useChatStore((s) =>
     sessionId ? (s.draftsBySession[sessionId] ?? "") : "",
   );
+  const sessionSkillDrafts = useChatStore((s) =>
+    sessionId
+      ? (s.skillDraftsBySession[sessionId] ?? EMPTY_SKILL_DRAFTS)
+      : EMPTY_SKILL_DRAFTS,
+  );
   const draftValue = sessionId ? sessionDraftValue : pendingDraftValue;
+  const selectedSkills = sessionId ? sessionSkillDrafts : pendingSkillDrafts;
   const handleDraftChange = useCallback(
     (text: string) => {
       useChatStore.getState().setDraft(stateSessionId, text);
+    },
+    [stateSessionId],
+  );
+  const handleSkillsChange = useCallback(
+    (skills: typeof selectedSkills) => {
+      useChatStore.getState().setSkillDrafts(stateSessionId, skills);
     },
     [stateSessionId],
   );
@@ -597,15 +638,24 @@ export function useChatSessionController({
 
     let cancelled = false;
     void pendingDraftValue;
+    void pendingSkillDrafts;
     void pendingQueuedMessage;
 
     const syncPendingHomeState = async () => {
       const chatState = useChatStore.getState();
       const pendingDraft =
         chatState.draftsBySession[PENDING_HOME_SESSION_ID] ?? "";
+      const pendingSkills =
+        chatState.skillDraftsBySession[PENDING_HOME_SESSION_ID] ?? [];
 
       if (pendingDraft && !chatState.draftsBySession[sessionId]) {
         chatState.setDraft(sessionId, pendingDraft);
+      }
+      if (
+        pendingSkills.length > 0 &&
+        !chatState.skillDraftsBySession[sessionId]?.length
+      ) {
+        chatState.setSkillDrafts(sessionId, pendingSkills);
       }
 
       const hasPendingProvider = pendingProviderId !== undefined;
@@ -654,7 +704,7 @@ export function useChatSessionController({
         }
         if (hasPendingProject) {
           patch.projectId = nextProjectId ?? null;
-          void setSessionProject(sessionId, nextProjectId ?? null).catch(
+          void updateSessionProject(sessionId, nextProjectId ?? null).catch(
             console.error,
           );
         }
@@ -705,6 +755,7 @@ export function useChatSessionController({
       }
 
       useChatStore.getState().clearDraft(PENDING_HOME_SESSION_ID);
+      useChatStore.getState().clearSkillDrafts(PENDING_HOME_SESSION_ID);
       useChatStore.getState().dismissQueuedMessage(PENDING_HOME_SESSION_ID);
       useChatStore.getState().cleanupSession(PENDING_HOME_SESSION_ID);
     };
@@ -717,6 +768,7 @@ export function useChatSessionController({
   }, [
     activeWorkspace?.path,
     pendingDraftValue,
+    pendingSkillDrafts,
     pendingModelSelection,
     pendingPersonaId,
     pendingProjectId,
@@ -751,6 +803,8 @@ export function useChatSessionController({
     handleSend,
     draftValue,
     handleDraftChange,
+    selectedSkills,
+    handleSkillsChange,
     scrollTarget,
     handleScrollTargetHandled,
     projectMetadataPending,
@@ -768,6 +822,7 @@ export function useChatSessionController({
     modelsLoading,
     modelStatusMessage,
     handleModelChange: handleModelChangeWithContextReset,
+    handlePickerOpen,
     selectedProjectId: effectiveProjectId,
     availableProjects,
     handleProjectChange,

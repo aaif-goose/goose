@@ -151,7 +151,7 @@
         "extensions": {
           "type": "array",
           "items": {},
-          "description": "Array of ExtensionEntry objects with `enabled` flag and config details."
+          "description": "Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details."
         },
         "warnings": {
           "type": "array",
@@ -167,6 +167,60 @@
       "description": "List configured extensions and any warnings.",
       "x-side": "agent",
       "x-method": "_goose/config/extensions"
+    },
+    "AddConfigExtensionRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "extensionConfig": {
+          "description": "Extension configuration. Must be a JSON object matching one of the\n`ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).\n`name` and `enabled` are injected server-side.",
+          "default": null
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "description": "Persist a new extension to the user's global goose config.",
+      "x-side": "agent",
+      "x-method": "_goose/config/extensions/add"
+    },
+    "RemoveConfigExtensionRequest": {
+      "type": "object",
+      "properties": {
+        "configKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "configKey"
+      ],
+      "description": "Remove a persisted extension from the user's global goose config.",
+      "x-side": "agent",
+      "x-method": "_goose/config/extensions/remove"
+    },
+    "ToggleConfigExtensionRequest": {
+      "type": "object",
+      "properties": {
+        "configKey": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "configKey",
+        "enabled"
+      ],
+      "description": "Toggle the `enabled` flag for a persisted extension in the user's global goose config.",
+      "x-side": "agent",
+      "x-method": "_goose/config/extensions/toggle"
     },
     "GetSessionExtensionsRequest": {
       "type": "object",
@@ -483,6 +537,178 @@
         "already_refreshing"
       ]
     },
+    "ProviderConfigReadRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Read saved configuration field values for one provider.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/read"
+    },
+    "ProviderConfigReadResponse": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigFieldValueDto"
+          }
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/read"
+    },
+    "ProviderConfigFieldValueDto": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "isSet": {
+          "type": "boolean"
+        },
+        "isSecret": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "isSet",
+        "isSecret",
+        "required"
+      ]
+    },
+    "ProviderConfigStatusRequest": {
+      "type": "object",
+      "properties": {
+        "providerIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "description": "Return provider configured statuses. Empty provider_ids means all providers.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/status"
+    },
+    "ProviderConfigStatusResponse": {
+      "type": "object",
+      "properties": {
+        "statuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigStatusDto"
+          }
+        }
+      },
+      "required": [
+        "statuses"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/status"
+    },
+    "ProviderConfigStatusDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "isConfigured": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "isConfigured"
+      ]
+    },
+    "ProviderConfigSaveRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigFieldUpdate"
+          }
+        }
+      },
+      "required": [
+        "providerId",
+        "fields"
+      ],
+      "description": "Save provider configuration fields and start an inventory refresh when supported.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/save"
+    },
+    "ProviderConfigFieldUpdate": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ]
+    },
+    "ProviderConfigChangeResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        }
+      },
+      "required": [
+        "status",
+        "refresh"
+      ],
+      "x-side": "agent"
+    },
+    "ProviderConfigDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Delete provider configuration fields and start an inventory refresh when supported.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/delete"
+    },
     "ReadConfigRequest": {
       "type": "object",
       "properties": {
@@ -689,6 +915,24 @@
       "x-side": "agent",
       "x-method": "_goose/session/update_project"
     },
+    "RenameSessionRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "title"
+      ],
+      "description": "Rename a session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/rename"
+    },
     "ArchiveSessionRequest": {
       "type": "object",
       "properties": {
@@ -716,27 +960,6 @@
       "description": "Unarchive a previously archived session.",
       "x-side": "agent",
       "x-method": "_goose/session/unarchive"
-    },
-    "SetSessionProjectRequest": {
-      "type": "object",
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "projectId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "description": "The source name (kebab-case ID) of the project, or null to clear."
-        }
-      },
-      "required": [
-        "sessionId"
-      ],
-      "description": "Set or clear the project associated with a session.",
-      "x-side": "agent",
-      "x-method": "_goose/session/set_project"
     },
     "CreateSourceRequest": {
       "type": "object",
@@ -783,7 +1006,7 @@
         "content",
         "global"
       ],
-      "description": "Create a new source (global or project-scoped).",
+      "description": "Create a new source in an explicit target scope (global or project-scoped).",
       "x-side": "agent",
       "x-method": "_goose/sources/create"
     },
@@ -791,6 +1014,10 @@
       "type": "string",
       "enum": [
         "skill",
+        "builtinSkill",
+        "recipe",
+        "subrecipe",
+        "agent",
         "project"
       ],
       "description": "The type of source entity."
@@ -823,13 +1050,20 @@
         "content": {
           "type": "string"
         },
-        "directory": {
+        "path": {
           "type": "string",
-          "description": "Absolute path to the source's directory on disk."
+          "description": "Stable on-disk path identifying this source. Pass it back to\nupdate/delete/export to operate on this entry. The shape varies by\nsource type: skills use the directory containing `SKILL.md`, projects\nand recipes use the markdown file path itself."
         },
         "global": {
           "type": "boolean",
           "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
+        },
+        "supportingFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Paths (absolute) of additional files that live alongside the source.\nOnly skills currently populate this; empty for other source types."
         },
         "properties": {
           "type": "object",
@@ -842,10 +1076,10 @@
         "name",
         "description",
         "content",
-        "directory",
+        "path",
         "global"
       ],
-      "description": "A source — a user-editable entity backed by an on-disk directory. Sources\nmay be either `global` (shared across all projects) or project-specific."
+      "description": "A source discovered by Goose and backed by an on-disk path. Sources may be\neither `global` (shared across all projects) or project-specific."
     },
     "ListSourcesRequest": {
       "type": "object",
@@ -872,7 +1106,7 @@
           "default": false
         }
       },
-      "description": "List sources. If `type` is omitted, sources of all known types are returned.\nBoth global and project-scoped sources are included when `project_dir` is set.",
+      "description": "List discovered sources.\n\nToday this endpoint only returns skills. If `type` is omitted, it defaults\nto listing skill sources. Both global and project-scoped skills are included\nwhen `project_dir` is set.",
       "x-side": "agent",
       "x-method": "_goose/sources/list"
     },
@@ -898,6 +1132,9 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
+        "path": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -907,29 +1144,20 @@
         "content": {
           "type": "string"
         },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "properties": {
           "type": "object",
           "additionalProperties": {},
-          "description": "Arbitrary key/value metadata. Replaces all existing properties."
+          "description": "Arbitrary key/value metadata. When non-empty, replaces all existing\nproperties on the source. Used for type-specific fields like project\nicon/color/workingDirs."
         }
       },
       "required": [
         "type",
+        "path",
         "name",
         "description",
-        "content",
-        "global"
+        "content"
       ],
-      "description": "Update an existing source's description and content.",
+      "description": "Update an existing source's name, description, and content by absolute path.",
       "x-side": "agent",
       "x-method": "_goose/sources/update"
     },
@@ -952,25 +1180,15 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
-        "name": {
+        "path": {
           "type": "string"
-        },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
         "type",
-        "name",
-        "global"
+        "path"
       ],
-      "description": "Delete a source and its on-disk directory.",
+      "description": "Delete a source and its on-disk directory by absolute path.",
       "x-side": "agent",
       "x-method": "_goose/sources/delete"
     },
@@ -980,25 +1198,15 @@
         "type": {
           "$ref": "#/$defs/SourceType"
         },
-        "name": {
+        "path": {
           "type": "string"
-        },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
         "type",
-        "name",
-        "global"
+        "path"
       ],
-      "description": "Export a source as a portable JSON payload.",
+      "description": "Export a source at an absolute path as a portable JSON payload.",
       "x-side": "agent",
       "x-method": "_goose/sources/export"
     },
@@ -1039,7 +1247,7 @@
         "data",
         "global"
       ],
-      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written under the given scope; on name collisions a\n`-imported` suffix is appended.",
+      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
       "x-side": "agent",
       "x-method": "_goose/sources/import"
     },
@@ -1460,6 +1668,33 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/AddConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/add",
+                  "title": "AddConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/remove",
+                  "title": "RemoveConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ToggleConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/toggle",
+                  "title": "ToggleConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/GetSessionExtensionsRequest"
                     }
                   ],
@@ -1483,6 +1718,42 @@
                   ],
                   "description": "Params for _goose/providers/inventory/refresh",
                   "title": "RefreshProviderInventoryRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigReadRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/read",
+                  "title": "ProviderConfigReadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigStatusRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/status",
+                  "title": "ProviderConfigStatusRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigSaveRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/save",
+                  "title": "ProviderConfigSaveRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/delete",
+                  "title": "ProviderConfigDeleteRequest"
                 },
                 {
                   "allOf": [
@@ -1568,6 +1839,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/RenameSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/rename",
+                  "title": "RenameSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ArchiveSessionRequest"
                     }
                   ],
@@ -1582,15 +1862,6 @@
                   ],
                   "description": "Params for _goose/session/unarchive",
                   "title": "UnarchiveSessionRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/SetSessionProjectRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/session/set_project",
-                  "title": "SetSessionProjectRequest"
                 },
                 {
                   "allOf": [
@@ -1803,6 +2074,30 @@
                         }
                       ],
                       "title": "RefreshProviderInventoryResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigReadResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigReadResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigStatusResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigStatusResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigChangeResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigChangeResponse"
                     },
                     {
                       "allOf": [

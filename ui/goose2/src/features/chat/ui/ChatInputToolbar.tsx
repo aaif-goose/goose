@@ -12,11 +12,9 @@ import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { IconLibraryPlusFilled } from "@tabler/icons-react";
 import type { AcpProvider } from "@/shared/api/acp";
-import type { Persona } from "@/shared/types/agents";
 import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
-import { PersonaPicker } from "./PersonaPicker";
 import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
 import {
@@ -34,29 +32,13 @@ import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { getCatalogEntry } from "@/features/providers/providerCatalog";
 import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
+import { ProjectSelectorIcon } from "./ProjectSelectorIcon";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
 
-function ProjectDot({ color }: { color?: string | null }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-block size-2 rounded-full",
-        color ? "" : "bg-muted-foreground/40",
-      )}
-      style={color ? { backgroundColor: color } : undefined}
-    />
-  );
-}
-
 interface ChatInputToolbarProps {
-  // Personas
-  personas: Persona[];
   selectedPersonaId: string | null;
-  onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
   // Provider
   providers: AcpProvider[];
   providersLoading?: boolean;
@@ -69,6 +51,7 @@ interface ChatInputToolbarProps {
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
+  onPickerOpen?: () => void;
   // Project
   selectedProjectId: string | null;
   availableProjects: ProjectOption[];
@@ -103,10 +86,7 @@ interface ChatInputToolbarProps {
 }
 
 export function ChatInputToolbar({
-  personas,
   selectedPersonaId,
-  onPersonaChange,
-  onCreatePersona,
   providers,
   providersLoading,
   selectedProvider,
@@ -117,6 +97,7 @@ export function ChatInputToolbar({
   modelsLoading = false,
   modelStatusMessage = null,
   onModelChange,
+  onPickerOpen,
   selectedProjectId,
   availableProjects,
   onProjectChange,
@@ -240,6 +221,7 @@ export function ChatInputToolbar({
             modelsLoading={modelsLoading}
             modelStatusMessage={modelStatusMessage}
             onModelChange={onModelChange}
+            onOpen={onPickerOpen}
             loading={providersLoading}
             isCompact={isCompact}
             showSelectedModelInTrigger={selectedPersonaId === null}
@@ -251,7 +233,7 @@ export function ChatInputToolbar({
           value={selectedProjectId ?? NO_PROJECT_VALUE}
           triggerLabel={projectLabel}
           triggerTitle={projectTitle}
-          icon={<ProjectDot color={selectedProject?.color} />}
+          icon={<ProjectSelectorIcon icon={selectedProject?.icon} />}
           triggerVariant="toolbar"
           triggerSize="sm"
           menuLabel={t("toolbar.chooseProject")}
@@ -263,7 +245,7 @@ export function ChatInputToolbar({
                   value: NO_PROJECT_VALUE,
                   label: t("toolbar.noProject"),
                   description: t("toolbar.generalChatWithoutProject"),
-                  icon: <ProjectDot />,
+                  icon: <ProjectSelectorIcon />,
                 },
                 ...availableProjects.map((project) => ({
                   value: project.id,
@@ -271,7 +253,7 @@ export function ChatInputToolbar({
                   description: project.workingDirs.length
                     ? project.workingDirs.join(", ")
                     : undefined,
-                  icon: <ProjectDot color={project.color} />,
+                  icon: <ProjectSelectorIcon icon={project.icon} />,
                 })),
               ],
             },
@@ -298,16 +280,6 @@ export function ChatInputToolbar({
       {/* Right side: actions */}
       <div className="flex items-center">
         <div className="flex items-center gap-px">
-          {personas.length > 0 && (
-            <PersonaPicker
-              personas={personas}
-              selectedPersonaId={selectedPersonaId}
-              onPersonaChange={(id) => onPersonaChange?.(id)}
-              onCreatePersona={onCreatePersona}
-              triggerVariant="icon"
-            />
-          )}
-
           {showContextUsage && (
             <Popover
               open={isContextPopoverOpen}
@@ -441,7 +413,7 @@ export function ChatInputToolbar({
                     voiceTranscribing && "animate-pulse",
                   )}
                 >
-                  <Mic />
+                  <Mic className="h-4 w-4" />
                 </Button>
               </span>
             </TooltipTrigger>

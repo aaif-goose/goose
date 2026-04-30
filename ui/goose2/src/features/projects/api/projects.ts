@@ -1,7 +1,10 @@
+import { invoke } from "@tauri-apps/api/core";
 import { getClient } from "@/shared/api/acpConnection";
 
 export interface ProjectInfo {
   id: string;
+  /** Stable on-disk path of the project source. Pass back to update/delete. */
+  path: string;
   name: string;
   description: string;
   prompt: string;
@@ -21,7 +24,7 @@ interface SourceEntry {
   name: string;
   description: string;
   content: string;
-  directory: string;
+  path: string;
   global: boolean;
   properties: Record<string, unknown>;
 }
@@ -30,6 +33,7 @@ function toProjectInfo(source: SourceEntry): ProjectInfo {
   const p = source.properties ?? {};
   return {
     id: source.name,
+    path: source.path,
     name: (p.title as string) ?? source.name,
     description: source.description,
     prompt: source.content,
@@ -44,9 +48,19 @@ function toProjectInfo(source: SourceEntry): ProjectInfo {
   };
 }
 
-function toProperties(
-  info: Omit<ProjectInfo, "id" | "description" | "prompt">,
-): Record<string, unknown> {
+interface ProjectMetadataFields {
+  name: string;
+  icon: string;
+  color: string;
+  preferredProvider: string | null;
+  preferredModel: string | null;
+  workingDirs: string[];
+  useWorktrees: boolean;
+  order: number;
+  archivedAt: string | null;
+}
+
+function toProperties(info: ProjectMetadataFields): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (info.name) props.title = info.name;
   if (info.icon) props.icon = info.icon;
@@ -56,6 +70,7 @@ function toProperties(
   if (info.workingDirs?.length) props.workingDirs = info.workingDirs;
   if (info.useWorktrees) props.useWorktrees = info.useWorktrees;
   if (typeof info.order === "number") props.order = info.order;
+  if (info.archivedAt) props.archivedAt = info.archivedAt;
   return props;
 }
 
@@ -65,6 +80,17 @@ function slugify(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return slug || "project";
+}
+
+export interface ProjectIconCandidate {
+  id: string;
+  label: string;
+  icon: string;
+  sourceDir: string;
+}
+
+export interface ProjectIconData {
+  icon: string;
 }
 
 export async function listProjects(): Promise<ProjectInfo[]> {
@@ -77,6 +103,16 @@ export async function listProjects(): Promise<ProjectInfo[]> {
     .map(toProjectInfo)
     .filter((p) => p.archivedAt === null)
     .sort((a, b) => a.order - b.order);
+}
+
+export async function scanProjectIcons(
+  workingDirs: string[],
+): Promise<ProjectIconCandidate[]> {
+  return invoke("scan_project_icons", { workingDirs });
+}
+
+export async function readProjectIcon(path: string): Promise<ProjectIconData> {
+  return invoke("read_project_icon", { path });
 }
 
 export async function createProject(
@@ -115,16 +151,16 @@ export async function createProject(
 
 export async function updateProject(
   existing: ProjectInfo,
-  updates: Partial<Omit<ProjectInfo, "id">>,
+  updates: Partial<Omit<ProjectInfo, "id" | "path">>,
 ): Promise<ProjectInfo> {
   const merged = { ...existing, ...updates };
   const client = await getClient();
   const raw = await client.extMethod("_goose/sources/update", {
     type: "project",
+    path: existing.path,
     name: existing.id,
     description: merged.description,
     content: merged.prompt,
-    global: true,
     properties: toProperties({
       name: merged.name,
       icon: merged.icon,
@@ -140,98 +176,61 @@ export async function updateProject(
   return toProjectInfo(raw.source as SourceEntry);
 }
 
-export async function deleteProject(id: string): Promise<void> {
+export async function deleteProject(
+  idOrProject: string | ProjectInfo,
+): Promise<void> {
   const client = await getClient();
+  const path =
+    typeof idOrProject === "string"
+      ? (await getProject(idOrProject)).path
+      : idOrProject.path;
   await client.extMethod("_goose/sources/delete", {
     type: "project",
-    name: id,
-    global: true,
+    path,
   });
 }
 
 export async function getProject(id: string): Promise<ProjectInfo> {
+  const all = await listAllProjects();
+  const match = all.find((p) => p.id === id);
+  if (!match) throw new Error(`Project "${id}" not found`);
+  return match;
+}
+
+/** List both archived and active projects. */
+async function listAllProjects(): Promise<ProjectInfo[]> {
   const client = await getClient();
   const raw = await client.extMethod("_goose/sources/list", {
     type: "project",
   });
   const sources = (raw.sources ?? []) as SourceEntry[];
-  const match = sources.find((s) => s.name === id);
-  if (!match) throw new Error(`Project "${id}" not found`);
-  return toProjectInfo(match);
+  return sources.map(toProjectInfo);
 }
 
 export async function archiveProject(id: string): Promise<void> {
-  // Read current, update with archivedAt property
-  const client = await getClient();
-  const raw = await client.extMethod("_goose/sources/list", {
-    type: "project",
-  });
-  const sources = (raw.sources ?? []) as SourceEntry[];
-  const existing = sources.find((s) => s.name === id);
-  if (!existing) throw new Error(`Project "${id}" not found`);
-
-  const props = { ...(existing.properties ?? {}) };
-  props.archivedAt = new Date().toISOString();
-
-  await client.extMethod("_goose/sources/update", {
-    type: "project",
-    name: id,
-    description: existing.description,
-    content: existing.content,
-    global: true,
-    properties: props,
+  const project = await getProject(id);
+  await updateProject(project, {
+    archivedAt: new Date().toISOString(),
   });
 }
 
 export async function restoreProject(id: string): Promise<void> {
-  const client = await getClient();
-  const raw = await client.extMethod("_goose/sources/list", {
-    type: "project",
-  });
-  const sources = (raw.sources ?? []) as SourceEntry[];
-  const existing = sources.find((s) => s.name === id);
-  if (!existing) throw new Error(`Project "${id}" not found`);
-
-  const props = { ...(existing.properties ?? {}) };
-  delete props.archivedAt;
-
-  await client.extMethod("_goose/sources/update", {
-    type: "project",
-    name: id,
-    description: existing.description,
-    content: existing.content,
-    global: true,
-    properties: props,
-  });
+  const project = await getProject(id);
+  await updateProject(project, { archivedAt: null });
 }
 
 export async function reorderProjects(
   order: [string, number][],
 ): Promise<void> {
-  const client = await getClient();
-  // Update each project's order property
+  const all = await listAllProjects();
   for (const [id, orderValue] of order) {
-    const raw = await client.extMethod("_goose/sources/list", {
-      type: "project",
-    });
-    const sources = (raw.sources ?? []) as SourceEntry[];
-    const existing = sources.find((s) => s.name === id);
+    const existing = all.find((p) => p.id === id);
     if (!existing) continue;
-
-    const props = { ...(existing.properties ?? {}), order: orderValue };
-    await client.extMethod("_goose/sources/update", {
-      type: "project",
-      name: id,
-      description: existing.description,
-      content: existing.content,
-      global: true,
-      properties: props,
-    });
+    await updateProject(existing, { order: orderValue });
   }
 }
 
 export async function listArchivedProjects(): Promise<ProjectInfo[]> {
-  // List all, filter for archived
-  const all = await listProjects();
+  const all = await listAllProjects();
   return all.filter((p) => p.archivedAt !== null);
 }

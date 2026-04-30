@@ -10,7 +10,7 @@
     "license": {
       "name": "Apache-2.0"
     },
-    "version": "1.31.0"
+    "version": "1.33.0"
   },
   "paths": {
     "/action-required/tool-confirmation": {
@@ -747,29 +747,6 @@
         }
       }
     },
-    "/config/backup": {
-      "post": {
-        "tags": [
-          "super::routes::config_management"
-        ],
-        "operationId": "backup_config",
-        "responses": {
-          "200": {
-            "description": "Config file backed up",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
     "/config/canonical-model-info": {
       "post": {
         "tags": [
@@ -1058,29 +1035,6 @@
           },
           "404": {
             "description": "Extension not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/config/init": {
-      "post": {
-        "tags": [
-          "super::routes::config_management"
-        ],
-        "operationId": "init_config",
-        "responses": {
-          "200": {
-            "description": "Config initialization check completed",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
           },
           "500": {
             "description": "Internal server error"
@@ -1481,29 +1435,6 @@
           },
           "500": {
             "description": "Unable to get the configuration value"
-          }
-        }
-      }
-    },
-    "/config/recover": {
-      "post": {
-        "tags": [
-          "super::routes::config_management"
-        ],
-        "operationId": "recover_config",
-        "responses": {
-          "200": {
-            "description": "Config recovery attempted",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
           }
         }
       }
@@ -4165,7 +4096,8 @@
         "enum": [
           "Builtin",
           "Recipe",
-          "Skill"
+          "Skill",
+          "Agent"
         ]
       },
       "ConfigKey": {
@@ -4642,6 +4574,10 @@
             },
             "nullable": true
           },
+          "model_doc_link": {
+            "type": "string",
+            "nullable": true
+          },
           "models": {
             "type": "array",
             "items": {
@@ -4653,6 +4589,12 @@
           },
           "requires_auth": {
             "type": "boolean"
+          },
+          "setup_steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "skip_canonical_filtering": {
             "type": "boolean"

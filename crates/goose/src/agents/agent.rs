@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::container::Container;
 use super::final_output_tool::FinalOutputTool;
+use super::mcp_client::GooseMcpHostInfo;
 use super::platform_tools;
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
@@ -21,6 +22,7 @@ use crate::agents::extension_manager::{
     get_parameter_names, ExtensionManager, ExtensionManagerCapabilities,
 };
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
+use crate::agents::platform_extensions::summon::discover_filesystem_sources;
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::platform_tools::PLATFORM_MANAGE_SCHEDULE_TOOL_NAME;
 use crate::agents::prompt_manager::PromptManager;
@@ -113,6 +115,7 @@ pub struct AgentConfig {
     pub goose_mode: GooseMode,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
+    pub mcp_host_info: Option<GooseMcpHostInfo>,
 }
 
 impl AgentConfig {
@@ -131,7 +134,13 @@ impl AgentConfig {
             goose_mode,
             disable_session_naming,
             goose_platform,
+            mcp_host_info: None,
         }
+    }
+
+    pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
+        self.mcp_host_info = mcp_host_info;
+        self
     }
 }
 
@@ -222,10 +231,23 @@ impl Agent {
 
         let goose_platform = config.goose_platform.clone();
         let initial_mode = config.goose_mode;
-        let capabilities = match config.goose_platform {
-            GoosePlatform::GooseDesktop => ExtensionManagerCapabilities { mcpui: true },
-            GoosePlatform::GooseCli => ExtensionManagerCapabilities { mcpui: false },
+        let explicit_mcp_host_info = config.mcp_host_info.clone();
+        let mcpui = explicit_mcp_host_info
+            .as_ref()
+            .filter(|host_info| host_info.explicit_extensions)
+            .map(GooseMcpHostInfo::mcpui_enabled)
+            .unwrap_or_else(|| match config.goose_platform {
+                GoosePlatform::GooseDesktop => true,
+                GoosePlatform::GooseCli => false,
+            });
+        let capabilities = ExtensionManagerCapabilities {
+            mcpui,
+            host_info: explicit_mcp_host_info.clone(),
         };
+        let client_name = explicit_mcp_host_info
+            .as_ref()
+            .and_then(|host_info| host_info.client_name.clone())
+            .unwrap_or_else(|| goose_platform.to_string());
         let session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
         Self {
@@ -235,7 +257,7 @@ impl Agent {
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
-                goose_platform.to_string(),
+                client_name,
                 capabilities,
             )),
             final_output_tool: Arc::new(Mutex::new(None)),
@@ -372,9 +394,16 @@ impl Agent {
         }
         let initial_messages = conversation.messages().clone();
 
-        let (tools, toolshim_tools, system_prompt) = self
+        let (tools, toolshim_tools, mut system_prompt) = self
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
+
+        if let Some(instructions) = self.resolve_at_mention(&conversation, working_dir) {
+            system_prompt = format!(
+                "{}\n\n# Instructions from active agent:\n\n{}",
+                system_prompt, instructions
+            );
+        }
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
@@ -407,6 +436,30 @@ impl Agent {
             tool_call_cut_off,
             initial_messages,
         })
+    }
+
+    fn resolve_at_mention(
+        &self,
+        conversation: &Conversation,
+        working_dir: &std::path::Path,
+    ) -> Option<String> {
+        let last_message = conversation.messages().last()?;
+        if last_message.role == rmcp::model::Role::User {
+            let after_at = last_message
+                .as_concat_text()
+                .trim()
+                .strip_prefix('@')?
+                .to_lowercase();
+
+            for source in discover_filesystem_sources(working_dir) {
+                let name = source.name.to_lowercase();
+                let is_match = after_at == name || after_at.starts_with(&format!("{} ", name));
+                if is_match && !source.content.is_empty() {
+                    return Some(source.content.clone());
+                }
+            }
+        }
+        None
     }
 
     async fn categorize_tools(
