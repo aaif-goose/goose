@@ -43,7 +43,7 @@ describe("SkillEditor", () => {
 
     it('shows "New Skill" title in create mode', () => {
       render(<SkillEditor {...defaultProps} />);
-      expect(screen.getByText("New Skill")).toBeInTheDocument();
+      expect(screen.getByText("New skill")).toBeInTheDocument();
     });
 
     it('shows "Edit Skill" title when editingSkill is provided', () => {
@@ -59,7 +59,7 @@ describe("SkillEditor", () => {
           }}
         />,
       );
-      expect(screen.getByText("Edit Skill")).toBeInTheDocument();
+      expect(screen.getByText("Edit skill")).toBeInTheDocument();
     });
   });
 

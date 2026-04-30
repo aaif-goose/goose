@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   cancelDictationLocalModelDownload,
   deleteDictationLocalModel,
+  deleteDictationProviderSecret,
   downloadDictationLocalModel,
   getDictationConfig,
   getDictationLocalModelDownloadProgress,
   listDictationLocalModels,
   saveDictationModelSelection,
+  saveDictationProviderSecret,
   transcribeDictation,
 } from "../dictation";
 import { getClient } from "../acpConnection";
@@ -64,6 +66,23 @@ describe("dictation SDK wiring", () => {
     expect(client.goose.GooseDictationModelSelect).toHaveBeenCalledWith({
       provider: "local",
       modelId: "tiny",
+    });
+  });
+
+  it("saveDictationProviderSecret calls GooseSecretUpsert", async () => {
+    client.goose.GooseSecretUpsert = vi.fn().mockResolvedValue({});
+    await saveDictationProviderSecret("groq", "gsk-test", "GROQ_API_KEY");
+    expect(client.goose.GooseSecretUpsert).toHaveBeenCalledWith({
+      key: "GROQ_API_KEY",
+      value: "gsk-test",
+    });
+  });
+
+  it("deleteDictationProviderSecret calls GooseSecretRemove", async () => {
+    client.goose.GooseSecretRemove = vi.fn().mockResolvedValue({});
+    await deleteDictationProviderSecret("groq", "GROQ_API_KEY");
+    expect(client.goose.GooseSecretRemove).toHaveBeenCalledWith({
+      key: "GROQ_API_KEY",
     });
   });
 

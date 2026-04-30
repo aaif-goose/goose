@@ -12,12 +12,6 @@ const WindowsDesktopInstallButtons = () => {
         >
           <IconDownload /> Windows
         </Link>
-        <Link
-          className="button button--primary button--lg"
-          to="https://github.com/aaif-goose/goose/releases/download/stable/Goose-win32-x64-cuda.zip"
-        >
-          <IconDownload /> Windows CUDA
-        </Link>
       </div>
     </div>
   );

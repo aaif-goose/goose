@@ -157,6 +157,7 @@ jobs:
         shell: pwsh
         env:
           CUDA_COMPUTE_CAP: ${{ matrix.variant == 'cuda' && '80' || '' }}
+          LLAMA_STATIC_CRT: ${{ matrix.variant == 'cuda' && '1' || '' }}
         run: |
           Write-Output "Building Windows CLI executable..."
           if ("${{ matrix.variant }}" -eq "cuda") {

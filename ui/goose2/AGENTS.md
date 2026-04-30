@@ -171,11 +171,14 @@ For a minimal frontend `api/` wrapper using the typed shape, see `ui/goose2/src/
 
 ### When `invoke()` is still appropriate
 
-Tauri commands (`invoke()` from `@tauri-apps/api/core`) are reserved for things that genuinely belong to the desktop shell, not to `goose` core. In practice that means:
+Tauri commands (`invoke()` from `@tauri-apps/api/core`) are reserved for things that genuinely belong to the desktop shell, not to `goose` core. Provider config or secret mutations that affect the Goose runtime must flow through React → SDK → ACP → goose core so core can validate provider metadata, invalidate secret caches, refresh inventory, and apply provider changes consistently. In practice, Tauri is limited to:
 
 - `get_goose_serve_url` — bootstrapping the ACP connection.
-- Secret storage owned by the OS keychain (e.g. `save_provider_field`, `delete_provider_config` — note dictation still uses these for writing API keys into the OS keychain, because that's a shell concern).
+- Native auth subprocesses and desktop-shell side effects.
 - Window state, filesystem dialogs, and other Tauri-plugin-backed capabilities.
+- Transitional provider cleanup such as `delete_provider_config` while local OAuth/cache side effects still live in the shell. `get_provider_config`, `check_all_provider_status`, and provider deletion duplicate provider/config knowledge in Tauri today and should move behind provider-scoped ACP methods.
+
+The long-term provider-config API should be provider-scoped rather than a frontend composition of generic config/secret writes. Prefer methods such as `_goose/providers/config/read`, `_goose/providers/config/status`, `_goose/providers/config/save`, and `_goose/providers/config/delete`; inventory refresh can be part of the result, but active provider reload belongs in the config mutation/apply path, not in `_goose/providers/inventory/refresh`.
 
 If the thing you're building is "get data from goose" or "tell goose to do something," it is **not** one of these cases. Add a custom ACP method instead.
 

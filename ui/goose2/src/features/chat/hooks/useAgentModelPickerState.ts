@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { AcpProvider } from "@/shared/api/acp";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
+import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import {
   getCatalogEntry,
   resolveAgentProviderCatalogIdStrict,
@@ -162,6 +163,24 @@ export function useAgentModelPickerState({
     [availableModels, onModelSelected],
   );
 
+  const refreshingRef = useRef(false);
+  const handlePickerOpen = useCallback(() => {
+    if (refreshingRef.current || useProviderInventoryStore.getState().loading) {
+      return;
+    }
+    refreshingRef.current = true;
+    import("@/features/providers/api/inventory")
+      .then(({ backgroundRefreshInventory }) =>
+        backgroundRefreshInventory(useProviderInventoryStore.getState()),
+      )
+      .catch((err) =>
+        console.error("Failed to background-refresh inventory:", err),
+      )
+      .finally(() => {
+        refreshingRef.current = false;
+      });
+  }, []);
+
   return {
     selectedAgentId,
     pickerAgents,
@@ -170,5 +189,6 @@ export function useAgentModelPickerState({
     modelStatusMessage,
     handleProviderChange,
     handleModelChange,
+    handlePickerOpen,
   };
 }

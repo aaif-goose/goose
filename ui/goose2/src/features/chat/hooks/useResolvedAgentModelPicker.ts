@@ -184,6 +184,7 @@ export function useResolvedAgentModelPicker({
     modelStatusMessage,
     handleProviderChange,
     handleModelChange,
+    handlePickerOpen,
   } = useAgentModelPickerState({
     providers,
     selectedProvider,
@@ -463,6 +464,7 @@ export function useResolvedAgentModelPicker({
     modelStatusMessage,
     handleProviderChange,
     handleModelChange,
+    handlePickerOpen,
     effectiveModelSelection,
   };
 }

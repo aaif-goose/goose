@@ -33,6 +33,10 @@ vi.mock("@/shared/api/system", () => ({
     mockListFilesForMentions(roots, maxResults),
 }));
 
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
+}));
+
 describe("ChatInput async send handling", () => {
   beforeEach(() => {
     mockListFilesForMentions.mockClear();

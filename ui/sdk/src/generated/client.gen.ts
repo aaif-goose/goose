@@ -47,6 +47,13 @@ import type {
   ListProvidersResponse,
   ListSourcesRequest,
   ListSourcesResponse,
+  ProviderConfigChangeResponse,
+  ProviderConfigDeleteRequest,
+  ProviderConfigReadRequest,
+  ProviderConfigReadResponse,
+  ProviderConfigSaveRequest,
+  ProviderConfigStatusRequest,
+  ProviderConfigStatusResponse,
   ReadConfigRequest,
   ReadConfigResponse,
   ReadResourceRequest,
@@ -83,6 +90,9 @@ import {
   zImportSourcesResponse,
   zListProvidersResponse,
   zListSourcesResponse,
+  zProviderConfigChangeResponse,
+  zProviderConfigReadResponse,
+  zProviderConfigStatusResponse,
   zReadConfigResponse,
   zReadResourceResponse,
   zRefreshProviderInventoryResponse,
@@ -171,6 +181,52 @@ export class GooseExtClient {
     return zRefreshProviderInventoryResponse.parse(
       raw,
     ) as RefreshProviderInventoryResponse;
+  }
+
+  async GooseProvidersConfigRead(
+    params: ProviderConfigReadRequest,
+  ): Promise<ProviderConfigReadResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/read",
+      params,
+    );
+    return zProviderConfigReadResponse.parse(raw) as ProviderConfigReadResponse;
+  }
+
+  async GooseProvidersConfigStatus(
+    params: ProviderConfigStatusRequest,
+  ): Promise<ProviderConfigStatusResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/status",
+      params,
+    );
+    return zProviderConfigStatusResponse.parse(
+      raw,
+    ) as ProviderConfigStatusResponse;
+  }
+
+  async GooseProvidersConfigSave(
+    params: ProviderConfigSaveRequest,
+  ): Promise<ProviderConfigChangeResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/save",
+      params,
+    );
+    return zProviderConfigChangeResponse.parse(
+      raw,
+    ) as ProviderConfigChangeResponse;
+  }
+
+  async GooseProvidersConfigDelete(
+    params: ProviderConfigDeleteRequest,
+  ): Promise<ProviderConfigChangeResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/delete",
+      params,
+    );
+    return zProviderConfigChangeResponse.parse(
+      raw,
+    ) as ProviderConfigChangeResponse;
   }
 
   async GooseConfigRead(

@@ -294,6 +294,96 @@ pub struct ProviderConfigKey {
     pub primary: bool,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigFieldValueDto {
+    pub key: String,
+    #[serde(default)]
+    pub value: Option<String>,
+    pub is_set: bool,
+    pub is_secret: bool,
+    pub required: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigStatusDto {
+    pub provider_id: String,
+    pub is_configured: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigFieldUpdate {
+    pub key: String,
+    pub value: String,
+}
+
+/// Read saved configuration field values for one provider.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/config/read",
+    response = ProviderConfigReadResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigReadRequest {
+    pub provider_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigReadResponse {
+    pub fields: Vec<ProviderConfigFieldValueDto>,
+}
+
+/// Return provider configured statuses. Empty provider_ids means all providers.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/config/status",
+    response = ProviderConfigStatusResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigStatusRequest {
+    #[serde(default)]
+    pub provider_ids: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigStatusResponse {
+    pub statuses: Vec<ProviderConfigStatusDto>,
+}
+
+/// Save provider configuration fields and start an inventory refresh when supported.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/config/save",
+    response = ProviderConfigChangeResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigSaveRequest {
+    pub provider_id: String,
+    pub fields: Vec<ProviderConfigFieldUpdate>,
+}
+
+/// Delete provider configuration fields and start an inventory refresh when supported.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/config/delete",
+    response = ProviderConfigChangeResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigDeleteRequest {
+    pub provider_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigChangeResponse {
+    pub status: ProviderConfigStatusDto,
+    pub refresh: RefreshProviderInventoryResponse,
+}
+
 /// The type of source entity.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,

@@ -223,6 +223,69 @@ export const zRefreshProviderInventoryResponse = z.object({
 });
 
 /**
+ * Read saved configuration field values for one provider.
+ */
+export const zProviderConfigReadRequest = z.object({
+    providerId: z.string()
+});
+
+export const zProviderConfigFieldValueDto = z.object({
+    key: z.string(),
+    value: z.union([
+        z.string(),
+        z.null()
+    ]).optional().default(null),
+    isSet: z.boolean(),
+    isSecret: z.boolean(),
+    required: z.boolean()
+});
+
+export const zProviderConfigReadResponse = z.object({
+    fields: z.array(zProviderConfigFieldValueDto)
+});
+
+/**
+ * Return provider configured statuses. Empty provider_ids means all providers.
+ */
+export const zProviderConfigStatusRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
+});
+
+export const zProviderConfigStatusDto = z.object({
+    providerId: z.string(),
+    isConfigured: z.boolean()
+});
+
+export const zProviderConfigStatusResponse = z.object({
+    statuses: z.array(zProviderConfigStatusDto)
+});
+
+export const zProviderConfigFieldUpdate = z.object({
+    key: z.string(),
+    value: z.string()
+});
+
+/**
+ * Save provider configuration fields and start an inventory refresh when supported.
+ */
+export const zProviderConfigSaveRequest = z.object({
+    providerId: z.string(),
+    fields: z.array(zProviderConfigFieldUpdate)
+});
+
+export const zProviderConfigChangeResponse = z.object({
+    status: zProviderConfigStatusDto,
+    refresh: zRefreshProviderInventoryResponse
+});
+
+/**
+ * Delete provider configuration fields and start an inventory refresh when supported.
+ */
+export const zProviderConfigDeleteRequest = z.object({
+    providerId: z.string()
+});
+
+/**
  * Read a single non-secret config value.
  */
 export const zReadConfigRequest = z.object({
@@ -628,6 +691,10 @@ export const zExtRequest = z.object({
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
             zRefreshProviderInventoryRequest,
+            zProviderConfigReadRequest,
+            zProviderConfigStatusRequest,
+            zProviderConfigSaveRequest,
+            zProviderConfigDeleteRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
             zRemoveConfigRequest,
@@ -674,6 +741,9 @@ export const zExtResponse = z.union([
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
                 zRefreshProviderInventoryResponse,
+                zProviderConfigReadResponse,
+                zProviderConfigStatusResponse,
+                zProviderConfigChangeResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,

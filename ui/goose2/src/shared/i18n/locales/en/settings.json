@@ -1,6 +1,6 @@
 {
   "about": {
-    "description": "About information will appear here.",
+    "description": "View app version, build info, and licenses.",
     "title": "About"
   },
   "appearance": {
@@ -16,18 +16,17 @@
         "red": "Red"
       },
       "description": "Choose your accent color",
-      "label": "Accent Color"
+      "label": "Accent color"
     },
     "density": {
       "description": "Adjust the spacing of UI elements",
-      "label": "Interface Density",
+      "label": "Interface density",
       "options": {
         "comfortable": "Comfortable",
         "compact": "Compact",
         "spacious": "Spacious"
       }
     },
-    "description": "Customize the look and feel of Goose",
     "theme": {
       "description": "Choose your preferred color scheme",
       "label": "Theme",
@@ -40,11 +39,11 @@
     "title": "Appearance"
   },
   "chats": {
-    "description": "Restore archived chats.",
+    "description": "View and restore your archived chats.",
     "empty": "No archived chats.",
     "messageCount_one": "{{displayCount}} message",
     "messageCount_other": "{{displayCount}} messages",
-    "sectionTitle": "Archived Chats",
+    "sectionTitle": "Archived chats",
     "title": "Chats",
     "types": {
       "project": "Project chat",
@@ -70,8 +69,8 @@
     "title": "Compaction"
   },
   "deleteProject": {
-    "description": "Are you sure you want to permanently delete \"{{name}}\"? This cannot be undone.",
-    "title": "Delete project permanently?"
+    "description": "This project and all its data will be permanently removed.",
+    "title": "Delete \"{{name}}\" permanently?"
   },
   "extensions": {
     "title": "Extensions",
@@ -125,10 +124,10 @@
     "agents": "Agents",
     "copied": "Copied",
     "copyDetails": "Copy details",
-    "description": "Verify required tools and agent availability for Goose.",
     "empty": "No checks are available yet.",
-    "rerun": "Re-run",
+    "rerun": "Try again",
     "runFix": "Run fix command?",
+    "runFixDescription": "This will run the following command:",
     "running": "Running checks...",
     "title": "Doctor",
     "tools": "Tools"
@@ -201,21 +200,33 @@
   "projects": {
     "description": "Manage your projects.",
     "empty": "No archived projects.",
-    "sectionTitle": "Archived Projects",
+    "sectionTitle": "Archived projects",
     "title": "Projects"
   },
   "providers": {
     "agents": {
-      "description": "Agents handle your requests using their own tools and models",
+      "description": "Goose is built in to your workspace. Install others to extend your setup.",
+      "errors": {
+        "installVerificationFailed": "Install finished but the CLI was not found on PATH. You may need to restart your terminal."
+      },
       "installLabel": "Install {{name}}",
+      "progress": {
+        "installing": "Installing {{name}}...",
+        "step": "Step {{step}} of {{total}}",
+        "verifyingInstallation": "Verifying installation..."
+      },
       "signIn": "Sign in",
       "signInLabel": "Sign in to {{name}}",
-      "title": "Agents"
+      "status": {
+        "checking": "Checking...",
+        "inProgress": "Setup in progress",
+        "setupFailed": "Setup failed"
+      },
+      "title": "Agent harnesses"
     },
-    "description": "Connect agents and AI models to use with Goose",
     "disconnect": "Disconnect",
     "models": {
-      "description": "AI models that power Goose. Expand a provider to review what it needs. Connect signs in with an existing account, while Set up saves API keys or other provider settings.",
+      "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",
       "notSet": "Not set",
       "setup": {
         "connected": {
@@ -225,24 +236,25 @@
           "oauthDeviceCode": "Connected through Goose device-code sign-in."
         },
         "fieldDescription": {
-          "cloudCredentials": "Set up saves any provider details Goose needs here. Your actual authentication still comes from your cloud credentials.",
-          "configFields": "Set up saves the provider details Goose needs, such as an API key, endpoint, or model settings.",
-          "hostWithOauthFallback": "Set up saves the host details Goose needs here. You can add a token now, or leave it blank and sign in afterward from Goose.",
-          "singleApiKey": "Set up saves the API key Goose needs for this provider."
+          "cloudCredentials": "Add the required details to use this provider.",
+          "configFields": "Add the required details to use this provider.",
+          "hostWithOauthFallback": "Add the required details to use this provider.",
+          "singleApiKey": "Add your API key to use this provider."
         },
         "hostWithOauthFallbackTerminal": "Leave Access Token blank, save your host URL, then run `goose configure` in your terminal to sign in.",
         "nativeConnectDescription": "Sign in with your existing account.",
         "pending": {
           "cloudCredentials": "Configure your cloud credentials in your terminal environment before using this provider.",
-          "local": "This provider runs locally and does not need saved settings here.",
-          "oauthGuided": "Goose will guide you through sign-in from here.",
+          "local": "This provider runs locally and doesn't need saved settings.",
+          "oauthGuided": "Goose will guide you through sign-in.",
           "oauthTerminal": "Run `goose configure` in your terminal to finish sign-in."
         }
       },
+      "checkingStatus": "Checking provider status...",
       "title": "Models"
     },
-    "restartButton": "Restart now",
-    "restartMessage": "Restart to apply credential changes.",
+    "loadingModels": "Loading models...",
+    "modelRefreshWarning": "Credentials saved. Model refresh needs attention: {{message}}",
     "saved": "Saved",
     "showFewer": "Show fewer",
     "showMore": "Show {{count}} more providers",

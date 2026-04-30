@@ -6,10 +6,14 @@ import {
   getAndDeleteReplayBuffer,
 } from "@/features/chat/hooks/replayBuffer";
 import { registerSession } from "./acpSessionTracker";
-import { handleSessionNotification } from "./acpNotificationHandler";
+import {
+  clearMessageTracking,
+  handleSessionNotification,
+} from "./acpNotificationHandler";
 
 describe("acpNotificationHandler", () => {
   beforeEach(() => {
+    clearMessageTracking();
     clearReplayBuffer("draft-session-1");
     clearReplayBuffer("draft-session-2");
     useChatStore.setState({

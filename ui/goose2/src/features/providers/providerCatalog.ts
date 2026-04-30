@@ -6,7 +6,6 @@ import {
 } from "./providerCatalogAliases";
 
 export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
-  // ── Agent providers ──────────────────────────────────────────────
   {
     id: "goose",
     displayName: "Goose",
@@ -92,7 +91,6 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     showOnlyWhenInstalled: true,
   },
 
-  // ── Model providers (power Goose) ────────────────────────────────
   {
     id: "anthropic",
     displayName: "Anthropic",
@@ -164,8 +162,18 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     id: "ollama",
     displayName: "Ollama",
     category: "model",
-    description: "Run models locally",
-    setupMethod: "local",
+    description: "Run local or self-hosted models",
+    setupMethod: "config_fields",
+    fields: [
+      {
+        key: "OLLAMA_HOST",
+        label: "Host",
+        secret: false,
+        required: true,
+        placeholder: "localhost or http://localhost:11434",
+        defaultValue: "http://localhost:11434",
+      },
+    ],
     docsUrl: "https://ollama.com",
     tier: "promoted",
   },

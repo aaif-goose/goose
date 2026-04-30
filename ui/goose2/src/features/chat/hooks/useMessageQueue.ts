@@ -3,6 +3,7 @@ import type { ChatState } from "@/shared/types/chat";
 import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useChatStore } from "../stores/chatStore";
+import type { ChatSendOptions } from "../types";
 
 const MAX_CONSECUTIVE_SEND_FAILURES = 2;
 
@@ -11,6 +12,7 @@ function getQueuedMessageKey(
     text: string;
     personaId?: string;
     attachments?: ChatAttachmentDraft[];
+    sendOptions?: ChatSendOptions;
   } | null,
 ): string | null {
   if (!queuedMessage) {
@@ -20,6 +22,7 @@ function getQueuedMessageKey(
   return JSON.stringify({
     text: queuedMessage.text,
     personaId: queuedMessage.personaId ?? null,
+    sendOptions: queuedMessage.sendOptions ?? null,
     attachments:
       queuedMessage.attachments?.map((attachment) => ({
         id: attachment.id,
@@ -45,6 +48,7 @@ export function useMessageQueue(
     text: string,
     overridePersona?: { id: string; name?: string },
     attachments?: ChatAttachmentDraft[],
+    sendOptions?: ChatSendOptions,
   ) => boolean | Promise<boolean>,
 ) {
   const queuedMessage = useChatStore(
@@ -104,12 +108,19 @@ export function useMessageQueue(
       idleCycle: idleCycleRef.current,
     };
 
-    const { text, personaId, attachments } = queuedMessage;
-    const sendResult = sendMessage(
-      text,
-      personaId ? { id: personaId } : undefined,
-      attachments,
-    );
+    const { text, personaId, attachments, sendOptions } = queuedMessage;
+    const sendResult = sendOptions
+      ? sendMessage(
+          text,
+          personaId ? { id: personaId } : undefined,
+          attachments,
+          sendOptions,
+        )
+      : sendMessage(
+          text,
+          personaId ? { id: personaId } : undefined,
+          attachments,
+        );
 
     const finalize = (accepted: boolean | undefined) => {
       const latestQueuedMessage =
@@ -145,11 +156,17 @@ export function useMessageQueue(
   }, [chatState, queuedMessage, queuedMessageKey, sendMessage, sessionId]);
 
   const enqueue = useCallback(
-    (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {
+    (
+      text: string,
+      personaId?: string,
+      attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
+    ) => {
       useChatStore.getState().enqueueMessage(sessionId, {
         text,
         personaId,
         attachments,
+        sendOptions,
       });
     },
     [sessionId],

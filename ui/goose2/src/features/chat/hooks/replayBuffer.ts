@@ -35,6 +35,10 @@ export function getBufferedMessage(
   return replayBuffers.get(sessionId)?.find((m) => m.id === messageId);
 }
 
+export function getReplayBuffer(sessionId: string): Message[] | undefined {
+  return replayBuffers.get(sessionId);
+}
+
 export function getAndDeleteReplayBuffer(
   sessionId: string,
 ): Message[] | undefined {

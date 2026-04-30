@@ -537,6 +537,178 @@
         "already_refreshing"
       ]
     },
+    "ProviderConfigReadRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Read saved configuration field values for one provider.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/read"
+    },
+    "ProviderConfigReadResponse": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigFieldValueDto"
+          }
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/read"
+    },
+    "ProviderConfigFieldValueDto": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "isSet": {
+          "type": "boolean"
+        },
+        "isSecret": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "isSet",
+        "isSecret",
+        "required"
+      ]
+    },
+    "ProviderConfigStatusRequest": {
+      "type": "object",
+      "properties": {
+        "providerIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "description": "Return provider configured statuses. Empty provider_ids means all providers.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/status"
+    },
+    "ProviderConfigStatusResponse": {
+      "type": "object",
+      "properties": {
+        "statuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigStatusDto"
+          }
+        }
+      },
+      "required": [
+        "statuses"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/status"
+    },
+    "ProviderConfigStatusDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "isConfigured": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "isConfigured"
+      ]
+    },
+    "ProviderConfigSaveRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigFieldUpdate"
+          }
+        }
+      },
+      "required": [
+        "providerId",
+        "fields"
+      ],
+      "description": "Save provider configuration fields and start an inventory refresh when supported.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/save"
+    },
+    "ProviderConfigFieldUpdate": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ]
+    },
+    "ProviderConfigChangeResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        }
+      },
+      "required": [
+        "status",
+        "refresh"
+      ],
+      "x-side": "agent"
+    },
+    "ProviderConfigDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Delete provider configuration fields and start an inventory refresh when supported.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/delete"
+    },
     "ReadConfigRequest": {
       "type": "object",
       "properties": {
@@ -1522,6 +1694,42 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ProviderConfigReadRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/read",
+                  "title": "ProviderConfigReadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigStatusRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/status",
+                  "title": "ProviderConfigStatusRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigSaveRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/save",
+                  "title": "ProviderConfigSaveRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/delete",
+                  "title": "ProviderConfigDeleteRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ReadConfigRequest"
                     }
                   ],
@@ -1838,6 +2046,30 @@
                         }
                       ],
                       "title": "RefreshProviderInventoryResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigReadResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigReadResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigStatusResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigStatusResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigChangeResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigChangeResponse"
                     },
                     {
                       "allOf": [

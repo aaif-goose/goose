@@ -141,10 +141,6 @@ import { PanelLeft } from 'lucide-react';
           1. Unzip the downloaded zip file.
           2. Run the executable file to launch the goose Desktop application.
 
-          :::info Windows variants
-          `Windows` is the standard general-purpose build. `Windows CUDA` is for NVIDIA GPUs with a compatible CUDA driver/runtime.
-          :::
-
           :::tip Updating goose
           It's best to periodically [update goose](/docs/guides/updating-goose).
           :::
@@ -156,30 +152,16 @@ import { PanelLeft } from 'lucide-react';
         - **MSYS2**: Available from [msys2.org](https://www.msys2.org/)
         - **PowerShell**: Available on Windows 10/11 by default
 
-        Use the standard build for the general-purpose Windows install. Use the CUDA variant if you have an NVIDIA GPU with a compatible CUDA driver/runtime.
-
         **Git Bash / MSYS2: Standard**
 
         ```bash
         curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
         ```
 
-        **Git Bash / MSYS2: Windows CUDA**
-
-        ```bash
-        curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | GOOSE_WINDOWS_VARIANT=cuda bash
-        ```
-
         To install without interactive configuration, disable `CONFIGURE`:
 
         ```bash
         curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash
-        ```
-
-        To install the CUDA variant without interactive configuration:
-
-        ```bash
-        curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | GOOSE_WINDOWS_VARIANT=cuda CONFIGURE=false bash
         ```
 
         **PowerShell Installation: Standard**
@@ -190,14 +172,6 @@ import { PanelLeft } from 'lucide-react';
         ```
         Then run the script to install goose:
         ```powershell
-        .\download_cli.ps1
-        ```
-
-        **PowerShell Installation: Windows CUDA**
-
-        ```powershell
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1" -OutFile "download_cli.ps1";
-        $env:GOOSE_WINDOWS_VARIANT="cuda"
         .\download_cli.ps1
         ```
 

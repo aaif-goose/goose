@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::container::Container;
 use super::final_output_tool::FinalOutputTool;
+use super::mcp_client::GooseMcpHostInfo;
 use super::platform_tools;
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
@@ -114,6 +115,7 @@ pub struct AgentConfig {
     pub goose_mode: GooseMode,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
+    pub mcp_host_info: Option<GooseMcpHostInfo>,
 }
 
 impl AgentConfig {
@@ -132,7 +134,13 @@ impl AgentConfig {
             goose_mode,
             disable_session_naming,
             goose_platform,
+            mcp_host_info: None,
         }
+    }
+
+    pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
+        self.mcp_host_info = mcp_host_info;
+        self
     }
 }
 
@@ -223,10 +231,23 @@ impl Agent {
 
         let goose_platform = config.goose_platform.clone();
         let initial_mode = config.goose_mode;
-        let capabilities = match config.goose_platform {
-            GoosePlatform::GooseDesktop => ExtensionManagerCapabilities { mcpui: true },
-            GoosePlatform::GooseCli => ExtensionManagerCapabilities { mcpui: false },
+        let explicit_mcp_host_info = config.mcp_host_info.clone();
+        let mcpui = explicit_mcp_host_info
+            .as_ref()
+            .filter(|host_info| host_info.explicit_extensions)
+            .map(GooseMcpHostInfo::mcpui_enabled)
+            .unwrap_or_else(|| match config.goose_platform {
+                GoosePlatform::GooseDesktop => true,
+                GoosePlatform::GooseCli => false,
+            });
+        let capabilities = ExtensionManagerCapabilities {
+            mcpui,
+            host_info: explicit_mcp_host_info.clone(),
         };
+        let client_name = explicit_mcp_host_info
+            .as_ref()
+            .and_then(|host_info| host_info.client_name.clone())
+            .unwrap_or_else(|| goose_platform.to_string());
         let session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
         Self {
@@ -236,7 +257,7 @@ impl Agent {
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
-                goose_platform.to_string(),
+                client_name,
                 capabilities,
             )),
             final_output_tool: Arc::new(Mutex::new(None)),

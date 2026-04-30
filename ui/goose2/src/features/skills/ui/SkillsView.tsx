@@ -33,7 +33,7 @@ import {
 } from "../lib/skillCategories";
 
 interface SkillsViewProps {
-  onStartChatWithSkill?: (skillName: string, projectId?: string | null) => void;
+  onStartChatWithSkill?: (skill: SkillInfo, projectId?: string | null) => void;
 }
 
 export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
@@ -175,7 +175,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
 
   const handleStartChat = useCallback(
     (skill: SkillInfo) => {
-      onStartChatWithSkill?.(skill.name, skill.projectLinks[0]?.id ?? null);
+      onStartChatWithSkill?.(skill, skill.projectLinks[0]?.id ?? null);
     },
     [onStartChatWithSkill],
   );

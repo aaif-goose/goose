@@ -66,6 +66,26 @@
       "responseType": "RefreshProviderInventoryResponse"
     },
     {
+      "method": "_goose/providers/config/read",
+      "requestType": "ProviderConfigReadRequest",
+      "responseType": "ProviderConfigReadResponse"
+    },
+    {
+      "method": "_goose/providers/config/status",
+      "requestType": "ProviderConfigStatusRequest",
+      "responseType": "ProviderConfigStatusResponse"
+    },
+    {
+      "method": "_goose/providers/config/save",
+      "requestType": "ProviderConfigSaveRequest",
+      "responseType": "ProviderConfigChangeResponse"
+    },
+    {
+      "method": "_goose/providers/config/delete",
+      "requestType": "ProviderConfigDeleteRequest",
+      "responseType": "ProviderConfigChangeResponse"
+    },
+    {
       "method": "_goose/config/read",
       "requestType": "ReadConfigRequest",
       "responseType": "ReadConfigResponse"

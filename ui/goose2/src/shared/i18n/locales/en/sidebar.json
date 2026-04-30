@@ -13,17 +13,17 @@
   "navigation": {
     "agents": "Agents",
     "home": "Home",
-    "sessionHistory": "Session History",
+    "sessionHistory": "Session history",
     "skills": "Skills"
   },
   "search": {
-    "error": "Message search failed. Showing metadata matches only.",
-    "placeholder": "Search conversations",
+    "error": "Message search failed. Showing metadata matches only. Try again.",
+    "placeholder": "Search chats...",
     "searching": "Searching chats..."
   },
   "sections": {
     "projects": "Projects",
-    "recents": "Recents"
+    "recents": "Chats"
   },
   "showLess": "Show less",
   "viewAllChats_one": "View all {{displayCount}} chat",

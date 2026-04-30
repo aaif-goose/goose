@@ -2,7 +2,6 @@ mod commands;
 mod services;
 mod types;
 
-use services::goose_config::GooseConfig;
 use services::personas::PersonaStore;
 use tauri_plugin_window_state::StateFlags;
 
@@ -25,8 +24,7 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
-        .manage(PersonaStore::new())
-        .manage(GooseConfig::new());
+        .manage(PersonaStore::new());
 
     #[cfg(feature = "app-test-driver")]
     let builder = builder.plugin(tauri_plugin_app_test_driver::init());
@@ -54,6 +52,8 @@ pub fn run() {
             commands::projects::list_archived_projects,
             commands::projects::archive_project,
             commands::projects::restore_project,
+            commands::project_icons::scan_project_icons,
+            commands::project_icons::read_project_icon,
             commands::doctor::run_doctor,
             commands::doctor::run_doctor_fix,
             commands::git::get_git_state,
@@ -65,11 +65,6 @@ pub fn run() {
             commands::git::git_pull,
             commands::git::git_create_branch,
             commands::git::git_create_worktree,
-            commands::credentials::get_provider_config,
-            commands::credentials::save_provider_field,
-            commands::credentials::delete_provider_config,
-            commands::credentials::check_all_provider_status,
-            commands::credentials::restart_app,
             commands::model_setup::authenticate_model_provider,
             commands::agent_setup::check_agent_installed,
             commands::agent_setup::check_agent_auth,

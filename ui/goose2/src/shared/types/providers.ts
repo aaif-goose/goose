@@ -19,6 +19,7 @@ export interface ProviderField {
   secret: boolean;
   required: boolean;
   placeholder?: string;
+  defaultValue?: string;
 }
 
 export interface ProviderFieldValue {

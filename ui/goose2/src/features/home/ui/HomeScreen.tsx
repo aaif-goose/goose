@@ -72,6 +72,8 @@ function HomeComposer({
       onDismissQueue={controller.queue.dismiss}
       initialValue={controller.draftValue}
       onDraftChange={controller.handleDraftChange}
+      selectedSkills={controller.selectedSkills}
+      onSkillsChange={controller.handleSkillsChange}
       onStop={controller.stopStreaming}
       isStreaming={
         controller.chatState === "streaming" ||
@@ -80,7 +82,6 @@ function HomeComposer({
       personas={controller.personas}
       selectedPersonaId={controller.selectedPersonaId}
       onPersonaChange={controller.handlePersonaChange}
-      onCreatePersona={controller.handleCreatePersona}
       providers={controller.pickerAgents}
       providersLoading={controller.providersLoading}
       selectedProvider={controller.selectedProvider}
@@ -91,6 +92,7 @@ function HomeComposer({
       modelsLoading={controller.modelsLoading}
       modelStatusMessage={controller.modelStatusMessage}
       onModelChange={controller.handleModelChange}
+      onPickerOpen={controller.handlePickerOpen}
       selectedProjectId={controller.selectedProjectId}
       availableProjects={controller.availableProjects}
       onProjectChange={controller.handleProjectChange}

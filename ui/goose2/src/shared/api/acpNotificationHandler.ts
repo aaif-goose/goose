@@ -5,16 +5,26 @@ import type {
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import {
-  ensureReplayBuffer,
   getBufferedMessage,
   findLatestUnpairedToolRequest,
 } from "@/features/chat/hooks/replayBuffer";
 import type {
-  TextContent,
   ToolRequestContent,
   ToolResponseContent,
 } from "@/shared/types/messages";
 import type { AcpNotificationHandler } from "./acpConnection";
+import { handleReplayUserMessageChunk } from "./acpSkillReplayChips";
+import {
+  attachMcpAppPayload,
+  extractToolResultText,
+  findReplayMessageWithToolCall,
+} from "./acpToolCallContent";
+import {
+  clearReplayAssistantMessage,
+  clearReplayAssistantTracking,
+  ensureReplayAssistantMessage,
+  getTrackedReplayAssistantMessageId,
+} from "./acpReplayAssistant";
 import {
   getLocalSessionId,
   subscribeToSessionRegistration,
@@ -23,47 +33,6 @@ import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per goose session
 const presetMessageIds = new Map<string, string>();
-const pendingUsageUpdates = new Map<string, SessionUpdate[]>();
-
-function shouldBufferPendingUpdate(update: SessionUpdate): boolean {
-  return update.sessionUpdate === "usage_update";
-}
-
-function queuePendingUsageUpdate(
-  gooseSessionId: string,
-  update: SessionUpdate,
-): void {
-  const pending = pendingUsageUpdates.get(gooseSessionId);
-  if (pending) {
-    pending.push(update);
-    return;
-  }
-  pendingUsageUpdates.set(gooseSessionId, [update]);
-}
-
-function flushPendingUsageUpdates(
-  localSessionId: string,
-  gooseSessionId: string,
-): void {
-  const pending = pendingUsageUpdates.get(gooseSessionId);
-  if (!pending?.length) {
-    return;
-  }
-
-  pendingUsageUpdates.delete(gooseSessionId);
-
-  for (const update of pending) {
-    if (useChatStore.getState().loadingSessionIds.has(localSessionId)) {
-      handleReplay(localSessionId, update);
-    } else {
-      handleLive(localSessionId, gooseSessionId, update);
-    }
-  }
-}
-
-subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
-  flushPendingUsageUpdates(localSessionId, gooseSessionId);
-});
 
 // Per-session perf counters for replay/live streaming.
 interface ReplayPerf {
@@ -78,6 +47,20 @@ interface LivePerf {
   chunkCount: number;
 }
 const livePerf = new Map<string, LivePerf>();
+const pendingUsageUpdates = new Map<
+  string,
+  { accumulatedTotal: number; contextLimit: number }
+>();
+
+subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
+  const pendingUsage = pendingUsageUpdates.get(gooseSessionId);
+  if (!pendingUsage) {
+    return;
+  }
+
+  useChatStore.getState().updateTokenState(localSessionId, pendingUsage);
+  pendingUsageUpdates.delete(gooseSessionId);
+});
 
 export function setActiveMessageId(
   gooseSessionId: string,
@@ -112,32 +95,23 @@ export async function handleSessionNotification(
   notification: SessionNotification,
 ): Promise<void> {
   const gooseSessionId = notification.sessionId;
-  const { update } = notification;
   const localSessionId = getLocalSessionId(gooseSessionId);
-
-  if (!localSessionId) {
-    if (shouldBufferPendingUpdate(update)) {
-      queuePendingUsageUpdate(gooseSessionId, update);
-    }
-    return;
-  }
-
-  const isReplay = useChatStore
-    .getState()
-    .loadingSessionIds.has(localSessionId);
+  const sessionId = localSessionId ?? gooseSessionId;
+  const { update } = notification;
+  const isReplay = useChatStore.getState().loadingSessionIds.has(sessionId);
 
   if (isReplay) {
-    const sid = localSessionId.slice(0, 8);
-    let perf = replayPerf.get(localSessionId);
+    const sid = sessionId.slice(0, 8);
+    let perf = replayPerf.get(sessionId);
     const now = performance.now();
     if (!perf) {
       perf = { firstAt: now, lastAt: now, count: 0 };
-      replayPerf.set(localSessionId, perf);
+      replayPerf.set(sessionId, perf);
       perfLog(`[perf:replay] ${sid} first notification received`);
     }
     perf.lastAt = now;
     perf.count += 1;
-    handleReplay(localSessionId, update);
+    handleReplay(sessionId, gooseSessionId, localSessionId, update);
   } else {
     const perf = livePerf.get(gooseSessionId);
     if (perf && update.sessionUpdate === "agent_message_chunk") {
@@ -150,7 +124,7 @@ export async function handleSessionNotification(
         );
       }
     }
-    handleLive(localSessionId, gooseSessionId, update);
+    handleLive(sessionId, gooseSessionId, localSessionId, update);
   }
 }
 
@@ -166,25 +140,18 @@ export function clearReplayPerf(sessionId: string): void {
   replayPerf.delete(sessionId);
 }
 
-function handleReplay(sessionId: string, update: SessionUpdate): void {
+function handleReplay(
+  sessionId: string,
+  gooseSessionId: string,
+  localSessionId: string | null,
+  update: SessionUpdate,
+): void {
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
-      const messageId = update.messageId ?? crypto.randomUUID();
-      const buffer = ensureReplayBuffer(sessionId);
-      if (!getBufferedMessage(sessionId, messageId)) {
-        buffer.push({
-          id: messageId,
-          role: "assistant",
-          created: Date.now(),
-          content: [],
-          metadata: {
-            userVisible: true,
-            agentVisible: true,
-            completionStatus: "inProgress",
-          },
-        });
-      }
-      const msg = getBufferedMessage(sessionId, messageId);
+      const msg = ensureReplayAssistantMessage(
+        sessionId,
+        update.messageId ?? null,
+      );
       if (msg && update.content.type === "text" && "text" in update.content) {
         const last = msg.content[msg.content.length - 1];
         if (last?.type === "text") {
@@ -197,53 +164,33 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     }
 
     case "user_message_chunk": {
+      clearReplayAssistantMessage(sessionId);
       if (update.content.type !== "text" || !("text" in update.content)) break;
       const messageId = update.messageId ?? crypto.randomUUID();
-      const buffer = ensureReplayBuffer(sessionId);
-      const existing = getBufferedMessage(sessionId, messageId);
-      // biome-ignore lint/suspicious/noExplicitAny: wire format has annotations but SDK types don't
-      const rawAnn = (update.content as any).annotations;
-      const ann: TextContent["annotations"] | undefined =
-        typeof rawAnn === "object" && rawAnn !== null ? rawAnn : undefined;
-      // Drop assistant-only blocks so they never enter chat state.
-      if (
-        ann?.audience &&
-        ann.audience.length > 0 &&
-        !ann.audience.includes("user")
-      )
-        break;
-      const textBlock = makeTextBlock(update.content.text, ann);
-      if (!existing) {
-        buffer.push({
-          id: messageId,
-          role: "user",
-          created: Date.now(),
-          content: [textBlock],
-          metadata: { userVisible: true, agentVisible: true },
-        });
-      } else {
-        existing.content.push(textBlock);
-      }
+      handleReplayUserMessageChunk(sessionId, messageId, update.content);
       break;
     }
 
     case "tool_call": {
-      const msg = findMessageInBuffer(sessionId, update.toolCallId);
-      if (msg) {
-        msg.content.push({
-          type: "toolRequest",
-          id: update.toolCallId,
-          name: update.title,
-          arguments: {},
-          status: "executing",
-          startedAt: Date.now(),
-        });
-      }
+      const msg = ensureReplayAssistantMessage(sessionId);
+      msg.content.push({
+        type: "toolRequest",
+        id: update.toolCallId,
+        name: update.title,
+        arguments: {},
+        status: "executing",
+        startedAt: Date.now(),
+      });
       break;
     }
 
     case "tool_call_update": {
-      const msg = findMessageWithToolCall(sessionId, update.toolCallId);
+      const replayMessageId = getTrackedReplayAssistantMessageId(sessionId);
+      const msg =
+        findReplayMessageWithToolCall(sessionId, update.toolCallId) ??
+        (replayMessageId
+          ? getBufferedMessage(sessionId, replayMessageId)
+          : undefined);
       if (msg) {
         if (update.title) {
           const tc = msg.content.find(
@@ -274,6 +221,19 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
             result: resultText,
             isError: update.status === "failed",
           });
+          if (update.status === "completed") {
+            attachMcpAppPayload(
+              sessionId,
+              update.toolCallId,
+              (tc as ToolRequestContent)?.name ?? update.title ?? "",
+              update,
+              true,
+              {
+                gooseSessionId,
+                replayMessageId,
+              },
+            );
+          }
         }
       }
       break;
@@ -282,7 +242,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     case "session_info_update":
     case "config_option_update":
     case "usage_update":
-      handleShared(sessionId, update);
+      handleShared(sessionId, gooseSessionId, localSessionId, update);
       break;
 
     default:
@@ -293,35 +253,18 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
 function handleLive(
   sessionId: string,
   gooseSessionId: string,
+  localSessionId: string | null,
   update: SessionUpdate,
 ): void {
   const store = useChatStore.getState();
 
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
-      const messageId =
-        update.messageId ??
-        presetMessageIds.get(gooseSessionId) ??
-        crypto.randomUUID();
-      const existing = store.messagesBySession[sessionId]?.find(
-        (m) => m.id === messageId,
+      const messageId = ensureLiveAssistantMessage(
+        sessionId,
+        gooseSessionId,
+        update.messageId,
       );
-
-      if (!existing) {
-        store.addMessage(sessionId, {
-          id: messageId,
-          role: "assistant",
-          created: Date.now(),
-          content: [],
-          metadata: {
-            userVisible: true,
-            agentVisible: true,
-            completionStatus: "inProgress",
-          },
-        });
-        store.setPendingAssistantProvider(sessionId, null);
-        store.setStreamingMessageId(sessionId, messageId);
-      }
 
       if (update.content.type === "text" && "text" in update.content) {
         store.setStreamingMessageId(sessionId, messageId);
@@ -331,8 +274,7 @@ function handleLive(
     }
 
     case "tool_call": {
-      const messageId = findStreamingMessageId(sessionId);
-      if (!messageId) break;
+      const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
 
       const toolRequest: ToolRequestContent = {
         type: "toolRequest",
@@ -348,8 +290,7 @@ function handleLive(
     }
 
     case "tool_call_update": {
-      const messageId = findStreamingMessageId(sessionId);
-      if (!messageId) break;
+      const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
 
       if (update.title) {
         store.updateMessage(sessionId, messageId, (msg) => ({
@@ -389,6 +330,15 @@ function handleLive(
         };
         store.setStreamingMessageId(sessionId, messageId);
         store.appendToStreamingMessage(sessionId, toolResponse);
+        if (update.status === "completed") {
+          attachMcpAppPayload(
+            sessionId,
+            update.toolCallId,
+            toolRequest?.name ?? update.title ?? "",
+            update,
+            false,
+          );
+        }
       }
       break;
     }
@@ -396,7 +346,7 @@ function handleLive(
     case "session_info_update":
     case "config_option_update":
     case "usage_update":
-      handleShared(sessionId, update);
+      handleShared(sessionId, gooseSessionId, localSessionId, update);
       break;
 
     default:
@@ -404,7 +354,12 @@ function handleLive(
   }
 }
 
-function handleShared(sessionId: string, update: SessionUpdate): void {
+function handleShared(
+  sessionId: string,
+  gooseSessionId: string,
+  localSessionId: string | null,
+  update: SessionUpdate,
+): void {
   switch (update.sessionUpdate) {
     case "session_info_update": {
       const info = update as SessionUpdate & {
@@ -463,7 +418,16 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
 
     case "usage_update": {
       const usage = update as SessionUpdate & { sessionUpdate: "usage_update" };
-      useChatStore.getState().updateTokenState(sessionId, {
+
+      if (!localSessionId) {
+        pendingUsageUpdates.set(gooseSessionId, {
+          accumulatedTotal: usage.used,
+          contextLimit: usage.size,
+        });
+        break;
+      }
+
+      useChatStore.getState().updateTokenState(localSessionId, {
         accumulatedTotal: usage.used,
         contextLimit: usage.size,
       });
@@ -475,66 +439,58 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
   }
 }
 
-// Helpers
-
 function findStreamingMessageId(sessionId: string): string | null {
   return useChatStore.getState().getSessionRuntime(sessionId)
     .streamingMessageId;
 }
 
-function makeTextBlock(
-  text: string,
-  ann?: TextContent["annotations"],
-): TextContent {
-  return { type: "text", text, ...(ann ? { annotations: ann } : {}) };
-}
-
-function findMessageInBuffer(
+function ensureLiveAssistantMessage(
   sessionId: string,
-  _toolCallId: string,
-): ReturnType<typeof getBufferedMessage> {
-  const buffer = ensureReplayBuffer(sessionId);
-  return buffer[buffer.length - 1];
-}
+  gooseSessionId: string,
+  preferredMessageId?: string | null,
+): string {
+  const store = useChatStore.getState();
+  const existingStreamingMessageId = findStreamingMessageId(sessionId);
+  const messages = store.messagesBySession[sessionId] ?? [];
 
-function findMessageWithToolCall(
-  sessionId: string,
-  toolCallId: string,
-): ReturnType<typeof getBufferedMessage> {
-  const buffer = ensureReplayBuffer(sessionId);
-  for (let i = buffer.length - 1; i >= 0; i--) {
-    const msg = buffer[i];
-    if (
-      msg.content.some((c) => c.type === "toolRequest" && c.id === toolCallId)
-    ) {
-      return msg;
-    }
+  if (
+    existingStreamingMessageId &&
+    messages.some((message) => message.id === existingStreamingMessageId)
+  ) {
+    return existingStreamingMessageId;
   }
-  return buffer[buffer.length - 1];
-}
 
-function extractToolResultText(update: {
-  // biome-ignore lint/suspicious/noExplicitAny: ACP SDK ToolCallContent type is complex
-  content?: Array<any> | null;
-  rawOutput?: unknown;
-}): string {
-  if (update.content && update.content.length > 0) {
-    for (const item of update.content) {
-      if (item.type === "content" && item.content?.type === "text") {
-        return item.content.text;
-      }
-    }
+  const messageId =
+    preferredMessageId ??
+    presetMessageIds.get(gooseSessionId) ??
+    existingStreamingMessageId ??
+    crypto.randomUUID();
+
+  if (!messages.some((message) => message.id === messageId)) {
+    store.addMessage(sessionId, {
+      id: messageId,
+      role: "assistant",
+      created: Date.now(),
+      content: [],
+      metadata: {
+        userVisible: true,
+        agentVisible: true,
+        completionStatus: "inProgress",
+      },
+    });
   }
-  if (update.rawOutput !== undefined && update.rawOutput !== null) {
-    return typeof update.rawOutput === "string"
-      ? update.rawOutput
-      : JSON.stringify(update.rawOutput);
-  }
-  return "";
+
+  store.setPendingAssistantProvider(sessionId, null);
+  store.setStreamingMessageId(sessionId, messageId);
+  clearActiveMessageId(gooseSessionId);
+
+  return messageId;
 }
 
 export function clearMessageTracking(): void {
   presetMessageIds.clear();
+  pendingUsageUpdates.clear();
+  clearReplayAssistantTracking();
 }
 
 const handler: AcpNotificationHandler = {

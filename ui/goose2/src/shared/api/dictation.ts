@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import type {
   DictationDownloadProgress,
   DictationProvider,
@@ -48,22 +47,19 @@ export async function saveDictationProviderSecret(
   if (!configKey) {
     throw new Error("No config key for this provider");
   }
-  return invoke("save_provider_field", { key: configKey, value });
+  const client = await getClient();
+  await client.goose.GooseSecretUpsert({ key: configKey, value });
 }
 
 export async function deleteDictationProviderSecret(
-  provider: DictationProvider,
-  _configKey?: string,
+  _provider: DictationProvider,
+  configKey?: string,
 ): Promise<void> {
-  const providerIdMap: Record<string, string> = {
-    groq: "dictation_groq",
-    elevenlabs: "dictation_elevenlabs",
-  };
-  const providerId = providerIdMap[provider];
-  if (!providerId) {
+  if (!configKey) {
     throw new Error("Cannot delete secrets for this provider");
   }
-  return invoke("delete_provider_config", { providerId });
+  const client = await getClient();
+  await client.goose.GooseSecretRemove({ key: configKey });
 }
 
 export async function listDictationLocalModels(): Promise<

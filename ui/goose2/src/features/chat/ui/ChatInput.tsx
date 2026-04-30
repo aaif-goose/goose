@@ -1,37 +1,30 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import {
+  attachmentSnapshotsMatch,
+  skillDraftSnapshotsMatch,
+} from "../lib/chatInputSnapshots";
+import {
+  getChatInputAgentLabel,
+  getChatInputPlaceholder,
+} from "../lib/chatInputPlaceholder";
 import { cn } from "@/shared/lib/cn";
-import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
 import { MentionAutocomplete } from "./MentionAutocomplete";
 import { useMentionHandlers } from "../hooks/useMentionHandlers";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { TooltipProvider } from "@/shared/ui/tooltip";
-import { PersonaAvatar } from "./PersonaPicker";
 import { useAttachmentDropTarget } from "../hooks/useAttachmentDropTarget";
-import {
-  normalizeDialogSelection,
-  useChatInputAttachments,
-} from "../hooks/useChatInputAttachments";
+import { useChatInputAttachments } from "../hooks/useChatInputAttachments";
+import { useChatInputFilePicker } from "../hooks/useChatInputFilePicker";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { ChatInputSelectionChips } from "./ChatInputSelectionChips";
+import { useChatInputSubmit } from "../hooks/useChatInputSubmit";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
-import type { ChatInputProps } from "../types";
-
-function attachmentSnapshotsMatch(
-  current: ChatAttachmentDraft[],
-  snapshot: ChatAttachmentDraft[],
-) {
-  return (
-    current.length === snapshot.length &&
-    current.every((attachment, index) => attachment.id === snapshot[index]?.id)
-  );
-}
+import type { ChatInputProps, ChatSkillDraft } from "../types";
 
 export function ChatInput({
   onSend,
@@ -42,11 +35,12 @@ export function ChatInput({
   onDismissQueue,
   initialValue = "",
   onDraftChange,
+  selectedSkills: selectedSkillsProp,
+  onSkillsChange,
   className,
   personas = [],
   selectedPersonaId = null,
   onPersonaChange,
-  onCreatePersona,
   providers = [],
   providersLoading = false,
   selectedProvider = "goose",
@@ -57,6 +51,7 @@ export function ChatInput({
   modelsLoading = false,
   modelStatusMessage = null,
   onModelChange,
+  onPickerOpen,
   selectedProjectId = null,
   availableProjects = [],
   onProjectChange,
@@ -71,6 +66,11 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
+  const [internalSelectedSkills, setInternalSelectedSkills] = useState<
+    ChatSkillDraft[]
+  >([]);
+  const selectedSkills = selectedSkillsProp ?? internalSelectedSkills;
+  const setSelectedSkills = onSkillsChange ?? setInternalSelectedSkills;
   const textRef = useRef(initialValue);
   useEffect(() => {
     setTextRaw(initialValue);
@@ -96,6 +96,8 @@ export function ChatInput({
   } = useChatInputAttachments();
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
+  const selectedSkillsRef = useRef(selectedSkills);
+  selectedSkillsRef.current = selectedSkills;
 
   const resetTextarea = useCallback(() => {
     if (textareaRef.current) {
@@ -104,17 +106,6 @@ export function ChatInput({
   }, []);
 
   const hasQueuedMessage = queuedMessage !== null;
-
-  const dictation = useVoiceDictation({
-    text,
-    setText,
-    attachments,
-    clearAttachments,
-    selectedPersonaId,
-    onSend,
-    resetTextarea,
-    isSendLocked: hasQueuedMessage || disabled,
-  });
 
   const activePersona = useMemo(
     () => personas.find((persona) => persona.id === selectedPersonaId) ?? null,
@@ -129,20 +120,37 @@ export function ChatInput({
   const stickyPersona = activePersona;
 
   const canSend =
-    (text.trim().length > 0 || attachments.length > 0) &&
+    (text.trim().length > 0 ||
+      attachments.length > 0 ||
+      selectedSkills.length > 0) &&
     !hasQueuedMessage &&
     !disabled;
+
+  const handleSkillMentionAdded = useCallback(
+    (skill: (typeof selectedSkills)[number]) => {
+      if (
+        selectedSkills.some((selectedSkill) => selectedSkill.id === skill.id)
+      ) {
+        return;
+      }
+      setSelectedSkills([...selectedSkills, skill]);
+    },
+    [selectedSkills, setSelectedSkills],
+  );
 
   const {
     mentionOpen,
     mentionSelectedIndex,
     filteredPersonas,
+    filteredSkills,
     filteredFiles,
+    resolveSkillSlashCommand,
     detectMention,
     closeMention,
     navigateMention,
     confirmMention,
     handlePersonaMentionSelect,
+    handleSkillMentionSelect,
     handleFileMentionSelect,
     handleMentionConfirm,
   } = useMentionHandlers({
@@ -152,6 +160,7 @@ export function ChatInput({
     setText,
     textareaRef,
     onPersonaChange,
+    onSkillMentionSelect: handleSkillMentionAdded,
   });
 
   useEffect(() => {
@@ -171,21 +180,34 @@ export function ChatInput({
 
   useEffect(() => textareaRef.current?.focus(), []);
 
+  const { submitChatInputMessage, handleVoiceAutoSubmit } = useChatInputSubmit({
+    attachmentsRef,
+    selectedSkillsRef,
+    selectedPersonaId,
+    onSend,
+    setSelectedSkills,
+    resolveSkillSlashCommand,
+  });
+
+  const dictation = useVoiceDictation({
+    text,
+    setText,
+    attachments,
+    clearAttachments,
+    selectedPersonaId,
+    onSend,
+    onAutoSubmit: handleVoiceAutoSubmit,
+    resetTextarea,
+    isSendLocked: hasQueuedMessage || disabled,
+  });
+
   const handleSend = useCallback(async () => {
     if (!canSend) {
       return;
     }
 
-    // If recording, stop without waiting for final flush and send what's
-    // already transcribed into the textarea. This makes Send a single click
-    // even while the mic is hot; any in-flight audio after the user clicked
-    // Send is intentionally dropped.
-    //
-    // Also handles the edge case where the user clicks Send while a
-    // getUserMedia startup is still pending (isRecording is still false but
-    // a stream is about to be acquired) — stopRecording sets the internal
-    // cancel flag so the pending startup tears itself down instead of
-    // leaving the OS mic indicator on.
+    // Stop without flushing so Send uses the text already in the composer.
+    // This also cancels an in-flight microphone startup.
     if (
       dictation.isRecording ||
       dictation.isTranscribing ||
@@ -195,25 +217,25 @@ export function ChatInput({
     }
 
     const submittedText = text;
+    const submittedSkills = selectedSkills;
     const submittedAttachments = attachments;
-    const sendResult = onSend(
-      submittedText.trim(),
-      selectedPersonaId ?? undefined,
-      submittedAttachments.length > 0 ? submittedAttachments : undefined,
+    const accepted = await submitChatInputMessage(
+      submittedText,
+      submittedAttachments,
+      submittedSkills,
     );
-    const accepted = isPromiseLike<boolean>(sendResult)
-      ? await sendResult
-      : sendResult;
-    if (accepted === false) {
+    if (!accepted) {
       return;
     }
     const draftStillMatchesSubmission =
       textRef.current === submittedText &&
+      skillDraftSnapshotsMatch(selectedSkillsRef.current, submittedSkills) &&
       attachmentSnapshotsMatch(attachmentsRef.current, submittedAttachments);
     if (!draftStillMatchesSubmission) {
       return;
     }
     setText("");
+    setSelectedSkills([]);
     clearAttachments();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -223,9 +245,10 @@ export function ChatInput({
     canSend,
     clearAttachments,
     dictation,
-    onSend,
-    selectedPersonaId,
+    selectedSkills,
+    setSelectedSkills,
     setText,
+    submitChatInputMessage,
     text,
   ]);
 
@@ -302,44 +325,18 @@ export function ChatInput({
       void addPathAttachments(paths);
     },
   });
-
-  const handleAttachFiles = useCallback(async () => {
-    if (disabled) {
-      return;
-    }
-
-    try {
-      const selected = await open({
-        title: t("attachments.chooseFilesDialogTitle"),
-        multiple: true,
-      });
-      await addPathAttachments(normalizeDialogSelection(selected));
-    } catch {
-      // Dialog plugin may be unavailable in some environments.
-    }
-  }, [addPathAttachments, disabled, t]);
-
-  const handleAttachFolders = useCallback(async () => {
-    if (disabled) {
-      return;
-    }
-
-    try {
-      const selected = await open({
-        directory: true,
-        title: t("attachments.chooseFoldersDialogTitle"),
-        multiple: true,
-      });
-      await addPathAttachments(normalizeDialogSelection(selected));
-    } catch {
-      // Dialog plugin may be unavailable in some environments.
-    }
-  }, [addPathAttachments, disabled, t]);
+  const { handleAttachFiles, handleAttachFolders } = useChatInputFilePicker({
+    disabled,
+    addPathAttachments,
+  });
 
   const providerDisplayName =
     providers.find((provider) => provider.id === selectedProvider)?.label ??
     formatProviderLabel(selectedProvider);
-  const agentDisplayName = activePersona?.displayName ?? providerDisplayName;
+  const agentDisplayName = getChatInputAgentLabel(
+    activePersona?.displayName,
+    providerDisplayName,
+  );
   const resolvedCurrentModel = useMemo(() => {
     if (currentModel) {
       return currentModel;
@@ -352,13 +349,23 @@ export function ChatInput({
     );
     return selectedModel?.displayName ?? selectedModel?.name ?? currentModelId;
   }, [availableModels, currentModel, currentModelId]);
-  const effectivePlaceholder = t("input.placeholder", {
-    agent: agentDisplayName,
-  });
+  const inputPlaceholder = getChatInputPlaceholder(
+    t,
+    agentDisplayName,
+    dictation.isRecording,
+    dictation.isTranscribing,
+  );
 
   const handleClearStickyPersona = useCallback(() => {
     onPersonaChange?.(null);
   }, [onPersonaChange]);
+
+  const handleRemoveSkill = useCallback(
+    (skillId: string) => {
+      setSelectedSkills(selectedSkills.filter((skill) => skill.id !== skillId));
+    },
+    [selectedSkills, setSelectedSkills],
+  );
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -390,9 +397,11 @@ export function ChatInput({
 
               <MentionAutocomplete
                 filteredPersonas={filteredPersonas}
+                filteredSkills={filteredSkills}
                 filteredFiles={filteredFiles}
                 isOpen={mentionOpen}
                 onSelectPersona={handlePersonaMentionSelect}
+                onSelectSkill={handleSkillMentionSelect}
                 onSelectFile={handleFileMentionSelect}
                 onClose={closeMention}
                 selectedIndex={mentionSelectedIndex}
@@ -403,24 +412,12 @@ export function ChatInput({
                 onRemove={removeAttachment}
               />
 
-              {stickyPersona && (
-                <div className="mb-2 flex items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-1 text-[11px] font-medium text-brand">
-                    <PersonaAvatar persona={stickyPersona} size="sm" />
-                    <span>@{stickyPersona.displayName}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="ml-0.5 size-auto p-0 opacity-60 hover:bg-transparent hover:opacity-100"
-                      onClick={handleClearStickyPersona}
-                      aria-label={t("persona.clearActive")}
-                    >
-                      <X className="size-3" />
-                    </Button>
-                  </span>
-                </div>
-              )}
+              <ChatInputSelectionChips
+                persona={stickyPersona}
+                skills={selectedSkills}
+                onClearPersona={handleClearStickyPersona}
+                onRemoveSkill={handleRemoveSkill}
+              />
 
               {queuedMessage && (
                 <div className="mb-2 flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-1.5">
@@ -445,13 +442,7 @@ export function ChatInput({
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  placeholder={
-                    dictation.isRecording
-                      ? t("toolbar.voiceInputRecording")
-                      : dictation.isTranscribing
-                        ? t("toolbar.voiceInputTranscribing")
-                        : effectivePlaceholder
-                  }
+                  placeholder={inputPlaceholder}
                   disabled={disabled}
                   rows={1}
                   className="mb-3 min-h-[36px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-foreground placeholder:font-light placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
@@ -460,10 +451,7 @@ export function ChatInput({
               </PopoverAnchor>
 
               <ChatInputToolbar
-                personas={personas}
                 selectedPersonaId={selectedPersonaId}
-                onPersonaChange={onPersonaChange}
-                onCreatePersona={onCreatePersona}
                 providers={providers}
                 providersLoading={providersLoading}
                 selectedProvider={selectedProvider}
@@ -474,6 +462,7 @@ export function ChatInput({
                 modelsLoading={modelsLoading}
                 modelStatusMessage={modelStatusMessage}
                 onModelChange={onModelChange}
+                onPickerOpen={onPickerOpen}
                 selectedProjectId={selectedProjectId}
                 availableProjects={availableProjects}
                 onProjectChange={onProjectChange}
