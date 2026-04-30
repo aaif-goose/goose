@@ -719,9 +719,6 @@ pub struct UpdateSourceRequest {
     pub name: String,
     pub description: String,
     pub content: String,
-    /// Arbitrary key/value metadata. When non-empty, replaces all existing
-    /// properties on the source. Used for type-specific fields like project
-    /// icon/color/workingDirs.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
