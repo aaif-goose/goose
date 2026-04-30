@@ -259,9 +259,6 @@ fn custom_provider_headers(headers: HashMap<String, String>) -> Option<HashMap<S
 fn load_declarative_provider_for_client(
     provider_id: &str,
 ) -> Result<declarative_providers::LoadedProvider, sacp::Error> {
-    declarative_providers::validate_provider_id(provider_id)
-        .map_err(|error| sacp::Error::invalid_params().data(error.to_string()))?;
-
     declarative_providers::load_provider(provider_id).map_err(|error| {
         if error.to_string().contains("Provider not found") {
             sacp::Error::invalid_params().data(format!("Unknown provider: {provider_id}"))

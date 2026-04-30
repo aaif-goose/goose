@@ -20,7 +20,7 @@ where
     Ok(opt.filter(|s| !s.trim().is_empty()))
 }
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use utoipa::ToSchema;
 
@@ -207,6 +207,21 @@ pub fn validate_provider_id(id: &str) -> Result<()> {
     }
 }
 
+fn custom_provider_file_path(id: &str) -> Result<PathBuf> {
+    if id.is_empty()
+        || id
+            .chars()
+            .any(|ch| ch == '/' || ch == '\\' || ch.is_control())
+    {
+        return Err(anyhow::anyhow!(
+            "Invalid provider id: {}",
+            if id.is_empty() { "<empty>" } else { id }
+        ));
+    }
+
+    Ok(custom_providers_dir().join(format!("{}.json", id)))
+}
+
 pub fn generate_api_key_name(id: &str) -> String {
     format!("{}_API_KEY", id.to_uppercase())
 }
@@ -299,7 +314,6 @@ pub fn create_custom_provider(
 }
 
 pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> {
-    validate_provider_id(&params.id)?;
     let loaded_provider = load_provider(&params.id)?;
     let existing_config = loaded_provider.config;
     let editable = loaded_provider.is_editable;
@@ -359,7 +373,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             fast_model: existing_config.fast_model.clone(),
         };
 
-        let file_path = custom_providers_dir().join(format!("{}.json", updated_config.name));
+        let file_path = custom_provider_file_path(&updated_config.name)?;
         let json_content = serde_json::to_string_pretty(&updated_config)?;
         std::fs::write(file_path, json_content)?;
     }
@@ -367,7 +381,6 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
 }
 
 pub fn remove_custom_provider(id: &str) -> Result<()> {
-    validate_provider_id(id)?;
     let config = Config::global();
     let loaded_provider = load_provider(id)?;
     let api_key_env = loaded_provider.config.api_key_env;
@@ -375,8 +388,7 @@ pub fn remove_custom_provider(id: &str) -> Result<()> {
         let _ = config.delete_secret(&api_key_env);
     }
 
-    let custom_providers_dir = custom_providers_dir();
-    let file_path = custom_providers_dir.join(format!("{}.json", id));
+    let file_path = custom_provider_file_path(id)?;
 
     if file_path.exists() {
         std::fs::remove_file(file_path)?;
@@ -386,8 +398,7 @@ pub fn remove_custom_provider(id: &str) -> Result<()> {
 }
 
 pub fn load_provider(id: &str) -> Result<LoadedProvider> {
-    validate_provider_id(id)?;
-    let custom_file_path = custom_providers_dir().join(format!("{}.json", id));
+    let custom_file_path = custom_provider_file_path(id)?;
 
     if custom_file_path.exists() {
         let content = std::fs::read_to_string(&custom_file_path)?;
@@ -675,6 +686,79 @@ mod tests {
         assert_eq!(config.models.len(), 1);
         assert_eq!(config.models[0].name, "z-ai/glm-4.7");
         assert_eq!(config.models[0].context_limit, 131072);
+    }
+
+    #[test]
+    fn test_validate_provider_id_rejects_legacy_punctuation_for_new_ids() {
+        assert!(validate_provider_id("custom_z.ai").is_err());
+    }
+
+    fn write_legacy_provider_config(id: &str, display_name: &str) {
+        let custom_dir = custom_providers_dir();
+        std::fs::create_dir_all(&custom_dir).unwrap();
+        let content = format!(
+            r#"{{
+  "name": "{id}",
+  "engine": "openai",
+  "display_name": "{display_name}",
+  "description": "legacy provider",
+  "api_key_env": "",
+  "base_url": "https://example.invalid/v1/chat/completions",
+  "models": [],
+  "requires_auth": false
+}}"#
+        );
+        std::fs::write(custom_dir.join(format!("{id}.json")), content).unwrap();
+    }
+
+    #[test]
+    fn test_load_provider_allows_legacy_custom_id_with_punctuation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
+
+        write_legacy_provider_config("custom_z.ai", "Z.AI");
+
+        let loaded = load_provider("custom_z.ai").unwrap();
+        assert!(loaded.is_editable);
+        assert_eq!(loaded.config.name, "custom_z.ai");
+    }
+
+    #[test]
+    fn test_update_and_remove_provider_allow_legacy_custom_id_with_punctuation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
+
+        write_legacy_provider_config("custom_z.ai", "Z.AI");
+
+        update_custom_provider(UpdateCustomProviderParams {
+            id: "custom_z.ai".to_string(),
+            engine: "openai".to_string(),
+            display_name: "Z.AI Updated".to_string(),
+            api_url: "https://updated.example.invalid/v1/chat/completions".to_string(),
+            api_key: None,
+            models: vec!["z-model".to_string()],
+            supports_streaming: Some(true),
+            headers: None,
+            requires_auth: false,
+            catalog_provider_id: None,
+            base_path: None,
+        })
+        .unwrap();
+
+        let updated = load_provider("custom_z.ai").unwrap();
+        assert_eq!(updated.config.display_name, "Z.AI Updated");
+        assert_eq!(updated.config.models[0].name, "z-model");
+
+        remove_custom_provider("custom_z.ai").unwrap();
+        assert!(!custom_providers_dir().join("custom_z.ai.json").exists());
+    }
+
+    #[test]
+    fn test_load_provider_rejects_path_segments() {
+        assert!(load_provider("custom_../secret").is_err());
+        assert!(load_provider("custom_..\\secret").is_err());
     }
 
     #[test]
