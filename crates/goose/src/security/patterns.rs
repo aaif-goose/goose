@@ -48,14 +48,14 @@ impl RiskLevel {
 pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     ThreatPattern {
         name: "rm_rf_root_bare",
-        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/(\*)?['\x22]?(\s|$)",
+        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/(\*)?['\x22]?(\s|[;&|]|$)",
         description: "Recursive deletion of root filesystem",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
     },
     ThreatPattern {
         name: "rm_rf_system",
-        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force)\s+[^\s;|&]*/?(bin|etc|usr|var|sys|proc|dev|boot|lib|opt|srv)\b",
+        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force)\s+[^\s;|&]*/?(bin|etc|usr|var|sys|proc|dev|boot|lib|opt|srv)(?:/|\s|[;&|]|$)",
         description: "Recursive deletion of system directories",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
@@ -388,5 +388,50 @@ pub struct PatternMatch {
 impl Default for PatternMatcher {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn matches(pattern_name: &str, input: &str) -> bool {
+        let matcher = PatternMatcher::new();
+        matcher
+            .scan_for_patterns(input)
+            .iter()
+            .any(|m| m.threat.name == pattern_name)
+    }
+
+    #[test]
+    fn rm_rf_root_bare_matches_known_variants() {
+        let pat = "rm_rf_root_bare";
+        assert!(matches(pat, "rm -rf /"));
+        assert!(matches(pat, "rm -rf /*"));
+        assert!(matches(pat, "rm -rf /; whoami"));
+        assert!(matches(pat, "rm -rf /&&echo ok"));
+    }
+
+    #[test]
+    fn rm_rf_root_bare_no_false_positives() {
+        let pat = "rm_rf_root_bare";
+        assert!(!matches(pat, "rm -rf ./build"));
+        assert!(!matches(pat, "rm -rf /tmp/cache"));
+    }
+
+    #[test]
+    fn rm_rf_system_matches_absolute_and_relative() {
+        let pat = "rm_rf_system";
+        assert!(matches(pat, "rm -rf /etc"));
+        assert!(matches(pat, "rm -rf /usr/bin"));
+        assert!(matches(pat, "rm -rf etc"));
+        assert!(matches(pat, "rm -rf var"));
+    }
+
+    #[test]
+    fn rm_rf_system_no_false_positives() {
+        let pat = "rm_rf_system";
+        assert!(!matches(pat, "rm -rf ./etc-backup"));
+        assert!(!matches(pat, "rm -rf /home/user/project"));
     }
 }
