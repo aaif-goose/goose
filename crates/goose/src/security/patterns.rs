@@ -199,15 +199,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         risk_level: RiskLevel::High,
         category: ThreatCategory::PrivilegeEscalation,
     },
-    // NOTE: command_substitution and shell_metacharacters patterns removed.
-    // They caused excessive false positives on legitimate shell scripts:
-    //   VAR=$(grep ... | head -1)    — variable assignment
-    //   echo "$(date)" && ls          — command substitution
-    //   RESULT=$(echo "1+1" | bc)     — arithmetic
-    //   $(wc -c < file)               — file size checks
-    // The ML classifier handles these patterns with much higher accuracy.
-    // When the classifier is unavailable, these patterns generated ~75% of
-    // all false positives at exactly 0.675 confidence.
     ThreatPattern {
         name: "encoded_commands",
         pattern: r"(base64|hex|url).*decode.*\|\s*(bash|sh)",
@@ -230,10 +221,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         risk_level: RiskLevel::High,
         category: ThreatCategory::CommandInjection,
     },
-    // NOTE: string_concatenation_obfuscation removed — matched JS template
-    // literals like ${Utils.escapeHtml(doc.url)} in heredocs and code files.
-    // NOTE: character_escaping removed — \\n, \\t, etc. are standard in shell
-    // scripts and code. Too noisy for practical use.
     ThreatPattern {
         name: "eval_with_variables",
         pattern: r"eval\s+\$[A-Za-z_][A-Za-z0-9_]*|\beval\s+.*\$\{",
@@ -248,9 +235,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         risk_level: RiskLevel::Medium,
         category: ThreatCategory::CommandInjection,
     },
-    // NOTE: environment_variable_abuse removed — `export PATH=...; command`
-    // and `export VAR=value && tool` are standard shell patterns used
-    // constantly by goose for tool setup (slack-cli, gdrive-cli, hermit, etc.).
     ThreatPattern {
         name: "unicode_obfuscation",
         pattern: r"\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}",
