@@ -98,10 +98,11 @@ fn validate_parameters_in_template(
 
     let param_keys: HashSet<String> = params.iter().map(|p| p.key.clone()).collect();
 
-    // Structured parameters (object/array) use dot-notation in templates
-    // (e.g., {{ signal.name }}), which undeclared_variables reports as
-    // "signal.name". Normalize these to their root key so they match the
-    // parameter definition.
+    // Structured parameters (object/array) use dot-notation or bracket
+    // notation in templates (e.g., {{ signal.name }}, {{ findings[0].name }},
+    // {{ signal["namespace"] }}). undeclared_variables reports these as full
+    // paths. Extract the root identifier and normalize to the parameter key
+    // when it matches a structured parameter.
     let structured_keys: HashSet<&str> = params
         .iter()
         .filter(|p| {
@@ -116,7 +117,7 @@ fn validate_parameters_in_template(
     let normalized_template_vars: HashSet<String> = template_variables
         .iter()
         .map(|var| {
-            let root = var.split('.').next().unwrap_or(var);
+            let root = extract_root_identifier(var);
             if structured_keys.contains(root) {
                 root.to_string()
             } else {
@@ -163,6 +164,20 @@ fn validate_parameters_in_template(
     Err(anyhow::anyhow!("{}", message.trim_end()))
 }
 
+/// Extracts the root identifier from a template variable path.
+/// Handles dot-notation (`signal.name`) and bracket notation
+/// (`findings[0].name`, `signal["ns"]`).
+fn extract_root_identifier(var: &str) -> &str {
+    let dot_pos = var.find('.');
+    let bracket_pos = var.find('[');
+    match (dot_pos, bracket_pos) {
+        (Some(d), Some(b)) => &var[..d.min(b)],
+        (Some(d), None) => &var[..d],
+        (None, Some(b)) => &var[..b],
+        (None, None) => var,
+    }
+}
+
 fn validate_optional_parameters(parameters: &Option<Vec<RecipeParameter>>) -> Result<()> {
     let empty_params = vec![];
     let params = parameters.as_ref().unwrap_or(&empty_params);
@@ -175,6 +190,36 @@ fn validate_optional_parameters(parameters: &Option<Vec<RecipeParameter>>) -> Re
 
     if !file_params_with_defaults.is_empty() {
         return Err(anyhow::anyhow!("File parameters cannot have default values to avoid importing sensitive user files: {}", file_params_with_defaults.join(", ")));
+    }
+
+    let invalid_structured_defaults: Vec<String> = params
+        .iter()
+        .filter(|p| {
+            matches!(
+                p.input_type,
+                RecipeParameterInputType::Object | RecipeParameterInputType::Array
+            ) && p.default.is_some()
+        })
+        .filter(|p| {
+            let default = p.default.as_ref().unwrap();
+            let parsed: Result<serde_json::Value, _> = serde_json::from_str(default);
+            match parsed {
+                Ok(v) => match p.input_type {
+                    RecipeParameterInputType::Object => !v.is_object(),
+                    RecipeParameterInputType::Array => !v.is_array(),
+                    _ => false,
+                },
+                Err(_) => true,
+            }
+        })
+        .map(|p| p.key.clone())
+        .collect();
+
+    if !invalid_structured_defaults.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Structured parameters have invalid default values (must be valid JSON matching their input_type): {}",
+            invalid_structured_defaults.join(", ")
+        ));
     }
 
     let optional_params_without_default_values: Vec<String> = params
