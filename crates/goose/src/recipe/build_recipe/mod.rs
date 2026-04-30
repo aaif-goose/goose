@@ -1,11 +1,14 @@
 use crate::recipe::read_recipe_file_content::read_parameter_file_content;
-use crate::recipe::template_recipe::render_recipe_content_with_params;
+use crate::recipe::template_recipe::{
+    render_recipe_content_with_params, render_recipe_content_with_structured_params,
+};
 use crate::recipe::validate_recipe::validate_recipe_template_from_content;
 use crate::recipe::{
     Recipe, RecipeParameter, RecipeParameterInputType, RecipeParameterRequirement,
     BUILT_IN_RECIPE_DIR_PARAM,
 };
 use anyhow::Result;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -32,16 +35,70 @@ where
         validate_recipe_template_from_content(&recipe_content, Some(recipe_dir_str.clone()))?
             .parameters;
 
-    let (params_for_template, missing_params) =
-        apply_values_to_parameters(&params, recipe_parameters, &recipe_dir_str, user_prompt_fn)?;
+    let has_structured_params = recipe_parameters.as_ref().is_some_and(|params| {
+        params.iter().any(|p| {
+            matches!(
+                p.input_type,
+                RecipeParameterInputType::Object | RecipeParameterInputType::Array
+            )
+        })
+    });
+
+    let (params_for_template, missing_params) = apply_values_to_parameters(
+        &params,
+        recipe_parameters.clone(),
+        &recipe_dir_str,
+        user_prompt_fn,
+    )?;
 
     let rendered_content = if missing_params.is_empty() {
-        render_recipe_content_with_params(&recipe_content, &params_for_template)?
+        if has_structured_params {
+            let structured_map =
+                to_structured_params(&params_for_template, recipe_parameters.as_deref())?;
+            render_recipe_content_with_structured_params(&recipe_content, &structured_map)?
+        } else {
+            render_recipe_content_with_params(&recipe_content, &params_for_template)?
+        }
     } else {
         String::new()
     };
 
     Ok((rendered_content, missing_params))
+}
+
+fn to_structured_params(
+    string_map: &HashMap<String, String>,
+    recipe_parameters: Option<&[RecipeParameter]>,
+) -> Result<HashMap<String, Value>> {
+    let structured_keys: std::collections::HashSet<&str> = recipe_parameters
+        .unwrap_or_default()
+        .iter()
+        .filter(|p| {
+            matches!(
+                p.input_type,
+                RecipeParameterInputType::Object | RecipeParameterInputType::Array
+            )
+        })
+        .map(|p| p.key.as_str())
+        .collect();
+
+    string_map
+        .iter()
+        .map(|(k, v)| {
+            let value = if structured_keys.contains(k.as_str()) {
+                serde_json::from_str(v).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Parameter '{}' has input_type object/array but value is not valid JSON: {}",
+                        k,
+                        e
+                    )
+                })?
+            } else {
+                Value::String(v.clone())
+            };
+            Ok((k.clone(), value))
+        })
+        .collect()
 }
 
 pub fn build_recipe_from_template<F>(

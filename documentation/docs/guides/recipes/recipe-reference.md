@@ -360,6 +360,7 @@ parameters:
   - key: findings
     input_type: array
     requirement: optional
+    default: "[]"
     description: "List of diagnostic findings"
 
 prompt: |

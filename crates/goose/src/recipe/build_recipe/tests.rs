@@ -664,3 +664,129 @@ fn test_build_recipe_from_template_invalid_retry_config() {
         _ => panic!("Expected Invalid error, got: {:?}", err),
     }
 }
+
+#[test]
+fn test_build_recipe_with_object_parameter() {
+    let yaml = r#"instructions: "Signal: {{ signal.name }} in {{ signal.namespace }}"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Signal data""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![(
+        "signal".to_string(),
+        r#"{"name": "OOMKilled", "namespace": "production"}"#.to_string(),
+    )];
+    let recipe = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    )
+    .unwrap();
+
+    assert_eq!(
+        recipe.instructions.unwrap(),
+        "Signal: OOMKilled in production"
+    );
+    let param = &recipe.parameters.as_ref().unwrap()[0];
+    assert!(matches!(param.input_type, RecipeParameterInputType::Object));
+}
+
+#[test]
+fn test_build_recipe_with_array_parameter() {
+    let yaml = r#"instructions: |
+  {% for item in findings %}{{ item.name }}: {{ item.output }}
+  {% endfor %}
+parameters:
+  - key: findings
+    input_type: array
+    requirement: required
+    description: "Diagnostic findings""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![(
+        "findings".to_string(),
+        r#"[{"name": "check-1", "output": "passed"}, {"name": "check-2", "output": "failed"}]"#
+            .to_string(),
+    )];
+    let recipe = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    )
+    .unwrap();
+
+    let instructions = recipe.instructions.unwrap();
+    assert!(instructions.contains("check-1: passed"));
+    assert!(instructions.contains("check-2: failed"));
+}
+
+#[test]
+fn test_build_recipe_with_mixed_string_and_object_params() {
+    let yaml = r#"instructions: "Alert {{ alert_name }} for {{ signal.resource_kind }}/{{ signal.resource_name }}"
+parameters:
+  - key: alert_name
+    input_type: string
+    requirement: required
+    description: "Alert name"
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Signal data""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![
+        ("alert_name".to_string(), "HighMemory".to_string()),
+        (
+            "signal".to_string(),
+            r#"{"resource_kind": "Pod", "resource_name": "api-server-abc"}"#.to_string(),
+        ),
+    ];
+    let recipe = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    )
+    .unwrap();
+
+    assert_eq!(
+        recipe.instructions.unwrap(),
+        "Alert HighMemory for Pod/api-server-abc"
+    );
+}
+
+#[test]
+fn test_build_recipe_with_object_param_invalid_json() {
+    let yaml = r#"instructions: "Signal: {{ signal.name }}"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Signal data""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![("signal".to_string(), "not-valid-json".to_string())];
+    let result = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    );
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        RecipeError::Invalid { source } => {
+            assert!(
+                source.to_string().contains("not valid JSON"),
+                "Expected JSON parse error, got: {}",
+                source
+            );
+        }
+        other => panic!("Expected Invalid error, got: {:?}", other),
+    }
+}
