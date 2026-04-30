@@ -206,13 +206,11 @@ mod tests {
 
     #[test]
     fn rejects_remote_configured_urls_for_inline_apps() {
-        assert!(ensure_configured_goose_serve_supports_inline_apps(
-            "ws://127.0.0.1:12345/acp"
-        )
-        .is_ok());
-        assert!(ensure_configured_goose_serve_supports_inline_apps(
-            "wss://example.test/acp"
-        )
-        .is_err());
+        assert!(
+            ensure_configured_goose_serve_supports_inline_apps("ws://127.0.0.1:12345/acp").is_ok()
+        );
+        assert!(
+            ensure_configured_goose_serve_supports_inline_apps("wss://example.test/acp").is_err()
+        );
     }
 }
