@@ -57,12 +57,12 @@ function DialogContent({
       <DialogOverlay />
       <div
         data-slot="dialog-positioner"
-        className="pointer-events-none fixed inset-0 z-[61] grid grid-rows-[minmax(1rem,1fr)_auto_minmax(1rem,1fr)] justify-items-center overflow-y-auto px-4"
+        className="pointer-events-none fixed inset-0 z-[61] grid place-items-center p-4"
       >
         <DialogPrimitive.Content
           data-slot="dialog-content"
           className={cn(
-            "pointer-events-auto relative row-start-2 grid w-full max-w-lg gap-4 rounded-modal border bg-background p-6 shadow-modal data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+            "pointer-events-auto relative grid max-h-[calc(100dvh-2rem)] w-full max-w-lg gap-4 overflow-y-auto rounded-modal border bg-background p-6 shadow-modal data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
             className,
           )}
           {...props}
