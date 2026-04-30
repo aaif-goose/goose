@@ -117,9 +117,6 @@ export function ProvidersSettings() {
       <h3 className="text-lg font-semibold font-display tracking-tight">
         {t("providers.title")}
       </h3>
-      {/* <p className="mt-1 text-sm text-muted-foreground">
-        {t("providers.description")}
-      </p> */}
 
       <Separator className="my-4" />
 

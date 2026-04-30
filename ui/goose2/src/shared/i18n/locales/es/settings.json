@@ -207,7 +207,7 @@
   },
   "providers": {
     "agents": {
-      "description": "Elige qué agentes quieres usar. Puedes cambiar entre agentes en cualquier momento.",
+      "description": "Goose está integrado en tu espacio de trabajo. Instala otros para ampliar tu configuración.",
       "errors": {
         "installVerificationFailed": "La instalación terminó, pero no se encontró la CLI en PATH. Puede que tengas que reiniciar tu terminal."
       },
