@@ -99,6 +99,20 @@
           return prelude + cleanedHtml;
         }
 
+        function renderSandboxError(message) {
+          if (guestIframe) {
+            guestIframe.remove();
+            guestIframe = null;
+          }
+
+          document.body.textContent = '';
+          var errorElement = document.createElement('div');
+          errorElement.setAttribute('role', 'alert');
+          errorElement.style.cssText = 'box-sizing:border-box; width:100%; height:100%; padding:16px; color:CanvasText; background:transparent; font:13px system-ui, sans-serif;';
+          errorElement.textContent = message;
+          document.body.appendChild(errorElement);
+        }
+
         async function storeGuestHtml(html) {
           var proxyParams = getProxyParams();
           var cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
@@ -149,8 +163,9 @@
           try {
             guestIframe.src = await storeGuestHtml(guestHtml);
           } catch (e) {
-            console.warn('Failed to use /mcp-app-guest endpoint, falling back to srcdoc:', e);
-            guestIframe.srcdoc = guestHtml;
+            console.error('Failed to store MCP app guest HTML:', e);
+            renderSandboxError('Unable to load MCP app sandbox.');
+            return;
           }
 
           document.body.appendChild(guestIframe);
