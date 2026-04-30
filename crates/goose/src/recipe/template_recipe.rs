@@ -373,7 +373,8 @@ description: "A test recipe"
 
         #[test]
         fn test_render_with_object_conditional() {
-            let content = r#"{% if signal.severity == "critical" %}CRITICAL{% else %}normal{% endif %}"#;
+            let content =
+                r#"{% if signal.severity == "critical" %}CRITICAL{% else %}normal{% endif %}"#;
             let params = HashMap::from([
                 ("recipe_dir".to_string(), str_val("some_dir")),
                 (
@@ -400,9 +401,12 @@ description: "A test recipe"
                 ),
             ]);
             let result = render_recipe_content_with_structured_params(content, &params).unwrap();
-            assert_eq!(result, "check-1: passed
+            assert_eq!(
+                result,
+                "check-1: passed
 check-2: failed
-");
+"
+            );
         }
 
         #[test]
@@ -432,7 +436,8 @@ check-2: failed
 
         #[test]
         fn test_render_mixed_scalar_and_object_params() {
-            let content = "Alert {{ alert_name }} for {{ signal.resource_kind }}/{{ signal.resource_name }}";
+            let content =
+                "Alert {{ alert_name }} for {{ signal.resource_kind }}/{{ signal.resource_name }}";
             let params = HashMap::from([
                 ("recipe_dir".to_string(), str_val("some_dir")),
                 ("alert_name".to_string(), str_val("HighMemory")),
