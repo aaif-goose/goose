@@ -16,10 +16,14 @@ describe("getChatInputAgentLabel", () => {
     expect(getChatInputAgentLabel(undefined, "Goose")).toBe("Goose");
   });
 
-  it("removes the default suffix from placeholder labels", () => {
-    expect(getChatInputAgentLabel("Goose (Default)", "Claude Code")).toBe(
-      "Goose",
+  it("preserves explicit persona names with the default suffix", () => {
+    expect(getChatInputAgentLabel("Ops (Default)", "Goose (Default)")).toBe(
+      "Ops (Default)",
     );
+  });
+
+  it("removes the default suffix from provider fallback labels", () => {
+    expect(getChatInputAgentLabel(undefined, "Goose (Default)")).toBe("Goose");
   });
 });
 

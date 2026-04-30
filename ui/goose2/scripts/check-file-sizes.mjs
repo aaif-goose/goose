@@ -30,11 +30,6 @@ const EXCEPTIONS = {
     justification:
       "Workspace widget integration tests cover branch switching, worktree creation, dirty-state dialogs, and picker interactions.",
   },
-  "src/features/settings/ui/VoiceInputSettings.tsx": {
-    limit: 515,
-    justification:
-      "Voice settings page header block (title, description, separator) added to match settings page structure. File is marginally over limit; splitting would create a wrapper with minimal benefit.",
-  },
   "src/features/sidebar/ui/Sidebar.tsx": {
     limit: 580,
     justification:

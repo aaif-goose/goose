@@ -4,10 +4,13 @@ export function getChatInputAgentLabel(
   personaDisplayName: string | undefined,
   providerDisplayName: string,
 ): string {
-  const displayName = personaDisplayName ?? providerDisplayName;
-  return displayName.endsWith(DEFAULT_LABEL_SUFFIX)
-    ? displayName.slice(0, -DEFAULT_LABEL_SUFFIX.length)
-    : displayName;
+  if (personaDisplayName) {
+    return personaDisplayName;
+  }
+
+  return providerDisplayName.endsWith(DEFAULT_LABEL_SUFFIX)
+    ? providerDisplayName.slice(0, -DEFAULT_LABEL_SUFFIX.length)
+    : providerDisplayName;
 }
 
 export function getChatInputPlaceholder(
