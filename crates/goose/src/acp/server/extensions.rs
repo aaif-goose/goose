@@ -1,6 +1,12 @@
 use super::*;
 use std::collections::HashSet;
 
+const EXTENSION_MANAGER_KEY: &str = "extensionmanager";
+
+fn enabled_for_config_add(config: &ExtensionConfig, requested_enabled: bool) -> bool {
+    requested_enabled && config.key() == EXTENSION_MANAGER_KEY
+}
+
 fn extension_config_to_dto(config: ExtensionConfig) -> ExtensionConfigDto {
     match config {
         ExtensionConfig::Sse {
@@ -200,7 +206,7 @@ impl GooseAcpAgent {
                 .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
 
         crate::config::extensions::set_extension(crate::config::extensions::ExtensionEntry {
-            enabled: req.enabled,
+            enabled: enabled_for_config_add(&config, req.enabled),
             config,
         });
         Ok(EmptyResponse {})
@@ -337,5 +343,42 @@ impl GooseAcpAgent {
         Ok(GetSessionExtensionStatusResponse {
             extensions: extensions_json,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_add_disables_non_extension_manager_entries() {
+        let config = ExtensionConfig::StreamableHttp {
+            name: "Context7".to_string(),
+            description: "Up-to-date code documentation".to_string(),
+            uri: "https://mcp.context7.com/mcp".to_string(),
+            envs: Default::default(),
+            env_keys: Vec::new(),
+            headers: Default::default(),
+            timeout: Some(300),
+            socket: None,
+            bundled: Some(false),
+            available_tools: Vec::new(),
+        };
+
+        assert!(!enabled_for_config_add(&config, true));
+    }
+
+    #[test]
+    fn config_add_allows_extension_manager_to_be_enabled() {
+        let config = ExtensionConfig::Platform {
+            name: "Extension Manager".to_string(),
+            description: "Enable extension management tools".to_string(),
+            display_name: Some("Extension Manager".to_string()),
+            bundled: Some(true),
+            available_tools: Vec::new(),
+        };
+
+        assert!(enabled_for_config_add(&config, true));
+        assert!(!enabled_for_config_add(&config, false));
     }
 }
