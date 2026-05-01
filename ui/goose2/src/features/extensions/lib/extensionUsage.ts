@@ -104,7 +104,10 @@ export function getToolOwner(
   const extensionName =
     toolRequest.extensionName ?? persistedExtensionName(toolRequest);
   if (extensionName) {
-    return normalizeExtensionKey(extensionName);
+    return (
+      toolToExtension.get(normalizeExtensionKey(extensionName)) ??
+      normalizeExtensionKey(extensionName)
+    );
   }
   const toolName = toolRequest.toolName ?? persistedToolName(toolRequest);
   if (toolName) {

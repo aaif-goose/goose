@@ -164,4 +164,38 @@ describe("extension usage derivation", () => {
 
     expect(used.map((item) => item.config_key)).toEqual(["context7"]);
   });
+
+  it("keeps the original config key when extension metadata casing differs", () => {
+    const extensions = [
+      extension("Context7", [
+        "Context7__resolve-library-id",
+        "Context7__query-docs",
+      ]),
+    ];
+    const persistedMessage = {
+      id: "message-80",
+      role: "assistant",
+      created: 80,
+      content: [
+        {
+          type: "toolRequest",
+          id: "tool-80",
+          toolCall: {
+            status: "success",
+            value: {
+              name: "Context7__query-docs",
+              arguments: {},
+            },
+          },
+          _meta: {
+            goose_extension: "context7",
+          },
+        },
+      ],
+    } as unknown as Message;
+
+    const used = getUsedSessionExtensions(extensions, [persistedMessage]);
+
+    expect(used).toEqual([extensions[0]]);
+  });
 });
