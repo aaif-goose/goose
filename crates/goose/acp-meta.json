@@ -121,34 +121,24 @@
       "responseType": "ProviderConfigChangeResponse"
     },
     {
-      "method": "_goose/config/read",
-      "requestType": "ReadConfigRequest",
-      "responseType": "ReadConfigResponse"
+      "method": "_goose/preferences/read",
+      "requestType": "PreferencesReadRequest",
+      "responseType": "PreferencesReadResponse"
     },
     {
-      "method": "_goose/config/upsert",
-      "requestType": "UpsertConfigRequest",
+      "method": "_goose/preferences/save",
+      "requestType": "PreferencesSaveRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/config/remove",
-      "requestType": "RemoveConfigRequest",
+      "method": "_goose/preferences/remove",
+      "requestType": "PreferencesRemoveRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/secret/check",
-      "requestType": "CheckSecretRequest",
-      "responseType": "CheckSecretResponse"
-    },
-    {
-      "method": "_goose/secret/upsert",
-      "requestType": "UpsertSecretRequest",
-      "responseType": "EmptyResponse"
-    },
-    {
-      "method": "_goose/secret/remove",
-      "requestType": "RemoveSecretRequest",
-      "responseType": "EmptyResponse"
+      "method": "_goose/defaults/read",
+      "requestType": "DefaultsReadRequest",
+      "responseType": "DefaultsReadResponse"
     },
     {
       "method": "_goose/session/export",
@@ -219,6 +209,16 @@
       "method": "_goose/dictation/config",
       "requestType": "DictationConfigRequest",
       "responseType": "DictationConfigResponse"
+    },
+    {
+      "method": "_goose/dictation/secret/save",
+      "requestType": "DictationSecretSaveRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/secret/delete",
+      "requestType": "DictationSecretDeleteRequest",
+      "responseType": "EmptyResponse"
     },
     {
       "method": "_goose/dictation/models/list",

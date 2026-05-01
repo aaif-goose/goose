@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { getClient } from "@/shared/api/acpConnection";
 import {
   AUTO_COMPACT_PREFERENCES_EVENT,
-  AUTO_COMPACT_THRESHOLD_CONFIG_KEY,
   DEFAULT_AUTO_COMPACT_THRESHOLD,
   normalizeAutoCompactThreshold,
 } from "../lib/autoCompact";
 
 const AUTO_COMPACT_RETRY_DELAY_MS = 1000;
+const AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY = "autoCompactThreshold";
 
 type ConfigReadResult =
   | {
@@ -18,22 +18,29 @@ type ConfigReadResult =
       ok: false;
     };
 
-async function readConfigValue(key: string): Promise<ConfigReadResult> {
+async function readAutoCompactThreshold(): Promise<ConfigReadResult> {
   try {
     const client = await getClient();
-    const response = await client.goose.GooseConfigRead({ key });
+    const response = await client.goose.GoosePreferencesRead({
+      keys: [AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY],
+    });
+    const preference = response.values.find(
+      (value) => value.key === AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY,
+    );
     return {
       ok: true,
-      value: response.value ?? null,
+      value: preference?.value ?? null,
     };
   } catch {
     return { ok: false };
   }
 }
 
-async function writeConfigValue(key: string, value: number): Promise<void> {
+async function writeAutoCompactThreshold(value: number): Promise<void> {
   const client = await getClient();
-  await client.goose.GooseConfigUpsert({ key, value });
+  await client.goose.GoosePreferencesSave({
+    values: [{ key: AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY, value }],
+  });
 }
 
 export function useAutoCompactPreferences() {
@@ -65,7 +72,7 @@ export function useAutoCompactPreferences() {
 
   const syncFromConfig = useCallback(async (_syncVersion: number) => {
     void _syncVersion;
-    const result = await readConfigValue(AUTO_COMPACT_THRESHOLD_CONFIG_KEY);
+    const result = await readAutoCompactThreshold();
     return result;
   }, []);
 
@@ -109,7 +116,7 @@ export function useAutoCompactPreferences() {
   const setAutoCompactThreshold = useCallback(
     async (value: number) => {
       const normalized = normalizeAutoCompactThreshold(value);
-      await writeConfigValue(AUTO_COMPACT_THRESHOLD_CONFIG_KEY, normalized);
+      await writeAutoCompactThreshold(normalized);
       setAutoCompactThresholdState(normalized);
       setIsHydrated(true);
       dispatchPreferencesEvent();

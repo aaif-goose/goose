@@ -69,20 +69,20 @@ describe("dictation SDK wiring", () => {
     });
   });
 
-  it("saveDictationProviderSecret calls GooseSecretUpsert", async () => {
-    client.goose.GooseSecretUpsert = vi.fn().mockResolvedValue({});
+  it("saveDictationProviderSecret calls GooseDictationSecretSave", async () => {
+    client.goose.GooseDictationSecretSave = vi.fn().mockResolvedValue({});
     await saveDictationProviderSecret("groq", "gsk-test", "GROQ_API_KEY");
-    expect(client.goose.GooseSecretUpsert).toHaveBeenCalledWith({
-      key: "GROQ_API_KEY",
+    expect(client.goose.GooseDictationSecretSave).toHaveBeenCalledWith({
+      provider: "groq",
       value: "gsk-test",
     });
   });
 
-  it("deleteDictationProviderSecret calls GooseSecretRemove", async () => {
-    client.goose.GooseSecretRemove = vi.fn().mockResolvedValue({});
+  it("deleteDictationProviderSecret calls GooseDictationSecretDelete", async () => {
+    client.goose.GooseDictationSecretDelete = vi.fn().mockResolvedValue({});
     await deleteDictationProviderSecret("groq", "GROQ_API_KEY");
-    expect(client.goose.GooseSecretRemove).toHaveBeenCalledWith({
-      key: "GROQ_API_KEY",
+    expect(client.goose.GooseDictationSecretDelete).toHaveBeenCalledWith({
+      provider: "groq",
     });
   });
 

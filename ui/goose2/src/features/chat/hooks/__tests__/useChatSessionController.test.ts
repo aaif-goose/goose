@@ -9,7 +9,7 @@ const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
 const mockSetSelectedProvider = vi.fn();
 const mockResolveSessionCwd = vi.fn();
-const mockGooseConfigRead = vi.fn();
+const mockGooseDefaultsRead = vi.fn();
 const mockUseProviderInventory = vi.fn();
 const mockPickerState = {
   pickerAgents: [{ id: "goose", label: "Goose" }],
@@ -31,7 +31,7 @@ vi.mock("@/shared/api/acp", () => ({
 vi.mock("@/shared/api/acpConnection", () => ({
   getClient: async () => ({
     goose: {
-      GooseConfigRead: (...args: unknown[]) => mockGooseConfigRead(...args),
+      GooseDefaultsRead: (...args: unknown[]) => mockGooseDefaultsRead(...args),
     },
   }),
 }));
@@ -116,7 +116,10 @@ describe("useChatSessionController", () => {
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
     mockResolveSessionCwd.mockResolvedValue("/tmp/project");
-    mockGooseConfigRead.mockResolvedValue({ value: null });
+    mockGooseDefaultsRead.mockResolvedValue({
+      providerId: null,
+      modelId: null,
+    });
     mockUseProviderInventory.mockReturnValue({
       getEntry: () => undefined,
     });
@@ -283,17 +286,10 @@ describe("useChatSessionController", () => {
 
   it("falls back to the configured goose default model when no explicit model is stored", async () => {
     useAgentStore.setState({ selectedProvider: "goose" });
-    mockGooseConfigRead.mockImplementation(
-      async ({ key }: { key: string }): Promise<{ value: string | null }> => {
-        if (key === "GOOSE_PROVIDER") {
-          return { value: "databricks" };
-        }
-        if (key === "GOOSE_MODEL") {
-          return { value: "goose-claude-4-6-opus" };
-        }
-        return { value: null };
-      },
-    );
+    mockGooseDefaultsRead.mockResolvedValue({
+      providerId: "databricks",
+      modelId: "goose-claude-4-6-opus",
+    });
     mockPickerState.availableModels = [
       {
         id: "goose-claude-4-6-opus",

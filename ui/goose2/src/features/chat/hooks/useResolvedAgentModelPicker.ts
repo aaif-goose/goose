@@ -15,8 +15,6 @@ import {
   setStoredModelPreference,
 } from "../lib/modelPreferences";
 
-const GOOSE_PROVIDER_CONFIG_KEY = "GOOSE_PROVIDER";
-const GOOSE_MODEL_CONFIG_KEY = "GOOSE_MODEL";
 const MODEL_ALIAS_IDS = new Set(["current", "default"]);
 
 export type PreferredModelSelection = {
@@ -134,23 +132,14 @@ export function useResolvedAgentModelPicker({
     const loadGooseDefaultSelection = async () => {
       try {
         const client = await getClient();
-        const [providerResponse, modelResponse] = await Promise.all([
-          client.goose.GooseConfigRead({ key: GOOSE_PROVIDER_CONFIG_KEY }),
-          client.goose.GooseConfigRead({ key: GOOSE_MODEL_CONFIG_KEY }),
-        ]);
+        const defaults = await client.goose.GooseDefaultsRead({});
 
         if (cancelled) {
           return;
         }
 
-        const providerId =
-          typeof providerResponse.value === "string"
-            ? providerResponse.value
-            : undefined;
-        const modelId =
-          typeof modelResponse.value === "string"
-            ? modelResponse.value
-            : undefined;
+        const providerId = defaults.providerId ?? undefined;
+        const modelId = defaults.modelId ?? undefined;
 
         if (!modelId) {
           setGooseDefaultSelection(null);

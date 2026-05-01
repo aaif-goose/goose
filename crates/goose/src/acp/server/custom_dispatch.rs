@@ -200,52 +200,36 @@ impl GooseAcpAgent {
         self.on_delete_provider_config(req).await
     }
 
-    #[custom_method(ReadConfigRequest)]
-    async fn dispatch_read_config(
+    #[custom_method(PreferencesReadRequest)]
+    async fn dispatch_preferences_read(
         &self,
-        req: ReadConfigRequest,
-    ) -> Result<ReadConfigResponse, sacp::Error> {
-        self.on_read_config(req).await
+        req: PreferencesReadRequest,
+    ) -> Result<PreferencesReadResponse, sacp::Error> {
+        self.on_preferences_read(req).await
     }
 
-    #[custom_method(UpsertConfigRequest)]
-    async fn dispatch_upsert_config(
+    #[custom_method(PreferencesSaveRequest)]
+    async fn dispatch_preferences_save(
         &self,
-        req: UpsertConfigRequest,
+        req: PreferencesSaveRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        self.on_upsert_config(req).await
+        self.on_preferences_save(req).await
     }
 
-    #[custom_method(RemoveConfigRequest)]
-    async fn dispatch_remove_config(
+    #[custom_method(PreferencesRemoveRequest)]
+    async fn dispatch_preferences_remove(
         &self,
-        req: RemoveConfigRequest,
+        req: PreferencesRemoveRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        self.on_remove_config(req).await
+        self.on_preferences_remove(req).await
     }
 
-    #[custom_method(CheckSecretRequest)]
-    async fn dispatch_check_secret(
+    #[custom_method(DefaultsReadRequest)]
+    async fn dispatch_defaults_read(
         &self,
-        req: CheckSecretRequest,
-    ) -> Result<CheckSecretResponse, sacp::Error> {
-        self.on_check_secret(req).await
-    }
-
-    #[custom_method(UpsertSecretRequest)]
-    async fn dispatch_upsert_secret(
-        &self,
-        req: UpsertSecretRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        self.on_upsert_secret(req).await
-    }
-
-    #[custom_method(RemoveSecretRequest)]
-    async fn dispatch_remove_secret(
-        &self,
-        req: RemoveSecretRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        self.on_remove_secret(req).await
+        req: DefaultsReadRequest,
+    ) -> Result<DefaultsReadResponse, sacp::Error> {
+        self.on_defaults_read(req).await
     }
 
     #[custom_method(ExportSessionRequest)]
@@ -358,6 +342,22 @@ impl GooseAcpAgent {
         _req: DictationConfigRequest,
     ) -> Result<DictationConfigResponse, sacp::Error> {
         self.on_dictation_config(_req).await
+    }
+
+    #[custom_method(DictationSecretSaveRequest)]
+    async fn dispatch_dictation_secret_save(
+        &self,
+        req: DictationSecretSaveRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        self.on_dictation_secret_save(req).await
+    }
+
+    #[custom_method(DictationSecretDeleteRequest)]
+    async fn dispatch_dictation_secret_delete(
+        &self,
+        req: DictationSecretDeleteRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        self.on_dictation_secret_delete(req).await
     }
 
     #[custom_method(DictationModelsListRequest)]
