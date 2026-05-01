@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Parameter } from '../recipe';
 import { Button } from './ui/button';
-import { getInitialWorkingDir } from '../utils/workingDir';
 import { defineMessages, useIntl } from '../i18n';
 
 const i18n = defineMessages({
@@ -126,14 +125,9 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
 
   const handleCancelOption = (option: 'new-chat' | 'back-to-form'): void => {
     if (option === 'new-chat') {
-      try {
-        const workingDir = getInitialWorkingDir();
-        window.electron.createChatWindow({ dir: workingDir });
-        window.electron.hideWindow();
-      } catch (error) {
-        console.error('Error creating new window:', error);
-        onClose();
-      }
+      // Just close the modal - don't create a new window
+      // The user can manually start a new chat if needed
+      onClose();
     } else {
       setShowCancelOptions(false); // Go back to the parameter form
     }
