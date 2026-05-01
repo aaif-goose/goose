@@ -1,6 +1,6 @@
 use crate::plugins::{
-    copy_dir_all, plugin_install_dir, write_install_metadata, ImportedSkill, PluginFormat,
-    PluginInstall,
+    copy_dir_all, plugin_install_dir, write_install_metadata, FormatNotSupported, ImportedSkill,
+    PluginFormat, PluginInstall,
 };
 use anyhow::{bail, Context, Result};
 use fs_err as fs;
@@ -20,19 +20,26 @@ struct SkillCandidate {
     relative_directory: PathBuf,
 }
 
-pub(super) fn is_supported(checkout_dir: &Path) -> bool {
-    checkout_dir.join(MANIFEST).is_file()
+pub fn try_install_from_manifest(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
+    install_from_manifest(source, checkout_dir, &plugin_install_dir())
 }
 
-pub(super) fn install_from_checkout(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
+fn install_from_manifest(
+    source: &str,
+    checkout_dir: &Path,
+    install_root: &Path,
+) -> Result<PluginInstall> {
     let manifest_path = checkout_dir.join(MANIFEST);
+    if !manifest_path.is_file() {
+        return Err(FormatNotSupported.into());
+    }
+
     let manifest: GeminiManifest = serde_json::from_str(&fs::read_to_string(&manifest_path)?)
         .with_context(|| format!("Failed to parse {}", manifest_path.display()))?;
 
     validate_extension_name(&manifest.name)?;
 
-    let install_root = plugin_install_dir();
-    fs::create_dir_all(&install_root)?;
+    fs::create_dir_all(install_root)?;
     let destination = install_root.join(&manifest.name);
     if destination.exists() {
         bail!(
@@ -145,17 +152,10 @@ fn extract_skill_name(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::installed_plugin_skill_dirs;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn installs_gemini_extension_skills() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let root = tempfile::tempdir().unwrap();
-        std::env::set_var("GOOSE_PATH_ROOT", root.path());
-
+        let install_root = tempfile::tempdir().unwrap();
         let repo = tempfile::tempdir().unwrap();
         fs::write(
             repo.path().join(MANIFEST),
@@ -170,8 +170,12 @@ mod tests {
         )
         .unwrap();
 
-        let installed =
-            install_from_checkout("https://example.invalid/repo.git", repo.path()).unwrap();
+        let installed = install_from_manifest(
+            "https://example.invalid/repo.git",
+            repo.path(),
+            install_root.path(),
+        )
+        .unwrap();
 
         assert_eq!(installed.name, "test-plugin");
         assert_eq!(installed.version, "1.0.0");
@@ -182,11 +186,6 @@ mod tests {
             .directory
             .join(crate::plugins::INSTALL_METADATA)
             .is_file());
-        assert_eq!(
-            installed_plugin_skill_dirs(),
-            vec![installed.directory.join("skills")]
-        );
-
-        std::env::remove_var("GOOSE_PATH_ROOT");
+        assert_eq!(installed.directory, install_root.path().join("test-plugin"));
     }
 }

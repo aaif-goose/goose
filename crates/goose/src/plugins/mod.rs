@@ -39,6 +39,10 @@ pub struct ImportedSkill {
     pub directory: PathBuf,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("format not supported")]
+pub struct FormatNotSupported;
+
 #[derive(Debug, Serialize)]
 struct InstallMetadata<'a> {
     source: &'a str,
@@ -77,14 +81,13 @@ pub fn install_plugin(source: &str) -> Result<PluginInstall> {
 }
 
 fn install_from_checkout(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
-    if formats::gemini::is_supported(checkout_dir) {
-        return formats::gemini::install_from_checkout(source, checkout_dir);
+    match formats::gemini::try_install_from_manifest(source, checkout_dir) {
+        Ok(install) => Ok(install),
+        Err(err) if err.is::<FormatNotSupported>() => {
+            bail!("No supported plugin format found")
+        }
+        Err(err) => Err(err),
     }
-
-    bail!(
-        "No supported plugin format found. Expected {} at the repository root",
-        formats::gemini::MANIFEST
-    );
 }
 
 fn clone_git_repo(source: &str, destination: &Path) -> Result<()> {
