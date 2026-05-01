@@ -5,7 +5,9 @@ use std::collections::HashSet;
 
 const EXTENSION_MANAGER_KEY: &str = "extensionmanager";
 
-fn enabled_for_config_add(config: &ExtensionConfig, requested_enabled: bool) -> bool {
+fn global_enabled_for_config_save(config: &ExtensionConfig, requested_enabled: bool) -> bool {
+    // Only Extension Manager starts globally; other extensions are catalog entries
+    // that Extension Manager loads into a session on demand.
     requested_enabled && config.key() == EXTENSION_MANAGER_KEY
 }
 
@@ -218,7 +220,7 @@ impl GooseAcpAgent {
                 .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
 
         crate::config::extensions::set_extension(crate::config::extensions::ExtensionEntry {
-            enabled: enabled_for_config_add(&config, req.enabled),
+            enabled: global_enabled_for_config_save(&config, req.enabled),
             config,
         });
         Ok(EmptyResponse {})
@@ -364,7 +366,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_add_disables_non_extension_manager_entries() {
+    fn config_save_disables_non_extension_manager_entries() {
         let config = ExtensionConfig::StreamableHttp {
             name: "Context7".to_string(),
             description: "Up-to-date code documentation".to_string(),
@@ -378,11 +380,31 @@ mod tests {
             available_tools: Vec::new(),
         };
 
-        assert!(!enabled_for_config_add(&config, true));
+        assert!(!global_enabled_for_config_save(&config, true));
     }
 
     #[test]
-    fn config_add_allows_extension_manager_to_be_enabled() {
+    fn config_save_disables_legacy_enabled_custom_entries_on_edit() {
+        let config = ExtensionConfig::Stdio {
+            name: "github".to_string(),
+            description: "Issue tracker".to_string(),
+            cmd: "npx".to_string(),
+            args: vec![
+                "-y".to_string(),
+                "@modelcontextprotocol/server-github".to_string(),
+            ],
+            envs: Default::default(),
+            env_keys: Vec::new(),
+            timeout: Some(300),
+            bundled: Some(false),
+            available_tools: Vec::new(),
+        };
+
+        assert!(!global_enabled_for_config_save(&config, true));
+    }
+
+    #[test]
+    fn config_save_allows_extension_manager_to_be_enabled() {
         let config = ExtensionConfig::Platform {
             name: "Extension Manager".to_string(),
             description: "Enable extension management tools".to_string(),
@@ -391,7 +413,7 @@ mod tests {
             available_tools: Vec::new(),
         };
 
-        assert!(enabled_for_config_add(&config, true));
-        assert!(!enabled_for_config_add(&config, false));
+        assert!(global_enabled_for_config_save(&config, true));
+        assert!(!global_enabled_for_config_save(&config, false));
     }
 }
