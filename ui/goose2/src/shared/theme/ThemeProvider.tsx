@@ -23,6 +23,8 @@ const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
 >(undefined);
 
+const DEFAULT_ACCENT_COLOR = "#3b82f6";
+
 function resolveTheme(preference: ThemePreference): ResolvedTheme {
   if (preference === "system") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -32,13 +34,54 @@ function resolveTheme(preference: ThemePreference): ResolvedTheme {
   return preference;
 }
 
+function normalizeHexColor(color: string | null): string {
+  const value = color?.trim();
+  if (!value) return DEFAULT_ACCENT_COLOR;
+
+  const hex = value.startsWith("#") ? value.slice(1) : value;
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+    return `#${hex
+      .split("")
+      .map((char) => char + char)
+      .join("")
+      .toLowerCase()}`;
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return `#${hex.toLowerCase()}`;
+  }
+
+  return DEFAULT_ACCENT_COLOR;
+}
+
+function getRelativeLuminance(hexColor: string): number {
+  const hex = hexColor.slice(1);
+  const channels = [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)].map(
+    (channel) => {
+      const value = Number.parseInt(channel, 16) / 255;
+      return value <= 0.04045
+        ? value / 12.92
+        : ((value + 0.055) / 1.055) ** 2.4;
+    },
+  );
+
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
 function getContrastColor(hexColor: string): string {
-  const hex = hexColor.replace("#", "");
-  const r = Number.parseInt(hex.slice(0, 2), 16);
-  const g = Number.parseInt(hex.slice(2, 4), 16);
-  const b = Number.parseInt(hex.slice(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? "#000000" : "#ffffff";
+  const luminance = getRelativeLuminance(hexColor);
+  const blackContrast = (luminance + 0.05) / 0.05;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  return blackContrast >= whiteContrast ? "#000000" : "#ffffff";
+}
+
+function applyAccentColor(root: HTMLElement, color: string) {
+  const normalizedColor = normalizeHexColor(color);
+  const foreground = getContrastColor(normalizedColor);
+  root.style.setProperty("--brand", normalizedColor);
+  root.style.setProperty("--brand-foreground", foreground);
+  root.style.setProperty("--color-brand", normalizedColor);
+  root.style.setProperty("--color-brand-foreground", foreground);
+  root.style.accentColor = normalizedColor;
 }
 
 export function ThemeProvider({
@@ -57,7 +100,7 @@ export function ThemeProvider({
   );
 
   const [accentColor, setAccentColorState] = React.useState<string>(() => {
-    return localStorage.getItem("goose-accent-color") ?? "#3b82f6";
+    return normalizeHexColor(localStorage.getItem("goose-accent-color"));
   });
 
   const [density, setDensityState] = React.useState<Density>(() => {
@@ -71,8 +114,9 @@ export function ThemeProvider({
   }, []);
 
   const setAccentColor = React.useCallback((color: string) => {
-    localStorage.setItem("goose-accent-color", color);
-    setAccentColorState(color);
+    const normalizedColor = normalizeHexColor(color);
+    localStorage.setItem("goose-accent-color", normalizedColor);
+    setAccentColorState(normalizedColor);
   }, []);
 
   const setDensity = React.useCallback((d: Density) => {
@@ -105,19 +149,18 @@ export function ThemeProvider({
 
   React.useEffect(() => {
     const root = window.document.documentElement;
-    root.style.setProperty("--color-brand", accentColor);
-    root.style.setProperty(
-      "--color-brand-foreground",
-      getContrastColor(accentColor),
-    );
+    applyAccentColor(root, accentColor);
+  }, [accentColor]);
 
+  React.useEffect(() => {
+    const root = window.document.documentElement;
     const spacingScale: Record<Density, string> = {
       compact: "0.75",
       comfortable: "1",
       spacious: "1.25",
     };
     root.style.setProperty("--density-spacing", spacingScale[density]);
-  }, [accentColor, density]);
+  }, [density]);
 
   const value = React.useMemo(
     () => ({

@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { ThemeProvider, useTheme } from "./ThemeProvider";
 
 function ThemeConsumer() {
-  const { theme, setTheme, accentColor, density } = useTheme();
+  const { theme, setTheme, accentColor, setAccentColor, density } = useTheme();
   return (
     <div>
       <span data-testid="theme">{theme}</span>
@@ -16,6 +16,15 @@ function ThemeConsumer() {
       <button type="button" onClick={() => setTheme("light")}>
         Set Light
       </button>
+      <button type="button" onClick={() => setAccentColor("#f97316")}>
+        Set Orange
+      </button>
+      <button type="button" onClick={() => setAccentColor("#fff")}>
+        Set White
+      </button>
+      <button type="button" onClick={() => setAccentColor("red")}>
+        Set Invalid
+      </button>
     </div>
   );
 }
@@ -24,6 +33,7 @@ describe("ThemeProvider", () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.classList.remove("light", "dark");
+    document.documentElement.removeAttribute("style");
   });
 
   it("provides default theme as system", () => {
@@ -65,6 +75,64 @@ describe("ThemeProvider", () => {
       </ThemeProvider>,
     );
     expect(screen.getByTestId("accent")).toHaveTextContent("#3b82f6");
+  });
+
+  it("applies accent color tokens to the document", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    await user.click(screen.getByText("Set Orange"));
+
+    expect(localStorage.getItem("goose-accent-color")).toBe("#f97316");
+    expect(document.documentElement.style.getPropertyValue("--brand")).toBe(
+      "#f97316",
+    );
+    expect(
+      document.documentElement.style.getPropertyValue("--brand-foreground"),
+    ).toBe("#000000");
+    expect(
+      document.documentElement.style.getPropertyValue("--color-brand"),
+    ).toBe("#f97316");
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--color-brand-foreground",
+      ),
+    ).toBe("#000000");
+    expect(document.documentElement.style.accentColor).toBe(
+      "rgb(249, 115, 22)",
+    );
+  });
+
+  it("normalizes and validates accent colors", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    await user.click(screen.getByText("Set White"));
+
+    expect(localStorage.getItem("goose-accent-color")).toBe("#ffffff");
+    expect(
+      document.documentElement.style.getPropertyValue("--color-brand"),
+    ).toBe("#ffffff");
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--color-brand-foreground",
+      ),
+    ).toBe("#000000");
+
+    await user.click(screen.getByText("Set Invalid"));
+
+    expect(localStorage.getItem("goose-accent-color")).toBe("#3b82f6");
+    expect(
+      document.documentElement.style.getPropertyValue("--color-brand"),
+    ).toBe("#3b82f6");
   });
 
   it("provides default density", () => {

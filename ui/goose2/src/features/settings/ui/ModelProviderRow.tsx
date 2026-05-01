@@ -377,7 +377,7 @@ export function ModelProviderRow({
           )}
           {authenticating ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner className="size-3.5 text-accent" />
+              <Spinner className="size-3.5 text-brand" />
               <span>{t("providers.waitingForSignIn")}</span>
             </div>
           ) : null}
@@ -486,10 +486,10 @@ export function ModelProviderRow({
           <IconCheck className="size-4 flex-shrink-0 text-success" />
         ) : null}
         {inventorySyncing ? (
-          <Spinner className="size-3.5 flex-shrink-0 text-accent" />
+          <Spinner className="size-3.5 flex-shrink-0 text-brand" />
         ) : null}
         {!isConnected && authenticating ? (
-          <Spinner className="size-3.5 flex-shrink-0 text-accent" />
+          <Spinner className="size-3.5 flex-shrink-0 text-brand" />
         ) : null}
       </button>
 

@@ -192,8 +192,8 @@ export function AvatarDropZone({
           className={cn(
             "size-16 overflow-hidden border-2 bg-muted shadow-sm",
             isDragOver
-              ? "scale-105 border-accent bg-accent/15 shadow-md ring-4 ring-accent/20"
-              : "border-border hover:border-border hover:bg-accent",
+              ? "scale-105 border-brand bg-brand/10 shadow-md ring-4 ring-brand/20"
+              : "border-border hover:border-brand/50 hover:bg-brand/10",
             disabled && "opacity-70 cursor-not-allowed",
             isUploading && "animate-pulse",
           )}

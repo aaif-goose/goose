@@ -397,7 +397,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     return (
       <div className="mt-3 space-y-2 border-t pt-3">
         <div className="flex items-center gap-2">
-          <Spinner className="size-3.5 text-accent" />
+          <Spinner className="size-3.5 text-brand" />
           <div className="min-w-0 flex-1">
             <span className="text-xs font-medium">{phaseLabel}</span>
             {stepInfo && (
@@ -420,7 +420,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     <div
       className={cn(
         "flex flex-col rounded-lg border bg-background p-3 transition-colors",
-        isActive && "border-accent/50",
+        isActive && "border-brand/50 bg-brand/10",
       )}
     >
       <div className="flex items-start justify-between">
@@ -451,7 +451,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
                     setupError
                       ? "bg-danger"
                       : isActive
-                        ? "bg-accent animate-pulse"
+                        ? "bg-brand animate-pulse"
                         : "bg-muted-foreground/40",
                   )}
                 />

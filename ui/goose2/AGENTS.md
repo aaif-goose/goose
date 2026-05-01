@@ -4,7 +4,7 @@ Guidelines for AI agents (and developers) working on this codebase.
 
 ## Project Overview
 
-Goose2 is a Tauri 2 + React 19 desktop app. It uses TypeScript strict mode, Vite, and Tailwind CSS 3. The codebase follows a feature-sliced architecture organized under `src/app/`, `src/features/`, and `src/shared/`.
+Goose2 is a Tauri 2 + React 19 desktop app. It uses TypeScript strict mode, Vite, and Tailwind CSS 4. The codebase follows a feature-sliced architecture organized under `src/app/`, `src/features/`, and `src/shared/`.
 
 ## First Steps
 
@@ -99,7 +99,7 @@ ThemeProvider manages three axes:
 | Axis         | Values                          | Persistence     | Mechanism                                    |
 |--------------|---------------------------------|-----------------|----------------------------------------------|
 | Theme mode   | `light`, `dark`, `system`       | localStorage    | `.dark` class on `<html>`                    |
-| Accent color | Any hex value                   | localStorage    | `--color-accent` CSS variable                |
+| Accent color | Hex color                       | localStorage    | `--brand` / `--color-brand` CSS variables    |
 | Density      | `compact`, `comfortable`, `spacious` | localStorage | `--density-spacing` CSS variable (0.75/1/1.25) |
 
 - CSS variables are defined in `globals.css` with light/dark variants.

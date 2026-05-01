@@ -349,7 +349,7 @@ export function ProvidersSettings() {
             </h4>
             {loading ? (
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Spinner className="size-3 text-accent" />
+                <Spinner className="size-3 text-brand" />
                 {t("providers.models.checkingStatus")}
               </span>
             ) : null}
