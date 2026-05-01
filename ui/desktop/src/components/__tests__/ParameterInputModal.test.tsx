@@ -28,7 +28,7 @@ const mockParameters: Parameter[] = [
     description: 'Boolean parameter',
     input_type: 'boolean',
     requirement: 'optional',
-    default: true,
+    default: 'true',
   },
 ];
 
