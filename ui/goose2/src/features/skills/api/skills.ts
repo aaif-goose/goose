@@ -1,12 +1,12 @@
 import type { SourceEntry } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
+import {
+  basename,
+  deriveProjectRoot,
+  getSkillFileLocation,
+} from "../lib/skillsPath";
 
 const SKILL_SOURCE_TYPE = "skill" as const;
-const PROJECT_SKILLS_MARKERS = [
-  "/.agents/skills/",
-  "/.goose/skills/",
-  "/.claude/skills/",
-];
 
 export interface SkillProjectLink {
   id: string;
@@ -23,47 +23,20 @@ export interface SkillInfo {
   instructions: string;
   path: string;
   fileLocation: string;
-  directoryPath: string;
   sourceKind: SkillSourceKind;
   sourceLabel: string;
   projectLinks: SkillProjectLink[];
-  editable: boolean;
 }
+
+export type EditingSkill = Pick<
+  SkillInfo,
+  "name" | "description" | "instructions" | "path" | "fileLocation"
+>;
 
 type SkillSourceEntry = SourceEntry & { type: typeof SKILL_SOURCE_TYPE };
 
 function isSkillSource(source: SourceEntry): source is SkillSourceEntry {
   return source.type === SKILL_SOURCE_TYPE;
-}
-
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/");
-}
-
-function basename(path: string): string {
-  const trimmed = normalizePath(path).replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-function getSkillFileLocation(directory: string): string {
-  const separator = directory.includes("\\") ? "\\" : "/";
-  return directory.endsWith(separator)
-    ? `${directory}SKILL.md`
-    : `${directory}${separator}SKILL.md`;
-}
-
-function deriveProjectRoot(directory: string): string | null {
-  const normalizedDirectory = normalizePath(directory);
-
-  for (const marker of PROJECT_SKILLS_MARKERS) {
-    const idx = normalizedDirectory.lastIndexOf(marker);
-    if (idx >= 0) {
-      return directory.slice(0, idx);
-    }
-  }
-
-  return null;
 }
 
 function toSkillInfo(source: SkillSourceEntry): SkillInfo {
@@ -90,12 +63,10 @@ function toSkillInfo(source: SkillSourceEntry): SkillInfo {
     instructions: source.content,
     path: source.directory,
     fileLocation: getSkillFileLocation(source.directory),
-    directoryPath: source.directory,
     sourceKind,
     sourceLabel:
       sourceKind === "global" ? "Personal" : projectName || "Project",
     projectLinks,
-    editable: true,
   };
 }
 

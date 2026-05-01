@@ -134,6 +134,7 @@ export function ChatView({
             selectedProvider={controller.selectedProvider}
             onProviderChange={controller.handleProviderChange}
             currentModelId={controller.currentModelId}
+            currentModelProviderId={controller.currentModelProviderId}
             currentModel={controller.currentModelName ?? undefined}
             availableModels={controller.availableModels}
             modelsLoading={controller.modelsLoading}

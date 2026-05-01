@@ -9,6 +9,21 @@ import { getModelProviders } from "../providerCatalog";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
 import { filterModelProvidersForDistro } from "../distroProviderConstraints";
 
+function isConfiguredGooseModelProvider(
+  entry: ProviderInventoryEntryDto,
+  modelProviderIds: Set<string>,
+): boolean {
+  if (!entry.configured) {
+    return false;
+  }
+
+  if (entry.providerType === "Custom") {
+    return entry.providerId.startsWith("custom_");
+  }
+
+  return modelProviderIds.has(entry.providerId);
+}
+
 function inventoryModelToOption(
   model: ProviderInventoryModelDto,
   provider?: Pick<ProviderInventoryEntryDto, "providerId" | "providerName">,
@@ -56,8 +71,8 @@ export function useProviderInventory() {
 
   const configuredModelProviderEntries = useMemo(
     () =>
-      [...entries.values()].filter(
-        (entry) => entry.configured && modelProviderIds.has(entry.providerId),
+      [...entries.values()].filter((entry) =>
+        isConfiguredGooseModelProvider(entry, modelProviderIds),
       ),
     [entries, modelProviderIds],
   );

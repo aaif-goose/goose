@@ -61,7 +61,108 @@ describe("AgentModelPicker", () => {
 
     await user.click(screen.getByRole("button", { name: "GPT-4o" }));
 
-    expect(onModelChange).toHaveBeenCalledWith("gpt-4o");
+    expect(onModelChange).toHaveBeenCalledWith(
+      "gpt-4o",
+      expect.objectContaining({ id: "gpt-4o" }),
+    );
+  });
+
+  it("passes the clicked model option through for duplicate model ids", async () => {
+    const user = userEvent.setup();
+    const onModelChange = vi.fn();
+
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="goose"
+        onAgentChange={vi.fn()}
+        currentModelId="llama3.2"
+        currentModelProviderId="custom_ollama"
+        currentModelName="llama3.2"
+        availableModels={[
+          {
+            id: "llama3.2",
+            name: "llama3.2",
+            providerId: "ollama",
+            providerName: "Ollama",
+            recommended: true,
+          },
+          {
+            id: "llama3.2",
+            name: "llama3.2",
+            providerId: "custom_ollama",
+            providerName: "Custom Ollama",
+            recommended: true,
+          },
+        ]}
+        onModelChange={onModelChange}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    );
+
+    const duplicateModelRows = screen.getAllByRole("button", {
+      name: "llama3.2",
+    });
+
+    const selectedDuplicateRows = duplicateModelRows.filter((row) =>
+      row.classList.contains("bg-muted/60"),
+    );
+    expect(selectedDuplicateRows).toHaveLength(1);
+
+    await user.click(selectedDuplicateRows[0]);
+
+    expect(onModelChange).toHaveBeenCalledWith(
+      "llama3.2",
+      expect.objectContaining({
+        name: "llama3.2",
+        providerId: "custom_ollama",
+      }),
+    );
+  });
+
+  it("does not select providerless duplicate rows when the current provider is known", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="goose"
+        onAgentChange={vi.fn()}
+        currentModelId="llama3.2"
+        currentModelProviderId="custom_ollama"
+        currentModelName="llama3.2"
+        availableModels={[
+          {
+            id: "llama3.2",
+            name: "llama3.2",
+            recommended: true,
+          },
+          {
+            id: "llama3.2",
+            name: "llama3.2",
+            providerId: "custom_ollama",
+            providerName: "Custom Ollama",
+            recommended: true,
+          },
+        ]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    );
+
+    const duplicateModelRows = screen.getAllByRole("button", {
+      name: "llama3.2",
+    });
+
+    expect(
+      duplicateModelRows.filter((row) => row.classList.contains("bg-muted/60")),
+    ).toHaveLength(1);
   });
 
   it("auto-expands the group containing the selected model", async () => {

@@ -17,8 +17,8 @@
     "skills": "Habilidades"
   },
   "search": {
-    "error": "La búsqueda de mensajes falló. Mostrando solo coincidencias de metadatos.",
-    "placeholder": "Buscar conversaciones",
+    "error": "La búsqueda de mensajes falló. Mostrando solo coincidencias de metadatos. Inténtalo de nuevo.",
+    "placeholder": "Buscar chats...",
     "searching": "Buscando chats..."
   },
   "sections": {

@@ -5,7 +5,10 @@ import {
   attachmentSnapshotsMatch,
   skillDraftSnapshotsMatch,
 } from "../lib/chatInputSnapshots";
-import { getChatInputPlaceholder } from "../lib/chatInputPlaceholder";
+import {
+  getChatInputAgentLabel,
+  getChatInputPlaceholder,
+} from "../lib/chatInputPlaceholder";
 import { cn } from "@/shared/lib/cn";
 import { Badge } from "@/shared/ui/badge";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
@@ -43,6 +46,7 @@ export function ChatInput({
   selectedProvider = "goose",
   onProviderChange,
   currentModelId = null,
+  currentModelProviderId = null,
   currentModel,
   availableModels = [],
   modelsLoading = false,
@@ -330,7 +334,10 @@ export function ChatInput({
   const providerDisplayName =
     providers.find((provider) => provider.id === selectedProvider)?.label ??
     formatProviderLabel(selectedProvider);
-  const agentDisplayName = activePersona?.displayName ?? providerDisplayName;
+  const agentDisplayName = getChatInputAgentLabel(
+    activePersona?.displayName,
+    providerDisplayName,
+  );
   const resolvedCurrentModel = useMemo(() => {
     if (currentModel) {
       return currentModel;
@@ -451,6 +458,7 @@ export function ChatInput({
                 selectedProvider={selectedProvider}
                 onProviderChange={(id) => onProviderChange?.(id)}
                 currentModelId={currentModelId}
+                currentModelProviderId={currentModelProviderId}
                 currentModel={resolvedCurrentModel}
                 availableModels={availableModels}
                 modelsLoading={modelsLoading}

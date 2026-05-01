@@ -25,7 +25,7 @@
       "branchName": "Branch name",
       "branchNamePlaceholder": "feature/my-branch",
       "branchSuccess": "Created and switched to {{branch}}.",
-      "branchTitle": "New Branch",
+      "branchTitle": "New branch",
       "branchToOpen": "Branch to open",
       "cancel": "Cancel",
       "createBranch": "Create branch",
@@ -40,17 +40,17 @@
       "worktreeNamePlaceholder": "my-worktree",
       "worktreePath": "Folder: {{path}}",
       "worktreeSuccess": "Created worktree {{worktree}}.",
-      "worktreeTitle": "New Worktree"
+      "worktreeTitle": "New worktree"
     },
     "empty": {
       "folderNotSet": "Folder not set",
       "noChanges": "No uncommitted changes",
-      "noProjectAssigned": "No project assigned.",
+      "noProjectAssigned": "No project assigned",
       "noExtensions": "No extensions enabled",
       "noMatchingExtensions": "No matching extensions"
     },
     "errors": {
-      "gitRead": "Unable to read git status."
+      "gitRead": "Couldn't read git status."
     },
     "picker": {
       "selectContext": "Select worktree or branch",
@@ -58,8 +58,9 @@
       "allBranches": "All branches",
       "checkedOutBranch": "{{branch}}",
       "currentBranch": "Current branch",
-      "dirtyTitle": "Uncommitted Changes",
-      "dirtyDescription": "You have {{count}} uncommitted change(s). How would you like to proceed?",
+      "dirtyTitle": "Uncommitted changes",
+      "dirtyDescription_one": "You have {{count}} uncommitted change. How would you like to proceed?",
+      "dirtyDescription_other": "You have {{count}} uncommitted changes. How would you like to proceed?",
       "stashAndSwitch": "Stash & Switch",
       "carryChanges": "Carry to Branch",
       "cancel": "Cancel",
@@ -96,19 +97,19 @@
     }
   },
   "files": {
-    "empty": "Project files are unavailable until a project with working directories is assigned.",
+    "empty": "Files will show here after you assign a project.",
     "folderEmpty": "Folder is empty",
-    "loadError": "Unable to load folder contents.",
+    "loadError": "Couldn't load this folder. Try again.",
     "loading": "Loading files...",
     "openFolder": "Open folder: {{path}}",
-    "rootLoadError": "Unable to load this folder."
+    "rootLoadError": "Couldn't load this folder. Try again."
   },
   "image": {
     "view": "View {{label}}"
   },
   "input": {
     "ariaLabel": "Chat message input",
-    "placeholder": "Message {{agent}}, @ to mention agents or skills"
+    "placeholder": "Chat with {{agent}} or @ mention an agent"
   },
   "loading": {
     "compacting": "Compacting conversation...",

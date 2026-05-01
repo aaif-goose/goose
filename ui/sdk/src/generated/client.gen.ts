@@ -15,6 +15,14 @@ import type {
   CheckSecretResponse,
   CreateSourceRequest,
   CreateSourceResponse,
+  CustomProviderCreateRequest,
+  CustomProviderCreateResponse,
+  CustomProviderDeleteRequest,
+  CustomProviderDeleteResponse,
+  CustomProviderReadRequest,
+  CustomProviderReadResponse,
+  CustomProviderUpdateRequest,
+  CustomProviderUpdateResponse,
   DeleteSessionRequest,
   DeleteSourceRequest,
   DictationConfigRequest,
@@ -47,6 +55,10 @@ import type {
   ListProvidersResponse,
   ListSourcesRequest,
   ListSourcesResponse,
+  ProviderCatalogListRequest,
+  ProviderCatalogListResponse,
+  ProviderCatalogTemplateRequest,
+  ProviderCatalogTemplateResponse,
   ProviderConfigChangeResponse,
   ProviderConfigDeleteRequest,
   ProviderConfigReadRequest,
@@ -77,6 +89,10 @@ import type {
 import {
   zCheckSecretResponse,
   zCreateSourceResponse,
+  zCustomProviderCreateResponse,
+  zCustomProviderDeleteResponse,
+  zCustomProviderReadResponse,
+  zCustomProviderUpdateResponse,
   zDictationConfigResponse,
   zDictationModelDownloadProgressResponse,
   zDictationModelsListResponse,
@@ -90,6 +106,8 @@ import {
   zImportSourcesResponse,
   zListProvidersResponse,
   zListSourcesResponse,
+  zProviderCatalogListResponse,
+  zProviderCatalogTemplateResponse,
   zProviderConfigChangeResponse,
   zProviderConfigReadResponse,
   zProviderConfigStatusResponse,
@@ -169,6 +187,76 @@ export class GooseExtClient {
   ): Promise<ListProvidersResponse> {
     const raw = await this.conn.extMethod("_goose/providers/list", params);
     return zListProvidersResponse.parse(raw) as ListProvidersResponse;
+  }
+
+  async GooseProvidersCatalogList(
+    params: ProviderCatalogListRequest,
+  ): Promise<ProviderCatalogListResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/catalog/list",
+      params,
+    );
+    return zProviderCatalogListResponse.parse(
+      raw,
+    ) as ProviderCatalogListResponse;
+  }
+
+  async GooseProvidersCatalogTemplate(
+    params: ProviderCatalogTemplateRequest,
+  ): Promise<ProviderCatalogTemplateResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/catalog/template",
+      params,
+    );
+    return zProviderCatalogTemplateResponse.parse(
+      raw,
+    ) as ProviderCatalogTemplateResponse;
+  }
+
+  async GooseProvidersCustomCreate(
+    params: CustomProviderCreateRequest,
+  ): Promise<CustomProviderCreateResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/custom/create",
+      params,
+    );
+    return zCustomProviderCreateResponse.parse(
+      raw,
+    ) as CustomProviderCreateResponse;
+  }
+
+  async GooseProvidersCustomRead(
+    params: CustomProviderReadRequest,
+  ): Promise<CustomProviderReadResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/custom/read",
+      params,
+    );
+    return zCustomProviderReadResponse.parse(raw) as CustomProviderReadResponse;
+  }
+
+  async GooseProvidersCustomUpdate(
+    params: CustomProviderUpdateRequest,
+  ): Promise<CustomProviderUpdateResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/custom/update",
+      params,
+    );
+    return zCustomProviderUpdateResponse.parse(
+      raw,
+    ) as CustomProviderUpdateResponse;
+  }
+
+  async GooseProvidersCustomDelete(
+    params: CustomProviderDeleteRequest,
+  ): Promise<CustomProviderDeleteResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/custom/delete",
+      params,
+    );
+    return zCustomProviderDeleteResponse.parse(
+      raw,
+    ) as CustomProviderDeleteResponse;
   }
 
   async GooseProvidersInventoryRefresh(

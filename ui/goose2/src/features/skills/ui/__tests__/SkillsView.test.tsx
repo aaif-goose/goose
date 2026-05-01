@@ -26,11 +26,9 @@ const mockSkills: SkillInfo[] = [
     instructions: "Refine spacing and visual rhythm...",
     path: "/path/layout/SKILL.md",
     fileLocation: "/path/layout/SKILL.md",
-    directoryPath: "/path/layout",
     sourceKind: "global" as const,
     sourceLabel: "Personal",
     projectLinks: [],
-    editable: true,
   },
   {
     id: "global:/path/code-review",
@@ -39,11 +37,9 @@ const mockSkills: SkillInfo[] = [
     instructions: "Review the code...",
     path: "/path/code-review",
     fileLocation: "/path/code-review/SKILL.md",
-    directoryPath: "/path/code-review",
     sourceKind: "global" as const,
     sourceLabel: "Personal",
     projectLinks: [],
-    editable: true,
   },
   {
     id: "project:/tmp/alpha/.goose/skills/test-writer",
@@ -52,7 +48,6 @@ const mockSkills: SkillInfo[] = [
     instructions: "Write tests...",
     path: "/tmp/alpha/.goose/skills/test-writer",
     fileLocation: "/tmp/alpha/.goose/skills/test-writer/SKILL.md",
-    directoryPath: "/tmp/alpha/.goose/skills/test-writer",
     sourceKind: "project" as const,
     sourceLabel: "alpha",
     projectLinks: [
@@ -62,12 +57,23 @@ const mockSkills: SkillInfo[] = [
         workingDir: "/tmp/alpha",
       },
     ],
-    editable: true,
   },
 ];
 
 vi.mock("../../api/skills", () => ({
   listSkills: vi.fn().mockResolvedValue([]),
+  createSkill: vi.fn().mockResolvedValue(undefined),
+  updateSkill: vi.fn().mockResolvedValue({
+    id: "global:/path/renamed-review",
+    name: "renamed-review",
+    description: "Reviews code",
+    instructions: "Review the code...",
+    path: "/path/renamed-review",
+    fileLocation: "/path/renamed-review/SKILL.md",
+    sourceKind: "global",
+    sourceLabel: "Personal",
+    projectLinks: [],
+  }),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
   exportSkill: vi
     .fn()
@@ -81,11 +87,12 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
   ) => selector({ projects: mockProjects }),
 }));
 
-const { listSkills, deleteSkill } = (await import(
+const { listSkills, deleteSkill, updateSkill } = (await import(
   "../../api/skills"
 )) as unknown as {
   listSkills: ReturnType<typeof vi.fn>;
   deleteSkill: ReturnType<typeof vi.fn>;
+  updateSkill: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
@@ -115,7 +122,7 @@ describe("SkillsView", () => {
     render(<SkillsView />);
     expect(screen.getByText("Skills")).toBeInTheDocument();
     expect(
-      screen.getByText(/Skills are reusable instructions/),
+      screen.getByText(/Use skills to add specific instructions/),
     ).toBeInTheDocument();
   });
 
@@ -164,7 +171,6 @@ describe("SkillsView", () => {
         name: "beta-skill",
         path: "/tmp/beta/.goose/skills/beta-skill",
         fileLocation: "/tmp/beta/.goose/skills/beta-skill/SKILL.md",
-        directoryPath: "/tmp/beta/.goose/skills/beta-skill",
         sourceLabel: "beta",
         projectLinks: [
           {
@@ -199,7 +205,6 @@ describe("SkillsView", () => {
         name: "test-writer",
         path: "/tmp/goose/.agents/skills/test-writer",
         fileLocation: "/tmp/goose/.agents/skills/test-writer/SKILL.md",
-        directoryPath: "/tmp/goose/.agents/skills/test-writer",
         sourceLabel: "goose",
         projectLinks: [
           {
@@ -296,6 +301,54 @@ describe("SkillsView", () => {
     expect(screen.queryByText("code-review")).not.toBeInTheDocument();
   });
 
+  it("stays on the detail page after renaming a skill", async () => {
+    const renamedSkill: SkillInfo = {
+      ...mockSkills[1],
+      id: "global:/path/renamed-review",
+      name: "renamed-review",
+      path: "/path/renamed-review",
+      fileLocation: "/path/renamed-review/SKILL.md",
+    };
+    listSkills
+      .mockResolvedValueOnce(mockSkills)
+      .mockResolvedValueOnce([mockSkills[0], renamedSkill, mockSkills[2]]);
+    updateSkill.mockResolvedValueOnce(renamedSkill);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("code-review");
+
+    await user.click(
+      screen.getByRole("button", { name: "Open code-review details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const nameInput = screen.getByPlaceholderText("my-skill-name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "renamed-review");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(updateSkill).toHaveBeenCalledWith(
+        "/path/code-review",
+        "renamed-review",
+        "Reviews code",
+        "Review the code...",
+      );
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Back to skills" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "renamed-review" }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByPlaceholderText("my-skill-name"),
+    ).not.toBeInTheDocument();
+  });
+
   it("filters skills by search text", async () => {
     listSkills.mockResolvedValue(mockSkills);
     const user = userEvent.setup();
@@ -356,7 +409,9 @@ describe("SkillsView", () => {
     await user.keyboard("{Enter}");
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
-    expect(screen.getByText("Delete skill?")).toBeInTheDocument();
+    expect(
+      screen.getByText('Delete "code-review" permanently?'),
+    ).toBeInTheDocument();
 
     const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
     await user.click(deleteButtons[deleteButtons.length - 1]);
@@ -400,7 +455,6 @@ describe("SkillsView", () => {
         name: "test-writer",
         path: "/tmp/goose/.agents/skills/test-writer",
         fileLocation: "/tmp/goose/.agents/skills/test-writer/SKILL.md",
-        directoryPath: "/tmp/goose/.agents/skills/test-writer",
         sourceLabel: "goose",
         projectLinks: [
           {
@@ -416,7 +470,6 @@ describe("SkillsView", () => {
         name: "audit",
         path: "/tmp/goose-worktree/.agents/skills/audit",
         fileLocation: "/tmp/goose-worktree/.agents/skills/audit/SKILL.md",
-        directoryPath: "/tmp/goose-worktree/.agents/skills/audit",
         sourceLabel: "goose-worktree",
         projectLinks: [
           {

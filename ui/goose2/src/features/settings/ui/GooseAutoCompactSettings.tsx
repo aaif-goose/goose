@@ -78,30 +78,19 @@ export function GooseAutoCompactSettings() {
 
   return (
     <div className="space-y-3">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 text-sm font-medium">
           {t(`${translationKeyPrefix}.label`)}
         </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {t(`${translationKeyPrefix}.description`)}
-        </p>
+        <div className="flex items-center gap-1.5 text-xs text-foreground">
+          {isSavingThreshold ? (
+            <Loader2 className="size-3 animate-spin text-muted-foreground" />
+          ) : null}
+          <span className="shrink-0 font-medium">{autoCompactValueLabel}</span>
+        </div>
       </div>
 
       <div className="w-full space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {t(`${translationKeyPrefix}.current`)}
-          </span>
-          <div className="flex items-center gap-1.5 text-xs text-foreground">
-            {isSavingThreshold ? (
-              <Loader2 className="size-3 animate-spin text-muted-foreground" />
-            ) : null}
-            <span className="shrink-0 font-medium">
-              {autoCompactValueLabel}
-            </span>
-          </div>
-        </div>
-
         <Slider
           value={[draftThresholdPercent]}
           min={1}

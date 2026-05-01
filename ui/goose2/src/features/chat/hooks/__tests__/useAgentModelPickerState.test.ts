@@ -122,4 +122,55 @@ describe("useAgentModelPickerState", () => {
       recommended: true,
     });
   });
+
+  it("uses the clicked model when multiple providers expose the same model id", () => {
+    const onModelSelected = vi.fn();
+    const customModel = {
+      id: "llama3.2",
+      name: "llama3.2",
+      displayName: "llama3.2",
+      providerId: "custom_ollama",
+      providerName: "Custom Ollama",
+    };
+
+    mockUseProviderInventory.mockReturnValue({
+      entries: new Map(),
+      getEntry: () => undefined,
+      configuredModelProviderEntries: [],
+      getModelsForAgent: () => [
+        {
+          id: "llama3.2",
+          name: "llama3.2",
+          displayName: "llama3.2",
+          providerId: "ollama",
+          providerName: "Ollama",
+        },
+        customModel,
+      ],
+      loading: false,
+    });
+
+    const { result } = renderHook(() =>
+      useAgentModelPickerState({
+        providers: [{ id: "goose", label: "Goose" }],
+        selectedProvider: "ollama",
+        onProviderSelected: vi.fn(),
+        onModelSelected,
+      }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("llama3.2", customModel);
+    });
+
+    expect(onModelSelected).toHaveBeenCalledWith({
+      id: "llama3.2",
+      name: "llama3.2",
+      displayName: "llama3.2",
+      provider: undefined,
+      providerId: "custom_ollama",
+      providerName: "Custom Ollama",
+      recommended: undefined,
+    });
+  });
 });

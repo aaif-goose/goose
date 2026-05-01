@@ -261,13 +261,90 @@ export type ProviderInventoryModelDto = {
 };
 
 /**
- * Trigger a background refresh of provider inventories.
+ * List custom-provider catalog entries. Omit `format` to list all formats.
  */
-export type RefreshProviderInventoryRequest = {
-    /**
-     * Which providers to refresh. Empty means all known providers.
-     */
-    providerIds?: Array<string>;
+export type ProviderCatalogListRequest = {
+    format?: string | null;
+};
+
+export type ProviderCatalogListResponse = {
+    providers: Array<ProviderCatalogEntryDto>;
+};
+
+export type ProviderCatalogEntryDto = {
+    providerId: string;
+    name: string;
+    format: string;
+    apiUrl: string;
+    modelCount: number;
+    docUrl: string;
+    envVar: string;
+};
+
+/**
+ * Return the editable template for one catalog provider.
+ */
+export type ProviderCatalogTemplateRequest = {
+    providerId: string;
+};
+
+export type ProviderCatalogTemplateResponse = {
+    template: ProviderTemplateDto;
+};
+
+export type ProviderTemplateDto = {
+    providerId: string;
+    name: string;
+    format: string;
+    apiUrl: string;
+    models: Array<ProviderTemplateModelDto>;
+    supportsStreaming: boolean;
+    envVar: string;
+    docUrl: string;
+};
+
+export type ProviderTemplateModelDto = {
+    id: string;
+    name: string;
+    contextLimit: number;
+    capabilities: ProviderTemplateCapabilitiesDto;
+    deprecated: boolean;
+};
+
+export type ProviderTemplateCapabilitiesDto = {
+    toolCall: boolean;
+    reasoning: boolean;
+    attachment: boolean;
+    temperature: boolean;
+};
+
+/**
+ * Create a custom provider backed by Goose's declarative provider store.
+ */
+export type CustomProviderCreateRequest = {
+    engine: string;
+    displayName: string;
+    apiUrl: string;
+    apiKey?: string | null;
+    models?: Array<string>;
+    supportsStreaming?: boolean | null;
+    headers?: {
+        [key: string]: string;
+    };
+    requiresAuth: boolean;
+    catalogProviderId?: string | null;
+    basePath?: string | null;
+};
+
+export type CustomProviderCreateResponse = {
+    providerId: string;
+    status: ProviderConfigStatusDto;
+    refresh: RefreshProviderInventoryResponse;
+};
+
+export type ProviderConfigStatusDto = {
+    providerId: string;
+    isConfigured: boolean;
 };
 
 /**
@@ -290,6 +367,83 @@ export type RefreshProviderInventorySkipDto = {
 };
 
 export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_configured' | 'does_not_support_refresh' | 'already_refreshing';
+
+/**
+ * Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
+ */
+export type CustomProviderReadRequest = {
+    providerId: string;
+};
+
+export type CustomProviderReadResponse = {
+    provider: CustomProviderConfigDto;
+    editable: boolean;
+    status: ProviderConfigStatusDto;
+};
+
+export type CustomProviderConfigDto = {
+    providerId: string;
+    engine: string;
+    displayName: string;
+    apiUrl: string;
+    models?: Array<string>;
+    supportsStreaming?: boolean | null;
+    headers?: {
+        [key: string]: string;
+    };
+    requiresAuth: boolean;
+    catalogProviderId?: string | null;
+    basePath?: string | null;
+    apiKeyEnv?: string | null;
+    apiKeySet: boolean;
+};
+
+/**
+ * Update a custom provider backed by Goose's declarative provider store.
+ */
+export type CustomProviderUpdateRequest = {
+    providerId: string;
+    engine: string;
+    displayName: string;
+    apiUrl: string;
+    apiKey?: string | null;
+    models?: Array<string>;
+    supportsStreaming?: boolean | null;
+    headers?: {
+        [key: string]: string;
+    };
+    requiresAuth: boolean;
+    catalogProviderId?: string | null;
+    basePath?: string | null;
+};
+
+export type CustomProviderUpdateResponse = {
+    providerId: string;
+    status: ProviderConfigStatusDto;
+    refresh: RefreshProviderInventoryResponse;
+};
+
+/**
+ * Delete a custom provider from Goose's declarative provider store.
+ */
+export type CustomProviderDeleteRequest = {
+    providerId: string;
+};
+
+export type CustomProviderDeleteResponse = {
+    providerId: string;
+    refresh: RefreshProviderInventoryResponse;
+};
+
+/**
+ * Trigger a background refresh of provider inventories.
+ */
+export type RefreshProviderInventoryRequest = {
+    /**
+     * Which providers to refresh. Empty means all known providers.
+     */
+    providerIds?: Array<string>;
+};
 
 /**
  * Read saved configuration field values for one provider.
@@ -319,11 +473,6 @@ export type ProviderConfigStatusRequest = {
 
 export type ProviderConfigStatusResponse = {
     statuses: Array<ProviderConfigStatusDto>;
-};
-
-export type ProviderConfigStatusDto = {
-    providerId: string;
-    isConfigured: boolean;
 };
 
 /**
@@ -727,14 +876,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

@@ -471,21 +471,291 @@
       ],
       "description": "A single model in provider inventory."
     },
-    "RefreshProviderInventoryRequest": {
+    "ProviderCatalogListRequest": {
       "type": "object",
       "properties": {
-        "providerIds": {
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "description": "List custom-provider catalog entries. Omit `format` to list all formats.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/catalog/list"
+    },
+    "ProviderCatalogListResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderCatalogEntryDto"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/catalog/list"
+    },
+    "ProviderCatalogEntryDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "modelCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "docUrl": {
+          "type": "string"
+        },
+        "envVar": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "name",
+        "format",
+        "apiUrl",
+        "modelCount",
+        "docUrl",
+        "envVar"
+      ]
+    },
+    "ProviderCatalogTemplateRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Return the editable template for one catalog provider.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/catalog/template"
+    },
+    "ProviderCatalogTemplateResponse": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "$ref": "#/$defs/ProviderTemplateDto"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/catalog/template"
+    },
+    "ProviderTemplateDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderTemplateModelDto"
+          }
+        },
+        "supportsStreaming": {
+          "type": "boolean"
+        },
+        "envVar": {
+          "type": "string"
+        },
+        "docUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "name",
+        "format",
+        "apiUrl",
+        "models",
+        "supportsStreaming",
+        "envVar",
+        "docUrl"
+      ]
+    },
+    "ProviderTemplateModelDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "contextLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capabilities": {
+          "$ref": "#/$defs/ProviderTemplateCapabilitiesDto"
+        },
+        "deprecated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "contextLimit",
+        "capabilities",
+        "deprecated"
+      ]
+    },
+    "ProviderTemplateCapabilitiesDto": {
+      "type": "object",
+      "properties": {
+        "toolCall": {
+          "type": "boolean"
+        },
+        "reasoning": {
+          "type": "boolean"
+        },
+        "attachment": {
+          "type": "boolean"
+        },
+        "temperature": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "toolCall",
+        "reasoning",
+        "attachment",
+        "temperature"
+      ]
+    },
+    "CustomProviderCreateRequest": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "apiKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "models": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Which providers to refresh. Empty means all known providers.",
           "default": []
+        },
+        "supportsStreaming": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "requiresAuth": {
+          "type": "boolean"
+        },
+        "catalogProviderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "basePath": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "description": "Trigger a background refresh of provider inventories.",
+      "required": [
+        "engine",
+        "displayName",
+        "apiUrl",
+        "requiresAuth"
+      ],
+      "description": "Create a custom provider backed by Goose's declarative provider store.",
       "x-side": "agent",
-      "x-method": "_goose/providers/inventory/refresh"
+      "x-method": "_goose/providers/custom/create"
+    },
+    "CustomProviderCreateResponse": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        }
+      },
+      "required": [
+        "providerId",
+        "status",
+        "refresh"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/custom/create"
+    },
+    "ProviderConfigStatusDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "isConfigured": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "isConfigured"
+      ]
     },
     "RefreshProviderInventoryResponse": {
       "type": "object",
@@ -536,6 +806,246 @@
         "does_not_support_refresh",
         "already_refreshing"
       ]
+    },
+    "CustomProviderReadRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Read a declarative provider config. Custom configs are editable; bundled configs are read-only.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/custom/read"
+    },
+    "CustomProviderReadResponse": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/CustomProviderConfigDto"
+        },
+        "editable": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        }
+      },
+      "required": [
+        "provider",
+        "editable",
+        "status"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/custom/read"
+    },
+    "CustomProviderConfigDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "supportsStreaming": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "requiresAuth": {
+          "type": "boolean"
+        },
+        "catalogProviderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "basePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiKeyEnv": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiKeySet": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "engine",
+        "displayName",
+        "apiUrl",
+        "requiresAuth",
+        "apiKeySet"
+      ]
+    },
+    "CustomProviderUpdateRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "apiKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "supportsStreaming": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "requiresAuth": {
+          "type": "boolean"
+        },
+        "catalogProviderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "basePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "providerId",
+        "engine",
+        "displayName",
+        "apiUrl",
+        "requiresAuth"
+      ],
+      "description": "Update a custom provider backed by Goose's declarative provider store.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/custom/update"
+    },
+    "CustomProviderUpdateResponse": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        }
+      },
+      "required": [
+        "providerId",
+        "status",
+        "refresh"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/custom/update"
+    },
+    "CustomProviderDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Delete a custom provider from Goose's declarative provider store.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/custom/delete"
+    },
+    "CustomProviderDeleteResponse": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        }
+      },
+      "required": [
+        "providerId",
+        "refresh"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/custom/delete"
+    },
+    "RefreshProviderInventoryRequest": {
+      "type": "object",
+      "properties": {
+        "providerIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Which providers to refresh. Empty means all known providers.",
+          "default": []
+        }
+      },
+      "description": "Trigger a background refresh of provider inventories.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/inventory/refresh"
     },
     "ProviderConfigReadRequest": {
       "type": "object",
@@ -627,21 +1137,6 @@
       ],
       "x-side": "agent",
       "x-method": "_goose/providers/config/status"
-    },
-    "ProviderConfigStatusDto": {
-      "type": "object",
-      "properties": {
-        "providerId": {
-          "type": "string"
-        },
-        "isConfigured": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "providerId",
-        "isConfigured"
-      ]
     },
     "ProviderConfigSaveRequest": {
       "type": "object",
@@ -1685,6 +2180,60 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ProviderCatalogListRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/catalog/list",
+                  "title": "ProviderCatalogListRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderCatalogTemplateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/catalog/template",
+                  "title": "ProviderCatalogTemplateRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderCreateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/create",
+                  "title": "CustomProviderCreateRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderReadRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/read",
+                  "title": "CustomProviderReadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderUpdateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/update",
+                  "title": "CustomProviderUpdateRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/delete",
+                  "title": "CustomProviderDeleteRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/RefreshProviderInventoryRequest"
                     }
                   ],
@@ -2038,6 +2587,54 @@
                         }
                       ],
                       "title": "ListProvidersResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderCatalogListResponse"
+                        }
+                      ],
+                      "title": "ProviderCatalogListResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderCatalogTemplateResponse"
+                        }
+                      ],
+                      "title": "ProviderCatalogTemplateResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderCreateResponse"
+                        }
+                      ],
+                      "title": "CustomProviderCreateResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderReadResponse"
+                        }
+                      ],
+                      "title": "CustomProviderReadResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderUpdateResponse"
+                        }
+                      ],
+                      "title": "CustomProviderUpdateResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderDeleteResponse"
+                        }
+                      ],
+                      "title": "CustomProviderDeleteResponse"
                     },
                     {
                       "allOf": [

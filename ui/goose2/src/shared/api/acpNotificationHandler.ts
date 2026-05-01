@@ -25,6 +25,7 @@ import {
   ensureReplayAssistantMessage,
   getTrackedReplayAssistantMessageId,
 } from "./acpReplayAssistant";
+import { getReplayCreated, getReplayMessageId } from "./acpReplayMetadata";
 import {
   getLocalSessionId,
   subscribeToSessionRegistration,
@@ -150,7 +151,8 @@ function handleReplay(
     case "agent_message_chunk": {
       const msg = ensureReplayAssistantMessage(
         sessionId,
-        update.messageId ?? null,
+        getReplayMessageId(update),
+        getReplayCreated(update),
       );
       if (msg && update.content.type === "text" && "text" in update.content) {
         const last = msg.content[msg.content.length - 1];
@@ -166,32 +168,54 @@ function handleReplay(
     case "user_message_chunk": {
       clearReplayAssistantMessage(sessionId);
       if (update.content.type !== "text" || !("text" in update.content)) break;
-      const messageId = update.messageId ?? crypto.randomUUID();
-      handleReplayUserMessageChunk(sessionId, messageId, update.content);
+      const messageId = getReplayMessageId(update) ?? crypto.randomUUID();
+      handleReplayUserMessageChunk(
+        sessionId,
+        messageId,
+        update.content,
+        getReplayCreated(update),
+      );
       break;
     }
 
     case "tool_call": {
-      const msg = ensureReplayAssistantMessage(sessionId);
+      const created = getReplayCreated(update);
+      const msg = ensureReplayAssistantMessage(
+        sessionId,
+        getReplayMessageId(update),
+        created,
+      );
       msg.content.push({
         type: "toolRequest",
         id: update.toolCallId,
         name: update.title,
         arguments: {},
         status: "executing",
-        startedAt: Date.now(),
+        startedAt: created ?? Date.now(),
       });
       break;
     }
 
     case "tool_call_update": {
-      const replayMessageId = getTrackedReplayAssistantMessageId(sessionId);
-      const msg =
-        findReplayMessageWithToolCall(sessionId, update.toolCallId) ??
-        (replayMessageId
-          ? getBufferedMessage(sessionId, replayMessageId)
-          : undefined);
+      const created = getReplayCreated(update);
+      const replayMessageId = getReplayMessageId(update);
+      const trackedMessageId = getTrackedReplayAssistantMessageId(sessionId);
+      const replayMsg = replayMessageId
+        ? getBufferedMessage(sessionId, replayMessageId)
+        : undefined;
+      const trackedMsg =
+        trackedMessageId && trackedMessageId !== replayMessageId
+          ? getBufferedMessage(sessionId, trackedMessageId)
+          : undefined;
+      const existingMsg = findReplayMessageWithToolCall(
+        sessionId,
+        update.toolCallId,
+      );
+      const msg = existingMsg ?? replayMsg ?? trackedMsg;
       if (msg) {
+        if (created !== undefined && !existingMsg && msg === replayMsg) {
+          msg.created = created;
+        }
         if (update.title) {
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,

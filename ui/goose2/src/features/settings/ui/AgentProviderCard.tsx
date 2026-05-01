@@ -425,10 +425,14 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     >
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex size-6 items-center justify-center [&>*]:size-6">
-            {icon}
-          </div>
-          <span className="mt-2 block text-sm">{provider.displayName}</span>
+          {icon ? (
+            <div className="flex size-6 items-center justify-center [&>*]:size-6">
+              {icon}
+            </div>
+          ) : null}
+          <span className={cn("block text-sm", icon && "mt-2")}>
+            {provider.displayName}
+          </span>
           <p className="mt-1 text-xs text-muted-foreground">
             {provider.description}
           </p>

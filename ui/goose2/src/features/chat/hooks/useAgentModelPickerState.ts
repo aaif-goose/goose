@@ -145,10 +145,10 @@ export function useAgentModelPickerState({
   );
 
   const handleModelChange = useCallback(
-    (modelId: string) => {
-      const selectedModel = availableModels.find(
-        (model) => model.id === modelId,
-      );
+    (modelId: string, selectedModelOverride?: ModelOption) => {
+      const selectedModel =
+        selectedModelOverride ??
+        availableModels.find((model) => model.id === modelId);
       onModelSelected?.({
         id: modelId,
         name: selectedModel?.name ?? modelId,

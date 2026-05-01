@@ -1,6 +1,6 @@
 import type { SkillInfo } from "../api/skills";
 
-export const SKILL_CATEGORY_ORDER = [
+const SKILL_CATEGORY_ORDER = [
   "design",
   "engineering",
   "quality",
@@ -242,7 +242,7 @@ function inferCategoryFromSlug(slug: string): SkillCategory | null {
   return null;
 }
 
-export function inferSkillCategory(
+function inferSkillCategory(
   skill: Pick<SkillInfo, "name" | "description" | "instructions">,
 ): SkillCategory {
   const slug = skill.name.toLowerCase();
@@ -272,7 +272,7 @@ export function inferSkillCategory(
   return bestScore > 0 ? bestCategory : "general";
 }
 
-export function withInferredSkillCategory(skill: SkillInfo): SkillViewInfo {
+function withInferredSkillCategory(skill: SkillInfo): SkillViewInfo {
   return {
     ...skill,
     inferredCategory: inferSkillCategory(skill),
@@ -283,4 +283,12 @@ export function withInferredSkillCategories(
   skills: SkillInfo[],
 ): SkillViewInfo[] {
   return skills.map(withInferredSkillCategory);
+}
+
+export function uniqueSkillCategories(
+  skills: SkillViewInfo[],
+): SkillCategory[] {
+  return SKILL_CATEGORY_ORDER.filter((category) =>
+    skills.some((skill) => skill.inferredCategory === category),
+  );
 }

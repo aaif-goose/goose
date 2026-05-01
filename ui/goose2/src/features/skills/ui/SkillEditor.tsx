@@ -11,66 +11,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
-import { createSkill, updateSkill } from "../api/skills";
+import {
+  createSkill,
+  updateSkill,
+  type EditingSkill,
+  type SkillInfo,
+} from "../api/skills";
+import { formatSkillName, isValidSkillName } from "../lib/skillsHelpers";
+import { getRenamedSkillFileLocation } from "../lib/skillsPath";
 
-const MAX_SKILL_NAME_LENGTH = 64;
-
-function isValidSkillName(name: string): boolean {
-  return (
-    name.length > 0 &&
-    name.length <= MAX_SKILL_NAME_LENGTH &&
-    !name.startsWith("-") &&
-    !name.endsWith("-") &&
-    [...name].every(
-      (char) =>
-        (char >= "a" && char <= "z") ||
-        (char >= "0" && char <= "9") ||
-        char === "-",
-    )
-  );
-}
-
-function formatSkillName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/^-/, "")
-    .slice(0, MAX_SKILL_NAME_LENGTH);
-}
-
-function getRenamedSkillFileLocation(
-  fileLocation: string,
-  name: string,
-): string {
-  const separator = fileLocation.includes("\\") ? "\\" : "/";
-  const parts = fileLocation.split(separator);
-
-  if (parts.length >= 2) {
-    parts[parts.length - 2] = name;
-  }
-
-  return parts.join(separator);
-}
-
-interface CreateSkillDialogProps {
+interface SkillEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated?: () => void;
-  editingSkill?: {
-    name: string;
-    description: string;
-    instructions: string;
-    path: string;
-    fileLocation: string;
-  };
+  onSaved?: (savedSkill?: SkillInfo) => void | Promise<void>;
+  editingSkill?: EditingSkill;
 }
 
-export function CreateSkillDialog({
+export function SkillEditor({
   isOpen,
   onClose,
-  onCreated,
+  onSaved,
   editingSkill,
-}: CreateSkillDialogProps) {
+}: SkillEditorProps) {
   const { t } = useTranslation(["skills", "common"]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -117,8 +79,9 @@ export function CreateSkillDialog({
     setSaving(true);
     setError(null);
     try {
+      let savedSkill: SkillInfo | undefined;
       if (isEditing) {
-        await updateSkill(
+        savedSkill = await updateSkill(
           editingSkill.path,
           name,
           description.trim(),
@@ -130,7 +93,7 @@ export function CreateSkillDialog({
       setName("");
       setDescription("");
       setInstructions("");
-      onCreated?.();
+      await onSaved?.(savedSkill);
       onClose();
     } catch (err) {
       setError(String(err));
