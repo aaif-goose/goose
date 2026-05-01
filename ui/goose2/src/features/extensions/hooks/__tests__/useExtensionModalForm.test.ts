@@ -88,6 +88,22 @@ describe("useExtensionModalForm", () => {
     });
   });
 
+  it("does not coerce unsupported SSE extensions into HTTP configs", () => {
+    const extension: ExtensionEntry = {
+      type: "sse",
+      name: "legacy-sse",
+      description: "Legacy SSE endpoint",
+      uri: "https://old.example/sse",
+      config_key: "legacy-sse",
+      enabled: true,
+    };
+    const { result } = renderHook(() => useExtensionModalForm(extension));
+
+    expect(result.current.type).toBe("unsupported");
+    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.buildSubmitPayload()).toBeNull();
+  });
+
   it("returns null when required fields are missing", () => {
     const { result } = renderHook(() => useExtensionModalForm());
 

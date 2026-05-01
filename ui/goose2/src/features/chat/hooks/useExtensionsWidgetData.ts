@@ -30,13 +30,13 @@ export function useExtensionsWidgetData(sessionId: string) {
   });
 
   const toolUsageSnapshot = useMemo(() => {
-    const nextSnapshot = getToolUsageSnapshot(
-      messages,
-      lastToolUsageSnapshot.current,
-    );
-    lastToolUsageSnapshot.current = nextSnapshot;
-    return nextSnapshot;
+    return getToolUsageSnapshot(messages, lastToolUsageSnapshot.current);
   }, [messages]);
+
+  useEffect(() => {
+    lastToolUsageSnapshot.current = toolUsageSnapshot;
+  }, [toolUsageSnapshot]);
+
   const toolOwnerSignature = toolUsageSnapshot.signature;
 
   useEffect(() => {

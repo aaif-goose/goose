@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ExtensionConfig, ExtensionEntry } from "../types";
 
-export type ExtensionModalType = "stdio" | "streamable_http";
+export type ExtensionModalType = "stdio" | "streamable_http" | "unsupported";
 
 export interface EnvVar {
   id: number;
@@ -35,9 +35,11 @@ function buildEnvVars(vars: EnvVar[]): Record<string, string> {
 }
 
 function initialType(extension?: ExtensionEntry): ExtensionModalType {
-  return extension?.type === "streamable_http" || extension?.type === "sse"
-    ? "streamable_http"
-    : "stdio";
+  if (!extension) return "stdio";
+  if (extension.type === "stdio" || extension.type === "streamable_http") {
+    return extension.type;
+  }
+  return "unsupported";
 }
 
 function initialEnvVars(extension?: ExtensionEntry): EnvVar[] {
@@ -60,11 +62,7 @@ export function useExtensionModalForm(extension?: ExtensionEntry) {
     extension?.type === "stdio" ? extension.args.join("\n") : "",
   );
   const [uri, setUri] = useState(
-    extension?.type === "streamable_http"
-      ? extension.uri
-      : extension?.type === "sse"
-        ? (extension.uri ?? "")
-        : "",
+    extension?.type === "streamable_http" ? extension.uri : "",
   );
   const [timeout, setTimeout] = useState(
     String(
@@ -78,6 +76,7 @@ export function useExtensionModalForm(extension?: ExtensionEntry) {
   );
 
   const canSubmit =
+    type !== "unsupported" &&
     name.trim().length > 0 &&
     (type === "stdio" ? cmd.trim().length > 0 : uri.trim().length > 0);
 
