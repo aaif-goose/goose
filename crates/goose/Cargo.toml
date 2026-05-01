@@ -129,12 +129,12 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 
 # For Bedrock provider (optional, behind "aws-providers" feature)
-aws-config = { version = "=1.8.12", features = ["behavior-version-latest"], optional = true }
+aws-config = { version = "=1.8.13", features = ["behavior-version-latest"], optional = true }
 aws-smithy-types = { version = "=1.4.7", optional = true }
-aws-sdk-bedrockruntime = { version = "=1.120.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
+aws-sdk-bedrockruntime = { version = "=1.124.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
 
 # For SageMaker TGI provider (optional, behind "aws-providers" feature)
-aws-sdk-sagemakerruntime = { version = "1.62.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
+aws-sdk-sagemakerruntime = { version = "1.95.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
 
 # For GCP Vertex AI provider auth
 jsonwebtoken = { version = "10.3.0", default-features = false, features = ["use_pem"] }
@@ -182,7 +182,7 @@ tree-sitter-typescript = { workspace = true }
 which = { workspace = true }
 pctx_code_mode = { version = "^0.3.0", optional = true }
 pulldown-cmark = "0.13.0"
-llama-cpp-2 = { version = "0.1.145", features = ["sampler", "mtmd"], optional = true }
+llama-cpp-2 = { version = "0.1.146", features = ["sampler", "mtmd"], optional = true }
 encoding_rs = "0.8.35"
 pastey = "0.2.2"
 shell-words = { workspace = true }
@@ -204,7 +204,7 @@ keyring = { version = "3.6.2", features = ["windows-native"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.9", default-features = false, features = ["metal"], optional = true }
 candle-nn = { version = "0.9", default-features = false, features = ["metal"], optional = true }
-llama-cpp-2 = { version = "0.1.143", features = ["sampler", "metal", "mtmd"], optional = true }
+llama-cpp-2 = { version = "0.1.146", features = ["sampler", "metal", "mtmd"], optional = true }
 keyring = { version = "3.6.2", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
