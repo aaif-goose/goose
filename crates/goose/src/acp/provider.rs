@@ -128,6 +128,11 @@ struct AcpSession {
     response: NewSessionResponse,
 }
 
+struct HandoffContextClaim {
+    first_prompt: bool,
+    include_context: bool,
+}
+
 pub struct AcpProvider {
     name: String,
     model: ModelConfig,
@@ -343,8 +348,12 @@ impl AcpProvider {
             .is_some_and(|opts| opts.iter().any(|o| o.category.as_ref() == Some(&category)))
     }
 
-    fn should_send_handoff_context(&self, messages: &[Message]) -> bool {
-        !self.handoff_context_sent.swap(true, Ordering::AcqRel) && has_handoff_context(messages)
+    fn claim_handoff_context(&self, messages: &[Message]) -> HandoffContextClaim {
+        let first_prompt = !self.handoff_context_sent.swap(true, Ordering::AcqRel);
+        HandoffContextClaim {
+            first_prompt,
+            include_context: first_prompt && has_handoff_context(messages),
+        }
     }
 }
 
@@ -412,17 +421,24 @@ impl Provider for AcpProvider {
     ) -> Result<MessageStream, ProviderError> {
         let session_id = self.acp_session_id();
 
-        let include_handoff_context = self.should_send_handoff_context(messages);
-        let prompt_blocks = messages_to_prompt(messages, include_handoff_context);
+        let claim = self.claim_handoff_context(messages);
+        let prompt_blocks = messages_to_prompt(messages, claim.include_context);
         // Drop any tool-call buffer state left over from a prior prompt
         // (e.g. cancelled or interrupted before its terminal status arrived).
         if let Ok(mut buffer) = self.pending_tool_updates.lock() {
             buffer.clear();
         }
-        let mut rx = self
-            .prompt(session_id, prompt_blocks)
-            .await
-            .map_err(|e| ProviderError::RequestFailed(format!("Failed to send ACP prompt: {e}")))?;
+        let mut rx = match self.prompt(session_id, prompt_blocks).await {
+            Ok(rx) => rx,
+            Err(e) => {
+                if claim.first_prompt {
+                    self.handoff_context_sent.store(false, Ordering::Release);
+                }
+                return Err(ProviderError::RequestFailed(format!(
+                    "Failed to send ACP prompt: {e}"
+                )));
+            }
+        };
 
         let pending_confirmations = self.pending_confirmations.clone();
         let goose_mode = *self
@@ -1478,6 +1494,10 @@ mod tests {
     }
 
     fn test_provider() -> AcpProvider {
+        test_provider_with_tx(None)
+    }
+
+    fn test_provider_with_tx(tx: Option<mpsc::Sender<ClientRequest>>) -> AcpProvider {
         AcpProvider {
             name: "acp-test".to_string(),
             model: ModelConfig {
@@ -1493,7 +1513,7 @@ mod tests {
             pending_confirmations: Arc::new(TokioMutex::new(HashMap::new())),
             pending_tool_updates: Arc::new(Mutex::new(HashMap::new())),
             handoff_context_sent: AtomicBool::new(false),
-            tx: None,
+            tx,
             loop_thread: None,
         }
     }
@@ -1570,8 +1590,13 @@ mod tests {
             Message::user().with_text("current request"),
         ];
 
-        assert!(provider.should_send_handoff_context(&messages));
-        assert!(!provider.should_send_handoff_context(&messages));
+        let first_claim = provider.claim_handoff_context(&messages);
+        assert!(first_claim.first_prompt);
+        assert!(first_claim.include_context);
+
+        let second_claim = provider.claim_handoff_context(&messages);
+        assert!(!second_claim.first_prompt);
+        assert!(!second_claim.include_context);
     }
 
     #[test]
@@ -1583,8 +1608,33 @@ mod tests {
             Message::user().with_text("current request"),
         ];
 
-        assert!(!provider.should_send_handoff_context(&first_prompt));
-        assert!(!provider.should_send_handoff_context(&later_prompt_with_history));
+        let first_claim = provider.claim_handoff_context(&first_prompt);
+        assert!(first_claim.first_prompt);
+        assert!(!first_claim.include_context);
+
+        let later_claim = provider.claim_handoff_context(&later_prompt_with_history);
+        assert!(!later_claim.first_prompt);
+        assert!(!later_claim.include_context);
+    }
+
+    #[tokio::test]
+    async fn failed_first_prompt_send_rolls_back_handoff_context_claim() {
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        let provider = test_provider_with_tx(Some(tx));
+        let messages = vec![
+            Message::assistant().with_text("prior answer"),
+            Message::user().with_text("current request"),
+        ];
+
+        let result = provider
+            .stream(&provider.model, "goose-session", "", &messages, &[])
+            .await;
+
+        assert!(matches!(result, Err(ProviderError::RequestFailed(_))));
+        let next_claim = provider.claim_handoff_context(&messages);
+        assert!(next_claim.first_prompt);
+        assert!(next_claim.include_context);
     }
 
     #[test]
