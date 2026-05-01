@@ -36,6 +36,8 @@ use std::io::Read;
 use std::path::PathBuf;
 use tracing::warn;
 
+const GOOSE_SERVER_SECRET_KEY_ENV: &str = "GOOSE_SERVER__SECRET_KEY";
+
 fn generate_serve_secret_key() -> String {
     use rand::distributions::{Alphanumeric, DistString};
 
@@ -1095,8 +1097,11 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         config_dir: Paths::config_dir(),
         goose_platform: GoosePlatform::GooseCli,
     }));
-    let secret_key =
-        std::env::var("GOOSE_SERVER__SECRET_KEY").unwrap_or_else(|_| generate_serve_secret_key());
+    let secret_key = std::env::var(GOOSE_SERVER_SECRET_KEY_ENV)
+        .ok()
+        .map(|secret| secret.trim().to_string())
+        .filter(|secret| !secret.is_empty())
+        .unwrap_or_else(generate_serve_secret_key);
     let router = create_router(server, secret_key);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
