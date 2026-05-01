@@ -51,7 +51,7 @@ regex = { workspace = true }
 tar = "0.4.45"
 reqwest = { workspace = true, features = ["blocking"], default-features = false }
 zip = { workspace = true }
-bzip2 = "0.5"
+bzip2 = "0.6"
 webbrowser = { workspace = true }
 indicatif = "0.18.1"
 tokio-util = { workspace = true, features = ["compat", "rt"] }
