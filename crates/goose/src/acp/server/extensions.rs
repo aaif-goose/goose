@@ -293,39 +293,46 @@ impl GooseAcpAgent {
             }
         }
 
-        let mut extensions_json = Vec::new();
-        for extension in extensions {
+        let extensions_json = futures::future::join_all(extensions.into_iter().map(|extension| {
             let config_key = extension.key();
             let extension_name = extension.name();
             let connected = connected_keys.contains(&config_key);
-            let tools = if connected {
-                agent
-                    .list_tools(&internal_id, Some(extension_name.clone()))
-                    .await
-                    .into_iter()
-                    .map(|tool| tool.name.to_string())
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            extensions_json.push(SessionExtensionStatusDto {
-                config: extension_config_to_dto(extension),
-                config_key,
-                status: if connected {
-                    ExtensionConnectionStatusDto::Connected
+            let agent = agent.clone();
+            let internal_id = internal_id.clone();
+
+            async move {
+                let tools = if connected {
+                    agent
+                        .list_tools(&internal_id, Some(extension_name))
+                        .await
+                        .into_iter()
+                        .map(|tool| tool.name.to_string())
+                        .collect()
                 } else {
-                    ExtensionConnectionStatusDto::Failed
-                },
-                tools,
-                error: if connected {
-                    None
-                } else {
-                    Some(
-                        "Goose could not connect this extension when the chat started.".to_string(),
-                    )
-                },
-            });
-        }
+                    Vec::new()
+                };
+
+                SessionExtensionStatusDto {
+                    config: extension_config_to_dto(extension),
+                    config_key,
+                    status: if connected {
+                        ExtensionConnectionStatusDto::Connected
+                    } else {
+                        ExtensionConnectionStatusDto::Failed
+                    },
+                    tools,
+                    error: if connected {
+                        None
+                    } else {
+                        Some(
+                            "Goose could not connect this extension when the chat started."
+                                .to_string(),
+                        )
+                    },
+                }
+            }
+        }))
+        .await;
 
         Ok(GetSessionExtensionStatusResponse {
             extensions: extensions_json,

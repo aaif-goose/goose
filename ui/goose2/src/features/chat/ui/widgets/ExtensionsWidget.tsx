@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconApps } from "@tabler/icons-react";
 import {
@@ -15,7 +15,7 @@ import {
   getUsedSessionExtensions,
 } from "@/features/extensions/lib/extensionUsage";
 import { cn } from "@/shared/lib/cn";
-import type { Message } from "@/shared/types/messages";
+import type { Message, ToolRequestContent } from "@/shared/types/messages";
 import { useChatStore } from "../../stores/chatStore";
 import { Widget } from "./Widget";
 
@@ -24,6 +24,11 @@ interface ExtensionsWidgetProps {
 }
 
 const EMPTY_MESSAGES: Message[] = [];
+
+interface ToolUsageSnapshot {
+  signature: string;
+  messages: Message[];
+}
 
 function toUnavailableStatus(
   extension: ExtensionEntry,
@@ -104,21 +109,41 @@ export function ExtensionsWidget({ sessionId }: ExtensionsWidgetProps) {
   const messages = useChatStore(
     (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
   );
+  const lastToolUsageSnapshot = useRef<ToolUsageSnapshot>({
+    signature: "",
+    messages: EMPTY_MESSAGES,
+  });
 
-  const toolOwnerSignature = useMemo(() => {
-    const owners = new Set<string>();
+  const toolUsageSnapshot = useMemo(() => {
+    const signatureParts: string[] = [];
+    const toolMessages: Message[] = [];
+
     for (const message of messages) {
+      const toolRequests: ToolRequestContent[] = [];
       for (const content of message.content) {
         if (content.type === "toolRequest") {
           const owner = getToolOwnerSignatureKey(content);
           if (owner) {
-            owners.add(owner);
+            signatureParts.push(`${message.id}:${content.id}:${owner}`);
           }
+          toolRequests.push(content);
         }
       }
+      if (toolRequests.length > 0) {
+        toolMessages.push({ ...message, content: toolRequests });
+      }
     }
-    return Array.from(owners).sort().join("|");
+
+    const signature = signatureParts.join("|");
+    if (signature === lastToolUsageSnapshot.current.signature) {
+      return lastToolUsageSnapshot.current;
+    }
+
+    const nextSnapshot = { signature, messages: toolMessages };
+    lastToolUsageSnapshot.current = nextSnapshot;
+    return nextSnapshot;
   }, [messages]);
+  const toolOwnerSignature = toolUsageSnapshot.signature;
 
   useEffect(() => {
     let isCurrent = true;
@@ -162,8 +187,8 @@ export function ExtensionsWidget({ sessionId }: ExtensionsWidgetProps) {
   }, [sessionId, toolOwnerSignature]);
 
   const used = useMemo(
-    () => getUsedSessionExtensions(extensions, messages),
-    [extensions, messages],
+    () => getUsedSessionExtensions(extensions, toolUsageSnapshot.messages),
+    [extensions, toolUsageSnapshot],
   );
 
   const renderSection = (sectionExtensions: SessionExtensionStatus[]) => {
