@@ -67,14 +67,9 @@ describe('ParameterInputModal', () => {
     it('calls onSubmit with parameter values when submitted', async () => {
       const user = userEvent.setup();
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
-      // Fill in required parameter
-      const input = screen.getByPlaceholderText('Enter value for param1...');
-      await user.type(input, 'test value');
-      
-      // Select optional parameter
-      const select = screen.getByRole('combobox', { name: /test parameter 2/i });
-      await user.selectOptions(select, 'option2');
+
+      await user.type(screen.getByLabelText(/test parameter 1/i), 'test value');
+      await user.selectOptions(screen.getByLabelText(/test parameter 2/i), 'option2');
       
       // Submit form
       const submitButton = screen.getByText('Start Recipe');
@@ -166,9 +161,8 @@ describe('ParameterInputModal', () => {
           initialValues={{ param1: 'initial value' }}
         />
       );
-      
-      const input = screen.getByPlaceholderText('Enter value for param1...') as HTMLInputElement;
-      expect(input.value).toBe('initial value');
+
+      expect((screen.getByLabelText(/test parameter 1/i) as HTMLInputElement).value).toBe('initial value');
     });
 
     it('pre-fills form with default values from parameters', () => {

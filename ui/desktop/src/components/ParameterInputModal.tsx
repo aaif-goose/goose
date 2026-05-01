@@ -125,11 +125,9 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
 
   const handleCancelOption = (option: 'new-chat' | 'back-to-form'): void => {
     if (option === 'new-chat') {
-      // Just close the modal - don't create a new window
-      // The user can manually start a new chat if needed
       onClose();
     } else {
-      setShowCancelOptions(false); // Go back to the parameter form
+      setShowCancelOptions(false);
     }
   };
 
@@ -173,16 +171,16 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
             <form onSubmit={handleSubmit} className="space-y-4 mb-4">
               {parameters.map((param) => (
                 <div key={param.key}>
-                  <label className="block text-md font-medium text-text-primary mb-2">
+                  <label htmlFor={param.key} className="block text-md font-medium text-text-primary mb-2">
                     {param.description || param.key}
                     {param.requirement === 'required' && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
                   </label>
 
-                  {/* Render different input types */}
                   {param.input_type === 'select' && param.options ? (
                     <select
+                      id={param.key}
                       value={inputValues[param.key] || ''}
                       onChange={(e) => handleChange(param.key, e.target.value)}
                       className={`w-full p-3 border rounded-lg bg-background-secondary text-text-primary focus:outline-none focus:ring-2 ${
@@ -200,6 +198,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
                     </select>
                   ) : param.input_type === 'boolean' ? (
                     <select
+                      id={param.key}
                       value={inputValues[param.key] || ''}
                       onChange={(e) => handleChange(param.key, e.target.value)}
                       className={`w-full p-3 border rounded-lg bg-background-secondary text-text-primary focus:outline-none focus:ring-2 ${
@@ -214,6 +213,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
                     </select>
                   ) : (
                     <input
+                      id={param.key}
                       type={param.input_type === 'number' ? 'number' : 'text'}
                       value={inputValues[param.key] || ''}
                       onChange={(e) => handleChange(param.key, e.target.value)}
