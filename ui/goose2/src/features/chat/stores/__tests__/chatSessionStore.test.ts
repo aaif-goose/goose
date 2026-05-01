@@ -317,6 +317,48 @@ describe("chatSessionStore", () => {
       expect(state.activeSessionId).toBe(localSession.id);
     });
 
+    it("keeps a bound optimistic session on its local id during ACP refresh", async () => {
+      const localSession = useChatSessionStore.getState().createLocalSession({
+        title: "Local Draft",
+        projectId: "project-1",
+        modelId: "gpt-4.1",
+        modelName: "GPT-4.1",
+      });
+      useChatSessionStore.getState().updateSession(localSession.id, {
+        acpSessionId: "goose-session-1",
+      });
+      useChatSessionStore.getState().setActiveSession(localSession.id);
+
+      mockAcpListSessions.mockResolvedValue([
+        {
+          sessionId: "goose-session-1",
+          title: "ACP Session",
+          updatedAt: "2026-04-02",
+          createdAt: "2026-04-02",
+          archivedAt: null,
+          userSetName: false,
+          messageCount: 1,
+          projectId: "project-1",
+          providerId: "openai",
+          modelId: "gpt-4.1",
+        },
+      ]);
+
+      await useChatSessionStore.getState().loadSessions();
+
+      const state = useChatSessionStore.getState();
+      expect(state.sessions).toHaveLength(1);
+      expect(state.sessions[0]).toMatchObject({
+        id: localSession.id,
+        acpSessionId: "goose-session-1",
+        title: "ACP Session",
+        modelId: "gpt-4.1",
+        modelName: "GPT-4.1",
+        messageCount: 1,
+      });
+      expect(state.activeSessionId).toBe(localSession.id);
+    });
+
     it("sets isLoading during fetch", async () => {
       let resolvePromise: (value: AcpSessionInfo[]) => void = () => {};
       mockAcpListSessions.mockReturnValue(
