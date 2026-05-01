@@ -45,9 +45,7 @@
     "empty": {
       "folderNotSet": "Folder not set",
       "noChanges": "No uncommitted changes",
-      "noProjectAssigned": "No project assigned",
-      "noExtensions": "No extensions enabled",
-      "noMatchingExtensions": "No matching extensions"
+      "noProjectAssigned": "No project assigned"
     },
     "errors": {
       "gitRead": "Couldn't read git status."
@@ -91,8 +89,6 @@
       "artifacts": "Artifacts",
       "changes": "Changes",
       "changesOnBranch": "on",
-      "extensions": "Extensions",
-      "searchExtensions": "Search extensions...",
       "workspace": "Workspace"
     }
   },

@@ -2230,7 +2230,8 @@ impl GooseAcpAgent {
                         if let Some(args) = args_value {
                             tool_call = tool_call.raw_input(args);
                         }
-                        tool_call = tool_call.meta(merge_replay_message_meta(identity_meta, message));
+                        tool_call =
+                            tool_call.meta(merge_replay_message_meta(identity_meta, message));
 
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),

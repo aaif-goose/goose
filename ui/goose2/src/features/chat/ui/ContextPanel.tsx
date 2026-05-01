@@ -19,7 +19,6 @@ import type { ActiveWorkspace } from "../stores/chatSessionStore";
 import { WorkspaceWidget } from "./widgets/WorkspaceWidget";
 import { ChangesWidget } from "./widgets/ChangesWidget";
 import { ArtifactsWidget } from "./widgets/ArtifactsWidget";
-import { ExtensionsWidget } from "./widgets/ExtensionsWidget";
 import { openPath } from "@tauri-apps/plugin-opener";
 
 interface ContextPanelProps {
@@ -204,7 +203,6 @@ export function ContextPanel({
             onOpenFile={handleOpenChangedFile}
           />
           <ArtifactsWidget />
-          <ExtensionsWidget />
         </div>
       </TabsContent>
 
