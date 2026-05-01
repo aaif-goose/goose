@@ -32,6 +32,33 @@ function toolOwnerFromName(name: string): string | null {
   return owner && owner !== name ? normalizeExtensionKey(owner) : null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function persistedExtensionName(
+  toolRequest: ToolRequestContent,
+): string | null {
+  const meta = (toolRequest as unknown as { _meta?: unknown })._meta;
+  if (!isRecord(meta)) return null;
+  const extensionName = meta.goose_extension;
+  return typeof extensionName === "string" ? extensionName : null;
+}
+
+function persistedToolName(toolRequest: ToolRequestContent): string | null {
+  const toolCall = (toolRequest as unknown as { toolCall?: unknown }).toolCall;
+  if (!isRecord(toolCall)) return null;
+
+  const value = toolCall.value;
+  if (isRecord(value) && typeof value.name === "string") {
+    return value.name;
+  }
+  if (typeof toolCall.name === "string") {
+    return toolCall.name;
+  }
+  return null;
+}
+
 function getToolOwnerFromName(
   toolName: string,
   toolToExtension: Map<string, string>,
@@ -74,13 +101,36 @@ export function getToolOwner(
   toolRequest: ToolRequestContent,
   toolToExtension: Map<string, string>,
 ): string | null {
-  if (toolRequest.extensionName) {
-    return normalizeExtensionKey(toolRequest.extensionName);
+  const extensionName =
+    toolRequest.extensionName ?? persistedExtensionName(toolRequest);
+  if (extensionName) {
+    return normalizeExtensionKey(extensionName);
   }
-  if (toolRequest.toolName) {
-    return getToolOwnerFromName(toolRequest.toolName, toolToExtension);
+  const toolName = toolRequest.toolName ?? persistedToolName(toolRequest);
+  if (toolName) {
+    return getToolOwnerFromName(toolName, toolToExtension);
+  }
+  if (!toolRequest.name) {
+    return null;
   }
   return getToolOwnerFromName(toolRequest.name, toolToExtension);
+}
+
+export function getToolOwnerSignatureKey(
+  toolRequest: ToolRequestContent,
+): string {
+  const extensionName =
+    toolRequest.extensionName ?? persistedExtensionName(toolRequest);
+  if (extensionName) {
+    return normalizeExtensionKey(extensionName);
+  }
+
+  const toolName =
+    toolRequest.toolName ?? persistedToolName(toolRequest) ?? toolRequest.name;
+  if (!toolName) {
+    return "";
+  }
+  return toolOwnerFromName(toolName) ?? normalizeExtensionKey(toolName);
 }
 
 export function getExtensionUsageByConfigKey(

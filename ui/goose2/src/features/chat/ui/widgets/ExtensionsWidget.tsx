@@ -10,10 +10,12 @@ import {
   type ExtensionEntry,
   type SessionExtensionStatus,
 } from "@/features/extensions/types";
-import { getUsedSessionExtensions } from "@/features/extensions/lib/extensionUsage";
-import { normalizeExtensionKey } from "@/features/extensions/lib/extensionKeys";
+import {
+  getToolOwnerSignatureKey,
+  getUsedSessionExtensions,
+} from "@/features/extensions/lib/extensionUsage";
 import { cn } from "@/shared/lib/cn";
-import type { Message, ToolRequestContent } from "@/shared/types/messages";
+import type { Message } from "@/shared/types/messages";
 import { useChatStore } from "../../stores/chatStore";
 import { Widget } from "./Widget";
 
@@ -47,19 +49,6 @@ function mergeExtensionStatuses(
     }
   }
   return Array.from(byKey.values());
-}
-
-function toolRequestOwnerKey(toolRequest: ToolRequestContent): string {
-  if (toolRequest.extensionName) {
-    return normalizeExtensionKey(toolRequest.extensionName);
-  }
-
-  const toolName = toolRequest.toolName ?? toolRequest.name;
-  const [owner] = toolName.split("__");
-  if (owner && owner !== toolName) {
-    return normalizeExtensionKey(owner);
-  }
-  return normalizeExtensionKey(toolName);
 }
 
 function ExtensionRow({ extension }: { extension: SessionExtensionStatus }) {
@@ -121,7 +110,10 @@ export function ExtensionsWidget({ sessionId }: ExtensionsWidgetProps) {
     for (const message of messages) {
       for (const content of message.content) {
         if (content.type === "toolRequest") {
-          owners.add(toolRequestOwnerKey(content));
+          const owner = getToolOwnerSignatureKey(content);
+          if (owner) {
+            owners.add(owner);
+          }
         }
       }
     }

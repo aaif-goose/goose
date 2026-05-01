@@ -12,7 +12,7 @@ use crate::config::extensions::get_enabled_extensions_with_config;
 use crate::config::paths::Paths;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
 use crate::mcp_utils::ToolResult;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -558,6 +558,41 @@ fn summarize_tool_call(tool_name: &str, arguments: Option<&serde_json::Value>) -
         Some(d) => format!("{base} · {d}"),
         None => base,
     }
+}
+
+fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {
+    let tool_call = tool_request.tool_call.as_ref().ok()?;
+    let tool_name = tool_call.name.to_string();
+    let extension_name = tool_request
+        .tool_meta
+        .as_ref()
+        .and_then(|meta| meta.get("goose_extension"))
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string)
+        .or_else(|| {
+            tool_name
+                .split_once("__")
+                .map(|(extension_name, _)| extension_name.to_string())
+        });
+
+    let mut tool_call_meta = serde_json::Map::new();
+    tool_call_meta.insert("toolName".to_string(), serde_json::Value::String(tool_name));
+    if let Some(extension_name) = extension_name {
+        tool_call_meta.insert(
+            "extensionName".to_string(),
+            serde_json::Value::String(extension_name),
+        );
+    }
+
+    let mut goose_meta = serde_json::Map::new();
+    goose_meta.insert(
+        "toolCall".to_string(),
+        serde_json::Value::Object(tool_call_meta),
+    );
+
+    let mut meta = serde_json::Map::new();
+    meta.insert("goose".to_string(), serde_json::Value::Object(goose_meta));
+    Some(meta)
 }
 
 fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
@@ -1417,6 +1452,7 @@ impl GooseAcpAgent {
             .and_then(|tc| tc.arguments.as_ref())
             .map(|a| serde_json::Value::Object(a.clone()));
         let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
+        let identity_meta = tool_call_identity_meta(tool_request);
 
         let mut initial_tool_call = ToolCall::new(
             ToolCallId::new(tool_request.id.clone()),
@@ -1426,6 +1462,7 @@ impl GooseAcpAgent {
         if let Some(args) = args_value.clone() {
             initial_tool_call = initial_tool_call.raw_input(args);
         }
+        initial_tool_call = initial_tool_call.meta(identity_meta.clone());
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
             SessionUpdate::ToolCall(initial_tool_call),
@@ -1440,6 +1477,7 @@ impl GooseAcpAgent {
             let request_id = tool_request.id.clone();
             let cx = cx.clone();
             let name = tool_call.name.to_string();
+            let identity_meta = identity_meta.clone();
             let args_json = tool_call
                 .arguments
                 .as_ref()
@@ -1461,10 +1499,10 @@ impl GooseAcpAgent {
                         let fields = ToolCallUpdateFields::new().title(fallback_title);
                         let _ = cx.send_notification(SessionNotification::new(
                             sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
+                            SessionUpdate::ToolCallUpdate(
+                                ToolCallUpdate::new(ToolCallId::new(request_id), fields)
+                                    .meta(identity_meta),
+                            ),
                         ));
                         return;
                     }
@@ -1501,10 +1539,10 @@ impl GooseAcpAgent {
                         let fields = ToolCallUpdateFields::new().title(title);
                         let _ = cx.send_notification(SessionNotification::new(
                             sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
+                            SessionUpdate::ToolCallUpdate(
+                                ToolCallUpdate::new(ToolCallId::new(request_id), fields)
+                                    .meta(identity_meta),
+                            ),
                         ));
                     }
                     Err(e) => {
@@ -1512,10 +1550,10 @@ impl GooseAcpAgent {
                         let fields = ToolCallUpdateFields::new().title(fallback_title);
                         let _ = cx.send_notification(SessionNotification::new(
                             sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
+                            SessionUpdate::ToolCallUpdate(
+                                ToolCallUpdate::new(ToolCallId::new(request_id), fields)
+                                    .meta(identity_meta),
+                            ),
                         ));
                     }
                 }
@@ -3017,6 +3055,28 @@ print(\"hello, world\")
         assert_eq!(
             summarize_tool_call("developer__shell", Some(&args)),
             "developer: shell · cargo build"
+        );
+    }
+
+    #[test]
+    fn test_tool_call_identity_meta_uses_goose_extension_metadata() {
+        let request = ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("context7__query-docs")),
+            metadata: None,
+            tool_meta: Some(serde_json::json!({"goose_extension": "context7"})),
+        };
+
+        let meta = tool_call_identity_meta(&request).expect("expected metadata");
+
+        assert_eq!(
+            meta.0.get("goose"),
+            Some(&serde_json::json!({
+                "toolCall": {
+                    "toolName": "context7__query-docs",
+                    "extensionName": "context7",
+                },
+            })),
         );
     }
 

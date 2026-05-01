@@ -127,4 +127,41 @@ describe("extension usage derivation", () => {
 
     expect(used.map((item) => item.config_key)).toEqual(["analyze"]);
   });
+
+  it("maps persisted Goose tool request metadata back to the extension", () => {
+    const extensions = [
+      extension("context7", [
+        "context7__resolve-library-id",
+        "context7__query-docs",
+      ]),
+    ];
+    const persistedMessage = {
+      id: "message-70",
+      role: "assistant",
+      created: 70,
+      content: [
+        {
+          type: "toolRequest",
+          id: "tool-70",
+          toolCall: {
+            status: "success",
+            value: {
+              name: "context7__resolve-library-id",
+              arguments: {
+                libraryName: "React",
+                query: "React docs useEffect cleanup",
+              },
+            },
+          },
+          _meta: {
+            goose_extension: "context7",
+          },
+        },
+      ],
+    } as unknown as Message;
+
+    const used = getUsedSessionExtensions(extensions, [persistedMessage]);
+
+    expect(used.map((item) => item.config_key)).toEqual(["context7"]);
+  });
 });
