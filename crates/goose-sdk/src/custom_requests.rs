@@ -148,6 +148,143 @@ pub struct GetSessionExtensionsResponse {
     pub extensions: Vec<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type")]
+pub enum ExtensionConfigDto {
+    #[serde(rename = "sse")]
+    Sse {
+        name: String,
+        description: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uri: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bundled: Option<bool>,
+    },
+    #[serde(rename = "stdio")]
+    Stdio {
+        name: String,
+        description: String,
+        cmd: String,
+        args: Vec<String>,
+        #[serde(default)]
+        envs: HashMap<String, String>,
+        #[serde(default)]
+        env_keys: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bundled: Option<bool>,
+        #[serde(default)]
+        available_tools: Vec<String>,
+    },
+    #[serde(rename = "builtin")]
+    Builtin {
+        name: String,
+        description: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bundled: Option<bool>,
+        #[serde(default)]
+        available_tools: Vec<String>,
+    },
+    #[serde(rename = "platform")]
+    Platform {
+        name: String,
+        description: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bundled: Option<bool>,
+        #[serde(default)]
+        available_tools: Vec<String>,
+    },
+    #[serde(rename = "streamable_http")]
+    StreamableHttp {
+        name: String,
+        description: String,
+        uri: String,
+        #[serde(default)]
+        envs: HashMap<String, String>,
+        #[serde(default)]
+        env_keys: Vec<String>,
+        #[serde(default)]
+        headers: HashMap<String, String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        socket: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bundled: Option<bool>,
+        #[serde(default)]
+        available_tools: Vec<String>,
+    },
+    #[serde(rename = "frontend")]
+    Frontend {
+        name: String,
+        description: String,
+        #[serde(default)]
+        frontend_tools: Vec<serde_json::Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        instructions: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bundled: Option<bool>,
+        #[serde(default)]
+        available_tools: Vec<String>,
+    },
+    #[serde(rename = "inline_python")]
+    InlinePython {
+        name: String,
+        description: String,
+        code: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dependencies: Option<Vec<String>>,
+        #[serde(default)]
+        available_tools: Vec<String>,
+    },
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionConnectionStatusDto {
+    Connected,
+    Failed,
+    #[default]
+    Available,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SessionExtensionStatusDto {
+    #[serde(flatten)]
+    pub config: ExtensionConfigDto,
+    pub config_key: String,
+    pub status: ExtensionConnectionStatusDto,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/session/extensions/status",
+    response = GetSessionExtensionStatusResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSessionExtensionStatusRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+pub struct GetSessionExtensionStatusResponse {
+    pub extensions: Vec<SessionExtensionStatusDto>,
+}
+
 /// Read a single non-secret config value.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/config/read", response = ReadConfigResponse)]

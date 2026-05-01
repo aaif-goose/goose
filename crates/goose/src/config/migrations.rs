@@ -4,11 +4,28 @@ use crate::config::extensions::ExtensionEntry;
 use serde_yaml::Mapping;
 
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
+const EXTENSIONS_ON_DEMAND_MIGRATION_KEY: &str = "extensions_on_demand_migration";
+const EXTENSION_MANAGER_KEY: &str = "extensionmanager";
 
 pub fn run_migrations(config: &mut Mapping) -> bool {
     let mut changed = false;
     changed |= migrate_platform_extensions(config);
+    changed |= migrate_extensions_to_on_demand_defaults(config);
     changed
+}
+
+fn migration_done(config: &Mapping, key: &str) -> bool {
+    config
+        .get(&serde_yaml::Value::String(key.to_string()))
+        .and_then(serde_yaml::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn mark_migration_done(config: &mut Mapping, key: &str) {
+    config.insert(
+        serde_yaml::Value::String(key.to_string()),
+        serde_yaml::Value::Bool(true),
+    );
 }
 
 fn migrate_platform_extensions(config: &mut Mapping) -> bool {
@@ -102,6 +119,35 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
     needs_save
 }
 
+fn migrate_extensions_to_on_demand_defaults(config: &mut Mapping) -> bool {
+    if migration_done(config, EXTENSIONS_ON_DEMAND_MIGRATION_KEY) {
+        return false;
+    }
+
+    let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
+    let Some(serde_yaml::Value::Mapping(extensions_map)) = config.get_mut(&extensions_key) else {
+        mark_migration_done(config, EXTENSIONS_ON_DEMAND_MIGRATION_KEY);
+        return true;
+    };
+
+    for value in extensions_map.values_mut() {
+        let Ok(mut entry) = serde_yaml::from_value::<ExtensionEntry>(value.clone()) else {
+            continue;
+        };
+
+        let should_enable = entry.config.key() == EXTENSION_MANAGER_KEY;
+        if entry.enabled != should_enable {
+            entry.enabled = should_enable;
+            if let Ok(next_value) = serde_yaml::to_value(&entry) {
+                *value = next_value;
+            }
+        }
+    }
+
+    mark_migration_done(config, EXTENSIONS_ON_DEMAND_MIGRATION_KEY);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +160,13 @@ mod tests {
         assert!(changed);
         let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
         assert!(config.contains_key(&extensions_key));
+
+        let extensions = config.get(&extensions_key).unwrap().as_mapping().unwrap();
+        for (key, value) in extensions {
+            let key = key.as_str().unwrap();
+            let entry: ExtensionEntry = serde_yaml::from_value(value.clone()).unwrap();
+            assert_eq!(entry.enabled, key == EXTENSION_MANAGER_KEY);
+        }
     }
 
     #[test]
@@ -149,6 +202,70 @@ mod tests {
         let todo_entry: ExtensionEntry = serde_yaml::from_value(todo_value.clone()).unwrap();
 
         assert!(!todo_entry.enabled);
+    }
+
+    #[test]
+    fn test_migrate_extensions_to_on_demand_defaults() {
+        let mut config = Mapping::new();
+        let mut extensions = Mapping::new();
+
+        let developer_entry = ExtensionEntry {
+            config: ExtensionConfig::Platform {
+                name: "developer".to_string(),
+                description: "Write and edit files, and execute shell commands".to_string(),
+                display_name: Some("Developer".to_string()),
+                bundled: Some(true),
+                available_tools: Vec::new(),
+            },
+            enabled: true,
+        };
+        let extension_manager_entry = ExtensionEntry {
+            config: ExtensionConfig::Platform {
+                name: "Extension Manager".to_string(),
+                description: "Enable extension management tools".to_string(),
+                display_name: Some("Extension Manager".to_string()),
+                bundled: Some(true),
+                available_tools: Vec::new(),
+            },
+            enabled: false,
+        };
+
+        extensions.insert(
+            serde_yaml::Value::String("developer".to_string()),
+            serde_yaml::to_value(&developer_entry).unwrap(),
+        );
+        extensions.insert(
+            serde_yaml::Value::String(EXTENSION_MANAGER_KEY.to_string()),
+            serde_yaml::to_value(&extension_manager_entry).unwrap(),
+        );
+        config.insert(
+            serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string()),
+            serde_yaml::Value::Mapping(extensions),
+        );
+
+        assert!(run_migrations(&mut config));
+
+        let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
+        let extensions = config.get(&extensions_key).unwrap().as_mapping().unwrap();
+        let developer: ExtensionEntry = serde_yaml::from_value(
+            extensions
+                .get(&serde_yaml::Value::String("developer".to_string()))
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        let extension_manager: ExtensionEntry = serde_yaml::from_value(
+            extensions
+                .get(&serde_yaml::Value::String(
+                    EXTENSION_MANAGER_KEY.to_string(),
+                ))
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+
+        assert!(!developer.enabled);
+        assert!(extension_manager.enabled);
     }
 
     #[test]

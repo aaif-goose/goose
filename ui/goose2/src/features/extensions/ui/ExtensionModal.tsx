@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -25,11 +26,7 @@ type ExtensionType = "stdio" | "streamable_http";
 
 interface ExtensionModalProps {
   extension?: ExtensionEntry;
-  onSubmit: (
-    name: string,
-    config: ExtensionConfig,
-    enabled: boolean,
-  ) => Promise<void>;
+  onSubmit: (name: string, config: ExtensionConfig) => Promise<void>;
   onDelete?: (configKey: string) => Promise<void>;
   onClose: () => void;
 }
@@ -71,6 +68,8 @@ export function ExtensionModal({
   const { t } = useTranslation("settings");
   const isEdit = !!extension;
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [name, setName] = useState(extension?.name ?? "");
   const [type, setType] = useState<ExtensionType>(
@@ -148,7 +147,7 @@ export function ExtensionModal({
         };
       }
 
-      await onSubmit(trimmedName, config, extension?.enabled ?? true);
+      await onSubmit(trimmedName, config);
     } finally {
       setIsSaving(false);
     }
@@ -173,191 +172,245 @@ export function ExtensionModal({
     });
   };
 
+  const handleConfirmDelete = async (event: MouseEvent) => {
+    event.preventDefault();
+    if (!extension || !onDelete || isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      await onDelete(extension.config_key);
+      setIsDeleteDialogOpen(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit
-              ? t("extensions.editExtension")
-              : t("extensions.addExtension")}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {isEdit
+                ? t("extensions.editExtension")
+                : t("extensions.addExtension")}
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="ext-name">{t("extensions.fields.name")}</Label>
-            <Input
-              id="ext-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t("extensions.fields.namePlaceholder")}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="ext-type">{t("extensions.fields.type")}</Label>
-            <Select
-              value={type}
-              onValueChange={(v) => setType(v as ExtensionType)}
-            >
-              <SelectTrigger id="ext-type" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="stdio">
-                  {t("extensions.types.stdio")}
-                </SelectItem>
-                <SelectItem value="streamable_http">
-                  {t("extensions.types.streamable_http")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="ext-desc">
-              {t("extensions.fields.description")}
-            </Label>
-            <Input
-              id="ext-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t("extensions.fields.descriptionPlaceholder")}
-            />
-          </div>
-
-          {type === "stdio" && (
-            <>
-              <div className="space-y-1.5">
-                <Label htmlFor="ext-cmd">
-                  {t("extensions.fields.command")}
-                </Label>
-                <Input
-                  id="ext-cmd"
-                  value={cmd}
-                  onChange={(e) => setCmd(e.target.value)}
-                  placeholder={t("extensions.fields.commandPlaceholder")}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ext-args">
-                  {t("extensions.fields.arguments")}
-                </Label>
-                <Textarea
-                  id="ext-args"
-                  value={args}
-                  onChange={(e) => setArgs(e.target.value)}
-                  placeholder={t("extensions.fields.argumentsPlaceholder")}
-                  rows={3}
-                />
-              </div>
-            </>
-          )}
-
-          {type === "streamable_http" && (
+          <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="ext-uri">{t("extensions.fields.url")}</Label>
+              <Label htmlFor="ext-name">{t("extensions.fields.name")}</Label>
               <Input
-                id="ext-uri"
-                value={uri}
-                onChange={(e) => setUri(e.target.value)}
-                placeholder={t("extensions.fields.urlPlaceholder")}
+                id="ext-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t("extensions.fields.namePlaceholder")}
               />
             </div>
-          )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="ext-timeout">
-              {t("extensions.fields.timeout")}
-            </Label>
-            <Input
-              id="ext-timeout"
-              type="number"
-              value={timeout}
-              onChange={(e) => setTimeout(e.target.value)}
-              min={1}
-            />
+            <div className="space-y-1.5">
+              <Label htmlFor="ext-type">{t("extensions.fields.type")}</Label>
+              <Select
+                value={type}
+                onValueChange={(v) => setType(v as ExtensionType)}
+              >
+                <SelectTrigger id="ext-type" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stdio">
+                    {t("extensions.types.stdio")}
+                  </SelectItem>
+                  <SelectItem value="streamable_http">
+                    {t("extensions.types.streamable_http")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="ext-desc">
+                {t("extensions.fields.description")}
+              </Label>
+              <Input
+                id="ext-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={t("extensions.fields.descriptionPlaceholder")}
+              />
+            </div>
+
+            {type === "stdio" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ext-cmd">
+                    {t("extensions.fields.command")}
+                  </Label>
+                  <Input
+                    id="ext-cmd"
+                    value={cmd}
+                    onChange={(e) => setCmd(e.target.value)}
+                    placeholder={t("extensions.fields.commandPlaceholder")}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ext-args">
+                    {t("extensions.fields.arguments")}
+                  </Label>
+                  <Textarea
+                    id="ext-args"
+                    value={args}
+                    onChange={(e) => setArgs(e.target.value)}
+                    placeholder={t("extensions.fields.argumentsPlaceholder")}
+                    rows={3}
+                  />
+                </div>
+              </>
+            )}
+
+            {type === "streamable_http" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="ext-uri">{t("extensions.fields.url")}</Label>
+                <Input
+                  id="ext-uri"
+                  value={uri}
+                  onChange={(e) => setUri(e.target.value)}
+                  placeholder={t("extensions.fields.urlPlaceholder")}
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="ext-timeout">
+                {t("extensions.fields.timeout")}
+              </Label>
+              <Input
+                id="ext-timeout"
+                type="number"
+                value={timeout}
+                onChange={(e) => setTimeout(e.target.value)}
+                min={1}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>{t("extensions.fields.envVars")}</Label>
+              <div className="space-y-2">
+                {envVars.map((env, i) => (
+                  <div key={env.id} className="flex items-center gap-2">
+                    <Input
+                      value={env.key}
+                      onChange={(e) => updateEnvVar(i, "key", e.target.value)}
+                      placeholder={t("extensions.fields.envKeyPlaceholder")}
+                      className="flex-1"
+                    />
+                    <Input
+                      value={env.value}
+                      onChange={(e) => updateEnvVar(i, "value", e.target.value)}
+                      placeholder={t("extensions.fields.envValuePlaceholder")}
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => removeEnvVar(env.id)}
+                      className="shrink-0 hover:text-destructive"
+                      aria-label={t("extensions.fields.removeEnvVar")}
+                    >
+                      <IconTrash className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={addEnvVar}
+                >
+                  <IconPlus className="size-3.5" />
+                  {t("extensions.fields.addEnvVar")}
+                </Button>
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>{t("extensions.fields.envVars")}</Label>
-            <div className="space-y-2">
-              {envVars.map((env, i) => (
-                <div key={env.id} className="flex items-center gap-2">
-                  <Input
-                    value={env.key}
-                    onChange={(e) => updateEnvVar(i, "key", e.target.value)}
-                    placeholder={t("extensions.fields.envKeyPlaceholder")}
-                    className="flex-1"
-                  />
-                  <Input
-                    value={env.value}
-                    onChange={(e) => updateEnvVar(i, "value", e.target.value)}
-                    placeholder={t("extensions.fields.envValuePlaceholder")}
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => removeEnvVar(env.id)}
-                    className="shrink-0 hover:text-destructive"
-                    aria-label={t("extensions.fields.removeEnvVar")}
-                  >
-                    <IconTrash className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
+          <DialogFooter>
+            {isEdit && onDelete && (
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
-                onClick={addEnvVar}
+                onClick={() => setIsDeleteDialogOpen(true)}
+                disabled={isSaving || isDeleting}
+                className="mr-auto text-destructive hover:text-destructive hover:bg-destructive/10"
               >
-                <IconPlus className="size-3.5" />
-                {t("extensions.fields.addEnvVar")}
+                <IconTrash className="size-4" />
+                {t("extensions.deleteExtension")}
               </Button>
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          {isEdit && onDelete && (
+            )}
             <Button
               type="button"
-              variant="ghost"
-              onClick={async () => {
-                setIsSaving(true);
-                try {
-                  await onDelete(extension.config_key);
-                } finally {
-                  setIsSaving(false);
-                }
-              }}
+              variant="outline"
+              onClick={onClose}
               disabled={isSaving}
-              className="mr-auto text-destructive hover:text-destructive hover:bg-destructive/10"
             >
-              <IconTrash className="size-4" />
-              {t("extensions.deleteExtension")}
+              {t("extensions.cancel")}
             </Button>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={isSaving}
+            <Button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSubmit || isSaving}
+            >
+              {t("extensions.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {isEdit && onDelete && (
+        <Dialog
+          open={isDeleteDialogOpen}
+          onOpenChange={(open) => {
+            if (!isDeleting) {
+              setIsDeleteDialogOpen(open);
+            }
+          }}
+        >
+          <DialogContent
+            className="max-w-sm"
+            overlayClassName="z-[70]"
+            positionerClassName="z-[71]"
           >
-            {t("extensions.cancel")}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!canSubmit || isSaving}
-          >
-            {t("extensions.save")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <DialogHeader>
+              <DialogTitle>
+                {t("extensions.deleteConfirmation.title", { name })}
+              </DialogTitle>
+              <DialogDescription>
+                {t("extensions.deleteConfirmation.description")}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDeleteDialogOpen(false)}
+                disabled={isDeleting}
+              >
+                {t("extensions.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={isDeleting}
+                onClick={(event) => void handleConfirmDelete(event)}
+              >
+                {isDeleting
+                  ? t("extensions.deleteConfirmation.deleting")
+                  : t("extensions.deleteConfirmation.confirm")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }

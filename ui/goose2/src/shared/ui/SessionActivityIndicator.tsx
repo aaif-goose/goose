@@ -21,7 +21,7 @@ export function SessionActivityIndicator({
           role="status"
           aria-label="Chat active"
           className={cn(
-            "absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-background bg-background shadow-sm transition-opacity duration-200 ease-out animate-in fade-in-0",
+            "absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center transition-opacity duration-200 ease-out animate-in fade-in-0",
             className,
           )}
         >

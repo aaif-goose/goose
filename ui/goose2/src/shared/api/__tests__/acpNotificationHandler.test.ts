@@ -125,6 +125,8 @@ describe("acpNotificationHandler", () => {
       type: "toolRequest",
       id: "tool-1",
       name: "mcp_app_bench__inspect_host_info",
+      toolName: "mcp_app_bench__inspect_host_info",
+      extensionName: "mcp_app_bench",
       status: "completed",
     });
     expect(message.content[1]).toMatchObject({
@@ -234,6 +236,11 @@ describe("acpNotificationHandler", () => {
       "mcpApp",
       "text",
     ]);
+    expect(buffer?.[1]?.content[0]).toMatchObject({
+      type: "toolRequest",
+      toolName: "mcp_app_bench__inspect_host_info",
+      extensionName: "mcp_app_bench",
+    });
     expect(buffer?.[1]?.content[2]).toMatchObject({
       type: "mcpApp",
       id: "tool-1",

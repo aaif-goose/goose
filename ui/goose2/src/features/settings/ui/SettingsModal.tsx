@@ -13,11 +13,10 @@ import {
   Stethoscope,
   X,
 } from "lucide-react";
-import { IconPlug, IconPuzzle } from "@tabler/icons-react";
+import { IconPlug } from "@tabler/icons-react";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { DoctorSettings } from "./DoctorSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
-import { ExtensionsSettings } from "@/features/extensions/ui/ExtensionsSettings";
 import { VoiceInputSettings } from "./VoiceInputSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { CompactionSettings } from "./CompactionSettings";
@@ -29,7 +28,6 @@ const NAV_ITEMS = [
   { id: "appearance", labelKey: "nav.appearance", icon: Palette },
   { id: "providers", labelKey: "nav.providers", icon: IconPlug },
   { id: "compaction", labelKey: "nav.compaction", icon: Minimize2 },
-  { id: "extensions", labelKey: "nav.extensions", icon: IconPuzzle },
   { id: "voice", labelKey: "nav.voice", icon: Mic },
   { id: "general", labelKey: "nav.general", icon: Settings2 },
   { id: "projects", labelKey: "nav.projects", icon: FolderKanban },
@@ -170,7 +168,6 @@ export function SettingsModal({
               {activeSection === "appearance" && <AppearanceSettings />}
               {activeSection === "providers" && <ProvidersSettings />}
               {activeSection === "compaction" && <CompactionSettings />}
-              {activeSection === "extensions" && <ExtensionsSettings />}
               {activeSection === "voice" && <VoiceInputSettings />}
               {activeSection === "doctor" && <DoctorSettings />}
               {activeSection === "general" && <GeneralSettings />}

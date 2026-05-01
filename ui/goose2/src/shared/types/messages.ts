@@ -78,6 +78,8 @@ export interface ToolRequestContent {
   type: "toolRequest";
   id: string;
   name: string;
+  toolName?: string;
+  extensionName?: string;
   arguments: Record<string, unknown>;
   status: ToolCallStatus;
   /** Epoch ms when the tool call started executing (set on event receipt). */

@@ -96,6 +96,14 @@ impl GooseAcpAgent {
         self.on_get_session_extensions(req).await
     }
 
+    #[custom_method(GetSessionExtensionStatusRequest)]
+    async fn dispatch_get_session_extension_status(
+        &self,
+        req: GetSessionExtensionStatusRequest,
+    ) -> Result<GetSessionExtensionStatusResponse, sacp::Error> {
+        self.on_get_session_extension_status(req).await
+    }
+
     #[custom_method(ListProvidersRequest)]
     async fn dispatch_list_providers(
         &self,

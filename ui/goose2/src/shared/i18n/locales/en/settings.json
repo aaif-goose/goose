@@ -83,16 +83,17 @@
   "extensions": {
     "title": "Extensions",
     "search": "Search extensions...",
-    "enabled": "Enabled",
-    "enabledCount": "Enabled ({{count}})",
-    "available": "Available",
-    "availableCount": "Available ({{count}})",
     "empty": "No extensions configured.",
     "noResults": "No extensions match your search.",
     "addExtension": "Add extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
-    "toggle": "Toggle {{name}}",
+    "deleteConfirmation": {
+      "title": "Delete \"{{name}}\" permanently?",
+      "description": "This will permanently remove this extension and all of its settings.",
+      "confirm": "Delete Extension",
+      "deleting": "Deleting..."
+    },
     "configure": "Configure {{name}}",
     "save": "Save",
     "cancel": "Cancel",
@@ -120,8 +121,20 @@
       "streamable_http": "HTTP",
       "builtin": "Built-in"
     },
+    "filters": {
+      "all": "All"
+    },
+    "categories": {
+      "appsServices": "Apps & services",
+      "gooseCapabilities": "Goose capabilities"
+    },
+    "sections": {
+      "extensions": "Extensions",
+      "gooseCapabilities": "Built-in Goose capabilities"
+    },
+    "showGooseCapabilities": "Show {{count}} built-in Goose capabilities",
+    "hideGooseCapabilities": "Hide built-in Goose capabilities",
     "errors": {
-      "toggleFailed": "Failed to toggle extension. Please try again.",
       "saveFailed": "Failed to save extension. Please try again.",
       "deleteFailed": "Failed to delete extension. Please try again.",
       "nameConflict": "An extension named \"{{name}}\" already exists."
@@ -198,7 +211,6 @@
     "doctor": "Doctor",
     "general": "General",
     "projects": "Projects",
-    "extensions": "Extensions",
     "providers": "Providers",
     "voice": "Voice"
   },

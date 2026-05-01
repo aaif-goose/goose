@@ -1,4 +1,129 @@
 use super::*;
+use std::collections::HashSet;
+
+fn extension_config_to_dto(config: ExtensionConfig) -> ExtensionConfigDto {
+    match config {
+        ExtensionConfig::Sse {
+            name,
+            description,
+            uri,
+        } => ExtensionConfigDto::Sse {
+            name,
+            description,
+            uri,
+            bundled: None,
+        },
+        ExtensionConfig::Stdio {
+            name,
+            description,
+            cmd,
+            args,
+            envs: _,
+            env_keys,
+            timeout,
+            bundled,
+            available_tools,
+        } => ExtensionConfigDto::Stdio {
+            name,
+            description,
+            cmd,
+            args,
+            envs: HashMap::new(),
+            env_keys,
+            timeout: timeout_to_dto(timeout),
+            bundled,
+            available_tools,
+        },
+        ExtensionConfig::Builtin {
+            name,
+            description,
+            display_name,
+            timeout,
+            bundled,
+            available_tools,
+        } => ExtensionConfigDto::Builtin {
+            name,
+            description,
+            display_name,
+            timeout: timeout_to_dto(timeout),
+            bundled,
+            available_tools,
+        },
+        ExtensionConfig::Platform {
+            name,
+            description,
+            display_name,
+            bundled,
+            available_tools,
+        } => ExtensionConfigDto::Platform {
+            name,
+            description,
+            display_name,
+            bundled,
+            available_tools,
+        },
+        ExtensionConfig::StreamableHttp {
+            name,
+            description,
+            uri,
+            envs: _,
+            env_keys,
+            headers: _,
+            timeout,
+            socket,
+            bundled,
+            available_tools,
+        } => ExtensionConfigDto::StreamableHttp {
+            name,
+            description,
+            uri,
+            envs: HashMap::new(),
+            env_keys,
+            headers: HashMap::new(),
+            timeout: timeout_to_dto(timeout),
+            socket,
+            bundled,
+            available_tools,
+        },
+        ExtensionConfig::Frontend {
+            name,
+            description,
+            tools,
+            instructions,
+            bundled,
+            available_tools,
+        } => ExtensionConfigDto::Frontend {
+            name,
+            description,
+            frontend_tools: tools
+                .into_iter()
+                .filter_map(|tool| serde_json::to_value(tool).ok())
+                .collect(),
+            instructions,
+            bundled,
+            available_tools,
+        },
+        ExtensionConfig::InlinePython {
+            name,
+            description,
+            code,
+            timeout,
+            dependencies,
+            available_tools,
+        } => ExtensionConfigDto::InlinePython {
+            name,
+            description,
+            code,
+            timeout: timeout_to_dto(timeout),
+            dependencies,
+            available_tools,
+        },
+    }
+}
+
+fn timeout_to_dto(timeout: Option<u64>) -> Option<u32> {
+    timeout.and_then(|value| u32::try_from(value).ok())
+}
 
 impl GooseAcpAgent {
     pub(super) async fn on_add_extension(
@@ -130,6 +255,79 @@ impl GooseAcpAgent {
             .internal_err()?;
 
         Ok(GetSessionExtensionsResponse {
+            extensions: extensions_json,
+        })
+    }
+
+    pub(super) async fn on_get_session_extension_status(
+        &self,
+        req: GetSessionExtensionStatusRequest,
+    ) -> Result<GetSessionExtensionStatusResponse, sacp::Error> {
+        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session = self
+            .session_manager
+            .get_session(&internal_id, false)
+            .await
+            .internal_err()?;
+        let expected_extensions = EnabledExtensionsState::extensions_or_default(
+            Some(&session.extension_data),
+            crate::config::Config::global(),
+        );
+        let agent = self.get_session_agent(&req.session_id, None).await?;
+        let connected_extensions = agent.get_extension_configs().await;
+        let connected_keys = connected_extensions
+            .iter()
+            .map(ExtensionConfig::key)
+            .collect::<HashSet<_>>();
+        let mut seen_keys = HashSet::new();
+        let mut extensions = Vec::new();
+
+        for extension in expected_extensions {
+            seen_keys.insert(extension.key());
+            extensions.push(extension);
+        }
+
+        for extension in connected_extensions {
+            if seen_keys.insert(extension.key()) {
+                extensions.push(extension);
+            }
+        }
+
+        let mut extensions_json = Vec::new();
+        for extension in extensions {
+            let config_key = extension.key();
+            let extension_name = extension.name();
+            let connected = connected_keys.contains(&config_key);
+            let tools = if connected {
+                agent
+                    .list_tools(&internal_id, Some(extension_name.clone()))
+                    .await
+                    .into_iter()
+                    .map(|tool| tool.name.to_string())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            extensions_json.push(SessionExtensionStatusDto {
+                config: extension_config_to_dto(extension),
+                config_key,
+                status: if connected {
+                    ExtensionConnectionStatusDto::Connected
+                } else {
+                    ExtensionConnectionStatusDto::Failed
+                },
+                tools,
+                error: if connected {
+                    None
+                } else {
+                    Some(
+                        "Goose could not connect this extension when the chat started.".to_string(),
+                    )
+                },
+            });
+        }
+
+        Ok(GetSessionExtensionStatusResponse {
             extensions: extensions_json,
         })
     }

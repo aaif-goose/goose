@@ -3,7 +3,7 @@
     "id": "developer",
     "name": "Developer",
     "description": "General development tools useful for software engineering.",
-    "enabled": true,
+    "enabled": false,
     "type": "builtin",
     "env_keys": [],
     "timeout": 300

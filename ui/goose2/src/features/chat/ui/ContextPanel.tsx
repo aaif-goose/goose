@@ -204,7 +204,7 @@ export function ContextPanel({
             onOpenFile={handleOpenChangedFile}
           />
           <ArtifactsWidget />
-          <ExtensionsWidget />
+          <ExtensionsWidget sessionId={sessionId} />
         </div>
       </TabsContent>
 

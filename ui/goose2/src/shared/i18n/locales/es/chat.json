@@ -45,9 +45,8 @@
     "empty": {
       "folderNotSet": "Carpeta no configurada",
       "noChanges": "No hay cambios sin confirmar",
-      "noProjectAssigned": "No hay proyecto asignado",
-      "noExtensions": "No hay extensiones habilitadas",
-      "noMatchingExtensions": "No hay extensiones que coincidan"
+      "noProjectAssigned": "No hay proyecto asignado.",
+      "noExtensions": "No se usaron herramientas de extensiones en este chat"
     },
     "errors": {
       "gitRead": "No se pudo leer el estado de git."
@@ -92,7 +91,15 @@
       "changes": "Cambios",
       "changesOnBranch": "en",
       "extensions": "Extensiones",
-      "searchExtensions": "Buscar extensiones...",
+      "extensionsAvailable": "Disponibles para este chat",
+      "extensionsFailed": "Requieren atención",
+      "extensionsUsed": "Usadas en este chat",
+      "extensionsUsedTitle": "Extensiones usadas",
+      "statusAvailable": "Disponible en este chat",
+      "statusConnected": "Conectada",
+      "statusFailed": "No se pudo conectar",
+      "statusUnavailable": "No disponible actualmente",
+      "toolCount": "{{count}} herramientas",
       "workspace": "Espacio de trabajo"
     }
   },
