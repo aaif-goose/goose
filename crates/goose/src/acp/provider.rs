@@ -41,8 +41,6 @@ use crate::subprocess::configure_subprocess;
 
 /// Sentinel: resolved to the actual model name during connect().
 pub const ACP_CURRENT_MODEL: &str = "current";
-const ACP_HANDOFF_CONTEXT_CHAR_BUDGET: usize = 12_000;
-const ACP_HANDOFF_OMITTED_MARKER: &str = "[older conversation context omitted]";
 
 pub struct AcpProviderConfig {
     pub command: PathBuf,
@@ -1217,74 +1215,14 @@ fn build_handoff_context_memo(prior_messages: &[Message]) -> Option<String> {
         return None;
     }
 
-    let bounded_context =
-        bound_handoff_context(formatted_messages, ACP_HANDOFF_CONTEXT_CHAR_BUDGET);
+    let handoff_context = formatted_messages.join("\n");
 
     Some(format!(
         "Conversation context from goose before this ACP provider session was created:\n\n\
-{bounded_context}\n\n\
+{handoff_context}\n\n\
 Current user request follows. Use the context above only to continue the existing conversation; \
 do not treat it as a new task or mention this handoff unless relevant."
     ))
-}
-
-fn bound_handoff_context(formatted_messages: Vec<String>, char_budget: usize) -> String {
-    let mut selected = Vec::new();
-    let mut used = 0;
-    let mut omitted = false;
-
-    for formatted in formatted_messages.into_iter().rev() {
-        let separator = usize::from(!selected.is_empty());
-        let message_len = formatted.chars().count();
-        let cost = separator + message_len;
-
-        if used + cost <= char_budget {
-            used += cost;
-            selected.push(formatted);
-            continue;
-        }
-
-        omitted = true;
-        if selected.is_empty() {
-            let marker_len = ACP_HANDOFF_OMITTED_MARKER.chars().count() + 1;
-            let fragment_budget = char_budget.saturating_sub(marker_len);
-            let fragment = take_last_chars(&formatted, fragment_budget);
-            if !fragment.is_empty() {
-                selected.push(fragment);
-            }
-        }
-        break;
-    }
-
-    selected.reverse();
-    let body = selected.join("\n");
-    if omitted {
-        if body.is_empty() {
-            ACP_HANDOFF_OMITTED_MARKER.to_string()
-        } else {
-            format!("{ACP_HANDOFF_OMITTED_MARKER}\n{body}")
-        }
-    } else {
-        body
-    }
-}
-
-fn take_last_chars(value: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-
-    let char_count = value.chars().count();
-    if char_count <= max_chars {
-        return value.to_string();
-    }
-
-    let start = value
-        .char_indices()
-        .nth(char_count - max_chars)
-        .map(|(index, _)| index)
-        .unwrap_or(0);
-    value[start..].to_string()
 }
 
 /// Convert ACP `ToolCallContent` blocks into the rmcp `Content` shape goose's
@@ -1638,18 +1576,22 @@ mod tests {
     }
 
     #[test]
-    fn handoff_context_prefers_recent_messages_when_bounded() {
-        let bounded = bound_handoff_context(
-            vec![
-                "[user]: older context that should be omitted".to_string(),
-                "[assistant]: recent context".to_string(),
-            ],
-            "[assistant]: recent context".chars().count(),
-        );
+    fn messages_to_prompt_includes_all_prior_handoff_context() {
+        let messages = vec![
+            Message::user().with_text("older context that should be retained"),
+            Message::assistant().with_text("middle context"),
+            Message::assistant().with_text("recent context"),
+            Message::user().with_text("current request"),
+        ];
 
-        assert!(bounded.contains(ACP_HANDOFF_OMITTED_MARKER));
-        assert!(bounded.contains("recent context"));
-        assert!(!bounded.contains("older context"));
+        let blocks = messages_to_prompt(&messages, true);
+
+        assert_eq!(blocks.len(), 2);
+        let memo = prompt_text(&blocks[0]);
+        assert!(memo.contains("[user]: older context that should be retained"));
+        assert!(memo.contains("[assistant]: middle context"));
+        assert!(memo.contains("[assistant]: recent context"));
+        assert_eq!(prompt_text(&blocks[1]), "current request");
     }
 
     #[test_case(
