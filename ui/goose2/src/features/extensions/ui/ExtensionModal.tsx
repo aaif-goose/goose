@@ -1,15 +1,15 @@
-import { useState, type MouseEvent } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
 import { Button } from "@/shared/ui/button";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
@@ -20,43 +20,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
+import {
+  useExtensionModalForm,
+  type ExtensionModalType,
+} from "../hooks/useExtensionModalForm";
 import type { ExtensionConfig, ExtensionEntry } from "../types";
-
-type ExtensionType = "stdio" | "streamable_http";
 
 interface ExtensionModalProps {
   extension?: ExtensionEntry;
   onSubmit: (name: string, config: ExtensionConfig) => Promise<void>;
   onDelete?: (configKey: string) => Promise<void>;
   onClose: () => void;
-}
-
-interface EnvVar {
-  id: number;
-  key: string;
-  value: string;
-}
-
-let nextEnvId = 0;
-
-function parseEnvVars(envs?: Record<string, string>): EnvVar[] {
-  if (!envs || Object.keys(envs).length === 0)
-    return [{ id: nextEnvId++, key: "", value: "" }];
-  return Object.entries(envs).map(([key, value]) => ({
-    id: nextEnvId++,
-    key,
-    value,
-  }));
-}
-
-function buildEnvVars(vars: EnvVar[]): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const v of vars) {
-    if (v.key.trim()) {
-      result[v.key.trim()] = v.value;
-    }
-  }
-  return result;
 }
 
 export function ExtensionModal({
@@ -70,110 +44,22 @@ export function ExtensionModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  const [name, setName] = useState(extension?.name ?? "");
-  const [type, setType] = useState<ExtensionType>(
-    extension?.type === "streamable_http" || extension?.type === "sse"
-      ? "streamable_http"
-      : "stdio",
-  );
-  const [description, setDescription] = useState(extension?.description ?? "");
-  const [cmd, setCmd] = useState(
-    extension?.type === "stdio" ? extension.cmd : "",
-  );
-  const [args, setArgs] = useState(
-    extension?.type === "stdio" ? extension.args.join("\n") : "",
-  );
-  const [uri, setUri] = useState(
-    extension?.type === "streamable_http"
-      ? extension.uri
-      : extension?.type === "sse"
-        ? (extension.uri ?? "")
-        : "",
-  );
-  const [timeout, setTimeout] = useState(
-    String(
-      extension?.type === "stdio" || extension?.type === "streamable_http"
-        ? (extension.timeout ?? 300)
-        : 300,
-    ),
-  );
-  const [envVars, setEnvVars] = useState<EnvVar[]>(() => {
-    if (extension?.type === "stdio") return parseEnvVars(extension.envs);
-    if (extension?.type === "streamable_http")
-      return parseEnvVars(extension.envs);
-    return [{ id: nextEnvId++, key: "", value: "" }];
-  });
-
-  const canSubmit =
-    name.trim().length > 0 &&
-    (type === "stdio" ? cmd.trim().length > 0 : uri.trim().length > 0);
+  const form = useExtensionModalForm(extension);
 
   const handleSubmit = async () => {
-    if (!canSubmit || isSaving) return;
+    if (!form.canSubmit || isSaving) return;
     setIsSaving(true);
 
     try {
-      const trimmedName = name.trim();
-      const envs = buildEnvVars(envVars);
-      const timeoutNum = Number.parseInt(timeout, 10) || 300;
-
-      let config: ExtensionConfig;
-
-      if (type === "stdio") {
-        config = {
-          ...(extension?.type === "stdio" ? extension : {}),
-          type: "stdio",
-          name: trimmedName,
-          description,
-          cmd: cmd.trim(),
-          args: args
-            .split("\n")
-            .map((a) => a.trim())
-            .filter(Boolean),
-          envs,
-          timeout: timeoutNum,
-        };
-      } else {
-        if (!uri.trim()) return;
-        config = {
-          ...(extension?.type === "streamable_http" ? extension : {}),
-          type: "streamable_http",
-          name: trimmedName,
-          description,
-          uri: uri.trim(),
-          envs,
-          timeout: timeoutNum,
-        };
-      }
-
-      await onSubmit(trimmedName, config);
+      const payload = form.buildSubmitPayload();
+      if (!payload) return;
+      await onSubmit(payload.name, payload.config);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const updateEnvVar = (index: number, field: "key" | "value", val: string) => {
-    setEnvVars((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: val };
-      return next;
-    });
-  };
-
-  const addEnvVar = () => {
-    setEnvVars((prev) => [...prev, { id: nextEnvId++, key: "", value: "" }]);
-  };
-
-  const removeEnvVar = (id: number) => {
-    setEnvVars((prev) => {
-      if (prev.length <= 1) return [{ id: nextEnvId++, key: "", value: "" }];
-      return prev.filter((v) => v.id !== id);
-    });
-  };
-
-  const handleConfirmDelete = async (event: MouseEvent) => {
-    event.preventDefault();
+  const handleConfirmDelete = async () => {
     if (!extension || !onDelete || isDeleting) return;
 
     setIsDeleting(true);
@@ -202,8 +88,8 @@ export function ExtensionModal({
               <Label htmlFor="ext-name">{t("extensions.fields.name")}</Label>
               <Input
                 id="ext-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={form.name}
+                onChange={(e) => form.setName(e.target.value)}
                 placeholder={t("extensions.fields.namePlaceholder")}
               />
             </div>
@@ -211,8 +97,10 @@ export function ExtensionModal({
             <div className="space-y-1.5">
               <Label htmlFor="ext-type">{t("extensions.fields.type")}</Label>
               <Select
-                value={type}
-                onValueChange={(v) => setType(v as ExtensionType)}
+                value={form.type}
+                onValueChange={(value) =>
+                  form.setType(value as ExtensionModalType)
+                }
               >
                 <SelectTrigger id="ext-type" className="w-full">
                   <SelectValue />
@@ -234,13 +122,13 @@ export function ExtensionModal({
               </Label>
               <Input
                 id="ext-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={form.description}
+                onChange={(e) => form.setDescription(e.target.value)}
                 placeholder={t("extensions.fields.descriptionPlaceholder")}
               />
             </div>
 
-            {type === "stdio" && (
+            {form.type === "stdio" && (
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor="ext-cmd">
@@ -248,8 +136,8 @@ export function ExtensionModal({
                   </Label>
                   <Input
                     id="ext-cmd"
-                    value={cmd}
-                    onChange={(e) => setCmd(e.target.value)}
+                    value={form.cmd}
+                    onChange={(e) => form.setCmd(e.target.value)}
                     placeholder={t("extensions.fields.commandPlaceholder")}
                   />
                 </div>
@@ -259,8 +147,8 @@ export function ExtensionModal({
                   </Label>
                   <Textarea
                     id="ext-args"
-                    value={args}
-                    onChange={(e) => setArgs(e.target.value)}
+                    value={form.args}
+                    onChange={(e) => form.setArgs(e.target.value)}
                     placeholder={t("extensions.fields.argumentsPlaceholder")}
                     rows={3}
                   />
@@ -268,13 +156,13 @@ export function ExtensionModal({
               </>
             )}
 
-            {type === "streamable_http" && (
+            {form.type === "streamable_http" && (
               <div className="space-y-1.5">
                 <Label htmlFor="ext-uri">{t("extensions.fields.url")}</Label>
                 <Input
                   id="ext-uri"
-                  value={uri}
-                  onChange={(e) => setUri(e.target.value)}
+                  value={form.uri}
+                  onChange={(e) => form.setUri(e.target.value)}
                   placeholder={t("extensions.fields.urlPlaceholder")}
                 />
               </div>
@@ -287,8 +175,8 @@ export function ExtensionModal({
               <Input
                 id="ext-timeout"
                 type="number"
-                value={timeout}
-                onChange={(e) => setTimeout(e.target.value)}
+                value={form.timeout}
+                onChange={(e) => form.setTimeout(e.target.value)}
                 min={1}
               />
             </div>
@@ -296,24 +184,28 @@ export function ExtensionModal({
             <div className="space-y-1.5">
               <Label>{t("extensions.fields.envVars")}</Label>
               <div className="space-y-2">
-                {envVars.map((env, i) => (
+                {form.envVars.map((env, i) => (
                   <div key={env.id} className="flex items-center gap-2">
                     <Input
                       value={env.key}
-                      onChange={(e) => updateEnvVar(i, "key", e.target.value)}
+                      onChange={(e) =>
+                        form.updateEnvVar(i, "key", e.target.value)
+                      }
                       placeholder={t("extensions.fields.envKeyPlaceholder")}
                       className="flex-1"
                     />
                     <Input
                       value={env.value}
-                      onChange={(e) => updateEnvVar(i, "value", e.target.value)}
+                      onChange={(e) =>
+                        form.updateEnvVar(i, "value", e.target.value)
+                      }
                       placeholder={t("extensions.fields.envValuePlaceholder")}
                       className="flex-1"
                     />
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      onClick={() => removeEnvVar(env.id)}
+                      onClick={() => form.removeEnvVar(env.id)}
                       className="shrink-0 hover:text-destructive"
                       aria-label={t("extensions.fields.removeEnvVar")}
                     >
@@ -325,7 +217,7 @@ export function ExtensionModal({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={addEnvVar}
+                  onClick={form.addEnvVar}
                 >
                   <IconPlus className="size-3.5" />
                   {t("extensions.fields.addEnvVar")}
@@ -358,7 +250,7 @@ export function ExtensionModal({
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={!canSubmit || isSaving}
+              disabled={!form.canSubmit || isSaving}
             >
               {t("extensions.save")}
             </Button>
@@ -367,49 +259,19 @@ export function ExtensionModal({
       </Dialog>
 
       {isEdit && onDelete && (
-        <Dialog
+        <ConfirmDialog
           open={isDeleteDialogOpen}
-          onOpenChange={(open) => {
-            if (!isDeleting) {
-              setIsDeleteDialogOpen(open);
-            }
-          }}
-        >
-          <DialogContent
-            className="max-w-sm"
-            overlayClassName="z-[70]"
-            positionerClassName="z-[71]"
-          >
-            <DialogHeader>
-              <DialogTitle>
-                {t("extensions.deleteConfirmation.title", { name })}
-              </DialogTitle>
-              <DialogDescription>
-                {t("extensions.deleteConfirmation.description")}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDeleteDialogOpen(false)}
-                disabled={isDeleting}
-              >
-                {t("extensions.cancel")}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={isDeleting}
-                onClick={(event) => void handleConfirmDelete(event)}
-              >
-                {isDeleting
-                  ? t("extensions.deleteConfirmation.deleting")
-                  : t("extensions.deleteConfirmation.confirm")}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onOpenChange={setIsDeleteDialogOpen}
+          title={t("extensions.deleteConfirmation.title", { name: form.name })}
+          description={t("extensions.deleteConfirmation.description")}
+          cancelLabel={t("extensions.cancel")}
+          confirmLabel={t("extensions.deleteConfirmation.confirm")}
+          loadingLabel={t("extensions.deleteConfirmation.deleting")}
+          isLoading={isDeleting}
+          overlayClassName="z-[70]"
+          positionerClassName="z-[71]"
+          onConfirm={handleConfirmDelete}
+        />
       )}
     </>
   );

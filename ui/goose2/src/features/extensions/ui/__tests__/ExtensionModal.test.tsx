@@ -61,17 +61,21 @@ describe("ExtensionModal", () => {
 
     await user.click(screen.getByRole("button", { name: "Delete Extension" }));
     expect(
-      screen.getByRole("dialog", { name: 'Delete "github" permanently?' }),
+      screen.getByRole("dialog", {
+        name: 'Delete "github" permanently?',
+      }),
     ).toBeInTheDocument();
 
-    const overlays = document.querySelectorAll('[data-slot="dialog-overlay"]');
+    const overlays = document.querySelectorAll('[data-slot$="dialog-overlay"]');
     expect(overlays).toHaveLength(2);
     expect(overlays[overlays.length - 1]).toHaveClass("z-[70]");
     await user.click(overlays[overlays.length - 1] as HTMLElement);
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("dialog", { name: 'Delete "github" permanently?' }),
+        screen.queryByRole("dialog", {
+          name: 'Delete "github" permanently?',
+        }),
       ).not.toBeInTheDocument();
     });
     expect(handleDelete).not.toHaveBeenCalled();

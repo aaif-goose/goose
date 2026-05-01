@@ -1,9 +1,20 @@
+import type { SessionExtensionStatusDto } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
 import type {
   ExtensionConfig,
   ExtensionEntry,
   SessionExtensionStatus,
 } from "../types";
+
+function toSessionExtensionStatus(
+  extension: SessionExtensionStatusDto,
+): SessionExtensionStatus {
+  return {
+    ...extension,
+    tools: extension.tools ?? [],
+    error: extension.error ?? undefined,
+  };
+}
 
 export async function listExtensions(): Promise<ExtensionEntry[]> {
   const client = await getClient();
@@ -18,7 +29,7 @@ export async function listSessionExtensions(
   const response = await client.goose.GooseSessionExtensionsStatus({
     sessionId,
   });
-  return (response.extensions ?? []) as SessionExtensionStatus[];
+  return response.extensions.map(toSessionExtensionStatus);
 }
 
 export async function addExtension(

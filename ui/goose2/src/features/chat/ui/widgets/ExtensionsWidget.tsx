@@ -1,59 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconApps } from "@tabler/icons-react";
 import {
-  listExtensions,
-  listSessionExtensions,
-} from "@/features/extensions/api/extensions";
-import {
   getDisplayName,
-  type ExtensionEntry,
   type SessionExtensionStatus,
 } from "@/features/extensions/types";
-import {
-  getToolOwnerSignatureKey,
-  getUsedSessionExtensions,
-} from "@/features/extensions/lib/extensionUsage";
 import { cn } from "@/shared/lib/cn";
-import type { Message, ToolRequestContent } from "@/shared/types/messages";
-import { useChatStore } from "../../stores/chatStore";
+import { useExtensionsWidgetData } from "../../hooks/useExtensionsWidgetData";
 import { Widget } from "./Widget";
 
 interface ExtensionsWidgetProps {
   sessionId: string;
-}
-
-const EMPTY_MESSAGES: Message[] = [];
-
-interface ToolUsageSnapshot {
-  signature: string;
-  messages: Message[];
-}
-
-function toUnavailableStatus(
-  extension: ExtensionEntry,
-): SessionExtensionStatus {
-  const { enabled: _enabled, ...config } = extension;
-  return {
-    ...config,
-    status: "unavailable",
-    tools: [],
-  };
-}
-
-function mergeExtensionStatuses(
-  sessionExtensions: SessionExtensionStatus[],
-  configuredExtensions: ExtensionEntry[],
-): SessionExtensionStatus[] {
-  const byKey = new Map(
-    sessionExtensions.map((extension) => [extension.config_key, extension]),
-  );
-  for (const extension of configuredExtensions) {
-    if (!byKey.has(extension.config_key)) {
-      byKey.set(extension.config_key, toUnavailableStatus(extension));
-    }
-  }
-  return Array.from(byKey.values());
 }
 
 function ExtensionRow({ extension }: { extension: SessionExtensionStatus }) {
@@ -104,92 +60,7 @@ function ExtensionRow({ extension }: { extension: SessionExtensionStatus }) {
 
 export function ExtensionsWidget({ sessionId }: ExtensionsWidgetProps) {
   const { t } = useTranslation("chat");
-  const [extensions, setExtensions] = useState<SessionExtensionStatus[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const messages = useChatStore(
-    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
-  );
-  const lastToolUsageSnapshot = useRef<ToolUsageSnapshot>({
-    signature: "",
-    messages: EMPTY_MESSAGES,
-  });
-
-  const toolUsageSnapshot = useMemo(() => {
-    const signatureParts: string[] = [];
-    const toolMessages: Message[] = [];
-
-    for (const message of messages) {
-      const toolRequests: ToolRequestContent[] = [];
-      for (const content of message.content) {
-        if (content.type === "toolRequest") {
-          const owner = getToolOwnerSignatureKey(content);
-          if (owner) {
-            signatureParts.push(`${message.id}:${content.id}:${owner}`);
-          }
-          toolRequests.push(content);
-        }
-      }
-      if (toolRequests.length > 0) {
-        toolMessages.push({ ...message, content: toolRequests });
-      }
-    }
-
-    const signature = signatureParts.join("|");
-    if (signature === lastToolUsageSnapshot.current.signature) {
-      return lastToolUsageSnapshot.current;
-    }
-
-    const nextSnapshot = { signature, messages: toolMessages };
-    lastToolUsageSnapshot.current = nextSnapshot;
-    return nextSnapshot;
-  }, [messages]);
-  const toolOwnerSignature = toolUsageSnapshot.signature;
-
-  useEffect(() => {
-    let isCurrent = true;
-
-    if (!toolOwnerSignature) {
-      setExtensions([]);
-      setIsLoading(false);
-      return () => {
-        isCurrent = false;
-      };
-    }
-
-    setIsLoading(true);
-    Promise.all([
-      listSessionExtensions(sessionId).catch(
-        () => [] as SessionExtensionStatus[],
-      ),
-      listExtensions().catch(() => [] as ExtensionEntry[]),
-    ])
-      .then(([sessionExtensions, configuredExtensions]) => {
-        if (isCurrent) {
-          setExtensions(
-            mergeExtensionStatuses(sessionExtensions, configuredExtensions),
-          );
-        }
-      })
-      .catch(() => {
-        if (isCurrent) {
-          setExtensions([]);
-        }
-      })
-      .finally(() => {
-        if (isCurrent) {
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [sessionId, toolOwnerSignature]);
-
-  const used = useMemo(
-    () => getUsedSessionExtensions(extensions, toolUsageSnapshot.messages),
-    [extensions, toolUsageSnapshot],
-  );
+  const { isLoading, usedExtensions } = useExtensionsWidgetData(sessionId);
 
   const renderSection = (sectionExtensions: SessionExtensionStatus[]) => {
     if (sectionExtensions.length === 0) return null;
@@ -214,14 +85,14 @@ export function ExtensionsWidget({ sessionId }: ExtensionsWidgetProps) {
             <div key={i} className="h-4 animate-pulse rounded bg-muted/40" />
           ))}
         </div>
-      ) : used.length === 0 ? (
+      ) : usedExtensions.length === 0 ? (
         <p className="px-3 py-2.5 text-xs text-foreground-subtle">
           {t("contextPanel.empty.noExtensions")}
         </p>
       ) : (
         <div>
           <div className="max-h-56 space-y-3 overflow-y-auto px-3 py-2">
-            {renderSection(used)}
+            {renderSection(usedExtensions)}
           </div>
         </div>
       )}
