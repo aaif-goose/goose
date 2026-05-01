@@ -254,6 +254,16 @@
   --density-spacing: 1;
 }
 
+[data-density="compact"] {
+  --density-spacing: 0.75;
+  --spacing: 0.1875rem;
+}
+
+[data-density="spacious"] {
+  --density-spacing: 1.25;
+  --spacing: 0.3125rem;
+}
+
 .dark {
   /* theming accents */
   --brand: var(--color-white);

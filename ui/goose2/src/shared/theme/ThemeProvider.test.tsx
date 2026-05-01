@@ -1,7 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeEach } from "vitest";
 import { ThemeProvider, useTheme } from "./ThemeProvider";
+
+const testDirname = dirname(fileURLToPath(import.meta.url));
+
+function rootCssVariable(name: string) {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+}
 
 function ThemeConsumer() {
   const {
@@ -12,6 +23,7 @@ function ThemeConsumer() {
     setAccentColor,
     resetAccentColor,
     density,
+    setDensity,
   } = useTheme();
   return (
     <div>
@@ -37,6 +49,9 @@ function ThemeConsumer() {
       <button type="button" onClick={resetAccentColor}>
         Reset Accent
       </button>
+      <button type="button" onClick={() => setDensity("spacious")}>
+        Set Spacious
+      </button>
     </div>
   );
 }
@@ -45,6 +60,7 @@ describe("ThemeProvider", () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.classList.remove("light", "dark");
+    document.documentElement.removeAttribute("data-density");
     document.documentElement.removeAttribute("style");
   });
 
@@ -195,6 +211,23 @@ describe("ThemeProvider", () => {
     ).toBe("#000000");
   });
 
+  it("falls back to default accent color when storage is invalid", () => {
+    localStorage.setItem("goose-accent-color", "blue");
+
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId("accent")).toHaveTextContent("#1a1a1a");
+    expect(screen.getByTestId("accent-preference")).toHaveTextContent(
+      "default",
+    );
+    expect(rootCssVariable("--color-brand")).toBe("#1a1a1a");
+    expect(rootCssVariable("--color-brand-foreground")).toBe("#ffffff");
+  });
+
   it("provides default density", () => {
     render(
       <ThemeProvider>
@@ -202,5 +235,92 @@ describe("ThemeProvider", () => {
       </ThemeProvider>,
     );
     expect(screen.getByTestId("density")).toHaveTextContent("comfortable");
+    expect(document.documentElement).not.toHaveAttribute("data-density");
+    expect(
+      document.documentElement.style.getPropertyValue("--density-spacing"),
+    ).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--spacing")).toBe(
+      "",
+    );
+  });
+
+  it("falls back to default theme when storage is invalid", () => {
+    localStorage.setItem("goose-theme", "sepia");
+
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId("theme")).toHaveTextContent("system");
+  });
+
+  it("reads persisted density", () => {
+    localStorage.setItem("goose-density", "compact");
+
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId("density")).toHaveTextContent("compact");
+    expect(document.documentElement.dataset.density).toBe("compact");
+    expect(
+      document.documentElement.style.getPropertyValue("--density-spacing"),
+    ).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--spacing")).toBe(
+      "",
+    );
+  });
+
+  it("persists density and updates spacing tokens", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    await user.click(screen.getByText("Set Spacious"));
+
+    expect(screen.getByTestId("density")).toHaveTextContent("spacious");
+    expect(localStorage.getItem("goose-density")).toBe("spacious");
+    expect(document.documentElement.dataset.density).toBe("spacious");
+    expect(
+      document.documentElement.style.getPropertyValue("--density-spacing"),
+    ).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--spacing")).toBe(
+      "",
+    );
+  });
+
+  it("falls back to comfortable density when storage is invalid", () => {
+    localStorage.setItem("goose-density", "tiny");
+
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId("density")).toHaveTextContent("comfortable");
+    expect(document.documentElement).not.toHaveAttribute("data-density");
+  });
+
+  it("keeps density spacing values in CSS", () => {
+    const css = readFileSync(
+      resolve(testDirname, "../styles/globals.css"),
+      "utf8",
+    );
+
+    expect(css).toContain('[data-density="compact"]');
+    expect(css).toContain("--density-spacing: 0.75;");
+    expect(css).toContain("--spacing: 0.1875rem;");
+    expect(css).toContain('[data-density="spacious"]');
+    expect(css).toContain("--density-spacing: 1.25;");
+    expect(css).toContain("--spacing: 0.3125rem;");
+    expect(css).toContain("padding: calc(0.5rem * var(--density-spacing));");
   });
 });
