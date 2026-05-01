@@ -5,6 +5,7 @@ use crate::subprocess::SubprocessExt;
 use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -13,12 +14,14 @@ const INSTALL_METADATA: &str = ".goose-plugin-install.json";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginFormat {
     Gemini,
+    OpenPlugins,
 }
 
 impl std::fmt::Display for PluginFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PluginFormat::Gemini => write!(f, "gemini"),
+            PluginFormat::OpenPlugins => write!(f, "open-plugins"),
         }
     }
 }
@@ -61,10 +64,20 @@ pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
         Err(_) => return Vec::new(),
     };
 
+    let mut seen = HashSet::new();
     entries
         .flatten()
-        .map(|entry| entry.path().join("skills"))
-        .filter(|path| path.is_dir())
+        .flat_map(|entry| {
+            let plugin_dir = entry.path();
+            let default_skills_dir = plugin_dir.join("skills");
+            let mut skill_dirs = Vec::new();
+            if default_skills_dir.is_dir() {
+                skill_dirs.push(default_skills_dir);
+            }
+            skill_dirs.extend(formats::open_plugins::installed_skill_dirs(&plugin_dir));
+            skill_dirs
+        })
+        .filter(|path| seen.insert(path.clone()))
         .collect()
 }
 
@@ -81,13 +94,18 @@ pub fn install_plugin(source: &str) -> Result<PluginInstall> {
 }
 
 fn install_from_checkout(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
-    match formats::gemini::try_install_from_manifest(source, checkout_dir) {
-        Ok(install) => Ok(install),
-        Err(err) if err.is::<FormatNotSupported>() => {
-            bail!("No supported plugin format found")
+    for try_install in [
+        formats::gemini::try_install_from_manifest,
+        formats::open_plugins::try_install_from_manifest,
+    ] {
+        match try_install(source, checkout_dir) {
+            Ok(install) => return Ok(install),
+            Err(err) if err.is::<FormatNotSupported>() => continue,
+            Err(err) => return Err(err),
         }
-        Err(err) => Err(err),
     }
+
+    bail!("No supported plugin format found")
 }
 
 fn clone_git_repo(source: &str, destination: &Path) -> Result<()> {
