@@ -2215,16 +2215,26 @@ impl GooseAcpAgent {
                             Err(_) => "error".to_string(),
                         };
 
+                        let args_value = tool_request
+                            .tool_call
+                            .as_ref()
+                            .ok()
+                            .and_then(|tc| tc.arguments.as_ref())
+                            .map(|a| serde_json::Value::Object(a.clone()));
+                        let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
+                        let identity_meta = tool_call_identity_meta(tool_request);
+
+                        let mut tool_call =
+                            ToolCall::new(ToolCallId::new(tool_request.id.clone()), fallback_title)
+                                .status(ToolCallStatus::Pending);
+                        if let Some(args) = args_value {
+                            tool_call = tool_call.raw_input(args);
+                        }
+                        tool_call = tool_call.meta(merge_replay_message_meta(identity_meta, message));
+
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
-                            SessionUpdate::ToolCall(
-                                ToolCall::new(
-                                    ToolCallId::new(tool_request.id.clone()),
-                                    format_tool_name(&tool_name),
-                                )
-                                .status(ToolCallStatus::Pending)
-                                .meta(replay_message_meta(message)),
-                            ),
+                            SessionUpdate::ToolCall(tool_call),
                         ))?;
                     }
                     MessageContent::ToolResponse(tool_response) => {
