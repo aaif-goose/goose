@@ -1,4 +1,6 @@
 use super::*;
+use crate::agents::extension_manager::get_tool_owner;
+use crate::config::extensions::name_to_key;
 use std::collections::HashSet;
 
 const EXTENSION_MANAGER_KEY: &str = "extensionmanager";
@@ -125,6 +127,16 @@ fn extension_config_to_dto(config: ExtensionConfig) -> ExtensionConfigDto {
             available_tools,
         },
     }
+}
+
+fn tool_extension_key(tool: &rmcp::model::Tool) -> Option<String> {
+    get_tool_owner(tool)
+        .map(|owner| name_to_key(&owner))
+        .or_else(|| {
+            tool.name
+                .split_once("__")
+                .map(|(owner, _)| name_to_key(owner))
+        })
 }
 
 fn timeout_to_dto(timeout: Option<u64>) -> Option<u32> {
@@ -299,21 +311,23 @@ impl GooseAcpAgent {
             }
         }
 
-        let extensions_json = futures::future::join_all(extensions.into_iter().map(|extension| {
-            let config_key = extension.key();
-            let extension_name = extension.name();
-            let connected = connected_keys.contains(&config_key);
-            let agent = agent.clone();
-            let internal_id = internal_id.clone();
+        let mut tools_by_extension: HashMap<String, Vec<String>> = HashMap::new();
+        for tool in agent.list_tools(&internal_id, None).await {
+            if let Some(owner_key) = tool_extension_key(&tool) {
+                tools_by_extension
+                    .entry(owner_key)
+                    .or_default()
+                    .push(tool.name.to_string());
+            }
+        }
 
-            async move {
+        let extensions_json = extensions
+            .into_iter()
+            .map(|extension| {
+                let config_key = extension.key();
+                let connected = connected_keys.contains(&config_key);
                 let tools = if connected {
-                    agent
-                        .list_tools(&internal_id, Some(extension_name))
-                        .await
-                        .into_iter()
-                        .map(|tool| tool.name.to_string())
-                        .collect()
+                    tools_by_extension.remove(&config_key).unwrap_or_default()
                 } else {
                     Vec::new()
                 };
@@ -336,9 +350,8 @@ impl GooseAcpAgent {
                         )
                     },
                 }
-            }
-        }))
-        .await;
+            })
+            .collect();
 
         Ok(GetSessionExtensionStatusResponse {
             extensions: extensions_json,

@@ -1,0 +1,101 @@
+import { act, renderHook } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import type { ExtensionEntry } from "../../types";
+import { useExtensionModalForm } from "../useExtensionModalForm";
+
+describe("useExtensionModalForm", () => {
+  it("builds trimmed stdio configs with args, env vars, and timeout", () => {
+    const { result } = renderHook(() => useExtensionModalForm());
+
+    act(() => {
+      result.current.setName(" GitHub MCP ");
+      result.current.setDescription("Issue tools");
+      result.current.setCmd(" npx ");
+      result.current.setArgs(" -y \n @modelcontextprotocol/server-github \n\n");
+      result.current.setTimeout("45");
+      result.current.updateEnvVar(0, "key", " GITHUB_TOKEN ");
+      result.current.updateEnvVar(0, "value", "secret");
+    });
+    act(() => {
+      result.current.addEnvVar();
+    });
+    act(() => {
+      result.current.updateEnvVar(1, "key", " ");
+      result.current.updateEnvVar(1, "value", "ignored");
+    });
+
+    expect(result.current.buildSubmitPayload()).toEqual({
+      name: "GitHub MCP",
+      config: {
+        type: "stdio",
+        name: "GitHub MCP",
+        description: "Issue tools",
+        cmd: "npx",
+        args: ["-y", "@modelcontextprotocol/server-github"],
+        envs: { GITHUB_TOKEN: "secret" },
+        timeout: 45,
+      },
+    });
+  });
+
+  it("builds streamable HTTP configs and falls back to the default timeout", () => {
+    const { result } = renderHook(() => useExtensionModalForm());
+
+    act(() => {
+      result.current.setType("streamable_http");
+      result.current.setName(" Context7 ");
+      result.current.setDescription("Docs");
+      result.current.setUri(" https://mcp.context7.com/mcp ");
+      result.current.setTimeout("");
+    });
+
+    expect(result.current.buildSubmitPayload()).toEqual({
+      name: "Context7",
+      config: {
+        type: "streamable_http",
+        name: "Context7",
+        description: "Docs",
+        uri: "https://mcp.context7.com/mcp",
+        envs: {},
+        timeout: 300,
+      },
+    });
+  });
+
+  it("preserves editable fields from an existing extension of the same type", () => {
+    const extension: ExtensionEntry = {
+      type: "streamable_http",
+      name: "context7",
+      description: "Docs",
+      uri: "https://old.example/mcp",
+      headers: { Authorization: "Bearer token" },
+      config_key: "context7",
+      enabled: true,
+      timeout: 60,
+    };
+    const { result } = renderHook(() => useExtensionModalForm(extension));
+
+    act(() => {
+      result.current.setUri("https://new.example/mcp");
+    });
+
+    expect(result.current.buildSubmitPayload()?.config).toMatchObject({
+      type: "streamable_http",
+      name: "context7",
+      uri: "https://new.example/mcp",
+      headers: { Authorization: "Bearer token" },
+      timeout: 60,
+    });
+  });
+
+  it("returns null when required fields are missing", () => {
+    const { result } = renderHook(() => useExtensionModalForm());
+
+    act(() => {
+      result.current.setName("No command");
+    });
+
+    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.buildSubmitPayload()).toBeNull();
+  });
+});
