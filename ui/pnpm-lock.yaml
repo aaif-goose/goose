@@ -360,8 +360,8 @@ importers:
         specifier: ^0.19.0
         version: 0.19.0(zod@4.3.6)
       '@mcp-ui/client':
-        specifier: 7.0.0
-        version: 7.0.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: 7.1.0
+        version: 7.1.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@radix-ui/react-accordion':
         specifier: ^1.2.12
         version: 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -1924,8 +1924,8 @@ packages:
       react: ^19.2.4
       react-dom: ^19.2.4
 
-  '@mcp-ui/client@7.0.0':
-    resolution: {integrity: sha512-by2YqknAegCbOIjQzEVAjTjopfrbwc0DYycWpAt33qVGv5yx8pChPVmO4l5iILrpVnRUPAtmhguPSoTTL7w0qw==}
+  '@mcp-ui/client@7.1.0':
+    resolution: {integrity: sha512-XWhYULwXtBtrniOR/8mZFa+Vn85NePCle0nUHz+Iupxu8kCpORXO2m+sTza27jFgif8LCV4lWVUjL7lDb2XwlA==}
     peerDependencies:
       react: ^19.2.4
       react-dom: ^19.2.4
@@ -10351,7 +10351,7 @@ snapshots:
       - preact
       - supports-color
 
-  '@mcp-ui/client@7.0.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@mcp-ui/client@7.1.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@modelcontextprotocol/ext-apps': 1.2.2(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@3.25.76)
       '@modelcontextprotocol/sdk': 1.27.1(zod@4.3.6)

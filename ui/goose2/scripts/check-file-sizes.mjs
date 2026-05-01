@@ -21,9 +21,14 @@ const EXCEPTIONS = {
       "Session preparation, provider/model handoff, persona-aware sends, cancellation, and compaction replay still live in one chat lifecycle hook.",
   },
   "src/shared/api/acpNotificationHandler.ts": {
-    limit: 550,
+    limit: 570,
     justification:
-      "ACP replay/live update handling, pending session buffering, model/config propagation, and streaming perf tracking still share one notification entrypoint.",
+      "ACP replay/live update handling, pending session buffering, model/config propagation, MCP structured tool output, and streaming perf tracking still share one notification entrypoint.",
+  },
+  "src/shared/api/__tests__/acpNotificationHandler.test.ts": {
+    limit: 540,
+    justification:
+      "Notification handler regression coverage spans live streaming, replay ordering, MCP app payload attachment, and structured tool output preservation in one integration-style suite.",
   },
   "src/features/chat/ui/__tests__/ContextPanel.test.tsx": {
     limit: 550,

@@ -21,7 +21,10 @@ import { CodeBlock } from "./code-block";
 export type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
-  <Collapsible className={cn("group not-prose w-full", className)} {...props} />
+  <Collapsible
+    className={cn("group not-prose w-full min-w-0 max-w-full", className)}
+    {...props}
+  />
 );
 
 export type ToolPart = ToolUIPart | DynamicToolUIPart;
@@ -106,7 +109,7 @@ export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
 export const ToolContent = ({ className, ...props }: ToolContentProps) => (
   <CollapsibleContent
     className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 space-y-4 py-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 min-w-0 max-w-full space-y-4 py-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
       className,
     )}
     {...props}
@@ -133,6 +136,7 @@ export type ToolOutputProps = ComponentProps<"div"> & {
   errorText: ToolPart["errorText"];
   label?: string;
   contentClassName?: string;
+  plainText?: boolean;
 };
 
 export const ToolOutput = ({
@@ -141,49 +145,67 @@ export const ToolOutput = ({
   errorText,
   label,
   contentClassName,
+  plainText = false,
   ...props
 }: ToolOutputProps) => {
-  if (!(output || errorText)) {
+  if (output === undefined && errorText === undefined) {
     return null;
   }
 
   let Output = <div>{output as ReactNode}</div>;
   let isCodeBlockOutput = false;
+  const isReactOutput = isValidElement(output);
 
-  if (typeof output === "object" && !isValidElement(output)) {
+  if (output !== null && typeof output === "object" && !isReactOutput) {
     isCodeBlockOutput = true;
     Output = (
       <CodeBlock
         code={JSON.stringify(output, null, 2)}
+        className="border-0 bg-transparent shadow-none"
         language="json"
-        viewportClassName={contentClassName}
+        transparentBackground
       />
     );
-  } else if (typeof output === "string") {
+  } else if (typeof output === "string" && plainText) {
+    Output = (
+      <pre className="m-0 whitespace-pre-wrap break-words p-4 font-mono text-foreground text-sm">
+        {output}
+      </pre>
+    );
+  } else if (output !== undefined && !plainText && !isReactOutput) {
     isCodeBlockOutput = true;
     Output = (
       <CodeBlock
-        code={output}
+        code={JSON.stringify(output) ?? String(output)}
+        className="border-0 bg-transparent shadow-none"
         language="json"
-        viewportClassName={contentClassName}
+        transparentBackground
       />
+    );
+  } else if (output !== undefined && output !== null && !isReactOutput) {
+    Output = (
+      <pre className="m-0 whitespace-pre-wrap break-words p-4 font-mono text-foreground text-sm">
+        {String(output)}
+      </pre>
     );
   }
 
   return (
-    <div className={cn("space-y-2", className)} {...props}>
+    <div
+      className={cn("w-full min-w-0 max-w-full space-y-2", className)}
+      {...props}
+    >
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
         {label ?? (errorText ? "Error" : "Result")}
       </h4>
       <div
         className={cn(
-          "rounded-md text-xs [&_table]:w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words",
+          "w-full rounded-md text-xs [&_table]:w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words",
+          errorText
+            ? "bg-destructive/10 text-destructive"
+            : "bg-muted/50 text-foreground",
           !isCodeBlockOutput && "overflow-x-auto",
-          !isCodeBlockOutput &&
-            (errorText
-              ? "bg-destructive/10 text-destructive"
-              : "bg-muted/50 text-foreground"),
-          !isCodeBlockOutput && contentClassName,
+          contentClassName,
         )}
       >
         {errorText && <div>{errorText}</div>}

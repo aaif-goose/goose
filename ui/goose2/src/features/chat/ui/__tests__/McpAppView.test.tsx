@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpAppView } from "../McpAppView";
+import packageJson from "../../../../../package.json";
 import type {
   McpAppPayload,
   ToolResponseContent,
@@ -257,6 +258,24 @@ describe("McpAppView nested tool calls", () => {
     expect(borderlessChrome?.className).not.toContain("border");
     expect(borderlessChrome?.className).not.toContain("shadow-sm");
     expect(borderlessChrome?.className).not.toContain("overflow-hidden");
+  });
+
+  it("passes Goose2 package identity as host info", async () => {
+    render(
+      <McpAppView
+        payload={createPayload()}
+        toolResponse={createToolResponse()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-app-renderer")).toBeInTheDocument();
+    });
+
+    expect(getLatestAppRendererProps().hostInfo).toEqual({
+      name: packageJson.name,
+      version: packageJson.version,
+    });
   });
 
   it("does not install a fallback handler for non-standard app requests", async () => {

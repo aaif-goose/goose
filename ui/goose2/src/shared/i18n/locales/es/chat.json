@@ -191,12 +191,14 @@
     "voiceInputAutoSubmitHint": "Di \"enviar\" para enviar"
   },
   "tools": {
+    "content": "Contenido",
     "fileNotFound": "Archivo no encontrado: {{path}}",
     "moreOutputs": "Más salidas ({{count}})",
     "openFile": "Abrir archivo",
     "openFolder": "Abrir carpeta",
     "openPath": "Abrir ruta",
     "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos.",
+    "structuredContent": "Contenido estructurado",
     "structuredOutput": "Salida estructurada",
     "structuredOutputLines": "{{count}} líneas"
   }

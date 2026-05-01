@@ -52,11 +52,7 @@ export function extractToolResultText(update: {
 export function extractToolStructuredContent(update: {
   rawOutput?: unknown;
 }): unknown | undefined {
-  if (
-    update.rawOutput !== null &&
-    typeof update.rawOutput === "object" &&
-    update.rawOutput !== undefined
-  ) {
+  if (Object.hasOwn(update, "rawOutput")) {
     return update.rawOutput;
   }
 

@@ -57,17 +57,26 @@ const addKeysToTokens = (lines: ThemedToken[][]): KeyedLine[] =>
   }));
 
 // Token rendering component
-const TokenSpan = ({ token }: { token: ThemedToken }) => (
+const TokenSpan = ({
+  token,
+  transparentBackground,
+}: {
+  token: ThemedToken;
+  transparentBackground: boolean;
+}) => (
   <span
-    className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
+    className={cn(
+      "dark:!text-[var(--shiki-dark)]",
+      !transparentBackground && "dark:!bg-[var(--shiki-dark-bg)]",
+    )}
     style={
       {
-        backgroundColor: token.bgColor,
         color: token.color,
         fontStyle: isItalic(token.fontStyle) ? "italic" : undefined,
         fontWeight: isBold(token.fontStyle) ? "bold" : undefined,
         textDecoration: isUnderline(token.fontStyle) ? "underline" : undefined,
         ...token.htmlStyle,
+        backgroundColor: transparentBackground ? undefined : token.bgColor,
       } as CSSProperties
     }
   >
@@ -93,15 +102,21 @@ const LINE_NUMBER_CLASSES = cn(
 const LineSpan = ({
   keyedLine,
   showLineNumbers,
+  transparentBackground,
 }: {
   keyedLine: KeyedLine;
   showLineNumbers: boolean;
+  transparentBackground: boolean;
 }) => (
   <span className={showLineNumbers ? LINE_NUMBER_CLASSES : "block"}>
     {keyedLine.tokens.length === 0
       ? "\n"
       : keyedLine.tokens.map(({ token, key }) => (
-          <TokenSpan key={key} token={token} />
+          <TokenSpan
+            key={key}
+            token={token}
+            transparentBackground={transparentBackground}
+          />
         ))}
   </span>
 );
@@ -112,6 +127,7 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   language: BundledLanguage;
   showLineNumbers?: boolean;
   viewportClassName?: string;
+  transparentBackground?: boolean;
 };
 
 interface TokenizedCode {
@@ -250,17 +266,19 @@ const CodeBlockBody = memo(
     tokenized,
     showLineNumbers,
     className,
+    transparentBackground,
   }: {
     tokenized: TokenizedCode;
     showLineNumbers: boolean;
     className?: string;
+    transparentBackground: boolean;
   }) => {
     const preStyle = useMemo(
       () => ({
-        backgroundColor: tokenized.bg,
+        backgroundColor: transparentBackground ? "transparent" : tokenized.bg,
         color: tokenized.fg,
       }),
-      [tokenized.bg, tokenized.fg],
+      [tokenized.bg, tokenized.fg, transparentBackground],
     );
 
     const keyedLines = useMemo(
@@ -271,7 +289,8 @@ const CodeBlockBody = memo(
     return (
       <pre
         className={cn(
-          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-4 text-sm",
+          "dark:!text-[var(--shiki-dark)] m-0 p-4 text-sm",
+          !transparentBackground && "dark:!bg-[var(--shiki-dark-bg)]",
           className,
         )}
         style={preStyle}
@@ -288,6 +307,7 @@ const CodeBlockBody = memo(
               key={keyedLine.key}
               keyedLine={keyedLine}
               showLineNumbers={showLineNumbers}
+              transparentBackground={transparentBackground}
             />
           ))}
         </code>
@@ -297,7 +317,8 @@ const CodeBlockBody = memo(
   (prevProps, nextProps) =>
     prevProps.tokenized === nextProps.tokenized &&
     prevProps.showLineNumbers === nextProps.showLineNumbers &&
-    prevProps.className === nextProps.className,
+    prevProps.className === nextProps.className &&
+    prevProps.transparentBackground === nextProps.transparentBackground,
 );
 
 CodeBlockBody.displayName = "CodeBlockBody";
@@ -310,7 +331,7 @@ export const CodeBlockContainer = ({
 }: HTMLAttributes<HTMLDivElement> & { language: string }) => (
   <div
     className={cn(
-      "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
+      "group relative w-full min-w-0 max-w-full overflow-hidden rounded-md border bg-background text-foreground",
       className,
     )}
     data-language={language}
@@ -377,11 +398,13 @@ export const CodeBlockContent = ({
   language,
   showLineNumbers = false,
   viewportClassName,
+  transparentBackground = false,
 }: {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
   viewportClassName?: string;
+  transparentBackground?: boolean;
 }) => {
   // Memoized raw tokens for immediate display
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
@@ -422,8 +445,17 @@ export const CodeBlockContent = ({
   const tokenized = highlightedTokens ?? rawTokens;
 
   return (
-    <div className={cn("relative overflow-auto", viewportClassName)}>
-      <CodeBlockBody showLineNumbers={showLineNumbers} tokenized={tokenized} />
+    <div
+      className={cn(
+        "relative min-w-0 max-w-full overflow-auto",
+        viewportClassName,
+      )}
+    >
+      <CodeBlockBody
+        showLineNumbers={showLineNumbers}
+        tokenized={tokenized}
+        transparentBackground={transparentBackground}
+      />
     </div>
   );
 };
@@ -433,6 +465,7 @@ export const CodeBlock = ({
   language,
   showLineNumbers = false,
   viewportClassName,
+  transparentBackground = false,
   className,
   children,
   ...props
@@ -448,6 +481,7 @@ export const CodeBlock = ({
           language={language}
           showLineNumbers={showLineNumbers}
           viewportClassName={viewportClassName}
+          transparentBackground={transparentBackground}
         />
       </CodeBlockContainer>
     </CodeBlockContext.Provider>

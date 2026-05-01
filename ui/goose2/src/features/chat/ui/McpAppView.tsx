@@ -39,6 +39,10 @@ const AVAILABLE_DISPLAY_MODES = [
   "inline",
 ] satisfies readonly AvailableDisplayMode[];
 const GOOSE2_USER_AGENT = `${packageJson.name}/${packageJson.version}`;
+const GOOSE2_HOST_INFO = {
+  name: packageJson.name,
+  version: packageJson.version,
+} satisfies NonNullable<AppRendererProps["hostInfo"]>;
 const DESKTOP_SAFE_AREA_INSETS = {
   top: 0,
   right: 0,
@@ -422,6 +426,7 @@ export function McpAppView({
             toolResourceUri={renderableDocument.resourceUri}
             html={renderableDocument.html}
             sandbox={sandbox}
+            hostInfo={GOOSE2_HOST_INFO}
             toolInput={currentToolInput}
             toolResult={currentToolResult}
             hostContext={hostContext}

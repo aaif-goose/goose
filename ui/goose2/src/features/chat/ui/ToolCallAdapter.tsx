@@ -4,11 +4,6 @@ import { FolderOpen, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/shared/ui/collapsible";
-import {
   Tool,
   ToolHeader,
   ToolContent,
@@ -223,30 +218,18 @@ export function ToolCallAdapter({
   const { t } = useTranslation("chat");
   const elapsed = useElapsedTime(status, startedAt);
   const state = toolStatusMap[status];
-  const [structuredOutputOpen, setStructuredOutputOpen] = useState(false);
-
-  const structuredOutputText = useMemo(() => {
-    if (structuredContent === undefined) return null;
-    if (typeof structuredContent === "string") return structuredContent;
-
-    try {
-      return JSON.stringify(structuredContent, null, 2);
-    } catch {
-      return String(structuredContent);
-    }
-  }, [structuredContent]);
-  const structuredOutputLineCount =
-    structuredOutputText?.split("\n").length ?? 0;
-  const shouldCollapseStructuredOutput =
-    !isError &&
-    structuredOutputText !== null &&
-    (structuredOutputLineCount > 14 || structuredOutputText.length > 1600);
 
   const elapsedSeconds =
     status === "executing" && elapsed >= 3 ? elapsed : undefined;
+  const outputViewportClassName = cn(
+    "max-h-[28rem] overflow-auto",
+    "[scrollbar-color:hsl(var(--muted-foreground))_transparent] [scrollbar-width:thin]",
+    "[&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent",
+    "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/50",
+  );
 
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-full">
       <Tool open={open} onOpenChange={onOpenChange}>
         <ToolHeader
           type="dynamic-tool"
@@ -261,45 +244,18 @@ export function ToolCallAdapter({
           <ToolOutput
             output={isError ? undefined : result}
             errorText={isError ? result : undefined}
+            label={isError ? undefined : t("tools.content")}
+            contentClassName={outputViewportClassName}
+            plainText
           />
-          {!isError &&
-            structuredContent !== undefined &&
-            (shouldCollapseStructuredOutput ? (
-              <Collapsible
-                open={structuredOutputOpen}
-                onOpenChange={setStructuredOutputOpen}
-              >
-                <CollapsibleTrigger className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                  <ChevronRight
-                    className={cn(
-                      "h-3 w-3 transition-transform",
-                      structuredOutputOpen && "rotate-90",
-                    )}
-                  />
-                  <span>{t("tools.structuredOutput")}</span>
-                  <span className="text-[11px] text-muted-foreground/80">
-                    {t("tools.structuredOutputLines", {
-                      count: structuredOutputLineCount,
-                    })}
-                  </span>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pt-2">
-                  <ToolOutput
-                    output={structuredContent}
-                    errorText={undefined}
-                    label={t("tools.structuredOutput")}
-                    contentClassName="max-h-[28rem] overflow-auto"
-                  />
-                </CollapsibleContent>
-              </Collapsible>
-            ) : (
-              <ToolOutput
-                output={structuredContent}
-                errorText={undefined}
-                label={t("tools.structuredOutput")}
-                contentClassName="max-h-[28rem] overflow-auto"
-              />
-            ))}
+          {!isError && structuredContent !== undefined && (
+            <ToolOutput
+              output={structuredContent}
+              errorText={undefined}
+              label={t("tools.structuredContent")}
+              contentClassName={outputViewportClassName}
+            />
+          )}
         </ToolContent>
       </Tool>
       <ArtifactActions args={args} name={name} result={result} />
