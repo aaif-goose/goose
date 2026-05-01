@@ -76,22 +76,20 @@ export default function ExtensionsSection({
   const extensions = useMemo(() => {
     if (extensionsList.length === 0) return [];
 
-    return [...extensionsList]
-      .sort((a, b) => {
-        // First sort by builtin
-        if (a.type === 'builtin' && b.type !== 'builtin') return -1;
-        if (a.type !== 'builtin' && b.type === 'builtin') return 1;
+    return [...extensionsList].sort((a, b) => {
+      // First sort by builtin
+      if (a.type === 'builtin' && b.type !== 'builtin') return -1;
+      if (a.type !== 'builtin' && b.type === 'builtin') return 1;
 
-        // Then sort by bundled (handle null/undefined cases)
-        const aBundled = 'bundled' in a && a.bundled === true;
-        const bBundled = 'bundled' in b && b.bundled === true;
-        if (aBundled && !bBundled) return -1;
-        if (!aBundled && bBundled) return 1;
+      // Then sort by bundled (handle null/undefined cases)
+      const aBundled = 'bundled' in a && a.bundled === true;
+      const bBundled = 'bundled' in b && b.bundled === true;
+      if (aBundled && !bBundled) return -1;
+      if (!aBundled && bBundled) return 1;
 
-        // Finally sort alphabetically within each group
-        return a.name.localeCompare(b.name);
-      })
-      .map((ext) => ({ ...ext }));
+      // Finally sort alphabetically within each group
+      return a.name.localeCompare(b.name);
+    });
   }, [extensionsList]);
 
   const fetchExtensions = useCallback(async () => {
