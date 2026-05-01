@@ -1,6 +1,18 @@
 {
   "about": {
-    "body": "Version, build info, and licenses will appear here.",
+    "buildModes": {
+      "development": "Development",
+      "production": "Production"
+    },
+    "fields": {
+      "buildMode": "Build mode",
+      "identifier": "App identifier",
+      "license": "License",
+      "name": "App name",
+      "tauriVersion": "Tauri version",
+      "version": "App version"
+    },
+    "unavailable": "Not available",
     "title": "About"
   },
   "appearance": {
