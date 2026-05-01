@@ -16,7 +16,7 @@ pub fn run_migrations(config: &mut Mapping) -> bool {
 
 fn migration_done(config: &Mapping, key: &str) -> bool {
     config
-        .get(&serde_yaml::Value::String(key.to_string()))
+        .get(serde_yaml::Value::String(key.to_string()))
         .and_then(serde_yaml::Value::as_bool)
         .unwrap_or(false)
 }
@@ -249,16 +249,14 @@ mod tests {
         let extensions = config.get(&extensions_key).unwrap().as_mapping().unwrap();
         let developer: ExtensionEntry = serde_yaml::from_value(
             extensions
-                .get(&serde_yaml::Value::String("developer".to_string()))
+                .get(serde_yaml::Value::String("developer".to_string()))
                 .unwrap()
                 .clone(),
         )
         .unwrap();
         let extension_manager: ExtensionEntry = serde_yaml::from_value(
             extensions
-                .get(&serde_yaml::Value::String(
-                    EXTENSION_MANAGER_KEY.to_string(),
-                ))
+                .get(serde_yaml::Value::String(EXTENSION_MANAGER_KEY.to_string()))
                 .unwrap()
                 .clone(),
         )

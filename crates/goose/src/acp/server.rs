@@ -3070,7 +3070,7 @@ print(\"hello, world\")
         let meta = tool_call_identity_meta(&request).expect("expected metadata");
 
         assert_eq!(
-            meta.0.get("goose"),
+            meta.get("goose"),
             Some(&serde_json::json!({
                 "toolCall": {
                     "toolName": "context7__query-docs",
