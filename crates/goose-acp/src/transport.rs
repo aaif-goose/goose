@@ -17,6 +17,7 @@ use axum::{
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
+use url::form_urlencoded;
 
 use crate::server_factory::AcpServer;
 
@@ -100,7 +101,7 @@ pub fn create_router(server: Arc<AcpServer>, secret_key: Option<String>) -> Rout
     let http_state = Arc::new(http::HttpState::new(server.clone()));
     let ws_state = Arc::new(websocket::WsState::new(server));
 
-    let cors = if let Some(ref key) = secret_key {
+    let cors = if secret_key.is_some() {
         CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
@@ -143,27 +144,29 @@ pub fn create_router(server: Arc<AcpServer>, secret_key: Option<String>) -> Rout
         .route("/acp", delete(http::handle_delete).with_state(http_state));
 
     if let Some(key) = secret_key {
-        router = router.layer(axum::middleware::from_fn(move |req: Request<Body>, next: axum::middleware::Next| {
-            let key = key.clone();
-            async move {
-                let auth_header = req
-                    .headers()
-                    .get(HEADER_SECRET_KEY)
-                    .and_then(|v| v.to_str().ok());
+        router = router.layer(axum::middleware::from_fn(
+            move |req: Request<Body>, next: axum::middleware::Next| {
+                let key = key.clone();
+                async move {
+                    let auth_header = req
+                        .headers()
+                        .get(HEADER_SECRET_KEY)
+                        .and_then(|v| v.to_str().ok());
 
-                let query_secret = req.uri().query().and_then(|q| {
-                    form_urlencoded::parse(q.as_bytes())
-                        .find(|(k, _)| k == "secret")
-                        .map(|(_, v)| v.into_owned())
-                });
+                    let query_secret = req.uri().query().and_then(|q| {
+                        form_urlencoded::parse(q.as_bytes())
+                            .find(|(k, _)| k == "secret")
+                            .map(|(_, v)| v.into_owned())
+                    });
 
-                if auth_header == Some(&key) || query_secret == Some(key) {
-                    Ok(next.run(req).await)
-                } else {
-                    Err(axum::http::StatusCode::UNAUTHORIZED)
+                    if auth_header == Some(&key) || query_secret == Some(key) {
+                        Ok(next.run(req).await)
+                    } else {
+                        Err(axum::http::StatusCode::UNAUTHORIZED)
+                    }
                 }
-            }
-        }));
+            },
+        ));
     }
 
     router.layer(cors)
