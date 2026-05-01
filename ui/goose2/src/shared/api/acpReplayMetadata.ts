@@ -41,27 +41,17 @@ function coerceReplayTimestamp(value: unknown): number | undefined {
     return normalizeEpochMilliseconds(value);
   }
 
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return undefined;
-  }
-
-  const numericValue = Number(value);
-  if (Number.isFinite(numericValue)) {
-    return normalizeEpochMilliseconds(numericValue);
-  }
-
-  const parsedDate = Date.parse(value);
-  return Number.isFinite(parsedDate) ? parsedDate : undefined;
+  return undefined;
 }
 
 function normalizeEpochMilliseconds(value: number): number | undefined {
-  if (!Number.isFinite(value)) {
+  if (!Number.isFinite(value) || value < 0) {
     return undefined;
   }
 
-  return Math.abs(value) < 1_000_000_000_000 ? value * 1000 : value;
+  return value < 1_000_000_000_000 ? value * 1000 : value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

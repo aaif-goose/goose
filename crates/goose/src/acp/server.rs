@@ -2237,9 +2237,12 @@ impl GooseAcpAgent {
                     MessageContent::Thinking(thinking) => {
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
-                            SessionUpdate::AgentThoughtChunk(ContentChunk::new(
-                                ContentBlock::Text(TextContent::new(thinking.thinking.clone())),
-                            )),
+                            SessionUpdate::AgentThoughtChunk(
+                                ContentChunk::new(ContentBlock::Text(TextContent::new(
+                                    thinking.thinking.clone(),
+                                )))
+                                .meta(replay_message_meta(message)),
+                            ),
                         ))?;
                     }
                     _ => {}
@@ -3319,6 +3322,35 @@ print(\"hello, world\")
                     "extensionName": "weather",
                     "toolName": "weather__render",
                 },
+            })),
+        );
+    }
+
+    #[test]
+    fn test_merge_replay_message_meta_creates_fresh_when_none() {
+        let message = Message::new(Role::Assistant, 1_700_000_000, vec![]).with_id("msg_2");
+
+        let merged = merge_replay_message_meta(None, &message);
+
+        assert_eq!(
+            merged.get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_2",
+            })),
+        );
+    }
+
+    #[test]
+    fn test_merge_replay_message_meta_omits_message_id_when_none() {
+        let message = Message::new(Role::Assistant, 1_700_000_000, vec![]);
+
+        let merged = merge_replay_message_meta(None, &message);
+
+        assert_eq!(
+            merged.get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
             })),
         );
     }
