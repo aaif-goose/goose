@@ -97,7 +97,7 @@ describe('ParameterInputModal', () => {
     });
   });
 
-  describe('Cancel Behavior (Bug Fix #8864)', () => {
+  describe('Cancel Behavior', () => {
     it('shows cancel options when cancel is clicked and parameters exist', async () => {
       const user = userEvent.setup();
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
@@ -119,19 +119,13 @@ describe('ParameterInputModal', () => {
       expect(defaultProps.onClose).toHaveBeenCalled();
     });
 
-    it('calls onClose (not createChatWindow) when "Start New Chat" is selected - Bug #8864 fix', async () => {
+    it('calls onClose when "Start New Chat" option is selected', async () => {
       const user = userEvent.setup();
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
-      // Click cancel to show options
-      const cancelButton = screen.getByText('Cancel');
-      await user.click(cancelButton);
-      
-      // Click "Start New Chat (No Recipe)"
-      const newChatButton = screen.getByText('Start New Chat (No Recipe)');
-      await user.click(newChatButton);
-      
-      // Should call onClose, NOT createChatWindow (this is the bug fix)
+
+      await user.click(screen.getByText('Cancel'));
+      await user.click(screen.getByText('Start New Chat (No Recipe)'));
+
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
     });
 
@@ -167,10 +161,8 @@ describe('ParameterInputModal', () => {
 
     it('pre-fills form with default values from parameters', () => {
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
-      // param3 has default=true, should be pre-selected
-      const booleanSelect = screen.getAllByRole('combobox')[1] as HTMLSelectElement;
-      expect(booleanSelect.value).toBe('true');
+
+      expect((screen.getByLabelText(/boolean parameter/i) as HTMLSelectElement).value).toBe('true');
     });
   });
 });

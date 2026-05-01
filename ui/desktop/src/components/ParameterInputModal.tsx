@@ -123,14 +123,6 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
     }
   };
 
-  const handleCancelOption = (option: 'new-chat' | 'back-to-form'): void => {
-    if (option === 'new-chat') {
-      onClose();
-    } else {
-      setShowCancelOptions(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 backdrop-blur-sm z-50 flex justify-center items-center animate-[fadein_200ms_ease-in]">
       {showCancelOptions ? (
@@ -142,7 +134,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
           <p className="text-text-primary mb-6">{intl.formatMessage(i18n.whatToDo)}</p>
           <div className="flex flex-col gap-3">
             <Button
-              onClick={() => handleCancelOption('back-to-form')}
+              onClick={() => setShowCancelOptions(false)}
               variant="default"
               size="lg"
               className="w-full rounded-full"
@@ -150,7 +142,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
               {intl.formatMessage(i18n.backToForm)}
             </Button>
             <Button
-              onClick={() => handleCancelOption('new-chat')}
+              onClick={onClose}
               variant="outline"
               size="lg"
               className="w-full rounded-full"
