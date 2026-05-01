@@ -30,7 +30,10 @@ static GOOSE_SERVE: OnceCell<GooseServeProcess> = OnceCell::const_new();
 impl GooseServeProcess {
     /// Return the WebSocket URL for connecting to this server.
     pub fn ws_url(&self) -> String {
-        format!("ws://{LOCALHOST}:{}/acp?secret={}", self.port, self.secret_key)
+        format!(
+            "ws://{LOCALHOST}:{}/acp?secret={}",
+            self.port, self.secret_key
+        )
     }
 
     /// Get a reference to the running process, or an error if it was never
