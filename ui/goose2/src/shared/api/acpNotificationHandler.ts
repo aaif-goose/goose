@@ -198,20 +198,22 @@ function handleReplay(
 
     case "tool_call_update": {
       const created = getReplayCreated(update);
-      const replayMessageId =
-        getReplayMessageId(update) ??
-        getTrackedReplayAssistantMessageId(sessionId);
+      const replayMessageId = getReplayMessageId(update);
+      const trackedMessageId = getTrackedReplayAssistantMessageId(sessionId);
+      const replayMsg = replayMessageId
+        ? getBufferedMessage(sessionId, replayMessageId)
+        : undefined;
+      const trackedMsg =
+        trackedMessageId && trackedMessageId !== replayMessageId
+          ? getBufferedMessage(sessionId, trackedMessageId)
+          : undefined;
       const existingMsg = findReplayMessageWithToolCall(
         sessionId,
         update.toolCallId,
       );
-      const msg =
-        existingMsg ??
-        (replayMessageId
-          ? getBufferedMessage(sessionId, replayMessageId)
-          : undefined);
+      const msg = existingMsg ?? replayMsg ?? trackedMsg;
       if (msg) {
-        if (created !== undefined && !existingMsg) {
+        if (created !== undefined && !existingMsg && msg === replayMsg) {
           msg.created = created;
         }
         if (update.title) {

@@ -401,4 +401,71 @@ describe("acpNotificationHandler", () => {
       }),
     });
   });
+
+  it("replay falls back to tracked assistant when a tool update ID is not buffered", async () => {
+    const replaySessionId = "replay-tool-response-id-session";
+    const assistantCreated = 1_700_000_120;
+    const toolResponseCreated = 1_700_000_240;
+    useChatStore.setState({
+      loadingSessionIds: new Set<string>([replaySessionId]),
+    });
+
+    await handleSessionNotification({
+      sessionId: replaySessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "I'll check that.",
+        },
+        _meta: {
+          goose: {
+            messageId: "assistant-1",
+            created: assistantCreated,
+          },
+        },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: replaySessionId,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-1",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "Tool completed.",
+            },
+          },
+        ],
+        _meta: {
+          goose: {
+            messageId: "tool-response-user-message",
+            created: toolResponseCreated,
+          },
+        },
+      },
+    } as never);
+
+    const buffer = getReplayBuffer(replaySessionId);
+    const assistant = buffer?.[0];
+    expect(assistant).toMatchObject({
+      id: "assistant-1",
+      created: assistantCreated * 1000,
+    });
+    expect(assistant?.content.map((block) => block.type)).toEqual([
+      "text",
+      "toolResponse",
+    ]);
+    expect(assistant?.content[1]).toMatchObject({
+      type: "toolResponse",
+      id: "tool-1",
+      result: "Tool completed.",
+      isError: false,
+    });
+  });
 });
