@@ -2,35 +2,531 @@
 
 
 /**
+ * Add an extension to an active session.
+ */
+export type AddExtensionRequest = {
+    sessionId: string;
+    /**
+     * Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform).
+     */
+    config?: unknown;
+};
+
+/**
+ * Empty success response for operations that return no data.
+ */
+export type EmptyResponse = {
+    [key: string]: unknown;
+};
+
+/**
+ * Remove an extension from an active session.
+ */
+export type RemoveExtensionRequest = {
+    sessionId: string;
+    name: string;
+};
+
+/**
+ * List all tools available in a session.
+ */
+export type GetToolsRequest = {
+    sessionId: string;
+};
+
+/**
+ * Tools response.
+ */
+export type GetToolsResponse = {
+    /**
+     * Array of tool info objects with `name`, `description`, `parameters`, and optional `permission`.
+     */
+    tools: Array<unknown>;
+};
+
+/**
+ * Read a resource from an extension.
+ */
+export type ReadResourceRequest = {
+    sessionId: string;
+    uri: string;
+    extensionName: string;
+};
+
+/**
+ * Resource read response.
+ */
+export type ReadResourceResponse = {
+    /**
+     * The resource result from the extension (MCP ReadResourceResult).
+     */
+    result?: unknown;
+};
+
+/**
+ * Update the working directory for a session.
+ */
+export type UpdateWorkingDirRequest = {
+    sessionId: string;
+    workingDir: string;
+};
+
+/**
+ * Delete a session.
+ */
+export type DeleteSessionRequest = {
+    sessionId: string;
+};
+
+/**
+ * List configured extensions and any warnings.
+ */
+export type GetExtensionsRequest = {
+    [key: string]: unknown;
+};
+
+/**
+ * List configured extensions and any warnings.
+ */
+export type GetExtensionsResponse = {
+    /**
+     * Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.
+     */
+    extensions: Array<unknown>;
+    warnings: Array<string>;
+};
+
+/**
  * Persist a new extension to the user's global goose config.
  */
 export type AddConfigExtensionRequest = {
-    enabled?: boolean;
+    name: string;
     /**
      * Extension configuration. Must be a JSON object matching one of the
      * `ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).
      * `name` and `enabled` are injected server-side.
      */
     extensionConfig?: unknown;
-    name: string;
+    enabled?: boolean;
 };
 
 /**
- * Add an extension to an active session.
+ * Remove a persisted extension from the user's global goose config.
  */
-export type AddExtensionRequest = {
+export type RemoveConfigExtensionRequest = {
+    configKey: string;
+};
+
+/**
+ * Toggle the `enabled` flag for a persisted extension in the user's global goose config.
+ */
+export type ToggleConfigExtensionRequest = {
+    configKey: string;
+    enabled: boolean;
+};
+
+export type GetSessionExtensionsRequest = {
+    sessionId: string;
+};
+
+export type GetSessionExtensionsResponse = {
+    extensions: Array<unknown>;
+};
+
+/**
+ * List providers with setup metadata and the current model inventory snapshot.
+ */
+export type ListProvidersRequest = {
     /**
-     * Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform).
+     * Only return entries for these providers. Empty means all.
      */
-    config?: unknown;
-    sessionId: string;
+    providerIds?: Array<string>;
 };
 
 /**
- * Archive a session (soft delete).
+ * Provider list response.
  */
-export type ArchiveSessionRequest = {
-    sessionId: string;
+export type ListProvidersResponse = {
+    entries: Array<ProviderInventoryEntryDto>;
+};
+
+/**
+ * Provider inventory entry.
+ */
+export type ProviderInventoryEntryDto = {
+    /**
+     * Provider identifier.
+     */
+    providerId: string;
+    /**
+     * Human-readable provider name.
+     */
+    providerName: string;
+    /**
+     * Description of the provider's capabilities.
+     */
+    description: string;
+    /**
+     * The default/recommended model for this provider.
+     */
+    defaultModel: string;
+    /**
+     * Whether Goose has enough configuration to use this provider.
+     */
+    configured: boolean;
+    /**
+     * Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
+     */
+    providerType: string;
+    /**
+     * Required configuration keys and setup metadata.
+     */
+    configKeys: Array<ProviderConfigKey>;
+    /**
+     * Step-by-step setup instructions, when present.
+     */
+    setupSteps: Array<string>;
+    /**
+     * Whether this provider supports background inventory refresh.
+     */
+    supportsRefresh: boolean;
+    /**
+     * Whether a refresh is currently in flight.
+     */
+    refreshing: boolean;
+    /**
+     * The list of available models.
+     */
+    models: Array<ProviderInventoryModelDto>;
+    /**
+     * When this entry was last successfully refreshed (ISO 8601).
+     */
+    lastUpdatedAt?: string | null;
+    /**
+     * When a refresh was most recently attempted (ISO 8601).
+     */
+    lastRefreshAttemptAt?: string | null;
+    /**
+     * The last refresh failure message, if any.
+     */
+    lastRefreshError?: string | null;
+    /**
+     * Whether we believe this data may be outdated.
+     */
+    stale: boolean;
+    /**
+     * Guidance message shown when this provider manages its own model selection externally.
+     */
+    modelSelectionHint?: string | null;
+};
+
+export type ProviderConfigKey = {
+    name: string;
+    required: boolean;
+    secret: boolean;
+    default?: string | null;
+    oauthFlow?: boolean;
+    deviceCodeFlow?: boolean;
+    primary?: boolean;
+};
+
+/**
+ * A single model in provider inventory.
+ */
+export type ProviderInventoryModelDto = {
+    /**
+     * Model identifier as the provider knows it.
+     */
+    id: string;
+    /**
+     * Human-readable display name.
+     */
+    name: string;
+    /**
+     * Model family for grouping in UI.
+     */
+    family?: string | null;
+    /**
+     * Context window size in tokens.
+     */
+    contextLimit?: number | null;
+    /**
+     * Whether the model supports reasoning/extended thinking.
+     */
+    reasoning?: boolean | null;
+    /**
+     * Whether this model should appear in the compact recommended picker.
+     */
+    recommended?: boolean;
+};
+
+/**
+ * List custom-provider catalog entries. Omit `format` to list all formats.
+ */
+export type ProviderCatalogListRequest = {
+    format?: string | null;
+};
+
+export type ProviderCatalogListResponse = {
+    providers: Array<ProviderCatalogEntryDto>;
+};
+
+export type ProviderCatalogEntryDto = {
+    providerId: string;
+    name: string;
+    format: string;
+    apiUrl: string;
+    modelCount: number;
+    docUrl: string;
+    envVar: string;
+};
+
+/**
+ * Return the editable template for one catalog provider.
+ */
+export type ProviderCatalogTemplateRequest = {
+    providerId: string;
+};
+
+export type ProviderCatalogTemplateResponse = {
+    template: ProviderTemplateDto;
+};
+
+export type ProviderTemplateDto = {
+    providerId: string;
+    name: string;
+    format: string;
+    apiUrl: string;
+    models: Array<ProviderTemplateModelDto>;
+    supportsStreaming: boolean;
+    envVar: string;
+    docUrl: string;
+};
+
+export type ProviderTemplateModelDto = {
+    id: string;
+    name: string;
+    contextLimit: number;
+    capabilities: ProviderTemplateCapabilitiesDto;
+    deprecated: boolean;
+};
+
+export type ProviderTemplateCapabilitiesDto = {
+    toolCall: boolean;
+    reasoning: boolean;
+    attachment: boolean;
+    temperature: boolean;
+};
+
+/**
+ * Create a custom provider backed by Goose's declarative provider store.
+ */
+export type CustomProviderCreateRequest = {
+    engine: string;
+    displayName: string;
+    apiUrl: string;
+    apiKey?: string | null;
+    models?: Array<string>;
+    supportsStreaming?: boolean | null;
+    headers?: {
+        [key: string]: string;
+    };
+    requiresAuth: boolean;
+    catalogProviderId?: string | null;
+    basePath?: string | null;
+};
+
+export type CustomProviderCreateResponse = {
+    providerId: string;
+    status: ProviderConfigStatusDto;
+    refresh: RefreshProviderInventoryResponse;
+};
+
+export type ProviderConfigStatusDto = {
+    providerId: string;
+    isConfigured: boolean;
+};
+
+/**
+ * Refresh acknowledgement.
+ */
+export type RefreshProviderInventoryResponse = {
+    /**
+     * Which providers will be refreshed.
+     */
+    started: Array<string>;
+    /**
+     * Which providers were skipped and why.
+     */
+    skipped?: Array<RefreshProviderInventorySkipDto>;
+};
+
+export type RefreshProviderInventorySkipDto = {
+    providerId: string;
+    reason: RefreshProviderInventorySkipReasonDto;
+};
+
+export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_configured' | 'does_not_support_refresh' | 'already_refreshing';
+
+/**
+ * Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
+ */
+export type CustomProviderReadRequest = {
+    providerId: string;
+};
+
+export type CustomProviderReadResponse = {
+    provider: CustomProviderConfigDto;
+    editable: boolean;
+    status: ProviderConfigStatusDto;
+};
+
+export type CustomProviderConfigDto = {
+    providerId: string;
+    engine: string;
+    displayName: string;
+    apiUrl: string;
+    models?: Array<string>;
+    supportsStreaming?: boolean | null;
+    headers?: {
+        [key: string]: string;
+    };
+    requiresAuth: boolean;
+    catalogProviderId?: string | null;
+    basePath?: string | null;
+    apiKeyEnv?: string | null;
+    apiKeySet: boolean;
+};
+
+/**
+ * Update a custom provider backed by Goose's declarative provider store.
+ */
+export type CustomProviderUpdateRequest = {
+    providerId: string;
+    engine: string;
+    displayName: string;
+    apiUrl: string;
+    apiKey?: string | null;
+    models?: Array<string>;
+    supportsStreaming?: boolean | null;
+    headers?: {
+        [key: string]: string;
+    };
+    requiresAuth: boolean;
+    catalogProviderId?: string | null;
+    basePath?: string | null;
+};
+
+export type CustomProviderUpdateResponse = {
+    providerId: string;
+    status: ProviderConfigStatusDto;
+    refresh: RefreshProviderInventoryResponse;
+};
+
+/**
+ * Delete a custom provider from Goose's declarative provider store.
+ */
+export type CustomProviderDeleteRequest = {
+    providerId: string;
+};
+
+export type CustomProviderDeleteResponse = {
+    providerId: string;
+    refresh: RefreshProviderInventoryResponse;
+};
+
+/**
+ * Trigger a background refresh of provider inventories.
+ */
+export type RefreshProviderInventoryRequest = {
+    /**
+     * Which providers to refresh. Empty means all known providers.
+     */
+    providerIds?: Array<string>;
+};
+
+/**
+ * Read saved configuration field values for one provider.
+ */
+export type ProviderConfigReadRequest = {
+    providerId: string;
+};
+
+export type ProviderConfigReadResponse = {
+    fields: Array<ProviderConfigFieldValueDto>;
+};
+
+export type ProviderConfigFieldValueDto = {
+    key: string;
+    value?: string | null;
+    isSet: boolean;
+    isSecret: boolean;
+    required: boolean;
+};
+
+/**
+ * Return provider configured statuses. Empty provider_ids means all providers.
+ */
+export type ProviderConfigStatusRequest = {
+    providerIds?: Array<string>;
+};
+
+export type ProviderConfigStatusResponse = {
+    statuses: Array<ProviderConfigStatusDto>;
+};
+
+/**
+ * Save provider configuration fields and start an inventory refresh when supported.
+ */
+export type ProviderConfigSaveRequest = {
+    providerId: string;
+    fields: Array<ProviderConfigFieldUpdate>;
+};
+
+export type ProviderConfigFieldUpdate = {
+    key: string;
+    value: string;
+};
+
+export type ProviderConfigChangeResponse = {
+    status: ProviderConfigStatusDto;
+    refresh: RefreshProviderInventoryResponse;
+};
+
+/**
+ * Delete provider configuration fields and start an inventory refresh when supported.
+ */
+export type ProviderConfigDeleteRequest = {
+    providerId: string;
+};
+
+/**
+ * Read a single non-secret config value.
+ */
+export type ReadConfigRequest = {
+    key: string;
+};
+
+/**
+ * Config read response.
+ */
+export type ReadConfigResponse = {
+    value?: unknown;
+};
+
+/**
+ * Upsert a single non-secret config value.
+ */
+export type UpsertConfigRequest = {
+    key: string;
+    value: unknown;
+};
+
+/**
+ * Remove a single non-secret config value.
+ */
+export type RemoveConfigRequest = {
+    key: string;
 };
 
 /**
@@ -48,240 +544,196 @@ export type CheckSecretResponse = {
 };
 
 /**
+ * Set a secret value (write-only).
+ */
+export type UpsertSecretRequest = {
+    key: string;
+    value: unknown;
+};
+
+/**
+ * Remove a secret.
+ */
+export type RemoveSecretRequest = {
+    key: string;
+};
+
+/**
+ * Export a session as a JSON string.
+ */
+export type ExportSessionRequest = {
+    sessionId: string;
+};
+
+/**
+ * Export session response — raw JSON of the goose session with `conversation`.
+ */
+export type ExportSessionResponse = {
+    data: string;
+};
+
+/**
+ * Import a session from a JSON string.
+ */
+export type ImportSessionRequest = {
+    data: string;
+};
+
+/**
+ * Import session response — metadata about the newly created session.
+ */
+export type ImportSessionResponse = {
+    sessionId: string;
+    title?: string | null;
+    updatedAt?: string | null;
+    messageCount: number;
+};
+
+/**
+ * Update the project association for a session.
+ */
+export type UpdateSessionProjectRequest = {
+    sessionId: string;
+    projectId?: string | null;
+};
+
+/**
+ * Rename a session.
+ */
+export type RenameSessionRequest = {
+    sessionId: string;
+    title: string;
+};
+
+/**
+ * Archive a session (soft delete).
+ */
+export type ArchiveSessionRequest = {
+    sessionId: string;
+};
+
+/**
+ * Unarchive a previously archived session.
+ */
+export type UnarchiveSessionRequest = {
+    sessionId: string;
+};
+
+/**
  * Create a new source in an explicit target scope (global or project-scoped).
  */
 export type CreateSourceRequest = {
-    content: string;
-    description: string;
-    global: boolean;
+    type: SourceType;
     name: string;
+    description: string;
+    content: string;
+    global: boolean;
     /**
      * Absolute path to the project root. Required when `global` is false.
      */
     projectDir?: string | null;
-    type: SourceType;
 };
+
+/**
+ * The type of source entity.
+ */
+export type SourceType = 'skill' | 'builtinSkill' | 'recipe' | 'subrecipe' | 'agent';
 
 export type CreateSourceResponse = {
     source: SourceEntry;
 };
 
-export type CustomProviderConfigDto = {
-    apiKeyEnv?: string | null;
-    apiKeySet: boolean;
-    apiUrl: string;
-    basePath?: string | null;
-    catalogProviderId?: string | null;
-    displayName: string;
-    engine: string;
-    headers?: {
-        [key: string]: string;
-    };
-    models?: Array<string>;
-    providerId: string;
-    requiresAuth: boolean;
-    supportsStreaming?: boolean | null;
+/**
+ * A source discovered by Goose and backed by an on-disk path. Sources may be
+ * either `global` (shared across all projects) or project-specific.
+ */
+export type SourceEntry = {
+    type: SourceType;
+    name: string;
+    description: string;
+    content: string;
+    /**
+     * Absolute path to the source on disk. A directory for skills, a file for
+     * recipes and agents.
+     */
+    directory: string;
+    /**
+     * True when the source lives in the user's global sources directory; false
+     * when it lives inside a specific project.
+     */
+    global: boolean;
+    /**
+     * Paths (absolute) of additional files that live alongside the source.
+     * Only skills currently populate this; empty for other source types.
+     */
+    supportingFiles?: Array<string>;
 };
 
 /**
- * Create a custom provider backed by Goose's declarative provider store.
+ * List discovered sources.
+ *
+ * Today this endpoint only returns skills. If `type` is omitted, it defaults
+ * to listing skill sources. Both global and project-scoped skills are included
+ * when `project_dir` is set.
  */
-export type CustomProviderCreateRequest = {
-    apiKey?: string | null;
-    apiUrl: string;
-    basePath?: string | null;
-    catalogProviderId?: string | null;
-    displayName: string;
-    engine: string;
-    headers?: {
-        [key: string]: string;
-    };
-    models?: Array<string>;
-    requiresAuth: boolean;
-    supportsStreaming?: boolean | null;
+export type ListSourcesRequest = {
+    type?: SourceType | null;
+    projectDir?: string | null;
 };
 
-export type CustomProviderCreateResponse = {
-    providerId: string;
-    refresh: RefreshProviderInventoryResponse;
-    status: ProviderConfigStatusDto;
+export type ListSourcesResponse = {
+    sources: Array<SourceEntry>;
 };
 
 /**
- * Delete a custom provider from Goose's declarative provider store.
+ * Update an existing source's name, description, and content by absolute path.
  */
-export type CustomProviderDeleteRequest = {
-    providerId: string;
+export type UpdateSourceRequest = {
+    type: SourceType;
+    path: string;
+    name: string;
+    description: string;
+    content: string;
 };
 
-export type CustomProviderDeleteResponse = {
-    providerId: string;
-    refresh: RefreshProviderInventoryResponse;
-};
-
-/**
- * Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
- */
-export type CustomProviderReadRequest = {
-    providerId: string;
-};
-
-export type CustomProviderReadResponse = {
-    editable: boolean;
-    provider: CustomProviderConfigDto;
-    status: ProviderConfigStatusDto;
-};
-
-/**
- * Update a custom provider backed by Goose's declarative provider store.
- */
-export type CustomProviderUpdateRequest = {
-    apiKey?: string | null;
-    apiUrl: string;
-    basePath?: string | null;
-    catalogProviderId?: string | null;
-    displayName: string;
-    engine: string;
-    headers?: {
-        [key: string]: string;
-    };
-    models?: Array<string>;
-    providerId: string;
-    requiresAuth: boolean;
-    supportsStreaming?: boolean | null;
-};
-
-export type CustomProviderUpdateResponse = {
-    providerId: string;
-    refresh: RefreshProviderInventoryResponse;
-    status: ProviderConfigStatusDto;
-};
-
-/**
- * Delete a session.
- */
-export type DeleteSessionRequest = {
-    sessionId: string;
+export type UpdateSourceResponse = {
+    source: SourceEntry;
 };
 
 /**
  * Delete a source and its on-disk directory by absolute path.
  */
 export type DeleteSourceRequest = {
-    path: string;
     type: SourceType;
+    path: string;
 };
 
 /**
- * Get the configuration status of all dictation providers.
+ * Export a source at an absolute path as a portable JSON payload.
  */
-export type DictationConfigRequest = {
-    [key: string]: unknown;
+export type ExportSourceRequest = {
+    type: SourceType;
+    path: string;
+};
+
+export type ExportSourceResponse = {
+    json: string;
+    filename: string;
 };
 
 /**
- * Dictation config response — map of provider name to status.
+ * Import a source from a JSON export payload produced by `_goose/sources/export`.
+ * The imported source is written into the explicit target scope; on name
+ * collisions a `-imported` suffix is appended.
  */
-export type DictationConfigResponse = {
-    providers: {
-        [key: string]: DictationProviderStatusEntry;
-    };
+export type ImportSourcesRequest = {
+    data: string;
+    global: boolean;
+    projectDir?: string | null;
 };
 
-export type DictationDownloadProgress = {
-    bytesDownloaded: number;
-    error?: string | null;
-    progressPercent: number;
-    /**
-     * serde lowercase of DownloadStatus: "downloading" | "completed" | "failed" | "cancelled"
-     */
-    status: string;
-    totalBytes: number;
-};
-
-export type DictationLocalModelStatus = {
-    description: string;
-    downloadInProgress: boolean;
-    downloaded: boolean;
-    id: string;
-    label: string;
-    sizeMb: number;
-};
-
-/**
- * Cancel an in-flight download.
- */
-export type DictationModelCancelRequest = {
-    modelId: string;
-};
-
-/**
- * Delete a downloaded local Whisper model from disk.
- */
-export type DictationModelDeleteRequest = {
-    modelId: string;
-};
-
-/**
- * Poll the progress of an in-flight download.
- */
-export type DictationModelDownloadProgressRequest = {
-    modelId: string;
-};
-
-export type DictationModelDownloadProgressResponse = {
-    /**
-     * None when no download is active for this model id.
-     */
-    progress?: DictationDownloadProgress | null;
-};
-
-/**
- * Kick off a background download of a local Whisper model.
- */
-export type DictationModelDownloadRequest = {
-    modelId: string;
-};
-
-export type DictationModelOption = {
-    description: string;
-    id: string;
-    label: string;
-};
-
-/**
- * Persist the user's model selection for a given provider.
- */
-export type DictationModelSelectRequest = {
-    modelId: string;
-    provider: string;
-};
-
-/**
- * List available local Whisper models with their download status.
- */
-export type DictationModelsListRequest = {
-    [key: string]: unknown;
-};
-
-export type DictationModelsListResponse = {
-    models: Array<DictationLocalModelStatus>;
-};
-
-/**
- * Per-provider configuration status.
- */
-export type DictationProviderStatusEntry = {
-    availableModels?: Array<DictationModelOption>;
-    configKey?: string | null;
-    configured: boolean;
-    defaultModel?: string | null;
-    description: string;
-    host?: string | null;
-    modelConfigKey?: string | null;
-    selectedModel?: string | null;
-    settingsPath?: string | null;
-    usesProviderConfig: boolean;
+export type ImportSourcesResponse = {
+    sources: Array<SourceEntry>;
 };
 
 /**
@@ -310,37 +762,115 @@ export type DictationTranscribeResponse = {
 };
 
 /**
- * Empty success response for operations that return no data.
+ * Get the configuration status of all dictation providers.
  */
-export type EmptyResponse = {
+export type DictationConfigRequest = {
     [key: string]: unknown;
 };
 
 /**
- * Export a session as a JSON string.
+ * Dictation config response — map of provider name to status.
  */
-export type ExportSessionRequest = {
-    sessionId: string;
+export type DictationConfigResponse = {
+    providers: {
+        [key: string]: DictationProviderStatusEntry;
+    };
 };
 
 /**
- * Export session response — raw JSON of the goose session with `conversation`.
+ * Per-provider configuration status.
  */
-export type ExportSessionResponse = {
-    data: string;
+export type DictationProviderStatusEntry = {
+    configured: boolean;
+    host?: string | null;
+    description: string;
+    usesProviderConfig: boolean;
+    settingsPath?: string | null;
+    configKey?: string | null;
+    modelConfigKey?: string | null;
+    defaultModel?: string | null;
+    selectedModel?: string | null;
+    availableModels?: Array<DictationModelOption>;
+};
+
+export type DictationModelOption = {
+    id: string;
+    label: string;
+    description: string;
 };
 
 /**
- * Export a source at an absolute path as a portable JSON payload.
+ * List available local Whisper models with their download status.
  */
-export type ExportSourceRequest = {
-    path: string;
-    type: SourceType;
+export type DictationModelsListRequest = {
+    [key: string]: unknown;
 };
 
-export type ExportSourceResponse = {
-    filename: string;
-    json: string;
+export type DictationModelsListResponse = {
+    models: Array<DictationLocalModelStatus>;
+};
+
+export type DictationLocalModelStatus = {
+    id: string;
+    label: string;
+    description: string;
+    sizeMb: number;
+    downloaded: boolean;
+    downloadInProgress: boolean;
+};
+
+/**
+ * Kick off a background download of a local Whisper model.
+ */
+export type DictationModelDownloadRequest = {
+    modelId: string;
+};
+
+/**
+ * Poll the progress of an in-flight download.
+ */
+export type DictationModelDownloadProgressRequest = {
+    modelId: string;
+};
+
+export type DictationModelDownloadProgressResponse = {
+    /**
+     * None when no download is active for this model id.
+     */
+    progress?: DictationDownloadProgress | null;
+};
+
+export type DictationDownloadProgress = {
+    bytesDownloaded: number;
+    totalBytes: number;
+    progressPercent: number;
+    /**
+     * serde lowercase of DownloadStatus: "downloading" | "completed" | "failed" | "cancelled"
+     */
+    status: string;
+    error?: string | null;
+};
+
+/**
+ * Cancel an in-flight download.
+ */
+export type DictationModelCancelRequest = {
+    modelId: string;
+};
+
+/**
+ * Delete a downloaded local Whisper model from disk.
+ */
+export type DictationModelDeleteRequest = {
+    modelId: string;
+};
+
+/**
+ * Persist the user's model selection for a given provider.
+ */
+export type DictationModelSelectRequest = {
+    provider: string;
+    modelId: string;
 };
 
 export type ExtRequest = {
@@ -357,538 +887,8 @@ export type ExtResponse = {
 } | {
     error: {
         code: number;
-        data?: unknown;
         message: string;
+        data?: unknown;
     };
     id: string;
-};
-
-/**
- * List configured extensions and any warnings.
- */
-export type GetExtensionsRequest = {
-    [key: string]: unknown;
-};
-
-/**
- * List configured extensions and any warnings.
- */
-export type GetExtensionsResponse = {
-    /**
-     * Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.
-     */
-    extensions: Array<unknown>;
-    warnings: Array<string>;
-};
-
-export type GetSessionExtensionsRequest = {
-    sessionId: string;
-};
-
-export type GetSessionExtensionsResponse = {
-    extensions: Array<unknown>;
-};
-
-/**
- * List all tools available in a session.
- */
-export type GetToolsRequest = {
-    sessionId: string;
-};
-
-/**
- * Tools response.
- */
-export type GetToolsResponse = {
-    /**
-     * Array of tool info objects with `name`, `description`, `parameters`, and optional `permission`.
-     */
-    tools: Array<unknown>;
-};
-
-/**
- * Import a session from a JSON string.
- */
-export type ImportSessionRequest = {
-    data: string;
-};
-
-/**
- * Import session response — metadata about the newly created session.
- */
-export type ImportSessionResponse = {
-    messageCount: number;
-    sessionId: string;
-    title?: string | null;
-    updatedAt?: string | null;
-};
-
-/**
- * Import a source from a JSON export payload produced by `_goose/sources/export`.
- * The imported source is written into the explicit target scope; on name
- * collisions a `-imported` suffix is appended.
- */
-export type ImportSourcesRequest = {
-    data: string;
-    global: boolean;
-    projectDir?: string | null;
-};
-
-export type ImportSourcesResponse = {
-    sources: Array<SourceEntry>;
-};
-
-/**
- * List providers with setup metadata and the current model inventory snapshot.
- */
-export type ListProvidersRequest = {
-    /**
-     * Only return entries for these providers. Empty means all.
-     */
-    providerIds?: Array<string>;
-};
-
-/**
- * Provider list response.
- */
-export type ListProvidersResponse = {
-    entries: Array<ProviderInventoryEntryDto>;
-};
-
-/**
- * List discovered sources.
- *
- * Today this endpoint only returns skills. If `type` is omitted, it defaults
- * to listing skill sources. Both global and project-scoped skills are included
- * when `project_dir` is set.
- */
-export type ListSourcesRequest = {
-    projectDir?: string | null;
-    type?: SourceType | null;
-};
-
-export type ListSourcesResponse = {
-    sources: Array<SourceEntry>;
-};
-
-export type ProviderCatalogEntryDto = {
-    apiUrl: string;
-    docUrl: string;
-    envVar: string;
-    format: string;
-    modelCount: number;
-    name: string;
-    providerId: string;
-};
-
-/**
- * List custom-provider catalog entries. Omit `format` to list all formats.
- */
-export type ProviderCatalogListRequest = {
-    format?: string | null;
-};
-
-export type ProviderCatalogListResponse = {
-    providers: Array<ProviderCatalogEntryDto>;
-};
-
-/**
- * Return the editable template for one catalog provider.
- */
-export type ProviderCatalogTemplateRequest = {
-    providerId: string;
-};
-
-export type ProviderCatalogTemplateResponse = {
-    template: ProviderTemplateDto;
-};
-
-export type ProviderConfigChangeResponse = {
-    refresh: RefreshProviderInventoryResponse;
-    status: ProviderConfigStatusDto;
-};
-
-/**
- * Delete provider configuration fields and start an inventory refresh when supported.
- */
-export type ProviderConfigDeleteRequest = {
-    providerId: string;
-};
-
-export type ProviderConfigFieldUpdate = {
-    key: string;
-    value: string;
-};
-
-export type ProviderConfigFieldValueDto = {
-    isSecret: boolean;
-    isSet: boolean;
-    key: string;
-    required: boolean;
-    value?: string | null;
-};
-
-export type ProviderConfigKey = {
-    default?: string | null;
-    deviceCodeFlow?: boolean;
-    name: string;
-    oauthFlow?: boolean;
-    primary?: boolean;
-    required: boolean;
-    secret: boolean;
-};
-
-/**
- * Read saved configuration field values for one provider.
- */
-export type ProviderConfigReadRequest = {
-    providerId: string;
-};
-
-export type ProviderConfigReadResponse = {
-    fields: Array<ProviderConfigFieldValueDto>;
-};
-
-/**
- * Save provider configuration fields and start an inventory refresh when supported.
- */
-export type ProviderConfigSaveRequest = {
-    fields: Array<ProviderConfigFieldUpdate>;
-    providerId: string;
-};
-
-export type ProviderConfigStatusDto = {
-    isConfigured: boolean;
-    providerId: string;
-};
-
-/**
- * Return provider configured statuses. Empty provider_ids means all providers.
- */
-export type ProviderConfigStatusRequest = {
-    providerIds?: Array<string>;
-};
-
-export type ProviderConfigStatusResponse = {
-    statuses: Array<ProviderConfigStatusDto>;
-};
-
-/**
- * Provider inventory entry.
- */
-export type ProviderInventoryEntryDto = {
-    /**
-     * Required configuration keys and setup metadata.
-     */
-    configKeys: Array<ProviderConfigKey>;
-    /**
-     * Whether Goose has enough configuration to use this provider.
-     */
-    configured: boolean;
-    /**
-     * The default/recommended model for this provider.
-     */
-    defaultModel: string;
-    /**
-     * Description of the provider's capabilities.
-     */
-    description: string;
-    /**
-     * When a refresh was most recently attempted (ISO 8601).
-     */
-    lastRefreshAttemptAt?: string | null;
-    /**
-     * The last refresh failure message, if any.
-     */
-    lastRefreshError?: string | null;
-    /**
-     * When this entry was last successfully refreshed (ISO 8601).
-     */
-    lastUpdatedAt?: string | null;
-    /**
-     * Guidance message shown when this provider manages its own model selection externally.
-     */
-    modelSelectionHint?: string | null;
-    /**
-     * The list of available models.
-     */
-    models: Array<ProviderInventoryModelDto>;
-    /**
-     * Provider identifier.
-     */
-    providerId: string;
-    /**
-     * Human-readable provider name.
-     */
-    providerName: string;
-    /**
-     * Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
-     */
-    providerType: string;
-    /**
-     * Whether a refresh is currently in flight.
-     */
-    refreshing: boolean;
-    /**
-     * Step-by-step setup instructions, when present.
-     */
-    setupSteps: Array<string>;
-    /**
-     * Whether we believe this data may be outdated.
-     */
-    stale: boolean;
-    /**
-     * Whether this provider supports background inventory refresh.
-     */
-    supportsRefresh: boolean;
-};
-
-/**
- * A single model in provider inventory.
- */
-export type ProviderInventoryModelDto = {
-    /**
-     * Context window size in tokens.
-     */
-    contextLimit?: number | null;
-    /**
-     * Model family for grouping in UI.
-     */
-    family?: string | null;
-    /**
-     * Model identifier as the provider knows it.
-     */
-    id: string;
-    /**
-     * Human-readable display name.
-     */
-    name: string;
-    /**
-     * Whether the model supports reasoning/extended thinking.
-     */
-    reasoning?: boolean | null;
-    /**
-     * Whether this model should appear in the compact recommended picker.
-     */
-    recommended?: boolean;
-};
-
-export type ProviderTemplateCapabilitiesDto = {
-    attachment: boolean;
-    reasoning: boolean;
-    temperature: boolean;
-    toolCall: boolean;
-};
-
-export type ProviderTemplateDto = {
-    apiUrl: string;
-    docUrl: string;
-    envVar: string;
-    format: string;
-    models: Array<ProviderTemplateModelDto>;
-    name: string;
-    providerId: string;
-    supportsStreaming: boolean;
-};
-
-export type ProviderTemplateModelDto = {
-    capabilities: ProviderTemplateCapabilitiesDto;
-    contextLimit: number;
-    deprecated: boolean;
-    id: string;
-    name: string;
-};
-
-/**
- * Read a single non-secret config value.
- */
-export type ReadConfigRequest = {
-    key: string;
-};
-
-/**
- * Config read response.
- */
-export type ReadConfigResponse = {
-    value?: unknown;
-};
-
-/**
- * Read a resource from an extension.
- */
-export type ReadResourceRequest = {
-    extensionName: string;
-    sessionId: string;
-    uri: string;
-};
-
-/**
- * Resource read response.
- */
-export type ReadResourceResponse = {
-    /**
-     * The resource result from the extension (MCP ReadResourceResult).
-     */
-    result?: unknown;
-};
-
-/**
- * Trigger a background refresh of provider inventories.
- */
-export type RefreshProviderInventoryRequest = {
-    /**
-     * Which providers to refresh. Empty means all known providers.
-     */
-    providerIds?: Array<string>;
-};
-
-/**
- * Refresh acknowledgement.
- */
-export type RefreshProviderInventoryResponse = {
-    /**
-     * Which providers were skipped and why.
-     */
-    skipped?: Array<RefreshProviderInventorySkipDto>;
-    /**
-     * Which providers will be refreshed.
-     */
-    started: Array<string>;
-};
-
-export type RefreshProviderInventorySkipDto = {
-    providerId: string;
-    reason: RefreshProviderInventorySkipReasonDto;
-};
-
-export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_configured' | 'does_not_support_refresh' | 'already_refreshing';
-
-/**
- * Remove a persisted extension from the user's global goose config.
- */
-export type RemoveConfigExtensionRequest = {
-    configKey: string;
-};
-
-/**
- * Remove a single non-secret config value.
- */
-export type RemoveConfigRequest = {
-    key: string;
-};
-
-/**
- * Remove an extension from an active session.
- */
-export type RemoveExtensionRequest = {
-    name: string;
-    sessionId: string;
-};
-
-/**
- * Remove a secret.
- */
-export type RemoveSecretRequest = {
-    key: string;
-};
-
-/**
- * Rename a session.
- */
-export type RenameSessionRequest = {
-    sessionId: string;
-    title: string;
-};
-
-/**
- * A source discovered by Goose and backed by an on-disk path. Sources may be
- * either `global` (shared across all projects) or project-specific.
- */
-export type SourceEntry = {
-    content: string;
-    description: string;
-    /**
-     * Absolute path to the source on disk. A directory for skills, a file for
-     * recipes and agents.
-     */
-    directory: string;
-    /**
-     * True when the source lives in the user's global sources directory; false
-     * when it lives inside a specific project.
-     */
-    global: boolean;
-    name: string;
-    /**
-     * Paths (absolute) of additional files that live alongside the source.
-     * Only skills currently populate this; empty for other source types.
-     */
-    supportingFiles?: Array<string>;
-    type: SourceType;
-};
-
-/**
- * The type of source entity.
- */
-export type SourceType = 'skill' | 'builtinSkill' | 'recipe' | 'subrecipe' | 'agent';
-
-/**
- * Toggle the `enabled` flag for a persisted extension in the user's global goose config.
- */
-export type ToggleConfigExtensionRequest = {
-    configKey: string;
-    enabled: boolean;
-};
-
-/**
- * Unarchive a previously archived session.
- */
-export type UnarchiveSessionRequest = {
-    sessionId: string;
-};
-
-/**
- * Update the project association for a session.
- */
-export type UpdateSessionProjectRequest = {
-    projectId?: string | null;
-    sessionId: string;
-};
-
-/**
- * Update an existing source's name, description, and content by absolute path.
- */
-export type UpdateSourceRequest = {
-    content: string;
-    description: string;
-    name: string;
-    path: string;
-    type: SourceType;
-};
-
-export type UpdateSourceResponse = {
-    source: SourceEntry;
-};
-
-/**
- * Update the working directory for a session.
- */
-export type UpdateWorkingDirRequest = {
-    sessionId: string;
-    workingDir: string;
-};
-
-/**
- * Upsert a single non-secret config value.
- */
-export type UpsertConfigRequest = {
-    key: string;
-    value: unknown;
-};
-
-/**
- * Set a secret value (write-only).
- */
-export type UpsertSecretRequest = {
-    key: string;
-    value: unknown;
 };
