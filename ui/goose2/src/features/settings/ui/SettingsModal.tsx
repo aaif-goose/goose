@@ -154,7 +154,7 @@ export function SettingsModal({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: click handler only prevents backdrop dismiss propagation */}
       <div
         className={cn(
-          "flex h-[600px] w-full max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-opacity duration-300 ease-out",
+          "flex h-[min(600px,calc(100vh-4rem))] w-[calc(100vw-2rem)] max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-opacity duration-300 ease-out",
           isLoaded ? "opacity-100" : "opacity-0",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -162,7 +162,7 @@ export function SettingsModal({
         {/* Sidebar */}
         <div
           className={cn(
-            "flex w-44 flex-col border-r bg-muted/50 transition-all duration-700 ease-out",
+            "flex min-h-0 w-44 flex-shrink-0 flex-col border-r bg-muted/50 transition-all duration-700 ease-out",
             isLoaded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2",
           )}
         >
@@ -176,31 +176,33 @@ export function SettingsModal({
           >
             <h2 className="text-sm font-semibold">{t("title")}</h2>
           </div>
-          <nav className="flex flex-col gap-1 px-2">
-            {navItems.map((item, index) => (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                key={item.id}
-                onClick={() => setActiveSection(item.id)}
-                className={cn(
-                  "w-full justify-start rounded-lg px-3 py-2 transition-all duration-600 ease-out",
-                  activeSection === item.id
-                    ? "bg-background text-foreground shadow-sm hover:bg-background"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground duration-300",
-                  isLoaded
-                    ? "opacity-100 translate-x-0"
-                    : "opacity-0 translate-x-4",
-                )}
-                style={{
-                  transitionDelay: isLoaded ? "0ms" : `${index * 40 + 300}ms`,
-                }}
-              >
-                <item.icon className="size-4" />
-                {item.label}
-              </Button>
-            ))}
+          <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <div className="flex flex-col gap-1">
+              {navItems.map((item, index) => (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  key={item.id}
+                  onClick={() => setActiveSection(item.id)}
+                  className={cn(
+                    "w-full justify-start rounded-lg px-3 py-2 transition-all duration-600 ease-out",
+                    activeSection === item.id
+                      ? "bg-background text-foreground shadow-sm hover:bg-background"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground duration-300",
+                    isLoaded
+                      ? "opacity-100 translate-x-0"
+                      : "opacity-0 translate-x-4",
+                  )}
+                  style={{
+                    transitionDelay: isLoaded ? "0ms" : `${index * 40 + 300}ms`,
+                  }}
+                >
+                  <item.icon className="size-4" />
+                  {item.label}
+                </Button>
+              ))}
+            </div>
           </nav>
         </div>
 
