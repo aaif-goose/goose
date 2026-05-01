@@ -1670,6 +1670,42 @@ fn extract_tool_call_update_meta(
     Some(meta_map)
 }
 
+fn replay_message_meta(message: &Message) -> Meta {
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "goose".to_string(),
+        serde_json::Value::Object(replay_message_goose_meta(message)),
+    );
+    meta
+}
+
+fn replay_message_goose_meta(message: &Message) -> serde_json::Map<String, serde_json::Value> {
+    let mut goose = serde_json::Map::new();
+    goose.insert("created".to_string(), serde_json::json!(message.created));
+    if let Some(id) = &message.id {
+        goose.insert("messageId".to_string(), serde_json::json!(id));
+    }
+    goose
+}
+
+fn merge_replay_message_meta(meta: Option<Meta>, message: &Message) -> Meta {
+    let replay_goose = replay_message_goose_meta(message);
+    let mut meta = meta.unwrap_or_default();
+    let goose_value = meta
+        .entry("goose".to_string())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+
+    if let serde_json::Value::Object(goose) = goose_value {
+        for (key, value) in replay_goose {
+            goose.insert(key, value);
+        }
+    } else {
+        *goose_value = serde_json::Value::Object(replay_goose);
+    }
+
+    meta
+}
+
 fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<ToolCallContent> {
     match tool_result {
         Ok(result) => result
@@ -2119,7 +2155,8 @@ impl GooseAcpAgent {
                                 ),
                             );
                         }
-                        let chunk = ContentChunk::new(ContentBlock::Text(tc));
+                        let chunk = ContentChunk::new(ContentBlock::Text(tc))
+                            .meta(replay_message_meta(message));
                         let update = match message.role {
                             Role::User => SessionUpdate::UserMessageChunk(chunk),
                             Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
@@ -2147,7 +2184,8 @@ impl GooseAcpAgent {
                                     ToolCallId::new(tool_request.id.clone()),
                                     format_tool_name(&tool_name),
                                 )
-                                .status(ToolCallStatus::Pending),
+                                .status(ToolCallStatus::Pending)
+                                .meta(replay_message_meta(message)),
                             ),
                         ))?;
                     }
@@ -2187,7 +2225,10 @@ impl GooseAcpAgent {
 
                         let update =
                             ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
-                                .meta(extract_tool_call_update_meta(tool_response));
+                                .meta(merge_replay_message_meta(
+                                    extract_tool_call_update_meta(tool_response),
+                                    message,
+                                ));
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
                             SessionUpdate::ToolCallUpdate(update),
@@ -3243,6 +3284,36 @@ print(\"hello, world\")
         assert_eq!(
             extracted.get("goose"),
             Some(&serde_json::json!({
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            })),
+        );
+    }
+
+    #[test]
+    fn test_merge_replay_message_meta_preserves_existing_goose_meta() {
+        let message = Message::new(Role::Assistant, 1_700_000_000, vec![]).with_id("msg_1");
+        let existing = serde_json::from_value(serde_json::json!({
+            "goose": {
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            },
+        }))
+        .unwrap();
+
+        let merged = merge_replay_message_meta(Some(existing), &message);
+
+        assert_eq!(
+            merged.get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_1",
                 "mcpApp": {
                     "resourceUri": "ui://trusted/app",
                     "extensionName": "weather",

@@ -288,8 +288,64 @@ describe("acpNotificationHandler", () => {
     });
   });
 
+  it("replay preserves timestamps from goose metadata on user and assistant chunks", async () => {
+    const replaySessionId = "replay-timestamp-session";
+    const userCreated = 1_700_000_000;
+    const assistantCreated = 1_700_000_120;
+    useChatStore.setState({
+      loadingSessionIds: new Set<string>([replaySessionId]),
+    });
+
+    await handleSessionNotification({
+      sessionId: replaySessionId,
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: {
+          type: "text",
+          text: "what time was this sent?",
+        },
+        _meta: {
+          goose: {
+            messageId: "user-from-meta",
+            created: userCreated,
+          },
+        },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: replaySessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "At the original replay time.",
+        },
+        _meta: {
+          goose: {
+            messageId: "assistant-from-meta",
+            created: assistantCreated,
+          },
+        },
+      },
+    } as never);
+
+    const buffer = getReplayBuffer(replaySessionId);
+    expect(buffer?.[0]).toMatchObject({
+      id: "user-from-meta",
+      role: "user",
+      created: userCreated * 1000,
+    });
+    expect(buffer?.[1]).toMatchObject({
+      id: "assistant-from-meta",
+      role: "assistant",
+      created: assistantCreated * 1000,
+    });
+  });
+
   it("replay preserves gooseSessionId in MCP app payloads before tracker registration", async () => {
     const replaySessionId = "replay-goose-session-2";
+    const replayCreated = 1_700_000_240;
     useChatStore.setState({
       loadingSessionIds: new Set<string>([replaySessionId]),
     });
@@ -300,6 +356,12 @@ describe("acpNotificationHandler", () => {
         sessionUpdate: "tool_call",
         toolCallId: "tool-1",
         title: "mcp_app_bench__inspect_host_info",
+        _meta: {
+          goose: {
+            messageId: "assistant-tool-only",
+            created: replayCreated,
+          },
+        },
       },
     } as never);
 
@@ -316,6 +378,8 @@ describe("acpNotificationHandler", () => {
               extensionName: "mcp_app_bench",
               resourceUri: "ui://inspect-host-info",
             },
+            messageId: "assistant-tool-only",
+            created: replayCreated,
           },
         },
       },
@@ -323,6 +387,10 @@ describe("acpNotificationHandler", () => {
 
     const buffer = getReplayBuffer(replaySessionId);
     const assistant = buffer?.[0];
+    expect(assistant).toMatchObject({
+      id: "assistant-tool-only",
+      created: replayCreated * 1000,
+    });
     const mcpAppBlock = assistant?.content.find(
       (block) => block.type === "mcpApp",
     );
