@@ -47,7 +47,7 @@ describe('ParameterInputModal', () => {
   describe('Rendering', () => {
     it('renders modal with parameters', () => {
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
+
       expect(screen.getByText('Recipe Parameters')).toBeInTheDocument();
       expect(screen.getByText('Test parameter 1')).toBeInTheDocument();
       expect(screen.getByText('Test parameter 2')).toBeInTheDocument();
@@ -56,8 +56,7 @@ describe('ParameterInputModal', () => {
 
     it('shows required indicator for required parameters', () => {
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
-      // param1 is required, should have red asterisk
+
       const requiredParam = screen.getByText('Test parameter 1');
       expect(requiredParam.parentElement?.querySelector('.text-red-500')).toBeInTheDocument();
     });
@@ -70,26 +69,24 @@ describe('ParameterInputModal', () => {
 
       await user.type(screen.getByLabelText(/test parameter 1/i), 'test value');
       await user.selectOptions(screen.getByLabelText(/test parameter 2/i), 'option2');
-      
-      // Submit form
+
       const submitButton = screen.getByText('Start Recipe');
       await user.click(submitButton);
-      
+
       expect(defaultProps.onSubmit).toHaveBeenCalledWith({
         param1: 'test value',
         param2: 'option2',
-        param3: 'true', // boolean default
+        param3: 'true',
       });
     });
 
     it('shows validation errors for required parameters', async () => {
       const user = userEvent.setup();
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
-      // Try to submit without filling required field
+
       const submitButton = screen.getByText('Start Recipe');
       await user.click(submitButton);
-      
+
       await waitFor(() => {
         expect(screen.getByText(/is required/)).toBeInTheDocument();
       });
@@ -101,10 +98,10 @@ describe('ParameterInputModal', () => {
     it('shows cancel options when cancel is clicked and parameters exist', async () => {
       const user = userEvent.setup();
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
+
       const cancelButton = screen.getByText('Cancel');
       await user.click(cancelButton);
-      
+
       expect(screen.getByText('Cancel Recipe Setup')).toBeInTheDocument();
       expect(screen.getByText('What would you like to do?')).toBeInTheDocument();
     });
@@ -112,10 +109,10 @@ describe('ParameterInputModal', () => {
     it('calls onClose directly when cancel is clicked and no parameters exist', async () => {
       const user = userEvent.setup();
       renderWithIntl(<ParameterInputModal {...defaultProps} parameters={[]} />);
-      
+
       const cancelButton = screen.getByText('Cancel');
       await user.click(cancelButton);
-      
+
       expect(defaultProps.onClose).toHaveBeenCalled();
     });
 
@@ -132,16 +129,13 @@ describe('ParameterInputModal', () => {
     it('returns to parameter form when "Back to Parameter Form" is clicked', async () => {
       const user = userEvent.setup();
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
-      
-      // Click cancel to show options
+
       const cancelButton = screen.getByText('Cancel');
       await user.click(cancelButton);
-      
-      // Click "Back to Parameter Form"
+
       const backButton = screen.getByText('Back to Parameter Form');
       await user.click(backButton);
-      
-      // Should be back to parameter form
+
       expect(screen.getByText('Recipe Parameters')).toBeInTheDocument();
       expect(defaultProps.onClose).not.toHaveBeenCalled();
     });
@@ -150,18 +144,18 @@ describe('ParameterInputModal', () => {
   describe('Initial Values', () => {
     it('pre-fills form with initial values', () => {
       renderWithIntl(
-        <ParameterInputModal
-          {...defaultProps}
-          initialValues={{ param1: 'initial value' }}
-        />
+        <ParameterInputModal {...defaultProps} initialValues={{ param1: 'initial value' }} />
       );
 
-      expect((screen.getByLabelText(/test parameter 1/i) as HTMLInputElement).value).toBe('initial value');
+      expect((screen.getByLabelText(/test parameter 1/i) as HTMLInputElement).value).toBe(
+        'initial value'
+      );
     });
 
     it('pre-fills form with default values from parameters', () => {
       renderWithIntl(<ParameterInputModal {...defaultProps} />);
 
+      // eslint-disable-next-line no-undef
       expect((screen.getByLabelText(/boolean parameter/i) as HTMLSelectElement).value).toBe('true');
     });
   });
