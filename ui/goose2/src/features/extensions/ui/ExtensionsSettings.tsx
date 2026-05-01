@@ -48,7 +48,6 @@ export function ExtensionsSettings() {
     handleConfigure,
     handleSubmit,
     handleDelete,
-    handleToggleEnabled,
     handleModalClose,
   } = useExtensionsSettings();
   const [searchTerm, setSearchTerm] = useState("");
@@ -105,7 +104,6 @@ export function ExtensionsSettings() {
               key={ext.config_key}
               extension={ext}
               onConfigure={handleConfigure}
-              onToggleEnabled={handleToggleEnabled}
             />
           ))}
         </div>

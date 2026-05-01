@@ -39,10 +39,7 @@ const extensions: ExtensionEntry[] = [
 ];
 
 describe("ExtensionsSettings", () => {
-  let handleToggleEnabled: ReturnType<typeof vi.fn>;
-
   beforeEach(() => {
-    handleToggleEnabled = vi.fn();
     mockUseExtensionsSettings.mockReturnValue({
       extensions,
       isLoading: false,
@@ -52,7 +49,6 @@ describe("ExtensionsSettings", () => {
       handleConfigure: vi.fn(),
       handleSubmit: vi.fn(),
       handleDelete: vi.fn(),
-      handleToggleEnabled,
       handleModalClose: vi.fn(),
     });
   });
@@ -73,9 +69,13 @@ describe("ExtensionsSettings", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not show global enable toggles for Goose capabilities", async () => {
+  it("does not show global enable toggles", async () => {
     const user = userEvent.setup();
     render(<ExtensionsSettings />);
+
+    expect(
+      screen.queryByRole("switch", { name: /disable github/i }),
+    ).not.toBeInTheDocument();
 
     await user.type(screen.getByRole("searchbox"), "summarize");
 
