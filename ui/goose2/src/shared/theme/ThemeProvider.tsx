@@ -14,6 +14,8 @@ type ThemeProviderState = {
   resolvedTheme: ResolvedTheme;
   setTheme: (theme: ThemePreference) => void;
   accentColor: string;
+  accentColorPreference: string;
+  resetAccentColor: () => void;
   setAccentColor: (color: string) => void;
   density: Density;
   setDensity: (d: Density) => void;
@@ -23,7 +25,9 @@ const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
 >(undefined);
 
-const DEFAULT_ACCENT_COLOR = "#3b82f6";
+const DEFAULT_ACCENT_COLOR_PREFERENCE = "default";
+const DEFAULT_LIGHT_ACCENT_COLOR = "#1a1a1a";
+const DEFAULT_DARK_ACCENT_COLOR = "#ffffff";
 
 function resolveTheme(preference: ThemePreference): ResolvedTheme {
   if (preference === "system") {
@@ -34,9 +38,15 @@ function resolveTheme(preference: ThemePreference): ResolvedTheme {
   return preference;
 }
 
-function normalizeHexColor(color: string | null): string {
+function getDefaultAccentColor(theme: ResolvedTheme): string {
+  return theme === "dark"
+    ? DEFAULT_DARK_ACCENT_COLOR
+    : DEFAULT_LIGHT_ACCENT_COLOR;
+}
+
+function normalizeHexColor(color: string | null): string | null {
   const value = color?.trim();
-  if (!value) return DEFAULT_ACCENT_COLOR;
+  if (!value || value === DEFAULT_ACCENT_COLOR_PREFERENCE) return null;
 
   const hex = value.startsWith("#") ? value.slice(1) : value;
   if (/^[0-9a-fA-F]{3}$/.test(hex)) {
@@ -50,7 +60,7 @@ function normalizeHexColor(color: string | null): string {
     return `#${hex.toLowerCase()}`;
   }
 
-  return DEFAULT_ACCENT_COLOR;
+  return null;
 }
 
 function getRelativeLuminance(hexColor: string): number {
@@ -75,13 +85,12 @@ function getContrastColor(hexColor: string): string {
 }
 
 function applyAccentColor(root: HTMLElement, color: string) {
-  const normalizedColor = normalizeHexColor(color);
-  const foreground = getContrastColor(normalizedColor);
-  root.style.setProperty("--brand", normalizedColor);
+  const foreground = getContrastColor(color);
+  root.style.setProperty("--brand", color);
   root.style.setProperty("--brand-foreground", foreground);
-  root.style.setProperty("--color-brand", normalizedColor);
+  root.style.setProperty("--color-brand", color);
   root.style.setProperty("--color-brand-foreground", foreground);
-  root.style.accentColor = normalizedColor;
+  root.style.accentColor = color;
 }
 
 export function ThemeProvider({
@@ -99,14 +108,24 @@ export function ThemeProvider({
     resolveTheme(theme),
   );
 
-  const [accentColor, setAccentColorState] = React.useState<string>(() => {
-    return normalizeHexColor(localStorage.getItem("goose-accent-color"));
-  });
+  const [accentColorPreference, setAccentColorPreference] =
+    React.useState<string>(() => {
+      return (
+        normalizeHexColor(localStorage.getItem("goose-accent-color")) ??
+        DEFAULT_ACCENT_COLOR_PREFERENCE
+      );
+    });
 
   const [density, setDensityState] = React.useState<Density>(() => {
     const stored = localStorage.getItem("goose-density") as Density | null;
     return stored ?? "comfortable";
   });
+
+  const accentColor = React.useMemo(() => {
+    return accentColorPreference === DEFAULT_ACCENT_COLOR_PREFERENCE
+      ? getDefaultAccentColor(resolvedTheme)
+      : accentColorPreference;
+  }, [accentColorPreference, resolvedTheme]);
 
   const setTheme = React.useCallback((newTheme: ThemePreference) => {
     localStorage.setItem("goose-theme", newTheme);
@@ -115,8 +134,19 @@ export function ThemeProvider({
 
   const setAccentColor = React.useCallback((color: string) => {
     const normalizedColor = normalizeHexColor(color);
+    if (!normalizedColor) {
+      localStorage.removeItem("goose-accent-color");
+      setAccentColorPreference(DEFAULT_ACCENT_COLOR_PREFERENCE);
+      return;
+    }
+
     localStorage.setItem("goose-accent-color", normalizedColor);
-    setAccentColorState(normalizedColor);
+    setAccentColorPreference(normalizedColor);
+  }, []);
+
+  const resetAccentColor = React.useCallback(() => {
+    localStorage.removeItem("goose-accent-color");
+    setAccentColorPreference(DEFAULT_ACCENT_COLOR_PREFERENCE);
   }, []);
 
   const setDensity = React.useCallback((d: Density) => {
@@ -168,6 +198,8 @@ export function ThemeProvider({
       resolvedTheme,
       setTheme,
       accentColor,
+      accentColorPreference,
+      resetAccentColor,
       setAccentColor,
       density,
       setDensity,
@@ -177,6 +209,8 @@ export function ThemeProvider({
       resolvedTheme,
       setTheme,
       accentColor,
+      accentColorPreference,
+      resetAccentColor,
       setAccentColor,
       density,
       setDensity,

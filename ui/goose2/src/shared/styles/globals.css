@@ -85,7 +85,7 @@
   --radius: 20px;
 
   /* theming accents */
-  --brand: #3b82f6;
+  --brand: var(--color-gray-900);
   --brand-foreground: #ffffff;
   --background-accent: var(--brand);
   --border-accent: var(--brand);
@@ -256,6 +256,8 @@
 
 .dark {
   /* theming accents */
+  --brand: var(--color-white);
+  --brand-foreground: #000000;
   --background-accent: var(--brand);
   --border-accent: var(--brand);
   --text-accent: var(--brand);

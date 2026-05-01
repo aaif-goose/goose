@@ -6,11 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
       (() => {
-        const defaultAccent = "#3b82f6";
+        const getDefaultAccent = (theme) =>
+          theme === "dark" ? "#ffffff" : "#1a1a1a";
 
         const normalizeHexColor = (color) => {
           const value = color?.trim();
-          if (!value) return defaultAccent;
+          if (!value || value === "default") return null;
 
           const hex = value.startsWith("#") ? value.slice(1) : value;
           if (/^[0-9a-fA-F]{3}$/.test(hex)) {
@@ -24,7 +25,7 @@
             return `#${hex.toLowerCase()}`;
           }
 
-          return defaultAccent;
+          return null;
         };
 
         const getRelativeLuminance = (hexColor) => {
@@ -56,7 +57,9 @@
                 ? "dark"
                 : "light"
               : storedTheme;
-          const accent = normalizeHexColor(localStorage.getItem("goose-accent-color"));
+          const accent =
+            normalizeHexColor(localStorage.getItem("goose-accent-color")) ||
+            getDefaultAccent(resolvedTheme);
           const foreground = getContrastColor(accent);
           const density = localStorage.getItem("goose-density") || "comfortable";
           const spacingScale = {
