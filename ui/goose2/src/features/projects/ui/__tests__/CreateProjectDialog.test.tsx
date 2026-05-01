@@ -106,7 +106,6 @@ function makeEditingProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
     archivedAt: null,
     createdAt: "2024-01-01",
     updatedAt: "2024-01-01",
-    artifactsDir: "/home/user/code/.goose",
     ...overrides,
   };
 }

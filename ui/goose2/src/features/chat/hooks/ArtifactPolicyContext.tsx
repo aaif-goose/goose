@@ -83,49 +83,6 @@ function basenameOf(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-function homeArtifactsRootFromRoots(roots: string[]): string | null {
-  return (
-    roots.find((root) => /\/\.goose\/artifacts\/?$/.test(root.trim())) ?? null
-  );
-}
-
-function stripRootArtifactsSegment(
-  path: string,
-  roots: string[],
-): string | null {
-  for (const root of roots) {
-    const normalizedRoot = root.replace(/\/+$/, "");
-    const prefix = `${normalizedRoot}/artifacts/`;
-    if (path.startsWith(prefix)) {
-      return `${normalizedRoot}/${path.slice(prefix.length)}`;
-    }
-  }
-  return null;
-}
-
-function fallbackArtifactPath(path: string, roots: string[]): string | null {
-  const normalized = path.trim();
-  if (!/\/\.goose\/projects\/.+\/artifacts\/.+/.test(normalized)) {
-    const rootAnchored = stripRootArtifactsSegment(normalized, roots);
-    if (rootAnchored) {
-      return rootAnchored;
-    }
-    return null;
-  }
-
-  const filename = basenameOf(normalized);
-  if (!filename || filename === normalized) {
-    return null;
-  }
-
-  const homeArtifactsRoot = homeArtifactsRootFromRoots(roots);
-  if (!homeArtifactsRoot) {
-    return null;
-  }
-
-  return `${homeArtifactsRoot.replace(/\/+$/, "")}/${filename}`;
-}
-
 export function ArtifactPolicyProvider({
   messages,
   allowedRoots,
@@ -190,14 +147,9 @@ export function ArtifactPolicyProvider({
         return path;
       }
 
-      const fallbackPath = fallbackArtifactPath(path, normalizedRoots);
-      if (fallbackPath && (await pathExists(fallbackPath))) {
-        return fallbackPath;
-      }
-
       return null;
     },
-    [normalizedRoots],
+    [],
   );
 
   const checkPathExists = useCallback(

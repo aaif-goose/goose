@@ -127,7 +127,7 @@ describe("ToolCallAdapter — ArtifactActions", () => {
   it("disables button and shows blocked reason for disallowed primary candidate", () => {
     const blocked = makeCandidate({
       allowed: false,
-      blockedReason: "Path is outside allowed project/artifacts roots.",
+      blockedReason: "Path is outside allowed roots.",
     });
     mockResolveToolCardDisplay.mockReturnValue({
       role: "primary_host",
@@ -139,7 +139,7 @@ describe("ToolCallAdapter — ArtifactActions", () => {
 
     expect(screen.getByRole("button", { name: /open file/i })).toBeDisabled();
     expect(
-      screen.getByText("Path is outside allowed project/artifacts roots."),
+      screen.getByText("Path is outside allowed roots."),
     ).toBeInTheDocument();
   });
 
@@ -151,7 +151,7 @@ describe("ToolCallAdapter — ArtifactActions", () => {
       rawPath: "/outside/secret.md",
       resolvedPath: "/Users/test/outside/secret.md",
       allowed: false,
-      blockedReason: "Path is outside allowed project/artifacts roots.",
+      blockedReason: "Path is outside allowed roots.",
     });
     mockResolveToolCardDisplay.mockReturnValue({
       role: "primary_host",
@@ -165,7 +165,7 @@ describe("ToolCallAdapter — ArtifactActions", () => {
     const secondaryBtn = screen.getByTitle(blockedSecondary.resolvedPath);
     expect(secondaryBtn).toBeDisabled();
     expect(
-      screen.getByText("Path is outside allowed project/artifacts roots."),
+      screen.getByText("Path is outside allowed roots."),
     ).toBeInTheDocument();
   });
 

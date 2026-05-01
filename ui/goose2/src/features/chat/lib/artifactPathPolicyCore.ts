@@ -245,11 +245,7 @@ function pickBaseRoot(allowedRoots: string[]): string | null {
   const normalizedRoots = allowedRoots
     .map((root) => normalizePath(root))
     .filter(Boolean);
-  if (normalizedRoots.length === 0) return null;
-  const projectRoots = normalizedRoots.filter(
-    (root) => !root.includes("/.goose/artifacts"),
-  );
-  return projectRoots[0] ?? normalizedRoots[0];
+  return normalizedRoots[0] ?? null;
 }
 
 export function resolvePathCandidate(
@@ -294,7 +290,7 @@ export function evaluatePathScope(
   }
   return {
     allowed: false,
-    blockedReason: "Path is outside allowed project/artifacts roots.",
+    blockedReason: "Path is outside allowed roots.",
   };
 }
 

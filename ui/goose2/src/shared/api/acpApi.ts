@@ -98,7 +98,7 @@ export async function forkSession(sessionId: string): Promise<AcpSessionInfo> {
   const client = await getClient();
   const response = await client.unstable_forkSession({
     sessionId,
-    cwd: "~/.goose/artifacts",
+    cwd: "~",
   });
   return {
     sessionId: response.sessionId,

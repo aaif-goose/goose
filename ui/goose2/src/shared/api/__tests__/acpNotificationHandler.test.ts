@@ -53,7 +53,7 @@ describe("acpNotificationHandler", () => {
       "local-session",
       "goose-session",
       "goose",
-      "/Users/aharvard/.goose/artifacts",
+      "/Users/aharvard",
     );
     setActiveMessageId("goose-session", "assistant-1");
 

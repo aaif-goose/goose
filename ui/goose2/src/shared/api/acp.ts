@@ -226,7 +226,7 @@ export async function acpLoadSession(
   gooseSessionId: string,
   workingDir?: string,
 ): Promise<void> {
-  const effectiveWorkingDir = workingDir ?? "~/.goose/artifacts";
+  const effectiveWorkingDir = workingDir ?? "~";
   const sid = sessionId.slice(0, 8);
   const t0 = performance.now();
   const rollbackSessionRegistration = sessionTracker.registerSession(
