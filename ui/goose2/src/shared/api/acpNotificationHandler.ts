@@ -30,6 +30,7 @@ import {
   getLocalSessionId,
   subscribeToSessionRegistration,
 } from "./acpSessionTracker";
+import { getToolCallIdentity } from "./acpToolCallIdentity";
 import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per goose session
@@ -52,39 +53,6 @@ const pendingUsageUpdates = new Map<
   string,
   { accumulatedTotal: number; contextLimit: number }
 >();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function getToolCallIdentity(update: SessionUpdate): {
-  toolName?: string;
-  extensionName?: string;
-} {
-  if (!isRecord(update._meta)) {
-    return {};
-  }
-  const goose = update._meta.goose;
-  if (!isRecord(goose)) {
-    return {};
-  }
-
-  const toolCall = isRecord(goose.mcpApp)
-    ? goose.mcpApp
-    : isRecord(goose.toolCall)
-      ? goose.toolCall
-      : null;
-  if (!toolCall) return {};
-
-  return {
-    ...(typeof toolCall.toolName === "string"
-      ? { toolName: toolCall.toolName }
-      : {}),
-    ...(typeof toolCall.extensionName === "string"
-      ? { extensionName: toolCall.extensionName }
-      : {}),
-  };
-}
 
 subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
   const pendingUsage = pendingUsageUpdates.get(gooseSessionId);
