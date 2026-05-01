@@ -2,6 +2,7 @@
 name = "goose-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -21,7 +22,6 @@ path = "src/bin/generate_manpages.rs"
 [dependencies]
 clap_mangen = "0.2.31"
 goose = { path = "../goose", default-features = false }
-goose-acp = { path = "../goose-acp", default-features = false }
 goose-mcp = { path = "../goose-mcp" }
 rmcp = { workspace = true }
 clap = { workspace = true }
@@ -55,14 +55,14 @@ bzip2 = "0.5"
 webbrowser = { workspace = true }
 indicatif = "0.18.1"
 tokio-util = { workspace = true, features = ["compat", "rt"] }
-anstream = "0.6.18"
-open = "5.3.2"
+anstream = "1.0.0"
+open = "5.3.4"
 url = { workspace = true }
 urlencoding = { workspace = true }
-clap_complete = "4.5.62"
+clap_complete = "4.6.2"
 comfy-table = "7.2.2"
 sha2 = { workspace = true }
-sigstore-verify = { version = "0.6", default-features = false }
+sigstore-verify = { version = "=0.6.5", default-features = false }
 axum.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -70,7 +70,7 @@ winapi = { workspace = true }
 
 [features]
 default = ["code-mode", "local-inference", "aws-providers", "telemetry", "otel", "rustls-tls"]
-code-mode = ["goose/code-mode", "goose-acp/code-mode"]
+code-mode = ["goose/code-mode"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]

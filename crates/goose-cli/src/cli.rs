@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
+use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
@@ -709,6 +710,8 @@ enum Command {
         /// Show verbose information including current configuration
         #[arg(short, long, help = "Show verbose information including config.yaml")]
         verbose: bool,
+        #[arg(long, help = "Test provider connection and show status")]
+        check: bool,
     },
 
     #[command(about = "Check that your Goose setup is working")]
@@ -1076,8 +1079,9 @@ async fn handle_serve_command(
     secret_key: Option<String>,
     builtins: Vec<String>,
 ) -> Result<()> {
+    use goose::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+    use goose::acp::transport::create_router;
     use goose::config::paths::Paths;
-    use goose_acp::server_factory::{AcpServer, AcpServerFactoryConfig};
     use std::net::SocketAddr;
     use std::sync::Arc;
     use tracing::info;
@@ -1092,8 +1096,9 @@ async fn handle_serve_command(
         builtins,
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
+        goose_platform: GoosePlatform::GooseCli,
     }));
-    let router = goose_acp::transport::create_router(server, secret_key);
+    let router = create_router(server, secret_key);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);
@@ -1776,9 +1781,9 @@ pub async fn cli() -> anyhow::Result<()> {
         }
         Some(Command::Configure {}) => handle_configure().await,
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
-        Some(Command::Info { verbose }) => handle_info(verbose),
+        Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
-        Some(Command::Acp { builtins }) => goose_acp::server::run(builtins).await,
+        Some(Command::Acp { builtins }) => goose::acp::server::run(builtins).await,
         Some(Command::Serve {
             host,
             port,

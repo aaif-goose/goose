@@ -1,16 +1,14 @@
-import { beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import type { Message } from "@/shared/types/messages";
-
-const mockOpenPath = vi.fn();
+import { openPath } from "@tauri-apps/plugin-opener";
+const mockWriteText = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: (path: string) => mockOpenPath(path),
+  openPath: vi.fn(),
 }));
-
-// ── helpers ───────────────────────────────────────────────────────────
 
 function userMessage(text: string, overrides: Partial<Message> = {}): Message {
   return {
@@ -35,12 +33,21 @@ function assistantMessage(
   };
 }
 
-// ── tests ─────────────────────────────────────────────────────────────
-
 describe("MessageBubble", () => {
   beforeEach(() => {
     useAgentStore.setState({ personas: [] });
-    mockOpenPath.mockClear();
+    vi.mocked(openPath).mockClear();
+    mockWriteText.mockClear();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: mockWriteText,
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders user message with correct alignment", () => {
@@ -70,6 +77,44 @@ describe("MessageBubble", () => {
     expect(screen.getByText("hello world")).toBeInTheDocument();
   });
 
+  it("renders compaction notifications as centered success messages", () => {
+    const { container } = render(
+      <MessageBubble
+        message={{
+          id: "s1",
+          role: "system",
+          created: Date.now(),
+          content: [
+            {
+              type: "systemNotification",
+              notificationType: "compaction",
+              text: "Conversation compacted.",
+            },
+          ],
+          metadata: {
+            userVisible: true,
+            agentVisible: false,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Conversation compacted.")).toBeInTheDocument();
+    expect(container.querySelector(".text-success")).toBeInTheDocument();
+  });
+
+  it("renders user text inside a muted bubble shell", () => {
+    const { container } = render(
+      <MessageBubble message={userMessage("hello world")} />,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-role="user-message"] .rounded-2xl.bg-muted',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders multiple content blocks", () => {
     const msg = assistantMessage([
       { type: "text", text: "first block" },
@@ -80,16 +125,105 @@ describe("MessageBubble", () => {
     expect(screen.getByText("second block")).toBeInTheDocument();
   });
 
-  it("shows action buttons on hover (retry for assistant)", () => {
+  it("renders a reserved actions tray for assistant messages", () => {
     const onRetryMessage = vi.fn();
-    render(
+    const { container } = render(
       <MessageBubble
         message={assistantMessage([{ type: "text", text: "response" }])}
         onRetryMessage={onRetryMessage}
       />,
     );
-    const retryBtn = screen.getByRole("button", { name: /retry/i });
-    expect(retryBtn).toBeInTheDocument();
+
+    expect(
+      container.querySelector('[data-role="assistant-message"] .pb-8'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(
+        '[data-role="assistant-message"] [data-role="message-actions"]',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("keeps the action tray timestamp on one line", () => {
+    const { container } = render(
+      <MessageBubble
+        message={assistantMessage([{ type: "text", text: "response" }])}
+      />,
+    );
+
+    const timestamp = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-timestamp"]',
+    );
+    expect(timestamp).toHaveClass("whitespace-nowrap");
+    expect(timestamp).toHaveClass("shrink-0");
+  });
+
+  it("anchors assistant and user actions on opposite sides of the timestamp", () => {
+    const { container } = render(
+      <>
+        <MessageBubble
+          message={assistantMessage([{ type: "text", text: "response" }])}
+          onRetryMessage={vi.fn()}
+        />
+        <MessageBubble message={userMessage("draft")} onEditMessage={vi.fn()} />
+      </>,
+    );
+
+    const assistantActions = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-actions"]',
+    );
+    const userActions = container.querySelector(
+      '[data-role="user-message"] [data-role="message-actions"]',
+    );
+
+    expect(
+      Array.from(assistantActions?.firstElementChild?.children ?? []).map(
+        (element) => element.tagName,
+      ),
+    ).toEqual(["BUTTON", "BUTTON", "SPAN"]);
+    expect(
+      Array.from(userActions?.firstElementChild?.children ?? []).map(
+        (element) => element.tagName,
+      ),
+    ).toEqual(["SPAN", "BUTTON", "BUTTON"]);
+  });
+
+  it("keeps copy confirmation visible until it resets", async () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <MessageBubble
+        message={assistantMessage([{ type: "text", text: "response" }])}
+      />,
+    );
+
+    const actions = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-actions"]',
+    );
+    expect(actions).toHaveAttribute("data-copy-confirmed", "false");
+    const copyButton = screen.getByRole("button", { name: /copy/i });
+    expect(copyButton).not.toHaveClass("bg-accent");
+
+    await act(async () => {
+      fireEvent.click(copyButton);
+      await Promise.resolve();
+    });
+
+    expect(mockWriteText).toHaveBeenCalledWith("response");
+    expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+    expect(copyButton).toHaveClass("bg-accent");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1999);
+    });
+    expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+    expect(copyButton).toHaveClass("bg-accent");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(actions).toHaveAttribute("data-copy-confirmed", "false");
+    expect(copyButton).not.toHaveClass("bg-accent");
   });
 
   it("renders tool request content as ToolCallCard", () => {
@@ -133,7 +267,7 @@ describe("MessageBubble", () => {
     await user.click(
       screen.getByRole("button", { name: /open attachment report\.pdf/i }),
     );
-    expect(mockOpenPath).toHaveBeenCalledWith("/Users/test/report.pdf");
+    expect(vi.mocked(openPath)).toHaveBeenCalledWith("/Users/test/report.pdf");
     expect(
       screen.getByRole("button", { name: /open attachment screenshots/i }),
     ).toBeInTheDocument();

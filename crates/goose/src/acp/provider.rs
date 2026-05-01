@@ -1388,6 +1388,7 @@ mod tests {
             env_keys: vec![],
             headers: HashMap::from([("Authorization".into(), "Bearer ghp_xxxxxxxxxxxx".into())]),
             timeout: None,
+            socket: None,
             bundled: Some(false),
             available_tools: vec![],
         },
@@ -1441,6 +1442,7 @@ mod tests {
             env_keys: vec![],
             headers: HashMap::from([("Authorization".into(), "Bearer ghp_xxxxxxxxxxxx".into())]),
             timeout: None,
+            socket: None,
             bundled: Some(false),
             available_tools: vec![],
         };

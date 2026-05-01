@@ -1,5 +1,5 @@
 use anyhow::Result;
-use axum::http::{HeaderMap, HeaderName};
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use chrono::{DateTime, Utc};
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{future, FutureExt};
@@ -34,7 +34,9 @@ use super::tool_execution::{ToolCallContext, ToolCallResult};
 use super::types::SharedProvider;
 use crate::agents::extension::{Envs, ProcessExit};
 use crate::agents::extension_malware_check;
-use crate::agents::mcp_client::{GooseMcpClientCapabilities, McpClient, McpClientTrait};
+use crate::agents::mcp_client::{
+    GooseMcpClientCapabilities, GooseMcpHostInfo, McpClient, McpClientTrait,
+};
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
@@ -43,8 +45,8 @@ use crate::oauth::oauth_flow;
 use crate::prompt_template;
 use crate::subprocess::configure_subprocess;
 use rmcp::model::{
-    CallToolRequestParams, Content, ErrorCode, ErrorData, GetPromptResult, Prompt, Resource,
-    ResourceContents, ServerInfo, Tool,
+    CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData, GetPromptResult, Meta,
+    Prompt, Resource, ResourceContents, ServerInfo, Tool,
 };
 use rmcp::transport::auth::AuthClient;
 use schemars::_private::NoSerialize;
@@ -116,7 +118,24 @@ impl Extension {
 
 pub struct ExtensionManagerCapabilities {
     pub mcpui: bool,
+    pub host_info: Option<GooseMcpHostInfo>,
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GooseMcpAppToolAttachment {
+    pub tool_name: String,
+    pub extension_name: String,
+    pub resource_uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_meta: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_error: Option<String>,
+}
+
+pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta";
 
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
@@ -211,6 +230,68 @@ pub fn get_tool_owner(tool: &Tool) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+fn get_tool_meta_value(tool: &Tool) -> Option<Value> {
+    tool.meta.as_ref().map(|meta| Value::Object(meta.0.clone()))
+}
+
+fn get_tool_resource_uri(tool: &Tool) -> Option<String> {
+    tool.meta
+        .as_ref()
+        .and_then(|meta| meta.0.get("ui"))
+        .and_then(Value::as_object)
+        .and_then(|ui| ui.get("resourceUri"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
+fn remove_untrusted_mcp_app_meta(result: &mut CallToolResult) {
+    let Some(meta) = result.meta.as_mut() else {
+        return;
+    };
+
+    meta.0.remove(TRUSTED_TOOL_UPDATE_META_KEY);
+
+    let remove_goose = meta
+        .0
+        .get_mut("goose")
+        .and_then(Value::as_object_mut)
+        .map(|goose_meta| {
+            goose_meta.remove("mcpApp");
+            goose_meta.is_empty()
+        })
+        .unwrap_or(false);
+
+    if remove_goose {
+        meta.0.remove("goose");
+    }
+
+    if meta.0.is_empty() {
+        result.meta = None;
+    }
+}
+
+fn insert_trusted_tool_update_meta(
+    result: &mut CallToolResult,
+    attachment: &GooseMcpAppToolAttachment,
+) {
+    let Ok(attachment_value) = serde_json::to_value(attachment) else {
+        return;
+    };
+
+    let mut meta_map = result
+        .meta
+        .as_ref()
+        .map(|meta| meta.0.clone())
+        .unwrap_or_default();
+    let mut trusted_meta = serde_json::Map::new();
+    trusted_meta.insert("mcpApp".to_string(), attachment_value);
+    meta_map.insert(
+        TRUSTED_TOOL_UPDATE_META_KEY.to_string(),
+        Value::Object(trusted_meta),
+    );
+    result.meta = Some(Meta(meta_map));
+}
+
 fn is_unprefixed_extension(config: &ExtensionConfig) -> bool {
     match config {
         ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. } => {
@@ -238,9 +319,12 @@ pub fn is_hidden_extension(name: &str) -> bool {
 
 /// Result of resolving a tool call to its owning extension
 struct ResolvedTool {
+    tool_name: String,
     extension_name: String,
     actual_tool_name: String,
     client: McpClientBox,
+    tool_meta: Option<Value>,
+    resource_uri: Option<String>,
 }
 
 async fn child_process_client(
@@ -315,16 +399,28 @@ fn should_attempt_oauth_fallback(res: &Result<McpClient, ClientInitializeError>)
     };
 
     if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
-        match http_err {
+        return match http_err {
             StreamableHttpError::AuthRequired(_) => true,
             StreamableHttpError::UnexpectedServerResponse(body) => body.starts_with("HTTP 401"),
             _ => false,
-        }
-    } else {
-        error
-            .to_string()
-            .contains("unexpected server response: HTTP 401")
+        };
     }
+
+    #[cfg(unix)]
+    if let Some(http_err) = error
+        .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
+        )
+    {
+        return match http_err {
+            StreamableHttpError::AuthRequired(_) => true,
+            StreamableHttpError::UnexpectedServerResponse(body) => body.starts_with("HTTP 401"),
+            _ => false,
+        };
+    }
+
+    error
+        .to_string()
+        .contains("unexpected server response: HTTP 401")
 }
 
 /// Merge environment variables from direct envs and keychain-stored env_keys
@@ -417,11 +513,34 @@ async fn create_streamable_http_client(
     timeout: Option<u64>,
     headers: &HashMap<String, String>,
     name: &str,
+    socket: Option<&str>,
     provider: SharedProvider,
     client_name: String,
     capabilities: GooseMcpClientCapabilities,
     roots_dir: &std::path::Path,
 ) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    #[cfg(unix)]
+    if let Some(socket_path) = socket {
+        return create_unix_socket_http_client(
+            uri,
+            timeout,
+            headers,
+            name,
+            socket_path,
+            provider,
+            client_name,
+            capabilities,
+            roots_dir,
+        )
+        .await;
+    }
+    #[cfg(not(unix))]
+    if socket.is_some() {
+        return Err(ExtensionError::ConfigError(
+            "Unix domain socket transport is not supported on this platform".to_string(),
+        ));
+    }
+
     let mut default_headers = HeaderMap::new();
 
     default_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
@@ -443,10 +562,7 @@ async fn create_streamable_http_client(
 
     let transport = StreamableHttpClientTransport::with_client(
         http_client,
-        StreamableHttpClientTransportConfig {
-            uri: uri.into(),
-            ..Default::default()
-        },
+        StreamableHttpClientTransportConfig::with_uri(uri),
     );
 
     let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
@@ -475,10 +591,7 @@ async fn create_streamable_http_client(
                 let auth_client = AuthClient::new(auth_http_client, auth_manager);
                 let transport = StreamableHttpClientTransport::with_client(
                     auth_client,
-                    StreamableHttpClientTransportConfig {
-                        uri: uri.into(),
-                        ..Default::default()
-                    },
+                    StreamableHttpClientTransportConfig::with_uri(uri),
                 );
                 Ok(Box::new(
                     McpClient::connect(
@@ -499,7 +612,76 @@ async fn create_streamable_http_client(
     }
 }
 
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+async fn create_unix_socket_http_client(
+    uri: &str,
+    timeout: Option<u64>,
+    headers: &HashMap<String, String>,
+    name: &str,
+    socket_path: &str,
+    provider: SharedProvider,
+    client_name: String,
+    capabilities: GooseMcpClientCapabilities,
+    roots_dir: &std::path::Path,
+) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    use rmcp::transport::UnixSocketHttpClient;
+
+    let unix_client = UnixSocketHttpClient::new(socket_path, uri);
+
+    let mut custom_headers = std::collections::HashMap::<HeaderName, HeaderValue>::new();
+
+    custom_headers.insert(
+        HeaderName::from_static("user-agent"),
+        GOOSE_USER_AGENT
+            .to_str()
+            .unwrap_or("goose")
+            .parse()
+            .unwrap_or_else(|_| HeaderValue::from_static("goose")),
+    );
+
+    for (key, value) in headers {
+        let header_name = HeaderName::try_from(key)
+            .map_err(|_| ExtensionError::ConfigError(format!("invalid header: {}", key)))?;
+        let header_value = value
+            .parse::<HeaderValue>()
+            .map_err(|_| ExtensionError::ConfigError(format!("invalid header value: {}", key)))?;
+        custom_headers.insert(header_name, header_value);
+    }
+
+    let config = StreamableHttpClientTransportConfig::with_uri(uri).custom_headers(custom_headers);
+    let transport = StreamableHttpClientTransport::with_client(unix_client, config);
+
+    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
+
+    let client_res = McpClient::connect(
+        transport,
+        timeout_duration,
+        provider.clone(),
+        client_name.clone(),
+        capabilities.clone(),
+        roots_dir.to_path_buf(),
+    )
+    .await;
+
+    if should_attempt_oauth_fallback(&client_res) {
+        tracing::warn!(
+            "Extension '{}' returned 401 over Unix domain socket transport; \
+             OAuth is not supported for UDS connections",
+            name,
+        );
+    }
+    Ok(Box::new(client_res?))
+}
+
 impl ExtensionManager {
+    fn mcp_client_capabilities(&self) -> GooseMcpClientCapabilities {
+        GooseMcpClientCapabilities {
+            mcpui: self.capabilities.mcpui,
+            host_info: self.capabilities.host_info.clone(),
+        }
+    }
+
     pub fn new(
         provider: SharedProvider,
         session_manager: Arc<crate::session::SessionManager>,
@@ -527,7 +709,10 @@ impl ExtensionManager {
             Arc::new(Mutex::new(None)),
             session_manager,
             "goose-cli".to_string(),
-            ExtensionManagerCapabilities { mcpui: false },
+            ExtensionManagerCapabilities {
+                mcpui: false,
+                host_info: None,
+            },
         )
     }
 
@@ -595,6 +780,7 @@ impl ExtensionManager {
                 name,
                 envs,
                 env_keys,
+                socket,
                 ..
             } => {
                 let config = Config::global();
@@ -604,18 +790,16 @@ impl ExtensionManager {
                     .iter()
                     .map(|(k, v)| (k.clone(), substitute_env_vars(v, &all_envs)))
                     .collect();
-                let capability = GooseMcpClientCapabilities {
-                    mcpui: self.capabilities.mcpui,
-                };
-
+                let resolved_socket = socket.as_ref().map(|s| substitute_env_vars(s, &all_envs));
                 create_streamable_http_client(
                     &resolved_uri,
                     *timeout,
                     &resolved_headers,
                     name,
+                    resolved_socket.as_deref(),
                     self.provider.clone(),
                     self.client_name.clone(),
-                    capability,
+                    self.mcp_client_capabilities(),
                     &effective_working_dir,
                 )
                 .await?
@@ -666,10 +850,6 @@ impl ExtensionManager {
                                 .arg(&normalized_name);
                         });
 
-                        let capabilities = GooseMcpClientCapabilities {
-                            mcpui: self.capabilities.mcpui,
-                        };
-
                         let client = child_process_client(
                             command,
                             &Some(timeout_secs),
@@ -677,7 +857,7 @@ impl ExtensionManager {
                             &effective_working_dir,
                             Some(container_id.to_string()),
                             self.client_name.clone(),
-                            capabilities,
+                            self.mcp_client_capabilities(),
                         )
                         .await?;
                         Box::new(client)
@@ -686,17 +866,13 @@ impl ExtensionManager {
                         let (client_read, server_write) = tokio::io::duplex(65536);
                         extension_fn(server_read, server_write);
 
-                        let capabilities = GooseMcpClientCapabilities {
-                            mcpui: self.capabilities.mcpui,
-                        };
-
                         Box::new(
                             McpClient::connect(
                                 (client_read, client_write),
                                 Duration::from_secs(timeout_secs),
                                 self.provider.clone(),
                                 self.client_name.clone(),
-                                capabilities,
+                                self.mcp_client_capabilities(),
                                 effective_working_dir.clone(),
                             )
                             .await?,
@@ -746,9 +922,6 @@ impl ExtensionManager {
                     })
                 };
 
-                let capabilities = GooseMcpClientCapabilities {
-                    mcpui: self.capabilities.mcpui,
-                };
                 let client = child_process_client(
                     command,
                     timeout,
@@ -756,7 +929,7 @@ impl ExtensionManager {
                     &effective_working_dir,
                     container.map(|c| c.id().to_string()),
                     self.client_name.clone(),
-                    capabilities,
+                    self.mcp_client_capabilities(),
                 )
                 .await?;
                 Box::new(client)
@@ -781,10 +954,6 @@ impl ExtensionManager {
                     command.arg("python").arg(file_path.to_str().unwrap());
                 });
 
-                let capabilities = GooseMcpClientCapabilities {
-                    mcpui: self.capabilities.mcpui,
-                };
-
                 let client = child_process_client(
                     command,
                     timeout,
@@ -792,7 +961,7 @@ impl ExtensionManager {
                     &effective_working_dir,
                     container.map(|c| c.id().to_string()),
                     self.client_name.clone(),
-                    capabilities,
+                    self.mcp_client_capabilities(),
                 )
                 .await?;
 
@@ -973,6 +1142,48 @@ impl ExtensionManager {
         }
 
         Ok(tools)
+    }
+
+    fn host_supports_mcp_apps(&self) -> bool {
+        if let Some(host_info) = &self.capabilities.host_info {
+            if host_info.explicit_extensions {
+                return host_info.mcpui_enabled();
+            }
+        }
+
+        self.capabilities.mcpui
+    }
+
+    async fn hydrate_mcp_app_attachment(
+        client: &McpClientBox,
+        session_id: &str,
+        resolved_tool: &ResolvedTool,
+        cancellation_token: CancellationToken,
+    ) -> Option<GooseMcpAppToolAttachment> {
+        let resource_uri = resolved_tool.resource_uri.clone()?;
+
+        let mut attachment = GooseMcpAppToolAttachment {
+            tool_name: resolved_tool.tool_name.clone(),
+            extension_name: resolved_tool.extension_name.clone(),
+            resource_uri: resource_uri.clone(),
+            tool_meta: resolved_tool.tool_meta.clone(),
+            resource_result: None,
+            read_error: None,
+        };
+
+        match client
+            .read_resource(session_id, &resource_uri, cancellation_token)
+            .await
+        {
+            Ok(resource_result) => {
+                attachment.resource_result = serde_json::to_value(&resource_result).ok();
+            }
+            Err(error) => {
+                attachment.read_error = Some(error.to_string());
+            }
+        }
+
+        Some(attachment)
     }
 
     async fn invalidate_tools_cache_and_bump_version(&self) {
@@ -1344,17 +1555,6 @@ impl ExtensionManager {
         session_id: &str,
         tool_name: &str,
     ) -> Result<ResolvedTool, ErrorData> {
-        if let Some((prefix, actual)) = tool_name.split_once("__") {
-            let owner = name_to_key(prefix);
-            if let Some(client) = self.get_server_client(&owner).await {
-                return Ok(ResolvedTool {
-                    extension_name: owner,
-                    actual_tool_name: actual.to_string(),
-                    client,
-                });
-            }
-        }
-
         let tools = self.get_all_tools_cached(session_id).await.map_err(|e| {
             ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
@@ -1364,13 +1564,19 @@ impl ExtensionManager {
         })?;
 
         if let Some(tool) = tools.iter().find(|t| *t.name == *tool_name) {
-            let owner = get_tool_owner(tool).ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::RESOURCE_NOT_FOUND,
-                    format!("Tool '{}' has no owner", tool_name),
-                    None,
-                )
-            })?;
+            let owner = get_tool_owner(tool)
+                .or_else(|| {
+                    tool_name
+                        .split_once("__")
+                        .map(|(prefix, _)| name_to_key(prefix))
+                })
+                .ok_or_else(|| {
+                    ErrorData::new(
+                        ErrorCode::RESOURCE_NOT_FOUND,
+                        format!("Tool '{}' has no owner", tool_name),
+                        None,
+                    )
+                })?;
 
             let actual_tool_name = tool_name
                 .strip_prefix(&format!("{owner}__"))
@@ -1386,10 +1592,27 @@ impl ExtensionManager {
             })?;
 
             return Ok(ResolvedTool {
+                tool_name: tool.name.to_string(),
                 extension_name: owner,
                 actual_tool_name,
                 client,
+                tool_meta: get_tool_meta_value(tool),
+                resource_uri: get_tool_resource_uri(tool),
             });
+        }
+
+        if let Some((prefix, actual)) = tool_name.split_once("__") {
+            let owner = name_to_key(prefix);
+            if let Some(client) = self.get_server_client(&owner).await {
+                return Ok(ResolvedTool {
+                    tool_name: tool_name.to_string(),
+                    extension_name: owner,
+                    actual_tool_name: actual.to_string(),
+                    client,
+                    tool_meta: None,
+                    resource_uri: None,
+                });
+            }
         }
 
         Err(ErrorData::new(
@@ -1427,8 +1650,13 @@ impl ExtensionManager {
 
         let arguments = tool_call.arguments.clone();
         let client = resolved.client.clone();
+        let hydration_client = client.clone();
         let notifications_receiver = client.subscribe().await;
-        let actual_tool_name = resolved.actual_tool_name;
+        let actual_tool_name = resolved.actual_tool_name.clone();
+        let resolved_tool = resolved;
+        let should_hydrate_mcp_app = self.host_supports_mcp_apps();
+        let read_cancellation_token = cancellation_token.clone();
+        let session_id = ctx.session_id.clone();
         let owned_ctx = ToolCallContext::new(
             ctx.session_id.clone(),
             ctx.working_dir.clone(),
@@ -1442,7 +1670,7 @@ impl ExtensionManager {
                 owned_ctx.session_id,
                 owned_ctx.working_dir,
             );
-            client
+            let mut result = client
                 .call_tool(&owned_ctx, &actual_tool_name, arguments, cancellation_token)
                 .await
                 .map_err(|e| match e {
@@ -1450,7 +1678,24 @@ impl ExtensionManager {
                     _ => {
                         ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), e.maybe_to_value())
                     }
-                })
+                })?;
+
+            remove_untrusted_mcp_app_meta(&mut result);
+
+            if should_hydrate_mcp_app && result.is_error != Some(true) {
+                if let Some(attachment) = Self::hydrate_mcp_app_attachment(
+                    &hydration_client,
+                    &session_id,
+                    &resolved_tool,
+                    read_cancellation_token,
+                )
+                .await
+                {
+                    insert_trusted_tool_update_meta(&mut result, &attachment);
+                }
+            }
+
+            Ok(result)
         };
 
         Ok(ToolCallResult {
@@ -2230,6 +2475,80 @@ mod tests {
         assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
     }
 
+    #[test]
+    fn test_remove_untrusted_mcp_app_meta_strips_spoofed_payload() {
+        let mut result = CallToolResult::success(vec![]);
+        result.meta = Some(Meta(
+            serde_json::from_value(serde_json::json!({
+                "goose": {
+                    "mcpApp": {
+                        "resourceUri": "ui://spoofed/app",
+                    },
+                    "other": true,
+                },
+                TRUSTED_TOOL_UPDATE_META_KEY: {
+                    "mcpApp": {
+                        "resourceUri": "ui://spoofed/internal",
+                    },
+                },
+            }))
+            .unwrap(),
+        ));
+
+        remove_untrusted_mcp_app_meta(&mut result);
+
+        let meta = result.meta.expect("expected remaining meta");
+        assert_eq!(meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY), None);
+        assert_eq!(
+            meta.0.get("goose"),
+            Some(&serde_json::json!({ "other": true }))
+        );
+    }
+
+    #[test]
+    fn test_insert_trusted_tool_update_meta_stores_backend_payload() {
+        let mut result = CallToolResult::success(vec![]);
+        let attachment = GooseMcpAppToolAttachment {
+            tool_name: "weather__render".to_string(),
+            extension_name: "weather".to_string(),
+            resource_uri: "ui://weather/app".to_string(),
+            tool_meta: None,
+            resource_result: Some(serde_json::json!({
+                "contents": [
+                    {
+                        "uri": "ui://weather/app",
+                        "mimeType": "text/html;profile=mcp-app",
+                        "text": "<div>Hello</div>",
+                    },
+                ],
+            })),
+            read_error: None,
+        };
+
+        insert_trusted_tool_update_meta(&mut result, &attachment);
+
+        let meta = result.meta.expect("expected trusted meta");
+        assert_eq!(
+            meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY),
+            Some(&serde_json::json!({
+                "mcpApp": {
+                    "toolName": "weather__render",
+                    "extensionName": "weather",
+                    "resourceUri": "ui://weather/app",
+                    "resourceResult": {
+                        "contents": [
+                            {
+                                "uri": "ui://weather/app",
+                                "mimeType": "text/html;profile=mcp-app",
+                                "text": "<div>Hello</div>",
+                            },
+                        ],
+                    },
+                },
+            })),
+        );
+    }
+
     #[tokio::test]
     async fn test_add_extension_noop_on_identical_config() {
         // When add_extension is called with a config that is byte-for-byte identical to
@@ -2318,11 +2637,11 @@ mod tests {
 
     fn transport_err(error: Box<dyn std::error::Error + Send + Sync>) -> ClientInitializeError {
         ClientInitializeError::TransportError {
-            error: rmcp::transport::DynamicTransportError {
-                transport_name: "test".into(),
-                transport_type_id: std::any::TypeId::of::<()>(),
+            error: rmcp::transport::DynamicTransportError::from_parts(
+                "test",
+                std::any::TypeId::of::<()>(),
                 error,
-            },
+            ),
             context: "test context".into(),
         }
     }
@@ -2337,9 +2656,9 @@ mod tests {
     fn test_oauth_fallback_on_typed_auth_required() {
         let err = streamable_err(
             rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
-                rmcp::transport::streamable_http_client::AuthRequiredError {
-                    www_authenticate_header: "Bearer realm=\"test\"".to_string(),
-                },
+                rmcp::transport::streamable_http_client::AuthRequiredError::new(
+                    "Bearer realm=\"test\"".to_string(),
+                ),
             ),
         );
         assert!(should_attempt_oauth_fallback(&Err(err)));

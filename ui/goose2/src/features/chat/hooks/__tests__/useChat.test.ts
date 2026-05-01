@@ -4,17 +4,25 @@ import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useChatStore } from "../../stores/chatStore";
 import { useChatSessionStore } from "../../stores/chatSessionStore";
 import type { Message } from "@/shared/types/messages";
+import { clearReplayBuffer } from "../replayBuffer";
 
 const mockAcpSendMessage = vi.fn();
 const mockAcpCancelSession = vi.fn();
+const mockAcpLoadSession = vi.fn();
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
+const mockGetGooseSessionId = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
   acpCancelSession: (...args: unknown[]) => mockAcpCancelSession(...args),
+  acpLoadSession: (...args: unknown[]) => mockAcpLoadSession(...args),
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
+}));
+
+vi.mock("@/shared/api/acpSessionTracker", () => ({
+  getGooseSessionId: (...args: unknown[]) => mockGetGooseSessionId(...args),
 }));
 
 import { useChat } from "../useChat";
@@ -53,7 +61,14 @@ function createDeferredPromise<T = void>() {
 
 describe("useChat", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockAcpSendMessage.mockReset();
+    mockAcpCancelSession.mockReset();
+    mockAcpLoadSession.mockReset();
+    mockAcpPrepareSession.mockReset();
+    mockAcpSetModel.mockReset();
+    mockGetGooseSessionId.mockReset();
+    clearReplayBuffer("session-1");
+    clearReplayBuffer("session-2");
     useChatStore.setState({
       messagesBySession: {},
       sessionStateById: {},
@@ -65,9 +80,7 @@ describe("useChat", () => {
       activeSessionId: null,
       isLoading: false,
       contextPanelOpenBySession: {},
-      activeWorkingContextBySession: {},
-      modelsBySession: {},
-      modelCacheByProvider: {},
+      activeWorkspaceBySession: {},
     });
     useAgentStore.setState({
       personas: [
@@ -95,10 +108,14 @@ describe("useChat", () => {
       isLoading: false,
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     });
+    mockAcpSendMessage.mockResolvedValue(undefined);
     mockAcpCancelSession.mockResolvedValue(true);
+    mockAcpLoadSession.mockResolvedValue(undefined);
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
+    mockGetGooseSessionId.mockReturnValue(null);
   });
 
   it("cancels the active override persona instead of the hook default persona", async () => {
@@ -336,7 +353,7 @@ describe("useChat", () => {
     });
   });
 
-  it("prepares draft sessions before applying a selected model on first send", async () => {
+  it("sends messages without an extra session preparation step", async () => {
     useChatSessionStore.setState({
       sessions: [
         {
@@ -348,7 +365,6 @@ describe("useChat", () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           messageCount: 0,
-          draft: true,
         },
       ],
     });
@@ -359,17 +375,56 @@ describe("useChat", () => {
       await result.current.sendMessage("Hello");
     });
 
-    expect(mockAcpPrepareSession).toHaveBeenCalledWith("session-1", "openai", {
-      workingDir: undefined,
-      personaId: undefined,
-    });
-    expect(mockAcpSetModel).toHaveBeenCalledWith("session-1", "gpt-4.1");
     expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "Hello", {
       systemPrompt: undefined,
       personaId: undefined,
       personaName: undefined,
       images: undefined,
     });
+  });
+
+  it("fires onMessageAccepted only after the message enters the session", async () => {
+    const onMessageAccepted = vi.fn();
+    const deferred = createDeferredPromise();
+    mockAcpSendMessage.mockReturnValue(deferred.promise);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        onMessageAccepted,
+      }),
+    );
+
+    await act(async () => {
+      const sendPromise = result.current.sendMessage("Hello");
+      await Promise.resolve();
+
+      expect(onMessageAccepted).toHaveBeenCalledTimes(1);
+      expect(
+        useChatStore.getState().messagesBySession["session-1"],
+      ).toHaveLength(1);
+
+      deferred.resolve();
+      await sendPromise;
+    });
+  });
+
+  it("awaits ensurePrepared before prompting", async () => {
+    const ensurePrepared = vi.fn().mockResolvedValue(undefined);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        ensurePrepared,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("Hello");
+    });
+
+    expect(ensurePrepared).toHaveBeenCalledTimes(1);
+    expect(ensurePrepared.mock.invocationCallOrder[0]).toBeLessThan(
+      mockAcpSendMessage.mock.invocationCallOrder[0],
+    );
   });
 
   it("appends an error message and removes the empty assistant placeholder when send fails", async () => {

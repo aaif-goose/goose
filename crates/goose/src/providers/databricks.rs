@@ -22,7 +22,7 @@ use super::formats::openai_responses::{
 };
 use super::oauth;
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status_openai_compat, map_http_error_to_provider_error,
+    handle_response_openai_compat, handle_status, map_http_error_to_provider_error,
     stream_openai_compat,
 };
 use super::retry::ProviderRetry;
@@ -269,17 +269,19 @@ impl DatabricksProvider {
     }
 
     fn is_responses_model(model_name: &str) -> bool {
-        let normalized = model_name.to_ascii_lowercase();
-        normalized.contains("codex")
+        super::utils::is_openai_responses_model(model_name)
     }
 
     fn get_endpoint_path(&self, model_name: &str, is_embedding: bool) -> String {
         if is_embedding {
             "serving-endpoints/text-embedding-3-small/invocations".to_string()
-        } else if Self::is_responses_model(model_name) {
-            "serving-endpoints/responses".to_string()
         } else {
-            format!("serving-endpoints/{}/invocations", model_name)
+            let (clean_name, _) = super::utils::extract_reasoning_effort(model_name);
+            if Self::is_responses_model(&clean_name) {
+                "serving-endpoints/responses".to_string()
+            } else {
+                format!("serving-endpoints/{}/invocations", clean_name)
+            }
         }
     }
 
@@ -340,6 +342,10 @@ impl ProviderDef for DatabricksProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
     }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
 }
 
 #[async_trait]
@@ -390,7 +396,7 @@ impl Provider for DatabricksProvider {
                         .api_client
                         .response_post(Some(session_id), &path, &payload_clone)
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {
@@ -588,5 +594,50 @@ impl EmbeddingCapable for DatabricksProvider {
             .collect::<Result<Vec<Vec<f32>>>>()?;
 
         Ok(embeddings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_provider() -> DatabricksProvider {
+        DatabricksProvider {
+            api_client: super::super::api_client::ApiClient::new(
+                "https://example.com".to_string(),
+                super::super::api_client::AuthMethod::NoAuth,
+            )
+            .unwrap(),
+            auth: DatabricksAuth::Token("fake".into()),
+            model: ModelConfig::new_or_fail("databricks-gpt-5.4"),
+            image_format: ImageFormat::OpenAi,
+            retry_config: RetryConfig::default(),
+            fast_retry_config: RetryConfig::new(0, 0, 1.0, 0),
+            name: "databricks".into(),
+            token_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            instance_id: None,
+        }
+    }
+
+    #[test]
+    fn responses_models_route_to_responses_endpoint() {
+        let provider = test_provider();
+
+        for (model_name, expected_path) in [
+            ("gpt-5.4", "serving-endpoints/responses"),
+            ("databricks-gpt-5.4-high", "serving-endpoints/responses"),
+            ("databricks-gpt-5-4-xhigh", "serving-endpoints/responses"),
+            ("o3-mini", "serving-endpoints/responses"),
+            (
+                "databricks-claude-sonnet-4",
+                "serving-endpoints/databricks-claude-sonnet-4/invocations",
+            ),
+        ] {
+            assert_eq!(
+                provider.get_endpoint_path(model_name, false),
+                expected_path,
+                "unexpected endpoint for {model_name}"
+            );
+        }
     }
 }

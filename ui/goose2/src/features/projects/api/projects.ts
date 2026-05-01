@@ -18,8 +18,29 @@ export interface ProjectInfo {
   artifactsDir: string;
 }
 
+export interface ProjectIconCandidate {
+  id: string;
+  label: string;
+  icon: string;
+  sourceDir: string;
+}
+
+export interface ProjectIconData {
+  icon: string;
+}
+
 export async function listProjects(): Promise<ProjectInfo[]> {
   return invoke("list_projects");
+}
+
+export async function scanProjectIcons(
+  workingDirs: string[],
+): Promise<ProjectIconCandidate[]> {
+  return invoke("scan_project_icons", { workingDirs });
+}
+
+export async function readProjectIcon(path: string): Promise<ProjectIconData> {
+  return invoke("read_project_icon", { path });
 }
 
 export async function createProject(

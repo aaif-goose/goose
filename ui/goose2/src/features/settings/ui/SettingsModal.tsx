@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/cn";
-import { type LocalePreference, useLocale } from "@/shared/i18n";
 import { Button, buttonVariants } from "@/shared/ui/button";
 import {
   AlertDialog,
@@ -14,13 +13,8 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/select";
-import {
+  Mic,
+  Minimize2,
   Palette,
   Settings2,
   FolderKanban,
@@ -34,12 +28,16 @@ import { AppearanceSettings } from "./AppearanceSettings";
 import { DoctorSettings } from "./DoctorSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { ExtensionsSettings } from "@/features/extensions/ui/ExtensionsSettings";
+import { VoiceInputSettings } from "./VoiceInputSettings";
+import { GeneralSettings } from "./GeneralSettings";
+import { CompactionSettings } from "./CompactionSettings";
 import {
   listArchivedProjects,
   restoreProject,
   deleteProject,
   type ProjectInfo,
 } from "@/features/projects/api/projects";
+import { ProjectIcon } from "@/features/projects/ui/ProjectIcon";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
@@ -49,7 +47,9 @@ import type { Session } from "@/shared/types/chat";
 const NAV_ITEMS = [
   { id: "appearance", labelKey: "nav.appearance", icon: Palette },
   { id: "providers", labelKey: "nav.providers", icon: IconPlug },
+  { id: "compaction", labelKey: "nav.compaction", icon: Minimize2 },
   { id: "extensions", labelKey: "nav.extensions", icon: IconPuzzle },
+  { id: "voice", labelKey: "nav.voice", icon: Mic },
   { id: "general", labelKey: "nav.general", icon: Settings2 },
   { id: "projects", labelKey: "nav.projects", icon: FolderKanban },
   { id: "chats", labelKey: "nav.chats", icon: MessageSquare },
@@ -69,7 +69,6 @@ export function SettingsModal({
   initialSection = "appearance",
 }: SettingsModalProps) {
   const { t } = useTranslation(["settings", "common"]);
-  const { preference, setLocalePreference, systemLocaleLabel } = useLocale();
   const [activeSection, setActiveSection] = useState<SectionId>(initialSection);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -155,9 +154,8 @@ export function SettingsModal({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: click handler only prevents backdrop dismiss propagation */}
       <div
         className={cn(
-          "flex h-[600px] w-full max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-all duration-500 ease-out",
-          isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-95",
-          isTransitioning ? "scale-[0.98]" : "scale-100",
+          "flex h-[600px] w-full max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-opacity duration-300 ease-out",
+          isLoaded ? "opacity-100" : "opacity-0",
         )}
         onClick={(e) => e.stopPropagation()}
       >
@@ -240,54 +238,11 @@ export function SettingsModal({
             >
               {activeSection === "appearance" && <AppearanceSettings />}
               {activeSection === "providers" && <ProvidersSettings />}
+              {activeSection === "compaction" && <CompactionSettings />}
               {activeSection === "extensions" && <ExtensionsSettings />}
+              {activeSection === "voice" && <VoiceInputSettings />}
               {activeSection === "doctor" && <DoctorSettings />}
-              {activeSection === "general" && (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold font-display tracking-tight">
-                      {t("general.title")}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {t("general.description")}
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <h4 className="text-sm font-semibold">
-                        {t("general.language.label")}
-                      </h4>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {t("general.language.description")}
-                      </p>
-                    </div>
-                    <Select
-                      value={preference}
-                      onValueChange={(value) =>
-                        void setLocalePreference(value as LocalePreference)
-                      }
-                    >
-                      <SelectTrigger className="w-full max-w-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="system">
-                          {t("general.language.system", {
-                            language: systemLocaleLabel,
-                          })}
-                        </SelectItem>
-                        <SelectItem value="en">
-                          {t("general.language.english")}
-                        </SelectItem>
-                        <SelectItem value="es">
-                          {t("general.language.spanish")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
+              {activeSection === "general" && <GeneralSettings />}
               {activeSection === "projects" && (
                 <div className="space-y-6">
                   <div>
@@ -315,9 +270,10 @@ export function SettingsModal({
                         className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: project.color }}
+                          <ProjectIcon
+                            icon={project.icon}
+                            className="size-4 shrink-0 text-foreground"
+                            imageClassName="size-4 shrink-0 rounded-[4px]"
                           />
                           <span className="text-sm truncate">
                             {project.name}
@@ -420,7 +376,11 @@ export function SettingsModal({
       >
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("deleteProject.title")}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("deleteProject.title", {
+                name: deletingProject?.name ?? "",
+              })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("deleteProject.description", {
                 name: deletingProject?.name ?? "",

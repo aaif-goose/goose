@@ -4,8 +4,9 @@ use crate::model::ModelConfig;
 use crate::providers::base::{ProviderUsage, Usage};
 use crate::providers::errors::ProviderError;
 use crate::providers::utils::{
-    convert_image, detect_image_path, extract_reasoning_effort, is_valid_function_name,
-    load_image_file, safely_parse_json, sanitize_function_name, ImageFormat,
+    convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
+    is_valid_function_name, load_image_file, safely_parse_json, sanitize_function_name,
+    ImageFormat,
 };
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -64,19 +65,31 @@ struct ContentPart {
     thought_signature: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 struct Delta {
     #[serde(default)]
     content: Option<DeltaContent>,
     role: Option<String>,
     tool_calls: Option<Vec<DeltaToolCall>>,
     reasoning_details: Option<Vec<Value>>,
-    #[serde(alias = "reasoning")]
+    reasoning: Option<String>,
     reasoning_content: Option<String>,
+}
+
+impl Delta {
+    /// Prefer `reasoning_content` (DeepSeek/OpenRouter) over `reasoning`
+    /// (vLLM); some servers (gpt-oss via vLLM) emit both. Skip empty values.
+    fn reasoning_text(&self) -> Option<&str> {
+        self.reasoning_content
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.reasoning.as_deref().filter(|s| !s.is_empty()))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct StreamingChoice {
+    #[serde(default)]
     delta: Delta,
     index: Option<i32>,
     finish_reason: Option<String>,
@@ -768,7 +781,7 @@ where
                 if let Some(details) = &chunk.choices[0].delta.reasoning_details {
                     accumulated_reasoning.extend(details.iter().cloned());
                 }
-                if let Some(rc) = &chunk.choices[0].delta.reasoning_content {
+                if let Some(rc) = chunk.choices[0].delta.reasoning_text() {
                     accumulated_reasoning_content.push_str(rc);
                 }
             }
@@ -810,7 +823,7 @@ where
                                     if let Some(details) = &tool_chunk.choices[0].delta.reasoning_details {
                                         accumulated_reasoning.extend(details.iter().cloned());
                                     }
-                                    if let Some(rc) = &tool_chunk.choices[0].delta.reasoning_content {
+                                    if let Some(rc) = tool_chunk.choices[0].delta.reasoning_text() {
                                         accumulated_reasoning_content.push_str(rc);
                                     }
                                     if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
@@ -918,14 +931,12 @@ where
                     Some(msg),
                     usage,
                 )
-            } else if chunk.choices[0].delta.content.is_some() || chunk.choices[0].delta.reasoning_content.is_some() {
+            } else if chunk.choices[0].delta.content.is_some() || chunk.choices[0].delta.reasoning_text().is_some() {
                 let mut content = Vec::new();
 
-                if let Some(reasoning) = &chunk.choices[0].delta.reasoning_content {
-                    if !reasoning.is_empty() {
-                        let signature = last_signature.as_deref().unwrap_or("");
-                        content.push(MessageContent::thinking(reasoning, signature));
-                    }
+                if let Some(reasoning) = chunk.choices[0].delta.reasoning_text() {
+                    let signature = last_signature.as_deref().unwrap_or("");
+                    content.push(MessageContent::thinking(reasoning, signature));
                 }
 
                 let (text_content, thought_signature) = extract_content_and_signature(chunk.choices[0].delta.content.as_ref());
@@ -984,7 +995,7 @@ pub fn create_request(
     }
 
     let (model_name, reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
-    let is_reasoning_model = reasoning_effort.is_some();
+    let is_reasoning_model = is_openai_responses_model(&model_name);
 
     let system_message = json!({
         "role": if is_reasoning_model { "developer" } else { "system" },
@@ -1716,7 +1727,8 @@ mod tests {
 
     #[test]
     fn test_create_request_o1_default() -> anyhow::Result<()> {
-        // Test default medium reasoning effort for O1 model
+        // Without an explicit effort suffix the API picks its own default;
+        // we should omit reasoning_effort entirely but still use "developer" role.
         let model_config = ModelConfig {
             model_name: "o1".to_string(),
             context_limit: Some(4096),
@@ -1745,13 +1757,16 @@ mod tests {
                     "content": "system"
                 }
             ],
-            "reasoning_effort": "medium",
             "max_completion_tokens": 1024
         });
 
         for (key, value) in expected.as_object().unwrap() {
             assert_eq!(obj.get(key).unwrap(), value);
         }
+        assert!(
+            obj.get("reasoning_effort").is_none(),
+            "reasoning_effort should be omitted when no explicit suffix is provided"
+        );
 
         Ok(())
     }
@@ -1994,6 +2009,23 @@ data: [DONE]
         assert_eq!(result.tool_calls.len(), 1, "Expected 1 tool call");
         assert_eq!(result.tool_calls[0], "developer__shell");
         assert_usage_yielded_once(&result, 12376, 79, 12455);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_azure_annotation_chunk_without_delta_does_not_fail() -> anyhow::Result<()> {
+        let response_lines = r#"
+data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1234567890,"model":"gpt-5.4","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}],"usage":null}
+data: {"choices":[{"content_filter_offsets":{"check_offset":5,"start_offset":5,"end_offset":5},"content_filter_results":{"hate":{"filtered":false,"severity":"safe"},"self_harm":{"filtered":false,"severity":"safe"},"sexual":{"filtered":false,"severity":"safe"},"violence":{"filtered":false,"severity":"safe"}},"finish_reason":null,"index":0}],"created":0,"id":"","model":"","object":""}
+data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1234567891,"model":"gpt-5.4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}
+data: [DONE]
+"#;
+
+        let result = run_streaming_test(response_lines).await?;
+
+        assert!(result.has_text_content, "Expected text content in response");
+        assert_usage_yielded_once(&result, 10, 1, 11);
 
         Ok(())
     }
@@ -2337,5 +2369,70 @@ data: [DONE]"#;
         assert_eq!(result.input_tokens, Some(42));
         assert_eq!(result.output_tokens, Some(128));
         assert_eq!(result.total_tokens, Some(170));
+    }
+
+    // vLLM serving gpt-oss emits both `reasoning` and `reasoning_content`
+    // in the same payload; the non-streaming path handles it fine today.
+    #[test]
+    fn test_response_to_message_with_both_reasoning_fields() -> anyhow::Result<()> {
+        let response = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "answer",
+                    "reasoning": "thinking...",
+                    "reasoning_content": "thinking..."
+                }
+            }]
+        });
+
+        let message = response_to_message(&response)?;
+        assert_eq!(message.content.len(), 2);
+        if let MessageContent::Thinking(t) = &message.content[0] {
+            assert_eq!(t.thinking, "thinking...");
+        } else {
+            panic!("Expected Thinking content, got {:?}", message.content[0]);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_chunk_with_only_reasoning_content() -> anyhow::Result<()> {
+        let response_lines = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"hi\"},\"finish_reason\":null}]}\ndata: [DONE]";
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        while let Some(result) = messages.next().await {
+            result?;
+        }
+        Ok(())
+    }
+
+    // Streaming counterpart: both fields in one delta must parse and yield
+    // thinking content, not fail with "duplicate field `reasoning_content`".
+    #[tokio::test]
+    async fn test_streaming_chunk_with_both_reasoning_fields() -> anyhow::Result<()> {
+        let response_lines = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"thinking...\",\"reasoning_content\":\"thinking...\"},\"finish_reason\":null}]}\ndata: [DONE]";
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut saw_thinking = false;
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for c in &msg.content {
+                    if let MessageContent::Thinking(t) = c {
+                        assert_eq!(t.thinking, "thinking...");
+                        saw_thinking = true;
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_thinking,
+            "expected thinking content from merged reasoning fields"
+        );
+        Ok(())
     }
 }

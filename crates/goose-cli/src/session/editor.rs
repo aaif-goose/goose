@@ -1,4 +1,5 @@
 use anyhow::Result;
+use goose::config::Config;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -6,15 +7,47 @@ use std::process::Command;
 use tempfile::Builder;
 use tempfile::NamedTempFile;
 
-/// Create temporary markdown file with conversation history
-fn create_temp_file(messages: &[&str]) -> Result<NamedTempFile> {
-    let temp_file = Builder::new()
-        .prefix("goose_prompt_")
-        .suffix(".md")
-        .tempfile()?;
+/// Resolve the editor command from config and environment variables.
+/// Checks GOOSE_PROMPT_EDITOR, then $VISUAL, then $EDITOR.
+pub fn resolve_editor_command() -> Option<String> {
+    let config = Config::global();
+    let config_editor = config.get_goose_prompt_editor().ok().flatten();
+    let visual = std::env::var("VISUAL").ok();
+    let editor_env = std::env::var("EDITOR").ok();
+    resolve_editor_from_sources(
+        config_editor.as_deref(),
+        visual.as_deref(),
+        editor_env.as_deref(),
+    )
+}
+
+/// Inner resolution logic, separated for testability.
+/// Checks sources in priority order: config, VISUAL, EDITOR.
+/// Skips empty strings at each level.
+fn resolve_editor_from_sources(
+    config_editor: Option<&str>,
+    visual: Option<&str>,
+    editor_env: Option<&str>,
+) -> Option<String> {
+    for cmd in [config_editor, visual, editor_env].into_iter().flatten() {
+        if !cmd.is_empty() {
+            return Some(cmd.to_string());
+        }
+    }
+    None
+}
+
+/// Build the markdown template content for the editor prompt.
+fn build_template(messages: &[&str], prefill: Option<&str>) -> String {
     let mut content = String::from("# Goose Prompt Editor\n\n");
 
     content.push_str("# Your prompt:\n\n");
+    if let Some(text) = prefill {
+        if !text.is_empty() {
+            content.push_str(text);
+            content.push('\n');
+        }
+    }
 
     if !messages.is_empty() {
         content.push_str("# Recent conversation for context (newest first):\n\n");
@@ -24,7 +57,17 @@ fn create_temp_file(messages: &[&str]) -> Result<NamedTempFile> {
         content.push('\n');
     }
 
-    fs::write(temp_file.path(), content)?;
+    content
+}
+
+/// Create temporary markdown file with conversation history and optional prefill text
+fn create_temp_file(messages: &[&str], prefill: Option<&str>) -> Result<NamedTempFile> {
+    let temp_file = Builder::new()
+        .prefix("goose_prompt_")
+        .suffix(".md")
+        .tempfile()?;
+
+    fs::write(temp_file.path(), build_template(messages, prefill))?;
     Ok(temp_file)
 }
 
@@ -80,8 +123,12 @@ fn launch_editor(editor_cmd: &str, file_path: &PathBuf) -> Result<()> {
 }
 
 /// Main function to get input from editor
-pub fn get_editor_input(editor_cmd: &str, messages: &[&str]) -> Result<(String, bool)> {
-    let temp_file = create_temp_file(messages)?;
+pub fn get_editor_input(
+    editor_cmd: &str,
+    messages: &[&str],
+    prefill: Option<&str>,
+) -> Result<(String, bool)> {
+    let temp_file = create_temp_file(messages, prefill)?;
     let temp_path = temp_file.path().to_path_buf();
 
     let symlink_path = PathBuf::from(".goose_prompt_temp.md");
@@ -98,18 +145,7 @@ pub fn get_editor_input(editor_cmd: &str, messages: &[&str]) -> Result<(String, 
 
     let _cleanup_guard = SymlinkCleanup::new(symlink_path.clone());
 
-    let _original_template = {
-        let mut template_content = String::from("# Goose Prompt Editor\n\n");
-        template_content.push_str("# Your prompt:\n\n");
-        if !messages.is_empty() {
-            template_content.push_str("# Recent conversation for context (newest first):\n\n");
-            for message in messages.iter().rev() {
-                template_content.push_str(&format!("{}\n", message));
-            }
-            template_content.push('\n');
-        }
-        template_content
-    };
+    let _original_template = build_template(messages, prefill);
 
     launch_editor(editor_cmd, &symlink_path)?;
 
@@ -209,7 +245,7 @@ This is the user's input
     fn test_create_temp_file_with_messages() {
         let messages = vec!["## User: Hello", "## Assistant: Hi there!"];
 
-        let temp_file = create_temp_file(&messages).unwrap();
+        let temp_file = create_temp_file(&messages, None).unwrap();
         let path = temp_file.path();
 
         assert!(path.exists());
@@ -222,6 +258,33 @@ This is the user's input
         assert!(content.contains("## Assistant: Hi there!"));
         assert!(content.contains("# Your prompt:"));
         assert!(content.contains("# Recent conversation for context (newest first):"));
+    }
+
+    #[test]
+    fn test_create_temp_file_with_prefill() {
+        let messages = vec!["## User: Hello"];
+        let temp_file = create_temp_file(&messages, Some("fix the login bug")).unwrap();
+        let content = fs::read_to_string(temp_file.path()).unwrap();
+
+        assert!(content.contains("# Your prompt:"));
+        assert!(content.contains("fix the login bug"));
+        // Prefill text should appear before conversation context
+        let prefill_pos = content.find("fix the login bug").unwrap();
+        let context_pos = content.find("# Recent conversation for context").unwrap();
+        assert!(
+            prefill_pos < context_pos,
+            "Prefill text should appear before conversation context"
+        );
+    }
+
+    #[test]
+    fn test_create_temp_file_without_prefill() {
+        let messages = vec!["## User: Hello"];
+        let temp_file = create_temp_file(&messages, None).unwrap();
+        let content = fs::read_to_string(temp_file.path()).unwrap();
+
+        assert!(content.contains("# Your prompt:"));
+        assert!(!content.contains("fix the login bug"));
     }
 
     #[test]
@@ -280,7 +343,7 @@ with multiple lines.
             "## User: Third message (newest)",
         ];
 
-        let temp_file = create_temp_file(&messages).unwrap();
+        let temp_file = create_temp_file(&messages, None).unwrap();
         let content = fs::read_to_string(temp_file.path()).unwrap();
 
         let newest_first = [
@@ -314,7 +377,7 @@ with multiple lines.
         use std::panic;
 
         let messages = vec!["## User: Test message for panic cleanup"];
-        let temp_file = create_temp_file(&messages).unwrap();
+        let temp_file = create_temp_file(&messages, None).unwrap();
         let temp_path = temp_file.path().to_path_buf();
 
         let symlink_path = PathBuf::from(format!("test_panic_cleanup_{}.md", std::process::id()));
@@ -351,13 +414,145 @@ with multiple lines.
         );
     }
 
+    // --- resolve_editor_from_sources tests ---
+
+    #[test]
+    fn test_resolve_editor_returns_config_when_set() {
+        let result = resolve_editor_from_sources(Some("code"), Some("vim"), Some("nano"));
+        assert_eq!(result.as_deref(), Some("code"));
+    }
+
+    #[test]
+    fn test_resolve_editor_falls_back_to_visual() {
+        let result = resolve_editor_from_sources(None, Some("vim"), Some("nano"));
+        assert_eq!(result.as_deref(), Some("vim"));
+    }
+
+    #[test]
+    fn test_resolve_editor_falls_back_to_editor_env() {
+        let result = resolve_editor_from_sources(None, None, Some("nano"));
+        assert_eq!(result.as_deref(), Some("nano"));
+    }
+
+    #[test]
+    fn test_resolve_editor_returns_none_when_nothing_set() {
+        let result = resolve_editor_from_sources(None, None, None);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_editor_skips_empty_config() {
+        let result = resolve_editor_from_sources(Some(""), Some("vim"), None);
+        assert_eq!(result.as_deref(), Some("vim"));
+    }
+
+    #[test]
+    fn test_resolve_editor_skips_empty_visual() {
+        let result = resolve_editor_from_sources(None, Some(""), Some("nano"));
+        assert_eq!(result.as_deref(), Some("nano"));
+    }
+
+    #[test]
+    fn test_resolve_editor_skips_all_empty() {
+        let result = resolve_editor_from_sources(Some(""), Some(""), Some(""));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_editor_skips_empty_config_and_visual() {
+        let result = resolve_editor_from_sources(Some(""), Some(""), Some("emacs"));
+        assert_eq!(result.as_deref(), Some("emacs"));
+    }
+
+    // --- build_template edge case tests ---
+
+    #[test]
+    fn test_build_template_empty_prefill_string() {
+        let content = build_template(&["## User: Hello"], Some(""));
+        // Empty prefill should not appear in content
+        assert!(content.contains("# Your prompt:\n\n#"));
+        // Should go directly to conversation context
+        assert!(content.contains("# Recent conversation for context"));
+    }
+
+    #[test]
+    fn test_build_template_prefill_with_no_messages() {
+        let content = build_template(&[], Some("fix the bug"));
+        assert!(content.contains("# Your prompt:\n\nfix the bug\n"));
+        assert!(!content.contains("# Recent conversation for context"));
+    }
+
+    #[test]
+    fn test_build_template_no_prefill_no_messages() {
+        let content = build_template(&[], None);
+        assert_eq!(content, "# Goose Prompt Editor\n\n# Your prompt:\n\n");
+    }
+
+    #[test]
+    fn test_build_template_prefill_with_messages() {
+        let content = build_template(&["## User: Hi", "## Assistant: Hello"], Some("do stuff"));
+        assert!(content.contains("do stuff"));
+        assert!(content.contains("## User: Hi"));
+        let prefill_pos = content.find("do stuff").unwrap();
+        let context_pos = content.find("# Recent conversation").unwrap();
+        assert!(prefill_pos < context_pos);
+    }
+
+    // --- extract_user_input with prefilled content tests ---
+
+    #[test]
+    fn test_extract_user_input_with_prefill_kept() {
+        // Simulates a user who opened the editor with prefill and kept it unchanged
+        let content = build_template(&["## User: Hello"], Some("fix the login bug"));
+        let result = extract_user_input(&content);
+        assert_eq!(result, "fix the login bug");
+    }
+
+    #[test]
+    fn test_extract_user_input_with_prefill_edited() {
+        // Simulates a user who edited the prefill text
+        let mut content = build_template(&["## User: Hello"], Some("fix the login bug"));
+        content = content.replace(
+            "fix the login bug",
+            "fix the login bug and also the signup flow",
+        );
+        let result = extract_user_input(&content);
+        assert_eq!(result, "fix the login bug and also the signup flow");
+    }
+
+    #[test]
+    fn test_extract_user_input_prefill_replaced() {
+        // Simulates a user who deleted the prefill and wrote something new
+        let mut content = build_template(&["## User: Hello"], Some("fix the login bug"));
+        content = content.replace("fix the login bug\n", "completely different prompt\n");
+        let result = extract_user_input(&content);
+        assert_eq!(result, "completely different prompt");
+    }
+
+    #[test]
+    fn test_extract_user_input_prefill_cleared() {
+        // Simulates a user who deleted the prefill and left nothing
+        let mut content = build_template(&["## User: Hello"], Some("fix the login bug"));
+        content = content.replace("fix the login bug\n", "");
+        let result = extract_user_input(&content);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_extract_user_input_multiline_with_prefill() {
+        let mut content = build_template(&["## User: Hello"], Some("line one"));
+        content = content.replace("line one\n", "line one\nline two\nline three\n");
+        let result = extract_user_input(&content);
+        assert_eq!(result, "line one\nline two\nline three");
+    }
+
     #[test]
     #[cfg(unix)]
     fn test_symlink_creation_and_cleanup() {
         use std::os::unix::fs;
 
         let messages = vec!["## User: Test message"];
-        let temp_file = create_temp_file(&messages).unwrap();
+        let temp_file = create_temp_file(&messages, None).unwrap();
         let temp_path = temp_file.path().to_path_buf();
 
         let symlink_path = PathBuf::from(format!("test_symlink_cleanup_{}.md", std::process::id()));

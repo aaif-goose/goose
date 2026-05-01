@@ -1,30 +1,19 @@
-import { useState, memo } from "react";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Copy,
-  Check,
-  RotateCcw,
-  Pencil,
-  User,
-  FileText,
-  FolderClosed,
-} from "lucide-react";
+import { Check, FileText, FolderClosed } from "lucide-react";
 import { IconRobot } from "@tabler/icons-react";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { cn } from "@/shared/lib/cn";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { getCatalogEntry } from "@/features/providers/providerCatalog";
 import {
   getProviderIcon,
   formatProviderLabel,
 } from "@/shared/ui/icons/ProviderIcons";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import {
-  MessageActions,
-  MessageAction,
-  MessageResponse,
-} from "@/shared/ui/ai-elements/message";
+import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import {
   Reasoning,
   ReasoningTrigger,
@@ -32,6 +21,7 @@ import {
 } from "@/shared/ui/ai-elements/reasoning";
 import { ToolChainCards, type ToolChainItem } from "./ToolChainCards";
 import { ClickableImage } from "./ClickableImage";
+import { McpAppView } from "./McpAppView";
 import { useArtifactLinkHandler } from "@/features/chat/hooks/useArtifactLinkHandler";
 import type {
   Message,
@@ -44,6 +34,8 @@ import type {
   ReasoningContent as ReasoningContentType,
   SystemNotificationContent,
 } from "@/shared/types/messages";
+import { MessageBubbleActions } from "./MessageBubbleActions";
+import { MessageMetadataChip } from "./MessageMetadataChip";
 
 function MessageAttachmentRow({
   attachment,
@@ -95,6 +87,13 @@ interface ContentSection {
   key: string;
   type: "single" | "toolChain";
   items: MessageContent[] | ToolChainItem[];
+}
+
+function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
+  return content.filter((b) => {
+    const aud = "annotations" in b ? b.annotations?.audience : undefined;
+    return !aud || aud.length === 0 || aud.includes("user");
+  });
 }
 
 function findMatchingToolChainIndex(
@@ -194,6 +193,9 @@ function renderContentBlock(
     case "text": {
       const tc = content as TextContent;
       if (isUserMessage) {
+        if (!tc.text.trim()) {
+          return null;
+        }
         return (
           <p key={`text-${index}`} className="whitespace-pre-wrap break-words">
             {tc.text}
@@ -224,29 +226,19 @@ function renderContentBlock(
     case "toolResponse":
       // Handled by groupContentSections toolChain rendering
       return null;
-    case "thinking": {
-      const th = content as ThinkingContent;
-      return (
-        <Reasoning
-          key={`thinking-${index}`}
-          isStreaming={isStreamingMsg}
-          defaultOpen={false}
-        >
-          <ReasoningTrigger />
-          <ReasoningContent>{th.text}</ReasoningContent>
-        </Reasoning>
-      );
-    }
+    case "mcpApp":
+      return <McpAppView key={`mcp-app-${index}`} payload={content.payload} />;
+    case "thinking":
     case "reasoning": {
-      const r = content as ReasoningContentType;
+      const text = (content as ThinkingContent | ReasoningContentType).text;
       return (
         <Reasoning
-          key={`reasoning-${index}`}
+          key={`${content.type}-${index}`}
           isStreaming={isStreamingMsg}
           defaultOpen={false}
         >
           <ReasoningTrigger />
-          <ReasoningContent>{r.text}</ReasoningContent>
+          <ReasoningContent>{text}</ReasoningContent>
         </Reasoning>
       );
     }
@@ -262,6 +254,7 @@ function renderContentBlock(
     case "systemNotification": {
       const sn = content as SystemNotificationContent;
       const isError = sn.notificationType === "error";
+      const isCompaction = sn.notificationType === "compaction";
       return (
         <div
           key={`notification-${index}`}
@@ -269,36 +262,19 @@ function renderContentBlock(
             "rounded-md border p-2 text-xs",
             isError
               ? "border-danger/30 bg-danger/10 text-danger"
-              : "border-border bg-accent text-muted-foreground",
+              : isCompaction
+                ? "inline-flex items-center justify-center gap-2 border-success/30 bg-success/10 font-medium text-success"
+                : "border-border bg-accent text-muted-foreground",
           )}
         >
-          {sn.text}
+          {isCompaction ? <Check className="size-3.5 shrink-0" /> : null}
+          <span>{sn.text}</span>
         </div>
       );
     }
     default:
       return null;
   }
-}
-
-function CopyAction({ text }: { text: string }) {
-  const { t } = useTranslation(["chat", "common"]);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <MessageAction
-      tooltip={copied ? t("message.copied") : t("common:actions.copy")}
-      onClick={handleCopy}
-    >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-    </MessageAction>
-  );
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -309,14 +285,21 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation(["chat", "common"]);
   const { formatDate } = useLocaleFormatting();
-  const { role, content, created } = message;
+  const { role, content: rawContent, created } = message;
+  // Only user messages carry annotated blocks; skip the filter for others.
+  const content =
+    role === "user" ? filterUserVisibleContent(rawContent) : rawContent;
   const { handleContentClick, pathNotice } = useArtifactLinkHandler();
   const persona = useAgentStore((state) =>
     message.metadata?.personaId
       ? state.getPersonaById(message.metadata.personaId)
       : undefined,
   );
+  const { isCopied: isCopyConfirmed, copyToClipboard } = useCopyToClipboard();
   const personaAvatarUrl = useAvatarSrc(persona?.avatar);
+
+  // Skip empty user bubbles (all blocks filtered as assistant-only).
+  if (role === "user" && content.length === 0) return null;
 
   const textContent = content
     .filter((c): c is TextContent => c.type === "text")
@@ -337,7 +320,6 @@ export const MessageBubble = memo(function MessageBubble({
       </div>
     );
   }
-
   const isUser = role === "user";
   const assistantProviderId = message.metadata?.providerId;
   const assistantProviderName = assistantProviderId
@@ -356,26 +338,32 @@ export const MessageBubble = memo(function MessageBubble({
       (assistantDisplayName || personaAvatarUrl || assistantProviderIcon),
   );
   const messageAttachments = message.metadata?.attachments ?? [];
+  const messageChips = message.metadata?.chips ?? [];
+  const timestamp = (
+    <span
+      data-role="message-timestamp"
+      className="shrink-0 whitespace-nowrap px-1 text-[10px] text-muted-foreground"
+    >
+      {formatDate(created, {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}
+    </span>
+  );
 
   return (
     <div
       className={cn(
-        "group flex px-4 py-1",
+        "flex px-4 py-1",
         "animate-in fade-in duration-200 motion-reduce:animate-none",
         isUser ? "ml-auto flex-row-reverse gap-3" : "flex-row",
       )}
       data-role={isUser ? "user-message" : "assistant-message"}
     >
-      {isUser ? (
-        <div className="flex h-7 w-7 shrink-0 self-start -mt-1 items-center justify-center rounded-full bg-accent">
-          <User size={14} className="text-muted-foreground" />
-        </div>
-      ) : null}
-
       <div
         className={cn(
-          "min-w-0 flex flex-col gap-1",
-          isUser ? "max-w-[80%] items-end" : "max-w-[85%] items-start",
+          "group relative min-w-0 flex flex-col gap-1 pb-8",
+          isUser ? "max-w-[640px] items-end" : "w-full items-start",
         )}
       >
         {showAssistantIdentity ? (
@@ -406,9 +394,22 @@ export const MessageBubble = memo(function MessageBubble({
         {/* biome-ignore lint/a11y/useKeyWithClickEvents: delegated link handler */}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: delegated link handler */}
         <div
-          className="w-full min-w-0 text-[13px] leading-relaxed"
+          className={cn(
+            "w-full min-w-0 text-sm leading-relaxed",
+            isUser && "rounded-2xl bg-muted p-3",
+          )}
           onClick={handleContentClick}
         >
+          {isUser && messageChips.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1.5">
+              {messageChips.map((chip) => (
+                <MessageMetadataChip
+                  key={`${chip.type}-${chip.label}`}
+                  chip={chip}
+                />
+              ))}
+            </div>
+          )}
           {messageAttachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {messageAttachments.map((attachment) => (
@@ -447,32 +448,29 @@ export const MessageBubble = memo(function MessageBubble({
           )}
         </div>
 
-        {/* Hover actions + timestamp */}
-        <MessageActions className="opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          {textContent && <CopyAction text={textContent} />}
-          {!isUser && onRetryMessage && (
-            <MessageAction
-              tooltip={t("common:actions.retry")}
-              onClick={() => onRetryMessage(message.id)}
-            >
-              <RotateCcw className="size-3.5" />
-            </MessageAction>
+        <div
+          data-role="message-actions"
+          data-copy-confirmed={isCopyConfirmed ? "true" : "false"}
+          className={cn(
+            "absolute bottom-0 transition-opacity duration-150 ease-out",
+            "opacity-0 pointer-events-none",
+            "group-hover:animate-in group-hover:slide-in-from-top-2 group-hover:opacity-100 group-hover:pointer-events-auto",
+            "group-focus-within:animate-in group-focus-within:slide-in-from-top-2 group-focus-within:opacity-100 group-focus-within:pointer-events-auto",
+            isCopyConfirmed && "opacity-100 pointer-events-auto",
+            isUser ? "right-0" : "left-0",
           )}
-          {isUser && onEditMessage && (
-            <MessageAction
-              tooltip={t("common:actions.edit")}
-              onClick={() => onEditMessage(message.id)}
-            >
-              <Pencil className="size-3.5" />
-            </MessageAction>
-          )}
-          <span className="px-1 text-[10px] text-muted-foreground">
-            {formatDate(created, {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-        </MessageActions>
+        >
+          <MessageBubbleActions
+            isUser={isUser}
+            messageId={message.id}
+            timestamp={timestamp}
+            textContent={textContent}
+            copied={isCopyConfirmed}
+            onCopy={() => copyToClipboard(textContent)}
+            onRetryMessage={onRetryMessage}
+            onEditMessage={onEditMessage}
+          />
+        </div>
       </div>
     </div>
   );

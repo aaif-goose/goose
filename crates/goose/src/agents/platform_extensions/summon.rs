@@ -1,4 +1,3 @@
-use super::{parse_frontmatter, Source, SourceKind};
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
@@ -13,8 +12,10 @@ use crate::recipe::local_recipes::load_local_recipe_file;
 use crate::recipe::{Recipe, Settings, RECIPE_FILE_EXTENSIONS};
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::SessionType;
+use crate::sources::parse_frontmatter;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult, Meta,
     ServerCapabilities, ServerNotification, Tool,
@@ -33,11 +34,11 @@ use tracing::{info, warn};
 
 pub static EXTENSION_NAME: &str = "summon";
 
-fn kind_plural(kind: SourceKind) -> &'static str {
+fn kind_plural(kind: SourceType) -> &'static str {
     match kind {
-        SourceKind::Subrecipe => "Subrecipes",
-        SourceKind::Recipe => "Recipes",
-        SourceKind::Agent => "Agents",
+        SourceType::Subrecipe => "Subrecipes",
+        SourceType::Recipe => "Recipes",
+        SourceType::Agent => "Agents",
         _ => "Other",
     }
 }
@@ -95,7 +96,7 @@ struct AgentMetadata {
     model: Option<String>,
 }
 
-fn parse_agent_content(content: &str, path: &Path) -> Option<Source> {
+fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
     let (metadata, body): (AgentMetadata, String) = match parse_frontmatter(content) {
         Ok(Some(parsed)) => parsed,
         Ok(None) => return None,
@@ -119,20 +120,21 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<Source> {
         format!("Agent{}", model_info)
     });
 
-    Some(Source {
+    Some(SourceEntry {
+        source_type: SourceType::Agent,
         name: metadata.name,
-        kind: SourceKind::Agent,
         description,
-        path: path.to_path_buf(),
         content: body,
+        directory: path.to_string_lossy().into_owned(),
+        global: false,
         supporting_files: Vec::new(),
     })
 }
 
 fn scan_recipes_from_dir(
     dir: &Path,
-    kind: SourceKind,
-    sources: &mut Vec<Source>,
+    kind: SourceType,
+    sources: &mut Vec<SourceEntry>,
     seen: &mut std::collections::HashSet<String>,
 ) {
     let entries = match std::fs::read_dir(dir) {
@@ -164,12 +166,13 @@ fn scan_recipes_from_dir(
         match Recipe::from_file_path(&path) {
             Ok(recipe) => {
                 seen.insert(name.clone());
-                sources.push(Source {
+                sources.push(SourceEntry {
+                    source_type: kind,
                     name,
-                    kind,
                     description: recipe.description.clone(),
-                    path: path.clone(),
                     content: recipe.instructions.clone().unwrap_or_default(),
+                    directory: path.to_string_lossy().into_owned(),
+                    global: false,
                     supporting_files: Vec::new(),
                 });
             }
@@ -182,7 +185,7 @@ fn scan_recipes_from_dir(
 
 fn scan_agents_from_dir(
     dir: &Path,
-    sources: &mut Vec<Source>,
+    sources: &mut Vec<SourceEntry>,
     seen: &mut std::collections::HashSet<String>,
 ) {
     let entries = match std::fs::read_dir(dir) {
@@ -218,8 +221,8 @@ fn scan_agents_from_dir(
     }
 }
 
-fn discover_filesystem_sources(working_dir: &Path) -> Vec<Source> {
-    let mut sources: Vec<Source> = Vec::new();
+pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
+    let mut sources: Vec<SourceEntry> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let home = dirs::home_dir();
@@ -240,6 +243,7 @@ fn discover_filesystem_sources(working_dir: &Path) -> Vec<Source> {
         })
         .chain(
             [
+                home.as_ref().map(|h| h.join(".goose/recipes")),
                 Some(config.join("recipes")),
                 home.as_ref().map(|h| h.join(".agents/recipes")),
             ]
@@ -255,6 +259,7 @@ fn discover_filesystem_sources(working_dir: &Path) -> Vec<Source> {
     ];
 
     let global_agent_dirs: Vec<PathBuf> = [
+        home.as_ref().map(|h| h.join(".goose/agents")),
         home.as_ref().map(|h| h.join(".agents/agents")),
         Some(config.join("agents")),
         home.as_ref().map(|h| h.join(".claude/agents")),
@@ -264,7 +269,7 @@ fn discover_filesystem_sources(working_dir: &Path) -> Vec<Source> {
     .collect();
 
     for dir in local_recipe_dirs {
-        scan_recipes_from_dir(&dir, SourceKind::Recipe, &mut sources, &mut seen);
+        scan_recipes_from_dir(&dir, SourceType::Recipe, &mut sources, &mut seen);
     }
 
     for dir in local_agent_dirs {
@@ -272,7 +277,7 @@ fn discover_filesystem_sources(working_dir: &Path) -> Vec<Source> {
     }
 
     for dir in global_recipe_dirs {
-        scan_recipes_from_dir(&dir, SourceKind::Recipe, &mut sources, &mut seen);
+        scan_recipes_from_dir(&dir, SourceType::Recipe, &mut sources, &mut seen);
     }
 
     for dir in global_agent_dirs {
@@ -313,7 +318,7 @@ fn is_session_id(s: &str) -> bool {
 pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
-    source_cache: Mutex<Option<(Instant, PathBuf, Vec<Source>)>>,
+    source_cache: Mutex<Option<(Instant, PathBuf, Vec<SourceEntry>)>>,
     background_tasks: Mutex<HashMap<String, BackgroundTask>>,
     completed_tasks: Mutex<HashMap<String, CompletedTask>>,
     notification_subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
@@ -475,11 +480,11 @@ impl SummonClient {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
     }
 
-    async fn get_sources(&self, session_id: &str, working_dir: &Path) -> Vec<Source> {
+    async fn get_sources(&self, session_id: &str, working_dir: &Path) -> Vec<SourceEntry> {
         let fs_sources = self.get_filesystem_sources(working_dir).await;
 
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut sources: Vec<Source> = Vec::new();
+        let mut sources: Vec<SourceEntry> = Vec::new();
 
         self.add_subrecipes(session_id, &mut sources, &mut seen)
             .await;
@@ -491,11 +496,11 @@ impl SummonClient {
             }
         }
 
-        sources.sort_by(|a, b| (&a.kind, &a.name).cmp(&(&b.kind, &b.name)));
+        sources.sort_by(|a, b| (&a.source_type, &a.name).cmp(&(&b.source_type, &b.name)));
         sources
     }
 
-    async fn get_filesystem_sources(&self, working_dir: &Path) -> Vec<Source> {
+    async fn get_filesystem_sources(&self, working_dir: &Path) -> Vec<SourceEntry> {
         let mut cache = self.source_cache.lock().await;
         if let Some((cached_at, cached_dir, sources)) = cache.as_ref() {
             if cached_dir == working_dir && cached_at.elapsed() < Duration::from_secs(60) {
@@ -512,11 +517,11 @@ impl SummonClient {
         session_id: &str,
         name: &str,
         working_dir: &Path,
-    ) -> Result<Option<Source>, String> {
+    ) -> Result<Option<SourceEntry>, String> {
         let sources = self.get_sources(session_id, working_dir).await;
 
         if let Some(mut source) = sources.iter().find(|s| s.name == name).cloned() {
-            if source.kind == SourceKind::Subrecipe && source.content.is_empty() {
+            if source.source_type == SourceType::Subrecipe && source.content.is_empty() {
                 source.content = self.load_subrecipe_content(session_id, &source.name).await;
             }
             return Ok(Some(source));
@@ -555,14 +560,14 @@ impl SummonClient {
         }
     }
 
-    fn discover_filesystem_sources(&self, working_dir: &Path) -> Vec<Source> {
+    fn discover_filesystem_sources(&self, working_dir: &Path) -> Vec<SourceEntry> {
         discover_filesystem_sources(working_dir)
     }
 
     async fn add_subrecipes(
         &self,
         session_id: &str,
-        sources: &mut Vec<Source>,
+        sources: &mut Vec<SourceEntry>,
         seen: &mut std::collections::HashSet<String>,
     ) {
         let session = match self
@@ -588,12 +593,13 @@ impl SummonClient {
 
             let description = self.build_subrecipe_description(sr).await;
 
-            sources.push(Source {
+            sources.push(SourceEntry {
+                source_type: SourceType::Subrecipe,
                 name: sr.name.clone(),
-                kind: SourceKind::Subrecipe,
                 description,
-                path: PathBuf::from(&sr.path),
                 content: String::new(),
+                directory: sr.path.clone(),
+                global: false,
                 supporting_files: Vec::new(),
             });
         }
@@ -839,8 +845,8 @@ impl SummonClient {
             }
         }
 
-        for kind in [SourceKind::Subrecipe, SourceKind::Recipe, SourceKind::Agent] {
-            let kind_sources: Vec<_> = sources.iter().filter(|s| s.kind == kind).collect();
+        for kind in [SourceType::Subrecipe, SourceType::Recipe, SourceType::Agent] {
+            let kind_sources: Vec<_> = sources.iter().filter(|s| s.source_type == kind).collect();
             if !kind_sources.is_empty() {
                 output.push_str(&format!("\n{}:\n", kind_plural(kind)));
                 for source in kind_sources {
@@ -873,7 +879,7 @@ impl SummonClient {
 
                 let output = format!(
                     "# Loaded: {} ({})\n\n{}\n\n---\nThis knowledge is now available in your context.",
-                    source.name, source.kind, content
+                    source.name, source.source_type, content
                 );
 
                 Ok(vec![Content::text(output)])
@@ -1078,16 +1084,16 @@ impl SummonClient {
             .await?
             .ok_or_else(|| format!("Source '{}' not found", source_name))?;
 
-        let mut recipe = match source.kind {
-            SourceKind::Recipe | SourceKind::Subrecipe => {
+        let mut recipe = match source.source_type {
+            SourceType::Recipe | SourceType::Subrecipe => {
                 self.build_recipe_from_source(&source, params, session_id)
                     .await?
             }
-            SourceKind::Agent => self.build_recipe_from_agent(&source, params)?,
+            SourceType::Agent => self.build_recipe_from_agent(&source, params)?,
             _ => {
                 return Err(format!(
                     "Source '{}' has kind '{}' which cannot be delegated from summon",
-                    source_name, source.kind
+                    source_name, source.source_type
                 ))
             }
         };
@@ -1106,7 +1112,7 @@ impl SummonClient {
 
     async fn build_recipe_from_source(
         &self,
-        source: &Source,
+        source: &SourceEntry,
         params: &DelegateParams,
         session_id: &str,
     ) -> Result<Recipe, String> {
@@ -1117,7 +1123,7 @@ impl SummonClient {
             .await
             .map_err(|e| format!("Failed to get session: {}", e))?;
 
-        if source.kind == SourceKind::Subrecipe {
+        if source.source_type == SourceType::Subrecipe {
             let sub_recipes = session.recipe.as_ref().and_then(|r| r.sub_recipes.as_ref());
 
             if let Some(sub_recipes) = sub_recipes {
@@ -1154,7 +1160,7 @@ impl SummonClient {
             }
         }
 
-        let recipe_file = load_local_recipe_file(source.path.to_str().unwrap_or(""))
+        let recipe_file = load_local_recipe_file(&source.directory)
             .map_err(|e| format!("Failed to load recipe '{}': {}", source.name, e))?;
 
         let param_values: Vec<(String, String)> = params
@@ -1184,13 +1190,13 @@ impl SummonClient {
 
     fn build_recipe_from_agent(
         &self,
-        source: &Source,
+        source: &SourceEntry,
         params: &DelegateParams,
     ) -> Result<Recipe, String> {
-        let agent_content = if source.path.as_os_str().is_empty() {
+        let agent_content = if source.directory.is_empty() {
             return Err("Agent source has no path".to_string());
         } else {
-            std::fs::read_to_string(&source.path)
+            std::fs::read_to_string(&source.directory)
                 .map_err(|e| format!("Failed to read agent file: {}", e))?
         };
 
@@ -1745,14 +1751,14 @@ You review code."#;
 
         let recipe = sources
             .iter()
-            .find(|s| s.name == "deploy" && s.kind == SourceKind::Recipe)
+            .find(|s| s.name == "deploy" && s.source_type == SourceType::Recipe)
             .unwrap();
         assert_eq!(recipe.description, "Deploy to production");
         assert_eq!(recipe.content, "Run deploy steps");
 
         let agent = sources
             .iter()
-            .find(|s| s.name == "reviewer" && s.kind == SourceKind::Agent)
+            .find(|s| s.name == "reviewer" && s.source_type == SourceType::Agent)
             .unwrap();
         assert_eq!(agent.description, "Code reviewer");
         assert!(agent.content.contains("You review code"));

@@ -115,17 +115,17 @@ pub async fn oauth_flow(
         .unwrap_or_default();
 
     credential_store
-        .save(StoredCredentials {
+        .save(StoredCredentials::new(
             client_id,
             token_response,
             granted_scopes,
-            token_received_at: Some(
+            Some(
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|duration| duration.as_secs())
                     .unwrap_or(0),
             ),
-        })
+        ))
         .await?;
 
     auth_manager.set_credential_store(credential_store);

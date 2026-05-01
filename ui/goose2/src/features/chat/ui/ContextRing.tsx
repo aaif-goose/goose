@@ -22,14 +22,6 @@ export function ContextRing({
   const offset = circumference - progress * circumference;
   const percent = formatNumber(Math.round(progress * 100));
 
-  // Color based on usage
-  const strokeColor =
-    progress > 0.9
-      ? "var(--text-danger)"
-      : progress > 0.7
-        ? "var(--text-warning)"
-        : "var(--text-muted)";
-
   return (
     <svg
       width={size}
@@ -38,29 +30,26 @@ export function ContextRing({
       className="shrink-0"
       aria-label={t("context.ringAria", { percent })}
     >
-      {/* Background track */}
       <circle
         cx={size / 2}
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        className="text-muted-foreground/30"
+        stroke="var(--color-border)"
+        strokeWidth={2.5}
       />
-      {/* Progress arc */}
       <circle
         cx={size / 2}
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke={strokeColor}
-        strokeWidth={2}
-        strokeLinecap="round"
+        stroke="var(--color-foreground)"
+        strokeWidth={2.5}
+        strokeLinecap={progress > 0 ? "round" : "butt"}
         strokeDasharray={circumference}
         strokeDashoffset={offset}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        className="transition-all duration-300"
+        className="transition-all duration-300 ease-out"
       />
     </svg>
   );

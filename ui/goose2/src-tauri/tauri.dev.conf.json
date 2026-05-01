@@ -1,4 +1,7 @@
 {
   "identifier": "com.goose.app.dev",
-  "productName": "Goose Dev"
+  "productName": "Goose Dev",
+  "bundle": {
+    "externalBin": []
+  }
 }

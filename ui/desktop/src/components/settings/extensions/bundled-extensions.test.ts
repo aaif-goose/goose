@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { isDeprecatedGoogleDriveExtension, syncBundledExtensions } from './bundled-extensions';
+import { pruneDeprecatedBundledExtensions, syncBundledExtensions } from './bundled-extensions';
 import type { FixedExtensionEntry } from '../../ConfigContext';
 
 vi.mock('./bundled-extensions.json', () => ({
@@ -28,143 +28,11 @@ vi.mock('./bundled-extensions.json', () => ({
   ],
 }));
 
-describe('isDeprecatedGoogleDriveExtension', () => {
-  it('returns true for builtin googledrive', () => {
-    const ext = {
-      name: 'Google Drive',
-      type: 'builtin',
-      description: 'Google Drive extension',
-      enabled: true,
-      bundled: true,
-    } as FixedExtensionEntry;
-    expect(isDeprecatedGoogleDriveExtension(ext)).toBe(true);
-  });
-
-  it('returns true for builtin google_drive', () => {
-    const ext = {
-      name: 'google_drive',
-      type: 'builtin',
-      description: 'Google Drive extension',
-      enabled: true,
-      bundled: true,
-    } as FixedExtensionEntry;
-    expect(isDeprecatedGoogleDriveExtension(ext)).toBe(true);
-  });
-
-  it('returns true for stdio googledrive with GOOGLE_DRIVE_CREDENTIALS_PATH', () => {
-    const ext = {
-      name: 'Google Drive',
-      type: 'stdio',
-      description: 'Google Drive extension',
-      cmd: 'some-cmd',
-      args: [],
-      env_keys: ['GOOGLE_DRIVE_CREDENTIALS_PATH'],
-      enabled: true,
-      bundled: true,
-    } as FixedExtensionEntry;
-    expect(isDeprecatedGoogleDriveExtension(ext)).toBe(true);
-  });
-
-  it('returns true for stdio googledrive with GOOGLE_DRIVE_OAUTH_PATH', () => {
-    const ext = {
-      name: 'Google Drive',
-      type: 'stdio',
-      description: 'Google Drive extension',
-      cmd: 'some-cmd',
-      args: [],
-      env_keys: ['GOOGLE_DRIVE_OAUTH_PATH'],
-      enabled: true,
-      bundled: true,
-    } as FixedExtensionEntry;
-    expect(isDeprecatedGoogleDriveExtension(ext)).toBe(true);
-  });
-
-  it('returns false for stdio googledrive without deprecated env keys', () => {
-    const ext = {
-      name: 'Google Drive',
-      type: 'stdio',
-      description: 'Google Drive extension',
-      cmd: 'some-cmd',
-      args: [],
-      env_keys: [],
-      enabled: true,
-      bundled: true,
-    } as FixedExtensionEntry;
-    expect(isDeprecatedGoogleDriveExtension(ext)).toBe(false);
-  });
-
-  it('returns false for non-googledrive extensions', () => {
-    const ext = {
-      name: 'developer',
-      type: 'builtin',
-      description: 'Developer tools',
-      enabled: true,
-      bundled: true,
-    } as FixedExtensionEntry;
-    expect(isDeprecatedGoogleDriveExtension(ext)).toBe(false);
-  });
-
-  it('returns false for non-googledrive stdio with those env keys', () => {
-    const ext = {
-      name: 'some-other-ext',
-      type: 'stdio',
-      description: 'Other extension',
-      cmd: 'some-cmd',
-      args: [],
-      env_keys: ['GOOGLE_DRIVE_CREDENTIALS_PATH'],
-      enabled: true,
-      bundled: true,
-    } as FixedExtensionEntry;
-    expect(isDeprecatedGoogleDriveExtension(ext)).toBe(false);
-  });
-});
+vi.mock('./deprecated-bundled-extensions.json', () => ({
+  default: [{ id: 'googledrive' }, { id: 'old-bundled-extension' }],
+}));
 
 describe('syncBundledExtensions', () => {
-  it('overwrites deprecated builtin googledrive extension', async () => {
-    const addExtensionFn = vi.fn().mockResolvedValue(undefined);
-    const existingExtensions = [
-      {
-        name: 'googledrive',
-        type: 'builtin',
-        description: 'Google Drive',
-        enabled: true,
-        bundled: true,
-      },
-    ] as FixedExtensionEntry[];
-
-    await syncBundledExtensions(existingExtensions, addExtensionFn);
-
-    expect(addExtensionFn).toHaveBeenCalledWith(
-      'googledrive',
-      expect.objectContaining({ type: 'stdio', bundled: true }),
-      true
-    );
-  });
-
-  it('overwrites stdio googledrive with deprecated env keys', async () => {
-    const addExtensionFn = vi.fn().mockResolvedValue(undefined);
-    const existingExtensions = [
-      {
-        name: 'googledrive',
-        type: 'stdio',
-        description: 'Google Drive',
-        cmd: 'some-cmd',
-        args: [],
-        env_keys: ['GOOGLE_DRIVE_CREDENTIALS_PATH'],
-        enabled: true,
-        bundled: true,
-      },
-    ] as FixedExtensionEntry[];
-
-    await syncBundledExtensions(existingExtensions, addExtensionFn);
-
-    expect(addExtensionFn).toHaveBeenCalledWith(
-      'googledrive',
-      expect.objectContaining({ type: 'stdio', bundled: true, env_keys: [] }),
-      true
-    );
-  });
-
   it('skips already bundled non-deprecated extensions', async () => {
     const addExtensionFn = vi.fn().mockResolvedValue(undefined);
     const existingExtensions = [
@@ -184,6 +52,85 @@ describe('syncBundledExtensions', () => {
       'developer',
       expect.anything(),
       expect.anything()
+    );
+  });
+});
+
+describe('pruneDeprecatedBundledExtensions', () => {
+  it('removes deprecated bundled extensions', async () => {
+    const removeExtensionFn = vi.fn().mockResolvedValue(undefined);
+    const existingExtensions = [
+      {
+        name: 'old-bundled-extension',
+        type: 'builtin',
+        description: 'Old bundled extension',
+        enabled: true,
+        bundled: true,
+      },
+    ] as FixedExtensionEntry[];
+
+    const remainingExtensions = await pruneDeprecatedBundledExtensions(
+      existingExtensions,
+      removeExtensionFn
+    );
+
+    expect(removeExtensionFn).toHaveBeenCalledWith('old-bundled-extension');
+    expect(remainingExtensions).toEqual([]);
+  });
+
+  it('does not remove non-bundled deprecated extensions', async () => {
+    const removeExtensionFn = vi.fn().mockResolvedValue(undefined);
+    const existingExtensions = [
+      {
+        name: 'old-bundled-extension',
+        type: 'builtin',
+        description: 'Old bundled extension',
+        enabled: true,
+        bundled: false,
+      },
+    ] as FixedExtensionEntry[];
+
+    const remainingExtensions = await pruneDeprecatedBundledExtensions(
+      existingExtensions,
+      removeExtensionFn
+    );
+
+    expect(removeExtensionFn).not.toHaveBeenCalled();
+    expect(remainingExtensions).toEqual(existingExtensions);
+  });
+
+  it('allows same-id bundled extensions to be re-added after prune', async () => {
+    const removeExtensionFn = vi.fn().mockResolvedValue(undefined);
+    const addExtensionFn = vi.fn().mockResolvedValue(undefined);
+    const existingExtensions = [
+      {
+        name: 'Google Drive',
+        type: 'stdio',
+        description: 'Google Drive extension',
+        cmd: 'some-cmd',
+        args: [],
+        env_keys: [],
+        enabled: true,
+        bundled: true,
+      },
+    ] as FixedExtensionEntry[];
+
+    const remainingExtensions = await pruneDeprecatedBundledExtensions(
+      existingExtensions,
+      removeExtensionFn
+    );
+
+    await syncBundledExtensions(remainingExtensions, addExtensionFn);
+
+    expect(removeExtensionFn).toHaveBeenCalledWith('googledrive');
+    expect(addExtensionFn).toHaveBeenCalledWith(
+      'googledrive',
+      expect.objectContaining({
+        type: 'stdio',
+        name: 'googledrive',
+        bundled: true,
+      }),
+      true
     );
   });
 });

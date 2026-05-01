@@ -46,6 +46,10 @@ vi.mock("@/shared/api/system", () => ({
   readImageAttachment: (path: string) => mockReadImageAttachment(path),
 }));
 
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
+}));
+
 const mockOpenDialog = vi.fn();
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: (...args: unknown[]) => mockOpenDialog(...args),

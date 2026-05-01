@@ -33,9 +33,7 @@ export function renderToolCallItem(
   item: ResponseItem & { itemType: "tool_call" },
   index: number,
   width: number,
-  toolCallsExpanded: boolean,
-  isFirst: boolean,
-  hasToolCalls: boolean
+  selected: boolean,
 ): React.ReactElement[] {
   const info: ToolCallInfo = {
     toolCallId: item.toolCallId,
@@ -47,10 +45,10 @@ export function renderToolCallItem(
     content: item.content,
     locations: item.locations,
   };
-  
+
   return [
     emptyLine(`tc-gap-${index}`, width),
-    ...renderToolCallLines(info, width, toolCallsExpanded, isFirst && hasToolCalls),
+    ...renderToolCallLines(info, width, selected),
   ];
 }
 

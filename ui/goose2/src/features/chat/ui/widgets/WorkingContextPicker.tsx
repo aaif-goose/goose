@@ -20,13 +20,13 @@ import {
 import { buttonVariants } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import type { GitState } from "@/shared/types/git";
-import type { WorkingContext } from "../../stores/chatSessionStore";
+import type { ActiveWorkspace } from "../../stores/chatSessionStore";
 
 interface WorkingContextPickerProps {
   currentProjectPath: string | null;
   gitState: GitState | undefined;
-  activeContext: WorkingContext | undefined;
-  onSelect: (context: WorkingContext) => void;
+  activeContext: ActiveWorkspace | undefined;
+  onSelect: (context: ActiveWorkspace) => void;
   onSwitchBranch: (path: string, branch: string) => Promise<void>;
   onStashAndSwitch: (path: string, branch: string) => Promise<void>;
 }
@@ -63,7 +63,7 @@ export function WorkingContextPicker({
 }: WorkingContextPickerProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
-  const [pendingSwitch, setPendingSwitch] = useState<WorkingContext | null>(
+  const [pendingSwitch, setPendingSwitch] = useState<ActiveWorkspace | null>(
     null,
   );
   const [switching, setSwitching] = useState(false);

@@ -11,9 +11,19 @@ const EXCEPTIONS = {
       "Drag-and-drop handlers for session-to-project moves and project reorder, plus activeProjectId highlight.",
   },
   "src/features/chat/ui/ChatView.tsx": {
-    limit: 535,
+    limit: 570,
     justification:
-      "ACP prewarm guards, project-aware working dir selection, working context sync, and chat bootstrapping still live together here.",
+      "ACP prewarm guards, project-aware working dir selection, working context sync, chat bootstrapping, context-ring compaction wiring, and gated [perf:chatview] logging via perfLog (dev-only by default).",
+  },
+  "src/features/chat/hooks/useChat.ts": {
+    limit: 510,
+    justification:
+      "Session preparation, provider/model handoff, persona-aware sends, cancellation, and compaction replay still live in one chat lifecycle hook.",
+  },
+  "src/shared/api/acpNotificationHandler.ts": {
+    limit: 550,
+    justification:
+      "ACP replay/live update handling, pending session buffering, model/config propagation, and streaming perf tracking still share one notification entrypoint.",
   },
   "src/features/chat/ui/__tests__/ContextPanel.test.tsx": {
     limit: 550,
@@ -26,9 +36,29 @@ const EXCEPTIONS = {
       "Search-as-you-type filtering and draft-aware sidebar highlight logic.",
   },
   "src/app/AppShell.tsx": {
-    limit: 650,
+    limit: 780,
     justification:
-      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, and app-level chat routing.",
+      "Shell still coordinates ACP session loading, replay-buffer cleanup on load failure, project reassignment, home-session restoration, app-level chat routing, restored project-draft reuse, and app-level compaction settings deep links. Includes gated [perf:load]/[perf:newtab] logging via perfLog (dev-only by default).",
+  },
+  "src/features/chat/hooks/useChatSessionController.ts": {
+    limit: 840,
+    justification:
+      "Controller now centralizes home-to-chat pending state transfer, workspace/project preparation, provider/model/persona handoff, Goose cross-provider model selection sequencing with rollback, context-usage readiness resets, queued-target compaction gating, and auto-compaction-aware send orchestration pending a later decomposition pass.",
+  },
+  "src/features/chat/hooks/__tests__/useChatSessionController.test.ts": {
+    limit: 520,
+    justification:
+      "Controller regression coverage now spans model/provider rollback, stale usage resets, compact-before-send, and queued-persona auto-compaction support checks in one hook suite.",
+  },
+  "src/features/chat/stores/chatStore.ts": {
+    limit: 520,
+    justification:
+      "Chat runtime state, queued-message persistence, replay loading flags, and usage snapshot tracking still live together in one Zustand store.",
+  },
+  "src/features/chat/ui/AgentModelPicker.tsx": {
+    limit: 570,
+    justification:
+      "Agent-first picker currently keeps the full trigger, recommended-model view, searchable full-model view, and ACP/goose-specific labeling logic in one component pending later extraction.",
   },
   "src/features/chat/stores/__tests__/chatSessionStore.test.ts": {
     limit: 540,
@@ -39,6 +69,26 @@ const EXCEPTIONS = {
     limit: 640,
     justification:
       "ACP-backed session overlay persistence, draft migration, and sidebar-facing session merge logic live together for now.",
+  },
+  "src/features/chat/ui/ChatInput.tsx": {
+    limit: 510,
+    justification:
+      "Voice dictation send/stop guards, attachment handling, and mention/picker coordination still share one chat composer component.",
+  },
+  "src/features/chat/ui/MessageBubble.tsx": {
+    limit: 520,
+    justification:
+      "Bubble rendering still owns assistant identity, grouped tool output, attachments, and the inline actions tray pending a later extraction pass.",
+  },
+  "src/features/skills/ui/SkillsView.tsx": {
+    limit: 620,
+    justification:
+      "SkillsView currently centralizes list/detail state, project-aware skill hydration, category/source filtering, import/export flows, and detail-page action wiring pending a later decomposition.",
+  },
+  "src/features/chat/ui/__tests__/ChatInput.test.tsx": {
+    limit: 570,
+    justification:
+      "Composer regression coverage spans personas, queueing, attachments, voice-input edge cases, and the compaction popover/settings ingress in one interaction-heavy suite.",
   },
   "src-tauri/src/commands/projects.rs": {
     limit: 520,

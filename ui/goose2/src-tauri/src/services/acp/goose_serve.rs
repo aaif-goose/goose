@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use tauri_plugin_shell::ShellExt;
+
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use tokio::process::{Child, Command};
@@ -7,12 +9,6 @@ use tokio::sync::OnceCell;
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
-const COMMON_GOOSE_PATHS: &[&str] = &[
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/usr/bin",
-    "/home/linuxbrew/.linuxbrew/bin",
-];
 // ---------------------------------------------------------------------------
 // GooseServeProcess — singleton that owns the long-lived `goose serve` child
 // ---------------------------------------------------------------------------
@@ -37,29 +33,15 @@ impl GooseServeProcess {
         format!("ws://{LOCALHOST}:{}/acp?secret={}", self.port, self.secret_key)
     }
 
-    /// Start the singleton `goose serve` process.
-    ///
-    /// This is called once from `lib.rs` during app startup.  Subsequent calls
-    /// are no-ops (the `OnceCell` ensures single initialisation).  The process
-    /// is spawned with `kill_on_drop(true)` so it is automatically terminated
-    /// when the Tauri app exits.
-    pub async fn start() -> Result<(), String> {
-        GOOSE_SERVE
-            .get_or_try_init(|| async { Self::spawn().await })
-            .await
-            .map(|_| ())
-    }
-
     /// Get a reference to the running process, or an error if it was never
     /// started (should not happen in normal operation).
-    pub fn get() -> Result<&'static GooseServeProcess, String> {
+    pub async fn get(app_handle: tauri::AppHandle) -> Result<&'static GooseServeProcess, String> {
         GOOSE_SERVE
-            .get()
-            .ok_or_else(|| "Goose serve process has not been started".to_string())
+            .get_or_try_init(|| async { Self::spawn(app_handle).await })
+            .await
     }
 
-    async fn spawn() -> Result<GooseServeProcess, String> {
-        let binary_path = resolve_goose_binary()?;
+    async fn spawn(app_handle: tauri::AppHandle) -> Result<GooseServeProcess, String> {
         let port = reserve_free_port()?;
         let secret_key = hex::encode(rand::random::<[u8; 32]>());
 
@@ -73,7 +55,9 @@ impl GooseServeProcess {
             )
         })?;
 
-        let mut command = Command::new(&binary_path);
+        let mut command: Command = get_goose_command(&app_handle)?;
+        let binary_display = command.as_std().get_program().to_string_lossy().to_string();
+
         command
             .arg("serve")
             .arg("--host")
@@ -89,16 +73,13 @@ impl GooseServeProcess {
             .kill_on_drop(true);
 
         log::info!(
-            "Spawning long-lived goose serve: binary={} port={} cwd={}",
-            binary_path.display(),
-            port,
+            "Spawning long-lived goose serve: binary={binary_display} port={port} cwd={}",
             working_dir.display(),
         );
 
         let mut child = command.spawn().map_err(|error| {
             format!(
-                "Failed to spawn goose serve (binary: {}, cwd: {}): {error}",
-                binary_path.display(),
+                "Failed to spawn goose serve (binary: {binary_display}, cwd: {}): {error}",
                 working_dir.display()
             )
         })?;
@@ -112,6 +93,19 @@ impl GooseServeProcess {
             secret_key,
             _child: child,
         })
+    }
+}
+
+pub fn get_goose_command(app_handle: &tauri::AppHandle) -> Result<Command, String> {
+    if let Ok(override_path) = std::env::var("GOOSE_BIN") {
+        Ok(Command::new(override_path))
+    } else {
+        let tauri_command = app_handle
+            .shell()
+            .sidecar("goose")
+            .map_err(|e| format!("could not resolve goose binary: {e}"))?;
+        let std_command: std::process::Command = tauri_command.into();
+        Ok(std_command.into())
     }
 }
 
@@ -147,164 +141,6 @@ fn default_serve_working_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join(".goose")
         .join("artifacts")
-}
-
-// ---------------------------------------------------------------------------
-// Binary resolution
-// ---------------------------------------------------------------------------
-
-pub(crate) fn resolve_goose_binary() -> Result<PathBuf, String> {
-    let binary_path = if let Ok(override_path) = std::env::var("GOOSE_BIN") {
-        let path = PathBuf::from(&override_path);
-        if !path.exists() {
-            return Err(format!(
-                "GOOSE_BIN points to non-existent path: {override_path}"
-            ));
-        }
-        if !goose_binary_supports_serve(&path)? {
-            return Err(format!(
-                "GOOSE_BIN points to a goose binary without `serve` support: {}",
-                path.display()
-            ));
-        }
-        log::info!("Using GOOSE_BIN override: {override_path}");
-        path
-    } else {
-        let path = find_goose_binary()
-            .ok_or_else(|| "Unknown or unavailable agent provider: goose".to_string())?;
-
-        if !goose_binary_supports_serve(&path)? {
-            return Err(format!(
-                "Resolved goose binary does not support `serve`: {}. Set GOOSE_BIN to a newer goose binary.",
-                path.display()
-            ));
-        }
-
-        log::info!(
-            "Resolved goose binary via local discovery: {}",
-            path.display()
-        );
-        path
-    };
-
-    // Log the binary version for debugging.
-    match std::process::Command::new(&binary_path)
-        .env("GOOSE_PATH_ROOT", goose_probe_root())
-        .arg("--version")
-        .output()
-    {
-        Ok(output) => {
-            let version = String::from_utf8_lossy(&output.stdout);
-            log::info!(
-                "Goose binary version: {} (path: {})",
-                version.trim(),
-                binary_path.display()
-            );
-        }
-        Err(err) => {
-            log::warn!(
-                "Could not determine goose binary version at {}: {err}",
-                binary_path.display()
-            );
-        }
-    }
-
-    Ok(binary_path)
-}
-
-fn find_goose_binary() -> Option<PathBuf> {
-    find_goose_via_login_shell().or_else(find_goose_in_common_paths)
-}
-
-fn find_goose_via_login_shell() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        None
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        for shell in ["/bin/zsh", "/bin/bash"] {
-            let Ok(output) = std::process::Command::new(shell)
-                .args(["-l", "-c", "which goose"])
-                .output()
-            else {
-                continue;
-            };
-
-            if !output.status.success() {
-                continue;
-            }
-
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(path_str) = stdout.lines().rfind(|line| !line.trim().is_empty()) {
-                let path = PathBuf::from(path_str.trim());
-                if path.is_file() {
-                    return Some(path);
-                }
-            }
-        }
-
-        None
-    }
-}
-
-fn find_goose_in_common_paths() -> Option<PathBuf> {
-    COMMON_GOOSE_PATHS
-        .iter()
-        .map(|dir| Path::new(dir).join(goose_binary_name()))
-        .find(|path| path.is_file())
-}
-
-fn goose_binary_name() -> &'static str {
-    #[cfg(target_os = "windows")]
-    {
-        "goose.exe"
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        "goose"
-    }
-}
-
-fn goose_binary_supports_serve(binary_path: &PathBuf) -> Result<bool, String> {
-    let output = std::process::Command::new(binary_path)
-        .env("GOOSE_PATH_ROOT", goose_probe_root())
-        .arg("serve")
-        .arg("--help")
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to probe goose binary {}: {error}",
-                binary_path.display()
-            )
-        })?;
-
-    if output.status.success() {
-        return Ok(true);
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    log::warn!(
-        "Goose binary probe failed for {}: status={} stderr={} stdout={}",
-        binary_path.display(),
-        output
-            .status
-            .code()
-            .map(|code| code.to_string())
-            .unwrap_or_else(|| "signal".to_string()),
-        stderr.trim(),
-        stdout.trim(),
-    );
-
-    Ok(false)
-}
-
-fn goose_probe_root() -> PathBuf {
-    std::env::temp_dir().join("block-goose2-goose-probe")
 }
 
 fn reserve_free_port() -> Result<u16, String> {

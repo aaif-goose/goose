@@ -37,6 +37,34 @@ pub type BoxError = Box<dyn std::error::Error + Sync + Send>;
 
 pub type Error = rmcp::ServiceError;
 
+const MCP_APPS_UI_EXTENSION_ID: &str = "io.modelcontextprotocol/ui";
+const MCP_APPS_UI_MIME_TYPE: &str = "text/html;profile=mcp-app";
+
+fn default_mcp_apps_ui_extensions() -> ExtensionCapabilities {
+    let mut extensions = ExtensionCapabilities::new();
+    let mut ui_extension_settings = JsonObject::new();
+    ui_extension_settings.insert(
+        "mimeTypes".to_string(),
+        serde_json::json!([MCP_APPS_UI_MIME_TYPE]),
+    );
+    extensions.insert(MCP_APPS_UI_EXTENSION_ID.to_string(), ui_extension_settings);
+    extensions
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GooseMcpHostInfo {
+    pub explicit_extensions: bool,
+    pub extensions: ExtensionCapabilities,
+    pub client_name: Option<String>,
+    pub client_version: Option<String>,
+}
+
+impl GooseMcpHostInfo {
+    pub fn mcpui_enabled(&self) -> bool {
+        self.extensions.contains_key(MCP_APPS_UI_EXTENSION_ID)
+    }
+}
+
 #[async_trait::async_trait]
 pub trait McpClientTrait: Send + Sync {
     async fn list_tools(
@@ -163,6 +191,40 @@ impl GooseClient {
             .find(|(key, _)| key.eq_ignore_ascii_case(SESSION_ID_HEADER))
             .and_then(|(_, value)| value.as_str())
             .map(|value| value.to_string())
+    }
+
+    fn resolved_extensions(&self) -> ExtensionCapabilities {
+        if let Some(host_info) = &self.capabilities.host_info {
+            if host_info.explicit_extensions {
+                return host_info.extensions.clone();
+            }
+        }
+
+        if self.capabilities.mcpui {
+            return default_mcp_apps_ui_extensions();
+        }
+
+        ExtensionCapabilities::new()
+    }
+
+    fn resolved_client_info(&self) -> Implementation {
+        let name = self
+            .capabilities
+            .host_info
+            .as_ref()
+            .and_then(|host_info| host_info.client_name.clone())
+            .unwrap_or_else(|| self.client_name.clone());
+        let version = self
+            .capabilities
+            .host_info
+            .as_ref()
+            .and_then(|host_info| host_info.client_version.clone())
+            .unwrap_or_else(|| {
+                std::env::var("GOOSE_MCP_CLIENT_VERSION")
+                    .unwrap_or(env!("CARGO_PKG_VERSION").to_owned())
+            });
+
+        Implementation::new(name, version)
     }
 }
 
@@ -327,9 +389,8 @@ impl ClientHandler for GooseClient {
         ActionRequiredManager::global()
             .request_and_wait(message, schema_value, Duration::from_secs(300))
             .await
-            .map(|user_data| CreateElicitationResult {
-                action: ElicitationAction::Accept,
-                content: Some(user_data),
+            .map(|user_data| {
+                CreateElicitationResult::new(ElicitationAction::Accept).with_content(user_data)
             })
             .map_err(|e| {
                 ErrorData::new(
@@ -341,21 +402,7 @@ impl ClientHandler for GooseClient {
     }
 
     fn get_info(&self) -> ClientInfo {
-        let mut extensions = ExtensionCapabilities::new();
-
-        if self.capabilities.mcpui {
-            // Build MCP Apps UI extension capability
-            // See: https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
-            let mut ui_extension_settings = JsonObject::new();
-            ui_extension_settings.insert(
-                "mimeTypes".to_string(),
-                serde_json::json!(["text/html;profile=mcp-app"]),
-            );
-            extensions.insert(
-                "io.modelcontextprotocol/ui".to_string(),
-                ui_extension_settings,
-            );
-        }
+        let extensions = self.resolved_extensions();
 
         InitializeRequestParams::new(
             ClientCapabilities::builder()
@@ -364,11 +411,7 @@ impl ClientHandler for GooseClient {
                 .enable_sampling()
                 .enable_elicitation()
                 .build(),
-            Implementation::new(
-                self.client_name.clone(),
-                std::env::var("GOOSE_MCP_CLIENT_VERSION")
-                    .unwrap_or(env!("CARGO_PKG_VERSION").to_owned()),
-            ),
+            self.resolved_client_info(),
         )
         .with_protocol_version(ProtocolVersion::V_2025_03_26)
     }
@@ -377,6 +420,7 @@ impl ClientHandler for GooseClient {
 #[derive(Debug, Clone)]
 pub struct GooseMcpClientCapabilities {
     pub mcpui: bool,
+    pub host_info: Option<GooseMcpHostInfo>,
 }
 
 /// The MCP client is the interface for MCP operations.
@@ -770,8 +814,14 @@ mod tests {
 
     fn new_client(platform: GoosePlatform) -> GooseClient {
         let capabilities = match platform {
-            GoosePlatform::GooseDesktop => GooseMcpClientCapabilities { mcpui: true },
-            GoosePlatform::GooseCli => GooseMcpClientCapabilities { mcpui: false },
+            GoosePlatform::GooseDesktop => GooseMcpClientCapabilities {
+                mcpui: true,
+                host_info: None,
+            },
+            GoosePlatform::GooseCli => GooseMcpClientCapabilities {
+                mcpui: false,
+                host_info: None,
+            },
         };
 
         GooseClient::new(
@@ -999,6 +1049,93 @@ mod tests {
             info.capabilities.roots.is_some(),
             "client should advertise roots capability"
         );
+    }
+
+    #[test]
+    fn test_explicit_host_info_passes_through_client_identity() {
+        let client = GooseClient::new(
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(Mutex::new(None)),
+            GoosePlatform::GooseDesktop.to_string(),
+            GooseMcpClientCapabilities {
+                mcpui: true,
+                host_info: Some(GooseMcpHostInfo {
+                    explicit_extensions: true,
+                    extensions: ExtensionCapabilities::new(),
+                    client_name: Some("goose2".to_string()),
+                    client_version: Some("0.1.0".to_string()),
+                }),
+            },
+            std::env::current_dir().unwrap_or_default(),
+        );
+
+        let info = ClientHandler::get_info(&client);
+        assert_eq!(info.client_info.name, "goose2");
+        assert_eq!(info.client_info.version, "0.1.0");
+        let extensions = info
+            .capabilities
+            .extensions
+            .expect("client should still serialize an extensions object");
+        assert!(
+            !extensions.contains_key(MCP_APPS_UI_EXTENSION_ID),
+            "explicit empty host extensions should disable platform fallback"
+        );
+    }
+
+    #[test]
+    fn test_explicit_host_extensions_override_platform_fallback() {
+        let client = GooseClient::new(
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(Mutex::new(None)),
+            GoosePlatform::GooseCli.to_string(),
+            GooseMcpClientCapabilities {
+                mcpui: false,
+                host_info: Some(GooseMcpHostInfo {
+                    explicit_extensions: true,
+                    extensions: default_mcp_apps_ui_extensions(),
+                    client_name: Some("goose2".to_string()),
+                    client_version: Some("0.1.0".to_string()),
+                }),
+            },
+            std::env::current_dir().unwrap_or_default(),
+        );
+
+        let info = ClientHandler::get_info(&client);
+        let extensions = info
+            .capabilities
+            .extensions
+            .expect("capabilities should have explicit host extensions");
+
+        assert!(extensions.contains_key(MCP_APPS_UI_EXTENSION_ID));
+        assert_eq!(info.client_info.name, "goose2");
+    }
+
+    #[test]
+    fn test_host_identity_does_not_disable_platform_fallback_without_explicit_extensions() {
+        let client = GooseClient::new(
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(Mutex::new(None)),
+            GoosePlatform::GooseDesktop.to_string(),
+            GooseMcpClientCapabilities {
+                mcpui: true,
+                host_info: Some(GooseMcpHostInfo {
+                    explicit_extensions: false,
+                    extensions: ExtensionCapabilities::new(),
+                    client_name: Some("goose2".to_string()),
+                    client_version: Some("0.1.0".to_string()),
+                }),
+            },
+            std::env::current_dir().unwrap_or_default(),
+        );
+
+        let info = ClientHandler::get_info(&client);
+        let extensions = info
+            .capabilities
+            .extensions
+            .expect("platform fallback should still advertise MCP Apps UI");
+
+        assert!(extensions.contains_key(MCP_APPS_UI_EXTENSION_ID));
+        assert_eq!(info.client_info.name, "goose2");
     }
 
     #[test]

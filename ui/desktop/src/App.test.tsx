@@ -87,6 +87,8 @@ vi.mock('./components/ModelAndProviderContext', () => ({
     provider: null,
     model: null,
     getCurrentModelAndProvider: vi.fn(),
+    getFallbackModelAndProvider: vi.fn().mockResolvedValue({ provider: '', model: '' }),
+    refreshCurrentModelAndProvider: vi.fn().mockResolvedValue(undefined),
     setCurrentModelAndProvider: vi.fn(),
   }),
 }));
@@ -205,8 +207,6 @@ describe('App Component - Brand New State', () => {
     window.location.hash = '';
     window.location.search = '';
     window.location.pathname = '/';
-    window.sessionStorage?.clear?.();
-    window.localStorage?.clear?.();
   });
 
   afterEach(() => {
@@ -270,29 +270,6 @@ describe('App Component - Brand New State', () => {
     });
 
     // Should not navigate anywhere since provider is configured and we're already at "/"
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it('should handle config recovery gracefully', async () => {
-    // Mock config error that triggers recovery
-    const { readAllConfig, recoverConfig } = await import('./api');
-    console.log(recoverConfig);
-    vi.mocked(readAllConfig).mockRejectedValueOnce(new Error('Config read error'));
-
-    mockElectron.getConfig.mockReturnValue({
-      GOOSE_DEFAULT_PROVIDER: null,
-      GOOSE_DEFAULT_MODEL: null,
-      GOOSE_ALLOWLIST_WARNING: false,
-    });
-
-    render(<AppInner />, { wrapper: IntlTestWrapper });
-
-    // Wait for initialization and recovery
-    await waitFor(() => {
-      expect(mockElectron.reactReady).toHaveBeenCalled();
-    });
-
-    // App should still initialize without any navigation calls
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

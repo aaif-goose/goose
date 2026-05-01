@@ -15,7 +15,7 @@ import {
 import type { CreatedWorktree } from "@/shared/types/git";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 import { useChatSessionStore } from "../stores/chatSessionStore";
-import type { WorkingContext } from "../stores/chatSessionStore";
+import type { ActiveWorkspace } from "../stores/chatSessionStore";
 import { WorkspaceWidget } from "./widgets/WorkspaceWidget";
 import { ChangesWidget } from "./widgets/ChangesWidget";
 import { ArtifactsWidget } from "./widgets/ArtifactsWidget";
@@ -39,35 +39,33 @@ export function ContextPanel({
 }: ContextPanelProps) {
   const { t } = useTranslation("chat");
   const [activeTab, setActiveTab] = useState<ContextPanelTab>("details");
-  const primaryWorkingDir = projectWorkingDirs[0] ?? null;
+  const primaryWorkspaceRoot = projectWorkingDirs[0] ?? null;
 
   const activeContext = useChatSessionStore(
-    (s) => s.activeWorkingContextBySession[sessionId],
+    (s) => s.activeWorkspaceBySession[sessionId],
   );
-  const setActiveWorkingContext = useChatSessionStore(
-    (s) => s.setActiveWorkingContext,
-  );
+  const setActiveWorkspace = useChatSessionStore((s) => s.setActiveWorkspace);
 
-  const gitQueryPath = activeContext?.path ?? primaryWorkingDir;
+  const gitTargetPath = activeContext?.path ?? primaryWorkspaceRoot;
   const {
     data: gitState,
     error,
     isLoading,
     isFetching,
     refetch,
-  } = useGitState(gitQueryPath, activeTab === "details");
+  } = useGitState(gitTargetPath, activeTab === "details");
 
   const {
     data: changedFiles,
     isLoading: isFilesLoading,
     refetch: refetchFiles,
-  } = useChangedFiles(gitQueryPath, activeTab === "details");
+  } = useChangedFiles(gitTargetPath, activeTab === "details");
 
   const handleContextChange = useCallback(
-    (context: WorkingContext) => {
-      setActiveWorkingContext(sessionId, context);
+    (context: ActiveWorkspace) => {
+      setActiveWorkspace(sessionId, context);
     },
-    [sessionId, setActiveWorkingContext],
+    [sessionId, setActiveWorkspace],
   );
 
   const refetchAll = useCallback(async () => {
@@ -149,11 +147,11 @@ export function ContextPanel({
 
   const handleOpenChangedFile = useCallback(
     (filePath: string) => {
-      if (!gitQueryPath) return;
-      const fullPath = `${gitQueryPath}/${filePath}`;
+      if (!gitTargetPath) return;
+      const fullPath = `${gitTargetPath}/${filePath}`;
       void openPath(fullPath);
     },
-    [gitQueryPath],
+    [gitTargetPath],
   );
 
   const handleRefresh = useCallback(() => {
@@ -202,7 +200,7 @@ export function ContextPanel({
             files={changedFiles}
             isLoading={isFilesLoading}
             currentBranch={gitState?.currentBranch ?? null}
-            repoPath={gitQueryPath ?? ""}
+            repoPath={gitTargetPath ?? ""}
             onOpenFile={handleOpenChangedFile}
           />
           <ArtifactsWidget />

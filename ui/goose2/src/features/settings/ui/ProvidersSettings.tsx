@@ -1,16 +1,46 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/shared/ui/button";
+import { Button, buttonVariants } from "@/shared/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog";
 import { Separator } from "@/shared/ui/separator";
-import { Skeleton } from "@/shared/ui/skeleton";
-import { IconChevronDown, IconRefresh } from "@tabler/icons-react";
+import { Spinner } from "@/shared/ui/spinner";
+import { IconChevronDown, IconPlus } from "@tabler/icons-react";
 import {
   getAgentProviders,
   getModelProviders,
 } from "@/features/providers/providerCatalog";
 import { useCredentials } from "@/features/providers/hooks/useCredentials";
+import { useCustomProviders } from "@/features/providers/hooks/useCustomProviders";
+import {
+  CustomProviderChoice,
+  type CustomProviderChoiceInfo,
+} from "@/features/providers/ui/CustomProviderChoice";
+import {
+  CustomProviderDialog,
+  type CustomProviderMutationInput,
+} from "@/features/providers/ui/CustomProviderDialog";
+import type {
+  CustomProviderFormValues,
+  ProviderTemplate,
+} from "@/features/providers/ui/CustomProviderForm";
+import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { AgentProviderCard } from "./AgentProviderCard";
 import { ModelProviderRow } from "./ModelProviderRow";
+import {
+  catalogEntryToTemplate,
+  formValueToDraft,
+  readResponseToFormValue,
+  templateToFormValue,
+} from "./customProviderFormAdapters";
 import type {
   ProviderDisplayInfo,
   ProviderSetupStatus,
@@ -37,22 +67,68 @@ function toDisplayInfo(
   }));
 }
 
+function isCustomProviderEntry(entry: {
+  providerId: string;
+  providerType?: string;
+}) {
+  return entry.providerType === "Custom";
+}
+
+function toCustomProviderChoiceInfo(entry: {
+  providerId: string;
+  providerName: string;
+  description?: string;
+  configured: boolean;
+  models: unknown[];
+}): CustomProviderChoiceInfo {
+  return {
+    providerId: entry.providerId,
+    displayName: entry.providerName,
+    description: entry.description || undefined,
+    configured: entry.configured,
+    modelCount: entry.models.length,
+  };
+}
+
+interface PendingCustomProviderDelete {
+  providerId: string;
+  displayName: string;
+  resolve: (deleted: boolean) => void;
+  reject: (error: unknown) => void;
+}
+
 export function ProvidersSettings() {
   const { t } = useTranslation(["settings", "common"]);
   const [showAllModels, setShowAllModels] = useState(false);
   const [modelOrder, setModelOrder] = useState<string[] | null>(null);
+  const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [customDialogMode, setCustomDialogMode] = useState<"create" | "edit">(
+    "create",
+  );
+  const [customProviderDraft, setCustomProviderDraft] =
+    useState<CustomProviderFormValues | null>(null);
+  const [customProviderTemplates, setCustomProviderTemplates] = useState<
+    ProviderTemplate[]
+  >([]);
+  const [customProviderError, setCustomProviderError] = useState("");
+  const [customProviderDeleteError, setCustomProviderDeleteError] =
+    useState("");
+  const [pendingCustomProviderDelete, setPendingCustomProviderDelete] =
+    useState<PendingCustomProviderDelete | null>(null);
+  const inventoryEntries = useProviderInventoryStore((state) => state.entries);
 
   const {
     configuredIds,
     loading,
-    saving,
-    needsRestart,
+    savingProviderIds,
+    syncingProviderIds,
+    inventoryWarnings,
     getConfig,
     save,
     remove,
-    restart,
     completeNativeSetup,
   } = useCredentials();
+  const customProvidersApi = useCustomProviders();
 
   const agents = useMemo(
     () => toDisplayInfo(getAgentProviders(), configuredIds),
@@ -112,21 +188,121 @@ export function ProvidersSettings() {
   const advancedModels = orderedModels.filter((m) => m.tier === "advanced");
   const visibleModels = showAllModels ? orderedModels : promotedModels;
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="mt-2 h-4 w-64" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-        </div>
-      </div>
-    );
+  const customProviders = useMemo(
+    () =>
+      [...inventoryEntries.values()]
+        .filter(isCustomProviderEntry)
+        .map(toCustomProviderChoiceInfo)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [inventoryEntries],
+  );
+
+  async function loadTemplates() {
+    try {
+      setCustomProviderError("");
+      const catalog = await customProvidersApi.loadCatalog();
+      const templates = await Promise.all(
+        catalog.map(async (entry) => {
+          try {
+            return templateToFormValue(
+              await customProvidersApi.getTemplate(entry.providerId),
+            );
+          } catch {
+            return catalogEntryToTemplate(entry);
+          }
+        }),
+      );
+      setCustomProviderTemplates(templates);
+    } catch (error) {
+      setCustomProviderTemplates([]);
+      setCustomProviderError(
+        error instanceof Error
+          ? error.message
+          : t("providers.custom.errors.templatesFailed"),
+      );
+    }
+  }
+
+  async function openCreateCustomProvider() {
+    setCustomProviderError("");
+    setCustomProviderDeleteError("");
+    setCustomDialogMode("create");
+    setCustomProviderDraft(null);
+    setCustomDialogOpen(true);
+    await loadTemplates();
+  }
+
+  async function openEditCustomProvider(providerId: string) {
+    setCustomProviderError("");
+    setCustomProviderDeleteError("");
+    try {
+      const provider = readResponseToFormValue(
+        await customProvidersApi.read(providerId),
+      );
+      setCustomDialogMode("edit");
+      setCustomProviderDraft(provider);
+      setCustomDialogOpen(true);
+      await loadTemplates();
+    } catch (error) {
+      setCustomProviderError(
+        error instanceof Error
+          ? error.message
+          : t("providers.custom.errors.loadFailed"),
+      );
+    }
+  }
+
+  async function createCustomProvider(input: CustomProviderMutationInput) {
+    await customProvidersApi.saveDraft(formValueToDraft(input));
+  }
+
+  async function updateCustomProvider(
+    providerId: string,
+    input: CustomProviderMutationInput,
+  ) {
+    await customProvidersApi.saveDraft(formValueToDraft(input), { providerId });
+  }
+
+  async function deleteCustomProvider(providerId: string) {
+    const providerName =
+      customProviders.find((provider) => provider.providerId === providerId)
+        ?.displayName ?? providerId;
+
+    return new Promise<boolean>((resolve, reject) => {
+      setPendingCustomProviderDelete({
+        providerId,
+        displayName: providerName,
+        resolve,
+        reject,
+      });
+    });
+  }
+
+  function cancelCustomProviderDelete() {
+    pendingCustomProviderDelete?.resolve(false);
+    setPendingCustomProviderDelete(null);
+  }
+
+  async function confirmCustomProviderDelete() {
+    const pendingDelete = pendingCustomProviderDelete;
+    if (!pendingDelete) {
+      return;
+    }
+
+    setCustomProviderDeleteError("");
+    try {
+      await customProvidersApi.remove(pendingDelete.providerId);
+      pendingDelete.resolve(true);
+      setPendingCustomProviderDelete(null);
+    } catch (error) {
+      setCustomProviderDeleteError(
+        error instanceof Error
+          ? error.message
+          : t("providers.custom.errors.deleteFailed"),
+      );
+      pendingDelete.reject(error);
+      setPendingCustomProviderDelete(null);
+    }
   }
 
   return (
@@ -134,19 +310,6 @@ export function ProvidersSettings() {
       <h3 className="text-lg font-semibold font-display tracking-tight">
         {t("providers.title")}
       </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t("providers.description")}
-      </p>
-
-      {needsRestart && (
-        <div className="mt-3 flex items-center gap-3 rounded-lg border border-accent bg-background-accent/30 px-3 py-2.5">
-          <p className="flex-1 text-sm">{t("providers.restartMessage")}</p>
-          <Button type="button" size="sm" onClick={() => void restart()}>
-            <IconRefresh className="size-3.5" />
-            {t("providers.restartButton")}
-          </Button>
-        </div>
-      )}
 
       <Separator className="my-4" />
 
@@ -171,13 +334,70 @@ export function ProvidersSettings() {
 
       <section>
         <div className="mb-3">
-          <h4 className="text-sm font-semibold">
-            {t("providers.models.title")}
-          </h4>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t("providers.models.description")}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold">
+                  {t("providers.models.title")}
+                </h4>
+                {loading ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Spinner className="size-3 text-accent" />
+                    {t("providers.models.checkingStatus")}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t("providers.models.description")}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void openCreateCustomProvider()}
+              leftIcon={<IconPlus />}
+              className="shrink-0"
+            >
+              {t("providers.custom.addButton")}
+            </Button>
+          </div>
         </div>
+
+        {customProviderError ? (
+          <p
+            role="alert"
+            className="mb-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+          >
+            {customProviderError}
+          </p>
+        ) : null}
+        {customProviderDeleteError ? (
+          <p
+            role="alert"
+            className="mb-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+          >
+            {customProviderDeleteError}
+          </p>
+        ) : null}
+
+        {customProviders.length > 0 ? (
+          <div className="mb-3 space-y-2">
+            {customProviders.map((provider) => (
+              <CustomProviderChoice
+                key={provider.providerId}
+                provider={provider}
+                onEdit={() => void openEditCustomProvider(provider.providerId)}
+                onDelete={() =>
+                  void deleteCustomProvider(provider.providerId).catch(() => {})
+                }
+                deleting={customProvidersApi.deletingProviderIds.has(
+                  provider.providerId,
+                )}
+              />
+            ))}
+          </div>
+        ) : null}
 
         <div className="space-y-2">
           {visibleModels.map((model) => (
@@ -185,10 +405,12 @@ export function ProvidersSettings() {
               key={model.id}
               provider={model}
               onGetConfig={getConfig}
-              onSaveField={save}
+              onSaveFields={(fields) => save(model.id, fields)}
               onRemoveConfig={() => remove(model.id)}
               onCompleteNativeSetup={completeNativeSetup}
-              saving={saving}
+              saving={savingProviderIds.has(model.id)}
+              inventorySyncing={syncingProviderIds.has(model.id)}
+              inventoryWarning={inventoryWarnings.get(model.id)}
             />
           ))}
         </div>
@@ -218,6 +440,53 @@ export function ProvidersSettings() {
           </Button>
         )}
       </section>
+
+      <CustomProviderDialog
+        open={customDialogOpen}
+        mode={customDialogMode}
+        provider={customProviderDraft}
+        templates={customProviderTemplates}
+        onOpenChange={setCustomDialogOpen}
+        onCreate={createCustomProvider}
+        onUpdate={updateCustomProvider}
+        onDelete={deleteCustomProvider}
+      />
+
+      <AlertDialog
+        open={!!pendingCustomProviderDelete}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelCustomProviderDelete();
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("providers.custom.confirmDeleteTitle", {
+                name: pendingCustomProviderDelete?.displayName ?? "",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("providers.custom.confirmDelete", {
+                name: pendingCustomProviderDelete?.displayName ?? "",
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common:actions.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmCustomProviderDelete();
+              }}
+            >
+              {t("common:actions.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

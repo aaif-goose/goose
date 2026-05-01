@@ -74,10 +74,6 @@ export const useAudioDevices = () => {
   }, []);
 
   const loadDevicesWithPermission = useCallback(async () => {
-    if (loading) {
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
@@ -108,11 +104,57 @@ export const useAudioDevices = () => {
     } finally {
       setLoading(false);
     }
-  }, [loading]);
+  }, []);
 
   useEffect(() => {
-    loadDevicesWithoutPermission();
-  }, [loadDevicesWithoutPermission]);
+    let cancelled = false;
+    let status: PermissionStatus | null = null;
+    const onChange = () => {
+      if (cancelled || !status) return;
+      const granted = status.state === "granted";
+      setHasPermission(granted);
+      // When permission flips to granted mid-session (e.g. the user enabled
+      // mic access via OS settings), re-enumerate devices so we pick up the
+      // real deviceIds/labels — the prior enumeration may have returned
+      // empty-string entries that VoiceInputSettings filters out.
+      if (granted) {
+        void loadDevicesWithPermission();
+      }
+    };
+
+    const init = async () => {
+      let alreadyGranted = false;
+      try {
+        status = await navigator.permissions.query({
+          name: "microphone" as PermissionName,
+        });
+        if (cancelled) return;
+        alreadyGranted = status.state === "granted";
+        setHasPermission(alreadyGranted);
+        status.addEventListener("change", onChange);
+      } catch {
+        // Permissions API not available for microphone; fall back silently.
+      }
+      if (cancelled) return;
+      // If OS-level permission is already granted, enumerate through the
+      // permission-ful path — otherwise enumerateDevices() may return
+      // entries with empty deviceId/label, which Radix Select rejects.
+      if (alreadyGranted) {
+        await loadDevicesWithPermission();
+      } else {
+        await loadDevicesWithoutPermission();
+      }
+    };
+
+    void init();
+
+    return () => {
+      cancelled = true;
+      if (status) {
+        status.removeEventListener("change", onChange);
+      }
+    };
+  }, [loadDevicesWithPermission, loadDevicesWithoutPermission]);
 
   useEffect(() => {
     const handleDeviceChange = () => {

@@ -235,6 +235,12 @@ pub enum ExtensionConfig {
         // NOTE: set timeout to be optional for compatibility.
         // However, new configurations should include this field.
         timeout: Option<u64>,
+        /// Optional Unix domain socket path for HTTP-over-UDS transport.
+        /// When set, the HTTP connection is routed through this socket while
+        /// `uri` is used for the Host header and path.
+        /// Use `@name` for Linux abstract sockets.
+        #[serde(default)]
+        socket: Option<String>,
         #[serde(default)]
         bundled: Option<bool>,
         #[serde(default)]
@@ -307,6 +313,7 @@ impl ExtensionConfig {
             headers: HashMap::new(),
             description: description.into(),
             timeout: Some(timeout.into()),
+            socket: None,
             bundled: None,
             available_tools: Vec::new(),
         }
@@ -460,6 +467,7 @@ impl ExtensionConfig {
                 env_keys,
                 headers,
                 timeout,
+                socket,
                 bundled,
                 available_tools,
             } => {
@@ -471,6 +479,7 @@ impl ExtensionConfig {
                         (k, v)
                     })
                     .collect();
+                let socket = socket.map(|s| substitute_env_vars(&s, &merged));
                 Ok(Self::StreamableHttp {
                     name,
                     description,
@@ -479,6 +488,7 @@ impl ExtensionConfig {
                     env_keys: vec![],
                     headers,
                     timeout,
+                    socket,
                     bundled,
                     available_tools,
                 })
@@ -494,8 +504,14 @@ impl std::fmt::Display for ExtensionConfig {
             ExtensionConfig::Sse { name, .. } => {
                 write!(f, "SSE({}: unsupported)", name)
             }
-            ExtensionConfig::StreamableHttp { name, uri, .. } => {
-                write!(f, "StreamableHttp({}: {})", name, uri)
+            ExtensionConfig::StreamableHttp {
+                name, uri, socket, ..
+            } => {
+                if let Some(socket) = socket {
+                    write!(f, "StreamableHttp({}: {} via {})", name, uri, socket)
+                } else {
+                    write!(f, "StreamableHttp({}: {})", name, uri)
+                }
             }
             ExtensionConfig::Stdio {
                 name, cmd, args, ..
@@ -679,6 +695,7 @@ available_tools: []
             .into_iter()
             .collect(),
             timeout: None,
+            socket: None,
             bundled: None,
             available_tools: vec![],
         },
@@ -699,6 +716,7 @@ available_tools: []
             .into_iter()
             .collect(),
             timeout: None,
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -772,6 +790,7 @@ available_tools: []
             .into_iter()
             .collect(),
             timeout: None,
+            socket: None,
             bundled: None,
             available_tools: vec![],
         },
@@ -789,6 +808,7 @@ available_tools: []
                 .into_iter()
                 .collect(),
             timeout: None,
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -803,6 +823,7 @@ available_tools: []
             env_keys: vec!["MY_SECRET".into()],
             headers: std::collections::HashMap::new(),
             timeout: None,
+            socket: None,
             bundled: None,
             available_tools: vec![],
         },
@@ -818,6 +839,7 @@ available_tools: []
             env_keys: vec![],
             headers: std::collections::HashMap::new(),
             timeout: None,
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -866,5 +888,45 @@ available_tools: []
         .unwrap();
         cfg.set("MY_SECRET", &"secret_value", true).unwrap();
         assert_eq!(config.resolve(&cfg).await.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_display_streamable_http_with_socket() {
+        let config = ExtensionConfig::StreamableHttp {
+            name: "test".into(),
+            description: String::new(),
+            uri: "http://localhost:8080/mcp".into(),
+            envs: extension::Envs::default(),
+            env_keys: vec![],
+            headers: std::collections::HashMap::new(),
+            timeout: None,
+            socket: Some("@egress.sock".to_string()),
+            bundled: None,
+            available_tools: vec![],
+        };
+        assert_eq!(
+            config.to_string(),
+            "StreamableHttp(test: http://localhost:8080/mcp via @egress.sock)"
+        );
+    }
+
+    #[test]
+    fn test_display_streamable_http_without_socket() {
+        let config = ExtensionConfig::StreamableHttp {
+            name: "test".into(),
+            description: String::new(),
+            uri: "http://localhost:8080/mcp".into(),
+            envs: extension::Envs::default(),
+            env_keys: vec![],
+            headers: std::collections::HashMap::new(),
+            timeout: None,
+            socket: None,
+            bundled: None,
+            available_tools: vec![],
+        };
+        assert_eq!(
+            config.to_string(),
+            "StreamableHttp(test: http://localhost:8080/mcp)"
+        );
     }
 }

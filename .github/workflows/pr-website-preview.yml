@@ -51,7 +51,7 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     needs: deploy
-    if: github.event.action == 'closed'
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == 'aaif-goose/goose'
     permissions:
       contents: write
     steps:

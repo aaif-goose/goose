@@ -2,13 +2,13 @@ mod commands;
 mod services;
 mod types;
 
-use services::goose_config::GooseConfig;
 use services::personas::PersonaStore;
 use tauri_plugin_window_state::StateFlags;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Debug)
@@ -24,8 +24,7 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
-        .manage(PersonaStore::new())
-        .manage(GooseConfig::new());
+        .manage(PersonaStore::new());
 
     #[cfg(feature = "app-test-driver")]
     let builder = builder.plugin(tauri_plugin_app_test_driver::init());
@@ -39,16 +38,11 @@ pub fn run() {
             commands::agents::refresh_personas,
             commands::agents::export_persona,
             commands::agents::import_personas,
+            commands::agents::read_import_persona_file,
             commands::agents::save_persona_avatar,
             commands::agents::save_persona_avatar_bytes,
             commands::agents::get_avatars_dir,
             commands::acp::get_goose_serve_url,
-            commands::skills::create_skill,
-            commands::skills::list_skills,
-            commands::skills::delete_skill,
-            commands::skills::update_skill,
-            commands::skills::export_skill,
-            commands::skills::import_skills,
             commands::projects::list_projects,
             commands::projects::create_project,
             commands::projects::update_project,
@@ -58,12 +52,10 @@ pub fn run() {
             commands::projects::list_archived_projects,
             commands::projects::archive_project,
             commands::projects::restore_project,
+            commands::project_icons::scan_project_icons,
+            commands::project_icons::read_project_icon,
             commands::doctor::run_doctor,
             commands::doctor::run_doctor_fix,
-            commands::extensions::list_extensions,
-            commands::extensions::add_extension,
-            commands::extensions::remove_extension,
-            commands::extensions::toggle_extension,
             commands::git::get_git_state,
             commands::git_changes::get_changed_files,
             commands::git::git_switch_branch,
@@ -73,16 +65,12 @@ pub fn run() {
             commands::git::git_pull,
             commands::git::git_create_branch,
             commands::git::git_create_worktree,
-            commands::credentials::get_provider_config,
-            commands::credentials::save_provider_field,
-            commands::credentials::delete_provider_config,
-            commands::credentials::check_all_provider_status,
-            commands::credentials::restart_app,
             commands::model_setup::authenticate_model_provider,
             commands::agent_setup::check_agent_installed,
             commands::agent_setup::check_agent_auth,
             commands::agent_setup::install_agent,
             commands::agent_setup::authenticate_agent,
+            commands::path_resolver::resolve_path,
             commands::system::get_home_dir,
             commands::system::save_exported_session_file,
             commands::system::path_exists,

@@ -9,7 +9,9 @@ use crate::acp::{
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::model::ModelConfig;
+use crate::providers::acp_tooling::{acp_adapter_installed, acp_inventory_identity};
 use crate::providers::base::{ProviderDef, ProviderMetadata};
+use crate::providers::inventory::InventoryIdentityInput;
 
 const AMP_ACP_PROVIDER_NAME: &str = "amp-acp";
 const AMP_ACP_DOC_URL: &str = "https://ampcode.com";
@@ -37,6 +39,7 @@ impl ProviderDef for AmpAcpProvider {
             "Set in your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: amp-acp\n  GOOSE_MODEL: current",
             "Restart goose for changes to take effect",
         ])
+        .with_model_selection_hint("Use the Amp CLI to configure models")
     }
 
     fn from_env(
@@ -49,10 +52,12 @@ impl ProviderDef for AmpAcpProvider {
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
 
             let mode_mapping = HashMap::from([
-                (GooseMode::Auto, "auto".to_string()),
-                (GooseMode::Approve, "approve".to_string()),
-                (GooseMode::SmartApprove, "smart-approve".to_string()),
-                (GooseMode::Chat, "chat".to_string()),
+                // "bypass" skips confirmations, closest to autonomous mode.
+                (GooseMode::Auto, "bypass".to_string()),
+                // "default" prompts before risky actions.
+                (GooseMode::Approve, "default".to_string()),
+                (GooseMode::SmartApprove, "default".to_string()),
+                (GooseMode::Chat, "default".to_string()),
             ]);
 
             let provider_config = AcpProviderConfig {
@@ -70,5 +75,17 @@ impl ProviderDef for AmpAcpProvider {
             let metadata = Self::metadata();
             AcpProvider::connect(metadata.name, model, goose_mode, provider_config).await
         })
+    }
+
+    fn supports_inventory_refresh() -> bool {
+        false
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        acp_inventory_identity(AMP_ACP_PROVIDER_NAME, AMP_ACP_BINARY)
+    }
+
+    fn inventory_configured() -> bool {
+        acp_adapter_installed(AMP_ACP_BINARY)
     }
 }

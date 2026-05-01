@@ -1,0 +1,2842 @@
+{
+  "$defs": {
+    "AddConfigExtensionRequest": {
+      "description": "Persist a new extension to the user's global goose config.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "extensionConfig": {
+          "default": null,
+          "description": "Extension configuration. Must be a JSON object matching one of the\n`ExtensionConfig` variants (e.g. `stdio`, `streamable_http`, `builtin`).\n`name` and `enabled` are injected server-side."
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object",
+      "x-method": "_goose/config/extensions/add",
+      "x-side": "agent"
+    },
+    "AddExtensionRequest": {
+      "description": "Add an extension to an active session.",
+      "properties": {
+        "config": {
+          "default": null,
+          "description": "Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform)."
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "_goose/extensions/add",
+      "x-side": "agent"
+    },
+    "ArchiveSessionRequest": {
+      "description": "Archive a session (soft delete).",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/archive",
+      "x-side": "agent"
+    },
+    "CheckSecretRequest": {
+      "description": "Check whether a secret exists. Never returns the actual value.",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object",
+      "x-method": "_goose/secret/check",
+      "x-side": "agent"
+    },
+    "CheckSecretResponse": {
+      "description": "Secret check response.",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "exists"
+      ],
+      "type": "object",
+      "x-method": "_goose/secret/check",
+      "x-side": "agent"
+    },
+    "CreateSourceRequest": {
+      "description": "Create a new source in an explicit target scope (global or project-scoped).",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "projectDir": {
+          "description": "Absolute path to the project root. Required when `global` is false.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "description",
+        "content",
+        "global"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/create",
+      "x-side": "agent"
+    },
+    "CreateSourceResponse": {
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SourceEntry"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/create",
+      "x-side": "agent"
+    },
+    "CustomProviderConfigDto": {
+      "properties": {
+        "apiKeyEnv": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiKeySet": {
+          "type": "boolean"
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "basePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "catalogProviderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "models": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "requiresAuth": {
+          "type": "boolean"
+        },
+        "supportsStreaming": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "providerId",
+        "engine",
+        "displayName",
+        "apiUrl",
+        "requiresAuth",
+        "apiKeySet"
+      ],
+      "type": "object"
+    },
+    "CustomProviderCreateRequest": {
+      "description": "Create a custom provider backed by Goose's declarative provider store.",
+      "properties": {
+        "apiKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "basePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "catalogProviderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "models": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requiresAuth": {
+          "type": "boolean"
+        },
+        "supportsStreaming": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "engine",
+        "displayName",
+        "apiUrl",
+        "requiresAuth"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/create",
+      "x-side": "agent"
+    },
+    "CustomProviderCreateResponse": {
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        },
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        }
+      },
+      "required": [
+        "providerId",
+        "status",
+        "refresh"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/create",
+      "x-side": "agent"
+    },
+    "CustomProviderDeleteRequest": {
+      "description": "Delete a custom provider from Goose's declarative provider store.",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/delete",
+      "x-side": "agent"
+    },
+    "CustomProviderDeleteResponse": {
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        }
+      },
+      "required": [
+        "providerId",
+        "refresh"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/delete",
+      "x-side": "agent"
+    },
+    "CustomProviderReadRequest": {
+      "description": "Read a declarative provider config. Custom configs are editable; bundled configs are read-only.",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/read",
+      "x-side": "agent"
+    },
+    "CustomProviderReadResponse": {
+      "properties": {
+        "editable": {
+          "type": "boolean"
+        },
+        "provider": {
+          "$ref": "#/$defs/CustomProviderConfigDto"
+        },
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        }
+      },
+      "required": [
+        "provider",
+        "editable",
+        "status"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/read",
+      "x-side": "agent"
+    },
+    "CustomProviderUpdateRequest": {
+      "description": "Update a custom provider backed by Goose's declarative provider store.",
+      "properties": {
+        "apiKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiUrl": {
+          "type": "string"
+        },
+        "basePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "catalogProviderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "models": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "requiresAuth": {
+          "type": "boolean"
+        },
+        "supportsStreaming": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "providerId",
+        "engine",
+        "displayName",
+        "apiUrl",
+        "requiresAuth"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/update",
+      "x-side": "agent"
+    },
+    "CustomProviderUpdateResponse": {
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        },
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        }
+      },
+      "required": [
+        "providerId",
+        "status",
+        "refresh"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/custom/update",
+      "x-side": "agent"
+    },
+    "DeleteSessionRequest": {
+      "description": "Delete a session.",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "session/delete",
+      "x-side": "agent"
+    },
+    "DeleteSourceRequest": {
+      "description": "Delete a source and its on-disk directory by absolute path.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        }
+      },
+      "required": [
+        "type",
+        "path"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/delete",
+      "x-side": "agent"
+    },
+    "DictationConfigRequest": {
+      "description": "Get the configuration status of all dictation providers.",
+      "type": "object",
+      "x-method": "_goose/dictation/config",
+      "x-side": "agent"
+    },
+    "DictationConfigResponse": {
+      "description": "Dictation config response — map of provider name to status.",
+      "properties": {
+        "providers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DictationProviderStatusEntry"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/config",
+      "x-side": "agent"
+    },
+    "DictationDownloadProgress": {
+      "properties": {
+        "bytesDownloaded": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "progressPercent": {
+          "format": "float",
+          "type": "number"
+        },
+        "status": {
+          "description": "serde lowercase of DownloadStatus: \"downloading\" | \"completed\" | \"failed\" | \"cancelled\"",
+          "type": "string"
+        },
+        "totalBytes": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bytesDownloaded",
+        "totalBytes",
+        "progressPercent",
+        "status"
+      ],
+      "type": "object"
+    },
+    "DictationLocalModelStatus": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "downloadInProgress": {
+          "type": "boolean"
+        },
+        "downloaded": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "sizeMb": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "description",
+        "sizeMb",
+        "downloaded",
+        "downloadInProgress"
+      ],
+      "type": "object"
+    },
+    "DictationModelCancelRequest": {
+      "description": "Cancel an in-flight download.",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/models/cancel",
+      "x-side": "agent"
+    },
+    "DictationModelDeleteRequest": {
+      "description": "Delete a downloaded local Whisper model from disk.",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/models/delete",
+      "x-side": "agent"
+    },
+    "DictationModelDownloadProgressRequest": {
+      "description": "Poll the progress of an in-flight download.",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/models/download/progress",
+      "x-side": "agent"
+    },
+    "DictationModelDownloadProgressResponse": {
+      "properties": {
+        "progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DictationDownloadProgress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "None when no download is active for this model id."
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/dictation/models/download/progress",
+      "x-side": "agent"
+    },
+    "DictationModelDownloadRequest": {
+      "description": "Kick off a background download of a local Whisper model.",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/models/download",
+      "x-side": "agent"
+    },
+    "DictationModelOption": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "description"
+      ],
+      "type": "object"
+    },
+    "DictationModelSelectRequest": {
+      "description": "Persist the user's model selection for a given provider.",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "modelId"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/model/select",
+      "x-side": "agent"
+    },
+    "DictationModelsListRequest": {
+      "description": "List available local Whisper models with their download status.",
+      "type": "object",
+      "x-method": "_goose/dictation/models/list",
+      "x-side": "agent"
+    },
+    "DictationModelsListResponse": {
+      "properties": {
+        "models": {
+          "items": {
+            "$ref": "#/$defs/DictationLocalModelStatus"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/models/list",
+      "x-side": "agent"
+    },
+    "DictationProviderStatusEntry": {
+      "description": "Per-provider configuration status.",
+      "properties": {
+        "availableModels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DictationModelOption"
+          },
+          "type": "array"
+        },
+        "configKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "defaultModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelConfigKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectedModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "settingsPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "usesProviderConfig": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "configured",
+        "description",
+        "usesProviderConfig"
+      ],
+      "type": "object"
+    },
+    "DictationTranscribeRequest": {
+      "description": "Transcribe audio via a dictation provider.",
+      "properties": {
+        "audio": {
+          "description": "Base64-encoded audio data",
+          "type": "string"
+        },
+        "mimeType": {
+          "description": "MIME type (e.g. \"audio/wav\", \"audio/webm\")",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Provider to use: \"openai\", \"groq\", \"elevenlabs\", or \"local\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "audio",
+        "mimeType",
+        "provider"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/transcribe",
+      "x-side": "agent"
+    },
+    "DictationTranscribeResponse": {
+      "description": "Transcription result.",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object",
+      "x-method": "_goose/dictation/transcribe",
+      "x-side": "agent"
+    },
+    "EmptyResponse": {
+      "description": "Empty success response for operations that return no data.",
+      "type": "object",
+      "x-side": "agent"
+    },
+    "ExportSessionRequest": {
+      "description": "Export a session as a JSON string.",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/export",
+      "x-side": "agent"
+    },
+    "ExportSessionResponse": {
+      "description": "Export session response — raw JSON of the goose session with `conversation`.",
+      "properties": {
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/export",
+      "x-side": "agent"
+    },
+    "ExportSourceRequest": {
+      "description": "Export a source at an absolute path as a portable JSON payload.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        }
+      },
+      "required": [
+        "type",
+        "path"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/export",
+      "x-side": "agent"
+    },
+    "ExportSourceResponse": {
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "json": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "json",
+        "filename"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/export",
+      "x-side": "agent"
+    },
+    "ExtRequest": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/AddExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/extensions/add",
+                  "title": "AddExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/extensions/remove",
+                  "title": "RemoveExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetToolsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/tools",
+                  "title": "GetToolsRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ReadResourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/resource/read",
+                  "title": "ReadResourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpdateWorkingDirRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/working_dir/update",
+                  "title": "UpdateWorkingDirRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DeleteSessionRequest"
+                    }
+                  ],
+                  "description": "Params for session/delete",
+                  "title": "DeleteSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetExtensionsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions",
+                  "title": "GetExtensionsRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/AddConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/add",
+                  "title": "AddConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/remove",
+                  "title": "RemoveConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ToggleConfigExtensionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/extensions/toggle",
+                  "title": "ToggleConfigExtensionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetSessionExtensionsRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/extensions",
+                  "title": "GetSessionExtensionsRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ListProvidersRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/list",
+                  "title": "ListProvidersRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderCatalogListRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/catalog/list",
+                  "title": "ProviderCatalogListRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderCatalogTemplateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/catalog/template",
+                  "title": "ProviderCatalogTemplateRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderCreateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/create",
+                  "title": "CustomProviderCreateRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderReadRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/read",
+                  "title": "CustomProviderReadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderUpdateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/update",
+                  "title": "CustomProviderUpdateRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CustomProviderDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/custom/delete",
+                  "title": "CustomProviderDeleteRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RefreshProviderInventoryRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/inventory/refresh",
+                  "title": "RefreshProviderInventoryRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigReadRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/read",
+                  "title": "ProviderConfigReadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigStatusRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/status",
+                  "title": "ProviderConfigStatusRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigSaveRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/save",
+                  "title": "ProviderConfigSaveRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderConfigDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/delete",
+                  "title": "ProviderConfigDeleteRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ReadConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/read",
+                  "title": "ReadConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpsertConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/upsert",
+                  "title": "UpsertConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/config/remove",
+                  "title": "RemoveConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CheckSecretRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/secret/check",
+                  "title": "CheckSecretRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpsertSecretRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/secret/upsert",
+                  "title": "UpsertSecretRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveSecretRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/secret/remove",
+                  "title": "RemoveSecretRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ExportSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/export",
+                  "title": "ExportSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ImportSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/import",
+                  "title": "ImportSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpdateSessionProjectRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/update_project",
+                  "title": "UpdateSessionProjectRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RenameSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/rename",
+                  "title": "RenameSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ArchiveSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/archive",
+                  "title": "ArchiveSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UnarchiveSessionRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/unarchive",
+                  "title": "UnarchiveSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CreateSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/create",
+                  "title": "CreateSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ListSourcesRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/list",
+                  "title": "ListSourcesRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/UpdateSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/update",
+                  "title": "UpdateSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DeleteSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/delete",
+                  "title": "DeleteSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ExportSourceRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/export",
+                  "title": "ExportSourceRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ImportSourcesRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/sources/import",
+                  "title": "ImportSourcesRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationTranscribeRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/transcribe",
+                  "title": "DictationTranscribeRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationConfigRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/config",
+                  "title": "DictationConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelsListRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/list",
+                  "title": "DictationModelsListRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelDownloadRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/download",
+                  "title": "DictationModelDownloadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelDownloadProgressRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/download/progress",
+                  "title": "DictationModelDownloadProgressRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelCancelRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/cancel",
+                  "title": "DictationModelCancelRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/models/delete",
+                  "title": "DictationModelDeleteRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationModelSelectRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/model/select",
+                  "title": "DictationModelSelectRequest"
+                }
+              ]
+            },
+            {
+              "description": "Untyped params",
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "method"
+      ],
+      "type": "object",
+      "x-docs-ignore": true
+    },
+    "ExtResponse": {
+      "anyOf": [
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/EmptyResponse"
+                        }
+                      ],
+                      "title": "EmptyResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetToolsResponse"
+                        }
+                      ],
+                      "title": "GetToolsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ReadResourceResponse"
+                        }
+                      ],
+                      "title": "ReadResourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetExtensionsResponse"
+                        }
+                      ],
+                      "title": "GetExtensionsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetSessionExtensionsResponse"
+                        }
+                      ],
+                      "title": "GetSessionExtensionsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ListProvidersResponse"
+                        }
+                      ],
+                      "title": "ListProvidersResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderCatalogListResponse"
+                        }
+                      ],
+                      "title": "ProviderCatalogListResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderCatalogTemplateResponse"
+                        }
+                      ],
+                      "title": "ProviderCatalogTemplateResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderCreateResponse"
+                        }
+                      ],
+                      "title": "CustomProviderCreateResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderReadResponse"
+                        }
+                      ],
+                      "title": "CustomProviderReadResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderUpdateResponse"
+                        }
+                      ],
+                      "title": "CustomProviderUpdateResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CustomProviderDeleteResponse"
+                        }
+                      ],
+                      "title": "CustomProviderDeleteResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+                        }
+                      ],
+                      "title": "RefreshProviderInventoryResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigReadResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigReadResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigStatusResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigStatusResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderConfigChangeResponse"
+                        }
+                      ],
+                      "title": "ProviderConfigChangeResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ReadConfigResponse"
+                        }
+                      ],
+                      "title": "ReadConfigResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CheckSecretResponse"
+                        }
+                      ],
+                      "title": "CheckSecretResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ExportSessionResponse"
+                        }
+                      ],
+                      "title": "ExportSessionResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ImportSessionResponse"
+                        }
+                      ],
+                      "title": "ImportSessionResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CreateSourceResponse"
+                        }
+                      ],
+                      "title": "CreateSourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ListSourcesResponse"
+                        }
+                      ],
+                      "title": "ListSourcesResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/UpdateSourceResponse"
+                        }
+                      ],
+                      "title": "UpdateSourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ExportSourceResponse"
+                        }
+                      ],
+                      "title": "ExportSourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ImportSourcesResponse"
+                        }
+                      ],
+                      "title": "ImportSourcesResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationTranscribeResponse"
+                        }
+                      ],
+                      "title": "DictationTranscribeResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationConfigResponse"
+                        }
+                      ],
+                      "title": "DictationConfigResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationModelsListResponse"
+                        }
+                      ],
+                      "title": "DictationModelsListResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DictationModelDownloadProgressResponse"
+                        }
+                      ],
+                      "title": "DictationModelDownloadProgressResponse"
+                    }
+                  ]
+                },
+                {
+                  "description": "Untyped result"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "title": "Success",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "properties": {
+                "code": {
+                  "type": "integer"
+                },
+                "data": {},
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "error"
+          ],
+          "title": "Error",
+          "type": "object"
+        }
+      ],
+      "x-docs-ignore": true
+    },
+    "GetExtensionsRequest": {
+      "description": "List configured extensions and any warnings.",
+      "type": "object",
+      "x-method": "_goose/config/extensions",
+      "x-side": "agent"
+    },
+    "GetExtensionsResponse": {
+      "description": "List configured extensions and any warnings.",
+      "properties": {
+        "extensions": {
+          "description": "Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.",
+          "items": {},
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "extensions",
+        "warnings"
+      ],
+      "type": "object",
+      "x-method": "_goose/config/extensions",
+      "x-side": "agent"
+    },
+    "GetSessionExtensionsRequest": {
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/extensions",
+      "x-side": "agent"
+    },
+    "GetSessionExtensionsResponse": {
+      "properties": {
+        "extensions": {
+          "items": {},
+          "type": "array"
+        }
+      },
+      "required": [
+        "extensions"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/extensions",
+      "x-side": "agent"
+    },
+    "GetToolsRequest": {
+      "description": "List all tools available in a session.",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "_goose/tools",
+      "x-side": "agent"
+    },
+    "GetToolsResponse": {
+      "description": "Tools response.",
+      "properties": {
+        "tools": {
+          "description": "Array of tool info objects with `name`, `description`, `parameters`, and optional `permission`.",
+          "items": {},
+          "type": "array"
+        }
+      },
+      "required": [
+        "tools"
+      ],
+      "type": "object",
+      "x-method": "_goose/tools",
+      "x-side": "agent"
+    },
+    "ImportSessionRequest": {
+      "description": "Import a session from a JSON string.",
+      "properties": {
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/import",
+      "x-side": "agent"
+    },
+    "ImportSessionResponse": {
+      "description": "Import session response — metadata about the newly created session.",
+      "properties": {
+        "messageCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updatedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "messageCount"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/import",
+      "x-side": "agent"
+    },
+    "ImportSourcesRequest": {
+      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data",
+        "global"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/import",
+      "x-side": "agent"
+    },
+    "ImportSourcesResponse": {
+      "properties": {
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/import",
+      "x-side": "agent"
+    },
+    "ListProvidersRequest": {
+      "description": "List providers with setup metadata and the current model inventory snapshot.",
+      "properties": {
+        "providerIds": {
+          "default": [],
+          "description": "Only return entries for these providers. Empty means all.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/providers/list",
+      "x-side": "agent"
+    },
+    "ListProvidersResponse": {
+      "description": "Provider list response.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ProviderInventoryEntryDto"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/list",
+      "x-side": "agent"
+    },
+    "ListSourcesRequest": {
+      "description": "List discovered sources.\n\nToday this endpoint only returns skills. If `type` is omitted, it defaults\nto listing skill sources. Both global and project-scoped skills are included\nwhen `project_dir` is set.",
+      "properties": {
+        "projectDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/sources/list",
+      "x-side": "agent"
+    },
+    "ListSourcesResponse": {
+      "properties": {
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/list",
+      "x-side": "agent"
+    },
+    "ProviderCatalogEntryDto": {
+      "properties": {
+        "apiUrl": {
+          "type": "string"
+        },
+        "docUrl": {
+          "type": "string"
+        },
+        "envVar": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "modelCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "name",
+        "format",
+        "apiUrl",
+        "modelCount",
+        "docUrl",
+        "envVar"
+      ],
+      "type": "object"
+    },
+    "ProviderCatalogListRequest": {
+      "description": "List custom-provider catalog entries. Omit `format` to list all formats.",
+      "properties": {
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/providers/catalog/list",
+      "x-side": "agent"
+    },
+    "ProviderCatalogListResponse": {
+      "properties": {
+        "providers": {
+          "items": {
+            "$ref": "#/$defs/ProviderCatalogEntryDto"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/catalog/list",
+      "x-side": "agent"
+    },
+    "ProviderCatalogTemplateRequest": {
+      "description": "Return the editable template for one catalog provider.",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/catalog/template",
+      "x-side": "agent"
+    },
+    "ProviderCatalogTemplateResponse": {
+      "properties": {
+        "template": {
+          "$ref": "#/$defs/ProviderTemplateDto"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/catalog/template",
+      "x-side": "agent"
+    },
+    "ProviderConfigChangeResponse": {
+      "properties": {
+        "refresh": {
+          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+        },
+        "status": {
+          "$ref": "#/$defs/ProviderConfigStatusDto"
+        }
+      },
+      "required": [
+        "status",
+        "refresh"
+      ],
+      "type": "object",
+      "x-side": "agent"
+    },
+    "ProviderConfigDeleteRequest": {
+      "description": "Delete provider configuration fields and start an inventory refresh when supported.",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/config/delete",
+      "x-side": "agent"
+    },
+    "ProviderConfigFieldUpdate": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    "ProviderConfigFieldValueDto": {
+      "properties": {
+        "isSecret": {
+          "type": "boolean"
+        },
+        "isSet": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "value": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "isSet",
+        "isSecret",
+        "required"
+      ],
+      "type": "object"
+    },
+    "ProviderConfigKey": {
+      "properties": {
+        "default": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deviceCodeFlow": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "oauthFlow": {
+          "default": false,
+          "type": "boolean"
+        },
+        "primary": {
+          "default": false,
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "required",
+        "secret"
+      ],
+      "type": "object"
+    },
+    "ProviderConfigReadRequest": {
+      "description": "Read saved configuration field values for one provider.",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/config/read",
+      "x-side": "agent"
+    },
+    "ProviderConfigReadResponse": {
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/ProviderConfigFieldValueDto"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/config/read",
+      "x-side": "agent"
+    },
+    "ProviderConfigSaveRequest": {
+      "description": "Save provider configuration fields and start an inventory refresh when supported.",
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/ProviderConfigFieldUpdate"
+          },
+          "type": "array"
+        },
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "fields"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/config/save",
+      "x-side": "agent"
+    },
+    "ProviderConfigStatusDto": {
+      "properties": {
+        "isConfigured": {
+          "type": "boolean"
+        },
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "isConfigured"
+      ],
+      "type": "object"
+    },
+    "ProviderConfigStatusRequest": {
+      "description": "Return provider configured statuses. Empty provider_ids means all providers.",
+      "properties": {
+        "providerIds": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/providers/config/status",
+      "x-side": "agent"
+    },
+    "ProviderConfigStatusResponse": {
+      "properties": {
+        "statuses": {
+          "items": {
+            "$ref": "#/$defs/ProviderConfigStatusDto"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "statuses"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/config/status",
+      "x-side": "agent"
+    },
+    "ProviderInventoryEntryDto": {
+      "description": "Provider inventory entry.",
+      "properties": {
+        "configKeys": {
+          "description": "Required configuration keys and setup metadata.",
+          "items": {
+            "$ref": "#/$defs/ProviderConfigKey"
+          },
+          "type": "array"
+        },
+        "configured": {
+          "description": "Whether Goose has enough configuration to use this provider.",
+          "type": "boolean"
+        },
+        "defaultModel": {
+          "description": "The default/recommended model for this provider.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Description of the provider's capabilities.",
+          "type": "string"
+        },
+        "lastRefreshAttemptAt": {
+          "description": "When a refresh was most recently attempted (ISO 8601).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastRefreshError": {
+          "description": "The last refresh failure message, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastUpdatedAt": {
+          "description": "When this entry was last successfully refreshed (ISO 8601).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelSelectionHint": {
+          "description": "Guidance message shown when this provider manages its own model selection externally.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "models": {
+          "description": "The list of available models.",
+          "items": {
+            "$ref": "#/$defs/ProviderInventoryModelDto"
+          },
+          "type": "array"
+        },
+        "providerId": {
+          "description": "Provider identifier.",
+          "type": "string"
+        },
+        "providerName": {
+          "description": "Human-readable provider name.",
+          "type": "string"
+        },
+        "providerType": {
+          "description": "Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.",
+          "type": "string"
+        },
+        "refreshing": {
+          "description": "Whether a refresh is currently in flight.",
+          "type": "boolean"
+        },
+        "setupSteps": {
+          "description": "Step-by-step setup instructions, when present.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "stale": {
+          "description": "Whether we believe this data may be outdated.",
+          "type": "boolean"
+        },
+        "supportsRefresh": {
+          "description": "Whether this provider supports background inventory refresh.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "providerName",
+        "description",
+        "defaultModel",
+        "configured",
+        "providerType",
+        "configKeys",
+        "setupSteps",
+        "supportsRefresh",
+        "refreshing",
+        "models",
+        "stale"
+      ],
+      "type": "object"
+    },
+    "ProviderInventoryModelDto": {
+      "description": "A single model in provider inventory.",
+      "properties": {
+        "contextLimit": {
+          "description": "Context window size in tokens.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "family": {
+          "description": "Model family for grouping in UI.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Model identifier as the provider knows it.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable display name.",
+          "type": "string"
+        },
+        "reasoning": {
+          "description": "Whether the model supports reasoning/extended thinking.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "recommended": {
+          "default": false,
+          "description": "Whether this model should appear in the compact recommended picker.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ProviderTemplateCapabilitiesDto": {
+      "properties": {
+        "attachment": {
+          "type": "boolean"
+        },
+        "reasoning": {
+          "type": "boolean"
+        },
+        "temperature": {
+          "type": "boolean"
+        },
+        "toolCall": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "toolCall",
+        "reasoning",
+        "attachment",
+        "temperature"
+      ],
+      "type": "object"
+    },
+    "ProviderTemplateDto": {
+      "properties": {
+        "apiUrl": {
+          "type": "string"
+        },
+        "docUrl": {
+          "type": "string"
+        },
+        "envVar": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ProviderTemplateModelDto"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "supportsStreaming": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "name",
+        "format",
+        "apiUrl",
+        "models",
+        "supportsStreaming",
+        "envVar",
+        "docUrl"
+      ],
+      "type": "object"
+    },
+    "ProviderTemplateModelDto": {
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/ProviderTemplateCapabilitiesDto"
+        },
+        "contextLimit": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "contextLimit",
+        "capabilities",
+        "deprecated"
+      ],
+      "type": "object"
+    },
+    "ReadConfigRequest": {
+      "description": "Read a single non-secret config value.",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object",
+      "x-method": "_goose/config/read",
+      "x-side": "agent"
+    },
+    "ReadConfigResponse": {
+      "description": "Config read response.",
+      "properties": {
+        "value": {
+          "default": null
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/config/read",
+      "x-side": "agent"
+    },
+    "ReadResourceRequest": {
+      "description": "Read a resource from an extension.",
+      "properties": {
+        "extensionName": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "uri",
+        "extensionName"
+      ],
+      "type": "object",
+      "x-method": "_goose/resource/read",
+      "x-side": "agent"
+    },
+    "ReadResourceResponse": {
+      "description": "Resource read response.",
+      "properties": {
+        "result": {
+          "default": null,
+          "description": "The resource result from the extension (MCP ReadResourceResult)."
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/resource/read",
+      "x-side": "agent"
+    },
+    "RefreshProviderInventoryRequest": {
+      "description": "Trigger a background refresh of provider inventories.",
+      "properties": {
+        "providerIds": {
+          "default": [],
+          "description": "Which providers to refresh. Empty means all known providers.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "x-method": "_goose/providers/inventory/refresh",
+      "x-side": "agent"
+    },
+    "RefreshProviderInventoryResponse": {
+      "description": "Refresh acknowledgement.",
+      "properties": {
+        "skipped": {
+          "default": [],
+          "description": "Which providers were skipped and why.",
+          "items": {
+            "$ref": "#/$defs/RefreshProviderInventorySkipDto"
+          },
+          "type": "array"
+        },
+        "started": {
+          "description": "Which providers will be refreshed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "started"
+      ],
+      "type": "object",
+      "x-method": "_goose/providers/inventory/refresh",
+      "x-side": "agent"
+    },
+    "RefreshProviderInventorySkipDto": {
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/RefreshProviderInventorySkipReasonDto"
+        }
+      },
+      "required": [
+        "providerId",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "RefreshProviderInventorySkipReasonDto": {
+      "enum": [
+        "unknown_provider",
+        "not_configured",
+        "does_not_support_refresh",
+        "already_refreshing"
+      ],
+      "type": "string"
+    },
+    "RemoveConfigExtensionRequest": {
+      "description": "Remove a persisted extension from the user's global goose config.",
+      "properties": {
+        "configKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "configKey"
+      ],
+      "type": "object",
+      "x-method": "_goose/config/extensions/remove",
+      "x-side": "agent"
+    },
+    "RemoveConfigRequest": {
+      "description": "Remove a single non-secret config value.",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object",
+      "x-method": "_goose/config/remove",
+      "x-side": "agent"
+    },
+    "RemoveExtensionRequest": {
+      "description": "Remove an extension from an active session.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "name"
+      ],
+      "type": "object",
+      "x-method": "_goose/extensions/remove",
+      "x-side": "agent"
+    },
+    "RemoveSecretRequest": {
+      "description": "Remove a secret.",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object",
+      "x-method": "_goose/secret/remove",
+      "x-side": "agent"
+    },
+    "RenameSessionRequest": {
+      "description": "Rename a session.",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "title"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/rename",
+      "x-side": "agent"
+    },
+    "SourceEntry": {
+      "description": "A source discovered by Goose and backed by an on-disk path. Sources may be\neither `global` (shared across all projects) or project-specific.",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "directory": {
+          "description": "Absolute path to the source on disk. A directory for skills, a file for\nrecipes and agents.",
+          "type": "string"
+        },
+        "global": {
+          "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "supportingFiles": {
+          "description": "Paths (absolute) of additional files that live alongside the source.\nOnly skills currently populate this; empty for other source types.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "description",
+        "content",
+        "directory",
+        "global"
+      ],
+      "type": "object"
+    },
+    "SourceType": {
+      "description": "The type of source entity.",
+      "enum": [
+        "skill",
+        "builtinSkill",
+        "recipe",
+        "subrecipe",
+        "agent"
+      ],
+      "type": "string"
+    },
+    "ToggleConfigExtensionRequest": {
+      "description": "Toggle the `enabled` flag for a persisted extension in the user's global goose config.",
+      "properties": {
+        "configKey": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "configKey",
+        "enabled"
+      ],
+      "type": "object",
+      "x-method": "_goose/config/extensions/toggle",
+      "x-side": "agent"
+    },
+    "UnarchiveSessionRequest": {
+      "description": "Unarchive a previously archived session.",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/unarchive",
+      "x-side": "agent"
+    },
+    "UpdateSessionProjectRequest": {
+      "description": "Update the project association for a session.",
+      "properties": {
+        "projectId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object",
+      "x-method": "_goose/session/update_project",
+      "x-side": "agent"
+    },
+    "UpdateSourceRequest": {
+      "description": "Update an existing source's name, description, and content by absolute path.",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        }
+      },
+      "required": [
+        "type",
+        "path",
+        "name",
+        "description",
+        "content"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/update",
+      "x-side": "agent"
+    },
+    "UpdateSourceResponse": {
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SourceEntry"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object",
+      "x-method": "_goose/sources/update",
+      "x-side": "agent"
+    },
+    "UpdateWorkingDirRequest": {
+      "description": "Update the working directory for a session.",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "workingDir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "workingDir"
+      ],
+      "type": "object",
+      "x-method": "_goose/working_dir/update",
+      "x-side": "agent"
+    },
+    "UpsertConfigRequest": {
+      "description": "Upsert a single non-secret config value.",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object",
+      "x-method": "_goose/config/upsert",
+      "x-side": "agent"
+    },
+    "UpsertSecretRequest": {
+      "description": "Set a secret value (write-only).",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object",
+      "x-method": "_goose/secret/upsert",
+      "x-side": "agent"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExtRequest"
+        }
+      ],
+      "description": "Extension request (client → agent)",
+      "title": "Request"
+    },
+    {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExtResponse"
+        }
+      ],
+      "description": "Extension response (agent → client)",
+      "title": "Response"
+    }
+  ],
+  "title": "GooseExtensions"
+}

@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { useChatStore } from "../stores/chatStore";
 import { useChatSessionStore } from "../stores/chatSessionStore";
+import { clearReplayBuffer, getAndDeleteReplayBuffer } from "./replayBuffer";
 import {
   type ChatAttachmentDraft,
   createSystemNotificationMessage,
@@ -10,20 +11,36 @@ import type { ChatState, TokenState } from "@/shared/types/chat";
 import {
   acpSendMessage,
   acpCancelSession,
-  acpPrepareSession,
-  acpSetModel,
+  acpLoadSession,
 } from "@/shared/api/acp";
+import { getGooseSessionId } from "@/shared/api/acpSessionTracker";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import {
   getSessionTitleFromDraft,
   isDefaultChatTitle,
 } from "../lib/sessionTitle";
 import { findLastIndex } from "@/shared/lib/arrays";
+import { perfLog } from "@/shared/lib/perfLog";
 import {
   buildAcpImages,
   buildAttachmentPromptPreamble,
   buildMessageAttachments,
 } from "../lib/attachments";
+import { sanitizeReplayMessages } from "../lib/replaySanitizer";
+import { i18n } from "@/shared/i18n";
+import type { ChatSendOptions } from "../types";
+import { buildSkillRetryOptions } from "../lib/skillSendPayload";
+
+// TODO: Remove this fallback once goose2 has first-class /-commands.
+const MANUAL_COMPACT_TRIGGER = "/compact";
+type CompactConversationResult = "completed" | "failed" | "skipped";
+
+function createCompactionConfirmationMessage() {
+  return createSystemNotificationMessage(
+    i18n.t("chat:notifications.compactionComplete"),
+    "compaction",
+  );
+}
 
 function getErrorMessage(error: unknown): string {
   // Tauri command rejections typically arrive as plain strings, so handle
@@ -83,7 +100,10 @@ export function useChat(
   providerOverride?: string,
   systemPromptOverride?: string,
   personaInfo?: { id: string; name: string },
-  workingDirOverride?: string,
+  options?: {
+    onMessageAccepted?: (sessionId: string) => void;
+    ensurePrepared?: (personaId?: string) => Promise<void>;
+  },
 ) {
   const store = useChatStore();
   const abortRef = useRef<AbortController | null>(null);
@@ -128,15 +148,26 @@ export function useChat(
       text: string,
       overridePersona?: { id: string; name?: string },
       attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
     ) => {
+      const sid = sessionId.slice(0, 8);
+      const tSendStart = performance.now();
       const images = buildAcpImages(attachments);
       const hasAttachments = (attachments?.length ?? 0) > 0;
+      const hasAssistantPrompt = Boolean(sendOptions?.assistantPrompt?.trim());
+      const currentChatState = useChatStore
+        .getState()
+        .getSessionRuntime(sessionId).chatState;
       if (
-        (!text.trim() && !hasAttachments) ||
-        chatState === "streaming" ||
-        chatState === "thinking"
+        (!text.trim() && !hasAttachments && !hasAssistantPrompt) ||
+        currentChatState === "streaming" ||
+        currentChatState === "thinking" ||
+        currentChatState === "compacting"
       )
         return;
+      perfLog(
+        `[perf:send] ${sid} useChat.sendMessage start (textLen=${text.length}, attachments=${attachments?.length ?? 0})`,
+      );
 
       const effectivePersonaInfo = resolvePersonaInfo(
         overridePersona?.id,
@@ -153,8 +184,9 @@ export function useChat(
 
       // Create and add user message
       const userMessage = createUserMessage(
-        text,
+        sendOptions?.displayText ?? text,
         buildMessageAttachments(attachments),
+        sendOptions?.chips,
       );
       if (effectivePersonaInfo) {
         userMessage.metadata = {
@@ -180,15 +212,8 @@ export function useChat(
       store.setChatState(sessionId, "thinking");
       store.setError(sessionId, null);
 
-      // Promote draft to real backend session before first send
       const sessionStore = useChatSessionStore.getState();
       const session = sessionStore.getSession(sessionId);
-      const wasDraft = !!session?.draft;
-      const selectedModelId = session?.modelId;
-
-      if (wasDraft) {
-        sessionStore.promoteDraft(sessionId);
-      }
 
       // Immediately set the session/sidebar title from the user's message when
       // the session still has the default placeholder.  This gives instant
@@ -196,19 +221,17 @@ export function useChat(
       // A better backend-generated title will overwrite this if it arrives
       // via the acp:session_info event.
       if (session && isDefaultChatTitle(session.title)) {
-        sessionStore.updateSession(
-          sessionId,
-          {
-            title: getSessionTitleFromDraft(text, attachments),
-            updatedAt: new Date().toISOString(),
-          },
-          { localOnly: wasDraft },
-        );
+        sessionStore.updateSession(sessionId, {
+          title: getSessionTitleFromDraft(text, attachments),
+          updatedAt: new Date().toISOString(),
+        });
       } else {
         sessionStore.updateSession(sessionId, {
           updatedAt: new Date().toISOString(),
         });
       }
+
+      options?.onMessageAccepted?.(sessionId);
 
       store.clearDraft(sessionId);
 
@@ -217,15 +240,7 @@ export function useChat(
       streamingPersonaIdRef.current = effectivePersonaInfo?.id ?? null;
 
       try {
-        if (wasDraft || selectedModelId) {
-          await acpPrepareSession(sessionId, providerId, {
-            workingDir: workingDirOverride,
-            personaId: effectivePersonaInfo?.id,
-          });
-          if (selectedModelId) {
-            await acpSetModel(sessionId, selectedModelId);
-          }
-        }
+        await options?.ensurePrepared?.(effectivePersonaInfo?.id);
 
         store.setChatState(sessionId, "streaming");
         // When images are present with no text, pass a single space so the ACP
@@ -234,29 +249,27 @@ export function useChat(
           buildAttachmentPromptPreamble(attachments);
         const promptBody = text.trim() || (images?.length ? " " : text);
         const acpPrompt = `${attachmentPromptPreamble}${promptBody}`;
+        const tAcp = performance.now();
+        perfLog(
+          `[perf:send] ${sid} → acpSendMessage (setup took ${(tAcp - tSendStart).toFixed(1)}ms)`,
+        );
         await acpSendMessage(sessionId, acpPrompt, {
           systemPrompt,
+          ...(sendOptions?.assistantPrompt
+            ? { assistantPrompt: sendOptions.assistantPrompt }
+            : {}),
           personaId: effectivePersonaInfo?.id,
           personaName: effectivePersonaInfo?.name,
           images: images?.map(
             (img) => [img.base64, img.mimeType] as [string, string],
           ),
         });
+        perfLog(
+          `[perf:send] ${sid} acpSendMessage returned after ${(performance.now() - tAcp).toFixed(1)}ms (total sendMessage ${(performance.now() - tSendStart).toFixed(1)}ms)`,
+        );
 
         store.setChatState(sessionId, "idle");
         store.setStreamingMessageId(sessionId, null);
-
-        if (wasDraft) {
-          const promoted = sessionStore.getSession(sessionId);
-          if (promoted) {
-            sessionStore.updateSession(sessionId, {
-              title: promoted.title,
-              providerId: promoted.providerId,
-              personaId: promoted.personaId,
-              projectId: promoted.projectId,
-            });
-          }
-        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           store.setChatState(sessionId, "idle");
@@ -294,12 +307,11 @@ export function useChat(
     },
     [
       sessionId,
-      chatState,
       store,
       providerOverride,
       systemPromptOverride,
       resolvePersonaInfo,
-      workingDirOverride,
+      options,
     ],
   );
 
@@ -346,11 +358,17 @@ export function useChat(
     if (textContent && "text" in textContent) {
       const targetPersonaId = lastUserMessage.metadata?.targetPersonaId;
       const targetPersonaName = lastUserMessage.metadata?.targetPersonaName;
-      await sendMessage(
+      const retryOptions = buildSkillRetryOptions(
         textContent.text,
+        lastUserMessage.metadata?.chips,
+      );
+      await sendMessage(
+        textContent.text || (retryOptions ? " " : ""),
         targetPersonaId
           ? { id: targetPersonaId, name: targetPersonaName }
           : undefined,
+        undefined,
+        retryOptions,
       );
     }
   }, [sessionId, store, sendMessage]);
@@ -362,6 +380,109 @@ export function useChat(
     store.setStreamingMessageId(sessionId, null);
     store.setPendingAssistantProvider(sessionId, null);
   }, [sessionId, store]);
+
+  const getWorkingDir = useCallback(
+    () =>
+      useChatSessionStore.getState().activeWorkspaceBySession[sessionId]?.path,
+    [sessionId],
+  );
+
+  const compactConversation = useCallback(
+    async (overridePersona?: { id: string; name?: string }) => {
+      const currentChatState = useChatStore
+        .getState()
+        .getSessionRuntime(sessionId).chatState;
+      if (currentChatState !== "idle") {
+        return "skipped" as CompactConversationResult;
+      }
+
+      const effectivePersonaInfo = resolvePersonaInfo(
+        overridePersona?.id,
+        overridePersona?.name,
+      );
+      let gooseSessionId = getGooseSessionId(
+        sessionId,
+        effectivePersonaInfo?.id,
+      );
+
+      if (!gooseSessionId) {
+        try {
+          await options?.ensurePrepared?.(effectivePersonaInfo?.id);
+        } catch (err) {
+          const errorMessage = getErrorMessage(err);
+          store.addMessage(
+            sessionId,
+            createSystemNotificationMessage(errorMessage, "error"),
+          );
+          store.setError(sessionId, errorMessage);
+          return "failed" as CompactConversationResult;
+        }
+        gooseSessionId = getGooseSessionId(sessionId, effectivePersonaInfo?.id);
+      }
+
+      if (!gooseSessionId) {
+        const errorMessage =
+          "Session not prepared. Send a message before compacting.";
+        store.addMessage(
+          sessionId,
+          createSystemNotificationMessage(errorMessage, "error"),
+        );
+        store.setError(sessionId, errorMessage);
+        return "failed" as CompactConversationResult;
+      }
+
+      store.setActiveSession(sessionId);
+      store.setChatState(sessionId, "compacting");
+      store.setStreamingMessageId(sessionId, null);
+      store.setError(sessionId, null);
+      store.setSessionLoading(sessionId, true);
+      clearReplayBuffer(sessionId);
+
+      try {
+        const sendOptions = effectivePersonaInfo?.id
+          ? { personaId: effectivePersonaInfo.id }
+          : undefined;
+        await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER, sendOptions);
+
+        // Command responses are streamed via prompt notifications, but the ACP
+        // layer does not currently forward history replacement events. Drop those
+        // transient chunks and refresh the session from replay instead.
+        clearReplayBuffer(sessionId);
+        const workingDir = getWorkingDir();
+        await acpLoadSession(sessionId, gooseSessionId, workingDir);
+
+        store.setSessionLoading(sessionId, false);
+
+        const buffer = getAndDeleteReplayBuffer(sessionId);
+        if (buffer) {
+          store.setMessages(sessionId, [
+            ...sanitizeReplayMessages(buffer),
+            createCompactionConfirmationMessage(),
+          ]);
+        } else {
+          store.addMessage(sessionId, createCompactionConfirmationMessage());
+        }
+        return "completed" as CompactConversationResult;
+      } catch (err) {
+        clearReplayBuffer(sessionId);
+        store.setSessionLoading(sessionId, false);
+
+        const errorMessage = getErrorMessage(err);
+        store.addMessage(
+          sessionId,
+          createSystemNotificationMessage(errorMessage, "error"),
+        );
+        store.setError(sessionId, errorMessage);
+        return "failed" as CompactConversationResult;
+      } finally {
+        store.setChatState(sessionId, "idle");
+        store.setStreamingMessageId(sessionId, null);
+        store.setPendingAssistantProvider(sessionId, null);
+        store.setSessionLoading(sessionId, false);
+      }
+    },
+    [getWorkingDir, options, resolvePersonaInfo, sessionId, store],
+  );
 
   const stopStreaming = stopGeneration;
 
@@ -376,6 +497,7 @@ export function useChat(
     stopStreaming,
     retryLastMessage,
     clearChat,
+    compactConversation,
     isStreaming,
   };
 }
