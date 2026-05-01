@@ -8,6 +8,7 @@ pub mod client;
 pub use client::{SkillsClient, EXTENSION_NAME};
 
 use crate::config::paths::Paths;
+use crate::plugins::installed_plugin_skill_dirs;
 use crate::sources::parse_frontmatter;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;
@@ -210,6 +211,12 @@ pub fn all_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
         dirs.push((h.join(".claude").join("skills"), true));
         dirs.push((h.join(".config").join("agents").join("skills"), true));
     }
+
+    dirs.extend(
+        installed_plugin_skill_dirs()
+            .into_iter()
+            .map(|dir| (dir, true)),
+    );
 
     dirs
 }
