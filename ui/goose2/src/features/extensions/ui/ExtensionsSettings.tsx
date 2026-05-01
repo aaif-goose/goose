@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { IconPlus, IconSearch } from "@tabler/icons-react";
+import { IconPlus } from "@tabler/icons-react";
 import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
+import { SearchBar } from "@/shared/ui/SearchBar";
 import {
   listExtensions,
   addExtension,
@@ -18,6 +18,7 @@ import {
 } from "../types";
 import { ExtensionItem } from "./ExtensionItem";
 import { ExtensionModal } from "./ExtensionModal";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 export function ExtensionsSettings() {
   const { t } = useTranslation("settings");
@@ -140,26 +141,33 @@ export function ExtensionsSettings() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="font-display text-lg font-semibold tracking-tight">
-          {t("extensions.title")}
-        </h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t("extensions.description")}
-        </p>
-      </div>
-
-      <div className="relative">
-        <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
+    <SettingsPage
+      title={t("extensions.title")}
+      description={t("extensions.description")}
+      actions={
+        <Button
+          type="button"
+          variant="outline"
+          size="xxs"
+          onClick={() => {
+            setEditingExtension(null);
+            setModalMode("add");
+          }}
+        >
+          <IconPlus className="size-4" />
+          {t("extensions.addExtension")}
+        </Button>
+      }
+      controls={
+        <SearchBar
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={setSearchTerm}
           placeholder={t("extensions.search")}
-          className="pl-9"
+          aria-label={t("extensions.search")}
+          size="compact"
         />
-      </div>
-
+      }
+    >
       {isLoading ? (
         <div className="divide-y divide-border">
           {[1, 2, 3].map((i) => (
@@ -212,19 +220,6 @@ export function ExtensionsSettings() {
         </div>
       )}
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          setEditingExtension(null);
-          setModalMode("add");
-        }}
-      >
-        <IconPlus className="size-4" />
-        {t("extensions.addExtension")}
-      </Button>
-
       {modalMode === "add" && (
         <ExtensionModal onSubmit={handleSubmit} onClose={handleModalClose} />
       )}
@@ -237,6 +232,6 @@ export function ExtensionsSettings() {
           onClose={handleModalClose}
         />
       )}
-    </div>
+    </SettingsPage>
   );
 }

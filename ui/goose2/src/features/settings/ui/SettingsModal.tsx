@@ -1,17 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/cn";
-import { Button, buttonVariants } from "@/shared/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/alert-dialog";
+import { Button } from "@/shared/ui/button";
 import {
   Mic,
   Minimize2,
@@ -31,18 +21,9 @@ import { ExtensionsSettings } from "@/features/extensions/ui/ExtensionsSettings"
 import { VoiceInputSettings } from "./VoiceInputSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { CompactionSettings } from "./CompactionSettings";
-import {
-  listArchivedProjects,
-  restoreProject,
-  deleteProject,
-  type ProjectInfo,
-} from "@/features/projects/api/projects";
-import { ProjectIcon } from "@/features/projects/ui/ProjectIcon";
-import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
-import { useProjectStore } from "@/features/projects/stores/projectStore";
-import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
-
-import type { Session } from "@/shared/types/chat";
+import { ProjectsSettings } from "./ProjectsSettings";
+import { ChatsSettings } from "./ChatsSettings";
+import { AboutSettings } from "./AboutSettings";
 
 const NAV_ITEMS = [
   { id: "appearance", labelKey: "nav.appearance", icon: Palette },
@@ -71,14 +52,7 @@ export function SettingsModal({
   const { t } = useTranslation(["settings", "common"]);
   const [activeSection, setActiveSection] = useState<SectionId>(initialSection);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [archivedProjects, setArchivedProjects] = useState<ProjectInfo[]>([]);
-  const [archivedChats, setArchivedChats] = useState<Session[]>([]);
-  const [loadingArchived, setLoadingArchived] = useState(true);
-  const [loadingArchivedChats, setLoadingArchivedChats] = useState(true);
-  const [deletingProject, setDeletingProject] = useState<ProjectInfo | null>(
-    null,
-  );
+  const modalRootRef = useRef<HTMLDivElement>(null);
 
   // Trigger entrance animations after mount
   useEffect(() => {
@@ -86,69 +60,41 @@ export function SettingsModal({
     return () => clearTimeout(timer);
   }, []);
 
-  // Load archived projects on mount
   useEffect(() => {
-    listArchivedProjects()
-      .then(setArchivedProjects)
-      .catch(() => setArchivedProjects([]))
-      .finally(() => setLoadingArchived(false));
-  }, []);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        event.target instanceof Node &&
+        modalRootRef.current?.contains(event.target)
+      ) {
+        onClose();
+      }
+    };
 
-  // Load archived chats from the session store (persisted in localStorage)
-  useEffect(() => {
-    const archived = useChatSessionStore.getState().getArchivedSessions();
-    setArchivedChats(archived as unknown as Session[]);
-    setLoadingArchivedChats(false);
-  }, []);
-
-  const handleRestoreProject = async (id: string) => {
-    try {
-      await restoreProject(id);
-      await useProjectStore.getState().fetchProjects();
-      setArchivedProjects((prev) => prev.filter((p) => p.id !== id));
-    } catch {
-      // best-effort
-    }
-  };
-
-  const handleRestoreChat = async (id: string) => {
-    await useChatSessionStore.getState().unarchiveSession(id);
-    setArchivedChats((prev) => prev.filter((session) => session.id !== id));
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteProject(id);
-      setArchivedProjects((prev) => prev.filter((p) => p.id !== id));
-    } catch {
-      // best-effort
-    }
-  };
-
-  // Content transition on section change
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeSection triggers the transition effect intentionally
-  useEffect(() => {
-    setIsTransitioning(true);
-    const timer = setTimeout(() => setIsTransitioning(false), 150);
-    return () => clearTimeout(timer);
-  }, [activeSection]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const navItems = NAV_ITEMS.map((item) => ({
     ...item,
     label: t(item.labelKey),
   }));
+  const activeSectionLabel =
+    navItems.find((item) => item.id === activeSection)?.label ?? t("title");
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape is handled by the document listener while the backdrop only handles pointer dismissal.
     <div
+      ref={modalRootRef}
       role="dialog"
+      aria-modal="true"
+      aria-label={activeSectionLabel}
       className={cn(
         "fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm transition-opacity duration-300",
         isLoaded ? "opacity-100" : "opacity-0",
       )}
       onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
     >
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation on inner container is not a meaningful interaction */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: click handler only prevents backdrop dismiss propagation */}
@@ -207,37 +153,20 @@ export function SettingsModal({
         </div>
 
         {/* Content */}
-        <div className="relative flex-1 overflow-y-auto">
+        <div className="relative flex min-w-0 flex-1 flex-col">
           <Button
             type="button"
             variant="ghost"
             size="icon-xs"
             onClick={onClose}
             aria-label={t("common:actions.close")}
-            className="absolute right-4 top-4 z-10 rounded-md text-muted-foreground hover:text-foreground"
+            className="absolute right-4 top-4 z-30 rounded-md text-muted-foreground hover:text-foreground"
           >
             <X className="size-4" />
           </Button>
 
-          <div
-            className={cn(
-              "px-6 py-4 transition-all duration-400 ease-out",
-              isTransitioning
-                ? "opacity-0 translate-y-2"
-                : "opacity-100 translate-y-0",
-            )}
-          >
-            <div
-              className={cn(
-                "transition-all duration-600 ease-out",
-                isLoaded
-                  ? "opacity-100 translate-y-0"
-                  : "opacity-0 translate-y-4",
-              )}
-              style={{
-                transitionDelay: isLoaded ? "400ms" : "0ms",
-              }}
-            >
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="px-6 pb-4">
               {activeSection === "appearance" && <AppearanceSettings />}
               {activeSection === "providers" && <ProvidersSettings />}
               {activeSection === "compaction" && <CompactionSettings />}
@@ -245,166 +174,13 @@ export function SettingsModal({
               {activeSection === "voice" && <VoiceInputSettings />}
               {activeSection === "doctor" && <DoctorSettings />}
               {activeSection === "general" && <GeneralSettings />}
-              {activeSection === "projects" && (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold font-display tracking-tight">
-                      {t("projects.title")}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {t("projects.description")}
-                    </p>
-                  </div>
-
-                  {/* Archived Projects */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold">
-                      {t("projects.sectionTitle")}
-                    </h3>
-                    {!loadingArchived && archivedProjects.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        {t("projects.empty")}
-                      </p>
-                    )}
-                    {archivedProjects.map((project) => (
-                      <div
-                        key={project.id}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <ProjectIcon
-                            icon={project.icon}
-                            className="size-4 shrink-0 text-foreground"
-                            imageClassName="size-4 shrink-0 rounded-[4px]"
-                          />
-                          <span className="text-sm truncate">
-                            {project.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="xs"
-                            onClick={() => handleRestoreProject(project.id)}
-                          >
-                            {t("common:actions.restore")}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => setDeletingProject(project)}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            {t("common:actions.delete")}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {activeSection === "chats" && (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold font-display tracking-tight">
-                      {t("chats.title")}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {t("chats.description")}
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold">
-                      {t("chats.sectionTitle")}
-                    </h3>
-                    {!loadingArchivedChats && archivedChats.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        {t("chats.empty")}
-                      </p>
-                    )}
-                    {archivedChats.map((session) => (
-                      <div
-                        key={session.id}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm">
-                            {getDisplaySessionTitle(
-                              session.title,
-                              t("common:session.defaultTitle"),
-                            )}
-                          </div>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {session.projectId
-                              ? t("chats.types.project")
-                              : t("chats.types.standalone")}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="xs"
-                          onClick={() => handleRestoreChat(session.id)}
-                          className="flex-shrink-0"
-                        >
-                          {t("common:actions.restore")}
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {activeSection === "about" && (
-                <div>
-                  <h3 className="text-lg font-semibold font-display tracking-tight">
-                    {t("about.title")}
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t("about.description")}
-                  </p>
-                </div>
-              )}
+              {activeSection === "projects" && <ProjectsSettings />}
+              {activeSection === "chats" && <ChatsSettings />}
+              {activeSection === "about" && <AboutSettings />}
             </div>
           </div>
         </div>
       </div>
-
-      <AlertDialog
-        open={!!deletingProject}
-        onOpenChange={(open) => !open && setDeletingProject(null)}
-      >
-        <AlertDialogContent className="max-w-sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t("deleteProject.title", {
-                name: deletingProject?.name ?? "",
-              })}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("deleteProject.description", {
-                name: deletingProject?.name ?? "",
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common:actions.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className={buttonVariants({ variant: "destructive" })}
-              onClick={() => {
-                if (deletingProject) {
-                  handleDelete(deletingProject.id);
-                  setDeletingProject(null);
-                }
-              }}
-            >
-              {t("common:actions.delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

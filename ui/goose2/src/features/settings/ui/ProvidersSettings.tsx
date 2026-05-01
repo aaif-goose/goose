@@ -35,6 +35,7 @@ import type {
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { AgentProviderCard } from "./AgentProviderCard";
 import { ModelProviderRow } from "./ModelProviderRow";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 import {
   catalogEntryToTemplate,
   formValueToDraft,
@@ -306,13 +307,21 @@ export function ProvidersSettings() {
   }
 
   return (
-    <div>
-      <h3 className="text-lg font-semibold font-display tracking-tight">
-        {t("providers.title")}
-      </h3>
-
-      <Separator className="my-4" />
-
+    <SettingsPage
+      title={t("providers.title")}
+      actions={
+        <Button
+          type="button"
+          variant="outline"
+          size="xxs"
+          onClick={() => void openCreateCustomProvider()}
+          leftIcon={<IconPlus />}
+          className="shrink-0"
+        >
+          {t("providers.custom.addButton")}
+        </Button>
+      }
+    >
       <section>
         <div className="mb-3">
           <h4 className="text-sm font-semibold">
@@ -334,34 +343,20 @@ export function ProvidersSettings() {
 
       <section>
         <div className="mb-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-semibold">
-                  {t("providers.models.title")}
-                </h4>
-                {loading ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Spinner className="size-3 text-accent" />
-                    {t("providers.models.checkingStatus")}
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t("providers.models.description")}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void openCreateCustomProvider()}
-              leftIcon={<IconPlus />}
-              className="shrink-0"
-            >
-              {t("providers.custom.addButton")}
-            </Button>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold">
+              {t("providers.models.title")}
+            </h4>
+            {loading ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Spinner className="size-3 text-accent" />
+                {t("providers.models.checkingStatus")}
+              </span>
+            ) : null}
           </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t("providers.models.description")}
+          </p>
         </div>
 
         {customProviderError ? (
@@ -487,6 +482,6 @@ export function ProvidersSettings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </SettingsPage>
   );
 }

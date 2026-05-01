@@ -4,6 +4,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/toggle-group";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { Sun, Moon, Monitor, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 const THEME_OPTIONS = [
   { value: "light", icon: Sun },
@@ -56,13 +57,7 @@ export function AppearanceSettings() {
     useTheme();
 
   return (
-    <div>
-      <h3 className="text-lg font-semibold font-display tracking-tight">
-        {t("appearance.title")}
-      </h3>
-
-      <Separator className="my-4" />
-
+    <SettingsPage title={t("appearance.title")}>
       <SettingRow
         label={t("appearance.theme.label")}
         description={t("appearance.theme.description")}
@@ -137,6 +132,6 @@ export function AppearanceSettings() {
           ))}
         </ToggleGroup>
       </SettingRow>
-    </div>
+    </SettingsPage>
   );
 }

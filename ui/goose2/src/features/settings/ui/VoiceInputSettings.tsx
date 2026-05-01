@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 const DISABLED_PROVIDER = "__disabled__";
 
@@ -221,28 +222,23 @@ export function VoiceInputSettings() {
 
   if (loading) {
     return (
-      <div className="space-y-3">
-        <h4 className="text-sm font-semibold">
-          {t("general.voiceInput.label")}
-        </h4>
+      <SettingsPage
+        title={t("general.voiceInput.label")}
+        description={t("general.voiceInput.description")}
+      >
         <p className="text-xs text-muted-foreground">
           {t("common:labels.loading")}
         </p>
-      </div>
+      </SettingsPage>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h4 className="text-sm font-semibold">
-          {t("general.voiceInput.label")}
-        </h4>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("general.voiceInput.description")}
-        </p>
-      </div>
-
+    <SettingsPage
+      title={t("general.voiceInput.label")}
+      description={t("general.voiceInput.description")}
+      contentClassName="space-y-4"
+    >
       <div className="space-y-2 rounded-lg border border-border px-3 py-3">
         <p className="text-xs font-medium text-foreground">
           {t("general.voiceInput.providerLabel")}
@@ -484,6 +480,6 @@ export function VoiceInputSettings() {
       </div>
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
+    </SettingsPage>
   );
 }

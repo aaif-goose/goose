@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
-import { Separator } from "@/shared/ui/separator";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 function SettingRow({
   label,
@@ -36,16 +36,10 @@ export function GeneralSettings() {
   const { preference, setLocalePreference, systemLocaleLabel } = useLocale();
 
   return (
-    <div>
-      <h3 className="text-lg font-semibold font-display tracking-tight">
-        {t("general.title")}
-      </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t("general.description")}
-      </p>
-
-      <Separator className="my-4" />
-
+    <SettingsPage
+      title={t("general.title")}
+      description={t("general.description")}
+    >
       <SettingRow
         label={t("general.language.label")}
         description={t("general.language.description")}
@@ -70,6 +64,6 @@ export function GeneralSettings() {
           </SelectContent>
         </Select>
       </SettingRow>
-    </div>
+    </SettingsPage>
   );
 }

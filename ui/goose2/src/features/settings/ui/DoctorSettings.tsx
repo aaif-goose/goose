@@ -2,13 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { RefreshCw, ClipboardCopy, Check, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/shared/ui/button";
-import { Separator } from "@/shared/ui/separator";
 import {
   runDoctor,
   type DoctorCheck,
   type DoctorReport,
 } from "@/shared/api/doctor";
 import { DoctorCheckRow } from "./DoctorCheckRow";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 function formatDebugReport(report: DoctorReport): string {
   const STATUS_ICONS: Record<DoctorCheck["status"], string> = {
@@ -93,20 +93,15 @@ export function DoctorSettings() {
   }
 
   return (
-    <div>
-      <div className="flex items-start justify-between gap-4 pr-8">
-        <div>
-          <h3 className="text-lg font-semibold font-display tracking-tight">
-            {t("doctor.title")}
-          </h3>
-        </div>
-
-        <div className="flex flex-shrink-0 items-center gap-2">
+    <SettingsPage
+      title={t("doctor.title")}
+      actions={
+        <>
           {report && !loading && (
             <Button
               type="button"
               variant="outline"
-              size="xs"
+              size="xxs"
               onClick={copyDebugInfo}
               className="text-muted-foreground hover:text-foreground"
             >
@@ -123,7 +118,7 @@ export function DoctorSettings() {
             <Button
               type="button"
               variant="outline"
-              size="xs"
+              size="xxs"
               onClick={runChecksAndRefresh}
               className="text-muted-foreground hover:text-foreground"
             >
@@ -131,11 +126,9 @@ export function DoctorSettings() {
               {t("doctor.rerun")}
             </Button>
           )}
-        </div>
-      </div>
-
-      <Separator className="my-4" />
-
+        </>
+      }
+    >
       {loading ? (
         <div className="flex min-h-[160px] items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -180,6 +173,6 @@ export function DoctorSettings() {
           {t("doctor.empty")}
         </div>
       )}
-    </div>
+    </SettingsPage>
   );
 }

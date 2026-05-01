@@ -2,22 +2,17 @@ import { useTranslation } from "react-i18next";
 import { IconCheck } from "@tabler/icons-react";
 import { getProviderIcon } from "@/shared/ui/icons/ProviderIcons";
 import { GooseAutoCompactSettings } from "./GooseAutoCompactSettings";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 export function CompactionSettings() {
   const { t } = useTranslation("settings");
   const icon = getProviderIcon("goose", "size-6");
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold font-display tracking-tight">
-          {t("compaction.title")}
-        </h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t("compaction.description")}
-        </p>
-      </div>
-
+    <SettingsPage
+      title={t("compaction.title")}
+      description={t("compaction.description")}
+    >
       <div className="rounded-lg border bg-background p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -42,6 +37,6 @@ export function CompactionSettings() {
           <GooseAutoCompactSettings />
         </div>
       </div>
-    </div>
+    </SettingsPage>
   );
 }
