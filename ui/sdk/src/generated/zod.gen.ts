@@ -113,147 +113,6 @@ export const zGetSessionExtensionsResponse = z.object({
     extensions: z.array(z.unknown())
 });
 
-export const zGetSessionExtensionStatusRequest = z.object({
-    sessionId: z.string()
-});
-
-export const zExtensionConnectionStatusDto = z.enum([
-    'connected',
-    'failed',
-    'available',
-    'unavailable'
-]);
-
-export const zSessionExtensionStatusDto = z.intersection(z.union([
-    z.object({
-        name: z.string(),
-        description: z.string(),
-        uri: z.union([
-            z.string(),
-            z.null()
-        ]).optional(),
-        bundled: z.union([
-            z.boolean(),
-            z.null()
-        ]).optional(),
-        type: z.literal('sse')
-    }),
-    z.object({
-        name: z.string(),
-        description: z.string(),
-        cmd: z.string(),
-        args: z.array(z.string()),
-        envs: z.record(z.string()).optional().default({}),
-        env_keys: z.array(z.string()).optional().default([]),
-        timeout: z.union([
-            z.number().int().gte(0).max(4294967295, { message: 'Invalid value: Expected uint32 to be <= 4294967295' }),
-            z.null()
-        ]).optional(),
-        bundled: z.union([
-            z.boolean(),
-            z.null()
-        ]).optional(),
-        available_tools: z.array(z.string()).optional().default([]),
-        type: z.literal('stdio')
-    }),
-    z.object({
-        name: z.string(),
-        description: z.string(),
-        display_name: z.union([
-            z.string(),
-            z.null()
-        ]).optional(),
-        timeout: z.union([
-            z.number().int().gte(0).max(4294967295, { message: 'Invalid value: Expected uint32 to be <= 4294967295' }),
-            z.null()
-        ]).optional(),
-        bundled: z.union([
-            z.boolean(),
-            z.null()
-        ]).optional(),
-        available_tools: z.array(z.string()).optional().default([]),
-        type: z.literal('builtin')
-    }),
-    z.object({
-        name: z.string(),
-        description: z.string(),
-        display_name: z.union([
-            z.string(),
-            z.null()
-        ]).optional(),
-        bundled: z.union([
-            z.boolean(),
-            z.null()
-        ]).optional(),
-        available_tools: z.array(z.string()).optional().default([]),
-        type: z.literal('platform')
-    }),
-    z.object({
-        name: z.string(),
-        description: z.string(),
-        uri: z.string(),
-        envs: z.record(z.string()).optional().default({}),
-        env_keys: z.array(z.string()).optional().default([]),
-        headers: z.record(z.string()).optional().default({}),
-        timeout: z.union([
-            z.number().int().gte(0).max(4294967295, { message: 'Invalid value: Expected uint32 to be <= 4294967295' }),
-            z.null()
-        ]).optional(),
-        socket: z.union([
-            z.string(),
-            z.null()
-        ]).optional(),
-        bundled: z.union([
-            z.boolean(),
-            z.null()
-        ]).optional(),
-        available_tools: z.array(z.string()).optional().default([]),
-        type: z.literal('streamable_http')
-    }),
-    z.object({
-        name: z.string(),
-        description: z.string(),
-        frontend_tools: z.array(z.unknown()).optional().default([]),
-        instructions: z.union([
-            z.string(),
-            z.null()
-        ]).optional(),
-        bundled: z.union([
-            z.boolean(),
-            z.null()
-        ]).optional(),
-        available_tools: z.array(z.string()).optional().default([]),
-        type: z.literal('frontend')
-    }),
-    z.object({
-        name: z.string(),
-        description: z.string(),
-        code: z.string(),
-        timeout: z.union([
-            z.number().int().gte(0).max(4294967295, { message: 'Invalid value: Expected uint32 to be <= 4294967295' }),
-            z.null()
-        ]).optional(),
-        dependencies: z.union([
-            z.array(z.string()),
-            z.null()
-        ]).optional(),
-        available_tools: z.array(z.string()).optional().default([]),
-        type: z.literal('inline_python')
-    })
-]), z.object({
-    config_key: z.string(),
-    status: zExtensionConnectionStatusDto,
-    tools: z.array(z.string()).optional().default([]),
-    error: z.union([
-        z.string(),
-        z.null()
-    ]).optional()
-}));
-
-export const zGetSessionExtensionStatusResponse = z.object({
-    extensions: z.array(zSessionExtensionStatusDto)
-});
-
 /**
  * List providers with setup metadata and the current model inventory snapshot.
  */
@@ -1012,7 +871,6 @@ export const zExtRequest = z.object({
             zRemoveConfigExtensionRequest,
             zToggleConfigExtensionRequest,
             zGetSessionExtensionsRequest,
-            zGetSessionExtensionStatusRequest,
             zListProvidersRequest,
             zProviderCatalogListRequest,
             zProviderCatalogTemplateRequest,
@@ -1069,7 +927,6 @@ export const zExtResponse = z.union([
                 zReadResourceResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
-                zGetSessionExtensionStatusResponse,
                 zListProvidersResponse,
                 zProviderCatalogListResponse,
                 zProviderCatalogTemplateResponse,

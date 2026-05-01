@@ -133,89 +133,6 @@ export type GetSessionExtensionsResponse = {
     extensions: Array<unknown>;
 };
 
-export type GetSessionExtensionStatusRequest = {
-    sessionId: string;
-};
-
-export type GetSessionExtensionStatusResponse = {
-    extensions: Array<SessionExtensionStatusDto>;
-};
-
-export type SessionExtensionStatusDto = ({
-    name: string;
-    description: string;
-    uri?: string | null;
-    bundled?: boolean | null;
-    type: 'sse';
-} | {
-    name: string;
-    description: string;
-    cmd: string;
-    args: Array<string>;
-    envs?: {
-        [key: string]: string;
-    };
-    env_keys?: Array<string>;
-    timeout?: number | null;
-    bundled?: boolean | null;
-    available_tools?: Array<string>;
-    type: 'stdio';
-} | {
-    name: string;
-    description: string;
-    display_name?: string | null;
-    timeout?: number | null;
-    bundled?: boolean | null;
-    available_tools?: Array<string>;
-    type: 'builtin';
-} | {
-    name: string;
-    description: string;
-    display_name?: string | null;
-    bundled?: boolean | null;
-    available_tools?: Array<string>;
-    type: 'platform';
-} | {
-    name: string;
-    description: string;
-    uri: string;
-    envs?: {
-        [key: string]: string;
-    };
-    env_keys?: Array<string>;
-    headers?: {
-        [key: string]: string;
-    };
-    timeout?: number | null;
-    socket?: string | null;
-    bundled?: boolean | null;
-    available_tools?: Array<string>;
-    type: 'streamable_http';
-} | {
-    name: string;
-    description: string;
-    frontend_tools?: Array<unknown>;
-    instructions?: string | null;
-    bundled?: boolean | null;
-    available_tools?: Array<string>;
-    type: 'frontend';
-} | {
-    name: string;
-    description: string;
-    code: string;
-    timeout?: number | null;
-    dependencies?: Array<string> | null;
-    available_tools?: Array<string>;
-    type: 'inline_python';
-}) & {
-    config_key: string;
-    status: ExtensionConnectionStatusDto;
-    tools?: Array<string>;
-    error?: string | null;
-};
-
-export type ExtensionConnectionStatusDto = 'connected' | 'failed' | 'available' | 'unavailable';
-
 /**
  * List providers with setup metadata and the current model inventory snapshot.
  */
@@ -959,14 +876,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | GetSessionExtensionStatusRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | GetSessionExtensionStatusResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

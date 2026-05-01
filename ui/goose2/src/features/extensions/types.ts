@@ -1,8 +1,3 @@
-import type {
-  ExtensionConnectionStatusDto,
-  SessionExtensionStatusDto,
-} from "@aaif/goose-sdk";
-
 export interface StdioExtensionConfig {
   type: "stdio";
   name: string;
@@ -89,20 +84,6 @@ export type ExtensionConfig =
 export type ExtensionEntry = ExtensionConfig & {
   config_key: string;
   enabled: boolean;
-};
-
-export type ExtensionConnectionStatus = ExtensionConnectionStatusDto;
-
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
-  ? Omit<T, K>
-  : never;
-
-export type SessionExtensionStatus = DistributiveOmit<
-  SessionExtensionStatusDto,
-  "tools" | "error"
-> & {
-  tools: string[];
-  error?: string;
 };
 
 export function getDisplayName(ext: {
