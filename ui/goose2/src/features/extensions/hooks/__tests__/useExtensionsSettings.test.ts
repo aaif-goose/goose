@@ -42,7 +42,7 @@ describe("useExtensionsSettings", () => {
     mocks.removeExtension.mockResolvedValue(undefined);
   });
 
-  it("saves edited non-manager extensions as disabled catalog entries", async () => {
+  it("preserves an edited extension's enabled flag", async () => {
     const { result } = renderHook(() => useExtensionsSettings());
 
     await waitFor(() => {
@@ -59,6 +59,29 @@ describe("useExtensionsSettings", () => {
     expect(mocks.addExtension).toHaveBeenCalledWith(
       "github",
       enabledExtension,
+      true,
+    );
+  });
+
+  it("saves new extensions as disabled catalog entries", async () => {
+    const { result } = renderHook(() => useExtensionsSettings());
+    const newExtension: ExtensionEntry = {
+      ...enabledExtension,
+      name: "linear",
+      config_key: "linear",
+    };
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.handleSubmit("linear", newExtension);
+    });
+
+    expect(mocks.addExtension).toHaveBeenCalledWith(
+      "linear",
+      newExtension,
       false,
     );
   });

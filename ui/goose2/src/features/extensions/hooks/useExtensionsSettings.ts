@@ -61,7 +61,7 @@ export function useExtensionsSettings() {
           return;
         }
 
-        await addExtension(name, config, false);
+        await addExtension(name, config, editingExtension?.enabled ?? false);
         if (keyChanged) {
           await removeExtension(editingExtension.config_key);
         }

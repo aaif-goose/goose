@@ -6,6 +6,8 @@ use serde_yaml::Mapping;
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
 const EXTENSIONS_ON_DEMAND_MIGRATION_KEY: &str = "extensions_on_demand_migration";
 const EXTENSION_MANAGER_KEY: &str = "extensionmanager";
+const CORE_DEFAULT_EXTENSION_KEYS: &[&str] =
+    &[EXTENSION_MANAGER_KEY, "developer", "skills", "todo"];
 
 pub fn run_migrations(config: &mut Mapping) -> bool {
     let mut changed = false;
@@ -26,6 +28,10 @@ fn mark_migration_done(config: &mut Mapping, key: &str) {
         serde_yaml::Value::String(key.to_string()),
         serde_yaml::Value::Bool(true),
     );
+}
+
+fn should_enable_by_default(key: &str) -> bool {
+    CORE_DEFAULT_EXTENSION_KEYS.contains(&key)
 }
 
 fn migrate_platform_extensions(config: &mut Mapping) -> bool {
@@ -135,7 +141,7 @@ fn migrate_extensions_to_on_demand_defaults(config: &mut Mapping) -> bool {
             continue;
         };
 
-        let should_enable = entry.config.key() == EXTENSION_MANAGER_KEY;
+        let should_enable = should_enable_by_default(&entry.config.key());
         if entry.enabled != should_enable {
             entry.enabled = should_enable;
             if let Ok(next_value) = serde_yaml::to_value(&entry) {
@@ -165,12 +171,12 @@ mod tests {
         for (key, value) in extensions {
             let key = key.as_str().unwrap();
             let entry: ExtensionEntry = serde_yaml::from_value(value.clone()).unwrap();
-            assert_eq!(entry.enabled, key == EXTENSION_MANAGER_KEY);
+            assert_eq!(entry.enabled, should_enable_by_default(key));
         }
     }
 
     #[test]
-    fn test_migrate_platform_extensions_preserves_enabled_state() {
+    fn test_migrate_platform_extensions_applies_core_defaults() {
         let mut config = Mapping::new();
         let mut extensions = Mapping::new();
         let todo_entry = ExtensionEntry {
@@ -201,7 +207,7 @@ mod tests {
         let todo_value = extensions.get(&todo_key).unwrap();
         let todo_entry: ExtensionEntry = serde_yaml::from_value(todo_value.clone()).unwrap();
 
-        assert!(!todo_entry.enabled);
+        assert!(todo_entry.enabled);
     }
 
     #[test]
@@ -209,6 +215,16 @@ mod tests {
         let mut config = Mapping::new();
         let mut extensions = Mapping::new();
 
+        let analyze_entry = ExtensionEntry {
+            config: ExtensionConfig::Platform {
+                name: "analyze".to_string(),
+                description: "Analyze code structure".to_string(),
+                display_name: Some("Analyze".to_string()),
+                bundled: Some(true),
+                available_tools: Vec::new(),
+            },
+            enabled: true,
+        };
         let developer_entry = ExtensionEntry {
             config: ExtensionConfig::Platform {
                 name: "developer".to_string(),
@@ -217,7 +233,7 @@ mod tests {
                 bundled: Some(true),
                 available_tools: Vec::new(),
             },
-            enabled: true,
+            enabled: false,
         };
         let extension_manager_entry = ExtensionEntry {
             config: ExtensionConfig::Platform {
@@ -230,6 +246,10 @@ mod tests {
             enabled: false,
         };
 
+        extensions.insert(
+            serde_yaml::Value::String("analyze".to_string()),
+            serde_yaml::to_value(&analyze_entry).unwrap(),
+        );
         extensions.insert(
             serde_yaml::Value::String("developer".to_string()),
             serde_yaml::to_value(&developer_entry).unwrap(),
@@ -247,6 +267,13 @@ mod tests {
 
         let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
         let extensions = config.get(&extensions_key).unwrap().as_mapping().unwrap();
+        let analyze: ExtensionEntry = serde_yaml::from_value(
+            extensions
+                .get(serde_yaml::Value::String("analyze".to_string()))
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
         let developer: ExtensionEntry = serde_yaml::from_value(
             extensions
                 .get(serde_yaml::Value::String("developer".to_string()))
@@ -262,7 +289,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!developer.enabled);
+        assert!(!analyze.enabled);
+        assert!(developer.enabled);
         assert!(extension_manager.enabled);
     }
 

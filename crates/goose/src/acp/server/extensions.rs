@@ -1,11 +1,4 @@
 use super::*;
-const EXTENSION_MANAGER_KEY: &str = "extensionmanager";
-
-fn global_enabled_for_config_save(config: &ExtensionConfig, requested_enabled: bool) -> bool {
-    // Only Extension Manager starts globally; other extensions are catalog entries
-    // that Extension Manager loads into a session on demand.
-    requested_enabled && config.key() == EXTENSION_MANAGER_KEY
-}
 
 impl GooseAcpAgent {
     pub(super) async fn on_add_extension(
@@ -82,7 +75,7 @@ impl GooseAcpAgent {
                 .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
 
         crate::config::extensions::set_extension(crate::config::extensions::ExtensionEntry {
-            enabled: global_enabled_for_config_save(&config, req.enabled),
+            enabled: req.enabled,
             config,
         });
         Ok(EmptyResponse {})
@@ -139,62 +132,5 @@ impl GooseAcpAgent {
         Ok(GetSessionExtensionsResponse {
             extensions: extensions_json,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn config_save_disables_non_extension_manager_entries() {
-        let config = ExtensionConfig::StreamableHttp {
-            name: "Context7".to_string(),
-            description: "Up-to-date code documentation".to_string(),
-            uri: "https://mcp.context7.com/mcp".to_string(),
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            headers: Default::default(),
-            timeout: Some(300),
-            socket: None,
-            bundled: Some(false),
-            available_tools: Vec::new(),
-        };
-
-        assert!(!global_enabled_for_config_save(&config, true));
-    }
-
-    #[test]
-    fn config_save_disables_legacy_enabled_custom_entries_on_edit() {
-        let config = ExtensionConfig::Stdio {
-            name: "github".to_string(),
-            description: "Issue tracker".to_string(),
-            cmd: "npx".to_string(),
-            args: vec![
-                "-y".to_string(),
-                "@modelcontextprotocol/server-github".to_string(),
-            ],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(300),
-            bundled: Some(false),
-            available_tools: Vec::new(),
-        };
-
-        assert!(!global_enabled_for_config_save(&config, true));
-    }
-
-    #[test]
-    fn config_save_allows_extension_manager_to_be_enabled() {
-        let config = ExtensionConfig::Platform {
-            name: "Extension Manager".to_string(),
-            description: "Enable extension management tools".to_string(),
-            display_name: Some("Extension Manager".to_string()),
-            bundled: Some(true),
-            available_tools: Vec::new(),
-        };
-
-        assert!(global_enabled_for_config_save(&config, true));
-        assert!(!global_enabled_for_config_save(&config, false));
     }
 }
