@@ -36,10 +36,7 @@ export function GeneralSettings() {
   const { preference, setLocalePreference, systemLocaleLabel } = useLocale();
 
   return (
-    <SettingsPage
-      title={t("general.title")}
-      description={t("general.description")}
-    >
+    <SettingsPage title={t("general.title")}>
       <SettingRow
         label={t("general.language.label")}
         description={t("general.language.description")}

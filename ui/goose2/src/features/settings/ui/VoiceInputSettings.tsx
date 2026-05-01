@@ -222,10 +222,7 @@ export function VoiceInputSettings() {
 
   if (loading) {
     return (
-      <SettingsPage
-        title={t("general.voiceInput.label")}
-        description={t("general.voiceInput.description")}
-      >
+      <SettingsPage title={t("general.voiceInput.label")}>
         <p className="text-xs text-muted-foreground">
           {t("common:labels.loading")}
         </p>
@@ -236,7 +233,6 @@ export function VoiceInputSettings() {
   return (
     <SettingsPage
       title={t("general.voiceInput.label")}
-      description={t("general.voiceInput.description")}
       contentClassName="space-y-4"
     >
       <div className="space-y-2 rounded-lg border border-border px-3 py-3">

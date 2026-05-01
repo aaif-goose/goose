@@ -103,7 +103,6 @@ export function DoctorSettings() {
               variant="outline"
               size="xxs"
               onClick={copyDebugInfo}
-              className="text-muted-foreground hover:text-foreground"
             >
               {copied ? (
                 <Check className="size-3.5" />
@@ -120,7 +119,6 @@ export function DoctorSettings() {
               variant="outline"
               size="xxs"
               onClick={runChecksAndRefresh}
-              className="text-muted-foreground hover:text-foreground"
             >
               <RefreshCw className="size-3.5" />
               {t("doctor.rerun")}

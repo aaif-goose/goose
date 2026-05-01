@@ -9,10 +9,7 @@ export function CompactionSettings() {
   const icon = getProviderIcon("goose", "size-6");
 
   return (
-    <SettingsPage
-      title={t("compaction.title")}
-      description={t("compaction.description")}
-    >
+    <SettingsPage title={t("compaction.title")}>
       <div className="rounded-lg border bg-background p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">

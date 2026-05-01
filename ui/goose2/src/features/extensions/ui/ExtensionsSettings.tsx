@@ -143,7 +143,6 @@ export function ExtensionsSettings() {
   return (
     <SettingsPage
       title={t("extensions.title")}
-      description={t("extensions.description")}
       actions={
         <Button
           type="button"

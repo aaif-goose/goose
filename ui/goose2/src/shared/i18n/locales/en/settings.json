@@ -1,6 +1,6 @@
 {
   "about": {
-    "description": "View app version, build info, and licenses.",
+    "body": "Version, build info, and licenses will appear here.",
     "title": "About"
   },
   "appearance": {
@@ -39,7 +39,6 @@
     "title": "Appearance"
   },
   "chats": {
-    "description": "View and restore your archived chats.",
     "empty": "No archived chats.",
     "messageCount_one": "{{displayCount}} message",
     "messageCount_other": "{{displayCount}} messages",
@@ -51,19 +50,16 @@
     }
   },
   "compaction": {
-    "description": "Manage how Goose trims older context in long-running chats.",
     "goose": {
       "autoCompact": {
-        "current": "Threshold",
-        "description": "Choose when Goose should compact older context before replying. This applies to all Goose chats.",
         "helper": "Set to 100% to turn auto-compaction off.",
-        "label": "Auto-compact context",
+        "label": "Auto-compact threshold",
         "loading": "Loading...",
         "off": "Off",
         "saveError": "Failed to save auto-compaction setting."
       },
       "builtIn": "Built in",
-      "description": "Goose-specific context controls for long-running chats.",
+      "description": "Choose when the Goose agent compacts older context during sessions. This applies to all goose chats.",
       "label": "Goose (Agent)"
     },
     "title": "Compaction"
@@ -74,7 +70,6 @@
   },
   "extensions": {
     "title": "Extensions",
-    "description": "Manage MCP extensions that add tools and capabilities to Goose.",
     "search": "Search extensions...",
     "enabled": "Enabled",
     "enabledCount": "Enabled ({{count}})",
@@ -82,7 +77,7 @@
     "availableCount": "Available ({{count}})",
     "empty": "No extensions configured.",
     "noResults": "No extensions match your search.",
-    "addExtension": "Add Extension",
+    "addExtension": "Add extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
     "toggle": "Toggle {{name}}",
@@ -133,7 +128,6 @@
     "tools": "Tools"
   },
   "general": {
-    "description": "Manage language and other app preferences.",
     "language": {
       "description": "Choose how Goose formats and displays the interface.",
       "english": "English",
@@ -143,8 +137,7 @@
     },
     "title": "General",
     "voiceInput": {
-      "label": "Voice Input",
-      "description": "Configure voice dictation for hands-free input.",
+      "label": "Voice input",
       "providerLabel": "Transcription Provider",
       "disabled": "Disabled",
       "notConfiguredSuffix": "(not configured)",
@@ -198,7 +191,6 @@
     "voice": "Voice"
   },
   "projects": {
-    "description": "Manage your projects.",
     "empty": "No archived projects.",
     "sectionTitle": "Archived projects",
     "title": "Projects"

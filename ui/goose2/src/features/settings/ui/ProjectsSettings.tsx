@@ -57,10 +57,7 @@ export function ProjectsSettings() {
 
   return (
     <>
-      <SettingsPage
-        title={t("projects.title")}
-        description={t("projects.description")}
-      >
+      <SettingsPage title={t("projects.title")}>
         <div className="space-y-3">
           <h4 className="text-sm font-semibold">
             {t("projects.sectionTitle")}

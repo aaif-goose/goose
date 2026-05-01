@@ -24,7 +24,7 @@ export function ChatsSettings() {
   }
 
   return (
-    <SettingsPage title={t("chats.title")} description={t("chats.description")}>
+    <SettingsPage title={t("chats.title")}>
       <div className="space-y-3">
         <h4 className="text-sm font-semibold">{t("chats.sectionTitle")}</h4>
         {!loadingArchivedChats && archivedChats.length === 0 ? (
