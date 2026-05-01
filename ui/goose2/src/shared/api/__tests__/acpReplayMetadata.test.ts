@@ -103,7 +103,7 @@ describe("getReplayCreated", () => {
     expect(getReplayCreated(atSource)).toBe(1_000_000_000_000);
   });
 
-  it("returns undefined for zero", () => {
+  it("returns zero as a valid timestamp", () => {
     const source = { _meta: { goose: { created: 0 } } };
     expect(getReplayCreated(source)).toBe(0);
   });

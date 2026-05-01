@@ -201,13 +201,17 @@ function handleReplay(
       const replayMessageId =
         getReplayMessageId(update) ??
         getTrackedReplayAssistantMessageId(sessionId);
+      const existingMsg = findReplayMessageWithToolCall(
+        sessionId,
+        update.toolCallId,
+      );
       const msg =
-        findReplayMessageWithToolCall(sessionId, update.toolCallId) ??
+        existingMsg ??
         (replayMessageId
           ? getBufferedMessage(sessionId, replayMessageId)
           : undefined);
       if (msg) {
-        if (created !== undefined) {
+        if (created !== undefined && !existingMsg) {
           msg.created = created;
         }
         if (update.title) {
