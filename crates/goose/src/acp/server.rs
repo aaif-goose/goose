@@ -1510,71 +1510,56 @@ impl GooseAcpAgent {
                 .unwrap_or_default();
 
             tokio::spawn(async move {
-                let provider: Arc<dyn Provider> = match agent.provider().await {
-                    Ok(p) => p,
+                let title = match agent.provider().await {
+                    Ok(provider) => {
+                        if provider.manages_own_context() {
+                            return;
+                        }
+
+                        let system =
+                            "Summarize this tool call in a short lowercase phrase (3-8 words). \
+                             No punctuation. No quotes. Examples: reading project configuration, \
+                             checking network connectivity, listing files in src directory";
+                        let user_text = format!("Tool: {name}\nArguments: {args_json}");
+                        let message = Message::user().with_text(&user_text);
+                        match provider
+                            .complete_fast(&sid.0, system, &[message], &[])
+                            .await
+                        {
+                            Ok((response, _)) => {
+                                let summary: String = response
+                                    .content
+                                    .iter()
+                                    .filter_map(|c: &MessageContent| c.as_text())
+                                    .collect::<String>()
+                                    .trim()
+                                    .to_string();
+                                if summary.is_empty() {
+                                    fallback_title.clone()
+                                } else {
+                                    summary
+                                }
+                            }
+                            Err(e) => {
+                                warn!("tool call summary: fast_complete failed: {e}");
+                                fallback_title.clone()
+                            }
+                        }
+                    }
                     Err(e) => {
                         warn!("tool call summary: failed to get provider: {e}");
-                        let fields = ToolCallUpdateFields::new().title(fallback_title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(
-                                ToolCallUpdate::new(ToolCallId::new(request_id), fields)
-                                    .meta(identity_meta),
-                            ),
-                        ));
-                        return;
+                        fallback_title.clone()
                     }
                 };
 
-                // in these case, the title summarization request would
-                // be added to the conversation which we don't want
-                if provider.manages_own_context() {
-                    return;
-                }
-
-                let system = "Summarize this tool call in a short lowercase phrase (3-8 words). \
-                              No punctuation. No quotes. Examples: reading project configuration, \
-                              checking network connectivity, listing files in src directory";
-                let user_text = format!("Tool: {name}\nArguments: {args_json}");
-                let message = Message::user().with_text(&user_text);
-                match provider
-                    .complete_fast(&sid.0, system, &[message], &[])
-                    .await
-                {
-                    Ok((response, _)) => {
-                        let summary: String = response
-                            .content
-                            .iter()
-                            .filter_map(|c: &MessageContent| c.as_text())
-                            .collect::<String>()
-                            .trim()
-                            .to_string();
-                        let title = if summary.is_empty() {
-                            fallback_title
-                        } else {
-                            summary
-                        };
-                        let fields = ToolCallUpdateFields::new().title(title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(
-                                ToolCallUpdate::new(ToolCallId::new(request_id), fields)
-                                    .meta(identity_meta),
-                            ),
-                        ));
-                    }
-                    Err(e) => {
-                        warn!("tool call summary: fast_complete failed: {e}");
-                        let fields = ToolCallUpdateFields::new().title(fallback_title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(
-                                ToolCallUpdate::new(ToolCallId::new(request_id), fields)
-                                    .meta(identity_meta),
-                            ),
-                        ));
-                    }
-                }
+                let fields = ToolCallUpdateFields::new().title(title);
+                let _ = cx.send_notification(SessionNotification::new(
+                    sid,
+                    SessionUpdate::ToolCallUpdate(
+                        ToolCallUpdate::new(ToolCallId::new(request_id), fields)
+                            .meta(identity_meta),
+                    ),
+                ));
             });
         }
 
