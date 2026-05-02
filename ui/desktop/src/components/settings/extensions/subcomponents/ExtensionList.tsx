@@ -4,7 +4,6 @@ import { ExtensionConfig } from '../../../../api';
 import { FixedExtensionEntry } from '../../../ConfigContext';
 import { combineCmdAndArgs } from '../utils';
 import { defineMessages, useIntl } from '../../../../i18n';
-import { sortExtensionsBySourcePriority } from '../extensionCategories';
 
 const i18n = defineMessages({
   defaultExtensions: {
@@ -60,13 +59,12 @@ export default function ExtensionList({
   const enabledExtensions = extensions.filter((ext) => ext.enabled && matchesSearch(ext));
   const disabledExtensions = extensions.filter((ext) => !ext.enabled && matchesSearch(ext));
 
-  const sortedEnabledExtensions = sortExtensionsBySourcePriority(
-    enabledExtensions,
-    getFriendlyTitle
+  // Sort each group alphabetically by their friendly title
+  const sortedEnabledExtensions = [...enabledExtensions].sort((a, b) =>
+    getFriendlyTitle(a).localeCompare(getFriendlyTitle(b))
   );
-  const sortedDisabledExtensions = sortExtensionsBySourcePriority(
-    disabledExtensions,
-    getFriendlyTitle
+  const sortedDisabledExtensions = [...disabledExtensions].sort((a, b) =>
+    getFriendlyTitle(a).localeCompare(getFriendlyTitle(b))
   );
   const configureHandler = disableConfiguration ? undefined : onConfigure;
   const hasVisibleExtensions =

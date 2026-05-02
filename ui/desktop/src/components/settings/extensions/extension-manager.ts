@@ -32,15 +32,15 @@ export async function deleteExtension({
   }
 }
 
-interface AddExtensionOnDemandProps {
+interface ActivateExtensionDefaultProps {
   addToConfig: (name: string, extensionConfig: ExtensionConfig, enabled: boolean) => Promise<void>;
   extensionConfig: ExtensionConfig;
 }
 
-export async function addExtensionOnDemand({
+export async function activateExtensionDefault({
   addToConfig,
   extensionConfig,
-}: AddExtensionOnDemandProps): Promise<void> {
+}: ActivateExtensionDefaultProps): Promise<void> {
   const isBuiltin = isBuiltinExtension(extensionConfig);
 
   try {

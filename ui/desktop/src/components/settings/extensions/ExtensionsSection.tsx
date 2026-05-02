@@ -13,9 +13,8 @@ import {
   getDefaultFormData,
 } from './utils';
 
-import { addExtensionOnDemand, deleteExtension } from './index';
+import { activateExtensionDefault, deleteExtension } from './index';
 import { ExtensionConfig } from '../../../api/types.gen';
-import { sortExtensionsBySourcePriority } from './extensionCategories';
 
 const i18n = defineMessages({
   addCustomExtension: {
@@ -77,7 +76,20 @@ export default function ExtensionsSection({
   const extensions = useMemo(() => {
     if (extensionsList.length === 0) return [];
 
-    return sortExtensionsBySourcePriority(extensionsList);
+    return [...extensionsList].sort((a, b) => {
+      // First sort by builtin
+      if (a.type === 'builtin' && b.type !== 'builtin') return -1;
+      if (a.type !== 'builtin' && b.type === 'builtin') return 1;
+
+      // Then sort by bundled (handle null/undefined cases)
+      const aBundled = 'bundled' in a && a.bundled === true;
+      const bBundled = 'bundled' in b && b.bundled === true;
+      if (aBundled && !bBundled) return -1;
+      if (!aBundled && bBundled) return 1;
+
+      // Finally sort alphabetically within each group
+      return a.name.localeCompare(b.name);
+    });
   }, [extensionsList]);
 
   const fetchExtensions = useCallback(async () => {
@@ -95,7 +107,7 @@ export default function ExtensionsSection({
 
     const extensionConfig = createExtensionConfig(formData);
     try {
-      await addExtensionOnDemand({
+      await activateExtensionDefault({
         addToConfig: addExtension,
         extensionConfig: extensionConfig,
       });
