@@ -27,6 +27,32 @@ export function compareExtensionsByName(
   return getDisplayName(a).localeCompare(getDisplayName(b));
 }
 
+function isBundledExtension(extension: ExtensionEntry): boolean {
+  return "bundled" in extension && extension.bundled === true;
+}
+
+function getSourcePriority(extension: ExtensionEntry): number {
+  if (classifyExtension(extension) === "gooseCapabilities") {
+    return extension.type === "builtin" ? 0 : 1;
+  }
+  return isBundledExtension(extension) ? 0 : 1;
+}
+
+export function compareExtensionsBySourcePriority(
+  a: ExtensionEntry,
+  b: ExtensionEntry,
+): number {
+  const categoryDelta =
+    EXTENSION_CATEGORIES.indexOf(classifyExtension(a)) -
+    EXTENSION_CATEGORIES.indexOf(classifyExtension(b));
+  if (categoryDelta !== 0) return categoryDelta;
+
+  const sourceDelta = getSourcePriority(a) - getSourcePriority(b);
+  if (sourceDelta !== 0) return sourceDelta;
+
+  return compareExtensionsByName(a, b);
+}
+
 export function getExtensionCategoryCounts(
   extensions: ExtensionEntry[],
 ): Record<ExtensionCategory, number> {
@@ -63,7 +89,7 @@ export function filterExtensions(options: {
         matchesSearch && (activeFilter === "all" || category === activeFilter)
       );
     })
-    .sort(compareExtensionsByName);
+    .sort(compareExtensionsBySourcePriority);
 }
 
 export function splitExtensionsByCategory(extensions: ExtensionEntry[]): {
