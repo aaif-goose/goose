@@ -36,7 +36,7 @@ export default function ExtensionList({
   extensions,
   onConfigure,
   isStatic,
-  disableConfiguration: _disableConfiguration,
+  disableConfiguration,
   searchTerm = '',
 }: ExtensionListProps) {
   const matchesSearch = (extension: FixedExtensionEntry): boolean => {
@@ -66,6 +66,9 @@ export default function ExtensionList({
   const sortedDisabledExtensions = [...disabledExtensions].sort((a, b) =>
     getFriendlyTitle(a).localeCompare(getFriendlyTitle(b))
   );
+  const configureHandler = disableConfiguration ? undefined : onConfigure;
+  const hasVisibleExtensions =
+    sortedEnabledExtensions.length > 0 || sortedDisabledExtensions.length > 0;
 
   return (
     <div className="space-y-8">
@@ -80,7 +83,7 @@ export default function ExtensionList({
               <ExtensionItem
                 key={extension.name}
                 extension={extension}
-                onConfigure={onConfigure}
+                onConfigure={configureHandler}
                 isStatic={isStatic}
               />
             ))}
@@ -101,7 +104,7 @@ export default function ExtensionList({
               <ExtensionItem
                 key={extension.name}
                 extension={extension}
-                onConfigure={onConfigure}
+                onConfigure={configureHandler}
                 isStatic={isStatic}
               />
             ))}
@@ -109,7 +112,7 @@ export default function ExtensionList({
         </div>
       )}
 
-      {extensions.length === 0 && (
+      {!hasVisibleExtensions && (
         <div className="text-center text-text-secondary py-8">
           {intl.formatMessage(i18n.noExtensions)}
         </div>

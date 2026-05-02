@@ -63,7 +63,12 @@ export function useExtensionsSettings() {
 
         await addExtension(name, config, editingExtension?.enabled ?? false);
         if (keyChanged) {
-          await removeExtension(editingExtension.config_key);
+          try {
+            await removeExtension(editingExtension.config_key);
+          } catch (error) {
+            await removeExtension(newKey).catch(() => undefined);
+            throw error;
+          }
         }
         setModalMode(null);
         setEditingExtension(null);
@@ -82,8 +87,9 @@ export function useExtensionsSettings() {
         setModalMode(null);
         setEditingExtension(null);
         await fetchExtensions();
-      } catch {
+      } catch (error) {
         toast.error(t("extensions.errors.deleteFailed"));
+        throw error;
       }
     },
     [fetchExtensions, t],

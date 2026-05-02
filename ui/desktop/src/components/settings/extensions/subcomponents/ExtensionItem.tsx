@@ -51,6 +51,7 @@ export default function ExtensionItem({ extension, onConfigure, isStatic }: Exte
           <div className="flex items-center justify-end gap-2">
             {editable && (
               <button
+                type="button"
                 className="text-text-secondary hover:text-text-primary"
                 aria-label={intl.formatMessage(i18n.configureExtension, {
                   name: getFriendlyTitle(extension),

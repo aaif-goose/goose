@@ -39,6 +39,7 @@ export interface StreamableHttpExtensionConfig {
   env_keys?: string[];
   headers?: Record<string, string>;
   timeout?: number;
+  socket?: string;
   bundled?: boolean;
   available_tools?: string[];
 }

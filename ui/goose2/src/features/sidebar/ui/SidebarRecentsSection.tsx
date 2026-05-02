@@ -102,7 +102,7 @@ export function SidebarRecentsSection({
             title={t("actions.newChat")}
             className={cn(
               "mr-1 size-6 flex-shrink-0 rounded-md",
-              "invisible opacity-0 group-hover/chats-header:visible group-hover/chats-header:opacity-100 group-focus-within/chats-header:visible group-focus-within/chats-header:opacity-100",
+              "opacity-0 pointer-events-none group-hover/chats-header:opacity-100 group-hover/chats-header:pointer-events-auto group-focus-within/chats-header:opacity-100 group-focus-within/chats-header:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto",
             )}
           >
             <IconEdit className="size-4" />

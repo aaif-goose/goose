@@ -271,6 +271,7 @@ export function ExtensionModal({
           overlayClassName="z-[70]"
           positionerClassName="z-[71]"
           onConfirm={handleConfirmDelete}
+          onConfirmError={() => undefined}
         />
       )}
     </>

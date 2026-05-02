@@ -317,6 +317,44 @@ describe("artifactPathPolicy", () => {
     expect(ranking?.primaryCandidate?.allowed).toBe(true);
   });
 
+  it("uses semantic tool names instead of display titles for write detection", () => {
+    const result = buildArtifactsIndexForMessages(
+      [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          created: Date.now(),
+          metadata: { userVisible: true, agentVisible: true },
+          content: [
+            {
+              type: "toolRequest",
+              id: "tool-1",
+              name: "Writing project summary",
+              toolName: "write_file",
+              arguments: { path: "/Users/test/project-a/summary.md" },
+              status: "completed",
+            },
+            {
+              type: "toolResponse",
+              id: "tool-1",
+              name: "Writing project summary",
+              result: "Created /Users/test/project-a/summary.md",
+              isError: false,
+            },
+          ],
+        },
+      ],
+      roots,
+    );
+
+    const ranking = result.byMessageId.get("assistant-1");
+    expect(ranking?.primaryToolCallId).toBe("tool-1");
+    expect(ranking?.primaryCandidate?.toolName).toBe("write_file");
+    expect(ranking?.primaryCandidate?.resolvedPath).toBe(
+      "/Users/test/project-a/summary.md",
+    );
+  });
+
   it("prefers an allowed candidate as primary when top-ranked candidate is blocked", () => {
     const ranking = rankMessageToolArtifacts(
       [

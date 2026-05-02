@@ -9,6 +9,7 @@ import {
   findLatestUnpairedToolRequest,
 } from "@/features/chat/hooks/replayBuffer";
 import type {
+  ToolCallStatus,
   ToolRequestContent,
   ToolResponseContent,
 } from "@/shared/types/messages";
@@ -53,6 +54,9 @@ const pendingUsageUpdates = new Map<
   string,
   { accumulatedTotal: number; contextLimit: number }
 >();
+
+const toolCallStatusFromUpdate = (status: string): ToolCallStatus =>
+  status === "failed" ? "error" : "completed";
 
 subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
   const pendingUsage = pendingUsageUpdates.get(gooseSessionId);
@@ -232,6 +236,7 @@ function handleReplay(
           }
         }
         if (update.status === "completed" || update.status === "failed") {
+          const toolCallStatus = toolCallStatusFromUpdate(update.status);
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,
           );
@@ -241,7 +246,7 @@ function handleReplay(
               msg.content[idx] = {
                 ...tc,
                 ...identity,
-                status: "completed",
+                status: toolCallStatus,
               } as ToolRequestContent;
             }
           }
@@ -343,6 +348,7 @@ function handleLive(
       }
 
       if (update.status === "completed" || update.status === "failed") {
+        const toolCallStatus = toolCallStatusFromUpdate(update.status);
         const streamingMessage = store.messagesBySession[sessionId]?.find(
           (m) => m.id === messageId,
         );
@@ -354,7 +360,11 @@ function handleLive(
           ...msg,
           content: msg.content.map((block) =>
             block.type === "toolRequest" && block.id === update.toolCallId
-              ? { ...block, ...identity, status: "completed" }
+              ? {
+                  ...block,
+                  ...identity,
+                  status: toolCallStatus,
+                }
               : block,
           ),
         }));

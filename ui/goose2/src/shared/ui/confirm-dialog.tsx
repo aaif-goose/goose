@@ -23,6 +23,7 @@ interface ConfirmDialogProps {
   overlayClassName?: string;
   positionerClassName?: string;
   onConfirm: () => void | Promise<void>;
+  onConfirmError?: (error: unknown) => void;
 }
 
 export function ConfirmDialog({
@@ -39,7 +40,16 @@ export function ConfirmDialog({
   overlayClassName,
   positionerClassName,
   onConfirm,
+  onConfirmError,
 }: ConfirmDialogProps) {
+  const handleConfirm = async () => {
+    try {
+      await onConfirm();
+    } catch (error) {
+      onConfirmError?.(error);
+    }
+  };
+
   return (
     <Dialog
       open={open}
@@ -71,7 +81,7 @@ export function ConfirmDialog({
             type="button"
             variant={confirmVariant}
             disabled={isLoading}
-            onClick={() => void onConfirm()}
+            onClick={() => void handleConfirm()}
           >
             {isLoading && loadingLabel ? loadingLabel : confirmLabel}
           </Button>

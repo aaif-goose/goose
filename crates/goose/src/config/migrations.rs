@@ -4,34 +4,11 @@ use crate::config::extensions::ExtensionEntry;
 use serde_yaml::Mapping;
 
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
-const EXTENSIONS_ON_DEMAND_MIGRATION_KEY: &str = "extensions_on_demand_migration";
-const EXTENSION_MANAGER_KEY: &str = "extensionmanager";
-const CORE_DEFAULT_EXTENSION_KEYS: &[&str] =
-    &[EXTENSION_MANAGER_KEY, "developer", "skills", "todo"];
 
 pub fn run_migrations(config: &mut Mapping) -> bool {
     let mut changed = false;
     changed |= migrate_platform_extensions(config);
-    changed |= migrate_extensions_to_on_demand_defaults(config);
     changed
-}
-
-fn migration_done(config: &Mapping, key: &str) -> bool {
-    config
-        .get(serde_yaml::Value::String(key.to_string()))
-        .and_then(serde_yaml::Value::as_bool)
-        .unwrap_or(false)
-}
-
-fn mark_migration_done(config: &mut Mapping, key: &str) {
-    config.insert(
-        serde_yaml::Value::String(key.to_string()),
-        serde_yaml::Value::Bool(true),
-    );
-}
-
-fn should_enable_by_default(key: &str) -> bool {
-    CORE_DEFAULT_EXTENSION_KEYS.contains(&key)
 }
 
 fn migrate_platform_extensions(config: &mut Mapping) -> bool {
@@ -125,35 +102,6 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
     needs_save
 }
 
-fn migrate_extensions_to_on_demand_defaults(config: &mut Mapping) -> bool {
-    if migration_done(config, EXTENSIONS_ON_DEMAND_MIGRATION_KEY) {
-        return false;
-    }
-
-    let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
-    let Some(serde_yaml::Value::Mapping(extensions_map)) = config.get_mut(&extensions_key) else {
-        mark_migration_done(config, EXTENSIONS_ON_DEMAND_MIGRATION_KEY);
-        return true;
-    };
-
-    for value in extensions_map.values_mut() {
-        let Ok(mut entry) = serde_yaml::from_value::<ExtensionEntry>(value.clone()) else {
-            continue;
-        };
-
-        let should_enable = should_enable_by_default(&entry.config.key());
-        if entry.enabled != should_enable {
-            entry.enabled = should_enable;
-            if let Ok(next_value) = serde_yaml::to_value(&entry) {
-                *value = next_value;
-            }
-        }
-    }
-
-    mark_migration_done(config, EXTENSIONS_ON_DEMAND_MIGRATION_KEY);
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,13 +118,14 @@ mod tests {
         let extensions = config.get(&extensions_key).unwrap().as_mapping().unwrap();
         for (key, value) in extensions {
             let key = key.as_str().unwrap();
+            let def = PLATFORM_EXTENSIONS.get(key).unwrap();
             let entry: ExtensionEntry = serde_yaml::from_value(value.clone()).unwrap();
-            assert_eq!(entry.enabled, should_enable_by_default(key));
+            assert_eq!(entry.enabled, def.default_enabled);
         }
     }
 
     #[test]
-    fn test_migrate_platform_extensions_applies_core_defaults() {
+    fn test_migrate_platform_extensions_refreshes_metadata_without_changing_enabled() {
         let mut config = Mapping::new();
         let mut extensions = Mapping::new();
         let todo_entry = ExtensionEntry {
@@ -207,11 +156,22 @@ mod tests {
         let todo_value = extensions.get(&todo_key).unwrap();
         let todo_entry: ExtensionEntry = serde_yaml::from_value(todo_value.clone()).unwrap();
 
-        assert!(todo_entry.enabled);
+        assert!(!todo_entry.enabled);
+        match todo_entry.config {
+            ExtensionConfig::Platform {
+                description,
+                display_name,
+                ..
+            } => {
+                assert_ne!(description, "old description");
+                assert_ne!(display_name.as_deref(), Some("Old Name"));
+            }
+            other => panic!("expected platform extension, got {other:?}"),
+        }
     }
 
     #[test]
-    fn test_migrate_extensions_to_on_demand_defaults() {
+    fn test_migrate_platform_extensions_preserves_existing_enabled_values() {
         let mut config = Mapping::new();
         let mut extensions = Mapping::new();
 
@@ -235,15 +195,19 @@ mod tests {
             },
             enabled: false,
         };
-        let extension_manager_entry = ExtensionEntry {
-            config: ExtensionConfig::Platform {
-                name: "Extension Manager".to_string(),
-                description: "Enable extension management tools".to_string(),
-                display_name: Some("Extension Manager".to_string()),
-                bundled: Some(true),
+        let custom_developer_entry = ExtensionEntry {
+            config: ExtensionConfig::Stdio {
+                name: "developer".to_string(),
+                description: "Custom user developer tools".to_string(),
+                cmd: "custom-developer".to_string(),
+                args: Vec::new(),
+                envs: Default::default(),
+                env_keys: Vec::new(),
+                timeout: Some(300),
+                bundled: None,
                 available_tools: Vec::new(),
             },
-            enabled: false,
+            enabled: true,
         };
 
         extensions.insert(
@@ -255,8 +219,8 @@ mod tests {
             serde_yaml::to_value(&developer_entry).unwrap(),
         );
         extensions.insert(
-            serde_yaml::Value::String(EXTENSION_MANAGER_KEY.to_string()),
-            serde_yaml::to_value(&extension_manager_entry).unwrap(),
+            serde_yaml::Value::String("custom-developer".to_string()),
+            serde_yaml::to_value(&custom_developer_entry).unwrap(),
         );
         config.insert(
             serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string()),
@@ -281,17 +245,17 @@ mod tests {
                 .clone(),
         )
         .unwrap();
-        let extension_manager: ExtensionEntry = serde_yaml::from_value(
+        let custom_developer: ExtensionEntry = serde_yaml::from_value(
             extensions
-                .get(serde_yaml::Value::String(EXTENSION_MANAGER_KEY.to_string()))
+                .get(serde_yaml::Value::String("custom-developer".to_string()))
                 .unwrap()
                 .clone(),
         )
         .unwrap();
 
-        assert!(!analyze.enabled);
-        assert!(developer.enabled);
-        assert!(extension_manager.enabled);
+        assert!(analyze.enabled);
+        assert!(!developer.enabled);
+        assert!(custom_developer.enabled);
     }
 
     #[test]

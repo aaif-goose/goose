@@ -1,12 +1,17 @@
 import { useState } from "react";
+import {
+  buildExtensionSubmitPayload,
+  canSubmitExtensionConfig,
+  parseExtensionEnvRows,
+  type ExtensionEnvRow,
+  type ExtensionModalType,
+} from "../lib/extensionFormConfig";
 import type { ExtensionConfig, ExtensionEntry } from "../types";
 
-export type ExtensionModalType = "stdio" | "streamable_http" | "unsupported";
+export type { ExtensionModalType };
 
-export interface EnvVar {
+export interface EnvVar extends ExtensionEnvRow {
   id: number;
-  key: string;
-  value: string;
 }
 
 let nextEnvId = 0;
@@ -15,23 +20,10 @@ function newEmptyEnvVar(): EnvVar {
   return { id: nextEnvId++, key: "", value: "" };
 }
 
-function parseEnvVars(envs?: Record<string, string>): EnvVar[] {
-  if (!envs || Object.keys(envs).length === 0) return [newEmptyEnvVar()];
-  return Object.entries(envs).map(([key, value]) => ({
-    id: nextEnvId++,
-    key,
-    value,
-  }));
-}
-
-function buildEnvVars(vars: EnvVar[]): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const v of vars) {
-    if (v.key.trim()) {
-      result[v.key.trim()] = v.value;
-    }
-  }
-  return result;
+function withEnvIds(rows: ExtensionEnvRow[]): EnvVar[] {
+  return rows.length > 0
+    ? rows.map((row) => ({ id: nextEnvId++, ...row }))
+    : [newEmptyEnvVar()];
 }
 
 function initialType(extension?: ExtensionEntry): ExtensionModalType {
@@ -43,9 +35,14 @@ function initialType(extension?: ExtensionEntry): ExtensionModalType {
 }
 
 function initialEnvVars(extension?: ExtensionEntry): EnvVar[] {
-  if (extension?.type === "stdio") return parseEnvVars(extension.envs);
+  if (extension?.type === "stdio")
+    return withEnvIds(
+      parseExtensionEnvRows(extension.envs, extension.env_keys),
+    );
   if (extension?.type === "streamable_http")
-    return parseEnvVars(extension.envs);
+    return withEnvIds(
+      parseExtensionEnvRows(extension.envs, extension.env_keys),
+    );
   return [newEmptyEnvVar()];
 }
 
@@ -75,10 +72,7 @@ export function useExtensionModalForm(extension?: ExtensionEntry) {
     initialEnvVars(extension),
   );
 
-  const canSubmit =
-    type !== "unsupported" &&
-    name.trim().length > 0 &&
-    (type === "stdio" ? cmd.trim().length > 0 : uri.trim().length > 0);
+  const canSubmit = canSubmitExtensionConfig({ type, name, cmd, uri });
 
   const updateEnvVar = (
     index: number,
@@ -107,43 +101,17 @@ export function useExtensionModalForm(extension?: ExtensionEntry) {
     name: string;
     config: ExtensionConfig;
   } | null => {
-    if (!canSubmit) return null;
-
-    const trimmedName = name.trim();
-    const envs = buildEnvVars(envVars);
-    const timeoutNum = Number.parseInt(timeout, 10) || 300;
-
-    if (type === "stdio") {
-      return {
-        name: trimmedName,
-        config: {
-          ...(extension?.type === "stdio" ? extension : {}),
-          type: "stdio",
-          name: trimmedName,
-          description,
-          cmd: cmd.trim(),
-          args: args
-            .split("\n")
-            .map((arg) => arg.trim())
-            .filter(Boolean),
-          envs,
-          timeout: timeoutNum,
-        },
-      };
-    }
-
-    return {
-      name: trimmedName,
-      config: {
-        ...(extension?.type === "streamable_http" ? extension : {}),
-        type: "streamable_http",
-        name: trimmedName,
-        description,
-        uri: uri.trim(),
-        envs,
-        timeout: timeoutNum,
-      },
-    };
+    return buildExtensionSubmitPayload({
+      type,
+      name,
+      description,
+      cmd,
+      args,
+      uri,
+      timeout,
+      envVars,
+      extension,
+    });
   };
 
   return {
