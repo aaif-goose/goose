@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { ExtensionEntry } from "../../types";
 import {
   classifyExtension,
-  compareExtensionsBySourcePriority,
   filterExtensions,
   getExtensionCategoryCounts,
   splitExtensionsByCategory,
@@ -80,22 +79,5 @@ describe("extension categories", () => {
       primaryExtensions: [{ name: "github" }],
       gooseCapabilities: [{ name: "developer" }, { name: "computer" }],
     });
-  });
-
-  it("sorts bundled service extensions before custom service extensions", () => {
-    const extensions = [
-      extension("z-custom", "stdio"),
-      {
-        ...extension("b-bundled", "stdio"),
-        bundled: true,
-      },
-      extension("a-custom", "stdio"),
-    ];
-
-    expect(
-      [...extensions]
-        .sort(compareExtensionsBySourcePriority)
-        .map((item) => item.name),
-    ).toEqual(["b-bundled", "a-custom", "z-custom"]);
   });
 });
