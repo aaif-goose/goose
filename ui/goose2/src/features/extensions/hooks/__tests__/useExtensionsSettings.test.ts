@@ -85,4 +85,37 @@ describe("useExtensionsSettings", () => {
       false,
     );
   });
+
+  it("does not delete the new extension when renamed old-key removal fails", async () => {
+    mocks.removeExtension.mockRejectedValueOnce(new Error("remove failed"));
+    const { result } = renderHook(() => useExtensionsSettings());
+    const renamedExtension: ExtensionEntry = {
+      ...enabledExtension,
+      name: "linear",
+      config_key: "linear",
+    };
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    act(() => {
+      result.current.handleConfigure(enabledExtension);
+    });
+    await act(async () => {
+      await result.current.handleSubmit("linear", renamedExtension);
+    });
+
+    expect(mocks.addExtension).toHaveBeenCalledWith(
+      "linear",
+      renamedExtension,
+      true,
+    );
+    expect(mocks.removeExtension).toHaveBeenCalledTimes(1);
+    expect(mocks.removeExtension).toHaveBeenCalledWith("github");
+    expect(mocks.removeExtension).not.toHaveBeenCalledWith("linear");
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      "extensions.errors.saveFailed",
+    );
+  });
 });

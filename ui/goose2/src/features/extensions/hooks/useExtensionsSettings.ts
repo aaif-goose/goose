@@ -63,17 +63,13 @@ export function useExtensionsSettings() {
 
         await addExtension(name, config, editingExtension?.enabled ?? false);
         if (keyChanged) {
-          try {
-            await removeExtension(editingExtension.config_key);
-          } catch (error) {
-            await removeExtension(newKey).catch(() => undefined);
-            throw error;
-          }
+          await removeExtension(editingExtension.config_key);
         }
         setModalMode(null);
         setEditingExtension(null);
         await fetchExtensions();
       } catch {
+        await fetchExtensions();
         toast.error(t("extensions.errors.saveFailed"));
       }
     },
