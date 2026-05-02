@@ -948,18 +948,19 @@ pub async fn run_permission_persistence<C: Connection>() {
     };
 
     let mut conn = C::new(config, openai).await;
+    let permission_path = conn.permission_config_path();
     let SessionData { mut session, .. } = conn.new_session().await.unwrap();
     expected_session_id.set(&session.session_id().0);
 
     for (decision, expected_status, expected_yaml) in cases {
         conn.reset_openai();
         conn.reset_permissions();
-        let _ = fs::remove_file(temp_dir.path().join("permission.yaml"));
+        let _ = fs::remove_file(&permission_path);
         let output = session.prompt(prompt, decision).await.unwrap();
 
         assert_eq!(output.tool_status.unwrap(), expected_status);
         assert_eq!(
-            fs::read_to_string(temp_dir.path().join("permission.yaml")).unwrap_or_default(),
+            fs::read_to_string(&permission_path).unwrap_or_default(),
             expected_yaml,
         );
     }

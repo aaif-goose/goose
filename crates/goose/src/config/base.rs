@@ -2,7 +2,7 @@ use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use fs2::FileExt;
 use keyring::Entry;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_yaml::Mapping;
@@ -130,6 +130,29 @@ pub struct Config {
     secrets_cache: Arc<Mutex<Option<HashMap<String, Value>>>>,
 }
 
+#[derive(Clone)]
+pub enum ConfigHandle {
+    Global,
+    Cached(Arc<Config>),
+}
+
+impl AsRef<Config> for ConfigHandle {
+    fn as_ref(&self) -> &Config {
+        match self {
+            Self::Global => Config::global(),
+            Self::Cached(config) => config.as_ref(),
+        }
+    }
+}
+
+impl std::ops::Deref for ConfigHandle {
+    type Target = Config;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
 enum SecretStorage {
     Keyring { service: String },
     File { path: PathBuf },
@@ -137,6 +160,8 @@ enum SecretStorage {
 
 // Global instance
 static GLOBAL_CONFIG: OnceCell<Config> = OnceCell::new();
+static CONFIG_CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Config>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 fn system_config_path() -> PathBuf {
     #[cfg(unix)]
@@ -163,43 +188,7 @@ fn bundled_defaults_path() -> Option<PathBuf> {
 
 impl Default for Config {
     fn default() -> Self {
-        let config_dir = Paths::config_dir();
-        let user_config_path = config_dir.join(CONFIG_YAML_NAME);
-
-        let mut config_paths = vec![system_config_path()];
-        if let Some(defaults) = bundled_defaults_path() {
-            config_paths.insert(0, defaults);
-        }
-        config_paths.push(user_config_path.clone());
-
-        let no_secrets_config = Self {
-            config_paths: config_paths.clone(),
-            secrets: SecretStorage::File {
-                path: Default::default(),
-            },
-            guard: Mutex::new(()),
-            secrets_cache: Arc::new(Mutex::new(None)),
-        };
-
-        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
-            || no_secrets_config
-                .get_param::<serde_yaml::Value>("GOOSE_DISABLE_KEYRING")
-                .is_ok_and(|v| keyring_disabled_value(&v))
-        {
-            SecretStorage::File {
-                path: config_dir.join("secrets.yaml"),
-            }
-        } else {
-            SecretStorage::Keyring {
-                service: KEYRING_SERVICE.to_string(),
-            }
-        };
-        Self {
-            config_paths,
-            secrets,
-            guard: Mutex::new(()),
-            secrets_cache: Arc::new(Mutex::new(None)),
-        }
+        Self::with_config_dir(Paths::config_dir())
     }
 }
 
@@ -343,6 +332,51 @@ fn keyring_disabled_in_config(config_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn normalize_writable_config_path(path: &Path) -> Result<PathBuf, ConfigError> {
+    if path.exists() {
+        return Ok(path.canonicalize()?);
+    }
+
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if parent.exists() {
+            let file_name = path
+                .file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(CONFIG_YAML_NAME));
+            return Ok(parent.canonicalize()?.join(file_name));
+        }
+    }
+
+    // Fallback: neither the path nor its parent exist on disk, so we cannot
+    // resolve symlinks via canonicalize(). This means two paths that differ
+    // only by a symlinked ancestor (e.g. /tmp/x vs /private/tmp/x on macOS)
+    // will produce different cache keys. In practice ACP config dirs are
+    // under ~/.config which exists, so the branches above handle the common
+    // case; this fallback covers only truly non-existent ancestor chains.
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    };
+
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            std::path::Component::Normal(_)
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => normalized.push(component.as_os_str()),
+        }
+    }
+    Ok(normalized)
+}
+
 impl Config {
     /// Get the global configuration instance.
     ///
@@ -350,6 +384,91 @@ impl Config {
     /// if it hasn't been initialized yet.
     pub fn global() -> &'static Config {
         GLOBAL_CONFIG.get_or_init(Config::default)
+    }
+
+    /// Return a config handle for the given config directory.
+    ///
+    /// If `config_dir` resolves to the default Goose config directory, this
+    /// returns [`ConfigHandle::Global`] backed by the process-wide singleton.
+    /// Otherwise it returns a [`ConfigHandle::Cached`] instance keyed by the
+    /// normalized config path — repeated calls with equivalent paths share one
+    /// `Config` (and its mutex/secrets cache).
+    ///
+    /// **Note:** Non-default config directories use a single-file config
+    /// (`config_dir/config.yaml`) and do *not* layer system defaults or bundled
+    /// defaults the way [`Config::global()`] does. This matches the original
+    /// ACP server behavior where custom config dirs were loaded via
+    /// `Config::new(path, service)`.
+    pub fn for_config_dir(config_dir: PathBuf) -> Result<ConfigHandle, ConfigError> {
+        let config_path = config_dir.join(CONFIG_YAML_NAME);
+        let cache_key = normalize_writable_config_path(&config_path)?;
+        let default_key =
+            normalize_writable_config_path(&Paths::config_dir().join(CONFIG_YAML_NAME))?;
+
+        if cache_key == default_key {
+            return Ok(ConfigHandle::Global);
+        }
+
+        let mut cache = CONFIG_CACHE.lock().unwrap();
+        if let Some(config) = cache.get(&cache_key) {
+            return Ok(ConfigHandle::Cached(Arc::clone(config)));
+        }
+
+        let config = Arc::new(Self::new(config_path, KEYRING_SERVICE)?);
+        cache.insert(cache_key, Arc::clone(&config));
+        Ok(ConfigHandle::Cached(config))
+    }
+
+    /// Remove all entries from the config cache.
+    ///
+    /// Intended for tests — prevents leaked temp-dir entries from
+    /// accumulating across test cases in the same process.
+    #[doc(hidden)]
+    pub fn clear_config_cache() {
+        CONFIG_CACHE.lock().unwrap().clear();
+    }
+
+    fn config_paths_for_dir(config_dir: &Path) -> Vec<PathBuf> {
+        let mut config_paths = vec![system_config_path()];
+        if let Some(defaults) = bundled_defaults_path() {
+            config_paths.insert(0, defaults);
+        }
+        config_paths.push(config_dir.join(CONFIG_YAML_NAME));
+        config_paths
+    }
+
+    fn with_config_dir(config_dir: PathBuf) -> Self {
+        let config_paths = Self::config_paths_for_dir(&config_dir);
+
+        let no_secrets_config = Self {
+            config_paths: config_paths.clone(),
+            secrets: SecretStorage::File {
+                path: Default::default(),
+            },
+            guard: Mutex::new(()),
+            secrets_cache: Arc::new(Mutex::new(None)),
+        };
+
+        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
+            || no_secrets_config
+                .get_param::<serde_yaml::Value>("GOOSE_DISABLE_KEYRING")
+                .is_ok_and(|v| keyring_disabled_value(&v))
+        {
+            SecretStorage::File {
+                path: config_dir.join("secrets.yaml"),
+            }
+        } else {
+            SecretStorage::Keyring {
+                service: KEYRING_SERVICE.to_string(),
+            }
+        };
+
+        Self {
+            config_paths,
+            secrets,
+            guard: Mutex::new(()),
+            secrets_cache: Arc::new(Mutex::new(None)),
+        }
     }
 
     /// Create a new configuration instance with custom paths

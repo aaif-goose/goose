@@ -287,6 +287,10 @@ impl Connection for AcpProviderConnection {
         self.data_root.clone()
     }
 
+    fn permission_config_path(&self) -> std::path::PathBuf {
+        self.permission_manager.get_config_path().to_path_buf()
+    }
+
     async fn set_mode(&self, _session_id: &str, _mode_id: &str) -> anyhow::Result<()> {
         Err(anyhow::anyhow!("not implemented for AcpProviderConnection"))
     }

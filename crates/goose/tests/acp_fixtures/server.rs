@@ -439,6 +439,10 @@ impl Connection for AcpServerConnection {
         self.data_root.clone()
     }
 
+    fn permission_config_path(&self) -> std::path::PathBuf {
+        self.permission_manager.get_config_path().to_path_buf()
+    }
+
     fn reset_openai(&self) {
         self._openai.reset();
     }

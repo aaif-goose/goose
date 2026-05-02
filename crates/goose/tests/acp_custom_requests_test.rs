@@ -15,6 +15,7 @@ use goose_test_support::{EnforceSessionId, IgnoreSessionId};
 use std::sync::{Arc, Mutex};
 
 use common_tests::fixtures::OpenAiFixture;
+use goose::config::Config;
 
 struct MockProvider {
     name: String,
@@ -142,8 +143,16 @@ fn test_custom_provider_inventory_includes_metadata() {
 #[test]
 fn test_custom_config_crud() {
     run_test(async {
+        let temp_dir = tempfile::tempdir().unwrap();
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: temp_dir.path().to_path_buf(),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
 
         send_custom(
             conn.cx(),
@@ -155,6 +164,12 @@ fn test_custom_config_crud() {
         )
         .await
         .expect("config upsert should succeed");
+
+        let cached_config = Config::for_config_dir(temp_dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            cached_config.get_param::<String>("GOOSE_PROVIDER").unwrap(),
+            "anthropic"
+        );
 
         let response = send_custom(
             conn.cx(),
@@ -187,6 +202,44 @@ fn test_custom_config_crud() {
         .await
         .expect("config read after remove should succeed");
         assert_eq!(response.get("value"), Some(&serde_json::Value::Null));
+    });
+}
+
+#[test]
+fn test_concurrent_custom_config_upserts_preserve_all_keys() {
+    run_test(async {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: temp_dir.path().to_path_buf(),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let requests = (0..24).map(|i| {
+            let key = format!("CONCURRENT_CONFIG_KEY_{i}");
+            send_custom(
+                conn.cx(),
+                "_goose/config/upsert",
+                serde_json::json!({
+                    "key": key,
+                    "value": i,
+                }),
+            )
+        });
+
+        for result in futures::future::join_all(requests).await {
+            result.expect("config upsert should succeed");
+        }
+
+        let cached_config = Config::for_config_dir(temp_dir.path().to_path_buf()).unwrap();
+        for i in 0..24 {
+            let key = format!("CONCURRENT_CONFIG_KEY_{i}");
+            assert_eq!(cached_config.get_param::<i64>(&key).unwrap(), i);
+        }
     });
 }
 

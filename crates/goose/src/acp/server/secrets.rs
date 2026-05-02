@@ -5,7 +5,7 @@ impl GooseAcpAgent {
         &self,
         req: CheckSecretRequest,
     ) -> Result<CheckSecretResponse, sacp::Error> {
-        let config = self.config()?;
+        let config = self.config.as_ref();
         let exists = config.get_secret::<serde_json::Value>(&req.key).is_ok();
         Ok(CheckSecretResponse { exists })
     }
@@ -14,7 +14,7 @@ impl GooseAcpAgent {
         &self,
         req: UpsertSecretRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
+        let config = self.config.as_ref();
         config.set_secret(&req.key, &req.value).internal_err()?;
         Config::global().invalidate_secrets_cache();
         Ok(EmptyResponse {})
@@ -24,7 +24,7 @@ impl GooseAcpAgent {
         &self,
         req: RemoveSecretRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
+        let config = self.config.as_ref();
         config.delete_secret(&req.key).internal_err()?;
         Config::global().invalidate_secrets_cache();
         Ok(EmptyResponse {})

@@ -5,7 +5,7 @@ impl GooseAcpAgent {
         &self,
         req: ReadConfigRequest,
     ) -> Result<ReadConfigResponse, sacp::Error> {
-        let config = self.config()?;
+        let config = self.config.as_ref();
         let response = match config.get_param::<serde_json::Value>(&req.key) {
             Ok(value) => ReadConfigResponse { value },
             Err(crate::config::ConfigError::NotFound(_)) => ReadConfigResponse {
@@ -20,7 +20,7 @@ impl GooseAcpAgent {
         &self,
         req: UpsertConfigRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
+        let config = self.config.as_ref();
         config.set_param(&req.key, &req.value).internal_err()?;
         Ok(EmptyResponse {})
     }
@@ -29,7 +29,7 @@ impl GooseAcpAgent {
         &self,
         req: RemoveConfigRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
+        let config = self.config.as_ref();
         config.delete(&req.key).internal_err()?;
         Ok(EmptyResponse {})
     }
