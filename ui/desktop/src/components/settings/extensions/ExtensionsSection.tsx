@@ -13,7 +13,7 @@ import {
   getDefaultFormData,
 } from './utils';
 
-import { activateExtensionDefault, deleteExtension } from './index';
+import { addExtensionOnDemand, deleteExtension } from './index';
 import { ExtensionConfig } from '../../../api/types.gen';
 import { sortExtensionsBySourcePriority } from './extensionCategories';
 
@@ -95,7 +95,7 @@ export default function ExtensionsSection({
 
     const extensionConfig = createExtensionConfig(formData);
     try {
-      await activateExtensionDefault({
+      await addExtensionOnDemand({
         addToConfig: addExtension,
         extensionConfig: extensionConfig,
       });

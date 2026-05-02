@@ -13,7 +13,7 @@ import {
   ExtensionFormData,
   createExtensionConfig,
 } from '../settings/extensions/utils';
-import { activateExtensionDefault } from '../settings/extensions';
+import { addExtensionOnDemand } from '../settings/extensions';
 import { useConfig } from '../ConfigContext';
 import { SearchView } from '../conversation/SearchView';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
@@ -112,7 +112,7 @@ export default function ExtensionsView({
     const extensionConfig = createExtensionConfig(formData);
 
     try {
-      await activateExtensionDefault({
+      await addExtensionOnDemand({
         addToConfig: addExtension,
         extensionConfig: extensionConfig,
       });
