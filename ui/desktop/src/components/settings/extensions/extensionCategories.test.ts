@@ -49,4 +49,29 @@ describe('extensionCategories', () => {
       'z-custom',
     ]);
   });
+
+  it('sorts by label within each source group', () => {
+    const extensions = [
+      {
+        name: 'z-custom',
+        type: 'stdio',
+        description: 'Custom',
+        cmd: 'custom',
+        enabled: false,
+      },
+      {
+        name: 'a-custom',
+        type: 'stdio',
+        description: 'Custom',
+        cmd: 'custom',
+        enabled: false,
+      },
+    ] as FixedExtensionEntry[];
+
+    expect(
+      sortExtensionsBySourcePriority(extensions, (extension) =>
+        extension.name === 'z-custom' ? 'Alpha' : 'Zulu'
+      ).map((extension) => extension.name)
+    ).toEqual(['z-custom', 'a-custom']);
+  });
 });

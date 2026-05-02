@@ -11,12 +11,13 @@ function getSourcePriority(extension: FixedExtensionEntry): number {
 }
 
 export function sortExtensionsBySourcePriority(
-  extensions: FixedExtensionEntry[]
+  extensions: FixedExtensionEntry[],
+  getLabel: (extension: FixedExtensionEntry) => string = (extension) => extension.name
 ): FixedExtensionEntry[] {
   return [...extensions].sort((a, b) => {
     const priorityDelta = getSourcePriority(a) - getSourcePriority(b);
     if (priorityDelta !== 0) return priorityDelta;
 
-    return a.name.localeCompare(b.name);
+    return getLabel(a).localeCompare(getLabel(b));
   });
 }
