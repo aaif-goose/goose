@@ -595,6 +595,42 @@ fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {
     Some(meta)
 }
 
+struct PendingToolCall {
+    tool_call: ToolCall,
+    identity_meta: Option<Meta>,
+    fallback_title: String,
+}
+
+fn pending_tool_call_from_request(tool_request: &ToolRequest) -> PendingToolCall {
+    let tool_name = match &tool_request.tool_call {
+        Ok(tool_call) => tool_call.name.to_string(),
+        Err(_) => "error".to_string(),
+    };
+    let args_value = tool_request
+        .tool_call
+        .as_ref()
+        .ok()
+        .and_then(|tc| tc.arguments.as_ref())
+        .map(|a| serde_json::Value::Object(a.clone()));
+    let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
+    let identity_meta = tool_call_identity_meta(tool_request);
+
+    let mut tool_call = ToolCall::new(
+        ToolCallId::new(tool_request.id.clone()),
+        fallback_title.clone(),
+    )
+    .status(ToolCallStatus::Pending);
+    if let Some(args) = args_value {
+        tool_call = tool_call.raw_input(args);
+    }
+
+    PendingToolCall {
+        tool_call,
+        identity_meta,
+        fallback_title,
+    }
+}
+
 fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
     if let Some(def) = PLATFORM_EXTENSIONS.get(name) {
         ExtensionConfig::Platform {
@@ -1440,29 +1476,10 @@ impl GooseAcpAgent {
             .tool_requests
             .insert(tool_request.id.clone(), tool_request.clone());
 
-        let tool_name = match &tool_request.tool_call {
-            Ok(tool_call) => tool_call.name.to_string(),
-            Err(_) => "error".to_string(),
-        };
-
-        let args_value = tool_request
+        let pending_tool_call = pending_tool_call_from_request(tool_request);
+        let initial_tool_call = pending_tool_call
             .tool_call
-            .as_ref()
-            .ok()
-            .and_then(|tc| tc.arguments.as_ref())
-            .map(|a| serde_json::Value::Object(a.clone()));
-        let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
-        let identity_meta = tool_call_identity_meta(tool_request);
-
-        let mut initial_tool_call = ToolCall::new(
-            ToolCallId::new(tool_request.id.clone()),
-            fallback_title.clone(),
-        )
-        .status(ToolCallStatus::Pending);
-        if let Some(args) = args_value.clone() {
-            initial_tool_call = initial_tool_call.raw_input(args);
-        }
-        initial_tool_call = initial_tool_call.meta(identity_meta.clone());
+            .meta(pending_tool_call.identity_meta.clone());
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
             SessionUpdate::ToolCall(initial_tool_call),
@@ -1477,7 +1494,8 @@ impl GooseAcpAgent {
             let request_id = tool_request.id.clone();
             let cx = cx.clone();
             let name = tool_call.name.to_string();
-            let identity_meta = identity_meta.clone();
+            let identity_meta = pending_tool_call.identity_meta.clone();
+            let fallback_title = pending_tool_call.fallback_title.clone();
             let args_json = tool_call
                 .arguments
                 .as_ref()
@@ -2210,28 +2228,10 @@ impl GooseAcpAgent {
                         // don't require a full GooseAcpSession.
                         replay_tool_requests.insert(tool_request.id.clone(), tool_request.clone());
 
-                        let tool_name = match &tool_request.tool_call {
-                            Ok(tool_call) => tool_call.name.to_string(),
-                            Err(_) => "error".to_string(),
-                        };
-
-                        let args_value = tool_request
-                            .tool_call
-                            .as_ref()
-                            .ok()
-                            .and_then(|tc| tc.arguments.as_ref())
-                            .map(|a| serde_json::Value::Object(a.clone()));
-                        let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
-                        let identity_meta = tool_call_identity_meta(tool_request);
-
-                        let mut tool_call =
-                            ToolCall::new(ToolCallId::new(tool_request.id.clone()), fallback_title)
-                                .status(ToolCallStatus::Pending);
-                        if let Some(args) = args_value {
-                            tool_call = tool_call.raw_input(args);
-                        }
-                        tool_call =
-                            tool_call.meta(merge_replay_message_meta(identity_meta, message));
+                        let pending_tool_call = pending_tool_call_from_request(tool_request);
+                        let tool_call = pending_tool_call.tool_call.meta(
+                            merge_replay_message_meta(pending_tool_call.identity_meta, message),
+                        );
 
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
