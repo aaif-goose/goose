@@ -1,17 +1,18 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { ToolCallAdapter } from "./ToolCallAdapter";
-import type {
-  ToolRequestContent,
-  ToolResponseContent,
-} from "@/shared/types/messages";
+import {
+  getChainAggregateStatus,
+  getToolItemName,
+  getToolItemStatus,
+  shouldRenderAsGroupedChain,
+  type ToolChainItem,
+} from "@/features/chat/lib/toolChainGrouping";
+import { summarizeToolChainSteps } from "@/features/chat/lib/toolChainSummary";
 
-export interface ToolChainItem {
-  key: string;
-  request?: ToolRequestContent;
-  response?: ToolResponseContent;
-}
+export type { ToolChainItem };
 
 const INTERNAL_TOOL_PREFIXES = new Set([
   "awk",
@@ -38,17 +39,6 @@ const INTERNAL_TOOL_PREFIXES = new Set([
   "which",
   "zsh",
 ]);
-
-function getToolItemName(item: ToolChainItem): string {
-  return item.request?.name || item.response?.name || "Tool result";
-}
-
-function getToolItemStatus(item: ToolChainItem) {
-  if (item.response) {
-    return item.response.isError ? "error" : "completed";
-  }
-  return item.request?.status ?? "completed";
-}
 
 function isLowSignalToolStep(item: ToolChainItem): boolean {
   if (getToolItemStatus(item) !== "completed") {
@@ -105,9 +95,16 @@ function partitionToolSteps(toolItems: ToolChainItem[]) {
 }
 
 export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
+  const { t } = useTranslation("chat");
   const [showInternalSteps, setShowInternalSteps] = useState(false);
+  const [chainExpanded, setChainExpanded] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const { primaryItems, hiddenItems } = partitionToolSteps(toolItems);
+  const grouped = shouldRenderAsGroupedChain(toolItems);
+  const aggregateStatus = getChainAggregateStatus(toolItems);
+  const summary = summarizeToolChainSteps(primaryItems);
+  const isActiveChain =
+    aggregateStatus === "executing" || aggregateStatus === "pending";
 
   const handleOpenChange = (key: string, open: boolean) => {
     setExpandedKeys((prev) => {
@@ -143,8 +140,8 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
     );
   };
 
-  return (
-    <div className="my-1 flex w-full min-w-0 max-w-full flex-col items-stretch gap-3">
+  const items = (
+    <div className="flex w-full min-w-0 max-w-full flex-col items-start gap-3">
       {primaryItems.map((item) => renderToolItem(item))}
 
       {hiddenItems.length > 0 && (
@@ -161,13 +158,56 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
               )}
             />
             {showInternalSteps
-              ? `Hide internal steps (${hiddenItems.length})`
-              : `Show internal steps (${hiddenItems.length})`}
+              ? t("tool_chain.internalSteps.hide", {
+                  count: hiddenItems.length,
+                })
+              : t("tool_chain.internalSteps.show", {
+                  count: hiddenItems.length,
+                })}
           </button>
 
           {showInternalSteps && hiddenItems.map((item) => renderToolItem(item))}
         </div>
       )}
     </div>
+  );
+
+  if (!grouped) {
+    return <div className="my-1">{items}</div>;
+  }
+
+  const labelText = isActiveChain
+    ? t("tool_chain.summary.active")
+    : t(summary.titleKey);
+  const headerText = isActiveChain
+    ? t("tool_chain.title.active", { count: toolItems.length })
+    : t("tool_chain.title.labeled", {
+        label: labelText,
+        count: toolItems.length,
+      });
+
+  return (
+    <section
+      className="my-1 flex w-full flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3"
+      data-role="tool-chain-card"
+      data-status={aggregateStatus}
+    >
+      <button
+        type="button"
+        onClick={() => setChainExpanded((prev) => !prev)}
+        aria-expanded={chainExpanded}
+        className="inline-flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={cn(
+            "h-3.5 w-3.5 transition-transform",
+            chainExpanded && "rotate-90",
+          )}
+        />
+        <span>{headerText}</span>
+      </button>
+      {chainExpanded && items}
+    </section>
   );
 }
