@@ -948,7 +948,7 @@ export type ProviderDetails = {
     metadata: ProviderMetadata;
     name: string;
     provider_type: ProviderType;
-    saved_model?: string;
+    saved_model?: string | null;
 };
 
 export type ProviderEngine = 'openai' | 'ollama' | 'anthropic';

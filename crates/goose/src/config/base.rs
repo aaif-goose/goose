@@ -484,12 +484,6 @@ impl Config {
             }
         }
 
-        if crate::config::migrations::run_migrations(&mut merged) {
-            if let Err(e) = self.save_values(&merged) {
-                tracing::warn!("Failed to save migrated config from load(): {}", e);
-            }
-        }
-
         Ok(merged)
     }
 
@@ -2239,7 +2233,10 @@ extensions:
         let openai = providers.get("openai").unwrap().as_mapping().unwrap();
 
         // model should be overridden
-        assert_eq!(openai.get("model").unwrap().as_str().unwrap(), "gpt-4o-mini");
+        assert_eq!(
+            openai.get("model").unwrap().as_str().unwrap(),
+            "gpt-4o-mini"
+        );
         // Other fields should be preserved
         assert!(openai.get("enabled").unwrap().as_bool().unwrap());
         assert!(openai.get("configured").unwrap().as_bool().unwrap());

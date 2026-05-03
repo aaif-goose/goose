@@ -115,7 +115,9 @@ fn cleanup_legacy_provider_keys(config: &mut Mapping) -> bool {
         .keys()
         .filter(|k| {
             k.as_str()
-                .map(|s| s == "GOOSE_PROVIDER" || s == "GOOSE_MODEL" || s.ends_with(configured_suffix))
+                .map(|s| {
+                    s == "GOOSE_PROVIDER" || s == "GOOSE_MODEL" || s.ends_with(configured_suffix)
+                })
                 .unwrap_or(false)
         })
         .cloned()
@@ -163,12 +165,12 @@ fn migrate_provider_config(config: &mut Mapping) -> bool {
 
     // Read the old flat keys, if present.
     let active_provider = config
-        .get(&serde_yaml::Value::String("GOOSE_PROVIDER".to_string()))
+        .get(serde_yaml::Value::String("GOOSE_PROVIDER".to_string()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     let active_model = config
-        .get(&serde_yaml::Value::String("GOOSE_MODEL".to_string()))
+        .get(serde_yaml::Value::String("GOOSE_MODEL".to_string()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_default();
@@ -231,11 +233,10 @@ fn migrate_provider_config(config: &mut Mapping) -> bool {
     }
 
     // Remove old flat keys.
-    config.shift_remove(&serde_yaml::Value::String("GOOSE_PROVIDER".to_string()));
-    config.shift_remove(&serde_yaml::Value::String("GOOSE_MODEL".to_string()));
+    config.shift_remove(serde_yaml::Value::String("GOOSE_PROVIDER".to_string()));
+    config.shift_remove(serde_yaml::Value::String("GOOSE_MODEL".to_string()));
     for name in &discovered_providers {
-        let marker_key =
-            serde_yaml::Value::String(format!("{}{}", name, configured_suffix));
+        let marker_key = serde_yaml::Value::String(format!("{}{}", name, configured_suffix));
         config.shift_remove(&marker_key);
     }
 
@@ -325,7 +326,7 @@ mod tests {
 
         // active_provider should be set
         let active = config
-            .get(&serde_yaml::Value::String("active_provider".to_string()))
+            .get(serde_yaml::Value::String("active_provider".to_string()))
             .unwrap()
             .as_str()
             .unwrap();
@@ -333,7 +334,7 @@ mod tests {
 
         // providers block should exist with the entry
         let providers = config
-            .get(&serde_yaml::Value::String("providers".to_string()))
+            .get(serde_yaml::Value::String("providers".to_string()))
             .unwrap()
             .as_mapping()
             .unwrap();
@@ -349,9 +350,9 @@ mod tests {
         assert_eq!(entry.model, "current");
 
         // Old flat keys should be removed
-        assert!(!config.contains_key(&serde_yaml::Value::String("GOOSE_PROVIDER".to_string())));
-        assert!(!config.contains_key(&serde_yaml::Value::String("GOOSE_MODEL".to_string())));
-        assert!(!config.contains_key(&serde_yaml::Value::String(
+        assert!(!config.contains_key(serde_yaml::Value::String("GOOSE_PROVIDER".to_string())));
+        assert!(!config.contains_key(serde_yaml::Value::String("GOOSE_MODEL".to_string())));
+        assert!(!config.contains_key(serde_yaml::Value::String(
             "claude-acp_configured".to_string()
         )));
     }
@@ -380,7 +381,7 @@ mod tests {
         assert!(changed);
 
         let providers = config
-            .get(&serde_yaml::Value::String("providers".to_string()))
+            .get(serde_yaml::Value::String("providers".to_string()))
             .unwrap()
             .as_mapping()
             .unwrap();
@@ -408,12 +409,10 @@ mod tests {
         assert!(lmstudio.configured);
 
         // Old markers removed
-        assert!(!config.contains_key(&serde_yaml::Value::String(
+        assert!(!config.contains_key(serde_yaml::Value::String(
             "claude-acp_configured".to_string()
         )));
-        assert!(!config.contains_key(&serde_yaml::Value::String(
-            "lmstudio_configured".to_string()
-        )));
+        assert!(!config.contains_key(serde_yaml::Value::String("lmstudio_configured".to_string())));
     }
 
     #[test]
@@ -456,7 +455,7 @@ mod tests {
         assert!(changed);
 
         let providers = config
-            .get(&serde_yaml::Value::String("providers".to_string()))
+            .get(serde_yaml::Value::String("providers".to_string()))
             .unwrap()
             .as_mapping()
             .unwrap();
@@ -480,10 +479,7 @@ mod tests {
             model: "current".to_string(),
             configured: true,
         }) {
-            providers_map.insert(
-                serde_yaml::Value::String("claude-acp".to_string()),
-                value,
-            );
+            providers_map.insert(serde_yaml::Value::String("claude-acp".to_string()), value);
         }
         config.insert(
             serde_yaml::Value::String("providers".to_string()),
@@ -506,13 +502,13 @@ mod tests {
         assert!(changed);
 
         // Legacy keys should be gone
-        assert!(!config.contains_key(&serde_yaml::Value::String("GOOSE_PROVIDER".to_string())));
-        assert!(!config.contains_key(&serde_yaml::Value::String("GOOSE_MODEL".to_string())));
-        assert!(!config.contains_key(&serde_yaml::Value::String(
+        assert!(!config.contains_key(serde_yaml::Value::String("GOOSE_PROVIDER".to_string())));
+        assert!(!config.contains_key(serde_yaml::Value::String("GOOSE_MODEL".to_string())));
+        assert!(!config.contains_key(serde_yaml::Value::String(
             "claude-acp_configured".to_string()
         )));
 
         // Providers block should be untouched
-        assert!(config.contains_key(&serde_yaml::Value::String("providers".to_string())));
+        assert!(config.contains_key(serde_yaml::Value::String("providers".to_string())));
     }
 }

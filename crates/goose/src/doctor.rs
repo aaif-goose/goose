@@ -141,7 +141,11 @@ async fn save_and_set(
     provider: Arc<dyn Provider>,
 ) -> anyhow::Result<()> {
     let config = Config::global();
-    crate::config::set_active_provider(config, provider.get_name(), &provider.get_model_config().model_name);
+    crate::config::set_active_provider(
+        config,
+        provider.get_name(),
+        &provider.get_model_config().model_name,
+    );
     agent.update_provider(provider, session_id).await
 }
 
