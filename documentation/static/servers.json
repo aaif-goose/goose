@@ -36,7 +36,7 @@
   {
     "id": "apify",
     "name": "Apify",
-    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store ⚡",
+    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store \u26a1",
     "command": "npx -y @apify/actors-mcp-server",
     "link": "https://github.com/apify/apify-mcp-server",
     "installation_notes": "Install using npx. Requires an Apify API token.",
@@ -848,13 +848,24 @@
   {
     "id": "cash-app",
     "name": "Cash App",
-    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout\u2014all conversationally.",
     "type": "streamable-http",
     "url": "https://connect.squareup.com/v2/mcp/cash-app",
     "link": "",
     "installation_notes": "No local setup required. This extension connects to a remote service. Use the install button or run the command below.",
     "is_builtin": false,
     "endorsed": true,
+    "environmentVariables": []
+  },
+  {
+    "id": "vc-deal-flow-signal",
+    "name": "VC Deal Flow Signal",
+    "description": "GitHub-derived engineering acceleration signals for ~400 venture-backed startups across 20 sectors. Six free read-only tools for VC sourcing \u2014 trending startups, sector lookup, individual signal, methodology, dataset summary, scout receipts. No auth required.",
+    "command": "npx -y @gitdealflow/mcp-signal",
+    "link": "https://github.com/kindrat86/mcp-deal-flow-signal",
+    "installation_notes": "Install using npx package manager. No API key required.",
+    "is_builtin": false,
+    "endorsed": false,
     "environmentVariables": []
   }
 ]
