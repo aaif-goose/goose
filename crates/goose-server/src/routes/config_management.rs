@@ -175,7 +175,11 @@ pub async fn upsert_config(
     // Intercept legacy keys to write structured provider config
     if query.key == "GOOSE_PROVIDER" {
         if let Some(name) = query.value.as_str() {
-            let model = config.get_goose_model().unwrap_or_default();
+            // Preserve the target provider's saved model rather than copying
+            // the current active provider's model into the new entry.
+            let model = goose::config::get_provider_entry(config, name)
+                .map(|e| e.model)
+                .unwrap_or_default();
             goose::config::set_active_provider(config, name, &model);
             return Ok(Json(Value::String(format!("Upserted key {}", query.key))));
         }
@@ -770,10 +774,9 @@ pub async fn set_config_provider(
     // Provider validation does not use extensions.
     create_with_default_model(&provider, Vec::new())
         .await
-        .and_then(|_| {
+        .map(|_| {
             let config = Config::global();
             goose::config::set_active_provider(config, &provider, &model);
-            Ok(())
         })
         .map_err(|err| {
             ErrorResponse::bad_request(format!(

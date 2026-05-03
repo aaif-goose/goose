@@ -15,6 +15,13 @@ pub fn run_migrations(config: &mut Mapping) -> bool {
     changed
 }
 
+/// Run only non-destructive migrations suitable for in-memory read paths.
+/// Provider migration is excluded because it removes flat keys that
+/// `get_param()` callers may still look up directly.
+pub fn run_read_migrations(config: &mut Mapping) {
+    migrate_platform_extensions(config);
+}
+
 fn migrate_platform_extensions(config: &mut Mapping) -> bool {
     let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
 
