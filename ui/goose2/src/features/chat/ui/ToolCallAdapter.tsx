@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
@@ -11,6 +11,10 @@ import {
   ToolOutput,
 } from "@/shared/ui/ai-elements/tool";
 import { toolStatusMap } from "../lib/toolStatusMap";
+import {
+  getToolInputSummaryRows,
+  type ToolInputSummaryRow,
+} from "@/features/chat/lib/toolCallPresentation";
 import type { ToolCallLocation, ToolCallStatus } from "@/shared/types/messages";
 import { useArtifactPolicyContext } from "@/features/chat/hooks/ArtifactPolicyContext";
 
@@ -177,6 +181,33 @@ function ArtifactActions({ locations }: { locations?: ToolCallLocation[] }) {
   );
 }
 
+function ToolInputSummary({ rows }: { rows: ToolInputSummaryRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <dl className="space-y-1 rounded-md bg-muted/50 px-3 py-2 text-xs">
+      {rows.map((row) => (
+        <div
+          key={`${row.label}:${row.value}`}
+          className="flex items-baseline gap-2"
+        >
+          <dt className="shrink-0 font-medium uppercase tracking-wide text-[10px] text-muted-foreground">
+            {row.label}
+          </dt>
+          <dd
+            className={cn(
+              "min-w-0 truncate text-foreground",
+              row.monospace && "font-mono",
+            )}
+            title={row.title ?? row.value}
+          >
+            {row.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function ToolCallAdapter({
   name,
   arguments: args,
@@ -192,6 +223,10 @@ export function ToolCallAdapter({
   const { t } = useTranslation("chat");
   const elapsed = useElapsedTime(status, startedAt);
   const state = toolStatusMap[status];
+  const summaryRows = useMemo(
+    () => getToolInputSummaryRows({ name, arguments: args }),
+    [args, name],
+  );
 
   const elapsedSeconds =
     status === "executing" && elapsed >= 3 ? elapsed : undefined;
@@ -214,6 +249,7 @@ export function ToolCallAdapter({
           elapsedSeconds={elapsedSeconds}
         />
         <ToolContent>
+          <ToolInputSummary rows={summaryRows} />
           {Object.keys(args).length > 0 && <ToolInput input={args} />}
           <ToolOutput
             output={isError ? undefined : result}
