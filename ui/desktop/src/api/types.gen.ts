@@ -3767,7 +3767,7 @@ export type DeleteScheduleErrors = {
 
 export type DeleteScheduleResponses = {
     /**
-     * Scheduled job deleted successfully
+     * Scheduled job removed successfully
      */
     204: void;
 };

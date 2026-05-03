@@ -2749,7 +2749,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Scheduled job deleted successfully"
+            "description": "Scheduled job removed successfully"
           },
           "404": {
             "description": "Scheduled job not found"
