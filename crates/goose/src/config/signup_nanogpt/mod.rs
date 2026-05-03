@@ -113,6 +113,6 @@ pub async fn complete_nanogpt_auth() -> Result<String> {
 
 pub fn configure_nanogpt(config: &Config, api_key: String) -> Result<()> {
     config.set_secret("NANOGPT_API_KEY", &api_key)?;
-    config.set_goose_provider("nano-gpt")?;
+    crate::config::set_active_provider(config, crate::providers::nanogpt::NANOGPT_PROVIDER_NAME, "");
     Ok(())
 }
