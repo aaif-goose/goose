@@ -118,30 +118,31 @@ pub fn check_provider_configured(metadata: &ProviderMetadata, provider_type: Pro
         }
     }
 
-    // Check the new structured providers block first
-    if let Some(entry) = goose::config::get_provider_entry(config, &metadata.name) {
-        if entry.configured {
-            return true;
-        }
-    }
-
-    // Special case: OAuth providers - check for configured marker (legacy)
+    // OAuth providers: trust the structured configured flag or legacy marker
     let has_oauth_key = metadata.config_keys.iter().any(|key| key.oauth_flow);
     if has_oauth_key {
+        if let Some(entry) = goose::config::get_provider_entry(config, &metadata.name) {
+            if entry.configured {
+                return true;
+            }
+        }
         let configured_marker = format!("{}_configured", metadata.name);
         if matches!(config.get_param::<bool>(&configured_marker), Ok(true)) {
             return true;
         }
     }
 
-    // Special case: Zero-config providers (no config keys)
+    // Zero-config providers (no config keys): trust structured flag or active status
     if metadata.config_keys.is_empty() {
+        if let Some(entry) = goose::config::get_provider_entry(config, &metadata.name) {
+            if entry.configured {
+                return true;
+            }
+        }
         let configured_marker = format!("{}_configured", metadata.name);
         if config.get_param::<bool>(&configured_marker).is_ok() {
             return true;
         }
-        // Also treat as configured if it's the currently active provider
-        // (handles manual config.yaml edits and first-run bootstrap).
         if let Ok(current) = config.get_goose_provider() {
             if current == metadata.name {
                 return true;
