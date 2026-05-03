@@ -4,7 +4,18 @@
   "display_name": "LM Studio",
   "description": "Run local models with LM Studio",
   "api_key_env": "",
-  "base_url": "http://localhost:1234/v1/chat/completions",
+  "base_url": "${LMSTUDIO_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "LMSTUDIO_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:1234",
+      "description": "Base URL of the LMStudio server (default: http://localhost:1234)"
+    }
+  ],
+  "dynamic_models": true,
   "models": [],
   "supports_streaming": true,
   "requires_auth": false,
