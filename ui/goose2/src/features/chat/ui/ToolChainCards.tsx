@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Check,
-  ChevronRight,
-  CircleIcon,
-  ClockIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { Check, ChevronRight, CircleIcon, ClockIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { ToolCallAdapter } from "./ToolCallAdapter";
@@ -22,21 +16,43 @@ import type { ToolCallStatus } from "@/shared/types/messages";
 
 export type { ToolChainItem };
 
-const STEP_BULLET_ICON: Record<ToolCallStatus, LucideIcon> = {
+const STEP_BULLET_ICON: Record<
+  Exclude<ToolCallStatus, "error" | "stopped">,
+  LucideIcon
+> = {
   pending: CircleIcon,
   executing: ClockIcon,
   completed: Check,
-  error: XCircleIcon,
-  stopped: XCircleIcon,
 };
 
-const STEP_BULLET_CLASS: Record<ToolCallStatus, string> = {
+const STEP_BULLET_CLASS: Record<
+  Exclude<ToolCallStatus, "error" | "stopped">,
+  string
+> = {
   pending: "text-muted-foreground/70",
   executing: "text-muted-foreground animate-pulse",
   completed: "text-muted-foreground",
-  error: "text-red-600",
-  stopped: "text-orange-600",
 };
+
+function ChainStepBullet({ status }: { status: ToolCallStatus }) {
+  if (status === "error") {
+    return (
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-red-600" />
+    );
+  }
+  if (status === "stopped") {
+    return (
+      <span
+        aria-hidden
+        className="size-1.5 shrink-0 rounded-full bg-orange-600"
+      />
+    );
+  }
+  const Icon = STEP_BULLET_ICON[status];
+  return (
+    <Icon className={cn("size-3.5 shrink-0", STEP_BULLET_CLASS[status])} />
+  );
+}
 
 function ChainStepRail({
   status,
@@ -48,7 +64,6 @@ function ChainStepRail({
   isLast?: boolean;
   lineTailVisible?: boolean;
 }) {
-  const Icon = STEP_BULLET_ICON[status];
   return (
     <div
       aria-hidden="true"
@@ -63,7 +78,7 @@ function ChainStepRail({
         />
       )}
       <div className="relative z-10 mt-1 flex h-4 w-4 items-center justify-center rounded-full bg-background ring-2 ring-background">
-        <Icon className={cn("size-3.5 shrink-0", STEP_BULLET_CLASS[status])} />
+        <ChainStepBullet status={status} />
       </div>
     </div>
   );
@@ -270,7 +285,13 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
     >
       <button
         type="button"
-        onClick={() => setChainExpanded((prev) => !prev)}
+        onClick={() => {
+          if (chainExpanded) {
+            setExpandedKeys(new Set());
+            setShowInternalSteps(false);
+          }
+          setChainExpanded((prev) => !prev);
+        }}
         aria-expanded={chainExpanded}
         className="flex w-full max-w-full items-start gap-2.5 text-left text-sm font-medium text-foreground"
       >
