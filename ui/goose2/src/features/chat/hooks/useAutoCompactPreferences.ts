@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getClient } from "@/shared/api/acpConnection";
 import {
   AUTO_COMPACT_PREFERENCES_EVENT,
@@ -6,7 +6,8 @@ import {
   normalizeAutoCompactThreshold,
 } from "../lib/autoCompact";
 
-const AUTO_COMPACT_RETRY_DELAY_MS = 1000;
+const AUTO_COMPACT_INITIAL_RETRY_DELAY_MS = 1000;
+const AUTO_COMPACT_MAX_RETRY_DELAY_MS = 30000;
 const AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY = "autoCompactThreshold";
 
 type ConfigReadResult =
@@ -48,30 +49,9 @@ export function useAutoCompactPreferences() {
     DEFAULT_AUTO_COMPACT_THRESHOLD,
   );
   const [isHydrated, setIsHydrated] = useState(false);
-  const [syncVersion, setSyncVersion] = useState(0);
+  const retryDelayMsRef = useRef(AUTO_COMPACT_INITIAL_RETRY_DELAY_MS);
 
-  const requestSyncFromConfig = useCallback(() => {
-    setSyncVersion((current) => current + 1);
-  }, []);
-
-  useEffect(() => {
-    const handler = () => {
-      requestSyncFromConfig();
-    };
-    window.addEventListener(
-      AUTO_COMPACT_PREFERENCES_EVENT,
-      handler as EventListener,
-    );
-    return () => {
-      window.removeEventListener(
-        AUTO_COMPACT_PREFERENCES_EVENT,
-        handler as EventListener,
-      );
-    };
-  }, [requestSyncFromConfig]);
-
-  const syncFromConfig = useCallback(async (_syncVersion: number) => {
-    void _syncVersion;
+  const syncFromConfig = useCallback(async () => {
     const result = await readAutoCompactThreshold();
     return result;
   }, []);
@@ -80,8 +60,16 @@ export function useAutoCompactPreferences() {
     let cancelled = false;
     let retryTimer: number | null = null;
 
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
     const applyConfig = async () => {
-      const result = await syncFromConfig(syncVersion);
+      clearRetryTimer();
+      const result = await syncFromConfig();
       if (cancelled) {
         return;
       }
@@ -90,24 +78,40 @@ export function useAutoCompactPreferences() {
         setAutoCompactThresholdState(
           normalizeAutoCompactThreshold(result.value),
         );
+        setIsHydrated(true);
+        retryDelayMsRef.current = AUTO_COMPACT_INITIAL_RETRY_DELAY_MS;
       } else {
-        retryTimer = window.setTimeout(
-          requestSyncFromConfig,
-          AUTO_COMPACT_RETRY_DELAY_MS,
+        const delayMs = retryDelayMsRef.current;
+        retryDelayMsRef.current = Math.min(
+          delayMs * 2,
+          AUTO_COMPACT_MAX_RETRY_DELAY_MS,
         );
+        retryTimer = window.setTimeout(() => {
+          void applyConfig();
+        }, delayMs);
       }
-      setIsHydrated(true);
     };
 
+    const handler = () => {
+      retryDelayMsRef.current = AUTO_COMPACT_INITIAL_RETRY_DELAY_MS;
+      void applyConfig();
+    };
+
+    window.addEventListener(
+      AUTO_COMPACT_PREFERENCES_EVENT,
+      handler as EventListener,
+    );
     void applyConfig();
 
     return () => {
       cancelled = true;
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-      }
+      clearRetryTimer();
+      window.removeEventListener(
+        AUTO_COMPACT_PREFERENCES_EVENT,
+        handler as EventListener,
+      );
     };
-  }, [requestSyncFromConfig, syncFromConfig, syncVersion]);
+  }, [syncFromConfig]);
 
   const dispatchPreferencesEvent = useCallback(() => {
     window.dispatchEvent(new Event(AUTO_COMPACT_PREFERENCES_EVENT));

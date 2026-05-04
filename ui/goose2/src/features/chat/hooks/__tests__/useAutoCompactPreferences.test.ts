@@ -77,13 +77,17 @@ describe("useAutoCompactPreferences", () => {
     window.removeEventListener(AUTO_COMPACT_PREFERENCES_EVENT, eventListener);
   });
 
-  it("marks the preferences hydrated even when the initial read fails", async () => {
+  it("does not mark preferences hydrated when the initial read fails", async () => {
     mockGetClient.mockRejectedValue(new Error("ACP not ready"));
 
     const { result } = renderHook(() => useAutoCompactPreferences());
 
-    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
+    expect(result.current.isHydrated).toBe(false);
     expect(result.current.autoCompactThreshold).toBe(
       DEFAULT_AUTO_COMPACT_THRESHOLD,
     );
@@ -112,7 +116,7 @@ describe("useAutoCompactPreferences", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.isHydrated).toBe(true);
+    expect(result.current.isHydrated).toBe(false);
     expect(result.current.autoCompactThreshold).toBe(
       DEFAULT_AUTO_COMPACT_THRESHOLD,
     );
@@ -122,6 +126,47 @@ describe("useAutoCompactPreferences", () => {
     });
 
     expect(result.current.autoCompactThreshold).toBe(0.65);
+    expect(result.current.isHydrated).toBe(true);
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("backs off repeated hydration retries", async () => {
+    vi.useFakeTimers();
+    const read = vi.fn().mockRejectedValue(new Error("ACP not ready"));
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GoosePreferencesRead: read,
+        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
+      },
+    });
+
+    renderHook(() => useAutoCompactPreferences());
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(read).toHaveBeenCalledTimes(3);
   });
 });

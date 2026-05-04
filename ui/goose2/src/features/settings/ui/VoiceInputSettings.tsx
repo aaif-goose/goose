@@ -145,11 +145,7 @@ export function VoiceInputSettings() {
 
     setError(null);
     try {
-      await saveDictationProviderSecret(
-        selectedProvider,
-        apiKeyInput,
-        selectedStatus?.configKey ?? undefined,
-      );
+      await saveDictationProviderSecret(selectedProvider, apiKeyInput);
       setApiKeyInput("");
       setIsEditingApiKey(false);
       await refreshConfig();
@@ -161,7 +157,7 @@ export function VoiceInputSettings() {
           : t("general.voiceInput.saveError"),
       );
     }
-  }, [apiKeyInput, refreshConfig, selectedProvider, selectedStatus, t]);
+  }, [apiKeyInput, refreshConfig, selectedProvider, t]);
 
   const removeApiKey = useCallback(async () => {
     if (!selectedProvider) {
@@ -170,10 +166,7 @@ export function VoiceInputSettings() {
 
     setError(null);
     try {
-      await deleteDictationProviderSecret(
-        selectedProvider,
-        selectedStatus?.configKey ?? undefined,
-      );
+      await deleteDictationProviderSecret(selectedProvider);
       setApiKeyInput("");
       setIsEditingApiKey(false);
       await refreshConfig();
@@ -185,7 +178,7 @@ export function VoiceInputSettings() {
           : t("general.voiceInput.deleteError"),
       );
     }
-  }, [refreshConfig, selectedProvider, selectedStatus, t]);
+  }, [refreshConfig, selectedProvider, t]);
 
   const handleModelChange = useCallback(
     async (modelId: string) => {

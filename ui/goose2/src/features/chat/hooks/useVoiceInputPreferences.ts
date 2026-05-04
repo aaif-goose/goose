@@ -54,21 +54,13 @@ async function writePreferenceString(
   key: VoicePreferenceKey,
   value: string,
 ): Promise<void> {
-  try {
-    const client = await getClient();
-    await client.goose.GoosePreferencesSave({ values: [{ key, value }] });
-  } catch {
-    // goose config may be unavailable
-  }
+  const client = await getClient();
+  await client.goose.GoosePreferencesSave({ values: [{ key, value }] });
 }
 
 async function removePreferenceKey(key: VoicePreferenceKey): Promise<void> {
-  try {
-    const client = await getClient();
-    await client.goose.GoosePreferencesRemove({ keys: [key] });
-  } catch {
-    // goose config may be unavailable
-  }
+  const client = await getClient();
+  await client.goose.GoosePreferencesRemove({ keys: [key] });
 }
 
 export function useVoiceInputPreferences() {
@@ -127,7 +119,9 @@ export function useVoiceInputPreferences() {
         // through to the default cleanly.
         setSelectedProviderState(null);
         setHasStoredProviderPreferenceState(false);
-        void removePreferenceKey(VOICE_DICTATION_PROVIDER_PREFERENCE_KEY);
+        void removePreferenceKey(VOICE_DICTATION_PROVIDER_PREFERENCE_KEY).catch(
+          () => undefined,
+        );
       }
     } else {
       setSelectedProviderState(null);
@@ -163,11 +157,16 @@ export function useVoiceInputPreferences() {
 
   const persistAndBroadcast = useCallback(
     (operation: Promise<void>) => {
-      void operation.finally(() => {
-        dispatchPreferencesEvent();
-      });
+      void operation
+        .then(() => {
+          dispatchPreferencesEvent();
+        })
+        .catch((error: unknown) => {
+          console.warn("Failed to persist voice input preferences", error);
+          void syncFromConfig();
+        });
     },
-    [dispatchPreferencesEvent],
+    [dispatchPreferencesEvent, syncFromConfig],
   );
 
   const setRawAutoSubmitPhrases = useCallback(

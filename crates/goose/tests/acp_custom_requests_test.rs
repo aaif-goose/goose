@@ -69,7 +69,7 @@ fn mock_provider_factory() -> AcpProviderFactory {
 
 #[test]
 fn test_custom_get_tools() {
-    run_test(async {
+    run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
 
@@ -92,7 +92,7 @@ fn test_custom_get_tools() {
 
 #[test]
 fn test_custom_get_extensions() {
-    run_test(async {
+    run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
 
@@ -249,6 +249,35 @@ fn test_custom_preferences_save_rejects_invalid_values() {
             let result = send_custom(conn.cx(), "_goose/preferences/save", payload).await;
             assert!(result.is_err(), "expected invalid params error");
         }
+
+        let result = send_custom(
+            conn.cx(),
+            "_goose/preferences/save",
+            serde_json::json!({
+                "values": [
+                    { "key": "voiceDictationPreferredMic", "value": "mic-1" },
+                    { "key": "voiceDictationProvider", "value": "bogus" }
+                ],
+            }),
+        )
+        .await;
+        assert!(result.is_err(), "expected invalid params error");
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/preferences/read",
+            serde_json::json!({
+                "keys": ["voiceDictationPreferredMic"],
+            }),
+        )
+        .await
+        .expect("preferences read should succeed");
+        assert_eq!(
+            response.get("values"),
+            Some(&serde_json::json!([
+                { "key": "voiceDictationPreferredMic", "value": null },
+            ]))
+        );
     });
 }
 
@@ -283,10 +312,28 @@ fn test_custom_defaults_read() {
 
 #[test]
 fn test_custom_dictation_secret_save_delete() {
-    let _env = env_lock::lock_env([("GROQ_API_KEY", None::<&str>)]);
-    run_test(async {
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().to_string_lossy().to_string();
+    let _env = env_lock::lock_env([
+        ("GOOSE_PATH_ROOT", Some(root_path.as_str())),
+        ("GOOSE_DISABLE_KEYRING", Some("1")),
+        ("GROQ_API_KEY", None::<&str>),
+    ]);
+    let config_dir = goose::config::paths::Paths::config_dir();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join(goose::config::base::CONFIG_YAML_NAME),
+        "GOOSE_MODEL: gpt-4o\nGOOSE_PROVIDER: openai\nGOOSE_DISABLE_KEYRING: true\n",
+    )
+    .unwrap();
+
+    run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let config = TestConnectionConfig {
+            data_root: config_dir.clone(),
+            ..Default::default()
+        };
+        let conn = AcpServerConnection::new(config, openai).await;
 
         send_custom(
             conn.cx(),

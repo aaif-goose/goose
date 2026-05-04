@@ -31,12 +31,17 @@ impl GooseAcpAgent {
         req: PreferencesSaveRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
         let config = self.config()?;
-        for preference in req.values {
-            validate_preference_value(&preference)?;
-            config
-                .set_param(preference_config_key(&preference.key), &preference.value)
-                .internal_err()?;
+        let mut updates = Vec::with_capacity(req.values.len());
+
+        for preference in &req.values {
+            validate_preference_value(preference)?;
+            updates.push((
+                preference_config_key(&preference.key).to_string(),
+                preference.value.clone(),
+            ));
         }
+
+        config.set_param_values(&updates).internal_err()?;
         Ok(EmptyResponse {})
     }
 
@@ -89,7 +94,7 @@ fn validate_preference_value(preference: &PreferenceValue) -> Result<(), sacp::E
                     sacp::Error::invalid_params().data("autoCompactThreshold must be a number")
                 );
             };
-            if value <= 0.0 || value > 1.0 {
+            if !value.is_finite() || value <= 0.0 || value > 1.0 {
                 return Err(sacp::Error::invalid_params()
                     .data("autoCompactThreshold must be greater than 0 and at most 1"));
             }
@@ -107,10 +112,7 @@ fn validate_preference_value(preference: &PreferenceValue) -> Result<(), sacp::E
                     sacp::Error::invalid_params().data("voiceDictationProvider must be a string")
                 );
             };
-            if !matches!(
-                value,
-                "openai" | "groq" | "elevenlabs" | "local" | "__disabled__"
-            ) {
+            if !is_supported_voice_dictation_provider(value) {
                 return Err(
                     sacp::Error::invalid_params().data("voiceDictationProvider is not supported")
                 );
@@ -129,6 +131,19 @@ fn validate_preference_value(preference: &PreferenceValue) -> Result<(), sacp::E
     }
 
     Ok(())
+}
+
+fn is_supported_voice_dictation_provider(value: &str) -> bool {
+    matches!(value, "openai" | "groq" | "elevenlabs" | "__disabled__") || {
+        #[cfg(feature = "local-inference")]
+        {
+            value == "local"
+        }
+        #[cfg(not(feature = "local-inference"))]
+        {
+            false
+        }
+    }
 }
 
 fn optional_config_string(config: &Config, key: &str) -> Result<Option<String>, sacp::Error> {

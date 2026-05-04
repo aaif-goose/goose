@@ -42,7 +42,6 @@ export async function saveDictationModelSelection(
 export async function saveDictationProviderSecret(
   provider: DictationProvider,
   value: string,
-  _configKey?: string,
 ): Promise<void> {
   const client = await getClient();
   await client.goose.GooseDictationSecretSave({ provider, value });
@@ -50,7 +49,6 @@ export async function saveDictationProviderSecret(
 
 export async function deleteDictationProviderSecret(
   provider: DictationProvider,
-  _configKey?: string,
 ): Promise<void> {
   const client = await getClient();
   await client.goose.GooseDictationSecretDelete({ provider });

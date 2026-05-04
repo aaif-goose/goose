@@ -119,6 +119,45 @@ describe("useVoiceInputPreferences", () => {
     window.removeEventListener("goose:voice-input-preferences", eventListener);
   });
 
+  it("does not broadcast failed preference writes and re-syncs stored state", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const save = vi.fn().mockRejectedValue(new Error("write failed"));
+    const read = vi.fn().mockResolvedValue({
+      values: [
+        { key: "voiceAutoSubmitPhrases", value: null },
+        { key: "voiceDictationProvider", value: "groq" },
+        { key: "voiceDictationPreferredMic", value: null },
+      ],
+    });
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GoosePreferencesRead: read,
+        GoosePreferencesSave: save,
+        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
+      },
+    });
+
+    const eventListener = vi.fn();
+    window.addEventListener("goose:voice-input-preferences", eventListener);
+
+    const { result } = renderHook(() => useVoiceInputPreferences());
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+
+    act(() => {
+      result.current.setSelectedProvider("openai");
+    });
+
+    expect(result.current.selectedProvider).toBe("openai");
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+
+    expect(eventListener).not.toHaveBeenCalled();
+    expect(result.current.selectedProvider).toBe("groq");
+
+    window.removeEventListener("goose:voice-input-preferences", eventListener);
+    warn.mockRestore();
+  });
+
   it("stores the disabled sentinel when provider is set to null", async () => {
     const save = vi.fn().mockResolvedValue({});
 
