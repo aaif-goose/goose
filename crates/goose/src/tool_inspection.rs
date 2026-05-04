@@ -6,6 +6,7 @@ use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolRequest};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
+use crate::tool_monitor::RepetitionInspector;
 
 /// Result of inspecting a tool call
 #[derive(Debug, Clone)]
@@ -128,6 +129,25 @@ impl ToolInspectionManager {
             .iter()
             .find(|i| i.name() == "permission")
             .and_then(|i| i.as_any().downcast_ref::<PermissionInspector>())
+    }
+
+    fn get_repetition_inspector(&self) -> Option<&RepetitionInspector> {
+        self.inspectors
+            .iter()
+            .find(|i| i.name() == "repetition")
+            .and_then(|i| i.as_any().downcast_ref::<RepetitionInspector>())
+    }
+
+    pub fn record_tool_error(&self, tool_name: &str, error_text: &str) {
+        if let Some(inspector) = self.get_repetition_inspector() {
+            inspector.record_error(tool_name, error_text);
+        }
+    }
+
+    pub fn record_tool_success(&self) {
+        if let Some(inspector) = self.get_repetition_inspector() {
+            inspector.record_success();
+        }
     }
 
     pub fn apply_tool_annotations(&self, tools: &[rmcp::model::Tool]) {

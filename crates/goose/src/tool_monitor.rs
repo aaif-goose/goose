@@ -6,6 +6,11 @@ use async_trait::async_trait;
 use rmcp::model::CallToolRequestParams;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Mutex;
+
+pub const FINDING_ID_REPEATED_CALLS: &str = "REP-001";
+pub const FINDING_ID_REPEATED_ERROR: &str = "REP-002";
+const MAX_CONSECUTIVE_ERROR_FINGERPRINTS: u32 = 3;
 
 // Helper struct for internal tracking
 #[derive(Debug, Clone)]
@@ -31,11 +36,19 @@ impl InternalToolCall {
 }
 
 #[derive(Debug)]
+struct ErrorState {
+    last_tool_name: Option<String>,
+    last_error_text: Option<String>,
+    consecutive_count: u32,
+}
+
+#[derive(Debug)]
 pub struct RepetitionInspector {
     max_repetitions: Option<u32>,
     last_call: Option<InternalToolCall>,
     repeat_count: u32,
     call_counts: HashMap<String, u32>,
+    error_state: Mutex<ErrorState>,
 }
 
 impl RepetitionInspector {
@@ -45,7 +58,33 @@ impl RepetitionInspector {
             last_call: None,
             repeat_count: 0,
             call_counts: HashMap::new(),
+            error_state: Mutex::new(ErrorState {
+                last_tool_name: None,
+                last_error_text: None,
+                consecutive_count: 0,
+            }),
         }
+    }
+
+    pub fn record_error(&self, tool_name: &str, error_text: &str) {
+        let truncated = &error_text[..error_text.len().min(100)];
+        let mut state = self.error_state.lock().unwrap();
+        if state.last_tool_name.as_deref() == Some(tool_name)
+            && state.last_error_text.as_deref() == Some(truncated)
+        {
+            state.consecutive_count += 1;
+        } else {
+            state.last_tool_name = Some(tool_name.to_string());
+            state.last_error_text = Some(truncated.to_string());
+            state.consecutive_count = 1;
+        }
+    }
+
+    pub fn record_success(&self) {
+        let mut state = self.error_state.lock().unwrap();
+        state.last_tool_name = None;
+        state.last_error_text = None;
+        state.consecutive_count = 0;
     }
 
     pub fn check_tool_call(&mut self, tool_call: CallToolRequestParams) -> bool {
@@ -83,6 +122,10 @@ impl RepetitionInspector {
         self.last_call = None;
         self.repeat_count = 0;
         self.call_counts.clear();
+        let mut state = self.error_state.lock().unwrap();
+        state.last_tool_name = None;
+        state.last_error_text = None;
+        state.consecutive_count = 0;
     }
 }
 
@@ -105,7 +148,7 @@ impl ToolInspector for RepetitionInspector {
     ) -> Result<Vec<InspectionResult>> {
         let mut results = Vec::new();
 
-        // Check repetition limits for each tool request
+        // Check call-repetition limits for each tool request
         for tool_request in tool_requests {
             if let Ok(tool_call) = &tool_request.tool_call {
                 // Create a temporary clone to check without modifying state
@@ -124,8 +167,36 @@ impl ToolInspector for RepetitionInspector {
                         ),
                         confidence: 1.0,
                         inspector_name: "repetition".to_string(),
-                        finding_id: Some("REP-001".to_string()),
+                        finding_id: Some(FINDING_ID_REPEATED_CALLS.to_string()),
                     });
+                }
+            }
+        }
+
+        // Deny a tool that has returned the same error N consecutive times, regardless
+        // of whether call parameters changed — catches retry loops with varying inputs.
+        {
+            let state = self.error_state.lock().unwrap();
+            if state.consecutive_count >= MAX_CONSECUTIVE_ERROR_FINGERPRINTS {
+                if let Some(ref last_tool) = state.last_tool_name {
+                    let error_text = state.last_error_text.as_deref().unwrap_or("");
+                    for tool_request in tool_requests {
+                        if let Ok(tool_call) = &tool_request.tool_call {
+                            if tool_call.name.as_ref() == last_tool.as_str() {
+                                results.push(InspectionResult {
+                                    tool_request_id: tool_request.id.clone(),
+                                    action: InspectionAction::Deny,
+                                    reason: format!(
+                                        "Tool '{}' has returned the same error {} consecutive times: '{}'",
+                                        tool_call.name, state.consecutive_count, error_text
+                                    ),
+                                    confidence: 1.0,
+                                    inspector_name: "repetition".to_string(),
+                                    finding_id: Some(FINDING_ID_REPEATED_ERROR.to_string()),
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }

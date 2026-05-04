@@ -52,7 +52,7 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
-use crate::tool_monitor::RepetitionInspector;
+use crate::tool_monitor::{RepetitionInspector, FINDING_ID_REPEATED_ERROR};
 use crate::utils::is_token_cancelled;
 use regex::Regex;
 use rmcp::model::{
@@ -1410,6 +1410,7 @@ impl Agent {
                                         yield AgentEvent::Message(msg);
                                     }
                                 }
+                                let mut inspection_results: Vec<crate::tool_inspection::InspectionResult> = Vec::new();
                                 if goose_mode == GooseMode::Chat {
                                     for request in remaining_requests.iter() {
                                         if let Some(response) = request_to_response_map.get_mut(&request.id) {
@@ -1422,7 +1423,7 @@ impl Agent {
                                     }
                                 } else {
                                     // Run all tool inspectors
-                                    let inspection_results = self.tool_inspection_manager
+                                    inspection_results = self.tool_inspection_manager
                                         .inspect_tools(
                                             &session_config.id,
                                             &remaining_requests,
@@ -1527,6 +1528,29 @@ impl Agent {
                                                                 {
                                                                     all_install_successful = false;
                                                                 }
+
+                                                                // must happen before output is moved
+                                                                let tool_name = remaining_requests.iter()
+                                                                    .find(|r| r.id == request_id)
+                                                                    .and_then(|r| r.tool_call.as_ref().ok())
+                                                                    .map(|tc| tc.name.as_ref())
+                                                                    .unwrap_or("unknown");
+                                                                match &output {
+                                                                    Err(e) => {
+                                                                        self.tool_inspection_manager.record_tool_error(tool_name, &e.to_string());
+                                                                    }
+                                                                    Ok(r) if r.is_error == Some(true) => {
+                                                                        let error_text = r.content.iter()
+                                                                            .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
+                                                                            .collect::<Vec<_>>()
+                                                                            .join(" ");
+                                                                        self.tool_inspection_manager.record_tool_error(tool_name, &error_text);
+                                                                    }
+                                                                    Ok(_) => {
+                                                                        self.tool_inspection_manager.record_tool_success();
+                                                                    }
+                                                                }
+
                                                                 if let Some(response) = request_to_response_map.get_mut(&request_id) {
                                                                     let metadata = request_metadata.get(&request_id).and_then(|m| m.as_ref());
                                                                     response.add_tool_response_with_metadata(request_id, output, metadata);
@@ -1606,6 +1630,23 @@ impl Agent {
                                             .unwrap_or_else(|| Message::user().with_generated_id());
                                         yield AgentEvent::Message(final_response.clone());
                                         messages_to_add.push(final_response);
+
+                                        // If a REP-002 deny fired, inject a corrective hint so the
+                                        // model knows to change strategy rather than retry again.
+                                        if let Some(result) = inspection_results.iter().find(|r| {
+                                            r.tool_request_id == request.id
+                                                && r.finding_id.as_deref() == Some(FINDING_ID_REPEATED_ERROR)
+                                        }) {
+                                            let hint = format!(
+                                                "Note: {}. Try a different approach — check whether \
+                                                 you are using the correct input values, a different \
+                                                 tool, or a different ID field from earlier results.",
+                                                result.reason
+                                            );
+                                            let hint_msg = Message::user().with_text(hint);
+                                            yield AgentEvent::Message(hint_msg.clone());
+                                            messages_to_add.push(hint_msg);
+                                        }
                                     } else {
                                         error!(
                                             "Tool call could not be parsed: {}",
