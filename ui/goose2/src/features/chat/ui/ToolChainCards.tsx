@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronRight, CircleIcon, ClockIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -174,9 +174,19 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
   const isActiveChain =
     aggregateStatus === "executing" || aggregateStatus === "pending";
   // Chains that mount as already-complete (history replay) start collapsed;
-  // live chains mount mid-execution and stay open until the user collapses.
+  // live chains mount mid-execution, stay open while running, and auto-collapse
+  // once they finish so the chat keeps moving forward.
   const [chainExpanded, setChainExpanded] = useState(() => isActiveChain);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const wasActiveChainRef = useRef(isActiveChain);
+  useEffect(() => {
+    if (wasActiveChainRef.current && !isActiveChain) {
+      setChainExpanded(false);
+      setExpandedKeys(new Set());
+      setShowInternalSteps(false);
+    }
+    wasActiveChainRef.current = isActiveChain;
+  }, [isActiveChain]);
 
   const handleOpenChange = (key: string, open: boolean) => {
     setExpandedKeys((prev) => {

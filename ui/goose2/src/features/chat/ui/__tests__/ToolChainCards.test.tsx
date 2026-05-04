@@ -126,6 +126,41 @@ describe("ToolChainCards", () => {
     expect(header).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("auto-collapses a live chain once every step has completed", () => {
+    const a = pair("Edit · src/a.ts");
+    const bRequest = pair("Edit · src/b.ts", {
+      status: "executing",
+      completed: false,
+    });
+    const { rerender } = render(<ToolChainCards toolItems={[a, bRequest]} />);
+    const activeHeader = screen.getByRole("button", {
+      name: /working through 2 steps/i,
+    });
+    expect(activeHeader).toHaveAttribute("aria-expanded", "true");
+
+    // Same chain identity, but the second step now has a response — i.e. the
+    // chain has just completed in realtime.
+    const bComplete: typeof bRequest = {
+      ...bRequest,
+      request: bRequest.request
+        ? { ...bRequest.request, status: "completed" }
+        : bRequest.request,
+      response: {
+        type: "toolResponse",
+        id: bRequest.request?.id ?? "tool-x",
+        name: "Edit · src/b.ts",
+        result: "ok",
+        isError: false,
+      },
+    };
+    rerender(<ToolChainCards toolItems={[a, bComplete]} />);
+
+    const completedHeader = screen.getByRole("button", {
+      name: /updating files.*2 steps/i,
+    });
+    expect(completedHeader).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("surfaces error status as a data attribute on the chain wrapper", () => {
     const { container } = render(
       <ToolChainCards
