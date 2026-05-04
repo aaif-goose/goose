@@ -353,7 +353,8 @@ static LANGUAGES: &[LangInfo] = &[
             imports: r#"
                 (call
                   target: (identifier) @_method
-                  (#any-of? @_method "import" "alias" "require" "use")) @path
+                  (arguments . (_) @path)
+                  (#any-of? @_method "import" "alias" "require" "use"))
             "#,
             calls: r#"
                 (call target: (identifier) @name
