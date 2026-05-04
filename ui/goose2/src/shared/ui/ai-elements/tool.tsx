@@ -442,7 +442,6 @@ export type ToolOutputProps = ComponentProps<"div"> & {
   errorText: ToolPart["errorText"];
   label?: string;
   contentClassName?: string;
-  plainText?: boolean;
   showLabel?: boolean;
   embedded?: boolean;
   /** Max height (Tailwind class, e.g. "max-h-32") for the embedded scroll viewport. */
@@ -455,7 +454,6 @@ export const ToolOutput = ({
   errorText,
   label,
   contentClassName,
-  plainText = false,
   showLabel = true,
   embedded = false,
   embeddedMaxHeightClass = "max-h-32",
@@ -480,13 +478,6 @@ export const ToolOutput = ({
       );
     }
     if (typeof output === "string") {
-      if (plainText) {
-        return (
-          <pre className="m-0 whitespace-pre-wrap break-words p-4 font-mono text-foreground text-sm">
-            {output}
-          </pre>
-        );
-      }
       return (
         <CodeBlock
           code={output}

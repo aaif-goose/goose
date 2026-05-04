@@ -36,8 +36,6 @@ interface ToolCallAdapterProps {
   showStatusBadge?: boolean;
   /** When false, hides the trailing disclosure chevron in the header. */
   showChevron?: boolean;
-  /** When true, the card sizes to its content rather than filling its parent. */
-  fitWidth?: boolean;
 }
 
 function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
@@ -268,7 +266,6 @@ export function ToolCallAdapter({
   onOpenChange,
   showStatusBadge = true,
   showChevron = true,
-  fitWidth = false,
 }: ToolCallAdapterProps) {
   const { t } = useTranslation("chat");
   const elapsed = useElapsedTime(status, startedAt);
@@ -345,7 +342,6 @@ export function ToolCallAdapter({
           showStatusBadge={showStatusBadge}
           showChevron={showChevron}
           splitTrigger={canOpenHeaderFile}
-          layout={fitWidth ? "fit" : "fill"}
           elapsedSeconds={elapsedSeconds}
         />
         <ToolContent>
@@ -383,12 +379,14 @@ export function ToolCallAdapter({
               <ToolOutput
                 output={isError ? undefined : result}
                 errorText={isError ? result : undefined}
+                contentClassName="max-h-[28rem] overflow-y-auto"
               />
               {!isError && structuredContent !== undefined && (
                 <ToolOutput
                   output={structuredContent}
                   errorText={undefined}
                   label={t("tools.structuredContent")}
+                  contentClassName="max-h-[28rem] overflow-y-auto"
                 />
               )}
             </>
