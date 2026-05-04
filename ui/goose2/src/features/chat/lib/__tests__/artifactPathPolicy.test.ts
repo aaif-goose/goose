@@ -8,11 +8,7 @@ import {
   resolvePathCandidate,
 } from "../artifactPathPolicy";
 
-const roots = [
-  "/Users/test/project-a",
-  "/Users/test/project-b",
-  "/Users/test/.goose/artifacts",
-];
+const roots = ["/Users/test/project-a", "/Users/test/project-b", "/Users/test"];
 
 describe("artifactPathPolicy", () => {
   it("prefers the latest write-oriented tool call over earlier tool calls", () => {
@@ -112,7 +108,7 @@ describe("artifactPathPolicy", () => {
     expect(allowed.allowed).toBe(true);
     expect(allowed.blockedReason).toBeNull();
 
-    const blocked = evaluatePathScope("/Users/test/outside/file.md", roots);
+    const blocked = evaluatePathScope("/Users/other/outside/file.md", roots);
     expect(blocked.allowed).toBe(false);
     expect(blocked.blockedReason).toContain("outside allowed");
   });
@@ -128,7 +124,7 @@ describe("artifactPathPolicy", () => {
           toolCallIndex: 0,
         },
       ],
-      ["/Users/test/.goose/artifacts"],
+      ["/Users/test"],
     );
 
     expect(ranking.primaryCandidate?.resolvedPath).toBe(
@@ -146,7 +142,7 @@ describe("artifactPathPolicy", () => {
         args: { path: "/Users/test/Desktop/coffee_shop_inventory.csv" },
         toolCallIndex: 0,
       },
-      ["/Users/test/.goose/artifacts"],
+      ["/Users/test/project-a"],
     );
 
     expect(candidates).toHaveLength(1);
@@ -268,7 +264,7 @@ describe("artifactPathPolicy", () => {
           toolCallIndex: 0,
         },
       ],
-      ["/Users/test", "/Users/test/.goose/artifacts"],
+      ["/Users/test", "/Users/test"],
     );
 
     expect(ranking.primaryCandidate?.resolvedPath).toBe(
@@ -301,18 +297,18 @@ describe("artifactPathPolicy", () => {
             },
             {
               type: "text",
-              text: "The file alpha.md has been created at /Users/test/.goose/artifacts/alpha.md.",
+              text: "The file alpha.md has been created at /Users/test/alpha.md.",
             },
           ],
         },
       ],
-      ["/Users/test/.goose/artifacts"],
+      ["/Users/test"],
     );
 
     const ranking = result.byMessageId.get("assistant-1");
     expect(ranking?.primaryToolCallId).toBe("tool-1");
     expect(ranking?.primaryCandidate?.resolvedPath).toBe(
-      "/Users/test/.goose/artifacts/alpha.md",
+      "/Users/test/alpha.md",
     );
     expect(ranking?.primaryCandidate?.allowed).toBe(true);
   });
@@ -367,7 +363,7 @@ describe("artifactPathPolicy", () => {
           toolCallIndex: 0,
         },
       ],
-      ["/Users/test/.goose/artifacts"],
+      ["/Users/test"],
     );
 
     expect(ranking.primaryCandidate?.allowed).toBe(true);
@@ -382,10 +378,7 @@ describe("artifactPathPolicy", () => {
   });
 
   it("preserves Windows drive roots when resolving relative paths", () => {
-    const windowsRoots = [
-      "C:/Users/test/project-a",
-      "C:/Users/test/.goose/artifacts",
-    ];
+    const windowsRoots = ["C:/Users/test/project-a", "C:/Users/test"];
     const resolved = resolvePathCandidate(
       "output/final_report.md",
       windowsRoots,

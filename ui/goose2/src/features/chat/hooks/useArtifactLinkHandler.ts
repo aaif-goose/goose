@@ -30,8 +30,7 @@ export function useArtifactLinkHandler() {
 
       if (!resolved.allowed) {
         setPathNotice(
-          resolved.blockedReason ||
-            "Path is outside allowed project/artifacts roots.",
+          resolved.blockedReason || "Path is outside allowed roots.",
         );
         return;
       }

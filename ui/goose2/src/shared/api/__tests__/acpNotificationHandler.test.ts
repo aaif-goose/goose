@@ -50,7 +50,7 @@ describe("acpNotificationHandler", () => {
     registerPreparedSession(
       "acp-session",
       "goose",
-      "/Users/aharvard/.goose/artifacts",
+      "/Users/aharvard",
     );
     setActiveMessageId("acp-session", "assistant-1");
 

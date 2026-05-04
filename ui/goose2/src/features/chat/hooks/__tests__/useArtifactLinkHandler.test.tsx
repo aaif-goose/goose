@@ -97,7 +97,7 @@ describe("useArtifactLinkHandler", () => {
     const user = userEvent.setup();
     const blocked = makeCandidate({
       allowed: false,
-      blockedReason: "Path is outside allowed project/artifacts roots.",
+      blockedReason: "Path is outside allowed roots.",
     });
     mockResolveMarkdownHref.mockReturnValue(blocked);
 
@@ -106,7 +106,7 @@ describe("useArtifactLinkHandler", () => {
 
     expect(mockOpenResolvedPath).not.toHaveBeenCalled();
     expect(screen.getByTestId("notice")).toHaveTextContent(
-      "Path is outside allowed project/artifacts roots.",
+      "Path is outside allowed roots.",
     );
   });
 
@@ -142,7 +142,7 @@ describe("useArtifactLinkHandler", () => {
     await user.click(screen.getByText("Blocked"));
 
     expect(screen.getByTestId("notice")).toHaveTextContent(
-      "Path is outside allowed project/artifacts roots.",
+      "Path is outside allowed roots.",
     );
   });
 });

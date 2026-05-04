@@ -27,7 +27,6 @@ function makeProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
     archivedAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    artifactsDir: "",
     ...overrides,
   };
 }
@@ -37,70 +36,64 @@ describe("sessionCwdSelection", () => {
     vi.mocked(resolvePath).mockReset();
   });
 
-  it("resolves the first workspace root to the default artifact root", () => {
+  it("resolves the first workspace root unchanged", () => {
     expect(
       resolveProjectDefaultArtifactRoot(
         makeProject({
           workingDirs: ["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"],
-          artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
         }),
       ),
-    ).toBe("/Users/wesb/dev/goose2/artifacts");
+    ).toBe("/Users/wesb/dev/goose2");
   });
 
-  it("falls back to the stored project artifact root when no workspace roots exist", () => {
+  it("returns undefined when no workspace roots exist", () => {
     expect(
       resolveProjectDefaultArtifactRoot(
         makeProject({
           workingDirs: [],
-          artifactsDir: "/Users/wesb/.goose/projects/sample-project/artifacts",
-        }),
-      ),
-    ).toBe("/Users/wesb/.goose/projects/sample-project/artifacts");
-  });
-
-  it("returns undefined for a pathless project artifact root", () => {
-    expect(
-      resolveProjectDefaultArtifactRoot(
-        makeProject({
-          workingDirs: [],
-          artifactsDir: "   ",
         }),
       ),
     ).toBeUndefined();
   });
 
-  it("falls back to global artifacts for a pathless project session cwd", async () => {
+  it("returns undefined for a pathless project fallback directory", () => {
+    expect(
+      resolveProjectDefaultArtifactRoot(
+        makeProject({
+          workingDirs: [],
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("falls back to home for a pathless project session cwd", async () => {
     vi.mocked(resolvePath).mockResolvedValue({
-      path: "/Users/wesb/.goose/artifacts",
+      path: "/Users/wesb",
     });
 
     await expect(
       resolveSessionCwd(
         makeProject({
           workingDirs: [],
-          artifactsDir: "   ",
         }),
       ),
-    ).resolves.toBe("/Users/wesb/.goose/artifacts");
+    ).resolves.toBe("/Users/wesb");
 
     expect(resolvePath).toHaveBeenCalledWith({
-      parts: ["~", ".goose", "artifacts"],
+      parts: ["~"],
     });
   });
 
   describe("defaultGlobalArtifactRoot", () => {
-    it("resolves the global artifact root through the path resolver", async () => {
+    it("resolves the home directory through the path resolver", async () => {
       vi.mocked(resolvePath).mockResolvedValue({
-        path: "/Users/wesb/.goose/artifacts",
+        path: "/Users/wesb",
       });
 
-      await expect(defaultGlobalArtifactRoot()).resolves.toBe(
-        "/Users/wesb/.goose/artifacts",
-      );
+      await expect(defaultGlobalArtifactRoot()).resolves.toBe("/Users/wesb");
 
       expect(resolvePath).toHaveBeenCalledWith({
-        parts: ["~", ".goose", "artifacts"],
+        parts: ["~"],
       });
     });
   });

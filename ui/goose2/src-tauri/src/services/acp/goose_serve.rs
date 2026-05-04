@@ -146,10 +146,7 @@ async fn wait_for_server_ready(port: u16, child: &mut Child) -> Result<(), Strin
 }
 
 fn default_serve_working_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".goose")
-        .join("artifacts")
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
 fn reserve_free_port() -> Result<u16, String> {
