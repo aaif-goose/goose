@@ -3,13 +3,17 @@ name: code-review
 description: >-
   Senior engineer code review focused on catching issues before they become PR
   comments. Reviews only changed lines, categorizes issues by priority, and fixes
-  them one by one. Use when the user says "code review", "review my code",
-  "review this branch", or wants pre-PR feedback.
+  them one by one. Includes a focused ui/goose2 refactor-quality pass for
+  maintainability, decomposition, layering, type hygiene, duplication, and dead
+  code. Use when the user says "code review", "review my code", "review this
+  branch", or wants pre-PR feedback.
 ---
 
 # Pre-PR Code Review
 
 You are a senior engineer conducting a thorough code review. Review **only the lines that changed** in this branch (via `git diff main...HEAD`) and provide actionable feedback on code quality. Do not flag issues in unchanged code.
+
+Default to reporting what needs to be fixed. Do not include an "Applied Well" or praise section unless the user explicitly asks for positive feedback.
 
 ## Determine Files to Review
 
@@ -45,7 +49,10 @@ You are a senior engineer conducting a thorough code review. Review **only the l
 - **Props**: Are prop types properly defined with TypeScript interfaces?
 - **Keys**: Are list items using proper unique keys (not array indices)?
 - **Hooks Rules**: Are hooks called at the top level and in the correct order?
-- **Custom Hooks**: Could any logic be extracted into reusable custom hooks?
+- **Custom Hooks**: Could repeated stateful/effectful logic be extracted into a focused reusable hook?
+- **Pure Helpers**: Could pure derivation, filtering, grouping, parsing, or formatting logic move out of render-heavy components into `lib/` helpers?
+- **Component Shape**: Does any changed view/page still own too many unrelated responsibilities across loading, derivation, mutation, and rendering orchestration?
+- **Component Size**: Treat these as smell thresholds, not hard limits: components around 200 lines, functions around 40 lines, files around 300 lines, JSX nesting around 4 levels.
 
 ### TypeScript Best Practices
 - **const vs let vs var**: Is `const` used by default? Is `let` only used when reassignment is needed? Is `var` avoided entirely?
@@ -55,6 +62,8 @@ You are a senior engineer conducting a thorough code review. Review **only the l
 - **React Ref Types**: Are React refs properly typed as nullable (`useRef<T>(null)` with `RefObject<T | null>`)? Refs are null on first render and during unmount.
 - **Optional Chaining**: Is optional chaining (`?.`) used appropriately for potentially undefined values?
 - **Enums vs Union Types**: Are union types preferred over enums where appropriate?
+- **Named Shapes**: Are repeated or verbose inline object shapes extracted to named types when that makes the contract easier to read?
+- **Shared Types**: Are canonical cross-feature types kept in `src/shared/types/` instead of duplicated across features?
 
 ### Design System & Styling
 - **Component Usage**: Are design system components used instead of raw HTML elements (`<Button>` not `<button>`, `<Input>` not `<input>`)?
@@ -65,11 +74,14 @@ You are a senior engineer conducting a thorough code review. Review **only the l
 - **Variants**: Could any components benefit from additional variants or properties in the design system?
 - **Light and Dark Mode Support**: Are colors working properly in both light and dark modes? No broken colors?
 - **Responsive Layout**: Does the layout work correctly at all breakpoints? No broken layout on mobile, tablet, or desktop?
+- **Semantic Structure**: Are semantic elements like `<main>`, `<nav>`, `<header>`, and `<aside>` used where they clarify page structure?
 
 ### Localization (i18n)
 - **New Keys**: When new translation keys are added to one locale (e.g., `en`), are all other supported locales updated too? i18next falls back gracefully, but incomplete locales should be flagged.
 - **Removed Keys**: When UI text is removed, are the corresponding translation keys removed from all locale files?
 - **Raw Strings**: Are user-facing strings wrapped in `t()` calls instead of hardcoded in JSX? Non-translatable symbols (icons, punctuation, HTML entities) are acceptable with an `i18n-check-ignore` annotation.
+- **Stable Keys**: Are translation keys stable and domain-specific instead of mirroring incidental English copy?
+- **Catch Blocks**: Are user-facing errors routed through translation keys instead of raw English strings in `catch` blocks?
 
 ### Code Simplicity (DRY Principle)
 - **Duplication**: Is there any repeated code that could be extracted into functions or components?
@@ -77,6 +89,9 @@ You are a senior engineer conducting a thorough code review. Review **only the l
 - **Logic**: Is the logic straightforward and easy to follow?
 - **Abstractions**: Are abstractions appropriate (not too early, not too late)?
 - **Guard Clauses**: Are early-return guards used to keep code shallow and readable?
+- **Stable Extraction**: If duplication exists in two or more call sites, is the shared shape stable enough to extract without making callers handle a shifting contract?
+- **Post-PR Shape**: For refactors, review the final code shape. Do not clear a smell just because the PR improved the previous version.
+- **Partial Cleanup**: Do not treat partial extraction, partial deduplication, or partial cleanup as resolution if a verified smell remains in the changed code.
 
 ### Code Cleanliness
 - **Comments**: Are there unnecessary comments explaining obvious code? (Remove them)
@@ -85,6 +100,8 @@ You are a senior engineer conducting a thorough code review. Review **only the l
 - **Cross-Boundary Dead Data**: Are there struct/interface fields computed on one side of a boundary (e.g., Rust backend) but never consumed on the other (e.g., TypeScript frontend)? This wastes computation and adds noise to data contracts.
 - **Naming**: Are variable and function names clear and descriptive?
 - **Magic Numbers**: Are there magic numbers without explanation? Should they be named constants?
+- **Redundant Data**: Are redundant props, fields, parameters, intermediate values, or exports removed?
+- **Coverage Drift**: When behavior-preserving logic moves, did meaningful test coverage move with it instead of disappearing?
 
 ### Animation & UI Polish
 - **Race Conditions**: Are there any animation race conditions or timing issues?
@@ -102,8 +119,24 @@ You are a senior engineer conducting a thorough code review. Review **only the l
 - **Best-Effort Lookups**: Do inventory/config/default-resolution lookups degrade gracefully on transient failure, or can they incorrectly block a primary flow that should still work with a safe fallback?
 - **Draft/Home/Handoff Paths**: If the product has draft, Home, pending, or pre-created sessions, did you review those handoff paths separately from the already-active session path?
 
+### UI Refactor Quality
+Use this focused pass for `ui/goose2` changes, especially when the user asks about cleanup, maintainability, decomposition, layering, type hygiene, duplication, dead code, readability, or extensibility.
+
+- **Final Shape**: Judge whether the changed code is easier to maintain and extend after the PR, not whether it is better than before.
+- **No Bug Required**: Report confirmed maintainability smells even when behavior still works.
+- **Confirmed Smells**: Any verified final-shape smell in changed code should become an issue; do not leave it only as a note or mental checklist item.
+- **Mixed Scope**: If a PR mixes feature work and refactoring, review the feature behavior separately from the cleanup quality.
+- **Layer Discipline**: Keep `ui/` for rendering and light view logic, `hooks/` for React state/effect orchestration, `api/` for backend transport and DTO adaptation, `lib/` for pure helpers, and `stores/` for shared feature state.
+- **Boundary Discipline**: Keep frontend-to-core behavior on the `SDK -> ACP -> goose` path. Do not add ad hoc `fetch()` calls or `invoke()` proxies for core Goose behavior, and do not call ACP clients directly from UI components.
+- **Module Encapsulation**: Export the minimum surface. Keep helpers private unless another module genuinely needs them, and remove stale exports.
+- **Hooks vs Helpers**: Prefer hooks for stateful async workflows and `lib/` helpers for React-independent logic. Do not use a hook as the default extraction target for an oversized component.
+- **Feature Wiring**: Confirm the refactor preserves user-visible behavior, state updates, persistence, and backend calls.
+- **Tests**: Treat coverage loss during refactors as suspicious unless the behavior was intentionally removed.
+- **Second Pass**: Before finalizing, re-check decomposition, layering, hooks/effects, pure helpers, type shapes, duplication, tests, and feature wiring for missed issues.
+
 ### General Code Quality
 - **Error Handling**: Are errors handled gracefully with user-friendly messages?
+- **Notifications**: Are success and error messages routed through the app's shared notification primitive instead of one-off notification UI?
 - **Loading States**: Are loading states shown during async operations?
 - **Accessibility**: Are ARIA labels, keyboard navigation, and screen reader support considered?
 - **Performance**: Are there any obvious performance issues (unnecessary re-renders, heavy computations)?
@@ -134,9 +167,10 @@ Report the results as pass/fail. Any failures are automatically **P0** issues an
 For each file in the list:
 
 1. Run `git diff main...HEAD -- <file>` to get the exact lines that changed
-2. Review **only those changed lines** against the Review Checklist — do not flag issues in unchanged code
+2. Review **only those changed lines** against the Review Checklist — do not flag issues in unchanged code, but follow changed code paths into surrounding modules when needed to verify the issue
 3. For stateful UI or async flow changes, trace the full path end to end: user selection -> local/session state update -> persistence -> backend prepare/set/update call -> failure/rollback path
-4. Note the file path and line numbers from the diff output for each issue found
+4. For `ui/goose2` refactors, run the UI Refactor Quality pass before finalizing findings
+5. Note the file path and line numbers from the diff output for each issue found
 
 ### Step 2: Categorize Issues
 
@@ -173,12 +207,15 @@ Before presenting findings to the user, silently review the issue list three tim
 1. **Pass 1**: For each issue, ask — is this genuinely a problem, or could it be intentional/acceptable? Remove false positives.
 2. **Pass 2**: For each remaining issue, ask — does the recommended fix actually improve the code, or is it a matter of preference?
 3. **Pass 3**: For async state/default-resolution issues, ask — can the UI, persisted state, and backend ever disagree after a failure, fallback, or session handoff?
+4. **Pass 4**: For `ui/goose2` refactors, ask — did any confirmed final-shape smell survive in decomposition, layering, hooks/effects, pure helpers, type shapes, duplication, tests, or feature wiring?
 
 After these passes, tag each surviving issue as one of:
 - **[Must Fix]** — clear violation, will likely get flagged in PR review
 - **[Your Call]** — valid concern but may be intentional or a reasonable tradeoff (e.g. stepping outside the design system for a specific reason). Present it but let the user decide.
 
 Only present issues that survived these passes.
+
+Do not include an "Applied Well" section in the review output. If there are no issues, say that clearly and mention any remaining test gaps or residual risk.
 
 ### Step 4: Fix Issues
 
