@@ -36,7 +36,6 @@ pub fn run() {
             commands::agents::update_persona,
             commands::agents::delete_persona,
             commands::agents::refresh_personas,
-            commands::agents::export_persona,
             commands::agents::import_personas,
             commands::agents::read_import_persona_file,
             commands::agents::save_persona_avatar,

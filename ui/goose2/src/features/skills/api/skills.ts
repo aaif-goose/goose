@@ -167,21 +167,21 @@ export async function updateSkill(
 
 export async function exportSkill(
   path: string,
-): Promise<{ json: string; filename: string }> {
+): Promise<{ contents: string; filename: string }> {
   const client = await getClient();
   const response = await client.goose.GooseSourcesExport({
     type: SKILL_SOURCE_TYPE,
     path,
   });
-  return { json: response.json, filename: response.filename };
+  return { contents: response.json, filename: response.filename };
 }
 
 export async function importSkills(
   fileBytes: number[],
   fileName: string,
 ): Promise<SkillInfo[]> {
-  if (!fileName.endsWith(".skill.json") && !fileName.endsWith(".json")) {
-    throw new Error("File must have a .skill.json or .json extension");
+  if (!fileName.toLowerCase().endsWith(".md")) {
+    throw new Error("File must have a .md extension");
   }
 
   const data = new TextDecoder().decode(new Uint8Array(fileBytes));

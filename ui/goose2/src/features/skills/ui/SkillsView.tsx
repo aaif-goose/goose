@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { Button } from "@/shared/ui/button";
 import { PageHeader, PageShell } from "@/shared/ui/page-shell";
-import { revealInFileManager } from "@/shared/lib/fileManager";
 import { useSkillImportExport } from "../hooks/useSkillImportExport";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { SkillsDialogs } from "./SkillsDialogs";
@@ -15,11 +14,13 @@ import { SkillsToolbar } from "./SkillsToolbar";
 import { hydrateProjectNames } from "../lib/projectHydration";
 import {
   filterSkills,
+  formatSkillName,
   groupSkills,
   uniqueProjectFilters,
   type SkillsFilter,
 } from "../lib/skillsHelpers";
 import {
+  createSkill,
   deleteSkill,
   listSkills,
   type EditingSkill,
@@ -31,6 +32,25 @@ import {
   type SkillCategory,
   type SkillViewInfo,
 } from "../lib/skillCategories";
+
+function getDuplicateSkillName(name: string, existingNames: Set<string>) {
+  const baseName = formatSkillName(`${name}-copy`) || "skill-copy";
+  if (!existingNames.has(baseName)) {
+    return baseName;
+  }
+
+  for (let index = 2; index < 1000; index += 1) {
+    const suffix = `-${index}`;
+    const prefix =
+      baseName.slice(0, 64 - suffix.length).replace(/-+$/g, "") || "skill";
+    const candidate = `${prefix}${suffix}`;
+    if (!existingNames.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `skill-copy-${Date.now().toString().slice(-8)}`;
+}
 
 interface SkillsViewProps {
   onStartChatWithSkill?: (skill: SkillInfo, projectId?: string | null) => void;
@@ -73,7 +93,6 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
       return nextSkills;
     } catch {
       if (loadRequestIdRef.current === requestId) {
-        setSkills([]);
         toast.error(t("view.loadError"));
       }
       return [];
@@ -172,9 +191,23 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     setDialogOpen(true);
   };
 
-  const handleReveal = useCallback((skill: SkillInfo) => {
-    void revealInFileManager(skill.path);
-  }, []);
+  const handleDuplicate = useCallback(
+    async (skill: SkillInfo) => {
+      const duplicateName = getDuplicateSkillName(
+        skill.name,
+        new Set(skills.map((currentSkill) => currentSkill.name)),
+      );
+
+      try {
+        await createSkill(duplicateName, skill.description, skill.instructions);
+        await loadSkills();
+        toast.success(t("view.duplicated", { name: duplicateName }));
+      } catch {
+        toast.error(t("view.duplicateError"));
+      }
+    },
+    [loadSkills, skills, t],
+  );
 
   const handleStartChat = useCallback(
     (skill: SkillInfo) => {
@@ -243,10 +276,10 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
           skill={activeSkill}
           onBack={() => setActiveSkillId(null)}
           onEdit={handleEdit}
-          onReveal={handleReveal}
           onCopyFile={handleCopyFile}
           onSaveCopy={handleSaveCopy}
           onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
+          onDuplicate={handleDuplicate}
           onDelete={handleDelete}
         />
         {dialogs}
@@ -297,13 +330,18 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
         isDragOver={isDragOver}
       />
 
-      {!loading && filteredSkills.length > 0 ? (
+      {filteredSkills.length > 0 ? (
         <SkillsListSections
           sections={groupedSkills}
           expandedSectionIds={expandedSectionIds}
           onExpandedSectionIdsChange={setExpandedSectionIds}
           onSelectSkill={handleSelectSkill}
           onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
+          onEdit={handleEdit}
+          onCopyFile={handleCopyFile}
+          onSaveCopy={handleSaveCopy}
+          onDuplicate={handleDuplicate}
+          onDelete={handleDelete}
         />
       ) : null}
 
@@ -320,7 +358,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".skill.json,.json"
+        accept=".md,text/markdown,text/plain"
         className="hidden"
         onChange={handleFileChange}
       />

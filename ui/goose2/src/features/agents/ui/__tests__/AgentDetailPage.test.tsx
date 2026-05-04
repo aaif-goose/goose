@@ -26,7 +26,6 @@ function renderDetail(
     persona,
     onBack: vi.fn(),
     onEdit: vi.fn(),
-    onReveal: vi.fn(),
     onStartChat: vi.fn(),
     onCopyFile: vi.fn(),
     onSaveCopy: vi.fn(),
@@ -40,29 +39,30 @@ function renderDetail(
 }
 
 describe("AgentDetailPage", () => {
-  it("shows the skills-style action rail for file-backed agents", async () => {
+  it("shows labeled primary actions for file-backed agents", async () => {
     const user = userEvent.setup();
     const persona = makePersona();
     const props = renderDetail(persona);
 
-    await user.click(screen.getByRole("button", { name: "Start chat" }));
+    await user.click(screen.getByRole("button", { name: "Start a chat" }));
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Show in folder" }));
 
     expect(props.onStartChat).toHaveBeenCalledWith(persona);
     expect(props.onEdit).toHaveBeenCalledWith(persona);
-    expect(props.onReveal).toHaveBeenCalledWith(persona);
   });
 
-  it("keeps file sharing actions in the overflow menu", () => {
+  it("keeps file actions in the share menu", async () => {
+    const user = userEvent.setup();
     renderDetail();
+
+    await user.click(screen.getByRole("button", { name: "Share" }));
 
     expect(screen.getByRole("button", { name: "More" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Copy file" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("menuitem", { name: "Copy file to clipboard" }),
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Save a copy..." }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("menuitem", { name: "Export a copy" }),
+    ).toBeInTheDocument();
   });
 });

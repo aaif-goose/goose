@@ -2,37 +2,53 @@ use crate::types::agents::{
     builtin_personas, Avatar, CreatePersonaRequest, Persona, UpdatePersonaRequest,
 };
 use log::warn;
-use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 pub struct PersonaStore {
     personas: Mutex<Vec<Persona>>,
-    store_path: PathBuf,
 }
 
 /// YAML frontmatter fields parsed from markdown persona files.
-#[derive(serde::Deserialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 struct MarkdownFrontmatter {
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    avatar: Option<Avatar>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
 }
 
 impl PersonaStore {
     pub fn new() -> Self {
         let store_path = Self::store_path();
-        let stored = Self::load_from_disk(&store_path);
-        let markdown = Self::load_markdown_personas();
-        let merged = Self::merge_all(stored, markdown);
-        Self {
-            personas: Mutex::new(merged),
-            store_path,
-        }
+        Self::migrate_legacy_markdown_agents();
+        Self::migrate_legacy_personas_json(&store_path);
+        Self::ensure_seed_agents();
+        let merged = Self::load_markdown_personas();
+        Self { personas: Mutex::new(merged) }
     }
 
     fn store_path() -> PathBuf {
         let base = dirs::home_dir().expect("home dir");
         base.join(".goose").join("personas.json")
+    }
+
+    fn migration_marker_path() -> PathBuf {
+        Self::agents_dir().join(".personas-json-migrated")
+    }
+
+    fn seed_marker_path() -> PathBuf {
+        Self::agents_dir().join(".seed-agents-installed")
+    }
+
+    fn legacy_markdown_migration_marker_path() -> PathBuf {
+        Self::agents_dir().join(".goose-agents-migrated")
     }
 
     /// Path to the avatars directory (~/.goose/avatars/).
@@ -43,66 +59,149 @@ impl PersonaStore {
             .join("avatars")
     }
 
-    fn load_from_disk(path: &PathBuf) -> Vec<Persona> {
+    fn load_legacy_json(path: &PathBuf) -> Vec<Persona> {
         match std::fs::read_to_string(path) {
-            Ok(contents) => {
-                let mut personas: Vec<Persona> =
-                    serde_json::from_str(&contents).unwrap_or_default();
-                let source_path = path.to_string_lossy().to_string();
-                for persona in &mut personas {
-                    persona.source_path = Some(source_path.clone());
-                }
-                personas
-            }
+            Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
             Err(_) => Vec::new(),
         }
     }
 
-    /// Merge builtins, JSON custom personas, and markdown personas.
-    /// Priority: builtins first, then JSON custom, then markdown.
-    /// Deduplication is by display_name (case-insensitive).
-    fn merge_all(stored: Vec<Persona>, markdown: Vec<Persona>) -> Vec<Persona> {
-        let builtins = builtin_personas();
-
-        let mut result = builtins;
-        let mut seen_names: HashSet<String> = result
-            .iter()
-            .map(|p| p.display_name.to_lowercase())
-            .collect();
-        let mut seen_ids: HashSet<String> = result.iter().map(|p| p.id.clone()).collect();
-
-        // Add custom (non-builtin) personas from JSON
-        for persona in stored {
-            if !seen_ids.contains(&persona.id) {
-                seen_names.insert(persona.display_name.to_lowercase());
-                seen_ids.insert(persona.id.clone());
-                result.push(persona);
-            }
-        }
-
-        // Add markdown personas, skipping any whose name already exists
-        for persona in markdown {
-            if !seen_names.contains(&persona.display_name.to_lowercase())
-                && !seen_ids.contains(&persona.id)
-            {
-                seen_names.insert(persona.display_name.to_lowercase());
-                seen_ids.insert(persona.id.clone());
-                result.push(persona);
-            }
-        }
-
-        result
+    /// Canonical directory containing global markdown agent files.
+    fn agents_dir() -> PathBuf {
+        dirs::home_dir()
+            .expect("home dir")
+            .join(".agents")
+            .join("agents")
     }
 
-    /// Directory containing markdown persona files.
-    fn agents_dir() -> PathBuf {
+    /// Previous markdown-agent location. Read only for one-time migration.
+    fn legacy_agents_dir() -> PathBuf {
         dirs::home_dir()
             .expect("home dir")
             .join(".goose")
             .join("agents")
     }
 
-    /// Scan `~/.goose/agents/*.md` and parse each into a Persona.
+    fn ensure_seed_agents() {
+        let dir = Self::agents_dir();
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            warn!("Failed to create agents directory {:?}: {}", dir, err);
+            return;
+        }
+        if Self::seed_marker_path().exists() {
+            return;
+        }
+
+        for persona in builtin_personas() {
+            let path = dir.join(format!("{}.md", Self::slugify_name(&persona.display_name)));
+            if path.exists() {
+                continue;
+            }
+            if let Err(err) = std::fs::write(&path, Self::persona_to_markdown(&persona)) {
+                warn!("Failed to seed agent {:?}: {}", path, err);
+            }
+        }
+        let _ = std::fs::write(Self::seed_marker_path(), chrono::Utc::now().to_rfc3339());
+    }
+
+    fn migrate_legacy_markdown_agents() {
+        let legacy_dir = Self::legacy_agents_dir();
+        if !legacy_dir.is_dir() || Self::legacy_markdown_migration_marker_path().exists() {
+            return;
+        }
+
+        let target_dir = Self::agents_dir();
+        if let Err(err) = std::fs::create_dir_all(&target_dir) {
+            warn!("Failed to create agents directory {:?}: {}", target_dir, err);
+            return;
+        }
+
+        let entries = match std::fs::read_dir(&legacy_dir) {
+            Ok(entries) => entries,
+            Err(err) => {
+                warn!("Failed to read legacy agents directory {:?}: {}", legacy_dir, err);
+                return;
+            }
+        };
+
+        for entry in entries.flatten() {
+            let source = entry.path();
+            if source.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                continue;
+            }
+
+            let Some(file_name) = source.file_name() else {
+                continue;
+            };
+            let destination =
+                Self::unique_agent_path(&target_dir, file_name.to_string_lossy().as_ref());
+            if let Err(err) = std::fs::copy(&source, &destination) {
+                warn!(
+                    "Failed to migrate legacy agent {:?} to {:?}: {}",
+                    source, destination, err
+                );
+            }
+        }
+        let _ = std::fs::write(
+            Self::legacy_markdown_migration_marker_path(),
+            chrono::Utc::now().to_rfc3339(),
+        );
+    }
+
+    fn migrate_legacy_personas_json(path: &PathBuf) {
+        if !path.is_file() || Self::migration_marker_path().exists() {
+            return;
+        }
+
+        let personas = Self::load_legacy_json(path);
+        let dir = Self::agents_dir();
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            warn!("Failed to create agents directory {:?}: {}", dir, err);
+            return;
+        }
+
+        if personas.is_empty() {
+            let _ = std::fs::write(Self::migration_marker_path(), "");
+            return;
+        }
+
+        for persona in personas {
+            let filename = format!("{}.md", Self::slugify_name(&persona.display_name));
+            let path = Self::unique_agent_path(&dir, &filename);
+            if let Err(err) = std::fs::write(&path, Self::persona_to_markdown(&persona)) {
+                warn!("Failed to migrate persona '{}' to markdown: {}", persona.display_name, err);
+            }
+        }
+
+        let _ = std::fs::write(Self::migration_marker_path(), chrono::Utc::now().to_rfc3339());
+    }
+
+    fn unique_agent_path(dir: &Path, filename: &str) -> PathBuf {
+        let path = dir.join(filename);
+        if !path.exists() {
+            return path;
+        }
+
+        let stem = Path::new(filename)
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("agent");
+        let extension = Path::new(filename)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("md");
+
+        for counter in 2.. {
+            let candidate = dir.join(format!("{}-{}.{}", stem, counter, extension));
+            if !candidate.exists() {
+                return candidate;
+            }
+        }
+
+        unreachable!("counter loop always returns");
+    }
+
+    /// Scan the canonical global agents directory and parse each Markdown file into a Persona.
     fn load_markdown_personas() -> Vec<Persona> {
         let dir = Self::agents_dir();
         if !dir.is_dir() {
@@ -181,10 +280,10 @@ impl PersonaStore {
         Ok(Persona {
             id,
             display_name: frontmatter.name,
-            avatar: None,
+            avatar: frontmatter.avatar,
             system_prompt,
-            provider: None,
-            model: None,
+            provider: frontmatter.provider,
+            model: frontmatter.model,
             is_builtin: false,
             is_from_disk: true,
             source_path: Some(path.to_string_lossy().to_string()),
@@ -210,6 +309,74 @@ impl PersonaStore {
         Ok((yaml_str, body))
     }
 
+    fn slugify_name(name: &str) -> String {
+        let mut slug = String::new();
+        let mut previous_hyphen = false;
+
+        for ch in name.to_lowercase().chars() {
+            let next = if ch.is_ascii_alphanumeric() {
+                Some(ch)
+            } else if ch.is_whitespace() || ch == '-' || ch == '_' {
+                Some('-')
+            } else {
+                None
+            };
+
+            if let Some(ch) = next {
+                if ch == '-' {
+                    if !previous_hyphen && !slug.is_empty() {
+                        slug.push(ch);
+                    }
+                    previous_hyphen = true;
+                } else {
+                    slug.push(ch);
+                    previous_hyphen = false;
+                }
+            }
+        }
+
+        let slug = slug.trim_matches('-');
+        if slug.is_empty() {
+            "agent".to_string()
+        } else {
+            slug.chars().take(64).collect()
+        }
+    }
+
+    fn persona_to_frontmatter(persona: &Persona) -> MarkdownFrontmatter {
+        MarkdownFrontmatter {
+            name: persona.display_name.clone(),
+            description: None,
+            avatar: persona.avatar.clone(),
+            provider: persona.provider.clone(),
+            model: persona.model.clone(),
+        }
+    }
+
+    fn markdown_from_parts(frontmatter: &MarkdownFrontmatter, body: &str) -> Result<String, String> {
+        let yaml = serde_yaml::to_string(frontmatter)
+            .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+        let body = body.trim();
+        if body.is_empty() {
+            Ok(format!("---\n{}---\n", yaml))
+        } else {
+            Ok(format!("---\n{}---\n\n{}\n", yaml, body))
+        }
+    }
+
+    fn persona_to_markdown(persona: &Persona) -> String {
+        Self::markdown_from_parts(
+            &Self::persona_to_frontmatter(persona),
+            &persona.system_prompt,
+        )
+        .unwrap_or_else(|_| {
+            format!(
+                "---\nname: {}\n---\n\n{}\n",
+                persona.display_name, persona.system_prompt
+            )
+        })
+    }
+
     fn update_markdown_persona_file(
         id: &str,
         req: &UpdatePersonaRequest,
@@ -219,26 +386,39 @@ impl PersonaStore {
             std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))?;
         let (yaml_str, current_body) = Self::split_markdown_persona(&content)?;
 
-        let mut frontmatter: serde_yaml::Mapping = serde_yaml::from_str(yaml_str)
+        let original_frontmatter: MarkdownFrontmatter = serde_yaml::from_str(yaml_str)
             .map_err(|e| format!("Invalid frontmatter YAML: {}", e))?;
+        let mut frontmatter = original_frontmatter.clone();
 
         if let Some(name) = &req.display_name {
-            frontmatter.insert(
-                serde_yaml::Value::String("name".to_string()),
-                serde_yaml::Value::String(name.clone()),
-            );
+            frontmatter.name = name.clone();
+        }
+        if let Some(avatar) = &req.avatar {
+            frontmatter.avatar = avatar.clone();
+        }
+        if let Some(provider) = &req.provider {
+            frontmatter.provider = Some(provider.clone());
+        }
+        if let Some(model) = &req.model {
+            frontmatter.model = Some(model.clone());
         }
 
-        let body = req
-            .system_prompt
-            .clone()
-            .unwrap_or(current_body)
-            .trim()
-            .to_string();
-
-        let yaml = serde_yaml::to_string(&frontmatter)
-            .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
-        let next_content = format!("---\n{}---\n\n{}\n", yaml, body);
+        let current_system_prompt = if current_body.is_empty() {
+            original_frontmatter
+                .description
+                .clone()
+                .unwrap_or_else(|| format!("You are {}.", original_frontmatter.name))
+        } else {
+            current_body.clone()
+        };
+        let body = match &req.system_prompt {
+            Some(prompt) if current_body.is_empty() && prompt.trim() == current_system_prompt => {
+                String::new()
+            }
+            Some(prompt) => prompt.trim().to_string(),
+            None => current_body,
+        };
+        let next_content = Self::markdown_from_parts(&frontmatter, &body)?;
 
         std::fs::write(&path, next_content)
             .map_err(|e| format!("Failed to write file '{}': {}", path.display(), e))?;
@@ -269,32 +449,11 @@ impl PersonaStore {
     /// Re-scan markdown personas and update the in-memory list.
     /// Returns the full updated persona list.
     pub fn refresh_markdown(&self) -> Vec<Persona> {
-        let stored = Self::load_from_disk(&self.store_path);
         let markdown = Self::load_markdown_personas();
-        let merged = Self::merge_all(stored, markdown);
 
         let mut personas = self.personas.lock().unwrap();
-        *personas = merged;
+        *personas = markdown;
         personas.clone()
-    }
-
-    fn save_to_disk(&self, personas: &[Persona]) {
-        if let Some(parent) = self.store_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        // Only persist app-created personas. Source paths are runtime metadata.
-        let custom: Vec<Persona> = personas
-            .iter()
-            .filter(|p| !p.is_builtin && !p.is_from_disk)
-            .map(|persona| {
-                let mut persona = persona.clone();
-                persona.source_path = None;
-                persona
-            })
-            .collect();
-        if let Ok(json) = serde_json::to_string_pretty(&custom) {
-            let _ = std::fs::write(&self.store_path, json);
-        }
     }
 
     pub fn list(&self) -> Vec<Persona> {
@@ -310,7 +469,7 @@ impl PersonaStore {
 
     pub fn create(&self, req: CreatePersonaRequest) -> Result<Persona, String> {
         let now = chrono::Utc::now().to_rfc3339();
-        let persona = Persona {
+        let mut persona = Persona {
             id: uuid::Uuid::new_v4().to_string(),
             display_name: req.display_name,
             avatar: req.avatar,
@@ -318,15 +477,41 @@ impl PersonaStore {
             provider: req.provider,
             model: req.model,
             is_builtin: false,
-            is_from_disk: false,
-            source_path: Some(self.store_path.to_string_lossy().to_string()),
+            is_from_disk: true,
+            source_path: None,
             created_at: now.clone(),
             updated_at: now,
         };
+        let agents_dir = Self::agents_dir();
+        std::fs::create_dir_all(&agents_dir)
+            .map_err(|e| format!("Failed to create agents directory: {}", e))?;
+        let filename = format!("{}.md", Self::slugify_name(&persona.display_name));
+        let path = Self::unique_agent_path(&agents_dir, &filename);
+        std::fs::write(&path, Self::persona_to_markdown(&persona))
+            .map_err(|e| format!("Failed to write agent file '{}': {}", path.display(), e))?;
+        persona = Self::parse_markdown_persona(&path)?;
 
         let mut personas = self.personas.lock().unwrap();
         personas.push(persona.clone());
-        self.save_to_disk(&personas);
+        Ok(persona)
+    }
+
+    pub fn import_markdown(
+        &self,
+        display_name: &str,
+        markdown: &str,
+    ) -> Result<Persona, String> {
+        let agents_dir = Self::agents_dir();
+        std::fs::create_dir_all(&agents_dir)
+            .map_err(|e| format!("Failed to create agents directory: {}", e))?;
+        let filename = format!("{}.md", Self::slugify_name(display_name));
+        let path = Self::unique_agent_path(&agents_dir, &filename);
+        std::fs::write(&path, markdown)
+            .map_err(|e| format!("Failed to write agent file '{}': {}", path.display(), e))?;
+        let persona = Self::parse_markdown_persona(&path)?;
+
+        let mut personas = self.personas.lock().unwrap();
+        personas.push(persona.clone());
         Ok(persona)
     }
 
@@ -337,9 +522,6 @@ impl PersonaStore {
             .find(|p| p.id == id)
             .ok_or_else(|| format!("Persona '{}' not found", id))?;
 
-        if persona.is_builtin {
-            return Err("Cannot update a built-in persona".to_string());
-        }
         if persona.is_from_disk {
             let updated = Self::update_markdown_persona_file(id, &req)?;
             *persona = updated.clone();
@@ -365,7 +547,6 @@ impl PersonaStore {
         persona.updated_at = chrono::Utc::now().to_rfc3339();
 
         let updated = persona.clone();
-        self.save_to_disk(&personas);
         Ok(updated)
     }
 
@@ -378,9 +559,6 @@ impl PersonaStore {
             .cloned()
             .ok_or_else(|| format!("Persona '{}' not found", id))?;
 
-        if persona.is_builtin {
-            return Err("Cannot delete a built-in persona".to_string());
-        }
         if persona.is_from_disk {
             let path = Self::markdown_persona_path(id)?;
             match std::fs::remove_file(&path) {
@@ -396,7 +574,6 @@ impl PersonaStore {
             }
 
             personas.retain(|p| p.id != id);
-            self.save_to_disk(&personas);
             return Ok(());
         }
 
@@ -407,7 +584,6 @@ impl PersonaStore {
         }
 
         personas.retain(|p| p.id != id);
-        self.save_to_disk(&personas);
         Ok(())
     }
 

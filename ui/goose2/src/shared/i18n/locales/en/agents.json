@@ -11,9 +11,6 @@
   },
   "card": {
     "ariaLabel": "Agent: {{name}}",
-    "custom": "Custom",
-    "featured": "Featured",
-    "fileBacked": "File-backed",
     "options": "Agent options"
   },
   "config": {
@@ -45,8 +42,6 @@
     "newTitle": "New Agent",
     "noModelsAvailable": "No models are available for this provider yet.",
     "provider": "Provider",
-    "readOnlyBuiltIn": "Built-in agents are read-only. Duplicate to customize one.",
-    "readOnlyFile": "This agent is loaded from a file. You can review it here, but editing is disabled.",
     "saveFailed": "Failed to save agent.",
     "savedModelUnavailable": "{{model}} (saved, unavailable)",
     "savedModelUnavailableHelp": "This agent uses a saved model that is not in the current provider inventory.",
@@ -72,10 +67,9 @@
   "view": {
     "copyName": "{{name}} (Copy)",
     "backToAgents": "Back to agents",
-    "copyFile": "Copy file",
+    "copyFile": "Copy file to clipboard",
     "copyFileFailed": "Couldn't copy the file.",
     "copySaved": "Saved a copy to {{path}}",
-    "created": "Created",
     "deleteFailed": "Failed to delete agent.",
     "deleteDescription": "This agent and its configuration will be permanently removed.",
     "deleteTitle": "Delete \"{{name}}\" permanently?",
@@ -84,9 +78,8 @@
     "emptyAgentsDescription": "Create an agent to get started.",
     "emptyAgentsTitle": "No agents yet",
     "fileCopied": "File copied. Paste it into Slack, email, or another app.",
-    "filePath": "File path",
-    "importInvalidExtension": "Unsupported file type. Choose a .json file.",
-    "importInvalidMimeType": "Unsupported file type. Choose a JSON file.",
+    "importInvalidExtension": "Unsupported file type. Choose a .md file.",
+    "importInvalidMimeType": "Unsupported file type. Choose a Markdown file.",
     "importFailed": "Failed to import agent.",
     "imported_one": "Imported {{count}} agent.",
     "imported_other": "Imported {{count}} agents.",
@@ -94,13 +87,12 @@
     "newPersona": "New Agent",
     "optionsAria": "Options for {{name}}",
     "reveal": "Show in folder",
-    "saveCopy": "Save a copy...",
+    "saveCopy": "Export a copy",
     "saveCopyFailed": "Couldn't save a copy.",
+    "share": "Share",
     "searchPlaceholder": "Search agents",
-    "source": "Source",
-    "startChat": "Start chat with {{name}}",
-    "startChatShort": "Start chat",
-    "title": "Agents",
-    "updated": "Updated"
+    "startChat": "Start a chat with {{name}}",
+    "startChatShort": "Start a chat",
+    "title": "Agents"
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { exportPersona, importPersonas, refreshPersonas } from "../agents";
+import { importPersonas, refreshPersonas } from "../agents";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -11,23 +11,6 @@ const mockedInvoke = vi.mocked(invoke);
 describe("agents API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  // ── exportPersona ────────────────────────────────────────────────────
-
-  it("exportPersona invokes correct Tauri command with ID", async () => {
-    const mockResult = {
-      json: '{"displayName":"Test"}',
-      suggestedFilename: "test.json",
-    };
-    mockedInvoke.mockResolvedValue(mockResult);
-
-    const result = await exportPersona("persona-123");
-
-    expect(mockedInvoke).toHaveBeenCalledWith("export_persona", {
-      id: "persona-123",
-    });
-    expect(result).toEqual(mockResult);
   });
 
   // ── importPersonas ───────────────────────────────────────────────────
@@ -46,11 +29,11 @@ describe("agents API", () => {
     mockedInvoke.mockResolvedValue(mockPersonas);
 
     const fileBytes = [0x7b, 0x7d]; // "{}"
-    const result = await importPersonas(fileBytes, "personas.json");
+    const result = await importPersonas(fileBytes, "agent.md");
 
     expect(mockedInvoke).toHaveBeenCalledWith("import_personas", {
       fileBytes,
-      fileName: "personas.json",
+      fileName: "agent.md",
     });
     expect(result).toEqual(mockPersonas);
   });

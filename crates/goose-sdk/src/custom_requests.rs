@@ -742,7 +742,7 @@ pub struct DeleteSourceRequest {
     pub path: String,
 }
 
-/// Export a source at an absolute path as a portable JSON payload.
+/// Export a source at an absolute path as its canonical Markdown payload.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/sources/export", response = ExportSourceResponse)]
 #[serde(rename_all = "camelCase")]
@@ -755,11 +755,12 @@ pub struct ExportSourceRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportSourceResponse {
+    /// Canonical source contents. The field remains `json` for wire compatibility.
     pub json: String,
     pub filename: String,
 }
 
-/// Import a source from a JSON export payload produced by `_goose/sources/export`.
+/// Import a source from a canonical Markdown payload produced by `_goose/sources/export`.
 /// The imported source is written into the explicit target scope; on name
 /// collisions a `-imported` suffix is appended.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]

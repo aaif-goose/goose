@@ -5,20 +5,15 @@ import {
   AvatarImage,
 } from "@/shared/ui/avatar";
 import { DetailField } from "@/shared/ui/detail-field";
-import { Badge } from "@/shared/ui/badge";
 import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
 import type { Avatar } from "@/shared/types/agents";
-import {
-  getPersonaInitials,
-  type PersonaSource,
-} from "@/features/agents/lib/personaPresentation";
+import { getPersonaInitials } from "@/features/agents/lib/personaPresentation";
 
 interface PersonaDetailsProps {
   avatar: Avatar | null;
   displayName: string;
   modelLabel: string;
-  personaSource: PersonaSource;
   providerLabel: string;
   systemPrompt: string;
 }
@@ -27,7 +22,6 @@ export function PersonaDetails({
   avatar,
   displayName,
   modelLabel,
-  personaSource,
   providerLabel,
   systemPrompt,
 }: PersonaDetailsProps) {
@@ -55,14 +49,6 @@ export function PersonaDetails({
             >
               {displayName}
             </DetailField>
-            <div className="flex flex-wrap items-center gap-2">
-              {personaSource === "builtin" ? (
-                <Badge variant="secondary">{t("common:labels.builtIn")}</Badge>
-              ) : null}
-              {personaSource === "file" ? (
-                <Badge variant="secondary">{t("card.fileBacked")}</Badge>
-              ) : null}
-            </div>
           </div>
         </div>
       </section>

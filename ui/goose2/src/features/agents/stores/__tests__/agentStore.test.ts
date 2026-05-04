@@ -177,28 +177,4 @@ describe("agentStore", () => {
     expect(result).toHaveLength(2);
     expect(result.map((a) => a.id).sort()).toEqual(["a1", "a3"]);
   });
-
-  it("getBuiltinPersonas returns only builtins", () => {
-    useAgentStore
-      .getState()
-      .setPersonas([
-        makePersona({ id: "b", isBuiltin: true }),
-        makePersona({ id: "c", isBuiltin: false }),
-      ]);
-    const builtins = useAgentStore.getState().getBuiltinPersonas();
-    expect(builtins).toHaveLength(1);
-    expect(builtins[0].id).toBe("b");
-  });
-
-  it("getCustomPersonas returns only non-builtins", () => {
-    useAgentStore
-      .getState()
-      .setPersonas([
-        makePersona({ id: "b", isBuiltin: true }),
-        makePersona({ id: "c", isBuiltin: false }),
-      ]);
-    const custom = useAgentStore.getState().getCustomPersonas();
-    expect(custom).toHaveLength(1);
-    expect(custom[0].id).toBe("c");
-  });
 });

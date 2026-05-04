@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button, buttonVariants } from "@/shared/ui/button";
 import { PageHeader, PageShell } from "@/shared/ui/page-shell";
-import { revealInFileManager } from "@/shared/lib/fileManager";
 import { copyFileToClipboard, saveFileCopy } from "@/shared/api/system";
 import {
   AlertDialog,
@@ -34,7 +33,6 @@ import {
   formatImportSuccessMessage,
   validatePersonaImportFile,
 } from "@/features/agents/lib/personaImport";
-import { getPersonaSource } from "@/features/agents/lib/personaPresentation";
 
 interface AgentsViewProps {
   onStartChatWithPersona?: (persona: Persona) => void;
@@ -122,7 +120,6 @@ export function AgentsView({ onStartChatWithPersona }: AgentsViewProps) {
   );
 
   const handleDeletePersona = useCallback((persona: Persona) => {
-    if (getPersonaSource(persona) === "builtin") return;
     setDeletingPersona(persona);
   }, []);
 
@@ -178,11 +175,6 @@ export function AgentsView({ onStartChatWithPersona }: AgentsViewProps) {
     [t],
   );
 
-  const handleRevealPersona = useCallback((persona: Persona) => {
-    if (!persona.sourcePath) return;
-    void revealInFileManager(persona.sourcePath);
-  }, []);
-
   const handleImportError = useCallback((message: string) => {
     toast.error(message);
   }, []);
@@ -217,8 +209,8 @@ export function AgentsView({ onStartChatWithPersona }: AgentsViewProps) {
         title: t("common:actions.import"),
         filters: [
           {
-            name: "JSON",
-            extensions: ["json"],
+            name: "Markdown",
+            extensions: ["md"],
           },
         ],
       });
@@ -295,7 +287,6 @@ export function AgentsView({ onStartChatWithPersona }: AgentsViewProps) {
           persona={activePersona}
           onBack={() => setActivePersonaId(null)}
           onEdit={(persona) => openPersonaEditor(persona, "edit")}
-          onReveal={handleRevealPersona}
           onStartChat={onStartChatWithPersona}
           onCopyFile={handleCopyPersonaFile}
           onSaveCopy={handleSavePersonaCopy}
@@ -349,6 +340,7 @@ export function AgentsView({ onStartChatWithPersona }: AgentsViewProps) {
           personas={filteredPersonas}
           hasAnyPersonas={personas.length > 0}
           onSelectPersona={(p) => setActivePersonaId(p.id)}
+          onStartChatPersona={onStartChatWithPersona}
           onEditPersona={(p) => openPersonaEditor(p, "edit")}
           onDuplicatePersona={handleDuplicatePersona}
           onDeletePersona={handleDeletePersona}

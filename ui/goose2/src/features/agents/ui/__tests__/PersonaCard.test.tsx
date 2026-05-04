@@ -22,12 +22,7 @@ describe("PersonaCard", () => {
     expect(screen.getByText("Coder")).toBeInTheDocument();
   });
 
-  it("shows featured badge for built-in personas", () => {
-    render(<PersonaCard persona={makePersona({ isBuiltin: true })} />);
-    expect(screen.getByText("Featured")).toBeInTheDocument();
-  });
-
-  it("does not show featured badge for custom personas", () => {
+  it("does not show a provenance badge", () => {
     render(<PersonaCard persona={makePersona({ isBuiltin: false })} />);
     expect(screen.queryByText("Featured")).not.toBeInTheDocument();
   });
@@ -76,7 +71,8 @@ describe("PersonaCard", () => {
     const user = userEvent.setup();
     render(
       <PersonaCard
-        persona={makePersona()}
+        persona={makePersona({ sourcePath: "/tmp/code-review.md" })}
+        onStartChat={vi.fn()}
         onEdit={vi.fn()}
         onDuplicate={vi.fn()}
         onDelete={vi.fn()}
@@ -85,7 +81,13 @@ describe("PersonaCard", () => {
 
     await user.click(screen.getByRole("button", { name: /agent options/i }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: /start a chat/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /edit/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: /share/i }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("menuitem", { name: /duplicate/i }),
     ).toBeInTheDocument();
@@ -94,7 +96,7 @@ describe("PersonaCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("delete is disabled for built-in personas", async () => {
+  it("shows delete for imported seeded personas", async () => {
     const user = userEvent.setup();
     render(
       <PersonaCard
@@ -104,8 +106,9 @@ describe("PersonaCard", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /agent options/i }));
-    const deleteBtn = screen.queryByRole("menuitem", { name: /delete/i });
-    expect(deleteBtn).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: /delete/i }),
+    ).toBeInTheDocument();
   });
 
   it("does not trigger selection when keyboard opens the options menu", async () => {

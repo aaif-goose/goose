@@ -77,9 +77,9 @@ fn validate_import_persona_path(source_path: &str) -> Result<PathBuf, String> {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
-        .ok_or_else(|| "Unsupported file type. Expected a .json file.".to_string())?;
-    if !extension.eq_ignore_ascii_case("json") {
-        return Err("Unsupported file type. Expected a .json file.".to_string());
+        .ok_or_else(|| "Unsupported file type. Expected a .md file.".to_string())?;
+    if !extension.eq_ignore_ascii_case("md") {
+        return Err("Unsupported file type. Expected a .md file.".to_string());
     }
 
     let metadata = std::fs::metadata(&path)
@@ -111,153 +111,73 @@ pub fn read_import_persona_file(source_path: String) -> Result<ImportFileReadRes
     })
 }
 
-// --- Sprout-compatible persona import/export ---
+// --- Markdown agent import ---
 
-/// Sprout-compatible persona export format (version 1, camelCase keys).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PersonaExportV1 {
-    version: u32,
-    display_name: String,
-    system_prompt: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+#[derive(Debug, Deserialize)]
+struct MarkdownAgentFrontmatter {
+    name: String,
+    description: Option<String>,
     avatar: Option<Avatar>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<String>,
 }
 
-/// Result returned by export_persona containing the JSON string and a suggested filename.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportResult {
-    pub json: String,
-    pub suggested_filename: String,
-}
-
-/// Convert a display name into a filesystem-safe slug.
-/// Lowercase, replace non-alphanumeric with hyphens, collapse runs, trim, max 50 chars.
-pub fn slugify(name: &str) -> String {
-    let slug: String = name
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect();
-
-    // Collapse consecutive hyphens
-    let mut collapsed = String::with_capacity(slug.len());
-    let mut prev_hyphen = false;
-    for c in slug.chars() {
-        if c == '-' {
-            if !prev_hyphen {
-                collapsed.push('-');
-            }
-            prev_hyphen = true;
-        } else {
-            collapsed.push(c);
-            prev_hyphen = false;
-        }
+fn parse_markdown_agent(content: &str) -> Result<CreatePersonaRequest, String> {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return Err("Missing frontmatter delimiter".to_string());
     }
 
-    let trimmed = collapsed.trim_matches('-');
-    let result = if trimmed.len() > 50 {
-        // Cut at 50 chars without splitting mid-char, then trim trailing hyphens
-        trimmed[..50].trim_end_matches('-').to_string()
-    } else {
-        trimmed.to_string()
-    };
+    let after_first = &trimmed[3..];
+    let end_idx = after_first
+        .find("\n---")
+        .ok_or_else(|| "Missing closing frontmatter delimiter".to_string())?;
+    let yaml = &after_first[..end_idx];
+    let body = after_first[end_idx + 4..].trim().to_string();
+    let frontmatter: MarkdownAgentFrontmatter = serde_yaml::from_str(yaml)
+        .map_err(|e| format!("Invalid frontmatter YAML: {}", e))?;
 
-    if result.is_empty() {
-        "persona".to_string()
-    } else {
-        result
+    if frontmatter.name.trim().is_empty() {
+        return Err("Agent name cannot be empty".to_string());
     }
-}
 
-/// Export a persona as sprout-compatible JSON (version 1).
-/// Returns the JSON string and a suggested filename.
-#[tauri::command]
-pub fn export_persona(store: State<'_, PersonaStore>, id: String) -> Result<ExportResult, String> {
-    let persona = store
-        .get(&id)
-        .ok_or_else(|| format!("Persona '{}' not found", id))?;
-
-    // For export, only include URL avatars (local files aren't portable)
-    let export_avatar = match &persona.avatar {
-        Some(Avatar::Url(url)) => Some(Avatar::Url(url.clone())),
-        _ => None,
+    let system_prompt = if body.is_empty() {
+        frontmatter
+            .description
+            .clone()
+            .unwrap_or_else(|| format!("You are {}.", frontmatter.name))
+    } else {
+        body
     };
 
-    let export = PersonaExportV1 {
-        version: 1,
-        display_name: persona.display_name.clone(),
-        system_prompt: persona.system_prompt,
-        avatar: export_avatar,
-        provider: persona.provider,
-        model: persona.model,
-    };
+    if system_prompt.trim().is_empty() {
+        return Err("Agent prompt cannot be empty".to_string());
+    }
 
-    let json = serde_json::to_string_pretty(&export)
-        .map_err(|e| format!("Failed to serialize persona: {}", e))?;
-
-    let slug = slugify(&persona.display_name);
-    let suggested_filename = format!("{}.persona.json", slug);
-
-    Ok(ExportResult {
-        json,
-        suggested_filename,
+    Ok(CreatePersonaRequest {
+        display_name: frontmatter.name,
+        avatar: frontmatter.avatar,
+        system_prompt,
+        provider: frontmatter.provider,
+        model: frontmatter.model,
     })
 }
 
-/// Import personas from sprout-compatible JSON (version 1).
-/// Accepts raw file bytes and the original filename.
-/// Returns the list of newly created personas.
+/// Import an agent from its canonical Markdown format.
 #[tauri::command]
 pub fn import_personas(
     store: State<'_, PersonaStore>,
     file_bytes: Vec<u8>,
     file_name: String,
 ) -> Result<Vec<Persona>, String> {
-    // Validate file extension
-    if !file_name.ends_with(".persona.json") && !file_name.ends_with(".json") {
-        return Err("Unsupported file type. Expected a .persona.json or .json file.".to_string());
+    if !file_name.to_lowercase().ends_with(".md") {
+        return Err("Unsupported file type. Expected a .md file.".to_string());
     }
 
-    // Parse the bytes as UTF-8
     let content =
         String::from_utf8(file_bytes).map_err(|_| "File is not valid UTF-8 text".to_string())?;
-
-    // Parse as JSON
-    let export: PersonaExportV1 =
-        serde_json::from_str(&content).map_err(|e| format!("Invalid persona JSON: {}", e))?;
-
-    // Validate version
-    if export.version != 1 {
-        return Err(format!(
-            "Unsupported persona format version {}. Expected version 1.",
-            export.version
-        ));
-    }
-
-    // Validate required fields
-    if export.display_name.trim().is_empty() {
-        return Err("Persona displayName cannot be empty".to_string());
-    }
-    if export.system_prompt.trim().is_empty() {
-        return Err("Persona systemPrompt cannot be empty".to_string());
-    }
-
-    // Create the persona via the store
-    let request = CreatePersonaRequest {
-        display_name: export.display_name,
-        avatar: export.avatar,
-        system_prompt: export.system_prompt,
-        provider: export.provider,
-        model: export.model,
-    };
-
-    let persona = store.create(request)?;
+    let request = parse_markdown_agent(&content)?;
+    let persona = store.import_markdown(&request.display_name, &content)?;
     Ok(vec![persona])
 }
 
@@ -266,8 +186,8 @@ mod tests {
     use super::validate_import_persona_path;
 
     #[test]
-    fn validate_import_persona_path_rejects_non_json_files() {
-        let path = std::env::temp_dir().join("persona-import.txt");
+    fn validate_import_persona_path_rejects_non_markdown_files() {
+        let path = std::env::temp_dir().join("persona-import.json");
         std::fs::write(&path, b"{}").unwrap();
 
         let result = validate_import_persona_path(path.to_str().unwrap());
@@ -288,8 +208,8 @@ mod tests {
     }
 
     #[test]
-    fn validate_import_persona_path_accepts_json_files() {
-        let path = std::env::temp_dir().join(format!("persona-import-{}.json", std::process::id()));
+    fn validate_import_persona_path_accepts_markdown_files() {
+        let path = std::env::temp_dir().join(format!("persona-import-{}.md", std::process::id()));
         std::fs::write(&path, b"{}").unwrap();
 
         let validated = validate_import_persona_path(path.to_str().unwrap()).unwrap();

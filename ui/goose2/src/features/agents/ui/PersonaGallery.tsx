@@ -7,12 +7,12 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import type { Persona } from "@/shared/types/agents";
 import { PersonaCard } from "@/features/agents/ui/PersonaCard";
 import { useFileImportZone } from "@/shared/hooks/useFileImportZone";
-import { getPersonaSource } from "@/features/agents/lib/personaPresentation";
 
 interface PersonaGalleryProps {
   personas: Persona[];
   activePersonaId?: string;
   onSelectPersona: (persona: Persona) => void;
+  onStartChatPersona?: (persona: Persona) => void;
   onEditPersona: (persona: Persona) => void;
   onDuplicatePersona: (persona: Persona) => void;
   onDeletePersona: (persona: Persona) => void;
@@ -53,6 +53,7 @@ export function PersonaGallery({
   personas,
   activePersonaId,
   onSelectPersona,
+  onStartChatPersona,
   onEditPersona,
   onDuplicatePersona,
   onDeletePersona,
@@ -74,16 +75,7 @@ export function PersonaGallery({
     });
   const sortedPersonas = useMemo(
     () =>
-      [...personas].sort((a, b) => {
-        const aFeatured = getPersonaSource(a) === "builtin";
-        const bFeatured = getPersonaSource(b) === "builtin";
-
-        if (aFeatured !== bFeatured) {
-          return aFeatured ? -1 : 1;
-        }
-
-        return a.displayName.localeCompare(b.displayName);
-      }),
+      [...personas].sort((a, b) => a.displayName.localeCompare(b.displayName)),
     [personas],
   );
 
@@ -133,7 +125,7 @@ export function PersonaGallery({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".json,application/json"
+              accept=".md,text/markdown,text/plain"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -144,13 +136,14 @@ export function PersonaGallery({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid auto-rows-fr grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {sortedPersonas.map((persona) => (
         <PersonaCard
           key={persona.id}
           persona={persona}
           isActive={persona.id === activePersonaId}
           onSelect={onSelectPersona}
+          onStartChat={onStartChatPersona}
           onEdit={onEditPersona}
           onDuplicate={onDuplicatePersona}
           onDelete={onDeletePersona}
@@ -166,7 +159,7 @@ export function PersonaGallery({
         aria-label={t("gallery.createAria")}
         {...dropHandlers}
         className={cn(
-          "flex min-h-48 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-5",
+          "flex h-full min-h-48 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-5",
           "text-muted-foreground transition-colors",
           "hover:border-border hover:text-foreground hover:bg-muted/20",
           isDragOver
@@ -186,7 +179,7 @@ export function PersonaGallery({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json,application/json"
+          accept=".md,text/markdown,text/plain"
           className="hidden"
           onChange={handleFileChange}
         />

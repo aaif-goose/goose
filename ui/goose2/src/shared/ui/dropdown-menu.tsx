@@ -1,13 +1,73 @@
-import type * as React from "react";
+import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 
+const DROPDOWN_MENU_OPEN_EVENT = "goose:dropdown-menu-open";
+
 function DropdownMenu({
+  open: controlledOpen,
+  defaultOpen = false,
+  onOpenChange,
+  closeOnSiblingOpen = true,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Root> & {
+  closeOnSiblingOpen?: boolean;
+}) {
+  const menuId = React.useId();
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const open = controlledOpen ?? uncontrolledOpen;
+
+  const handleOpenChange = React.useCallback(
+    (nextOpen: boolean) => {
+      if (controlledOpen === undefined) {
+        setUncontrolledOpen(nextOpen);
+      }
+      onOpenChange?.(nextOpen);
+
+      if (nextOpen && closeOnSiblingOpen && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(DROPDOWN_MENU_OPEN_EVENT, {
+            detail: { id: menuId },
+          }),
+        );
+      }
+    },
+    [closeOnSiblingOpen, controlledOpen, menuId, onOpenChange],
+  );
+
+  React.useEffect(() => {
+    if (!closeOnSiblingOpen || !open || typeof window === "undefined") {
+      return;
+    }
+
+    const handleSiblingOpen = (event: Event) => {
+      const siblingMenuId = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (siblingMenuId === menuId) {
+        return;
+      }
+
+      if (controlledOpen === undefined) {
+        setUncontrolledOpen(false);
+      }
+      onOpenChange?.(false);
+    };
+
+    window.addEventListener(DROPDOWN_MENU_OPEN_EVENT, handleSiblingOpen);
+    return () => {
+      window.removeEventListener(DROPDOWN_MENU_OPEN_EVENT, handleSiblingOpen);
+    };
+  }, [closeOnSiblingOpen, controlledOpen, menuId, onOpenChange, open]);
+
+  return (
+    <DropdownMenuPrimitive.Root
+      data-slot="dropdown-menu"
+      open={open}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function DropdownMenuPortal({
@@ -206,7 +266,7 @@ function DropdownMenuSubTrigger({
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
-        "focus:bg-muted focus:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground flex cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[inset]:pl-8",
+        "focus:bg-muted focus:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

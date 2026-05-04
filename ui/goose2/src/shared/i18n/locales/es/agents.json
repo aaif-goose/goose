@@ -11,9 +11,6 @@
   },
   "card": {
     "ariaLabel": "Agente: {{name}}",
-    "custom": "Personalizado",
-    "featured": "Destacado",
-    "fileBacked": "Desde archivo",
     "options": "Opciones del agente"
   },
   "config": {
@@ -45,8 +42,6 @@
     "newTitle": "Nuevo agente",
     "noModelsAvailable": "Todavía no hay modelos disponibles para este proveedor.",
     "provider": "Proveedor",
-    "readOnlyBuiltIn": "Los agentes integrados son de solo lectura. Duplícalo para personalizarlo.",
-    "readOnlyFile": "Este agente se cargó desde un archivo. Puedes revisarlo aquí, pero la edición está deshabilitada.",
     "saveFailed": "No se pudo guardar el agente.",
     "savedModelUnavailable": "{{model}} (guardado, no disponible)",
     "savedModelUnavailableHelp": "Este agente usa un modelo guardado que no está en el inventario actual del proveedor.",
@@ -72,10 +67,9 @@
   "view": {
     "copyName": "{{name}} (Copia)",
     "backToAgents": "Volver a agentes",
-    "copyFile": "Copiar archivo",
+    "copyFile": "Copiar archivo al portapapeles",
     "copyFileFailed": "No se pudo copiar el archivo.",
     "copySaved": "Se guardó una copia en {{path}}",
-    "created": "Creado",
     "deleteFailed": "No se pudo eliminar el agente.",
     "deleteDescription": "Este agente y su configuración se eliminarán de forma permanente.",
     "deleteTitle": "¿Eliminar \"{{name}}\" de forma permanente?",
@@ -84,9 +78,8 @@
     "emptyAgentsDescription": "Crea un agente para empezar.",
     "emptyAgentsTitle": "Aún no hay agentes",
     "fileCopied": "Archivo copiado. Pégalo en Slack, correo u otra app.",
-    "filePath": "Ruta del archivo",
-    "importInvalidExtension": "Tipo de archivo no compatible. Elige un archivo .json.",
-    "importInvalidMimeType": "Tipo de archivo no compatible. Elige un archivo JSON.",
+    "importInvalidExtension": "Tipo de archivo no compatible. Elige un archivo .md.",
+    "importInvalidMimeType": "Tipo de archivo no compatible. Elige un archivo Markdown.",
     "importFailed": "No se pudo importar el agente.",
     "imported_one": "Se importó {{count}} agente.",
     "imported_other": "Se importaron {{count}} agentes.",
@@ -94,13 +87,12 @@
     "newPersona": "Nuevo agente",
     "optionsAria": "Opciones de {{name}}",
     "reveal": "Mostrar en carpeta",
-    "saveCopy": "Guardar una copia...",
+    "saveCopy": "Exportar una copia",
     "saveCopyFailed": "No se pudo guardar una copia.",
+    "share": "Compartir",
     "searchPlaceholder": "Buscar agentes",
-    "source": "Origen",
-    "startChat": "Iniciar chat con {{name}}",
-    "startChatShort": "Iniciar chat",
-    "title": "Agentes",
-    "updated": "Actualizado"
+    "startChat": "Iniciar un chat con {{name}}",
+    "startChatShort": "Iniciar un chat",
+    "title": "Agentes"
   }
 }

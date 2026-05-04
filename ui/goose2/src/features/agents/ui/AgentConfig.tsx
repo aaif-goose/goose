@@ -122,9 +122,6 @@ export function AgentConfig({
             {personas.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.displayName}
-                {p.isBuiltin
-                  ? ` (${t("common:labels.builtIn").toLowerCase()})`
-                  : ""}
               </SelectItem>
             ))}
           </SelectContent>

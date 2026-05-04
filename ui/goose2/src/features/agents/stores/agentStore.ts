@@ -97,8 +97,6 @@ interface AgentStoreActions {
   getPersonaById: (id: string) => Persona | undefined;
   getAgentById: (id: string) => Agent | undefined;
   getAgentsByPersona: (personaId: string) => Agent[];
-  getBuiltinPersonas: () => Persona[];
-  getCustomPersonas: () => Persona[];
 }
 
 export type AgentStore = AgentStoreState & AgentStoreActions;
@@ -216,8 +214,4 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   getAgentsByPersona: (personaId) =>
     get().agents.filter((a) => a.personaId === personaId),
-
-  getBuiltinPersonas: () => get().personas.filter((p) => p.isBuiltin),
-
-  getCustomPersonas: () => get().personas.filter((p) => !p.isBuiltin),
 }));

@@ -37,11 +37,7 @@ import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
 import { getProviderInventory } from "@/features/providers/api/inventory";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
-import {
-  getPersonaInitials,
-  getPersonaSource,
-  isPersonaReadOnly,
-} from "@/features/agents/lib/personaPresentation";
+import { getPersonaInitials } from "@/features/agents/lib/personaPresentation";
 import { AvatarDropZone } from "./AvatarDropZone";
 import { PersonaDetails } from "./PersonaDetails";
 
@@ -71,12 +67,7 @@ export function PersonaEditor({
   const { t } = useTranslation(["agents", "common"]);
   const isEditing = mode === "edit";
   const detailsMode = mode === "details";
-  const readOnlyBySource = persona ? isPersonaReadOnly(persona) : false;
-  const isReadOnly = detailsMode || readOnlyBySource;
-  const personaSource = persona ? getPersonaSource(persona) : "custom";
-  const canEditPersona = !readOnlyBySource;
-  const isFileBacked = personaSource === "file";
-  const canDeletePersona = personaSource !== "builtin";
+  const isReadOnly = detailsMode;
   const acpProviders = useAgentStore((s) => s.providers);
   const setProviders = useAgentStore((s) => s.setProviders);
   const mergeInventoryEntries = useProviderInventoryStore(
@@ -151,9 +142,6 @@ export function PersonaEditor({
     ? `__saved__:${model}`
     : model || "__none__";
 
-  const readOnlyDescription = readOnlyBySource
-    ? t("editor.readOnlyBuiltIn")
-    : null;
   const providerLabel = provider
     ? (acpProviders.find((providerOption) => providerOption.id === provider)
         ?.label ?? provider)
@@ -202,11 +190,6 @@ export function PersonaEditor({
                 ? t("editor.editTitle")
                 : t("editor.newTitle")}
           </DialogTitle>
-          {readOnlyDescription ? (
-            <p className="text-xs text-muted-foreground">
-              {readOnlyDescription}
-            </p>
-          ) : null}
         </DialogHeader>
 
         {detailsMode ? (
@@ -215,7 +198,6 @@ export function PersonaEditor({
               avatar={avatar}
               displayName={displayName}
               modelLabel={modelLabel}
-              personaSource={personaSource}
               providerLabel={providerLabel}
               systemPrompt={systemPrompt}
             />
@@ -224,7 +206,7 @@ export function PersonaEditor({
           <DialogBody asChild className="space-y-4 px-5 pb-5">
             <form id="persona-form" onSubmit={handleSubmit}>
               <div className="flex justify-center">
-                {isReadOnly || isFileBacked ? (
+                {isReadOnly ? (
                   <AvatarRoot className="h-16 w-16 border border-border">
                     <AvatarImage
                       src={avatarSrc ?? undefined}
@@ -301,13 +283,12 @@ export function PersonaEditor({
                       setModel("");
                     }
                   }}
-                  disabled={isReadOnly || isFileBacked}
+                  disabled={isReadOnly}
                 >
                   <SelectTrigger
                     className={cn(
                       "w-full",
-                      (isReadOnly || isFileBacked) &&
-                        "opacity-70 cursor-not-allowed",
+                      isReadOnly && "opacity-70 cursor-not-allowed",
                     )}
                   >
                     <SelectValue placeholder={t("common:labels.none")} />
@@ -345,13 +326,12 @@ export function PersonaEditor({
                     }
                     setModel(value);
                   }}
-                  disabled={isReadOnly || isFileBacked || !provider}
+                  disabled={isReadOnly || !provider}
                 >
                   <SelectTrigger
                     className={cn(
                       "w-full",
-                      (isReadOnly || isFileBacked) &&
-                        "opacity-70 cursor-not-allowed",
+                      isReadOnly && "opacity-70 cursor-not-allowed",
                     )}
                   >
                     <SelectValue
@@ -399,7 +379,7 @@ export function PersonaEditor({
         <DialogFooter className="shrink-0 border-t px-5 py-4">
           {detailsMode && persona ? (
             <>
-              {onEdit && canEditPersona ? (
+              {onEdit ? (
                 <Button
                   type="button"
                   variant="outline-flat"
@@ -421,7 +401,7 @@ export function PersonaEditor({
                   {t("editor.duplicate")}
                 </Button>
               ) : null}
-              {onDelete && canDeletePersona ? (
+              {onDelete ? (
                 <Button
                   type="button"
                   variant="destructive-flat"

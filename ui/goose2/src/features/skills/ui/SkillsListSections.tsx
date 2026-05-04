@@ -1,13 +1,30 @@
 import { useTranslation } from "react-i18next";
 import {
+  Copy,
+  CopyPlus,
+  MessageSquarePlus,
+  MoreVertical,
+  Pencil,
+  Save,
+  Share2,
+  Trash2,
+} from "lucide-react";
+import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionSectionTrigger,
 } from "@/shared/ui/accordion";
 import { Button } from "@/shared/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { IconMessagePlus } from "@tabler/icons-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import type { SkillViewInfo } from "../lib/skillCategories";
 import type { SkillsSection } from "../lib/skillsHelpers";
 
@@ -17,6 +34,11 @@ interface SkillsListSectionsProps {
   onExpandedSectionIdsChange: (ids: string[]) => void;
   onSelectSkill: (skill: SkillViewInfo) => void;
   onStartChat?: (skill: SkillViewInfo) => void;
+  onEdit: (skill: SkillViewInfo) => void;
+  onCopyFile: (skill: SkillViewInfo) => void;
+  onSaveCopy: (skill: SkillViewInfo) => void;
+  onDuplicate: (skill: SkillViewInfo) => void;
+  onDelete: (skill: SkillViewInfo) => void;
 }
 
 export function SkillsListSections({
@@ -25,8 +47,13 @@ export function SkillsListSections({
   onExpandedSectionIdsChange,
   onSelectSkill,
   onStartChat,
+  onEdit,
+  onCopyFile,
+  onSaveCopy,
+  onDuplicate,
+  onDelete,
 }: SkillsListSectionsProps) {
-  const { t } = useTranslation(["skills"]);
+  const { t } = useTranslation(["skills", "common"]);
 
   return (
     <Accordion
@@ -55,7 +82,7 @@ export function SkillsListSections({
                 {section.skills.map((skill) => (
                   <div
                     key={`${section.id}-${skill.id}`}
-                    className="group relative flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/20"
+                    className="group relative px-5 py-4 transition-colors hover:bg-muted/20"
                   >
                     <button
                       type="button"
@@ -63,8 +90,8 @@ export function SkillsListSections({
                       onClick={() => onSelectSkill(skill)}
                       aria-label={t("view.openDetails", { name: skill.name })}
                     />
-                    <div className="pointer-events-none relative z-10 min-w-0 flex-1">
-                      <p className="text-sm font-normal text-foreground">
+                    <div className="pointer-events-none relative z-10 min-w-0">
+                      <p className="pr-10 text-sm font-normal text-foreground">
                         {skill.name}
                       </p>
                       {skill.description ? (
@@ -73,34 +100,65 @@ export function SkillsListSections({
                         </p>
                       ) : null}
                     </div>
-                    {onStartChat ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline-flat"
-                            size="icon-xs"
-                            className="relative z-20 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                            onClick={() => onStartChat(skill)}
-                            aria-label={t("view.startChat", {
-                              name: skill.name,
-                            })}
-                          >
-                            <IconMessagePlus className="size-3.5" />
-                            <span className="sr-only">
-                              {t("view.startChatShort")}
-                            </span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="top"
-                          align="center"
-                          sideOffset={8}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className="absolute top-3 right-4 z-20 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={t("view.optionsAria", {
+                            name: skill.name,
+                          })}
                         >
-                          <p>{t("view.startChatShort")}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : null}
+                          <MoreVertical className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" sideOffset={4}>
+                        {onStartChat ? (
+                          <DropdownMenuItem onSelect={() => onStartChat(skill)}>
+                            <MessageSquarePlus className="size-3.5" />
+                            {t("view.startChatShort")}
+                          </DropdownMenuItem>
+                        ) : null}
+                        <DropdownMenuItem onSelect={() => onEdit(skill)}>
+                          <Pencil className="size-3.5" />
+                          {t("common:actions.edit")}
+                        </DropdownMenuItem>
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <Share2 className="size-3.5" />
+                            {t("view.share")}
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent>
+                            <DropdownMenuItem
+                              onSelect={() => onCopyFile(skill)}
+                            >
+                              <Copy className="size-3.5" />
+                              {t("view.copyFile")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => onSaveCopy(skill)}
+                            >
+                              <Save className="size-3.5" />
+                              {t("view.saveCopy")}
+                            </DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                        <DropdownMenuItem onSelect={() => onDuplicate(skill)}>
+                          <CopyPlus className="size-3.5" />
+                          {t("common:actions.duplicate")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() => onDelete(skill)}
+                        >
+                          <Trash2 className="size-3.5" />
+                          {t("common:actions.delete")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 ))}
               </div>

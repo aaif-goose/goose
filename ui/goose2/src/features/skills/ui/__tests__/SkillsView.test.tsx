@@ -75,9 +75,10 @@ vi.mock("../../api/skills", () => ({
     projectLinks: [],
   }),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
-  exportSkill: vi
-    .fn()
-    .mockResolvedValue({ json: "{}", filename: "test.skill.json" }),
+  exportSkill: vi.fn().mockResolvedValue({
+    contents: "---\nname: test\n---\n",
+    filename: "SKILL.md",
+  }),
   importSkills: vi.fn().mockResolvedValue([]),
 }));
 
@@ -190,6 +191,52 @@ describe("SkillsView", () => {
     });
   });
 
+  it("keeps existing skills visible while refreshing", async () => {
+    const secondLoad = createDeferred<typeof mockSkills>();
+    listSkills
+      .mockResolvedValueOnce(mockSkills)
+      .mockReturnValueOnce(secondLoad.promise);
+    const { rerender } = render(<SkillsView />);
+
+    await screen.findByText("code-review");
+
+    mockProjects = [
+      {
+        id: "project-beta",
+        name: "beta",
+        workingDirs: ["/tmp/beta"],
+      },
+    ];
+    rerender(<SkillsView />);
+
+    await waitFor(() => {
+      expect(listSkills).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText("code-review")).toBeInTheDocument();
+    expect(screen.getByText("test-writer")).toBeInTheDocument();
+
+    secondLoad.resolve([
+      {
+        ...mockSkills[2],
+        id: "project:/tmp/beta/.goose/skills/beta-skill",
+        name: "beta-skill",
+        path: "/tmp/beta/.goose/skills/beta-skill",
+        fileLocation: "/tmp/beta/.goose/skills/beta-skill/SKILL.md",
+        sourceLabel: "beta",
+        projectLinks: [
+          {
+            id: "/tmp/beta",
+            name: "beta",
+            workingDir: "/tmp/beta",
+          },
+        ],
+      },
+    ]);
+
+    await screen.findByText("beta-skill");
+    expect(screen.queryByText("code-review")).not.toBeInTheDocument();
+  });
+
   it("matches saved project working directories with trailing separators", async () => {
     mockProjects = [
       {
@@ -256,8 +303,9 @@ describe("SkillsView", () => {
     await screen.findByText("test-writer");
 
     await user.click(
-      screen.getByRole("button", { name: "Start chat with test-writer" }),
+      screen.getByRole("button", { name: "Options for test-writer" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Start a chat" }));
 
     expect(onStartChatWithSkill).toHaveBeenCalledWith(
       expect.objectContaining({ name: "test-writer" }),
@@ -276,7 +324,7 @@ describe("SkillsView", () => {
     await user.click(
       screen.getByRole("button", { name: "Open code-review details" }),
     );
-    await user.click(screen.getByRole("button", { name: "Start chat" }));
+    await user.click(screen.getByRole("button", { name: "Start a chat" }));
 
     expect(onStartChatWithSkill).toHaveBeenCalledWith(
       expect.objectContaining({ name: "code-review" }),

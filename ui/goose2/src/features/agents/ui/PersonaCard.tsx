@@ -1,27 +1,35 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, MoreVertical, Pencil, Save, Trash2 } from "lucide-react";
+import {
+  Copy,
+  CopyPlus,
+  MessageSquarePlus,
+  MoreVertical,
+  Pencil,
+  Save,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Avatar, AvatarImage, AvatarFallback } from "@/shared/ui/avatar";
-import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
 import type { Persona } from "@/shared/types/agents";
-import {
-  getPersonaInitials,
-  getPersonaSource,
-  isPersonaReadOnly,
-} from "@/features/agents/lib/personaPresentation";
+import { getPersonaInitials } from "@/features/agents/lib/personaPresentation";
 
 interface PersonaCardProps {
   persona: Persona;
   onSelect?: (persona: Persona) => void;
+  onStartChat?: (persona: Persona) => void;
   onEdit?: (persona: Persona) => void;
   onDuplicate?: (persona: Persona) => void;
   onDelete?: (persona: Persona) => void;
@@ -33,6 +41,7 @@ interface PersonaCardProps {
 export function PersonaCard({
   persona,
   onSelect,
+  onStartChat,
   onEdit,
   onDuplicate,
   onDelete,
@@ -45,12 +54,7 @@ export function PersonaCard({
 
   const initials = getPersonaInitials(persona.displayName);
   const avatarSrc = useAvatarSrc(persona.avatar);
-  const personaSource = getPersonaSource(persona);
-  const canEditPersona = !isPersonaReadOnly(persona);
-  const canDeletePersona = personaSource !== "builtin";
-  const hasFileActions =
-    personaSource === "file" && Boolean(persona.sourcePath);
-  const isFeatured = personaSource === "builtin";
+  const hasFileActions = Boolean(persona.sourcePath);
   const providerModelLabel = [persona.provider, persona.model]
     .filter(Boolean)
     .join(" / ");
@@ -75,6 +79,7 @@ export function PersonaCard({
       tabIndex={0}
       className={cn(
         "group relative flex cursor-pointer flex-col rounded-2xl border border-border-soft bg-background p-5",
+        "h-full",
         "transition-colors duration-200 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2",
         "hover:border-border hover:bg-muted/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         isActive && "border-border bg-muted/20",
@@ -109,37 +114,45 @@ export function PersonaCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" sideOffset={4}>
-              {hasFileActions && (
-                <>
-                  <DropdownMenuItem onSelect={() => onCopyFile?.(persona)}>
-                    <Copy className="size-3.5" />
-                    {t("view.copyFile")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onSaveCopy?.(persona)}>
-                    <Save className="size-3.5" />
-                    {t("view.saveCopy")}
-                  </DropdownMenuItem>
-                </>
-              )}
-              {canEditPersona && (
-                <DropdownMenuItem onSelect={() => onEdit?.(persona)}>
-                  <Pencil className="size-3.5" />
-                  {t("common:actions.edit")}
+              {onStartChat && (
+                <DropdownMenuItem onSelect={() => onStartChat(persona)}>
+                  <MessageSquarePlus className="size-3.5" />
+                  {t("view.startChatShort")}
                 </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={() => onEdit?.(persona)}>
+                <Pencil className="size-3.5" />
+                {t("common:actions.edit")}
+              </DropdownMenuItem>
+              {hasFileActions && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Share2 className="size-3.5" />
+                    {t("view.share")}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onSelect={() => onCopyFile?.(persona)}>
+                      <Copy className="size-3.5" />
+                      {t("view.copyFile")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onSaveCopy?.(persona)}>
+                      <Save className="size-3.5" />
+                      {t("view.saveCopy")}
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               )}
               <DropdownMenuItem onSelect={() => onDuplicate?.(persona)}>
-                <Copy className="size-3.5" />
+                <CopyPlus className="size-3.5" />
                 {t("common:actions.duplicate")}
               </DropdownMenuItem>
-              {canDeletePersona && (
-                <DropdownMenuItem
-                  variant="destructive"
-                  onSelect={() => onDelete?.(persona)}
-                >
-                  <Trash2 className="size-3.5" />
-                  {t("common:actions.delete")}
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => onDelete?.(persona)}
+              >
+                <Trash2 className="size-3.5" />
+                {t("common:actions.delete")}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -150,11 +163,6 @@ export function PersonaCard({
           <h3 className="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
             {persona.displayName}
           </h3>
-          {isFeatured ? (
-            <Badge variant="featured" className="text-[10px]">
-              {t("card.featured")}
-            </Badge>
-          ) : null}
         </div>
 
         {providerModelLabel ? (

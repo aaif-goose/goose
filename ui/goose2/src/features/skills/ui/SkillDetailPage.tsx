@@ -1,14 +1,15 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  IconDots,
-  IconCopy,
-  IconDeviceFloppy,
-  IconFolderOpen,
-  IconMessagePlus,
-  IconPencil,
-  IconTrash,
-} from "@tabler/icons-react";
+  Copy,
+  CopyPlus,
+  MessageSquarePlus,
+  MoreVertical,
+  Pencil,
+  Save,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import { Button } from "@/shared/ui/button";
 import { DetailField } from "@/shared/ui/detail-field";
@@ -20,7 +21,6 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { PageColumns } from "@/shared/ui/page-columns";
 import { DetailPageShell, PageHeader } from "@/shared/ui/page-shell";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import type { SkillInfo } from "../api/skills";
 import type { SkillViewInfo } from "../lib/skillCategories";
 
@@ -28,10 +28,10 @@ interface SkillDetailPageProps {
   skill: SkillViewInfo | null;
   onBack: () => void;
   onEdit: (skill: SkillInfo) => void;
-  onReveal: (skill: SkillInfo) => void;
   onCopyFile: (skill: SkillInfo) => void;
   onSaveCopy: (skill: SkillInfo) => void;
   onStartChat?: (skill: SkillInfo) => void;
+  onDuplicate: (skill: SkillInfo) => void;
   onDelete: (skill: SkillInfo) => void;
 }
 
@@ -39,34 +39,24 @@ interface SkillHeaderActionButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   icon: ReactNode;
-  tooltipSide?: "top" | "right" | "bottom" | "left";
 }
 
 function SkillHeaderActionButton({
   label,
   icon,
   type = "button",
-  tooltipSide = "top",
   ...props
 }: SkillHeaderActionButtonProps) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type={type}
-          size="icon-xs"
-          variant="outline-flat"
-          aria-label={label}
-          {...props}
-        >
-          {icon}
-          <span className="sr-only">{label}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side={tooltipSide} align="center" sideOffset={8}>
-        <p>{label}</p>
-      </TooltipContent>
-    </Tooltip>
+    <Button
+      type={type}
+      size="xs"
+      variant="outline-flat"
+      leftIcon={icon}
+      {...props}
+    >
+      {label}
+    </Button>
   );
 }
 
@@ -74,10 +64,10 @@ export function SkillDetailPage({
   skill,
   onBack,
   onEdit,
-  onReveal,
   onCopyFile,
   onSaveCopy,
   onStartChat,
+  onDuplicate,
   onDelete,
 }: SkillDetailPageProps) {
   const { t } = useTranslation(["skills", "common"]);
@@ -99,7 +89,7 @@ export function SkillDetailPage({
       : [skill.sourceLabel];
   const startChatLabel = t("view.startChatShort");
   const editLabel = t("common:actions.edit");
-  const revealLabel = t("view.reveal");
+  const shareLabel = t("view.share");
   const moreLabel = t("view.more");
 
   return (
@@ -126,23 +116,37 @@ export function SkillDetailPage({
               {onStartChat ? (
                 <SkillHeaderActionButton
                   label={startChatLabel}
-                  icon={<IconMessagePlus className="size-3.5" />}
-                  tooltipSide="top"
+                  icon={<MessageSquarePlus aria-hidden="true" />}
                   onClick={() => onStartChat(skill)}
                 />
               ) : null}
               <SkillHeaderActionButton
                 label={editLabel}
-                icon={<IconPencil className="size-3.5" />}
-                tooltipSide="top"
+                icon={<Pencil aria-hidden="true" />}
                 onClick={() => onEdit(skill)}
               />
-              <SkillHeaderActionButton
-                label={revealLabel}
-                icon={<IconFolderOpen className="size-3.5" />}
-                tooltipSide="top"
-                onClick={() => onReveal(skill)}
-              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline-flat"
+                    leftIcon={<Share2 aria-hidden="true" />}
+                  >
+                    {shareLabel}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={8}>
+                  <DropdownMenuItem onSelect={() => onCopyFile(skill)}>
+                    <Copy className="size-3.5" />
+                    {t("view.copyFile")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onSaveCopy(skill)}>
+                    <Save className="size-3.5" />
+                    {t("view.saveCopy")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -151,24 +155,20 @@ export function SkillDetailPage({
                     variant="outline-flat"
                     aria-label={moreLabel}
                   >
-                    <IconDots className="size-3.5" />
+                    <MoreVertical className="size-3.5" />
                     <span className="sr-only">{moreLabel}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" sideOffset={8}>
-                  <DropdownMenuItem onSelect={() => onCopyFile(skill)}>
-                    <IconCopy className="size-3.5" />
-                    {t("view.copyFile")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onSaveCopy(skill)}>
-                    <IconDeviceFloppy className="size-3.5" />
-                    {t("view.saveCopy")}
+                  <DropdownMenuItem onSelect={() => onDuplicate(skill)}>
+                    <CopyPlus className="size-3.5" />
+                    {t("common:actions.duplicate")}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     variant="destructive"
                     onSelect={() => onDelete(skill)}
                   >
-                    <IconTrash className="size-3.5" />
+                    <Trash2 className="size-3.5" />
                     {t("common:actions.delete")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>

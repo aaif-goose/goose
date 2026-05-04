@@ -1,9 +1,8 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
 
 use crate::skills::{
-    build_skill_md, discover_skills, infer_skill_name, is_global_skill_dir,
-    parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
-    validate_skill_name,
+    build_skill_md, discover_skills, is_global_skill_dir, resolve_discoverable_skill_dir,
+    resolve_skill_dir, skill_base_dir, validate_skill_name, SkillFrontmatter,
 };
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
@@ -180,21 +179,7 @@ pub fn export_source(source_type: SourceType, path: &str) -> Result<(String, Str
     let md = dir.join("SKILL.md");
     let raw = fs::read_to_string(&md)
         .map_err(|e| Error::internal_error().data(format!("Failed to read SKILL.md: {e}")))?;
-    let (description, content) = parse_skill_frontmatter(&raw);
-
-    let name = infer_skill_name(&dir);
-
-    let export = serde_json::json!({
-        "version": 1,
-        "type": "skill",
-        "name": name,
-        "description": description,
-        "content": content,
-    });
-    let json = serde_json::to_string_pretty(&export)
-        .map_err(|e| Error::internal_error().data(format!("Failed to serialize source: {e}")))?;
-    let filename = format!("{}.skill.json", name);
-    Ok((json, filename))
+    Ok((raw, "SKILL.md".to_string()))
 }
 
 pub fn import_sources(
@@ -202,57 +187,18 @@ pub fn import_sources(
     global: bool,
     project_dir: Option<&str>,
 ) -> Result<Vec<SourceEntry>, Error> {
-    let value: serde_json::Value = serde_json::from_str(data)
-        .map_err(|e| Error::invalid_params().data(format!("Invalid JSON: {e}")))?;
+    let (metadata, content): (SkillFrontmatter, String) = parse_frontmatter(data)
+        .map_err(|e| Error::invalid_params().data(format!("Invalid skill frontmatter: {e}")))?
+        .ok_or_else(|| Error::invalid_params().data("Missing skill frontmatter"))?;
 
-    let version = value
-        .get("version")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| Error::invalid_params().data("Missing or invalid \"version\" field"))?;
-    if version != 1 {
-        return Err(
-            Error::invalid_params().data(format!("Unsupported source export version: {}", version))
-        );
-    }
-
-    match value
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("skill")
-    {
-        "skill" => {}
-        other => {
-            return Err(Error::invalid_params().data(format!(
-                "Source type '{}' is not supported. Only 'skill' is currently supported.",
-                other
-            )));
-        }
-    };
-
-    let name = value
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::invalid_params().data("Missing or invalid \"name\" field"))?
-        .to_string();
-    if name.is_empty() {
-        return Err(Error::invalid_params().data("Source name must not be empty"));
-    }
-
-    let description = value
-        .get("description")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::invalid_params().data("Missing or invalid \"description\" field"))?
-        .to_string();
-    if description.is_empty() {
+    let name = metadata
+        .name
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| Error::invalid_params().data("Missing or invalid \"name\" field"))?;
+    let description = metadata.description;
+    if description.trim().is_empty() {
         return Err(Error::invalid_params().data("Source description must not be empty"));
     }
-
-    let content = value
-        .get("content")
-        .or_else(|| value.get("instructions"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
 
     validate_skill_name(&name)?;
 
@@ -378,11 +324,11 @@ mod tests {
         .unwrap();
 
         let portable_dir = project_a.join(".agents").join("skills").join("portable");
-        let (json, filename) =
+        let (markdown, filename) =
             export_source(SourceType::Skill, portable_dir.to_str().unwrap()).unwrap();
-        assert_eq!(filename, "portable.skill.json");
+        assert_eq!(filename, "SKILL.md");
 
-        let imported = import_sources(&json, false, Some(project_b.to_str().unwrap())).unwrap();
+        let imported = import_sources(&markdown, false, Some(project_b.to_str().unwrap())).unwrap();
         assert_eq!(imported.len(), 1);
         assert_eq!(imported[0].name, "portable");
         assert_eq!(imported[0].description, "describes itself");
@@ -408,10 +354,10 @@ mod tests {
             .find(|skill| skill.name == "portable")
             .expect("expected listed skill");
 
-        let (json, filename) =
+        let (markdown, filename) =
             export_source(SourceType::Skill, exported_skill.directory.as_str()).unwrap();
-        assert_eq!(filename, "portable.skill.json");
-        assert!(json.contains("\"name\": \"portable\""));
+        assert_eq!(filename, "SKILL.md");
+        assert!(markdown.contains("name: portable"));
     }
 
     #[test]
@@ -451,14 +397,7 @@ mod tests {
 
         create_source(SourceType::Skill, "busy", "d", "c", false, Some(project)).unwrap();
 
-        let payload = serde_json::json!({
-            "version": 1,
-            "type": "skill",
-            "name": "busy",
-            "description": "d",
-            "content": "c",
-        })
-        .to_string();
+        let payload = build_skill_md("busy", "d", "c");
         let imported = import_sources(&payload, false, Some(project)).unwrap();
         assert_eq!(imported[0].name, "busy-imported");
     }
