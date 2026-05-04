@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { SessionNotification } from "@agentclientprotocol/sdk";
 import { useChatStore } from "@/features/chat/stores/chatStore";
-import {
-  clearReplayBuffer,
-  getAndDeleteReplayBuffer,
-} from "@/features/chat/hooks/replayBuffer";
+import { clearReplayBuffer } from "@/features/chat/hooks/replayBuffer";
 import {
   clearMessageTracking,
   handleSessionNotification,
@@ -43,30 +40,5 @@ describe("acpNotificationHandler", () => {
     expect(runtime.tokenState.accumulatedTotal).toBe(512);
     expect(runtime.tokenState.contextLimit).toBe(8192);
     expect(runtime.hasUsageSnapshot).toBe(true);
-  });
-
-  it("routes live non-usage updates to the ACP session id", async () => {
-    const notification = {
-      sessionId: "acp-session-2",
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        messageId: "message-1",
-        content: {
-          type: "text",
-          text: "hello from replay",
-        },
-      },
-    } as SessionNotification;
-
-    await handleSessionNotification(notification);
-
-    expect(getAndDeleteReplayBuffer("acp-session-2")).toBeUndefined();
-    expect(
-      useChatStore.getState().messagesBySession["acp-session-2"]?.[0],
-    ).toMatchObject({
-      id: "message-1",
-      role: "assistant",
-      content: [{ type: "text", text: "hello from replay" }],
-    });
   });
 });

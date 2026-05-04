@@ -345,7 +345,7 @@ describe("acpNotificationHandler", () => {
     });
   });
 
-  it("replay stores the ACP session id in MCP app payloads before session registration", async () => {
+  it("replay attaches MCP app payloads to tool-only assistant messages", async () => {
     const replaySessionId = "replay-acp-session-2";
     const replayCreated = 1_700_000_240;
     useChatStore.setState({
