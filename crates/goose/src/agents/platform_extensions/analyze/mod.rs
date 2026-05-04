@@ -60,7 +60,7 @@ impl AnalyzeClient {
             .with_instructions(indoc! {"
             Analyze code structure using tree-sitter AST parsing. Three auto-selected modes:
             - Directory path → structure overview (file tree with function/class counts)
-            - File path → semantic details (functions, classes, imports, call counts)
+            - File path → AST symbol details (functions, classes, imports — not for raw file reading; use shell cat for that)
             - Any path + focus parameter → symbol call graph (incoming/outgoing chains)
 
             For large codebases, delegate analysis to a subagent and retain only the summary.
@@ -215,7 +215,7 @@ impl McpClientTrait for AnalyzeClient {
     ) -> Result<ListToolsResult, Error> {
         let tool = Tool::new(
             "analyze".to_string(),
-            "Analyze code structure in 3 modes: 1) Directory overview - file tree with LOC/function/class counts to max_depth. 2) File details - functions, classes, imports. 3) Symbol focus - call graphs across directory to max_depth (requires file or directory path, case-sensitive). Typical flow: directory → files → symbols. Functions called >3x show •N.".to_string(),
+            "Analyze code structure via AST parsing (not a file reader — use shell cat for raw contents). 3 modes: 1) Directory overview - file tree with LOC/function/class counts to max_depth. 2) File symbols (AST-parsed) - functions, classes, imports. 3) Symbol focus - call graphs across directory to max_depth (requires file or directory path, case-sensitive). Typical flow: directory → files → symbols. Functions called >3x show •N.".to_string(),
             Self::schema::<AnalyzeParams>(),
         )
         .annotate(ToolAnnotations::from_raw(
