@@ -59,6 +59,10 @@ export function SettingsModal({
   }, []);
 
   useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.key === "Escape" &&
