@@ -66,6 +66,9 @@ use tracing::{debug, error, info, instrument, warn};
 
 const DEFAULT_MAX_TURNS: u32 = 1000;
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
+const MAX_TEXT_ONLY_NUDGES: u32 = 3;
+const TEXT_ONLY_NUDGE_MESSAGE: &str =
+    "Please continue by using the available tools to accomplish the task.";
 
 /// Context needed for the reply function
 pub struct ReplyContext {
@@ -1277,6 +1280,7 @@ impl Agent {
             });
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
+            let mut consecutive_text_only_turns: u32 = 0;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1748,6 +1752,10 @@ impl Agent {
                     }
                 }
 
+                if !no_tools_called {
+                    consecutive_text_only_turns = 0;
+                }
+
                 if no_tools_called {
                     // Lock, extract state, drop guard before branching — handle_retry_logic
                     // also locks final_output_tool and tokio::sync::Mutex is not reentrant.
@@ -1773,25 +1781,37 @@ impl Agent {
                             // continue from last user message after recovery compact
                         }
                         None => {
-                            match self.handle_retry_logic(&mut conversation, &session_config, &initial_messages).await {
-                                Ok(should_retry) => {
-                                    if should_retry {
-                                        info!("Retry logic triggered, restarting agent loop");
-                                        messages_to_add = Conversation::default();
-                                        session_manager.replace_conversation(&session_config.id, &conversation).await?;
-                                        yield AgentEvent::HistoryReplaced(conversation.clone());
-                                    } else {
+                            if !messages_to_add.is_empty() && consecutive_text_only_turns < MAX_TEXT_ONLY_NUDGES {
+                                consecutive_text_only_turns += 1;
+                                info!(
+                                    "Model produced text without tool calls ({}/{}), nudging to continue",
+                                    consecutive_text_only_turns, MAX_TEXT_ONLY_NUDGES
+                                );
+                                let nudge = Message::user().with_text(TEXT_ONLY_NUDGE_MESSAGE);
+                                messages_to_add.push(nudge.clone());
+                                yield AgentEvent::Message(nudge);
+                            } else {
+                                consecutive_text_only_turns = 0;
+                                match self.handle_retry_logic(&mut conversation, &session_config, &initial_messages).await {
+                                    Ok(should_retry) => {
+                                        if should_retry {
+                                            info!("Retry logic triggered, restarting agent loop");
+                                            messages_to_add = Conversation::default();
+                                            session_manager.replace_conversation(&session_config.id, &conversation).await?;
+                                            yield AgentEvent::HistoryReplaced(conversation.clone());
+                                        } else {
+                                            exit_chat = true;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Retry logic failed: {}", e);
+                                        yield AgentEvent::Message(
+                                            Message::assistant().with_text(
+                                                format!("Retry logic encountered an error: {}", e)
+                                            )
+                                        );
                                         exit_chat = true;
                                     }
-                                }
-                                Err(e) => {
-                                    error!("Retry logic failed: {}", e);
-                                    yield AgentEvent::Message(
-                                        Message::assistant().with_text(
-                                            format!("Retry logic encountered an error: {}", e)
-                                        )
-                                    );
-                                    exit_chat = true;
                                 }
                             }
                         }
