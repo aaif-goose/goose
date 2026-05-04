@@ -151,6 +151,44 @@ describe("acpNotificationHandler", () => {
     ).toBe("assistant-1");
   });
 
+  it("preserves ACP tool kind and locations on tool requests", async () => {
+    registerSession("local-session", "goose-session", "goose", "/Users/test");
+    setActiveMessageId("goose-session", "assistant-1");
+
+    await handleSessionNotification({
+      sessionId: "goose-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-1",
+        title: "write_file",
+        kind: "edit",
+        locations: [{ path: "/tmp/report.md", line: 7 }],
+        rawInput: { path: "/tmp/report.md" },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "goose-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-1",
+        status: "completed",
+        locations: [{ path: "/tmp/report.md", line: 9 }],
+      },
+    } as never);
+
+    const [message] =
+      useChatStore.getState().messagesBySession["local-session"];
+    expect(message.content[0]).toMatchObject({
+      type: "toolRequest",
+      id: "tool-1",
+      arguments: { path: "/tmp/report.md" },
+      toolKind: "edit",
+      locations: [{ path: "/tmp/report.md", line: 9 }],
+      status: "completed",
+    });
+  });
+
   it("preserves structured tool output when ACP provides rawOutput", async () => {
     registerSession(
       "local-session",

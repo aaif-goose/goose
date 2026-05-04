@@ -9,7 +9,9 @@ import {
   findLatestUnpairedToolRequest,
 } from "@/features/chat/hooks/replayBuffer";
 import type {
+  ToolCallLocation,
   ToolCallStatus,
+  ToolKind,
   ToolRequestContent,
   ToolResponseContent,
 } from "@/shared/types/messages";
@@ -58,6 +60,52 @@ const pendingUsageUpdates = new Map<
 
 const toolCallStatusFromUpdate = (status: string): ToolCallStatus =>
   status === "failed" ? "error" : "completed";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rawInputToArguments(rawInput: unknown): Record<string, unknown> {
+  return isRecord(rawInput) ? rawInput : {};
+}
+
+function toolKindFromUpdate(update: SessionUpdate): ToolKind | undefined {
+  const record: Record<string, unknown> = update;
+  const value = record.kind;
+  return typeof value === "string" ? (value as ToolKind) : undefined;
+}
+
+function locationsFromUpdate(
+  update: SessionUpdate,
+): ToolCallLocation[] | undefined {
+  const record: Record<string, unknown> = update;
+  const value = record.locations;
+  if (!Array.isArray(value)) return undefined;
+
+  return value
+    .filter(
+      (location): location is { path: string; line?: number | null } =>
+        isRecord(location) && typeof location.path === "string",
+    )
+    .map((location) => ({
+      path: location.path,
+      ...(typeof location.line === "number" || location.line === null
+        ? { line: location.line }
+        : {}),
+    }));
+}
+
+function toolCallUpdatePatch(
+  update: SessionUpdate,
+): Partial<ToolRequestContent> {
+  const toolKind = toolKindFromUpdate(update);
+  const locations = locationsFromUpdate(update);
+
+  return {
+    ...(toolKind ? { toolKind } : {}),
+    ...(locations ? { locations } : {}),
+  };
+}
 
 subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
   const pendingUsage = pendingUsageUpdates.get(gooseSessionId);
@@ -203,8 +251,9 @@ function handleReplay(
         id: update.toolCallId,
         name: update.title,
         ...identity,
-        arguments: {},
+        arguments: rawInputToArguments(update.rawInput),
         status: "executing",
+        ...toolCallUpdatePatch(update),
         startedAt: created ?? Date.now(),
       });
       break;
@@ -231,7 +280,12 @@ function handleReplay(
         if (created !== undefined && !existingMsg && msg === replayMsg) {
           msg.created = created;
         }
-        if (update.title || Object.keys(identity).length > 0) {
+        const patch = toolCallUpdatePatch(update);
+        if (
+          update.title ||
+          Object.keys(identity).length > 0 ||
+          Object.keys(patch).length > 0
+        ) {
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,
           );
@@ -239,6 +293,7 @@ function handleReplay(
             Object.assign(tc as ToolRequestContent, {
               ...(update.title ? { name: update.title } : {}),
               ...identity,
+              ...patch,
             });
           }
         }
@@ -253,6 +308,7 @@ function handleReplay(
               msg.content[idx] = {
                 ...tc,
                 ...identity,
+                ...toolCallUpdatePatch(update),
                 status: toolCallStatus,
               } as ToolRequestContent;
             }
@@ -327,8 +383,9 @@ function handleLive(
         id: update.toolCallId,
         name: update.title,
         ...identity,
-        arguments: {},
+        arguments: rawInputToArguments(update.rawInput),
         status: "executing",
+        ...toolCallUpdatePatch(update),
         startedAt: Date.now(),
       };
       store.setStreamingMessageId(sessionId, messageId);
@@ -340,7 +397,12 @@ function handleLive(
       const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
       const identity = getToolCallIdentity(update);
 
-      if (update.title || Object.keys(identity).length > 0) {
+      const patch = toolCallUpdatePatch(update);
+      if (
+        update.title ||
+        Object.keys(identity).length > 0 ||
+        Object.keys(patch).length > 0
+      ) {
         store.updateMessage(sessionId, messageId, (msg) => ({
           ...msg,
           content: msg.content.map((c) =>
@@ -349,6 +411,7 @@ function handleLive(
                   ...c,
                   ...(update.title ? { name: update.title } : {}),
                   ...identity,
+                  ...patch,
                 }
               : c,
           ),
@@ -371,6 +434,7 @@ function handleLive(
               ? {
                   ...block,
                   ...identity,
+                  ...toolCallUpdatePatch(update),
                   status: toolCallStatus,
                 }
               : block,

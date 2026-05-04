@@ -7,20 +7,17 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { Message } from "@/shared/types/messages";
+import type {
+  Message,
+  ToolCallLocation,
+  ToolKind,
+} from "@/shared/types/messages";
 import { pathExists } from "@/shared/api/system";
-import {
-  buildArtifactsIndexForMessages,
-  inferHomeDirFromRoots,
-  isWriteOrientedTool,
-  resolveMarkdownLocalHref,
-  type ArtifactPathCandidate,
-} from "@/features/chat/lib/artifactPathPolicy";
 
-export interface ToolCardDisplay {
-  role: "primary_host" | "none";
-  primaryCandidate: ArtifactPathCandidate | null;
-  secondaryCandidates: ArtifactPathCandidate[];
+export interface ArtifactLinkCandidate {
+  resolvedPath: string;
+  rawPath: string;
+  line?: number | null;
 }
 
 export interface SessionArtifact {
@@ -33,28 +30,18 @@ export interface SessionArtifact {
   lastTouchedAt: number;
   kind: "file" | "folder" | "path";
   toolName: string | null;
+  toolKind?: ToolKind;
+  line?: number | null;
 }
 
 interface ArtifactPolicyContextValue {
-  resolveToolCardDisplay: (
-    args: Record<string, unknown>,
-    name: string,
-    result?: string,
-  ) => ToolCardDisplay;
-  resolveMarkdownHref: (href: string) => ArtifactPathCandidate | null;
+  resolveMarkdownHref: (href: string) => ArtifactLinkCandidate | null;
   pathExists: (path: string) => Promise<boolean>;
   openResolvedPath: (path: string) => Promise<void>;
   getAllSessionArtifacts: () => SessionArtifact[];
 }
 
-const EMPTY_DISPLAY: ToolCardDisplay = {
-  role: "none",
-  primaryCandidate: null,
-  secondaryCandidates: [],
-};
-
 const DEFAULT_CONTEXT_VALUE: ArtifactPolicyContextValue = {
-  resolveToolCardDisplay: () => EMPTY_DISPLAY,
   resolveMarkdownHref: () => null,
   pathExists: async () => false,
   openResolvedPath: async () => {},
@@ -64,6 +51,25 @@ const DEFAULT_CONTEXT_VALUE: ArtifactPolicyContextValue = {
 const ArtifactPolicyContext = createContext<ArtifactPolicyContextValue>(
   DEFAULT_CONTEXT_VALUE,
 );
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").trim();
+}
+
+function normalizeComparablePath(path: string): string {
+  return normalizePath(path).replace(/\/+$/, "").toLowerCase();
+}
+
+function inferHomeDirFromRoots(roots: string[]): string | null {
+  for (const root of roots) {
+    const normalized = normalizePath(root);
+    const usersMatch = normalized.match(/^\/Users\/[^/]+/);
+    if (usersMatch) return usersMatch[0];
+    const homeMatch = normalized.match(/^\/home\/[^/]+/);
+    if (homeMatch) return homeMatch[0];
+  }
+  return null;
+}
 
 function shortenPath(fullPath: string, homeDir: string | null): string {
   if (homeDir && fullPath.startsWith(homeDir)) {
@@ -83,6 +89,78 @@ function basenameOf(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+function hasExtension(path: string): boolean {
+  const name = basenameOf(path);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1;
+}
+
+function inferPathKind(path: string): SessionArtifact["kind"] {
+  const normalized = normalizePath(path);
+  if (normalized.endsWith("/")) return "folder";
+  if (hasExtension(normalized)) return "file";
+  return "path";
+}
+
+function isExternalHref(href: string): boolean {
+  return (
+    /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href) &&
+    !href.toLowerCase().startsWith("file://")
+  );
+}
+
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
+}
+
+function resolveRelativeToBase(base: string, relativePath: string): string {
+  const normalizedBase = normalizePath(base).replace(/\/+$/, "");
+  const normalizedRelative = normalizePath(relativePath).replace(/^\.\/+/, "");
+  if (!normalizedRelative || normalizedRelative === ".") return normalizedBase;
+
+  const stack = normalizedBase.split("/").filter(Boolean);
+  const hasWindowsDriveRoot = /^[a-zA-Z]:$/.test(stack[0] ?? "");
+  for (const segment of normalizedRelative.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (stack.length > 0) stack.pop();
+      continue;
+    }
+    stack.push(segment);
+  }
+
+  const resolved = stack.join("/");
+  if (hasWindowsDriveRoot) return resolved;
+  return `/${resolved}`;
+}
+
+function resolvePath(path: string, roots: string[]): string {
+  const normalized = normalizePath(path);
+  if (!normalized) return "";
+
+  const homeDir = inferHomeDirFromRoots(roots);
+  if (normalized.startsWith("~/") && homeDir) {
+    return `${homeDir}${normalized.slice(1)}`;
+  }
+
+  if (normalized.toLowerCase().startsWith("file://")) {
+    return normalized.slice("file://".length);
+  }
+
+  if (isAbsolutePath(normalized) || normalized.startsWith("~/")) {
+    return normalized;
+  }
+
+  const base = roots.map((root) => normalizePath(root)).find(Boolean);
+  return base ? resolveRelativeToBase(base, normalized) : normalized;
+}
+
+function isNonEmptyLocation(
+  location: ToolCallLocation,
+): location is ToolCallLocation & { path: string } {
+  return typeof location.path === "string" && location.path.trim().length > 0;
+}
+
 export function ArtifactPolicyProvider({
   messages,
   allowedRoots,
@@ -98,46 +176,22 @@ export function ArtifactPolicyProvider({
   );
   const lastOpenAtByPathRef = useRef(new Map<string, number>());
 
-  const artifactsIndex = useMemo(
-    () => buildArtifactsIndexForMessages(messages, normalizedRoots),
-    [messages, normalizedRoots],
-  );
-
-  const { argsToToolCallId, toolCardDisplayByToolCallId } = useMemo(() => {
-    const displayByToolCallId = new Map<string, ToolCardDisplay>();
-
-    for (const ranking of artifactsIndex.byMessageId.values()) {
-      if (!ranking.primaryToolCallId || !ranking.primaryCandidate) continue;
-      if (
-        !ranking.primaryCandidate.toolName ||
-        !isWriteOrientedTool(ranking.primaryCandidate.toolName)
-      ) {
-        continue;
-      }
-      displayByToolCallId.set(ranking.primaryToolCallId, {
-        role: "primary_host",
-        primaryCandidate: ranking.primaryCandidate,
-        secondaryCandidates: ranking.secondaryCandidates,
-      });
-    }
-
-    return {
-      argsToToolCallId: artifactsIndex.argsToToolCallId,
-      toolCardDisplayByToolCallId: displayByToolCallId,
-    };
-  }, [artifactsIndex]);
-
-  const resolveToolCardDisplay = useCallback(
-    (args: Record<string, unknown>, _name: string, _result?: string) => {
-      const toolCallId = argsToToolCallId.get(args);
-      if (!toolCallId) return EMPTY_DISPLAY;
-      return toolCardDisplayByToolCallId.get(toolCallId) ?? EMPTY_DISPLAY;
-    },
-    [argsToToolCallId, toolCardDisplayByToolCallId],
-  );
-
   const resolveMarkdownHref = useCallback(
-    (href: string) => resolveMarkdownLocalHref(href, normalizedRoots),
+    (href: string): ArtifactLinkCandidate | null => {
+      const trimmed = href.trim();
+      if (!trimmed || trimmed.startsWith("#")) return null;
+      if (trimmed.toLowerCase().startsWith("javascript:")) return null;
+      if (isExternalHref(trimmed)) return null;
+
+      const withoutHash = trimmed.split("#")[0];
+      const withoutQuery = withoutHash.split("?")[0];
+      if (!withoutQuery) return null;
+
+      return {
+        rawPath: withoutQuery,
+        resolvedPath: resolvePath(withoutQuery, normalizedRoots),
+      };
+    },
     [normalizedRoots],
   );
 
@@ -181,44 +235,46 @@ export function ArtifactPolicyProvider({
       normalizedRoots.length > 0
         ? inferHomeDirFromRoots(normalizedRoots)
         : null;
-
     const artifactMap = new Map<string, SessionArtifact>();
 
-    for (const [messageId, ranking] of artifactsIndex.byMessageId.entries()) {
-      const message = messages.find((m) => m.id === messageId);
-      const timestamp = message?.created ?? 0;
+    for (const message of messages) {
+      if (message.role !== "assistant") continue;
+      if (message.metadata?.userVisible === false) continue;
 
-      for (const candidates of ranking.candidatesByToolCallId.values()) {
-        for (const candidate of candidates) {
-          if (!candidate.allowed) continue;
-          if (!candidate.toolName || !isWriteOrientedTool(candidate.toolName)) {
-            continue;
-          }
-          const key = candidate.resolvedPath.trim().toLowerCase();
+      for (const block of message.content) {
+        if (block.type !== "toolRequest") continue;
+        const locations = block.locations?.filter(isNonEmptyLocation) ?? [];
+
+        for (const location of locations) {
+          const resolvedPath = resolvePath(location.path, normalizedRoots);
+          const key = normalizeComparablePath(resolvedPath);
+          if (!key) continue;
+
           const existing = artifactMap.get(key);
-
           if (existing) {
             existing.versionCount += 1;
-            if (timestamp > existing.lastTouchedAt) {
-              existing.lastTouchedAt = timestamp;
-              existing.toolName = candidate.toolName;
+            if (message.created > existing.lastTouchedAt) {
+              existing.lastTouchedAt = message.created;
+              existing.toolName = block.toolName ?? block.name;
+              existing.toolKind = block.toolKind;
+              existing.line = location.line;
             }
-          } else {
-            artifactMap.set(key, {
-              resolvedPath: candidate.resolvedPath,
-              displayPath: shortenPath(candidate.resolvedPath, homeDir),
-              filename: basenameOf(candidate.resolvedPath),
-              directoryPath: shortenPath(
-                parentDir(candidate.resolvedPath),
-                homeDir,
-              ),
-              resolvedDirectoryPath: parentDir(candidate.resolvedPath),
-              versionCount: 1,
-              lastTouchedAt: timestamp,
-              kind: candidate.kind,
-              toolName: candidate.toolName,
-            });
+            continue;
           }
+
+          artifactMap.set(key, {
+            resolvedPath,
+            displayPath: shortenPath(resolvedPath, homeDir),
+            filename: basenameOf(resolvedPath),
+            directoryPath: shortenPath(parentDir(resolvedPath), homeDir),
+            resolvedDirectoryPath: parentDir(resolvedPath),
+            versionCount: 1,
+            lastTouchedAt: message.created,
+            kind: inferPathKind(resolvedPath),
+            toolName: block.toolName ?? block.name,
+            toolKind: block.toolKind,
+            line: location.line,
+          });
         }
       }
     }
@@ -226,11 +282,10 @@ export function ArtifactPolicyProvider({
     return Array.from(artifactMap.values()).sort(
       (a, b) => b.lastTouchedAt - a.lastTouchedAt,
     );
-  }, [messages, normalizedRoots, artifactsIndex]);
+  }, [messages, normalizedRoots]);
 
   const contextValue = useMemo<ArtifactPolicyContextValue>(
     () => ({
-      resolveToolCardDisplay,
       resolveMarkdownHref,
       pathExists: checkPathExists,
       openResolvedPath,
@@ -241,7 +296,6 @@ export function ArtifactPolicyProvider({
       getAllSessionArtifacts,
       openResolvedPath,
       resolveMarkdownHref,
-      resolveToolCardDisplay,
     ],
   );
 

@@ -1,52 +1,33 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { ArtifactPathCandidate } from "@/features/chat/lib/artifactPathPolicy";
-
-// ── mocks ────────────────────────────────────────────────────────────
+import type { ArtifactLinkCandidate } from "@/features/chat/hooks/ArtifactPolicyContext";
 
 const mockResolveMarkdownHref =
-  vi.fn<(href: string) => ArtifactPathCandidate | null>();
+  vi.fn<(href: string) => ArtifactLinkCandidate | null>();
 const mockOpenResolvedPath = vi.fn<(path: string) => Promise<void>>();
 
 vi.mock("@/features/chat/hooks/ArtifactPolicyContext", () => ({
   useArtifactPolicyContext: () => ({
-    resolveToolCardDisplay: () => ({
-      role: "none",
-      primaryCandidate: null,
-      secondaryCandidates: [],
-    }),
     resolveMarkdownHref: mockResolveMarkdownHref,
     pathExists: async () => false,
     openResolvedPath: mockOpenResolvedPath,
+    getAllSessionArtifacts: () => [],
   }),
 }));
 
 import { useArtifactLinkHandler } from "../useArtifactLinkHandler";
 
-// ── helpers ──────────────────────────────────────────────────────────
-
 function makeCandidate(
-  overrides: Partial<ArtifactPathCandidate> = {},
-): ArtifactPathCandidate {
+  overrides: Partial<ArtifactLinkCandidate> = {},
+): ArtifactLinkCandidate {
   return {
-    id: "md-1",
     rawPath: "/project/report.md",
     resolvedPath: "/Users/test/project/report.md",
-    source: "arg_key",
-    confidence: "high",
-    kind: "file",
-    allowed: true,
-    blockedReason: null,
-    toolCallId: null,
-    toolName: null,
-    toolCallIndex: 0,
-    appearanceIndex: 0,
     ...overrides,
   };
 }
 
-/** Renders a container with the click handler and an anchor link inside. */
 function Harness({ href, label }: { href: string; label: string }) {
   const { handleContentClick, pathNotice } = useArtifactLinkHandler();
   return (
@@ -59,7 +40,6 @@ function Harness({ href, label }: { href: string; label: string }) {
   );
 }
 
-/** Renders a container with a non-link element. */
 function HarnessNoLink() {
   const { handleContentClick, pathNotice } = useArtifactLinkHandler();
   return (
@@ -72,15 +52,13 @@ function HarnessNoLink() {
   );
 }
 
-// ── tests ────────────────────────────────────────────────────────────
-
 describe("useArtifactLinkHandler", () => {
   beforeEach(() => {
     mockResolveMarkdownHref.mockReset();
     mockOpenResolvedPath.mockReset();
   });
 
-  it("calls resolveMarkdownHref and openResolvedPath for allowed local links", async () => {
+  it("opens resolved local links", async () => {
     const user = userEvent.setup();
     const candidate = makeCandidate();
     mockResolveMarkdownHref.mockReturnValue(candidate);
@@ -93,24 +71,24 @@ describe("useArtifactLinkHandler", () => {
     expect(mockOpenResolvedPath).toHaveBeenCalledWith(candidate.resolvedPath);
   });
 
-  it("shows blocked notice for disallowed paths", async () => {
+  it("shows opener errors", async () => {
     const user = userEvent.setup();
-    const blocked = makeCandidate({
-      allowed: false,
-      blockedReason: "Path is outside allowed roots.",
-    });
-    mockResolveMarkdownHref.mockReturnValue(blocked);
+    mockResolveMarkdownHref.mockReturnValue(
+      makeCandidate({ resolvedPath: "/secret/data.md" }),
+    );
+    mockOpenResolvedPath.mockRejectedValue(
+      new Error("File not found: /secret/data.md"),
+    );
 
     render(<Harness href="/secret/data.md" label="Secret" />);
     await user.click(screen.getByText("Secret"));
 
-    expect(mockOpenResolvedPath).not.toHaveBeenCalled();
     expect(screen.getByTestId("notice")).toHaveTextContent(
-      "Path is outside allowed roots.",
+      "File not found: /secret/data.md",
     );
   });
 
-  it("does not intercept external URLs (defers to MarkdownLink's LinkSafetyModal)", async () => {
+  it("does not intercept external URLs", async () => {
     const user = userEvent.setup();
 
     render(<Harness href="https://example.com" label="External" />);
@@ -128,21 +106,5 @@ describe("useArtifactLinkHandler", () => {
 
     expect(mockResolveMarkdownHref).not.toHaveBeenCalled();
     expect(mockOpenResolvedPath).not.toHaveBeenCalled();
-  });
-
-  it("shows default blocked reason when blockedReason is null", async () => {
-    const user = userEvent.setup();
-    const blocked = makeCandidate({
-      allowed: false,
-      blockedReason: null,
-    });
-    mockResolveMarkdownHref.mockReturnValue(blocked);
-
-    render(<Harness href="/outside/file.md" label="Blocked" />);
-    await user.click(screen.getByText("Blocked"));
-
-    expect(screen.getByTestId("notice")).toHaveTextContent(
-      "Path is outside allowed roots.",
-    );
   });
 });

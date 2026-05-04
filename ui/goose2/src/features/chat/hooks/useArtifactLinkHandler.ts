@@ -28,13 +28,6 @@ export function useArtifactLinkHandler() {
       const resolved = resolveMarkdownHref(href);
       if (!resolved) return;
 
-      if (!resolved.allowed) {
-        setPathNotice(
-          resolved.blockedReason || "Path is outside allowed roots.",
-        );
-        return;
-      }
-
       setPathNotice(null);
       void openResolvedPath(resolved.resolvedPath).catch((err) => {
         setPathNotice(err instanceof Error ? err.message : String(err));
