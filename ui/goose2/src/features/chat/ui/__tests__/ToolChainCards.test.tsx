@@ -117,4 +117,72 @@ describe("ToolChainCards", () => {
     const wrapper = container.querySelector('[data-role="tool-chain-card"]');
     expect(wrapper?.getAttribute("data-status")).toBe("error");
   });
+
+  it("renders a step rail row for each child inside a chain", () => {
+    const { container } = render(
+      <ToolChainCards
+        toolItems={[
+          pair("Edit · src/a.ts"),
+          pair("Edit · src/b.ts"),
+          pair("Edit · src/c.ts"),
+        ]}
+      />,
+    );
+    const rows = container.querySelectorAll('[data-role="tool-chain-step"]');
+    expect(rows).toHaveLength(3);
+  });
+
+  it("does not wrap a single tool call in a rail row", () => {
+    const { container } = render(
+      <ToolChainCards toolItems={[pair("Read · src/a.ts")]} />,
+    );
+    const rows = container.querySelectorAll('[data-role="tool-chain-step"]');
+    expect(rows).toHaveLength(0);
+  });
+
+  it("counts the internal-steps disclosure as part of the rail", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ToolChainCards
+        toolItems={[
+          pair("Edit · src/a.ts"),
+          pair("Edit · src/b.ts"),
+          pair("ls"),
+          pair("cat"),
+        ]}
+      />,
+    );
+    const disclosure = container.querySelector(
+      '[data-role="tool-chain-internal-disclosure"]',
+    );
+    expect(disclosure).not.toBeNull();
+
+    const beforeRows = container.querySelectorAll(
+      '[data-role="tool-chain-step"]',
+    );
+    expect(beforeRows.length).toBeGreaterThanOrEqual(1);
+
+    const showButton = screen.getByRole("button", {
+      name: /show internal steps \(2\)/i,
+    });
+    await user.click(showButton);
+
+    const afterRows = container.querySelectorAll(
+      '[data-role="tool-chain-step"]',
+    );
+    expect(afterRows.length).toBe(beforeRows.length + 2);
+  });
+
+  it("removes the heavy parent card chrome around the chain wrapper", () => {
+    const { container } = render(
+      <ToolChainCards
+        toolItems={[pair("Edit · src/a.ts"), pair("Edit · src/b.ts")]}
+      />,
+    );
+    const wrapper = container.querySelector('[data-role="tool-chain-card"]');
+    expect(wrapper).not.toBeNull();
+    const className = wrapper?.getAttribute("class") ?? "";
+    expect(className).not.toMatch(/border-/);
+    expect(className).not.toMatch(/bg-muted/);
+  });
 });
