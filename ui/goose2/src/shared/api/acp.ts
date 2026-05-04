@@ -166,13 +166,14 @@ export async function acpCreateSession(
   workingDir: string,
   options: AcpCreateSessionOptions = {},
 ): Promise<{ sessionId: string }> {
-  const localSessionId = crypto.randomUUID();
-  const gooseSessionId = await acpPrepareSession(
-    localSessionId,
-    providerId,
+  const response = await directAcp.newSession(
     workingDir,
-    options,
+    providerId,
+    options.projectId,
+    options.personaId,
   );
+  const gooseSessionId = response.sessionId;
+  await directAcp.setProvider(gooseSessionId, providerId);
   sessionTracker.registerSession(
     gooseSessionId,
     gooseSessionId,
