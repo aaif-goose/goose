@@ -6,6 +6,7 @@ import {
   type ProviderStatus,
   checkAllProviderStatus,
 } from "@/features/providers/api/credentials";
+import { notifyVoiceDictationConfigChanged } from "@/features/chat/lib/voiceInput";
 import {
   syncProviderInventory,
   type SyncProviderInventoryResult,
@@ -208,6 +209,7 @@ export function useCredentials(): UseCredentialsReturn {
           fields.map(({ key, value }) => ({ key, value })),
         );
         updateProviderStatus(result.status);
+        notifyVoiceDictationConfigChanged();
         startInventorySync(providerId, result.refresh);
       } finally {
         setProviderSaving(providerId, false);
@@ -222,6 +224,7 @@ export function useCredentials(): UseCredentialsReturn {
       try {
         const result = await deleteProviderConfig(providerId);
         updateProviderStatus(result.status);
+        notifyVoiceDictationConfigChanged();
         startInventorySync(providerId, result.refresh);
       } finally {
         setProviderSaving(providerId, false);
@@ -241,6 +244,7 @@ export function useCredentials(): UseCredentialsReturn {
         setProviderInventoryWarning(providerId, errorMessage(error));
       }
       await refreshStatuses();
+      notifyVoiceDictationConfigChanged();
       startInventorySync(providerId, initialRefresh);
     },
     [refreshStatuses, setProviderInventoryWarning, startInventorySync],
