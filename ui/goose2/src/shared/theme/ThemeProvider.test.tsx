@@ -133,9 +133,7 @@ describe("ThemeProvider", () => {
         "--color-brand-foreground",
       ),
     ).toBe("#000000");
-    expect(document.documentElement.style.accentColor).toBe(
-      "rgb(249, 115, 22)",
-    );
+    expect(document.documentElement.style.accentColor).toBe("#f97316");
   });
 
   it("normalizes and validates accent colors", async () => {
