@@ -180,23 +180,23 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
     const status = getToolItemStatus(item);
     const { request, response } = item;
 
-    const adapter = (
-      <ToolCallAdapter
-        name={name}
-        arguments={request?.arguments ?? {}}
-        status={status}
-        locations={request?.locations}
-        result={response?.result}
-        structuredContent={response?.structuredContent}
-        isError={response?.isError}
-        startedAt={request?.startedAt}
-        open={expandedKeys.has(item.key)}
-        onOpenChange={(open) => handleOpenChange(item.key, open)}
-      />
-    );
-
     if (!options.withRail) {
-      return <div key={item.key}>{adapter}</div>;
+      return (
+        <div key={item.key}>
+          <ToolCallAdapter
+            name={name}
+            arguments={request?.arguments ?? {}}
+            status={status}
+            locations={request?.locations}
+            result={response?.result}
+            structuredContent={response?.structuredContent}
+            isError={response?.isError}
+            startedAt={request?.startedAt}
+            open={expandedKeys.has(item.key)}
+            onOpenChange={(open) => handleOpenChange(item.key, open)}
+          />
+        </div>
+      );
     }
 
     return (
@@ -210,7 +210,22 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
           isFirst={index === 0}
           isLast={index === total - 1}
         />
-        <div className="min-w-0 flex-1 pb-1">{adapter}</div>
+        <div className="min-w-0 flex-1 pb-1">
+          <ToolCallAdapter
+            name={name}
+            arguments={request?.arguments ?? {}}
+            status={status}
+            locations={request?.locations}
+            result={response?.result}
+            structuredContent={response?.structuredContent}
+            isError={response?.isError}
+            startedAt={request?.startedAt}
+            open={expandedKeys.has(item.key)}
+            onOpenChange={(open) => handleOpenChange(item.key, open)}
+            showStatusBadge={false}
+            fitWidth
+          />
+        </div>
       </div>
     );
   };
@@ -225,9 +240,19 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
     );
   }
 
-  const labelText = isActiveChain
-    ? t("tool_chain.summary.active")
-    : t(summary.titleKey);
+  // Prefer the server-generated LLM chain summary (anchored on the first tool
+  // request of the chain) over the deterministic bucket phrase. The summary is
+  // attached after every step in the chain has completed, so it's only
+  // available for finished chains; while the chain is still active, fall back
+  // to the deterministic phrase.
+  const firstChainSummary = toolItems.find((item) => item.request?.chainSummary)
+    ?.request?.chainSummary;
+  const labelText =
+    !isActiveChain && firstChainSummary
+      ? firstChainSummary.summary
+      : isActiveChain
+        ? t("tool_chain.summary.active")
+        : t(summary.titleKey);
   const headerText = isActiveChain
     ? t("tool_chain.title.active", { count: toolItems.length })
     : t("tool_chain.title.labeled", {

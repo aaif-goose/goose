@@ -78,4 +78,95 @@ describe("acpNotificationHandler", () => {
       useChatStore.getState().messagesBySession["draft-session-2"],
     ).toBeUndefined();
   });
+
+  it("threads tool chain summary onto the streaming tool request (live)", async () => {
+    registerSession("draft-session-1", "goose-session-1", "goose", "/tmp");
+
+    await handleSessionNotification({
+      sessionId: "goose-session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-1",
+        title: "running ls",
+      },
+    } as SessionNotification);
+
+    await handleSessionNotification({
+      sessionId: "goose-session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-2",
+        title: "running pwd",
+      },
+    } as SessionNotification);
+
+    await handleSessionNotification({
+      sessionId: "goose-session-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc-1",
+        _meta: {
+          goose: {
+            toolChainSummary: {
+              summary: "inspected working directory",
+              count: 2,
+            },
+          },
+        },
+      },
+    } as SessionNotification);
+
+    const messages =
+      useChatStore.getState().messagesBySession["draft-session-1"];
+    expect(messages).toBeTruthy();
+    const toolReqs =
+      messages?.flatMap((m) =>
+        m.content.filter((c) => c.type === "toolRequest"),
+      ) ?? [];
+    const first = toolReqs.find(
+      (c) => c.type === "toolRequest" && c.id === "tc-1",
+    );
+    const second = toolReqs.find(
+      (c) => c.type === "toolRequest" && c.id === "tc-2",
+    );
+    expect(first?.type === "toolRequest" && first.chainSummary).toEqual({
+      summary: "inspected working directory",
+      count: 2,
+    });
+    expect(
+      second?.type === "toolRequest" && second.chainSummary,
+    ).toBeUndefined();
+  });
+
+  it("attaches tool chain summary on initial tool_call during replay", async () => {
+    await handleSessionNotification({
+      sessionId: "goose-session-2",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-1",
+        title: "ran two things",
+        _meta: {
+          goose: {
+            toolChainSummary: {
+              summary: "applied dark mode polish",
+              count: 4,
+            },
+          },
+        },
+      },
+    } as SessionNotification);
+
+    registerSession("draft-session-2", "goose-session-2", "goose", "/tmp");
+
+    const buffered =
+      useChatStore.getState().messagesBySession["draft-session-2"];
+    expect(buffered).toBeTruthy();
+    const tc = buffered
+      ?.flatMap((m) => m.content)
+      .find((c) => c.type === "toolRequest" && c.id === "tc-1");
+    expect(tc?.type === "toolRequest" && tc.chainSummary).toEqual({
+      summary: "applied dark mode polish",
+      count: 4,
+    });
+  });
 });

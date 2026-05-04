@@ -1,5 +1,5 @@
 use super::session_manager::{role_to_string, SessionStorage};
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rmcp::model::Role;
@@ -378,6 +378,67 @@ impl ThreadManager {
         self.get_thread(&new_id).await
     }
 
+    /// Merge a JSON object patch into the `tool_meta` of the `ToolRequest` whose
+    /// `id == tool_call_id` inside the message identified by `(thread_id,
+    /// message_id)`. Existing keys in `tool_meta` are preserved.
+    ///
+    /// No-ops (returns `Ok(())`) if the message row or the tool request can't
+    /// be found — callers (e.g. async title tasks) treat persistence as
+    /// best-effort.
+    pub async fn update_tool_request_meta(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+        tool_call_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<()> {
+        let pool = self.storage.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let content_json = sqlx::query_scalar::<_, String>(
+            "SELECT content_json FROM thread_messages \
+             WHERE thread_id = ? AND message_id = ?",
+        )
+        .bind(thread_id)
+        .bind(message_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let Some(content_json) = content_json else {
+            return Ok(());
+        };
+
+        let mut content: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+        let mut found = false;
+        for block in &mut content {
+            if let MessageContent::ToolRequest(tr) = block {
+                if tr.id == tool_call_id {
+                    tr.tool_meta = Some(merge_tool_meta(tr.tool_meta.take(), &patch));
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if !found {
+            return Ok(());
+        }
+
+        let updated_json = serde_json::to_string(&content)?;
+        sqlx::query(
+            "UPDATE thread_messages SET content_json = ? \
+             WHERE thread_id = ? AND message_id = ?",
+        )
+        .bind(updated_json)
+        .bind(thread_id)
+        .bind(message_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn list_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         let pool = self.storage.pool().await?;
         let rows = sqlx::query_as::<_, (Option<String>, String, Option<String>, String, i64, String)>(
@@ -430,4 +491,260 @@ fn append_text_json(content_json: &str, new_text: &str) -> anyhow::Result<String
         *text_val = serde_json::Value::String(format!("{}{}", existing, new_text));
     }
     Ok(serde_json::to_string(&items)?)
+}
+
+/// Merge a JSON object `patch` into an existing optional object value,
+/// preserving keys not present in the patch. Non-object values are replaced.
+fn merge_tool_meta(
+    existing: Option<serde_json::Value>,
+    patch: &serde_json::Value,
+) -> serde_json::Value {
+    let mut base = match existing {
+        Some(serde_json::Value::Object(map)) => map,
+        _ => serde_json::Map::new(),
+    };
+    if let serde_json::Value::Object(patch_map) = patch {
+        for (k, v) in patch_map {
+            base.insert(k.clone(), v.clone());
+        }
+    }
+    serde_json::Value::Object(base)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::conversation::message::{
+        Message, MessageContent, ToolRequest, TOOL_META_CHAIN_SUMMARY_KEY,
+        TOOL_META_EXTERNAL_DISPATCH_KEY, TOOL_META_TITLE_KEY,
+    };
+    use crate::session::SessionManager;
+    use rmcp::model::CallToolRequestParams;
+    use tempfile::TempDir;
+
+    fn assistant_message_with_tool_request(
+        tool_id: &str,
+        tool_meta: Option<serde_json::Value>,
+    ) -> Message {
+        let tool_request = ToolRequest {
+            id: tool_id.to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta,
+        };
+        Message::new(
+            Role::Assistant,
+            chrono::Utc::now().timestamp_millis(),
+            vec![MessageContent::ToolRequest(tool_request)],
+        )
+    }
+
+    async fn fresh_thread_manager(temp: &TempDir) -> Arc<ThreadManager> {
+        let session_manager = SessionManager::new(temp.path().to_path_buf());
+        Arc::new(ThreadManager::new(session_manager.storage().clone()))
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_sets_title_when_missing() {
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        let stored = mgr
+            .append_message(
+                &thread.id,
+                None,
+                &assistant_message_with_tool_request("tc-1", None),
+            )
+            .await
+            .unwrap();
+        let message_id = stored.id.clone().unwrap();
+
+        mgr.update_tool_request_meta(
+            &thread.id,
+            &message_id,
+            "tc-1",
+            serde_json::json!({ TOOL_META_TITLE_KEY: "reading config" }),
+        )
+        .await
+        .unwrap();
+
+        let messages = mgr.list_messages(&thread.id).await.unwrap();
+        let req = match &messages[0].content[0] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request"),
+        };
+        assert_eq!(req.persisted_title(), Some("reading config"));
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_preserves_existing_keys() {
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        let stored = mgr
+            .append_message(
+                &thread.id,
+                None,
+                &assistant_message_with_tool_request(
+                    "tc-1",
+                    Some(serde_json::json!({ TOOL_META_EXTERNAL_DISPATCH_KEY: true })),
+                ),
+            )
+            .await
+            .unwrap();
+        let message_id = stored.id.clone().unwrap();
+
+        mgr.update_tool_request_meta(
+            &thread.id,
+            &message_id,
+            "tc-1",
+            serde_json::json!({ TOOL_META_TITLE_KEY: "running commands" }),
+        )
+        .await
+        .unwrap();
+
+        let messages = mgr.list_messages(&thread.id).await.unwrap();
+        let req = match &messages[0].content[0] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request"),
+        };
+        assert!(
+            req.is_externally_dispatched(),
+            "external_dispatch key should be preserved across the merge"
+        );
+        assert_eq!(req.persisted_title(), Some("running commands"));
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_overwrites_existing_value() {
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        let stored = mgr
+            .append_message(
+                &thread.id,
+                None,
+                &assistant_message_with_tool_request(
+                    "tc-1",
+                    Some(serde_json::json!({ TOOL_META_TITLE_KEY: "old" })),
+                ),
+            )
+            .await
+            .unwrap();
+        let message_id = stored.id.clone().unwrap();
+
+        mgr.update_tool_request_meta(
+            &thread.id,
+            &message_id,
+            "tc-1",
+            serde_json::json!({ TOOL_META_TITLE_KEY: "new" }),
+        )
+        .await
+        .unwrap();
+
+        let messages = mgr.list_messages(&thread.id).await.unwrap();
+        let req = match &messages[0].content[0] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request"),
+        };
+        assert_eq!(req.persisted_title(), Some("new"));
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_no_op_for_unknown_message() {
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        mgr.update_tool_request_meta(
+            &thread.id,
+            "missing-message-id",
+            "tc-1",
+            serde_json::json!({ TOOL_META_TITLE_KEY: "x" }),
+        )
+        .await
+        .expect("missing message must be a no-op, not an error");
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_no_op_for_unknown_tool_call() {
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        let stored = mgr
+            .append_message(
+                &thread.id,
+                None,
+                &assistant_message_with_tool_request("tc-1", None),
+            )
+            .await
+            .unwrap();
+        let message_id = stored.id.clone().unwrap();
+
+        mgr.update_tool_request_meta(
+            &thread.id,
+            &message_id,
+            "tc-other",
+            serde_json::json!({ TOOL_META_TITLE_KEY: "x" }),
+        )
+        .await
+        .unwrap();
+
+        let messages = mgr.list_messages(&thread.id).await.unwrap();
+        let req = match &messages[0].content[0] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request"),
+        };
+        assert!(
+            req.persisted_title().is_none(),
+            "no-match must leave tool_meta untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_persists_chain_summary_object() {
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        let stored = mgr
+            .append_message(
+                &thread.id,
+                None,
+                &assistant_message_with_tool_request(
+                    "tc-1",
+                    Some(serde_json::json!({ TOOL_META_TITLE_KEY: "first step" })),
+                ),
+            )
+            .await
+            .unwrap();
+        let message_id = stored.id.clone().unwrap();
+
+        mgr.update_tool_request_meta(
+            &thread.id,
+            &message_id,
+            "tc-1",
+            serde_json::json!({
+                TOOL_META_CHAIN_SUMMARY_KEY: { "summary": "applied dark mode polish", "count": 4 },
+            }),
+        )
+        .await
+        .unwrap();
+
+        let messages = mgr.list_messages(&thread.id).await.unwrap();
+        let req = match &messages[0].content[0] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request"),
+        };
+        let chain = req
+            .persisted_chain_summary()
+            .expect("chain summary should be present");
+        assert_eq!(chain.summary, "applied dark mode polish");
+        assert_eq!(chain.count, 4);
+        assert_eq!(req.persisted_title(), Some("first step"));
+    }
 }

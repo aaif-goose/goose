@@ -185,4 +185,56 @@ describe("ToolChainCards", () => {
     expect(className).not.toMatch(/border-/);
     expect(className).not.toMatch(/bg-muted/);
   });
+
+  it("prefers the LLM chain summary over the deterministic phrase when present", () => {
+    const a = pair("Edit · src/a.ts");
+    const b = pair("Edit · src/b.ts");
+    if (a.request) {
+      a.request.chainSummary = {
+        summary: "applied dark mode polish",
+        count: 2,
+      };
+    }
+    render(<ToolChainCards toolItems={[a, b]} />);
+    expect(
+      screen.getByRole("button", {
+        name: /applied dark mode polish.*2 steps/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /updating files/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to the deterministic phrase when no chain summary is present", () => {
+    render(
+      <ToolChainCards
+        toolItems={[pair("Edit · src/a.ts"), pair("Edit · src/b.ts")]}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /updating files.*2 steps/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not surface the chain summary while the chain is still active", () => {
+    const a = pair("Edit · src/a.ts");
+    const b = pair("Edit · src/b.ts", {
+      status: "executing",
+      completed: false,
+    });
+    if (a.request) {
+      a.request.chainSummary = {
+        summary: "applied dark mode polish",
+        count: 2,
+      };
+    }
+    render(<ToolChainCards toolItems={[a, b]} />);
+    expect(
+      screen.getByRole("button", { name: /working through 2 steps/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /applied dark mode polish/i }),
+    ).not.toBeInTheDocument();
+  });
 });

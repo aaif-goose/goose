@@ -34,7 +34,10 @@ import {
   getLocalSessionId,
   subscribeToSessionRegistration,
 } from "./acpSessionTracker";
-import { getToolCallIdentity } from "./acpToolCallIdentity";
+import {
+  getToolCallIdentity,
+  getToolChainSummary,
+} from "./acpToolCallIdentity";
 import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per goose session
@@ -241,6 +244,7 @@ function handleReplay(
     case "tool_call": {
       const created = getReplayCreated(update);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
       const msg = ensureReplayAssistantMessage(
         sessionId,
         getReplayMessageId(update),
@@ -255,6 +259,7 @@ function handleReplay(
         status: "executing",
         ...toolCallUpdatePatch(update),
         startedAt: created ?? Date.now(),
+        ...(chainSummary ? { chainSummary } : {}),
       });
       break;
     }
@@ -263,6 +268,7 @@ function handleReplay(
       const created = getReplayCreated(update);
       const replayMessageId = getReplayMessageId(update);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
       const trackedMessageId = getTrackedReplayAssistantMessageId(sessionId);
       const replayMsg = replayMessageId
         ? getBufferedMessage(sessionId, replayMessageId)
@@ -284,7 +290,8 @@ function handleReplay(
         if (
           update.title ||
           Object.keys(identity).length > 0 ||
-          Object.keys(patch).length > 0
+          Object.keys(patch).length > 0 ||
+          chainSummary
         ) {
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,
@@ -294,6 +301,7 @@ function handleReplay(
               ...(update.title ? { name: update.title } : {}),
               ...identity,
               ...patch,
+              ...(chainSummary ? { chainSummary } : {}),
             });
           }
         }
@@ -377,6 +385,7 @@ function handleLive(
     case "tool_call": {
       const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
 
       const toolRequest: ToolRequestContent = {
         type: "toolRequest",
@@ -387,6 +396,7 @@ function handleLive(
         status: "executing",
         ...toolCallUpdatePatch(update),
         startedAt: Date.now(),
+        ...(chainSummary ? { chainSummary } : {}),
       };
       store.setStreamingMessageId(sessionId, messageId);
       store.appendToStreamingMessage(sessionId, toolRequest);
@@ -396,12 +406,14 @@ function handleLive(
     case "tool_call_update": {
       const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
 
       const patch = toolCallUpdatePatch(update);
       if (
         update.title ||
         Object.keys(identity).length > 0 ||
-        Object.keys(patch).length > 0
+        Object.keys(patch).length > 0 ||
+        chainSummary
       ) {
         store.updateMessage(sessionId, messageId, (msg) => ({
           ...msg,
@@ -412,6 +424,7 @@ function handleLive(
                   ...(update.title ? { name: update.title } : {}),
                   ...identity,
                   ...patch,
+                  ...(chainSummary ? { chainSummary } : {}),
                 }
               : c,
           ),

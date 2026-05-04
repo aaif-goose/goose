@@ -56,7 +56,7 @@ use sacp::{
     Responder,
 };
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
@@ -156,10 +156,34 @@ struct GooseAcpSession {
     agent: AgentHandle,
     internal_session_id: String,
     tool_requests: HashMap<String, crate::conversation::message::ToolRequest>,
+    /// For each tool_call_id that belongs to a multi-tool chain (run of
+    /// consecutive ToolRequest blocks within one assistant message), the chain
+    /// it belongs to. Populated when the assistant message is processed.
+    /// Used by `handle_tool_response` to detect when a chain has fully
+    /// completed and fire a single LLM summary covering the run.
+    chain_membership: HashMap<String, Arc<ToolChain>>,
+    /// Set of tool_call_ids whose ToolResponse has already been processed.
+    /// Drives the "all responses present" check for chain completion.
+    responded_tool_ids: HashSet<String>,
+    /// Tool_call_ids of chains that have already had a summary task fired.
+    /// Idempotence guard so we summarize each chain at most once.
+    summarized_chains: HashSet<String>,
     cancel_token: Option<CancellationToken>,
     /// Working directory set while the agent was still loading.
     /// Applied once the agent becomes ready.
     pending_working_dir: Option<std::path::PathBuf>,
+}
+
+/// A run of consecutive ToolRequest blocks within one assistant message,
+/// tracked by [`GooseAcpSession::chain_membership`]. Used to drive a single
+/// LLM summary for the whole run once every step has a recorded ToolResponse.
+#[derive(Debug, Clone)]
+struct ToolChain {
+    /// Assistant message id where every tool request in this chain lives.
+    /// This is also the row we patch when persisting the chain summary.
+    message_id: String,
+    /// Tool call ids in document order. Always `len() >= 2`.
+    ids: Vec<String>,
 }
 
 /// Progress stages signalled by the background agent setup task via the watch
@@ -587,10 +611,81 @@ fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {
     Some(meta)
 }
 
+/// Add `goose.toolChainSummary = { summary, count }` to a `Meta` blob,
+/// preserving any existing `goose.*` keys (e.g. `goose.toolCall` set by
+/// [`tool_call_identity_meta`]).
+fn with_tool_chain_summary_meta(base: Option<Meta>, summary: &str, count: usize) -> Option<Meta> {
+    let mut meta = base.unwrap_or_default();
+    let goose_entry = meta
+        .entry("goose".to_string())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let goose_obj = match goose_entry {
+        serde_json::Value::Object(obj) => obj,
+        other => {
+            *other = serde_json::Value::Object(serde_json::Map::new());
+            match other {
+                serde_json::Value::Object(obj) => obj,
+                _ => unreachable!(),
+            }
+        }
+    };
+    let mut chain = serde_json::Map::new();
+    chain.insert(
+        "summary".to_string(),
+        serde_json::Value::String(summary.to_string()),
+    );
+    chain.insert(
+        "count".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(count)),
+    );
+    goose_obj.insert(
+        "toolChainSummary".to_string(),
+        serde_json::Value::Object(chain),
+    );
+    Some(meta)
+}
+
 struct PendingToolCall {
     tool_call: ToolCall,
     identity_meta: Option<Meta>,
     fallback_title: String,
+}
+
+/// Extract chains (runs of consecutive `MessageContent::ToolRequest` blocks)
+/// from a single message's content. Mirrors the frontend's chain detection in
+/// `MessageBubble.groupContentSections`: any non-tool block (text, thinking,
+/// image, etc.) breaks the run.
+///
+/// Returns one inner Vec per detected chain, holding the tool_call_ids in
+/// document order. Single-tool runs are included; callers (chain
+/// summarization) gate on `chain.len() >= 2`.
+fn extract_tool_chains(
+    content: &[crate::conversation::message::MessageContent],
+) -> Vec<Vec<String>> {
+    use crate::conversation::message::MessageContent;
+    let mut chains: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+
+    for block in content {
+        match block {
+            MessageContent::ToolRequest(tr) => current.push(tr.id.clone()),
+            MessageContent::ToolResponse(_) => {
+                // Server-side, assistant messages don't carry responses;
+                // responses arrive in subsequent messages. Treat as
+                // chain-neutral so a stray response doesn't split a chain
+                // if the data shape ever changes.
+            }
+            _ => {
+                if !current.is_empty() {
+                    chains.push(std::mem::take(&mut current));
+                }
+            }
+        }
+    }
+    if !current.is_empty() {
+        chains.push(current);
+    }
+    chains
 }
 
 fn pending_tool_call_from_request(tool_request: &ToolRequest) -> PendingToolCall {
@@ -607,11 +702,17 @@ fn pending_tool_call_from_request(tool_request: &ToolRequest) -> PendingToolCall
     let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
     let identity_meta = tool_call_identity_meta(tool_request);
 
-    let mut tool_call = ToolCall::new(
-        ToolCallId::new(tool_request.id.clone()),
-        fallback_title.clone(),
-    )
-    .status(ToolCallStatus::Pending);
+    // Prefer the persisted LLM-generated title when available so replay (and
+    // any subsequent live initial ToolCall after the title task has already
+    // resolved) emits the nice title up front, with no flash of the
+    // deterministic fallback.
+    let initial_title = tool_request
+        .persisted_title()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| fallback_title.clone());
+
+    let mut tool_call = ToolCall::new(ToolCallId::new(tool_request.id.clone()), initial_title)
+        .status(ToolCallStatus::Pending);
     if let Some(args) = args_value {
         tool_call = tool_call.raw_input(args);
     }
@@ -1400,10 +1501,13 @@ impl GooseAcpAgent {
         message
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_message_content(
         &self,
         content_item: &MessageContent,
         session_id: &SessionId,
+        thread_id: &str,
+        message_id: Option<&str>,
         agent: &Arc<Agent>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
@@ -1418,12 +1522,26 @@ impl GooseAcpAgent {
                 ))?;
             }
             MessageContent::ToolRequest(tool_request) => {
-                self.handle_tool_request(tool_request, session_id, session, cx)
-                    .await?;
+                self.handle_tool_request(
+                    tool_request,
+                    session_id,
+                    thread_id,
+                    message_id,
+                    session,
+                    cx,
+                )
+                .await?;
             }
             MessageContent::ToolResponse(tool_response) => {
-                self.handle_tool_response(tool_response, session_id, session, cx)
-                    .await?;
+                self.handle_tool_response(
+                    tool_response,
+                    session_id,
+                    thread_id,
+                    message_id,
+                    session,
+                    cx,
+                )
+                .await?;
             }
             MessageContent::Thinking(thinking) => {
                 cx.send_notification(SessionNotification::new(
@@ -1461,6 +1579,8 @@ impl GooseAcpAgent {
         &self,
         tool_request: &crate::conversation::message::ToolRequest,
         session_id: &SessionId,
+        thread_id: &str,
+        message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), sacp::Error> {
@@ -1501,8 +1621,12 @@ impl GooseAcpAgent {
                 })
                 .unwrap_or_default();
 
+            let thread_id_for_persist = thread_id.to_string();
+            let message_id_for_persist = message_id.map(|s| s.to_string());
+            let thread_manager = self.thread_manager.clone();
+
             tokio::spawn(async move {
-                let title = match agent.provider().await {
+                let (title, from_llm) = match agent.provider().await {
                     Ok(provider) => {
                         if provider.manages_own_context() {
                             return;
@@ -1527,31 +1651,53 @@ impl GooseAcpAgent {
                                     .trim()
                                     .to_string();
                                 if summary.is_empty() {
-                                    fallback_title.clone()
+                                    (fallback_title.clone(), false)
                                 } else {
-                                    summary
+                                    (summary, true)
                                 }
                             }
                             Err(e) => {
                                 warn!("tool call summary: fast_complete failed: {e}");
-                                fallback_title.clone()
+                                (fallback_title.clone(), false)
                             }
                         }
                     }
                     Err(e) => {
                         warn!("tool call summary: failed to get provider: {e}");
-                        fallback_title.clone()
+                        (fallback_title.clone(), false)
                     }
                 };
 
-                let fields = ToolCallUpdateFields::new().title(title);
+                let fields = ToolCallUpdateFields::new().title(title.clone());
                 let _ = cx.send_notification(SessionNotification::new(
                     sid,
                     SessionUpdate::ToolCallUpdate(
-                        ToolCallUpdate::new(ToolCallId::new(request_id), fields)
+                        ToolCallUpdate::new(ToolCallId::new(request_id.clone()), fields)
                             .meta(identity_meta),
                     ),
                 ));
+
+                // Best-effort persistence: only persist the LLM-generated title
+                // (not the deterministic fallback) so reload uses fallback_title
+                // for older or failed cases just like today.
+                if from_llm {
+                    if let Some(msg_id) = message_id_for_persist {
+                        let patch = serde_json::json!({
+                            crate::conversation::message::TOOL_META_TITLE_KEY: title,
+                        });
+                        if let Err(e) = thread_manager
+                            .update_tool_request_meta(
+                                &thread_id_for_persist,
+                                &msg_id,
+                                &request_id,
+                                patch,
+                            )
+                            .await
+                        {
+                            debug!("tool call summary: persist failed: {e}");
+                        }
+                    }
+                }
             });
         }
 
@@ -1562,6 +1708,8 @@ impl GooseAcpAgent {
         &self,
         tool_response: &crate::conversation::message::ToolResponse,
         session_id: &SessionId,
+        thread_id: &str,
+        message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), sacp::Error> {
@@ -1602,7 +1750,158 @@ impl GooseAcpAgent {
             SessionUpdate::ToolCallUpdate(update),
         ))?;
 
+        // Chain summarization: when this response completes a multi-tool
+        // chain, fire one LLM summary covering the run.
+        session.responded_tool_ids.insert(tool_response.id.clone());
+        self.maybe_summarize_chain(&tool_response.id, session_id, thread_id, session, cx);
+        let _ = message_id;
+
         Ok(())
+    }
+
+    /// If `tool_call_id` belongs to a multi-tool chain and every step in that
+    /// chain has now had its response processed, spawn a single LLM
+    /// summarization task that persists the chain summary on the first tool
+    /// request and notifies the client. Idempotent — fires at most once per
+    /// chain.
+    fn maybe_summarize_chain(
+        &self,
+        tool_call_id: &str,
+        session_id: &SessionId,
+        thread_id: &str,
+        session: &mut GooseAcpSession,
+        cx: &ConnectionTo<Client>,
+    ) {
+        let Some(chain) = session.chain_membership.get(tool_call_id).cloned() else {
+            return;
+        };
+        if !chain
+            .ids
+            .iter()
+            .all(|id| session.responded_tool_ids.contains(id))
+        {
+            return;
+        }
+        let Some(first_id) = chain.ids.first() else {
+            return;
+        };
+        if !session.summarized_chains.insert(first_id.clone()) {
+            return;
+        }
+
+        let agent = match &session.agent {
+            AgentHandle::Ready(a) => a.clone(),
+            AgentHandle::Loading(_) => return,
+        };
+
+        // Snapshot (name, args_json) for each step in document order.
+        let steps: Vec<(String, String)> = chain
+            .ids
+            .iter()
+            .filter_map(|id| {
+                let req = session.tool_requests.get(id)?;
+                let tool_call = req.tool_call.as_ref().ok()?;
+                let name = tool_call.name.to_string();
+                let args = tool_call
+                    .arguments
+                    .as_ref()
+                    .map(|a| serde_json::to_string(a).unwrap_or_default())
+                    .unwrap_or_default();
+                let args = if args.len() > 200 {
+                    format!("{}…", crate::utils::safe_truncate(&args, 200))
+                } else {
+                    args
+                };
+                Some((name, args))
+            })
+            .collect();
+        if steps.len() < 2 {
+            return;
+        }
+
+        let identity_meta = session
+            .tool_requests
+            .get(first_id)
+            .and_then(tool_call_identity_meta);
+
+        let sid = session_id.clone();
+        let thread_id_for_persist = thread_id.to_string();
+        let chain_for_task = chain.clone();
+        let cx = cx.clone();
+        let thread_manager = self.thread_manager.clone();
+
+        tokio::spawn(async move {
+            let provider = match agent.provider().await {
+                Ok(p) => p,
+                Err(e) => {
+                    debug!("tool chain summary: failed to get provider: {e}");
+                    return;
+                }
+            };
+            if provider.manages_own_context() {
+                return;
+            }
+
+            let system = "Summarize this sequence of tool calls in a short lowercase phrase \
+                 (3-8 words). No punctuation. No quotes. \
+                 Examples: applied dark mode polish, scanned for security issues, \
+                 refactored config loading";
+
+            let mut user_text = String::from("Tool call sequence:\n");
+            for (i, (name, args)) in steps.iter().enumerate() {
+                user_text.push_str(&format!("Step {}: {} {}\n", i + 1, name, args));
+            }
+            let message = Message::user().with_text(&user_text);
+
+            let summary = match provider
+                .complete_fast(&sid.0, system, &[message], &[])
+                .await
+            {
+                Ok((response, _)) => response
+                    .content
+                    .iter()
+                    .filter_map(|c: &MessageContent| c.as_text())
+                    .collect::<String>()
+                    .trim()
+                    .to_string(),
+                Err(e) => {
+                    debug!("tool chain summary: complete_fast failed: {e}");
+                    return;
+                }
+            };
+            if summary.is_empty() {
+                return;
+            }
+
+            let count = chain_for_task.ids.len();
+            let patch = serde_json::json!({
+                crate::conversation::message::TOOL_META_CHAIN_SUMMARY_KEY: {
+                    "summary": summary,
+                    "count": count,
+                },
+            });
+            if let Err(e) = thread_manager
+                .update_tool_request_meta(
+                    &thread_id_for_persist,
+                    &chain_for_task.message_id,
+                    &chain_for_task.ids[0],
+                    patch,
+                )
+                .await
+            {
+                debug!("tool chain summary: persist failed: {e}");
+            }
+
+            let meta = with_tool_chain_summary_meta(identity_meta, &summary, count);
+            let fields = ToolCallUpdateFields::new();
+            let _ = cx.send_notification(SessionNotification::new(
+                sid,
+                SessionUpdate::ToolCallUpdate(
+                    ToolCallUpdate::new(ToolCallId::new(chain_for_task.ids[0].clone()), fields)
+                        .meta(meta),
+                ),
+            ));
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1901,6 +2200,9 @@ impl GooseAcpAgent {
             agent: AgentHandle::Loading(agent_rx),
             internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
+            chain_membership: HashMap::new(),
+            responded_tool_ids: HashSet::new(),
+            summarized_chains: HashSet::new(),
             cancel_token: None,
             pending_working_dir: None,
         };
@@ -2216,9 +2518,21 @@ impl GooseAcpAgent {
                         replay_tool_requests.insert(tool_request.id.clone(), tool_request.clone());
 
                         let pending_tool_call = pending_tool_call_from_request(tool_request);
-                        let tool_call = pending_tool_call.tool_call.meta(
-                            merge_replay_message_meta(pending_tool_call.identity_meta, message),
-                        );
+                        let mut meta = pending_tool_call.identity_meta;
+                        // If this tool request is the first of a chain whose
+                        // summary was persisted at completion time, attach the
+                        // chain summary to the initial ToolCall so the chain
+                        // header is correct on first paint after reload.
+                        if let Some(chain_summary) = tool_request.persisted_chain_summary() {
+                            meta = with_tool_chain_summary_meta(
+                                meta,
+                                &chain_summary.summary,
+                                chain_summary.count,
+                            );
+                        }
+                        let tool_call = pending_tool_call
+                            .tool_call
+                            .meta(merge_replay_message_meta(meta, message));
 
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
@@ -2311,6 +2625,9 @@ impl GooseAcpAgent {
             agent: AgentHandle::Loading(agent_rx),
             internal_session_id: internal_session_id.clone(),
             tool_requests: replay_tool_requests,
+            chain_membership: HashMap::new(),
+            responded_tool_ids: HashSet::new(),
+            summarized_chains: HashSet::new(),
             cancel_token: None,
             pending_working_dir: None,
         };
@@ -2444,10 +2761,12 @@ impl GooseAcpAgent {
 
             match event {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
-                    self.thread_manager
+                    let stored_message = self
+                        .thread_manager
                         .append_message(&thread_id, Some(&internal_session_id), &message)
                         .await
                         .internal_err_ctx("Failed to persist message")?;
+                    let stored_message_id = stored_message.id.clone();
 
                     let mut sessions = self.sessions.lock().await;
                     let session = sessions.get_mut(&thread_id).ok_or_else(|| {
@@ -2455,10 +2774,30 @@ impl GooseAcpAgent {
                             .data(format!("Session not found: {}", thread_id))
                     })?;
 
-                    for content_item in &message.content {
+                    // Register chain memberships for any multi-tool runs in
+                    // this message so the matching ToolResponses can detect
+                    // chain completion.
+                    if let Some(msg_id) = stored_message_id.as_deref() {
+                        for chain_ids in extract_tool_chains(&stored_message.content) {
+                            if chain_ids.len() < 2 {
+                                continue;
+                            }
+                            let chain = Arc::new(ToolChain {
+                                message_id: msg_id.to_string(),
+                                ids: chain_ids.clone(),
+                            });
+                            for id in chain_ids {
+                                session.chain_membership.insert(id, chain.clone());
+                            }
+                        }
+                    }
+
+                    for content_item in &stored_message.content {
                         self.handle_message_content(
                             content_item,
                             &args.session_id,
+                            &thread_id,
+                            stored_message_id.as_deref(),
                             &agent,
                             session,
                             cx,
@@ -2815,6 +3154,9 @@ impl GooseAcpAgent {
             agent: AgentHandle::Loading(agent_rx),
             internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
+            chain_membership: HashMap::new(),
+            responded_tool_ids: HashSet::new(),
+            summarized_chains: HashSet::new(),
             cancel_token: None,
             pending_working_dir: None,
         };
@@ -3080,6 +3422,125 @@ print(\"hello, world\")
                     "extensionName": "context7",
                 },
             })),
+        );
+    }
+
+    fn tool_request_block(id: &str) -> crate::conversation::message::MessageContent {
+        crate::conversation::message::MessageContent::ToolRequest(ToolRequest {
+            id: id.to_string(),
+            tool_call: Ok(CallToolRequestParams::new("dummy")),
+            metadata: None,
+            tool_meta: None,
+        })
+    }
+
+    fn text_block(text: &str) -> crate::conversation::message::MessageContent {
+        crate::conversation::message::MessageContent::text(text)
+    }
+
+    #[test]
+    fn extract_tool_chains_returns_empty_for_no_tool_blocks() {
+        let content = vec![text_block("hello"), text_block("world")];
+        assert!(extract_tool_chains(&content).is_empty());
+    }
+
+    #[test]
+    fn extract_tool_chains_returns_single_chain_when_only_tools() {
+        let content = vec![
+            tool_request_block("a"),
+            tool_request_block("b"),
+            tool_request_block("c"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(
+            chains,
+            vec![vec!["a".to_string(), "b".to_string(), "c".to_string()]]
+        );
+    }
+
+    #[test]
+    fn extract_tool_chains_breaks_on_text_block() {
+        let content = vec![
+            tool_request_block("a"),
+            tool_request_block("b"),
+            text_block("interlude"),
+            tool_request_block("c"),
+            tool_request_block("d"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(
+            chains,
+            vec![
+                vec!["a".to_string(), "b".to_string()],
+                vec!["c".to_string(), "d".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_tool_chains_includes_singletons() {
+        let content = vec![
+            tool_request_block("a"),
+            text_block("split"),
+            tool_request_block("b"),
+            text_block("split"),
+            tool_request_block("c"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(
+            chains,
+            vec![
+                vec!["a".to_string()],
+                vec!["b".to_string()],
+                vec!["c".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_tool_chains_keeps_run_when_text_leads_or_trails() {
+        let content = vec![
+            text_block("intro"),
+            tool_request_block("a"),
+            tool_request_block("b"),
+            text_block("outro"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(chains, vec![vec!["a".to_string(), "b".to_string()]]);
+    }
+
+    #[test]
+    fn with_tool_chain_summary_meta_creates_fresh_when_none() {
+        let meta = with_tool_chain_summary_meta(None, "applied dark mode", 4)
+            .expect("meta should be created");
+        assert_eq!(
+            meta.get("goose"),
+            Some(&serde_json::json!({
+                "toolChainSummary": { "summary": "applied dark mode", "count": 4 },
+            })),
+        );
+    }
+
+    #[test]
+    fn with_tool_chain_summary_meta_preserves_existing_tool_call_identity() {
+        let existing = tool_call_identity_meta(&ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta: None,
+        });
+        let meta = with_tool_chain_summary_meta(existing, "ran two commands", 2)
+            .expect("meta should be created");
+        let goose = meta.get("goose").expect("goose key");
+        assert_eq!(
+            goose.get("toolCall"),
+            Some(
+                &serde_json::json!({ "toolName": "developer__shell", "extensionName": "developer" })
+            )
+        );
+        assert_eq!(
+            goose.get("toolChainSummary"),
+            Some(&serde_json::json!({ "summary": "ran two commands", "count": 2 }))
         );
     }
 
