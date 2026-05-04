@@ -238,7 +238,6 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
               update,
               true,
               {
-                gooseSessionId: sessionId,
                 replayMessageId,
               },
             );

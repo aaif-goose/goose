@@ -46,9 +46,7 @@ describe("acpLoadSession", () => {
       acpLoadSession("acp-session-1", "/tmp/replay"),
     ).rejects.toThrow("load failed");
 
-    expect(sessionTracker.getGooseSessionId("acp-session-1")).toBe(
-      "acp-session-1",
-    );
+    expect(sessionTracker.isSessionPrepared("acp-session-1")).toBe(true);
   });
 });
 
@@ -81,9 +79,7 @@ describe("acpCreateSession", () => {
     expect(mockLoadSession).not.toHaveBeenCalled();
     expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
     expect(mockSetModel).toHaveBeenCalledWith("acp-session-1", "gpt-4.1");
-    expect(sessionTracker.getGooseSessionId("acp-session-1")).toBe(
-      "acp-session-1",
-    );
+    expect(sessionTracker.isSessionPrepared("acp-session-1")).toBe(true);
   });
 });
 
@@ -112,9 +108,7 @@ describe("acpPrepareSession", () => {
     );
     expect(mockNewSession).not.toHaveBeenCalled();
     expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
-    expect(sessionTracker.getGooseSessionId("acp-session-1")).toBe(
-      "acp-session-1",
-    );
+    expect(sessionTracker.isSessionPrepared("acp-session-1")).toBe(true);
   });
 
   it("surfaces load failures instead of creating a new ACP session", async () => {

@@ -47,11 +47,10 @@ export async function prepareSession(
     `[perf:prepare] ${sid} tracker loadSession ok in ${(performance.now() - tLoad).toFixed(1)}ms`,
   );
 
-  const gooseSid = sessionId.slice(0, 8);
   const tProv = performance.now();
   await acpApi.setProvider(sessionId, providerId);
   perfLog(
-    `[perf:prepare] ${sid} tracker setProvider(${providerId}) in ${(performance.now() - tProv).toFixed(1)}ms (goose_sid=${gooseSid})`,
+    `[perf:prepare] ${sid} tracker setProvider(${providerId}) in ${(performance.now() - tProv).toFixed(1)}ms`,
   );
 
   const entry = { providerId, workingDir };
@@ -60,8 +59,8 @@ export async function prepareSession(
   return sessionId;
 }
 
-export function getGooseSessionId(sessionId: string): string | null {
-  return prepared.has(sessionId) ? sessionId : null;
+export function isSessionPrepared(sessionId: string): boolean {
+  return prepared.has(sessionId);
 }
 
 export function registerSession(

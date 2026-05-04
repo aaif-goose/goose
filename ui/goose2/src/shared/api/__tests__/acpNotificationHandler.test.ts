@@ -16,7 +16,6 @@ import { registerSession } from "../acpSessionTracker";
 function createMcpAppPayload(): McpAppPayload {
   return {
     sessionId: "acp-session",
-    gooseSessionId: "acp-session",
     toolCallId: "tool-1",
     toolCallTitle: "mcp_app_bench__inspect_host_info",
     source: "toolCallUpdateMeta",
@@ -145,7 +144,7 @@ describe("acpNotificationHandler", () => {
   });
 
   it("replay keeps tool and MCP app content on an assistant message when tool events arrive before text", async () => {
-    const replaySessionId = "replay-goose-session";
+    const replaySessionId = "replay-acp-session";
     useChatStore.setState({
       loadingSessionIds: new Set<string>([replaySessionId]),
     });
@@ -240,7 +239,6 @@ describe("acpNotificationHandler", () => {
       payload: {
         ...createMcpAppPayload(),
         sessionId: replaySessionId,
-        gooseSessionId: replaySessionId,
       },
     });
   });
@@ -343,8 +341,8 @@ describe("acpNotificationHandler", () => {
     });
   });
 
-  it("replay preserves gooseSessionId in MCP app payloads before tracker registration", async () => {
-    const replaySessionId = "replay-goose-session-2";
+  it("replay stores the ACP session id in MCP app payloads before tracker registration", async () => {
+    const replaySessionId = "replay-acp-session-2";
     const replayCreated = 1_700_000_240;
     useChatStore.setState({
       loadingSessionIds: new Set<string>([replaySessionId]),
@@ -397,7 +395,7 @@ describe("acpNotificationHandler", () => {
     expect(mcpAppBlock).toMatchObject({
       type: "mcpApp",
       payload: expect.objectContaining({
-        gooseSessionId: replaySessionId,
+        sessionId: replaySessionId,
       }),
     });
   });

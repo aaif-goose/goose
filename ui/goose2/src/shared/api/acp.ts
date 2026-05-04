@@ -85,8 +85,7 @@ export async function acpSendMessage(
   const sid = sessionId.slice(0, 8);
   const tStart = performance.now();
 
-  const gooseSessionId = sessionTracker.getGooseSessionId(sessionId);
-  if (!gooseSessionId) {
+  if (!sessionTracker.isSessionPrepared(sessionId)) {
     throw new Error("Session not prepared. Call acpPrepareSession first.");
   }
 
@@ -113,7 +112,7 @@ export async function acpSendMessage(
   }
 
   const messageId = crypto.randomUUID();
-  setActiveMessageId(gooseSessionId, messageId);
+  setActiveMessageId(sessionId, messageId);
 
   perfLog(
     `[perf:send] ${sid} acpSendMessage → prompt(len=${prompt.length}, imgs=${images?.length ?? 0})`,
@@ -123,7 +122,7 @@ export async function acpSendMessage(
   if (personaId) meta.personaId = personaId;
   try {
     await directAcp.prompt(
-      gooseSessionId,
+      sessionId,
       content,
       Object.keys(meta).length > 0 ? meta : undefined,
     );
@@ -132,7 +131,7 @@ export async function acpSendMessage(
       `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
     );
   } finally {
-    clearActiveMessageId(gooseSessionId);
+    clearActiveMessageId(sessionId);
   }
 }
 
@@ -148,7 +147,7 @@ export async function acpPrepareSession(
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession start (provider=${providerId})`,
   );
-  const gooseSessionId = await sessionTracker.prepareSession(
+  const preparedSession = await sessionTracker.prepareSession(
     sessionId,
     providerId,
     workingDir,
@@ -158,7 +157,7 @@ export async function acpPrepareSession(
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession done in ${(performance.now() - t0).toFixed(1)}ms`,
   );
-  return gooseSessionId;
+  return preparedSession;
 }
 
 export async function acpCreateSession(
@@ -172,13 +171,13 @@ export async function acpCreateSession(
     options.projectId,
     options.personaId,
   );
-  const gooseSessionId = response.sessionId;
-  await directAcp.setProvider(gooseSessionId, providerId);
-  sessionTracker.registerSession(gooseSessionId, providerId, workingDir);
+  const sessionId = response.sessionId;
+  await directAcp.setProvider(sessionId, providerId);
+  sessionTracker.registerSession(sessionId, providerId, workingDir);
   if (options.modelId) {
-    await directAcp.setModel(gooseSessionId, options.modelId);
+    await directAcp.setModel(sessionId, options.modelId);
   }
-  return { sessionId: gooseSessionId };
+  return { sessionId };
 }
 
 export async function acpSetModel(
