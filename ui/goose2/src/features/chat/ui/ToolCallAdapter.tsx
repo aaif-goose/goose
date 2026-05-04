@@ -336,18 +336,8 @@ export function ToolCallAdapter({
   const showCombinedSurface = summaryRows.length > 0 || hasStructuredArgs;
 
   return (
-    <div
-      className={cn(
-        fitWidth
-          ? "inline-flex max-w-full flex-col"
-          : "w-full min-w-0 max-w-full",
-      )}
-    >
-      <Tool
-        open={open}
-        onOpenChange={onOpenChange}
-        className={cn(fitWidth && "inline-flex w-auto max-w-full flex-col")}
-      >
+    <div className="w-full min-w-0 max-w-full">
+      <Tool open={open} onOpenChange={onOpenChange}>
         <ToolHeader
           type="dynamic-tool"
           toolName={name}
