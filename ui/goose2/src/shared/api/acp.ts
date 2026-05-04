@@ -85,7 +85,7 @@ export async function acpSendMessage(
   const sid = sessionId.slice(0, 8);
   const tStart = performance.now();
 
-  const gooseSessionId = sessionTracker.getGooseSessionId(sessionId, personaId);
+  const gooseSessionId = sessionTracker.getGooseSessionId(sessionId);
   if (!gooseSessionId) {
     throw new Error("Session not prepared. Call acpPrepareSession first.");
   }
@@ -190,8 +190,7 @@ export async function acpSetModel(
   sessionId: string,
   modelId: string,
 ): Promise<void> {
-  const gooseSessionId = sessionTracker.getGooseSessionId(sessionId);
-  return directAcp.setModel(gooseSessionId ?? sessionId, modelId);
+  return directAcp.setModel(sessionId, modelId);
 }
 
 export type { AcpSessionInfo };
@@ -262,17 +261,14 @@ export async function acpImportSession(json: string): Promise<AcpSessionInfo> {
 export async function acpDuplicateSession(
   sessionId: string,
 ): Promise<AcpSessionInfo> {
-  const gooseSessionId =
-    sessionTracker.getGooseSessionId(sessionId) ?? sessionId;
-  return directAcp.forkSession(gooseSessionId);
+  return directAcp.forkSession(sessionId);
 }
 
 /** Cancel an in-progress ACP session so the backend stops streaming. */
 export async function acpCancelSession(
   sessionId: string,
-  personaId?: string,
+  _personaId?: string,
 ): Promise<boolean> {
-  const gooseSessionId = sessionTracker.getGooseSessionId(sessionId, personaId);
-  await directAcp.cancelSession(gooseSessionId ?? sessionId);
+  await directAcp.cancelSession(sessionId);
   return true;
 }

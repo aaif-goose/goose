@@ -13,7 +13,6 @@ import {
   acpCancelSession,
   acpLoadSession,
 } from "@/shared/api/acp";
-import { getGooseSessionId } from "@/shared/api/acpSessionTracker";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import {
   getSessionTitleFromDraft,
@@ -400,41 +399,25 @@ export function useChat(
         overridePersona?.id,
         overridePersona?.name,
       );
-      let gooseSessionId = getGooseSessionId(
-        sessionId,
-        effectivePersonaInfo?.id,
-      );
-
-      if (!gooseSessionId) {
-        try {
-          await options?.ensurePrepared?.(effectivePersonaInfo?.id);
-        } catch (err) {
-          const errorMessage = getErrorMessage(err);
-          store.addMessage(
-            sessionId,
-            createSystemNotificationMessage(errorMessage, "error"),
-          );
-          store.setError(sessionId, errorMessage);
-          return "failed" as CompactConversationResult;
-        }
-        gooseSessionId = getGooseSessionId(sessionId, effectivePersonaInfo?.id);
-      }
-
-      if (!gooseSessionId) {
-        const errorMessage =
-          "Session not prepared. Send a message before compacting.";
-        store.addMessage(
-          sessionId,
-          createSystemNotificationMessage(errorMessage, "error"),
-        );
-        store.setError(sessionId, errorMessage);
-        return "failed" as CompactConversationResult;
-      }
 
       store.setActiveSession(sessionId);
       store.setChatState(sessionId, "compacting");
       store.setStreamingMessageId(sessionId, null);
       store.setError(sessionId, null);
+
+      try {
+        await options?.ensurePrepared?.(effectivePersonaInfo?.id);
+      } catch (err) {
+        const errorMessage = getErrorMessage(err);
+        store.addMessage(
+          sessionId,
+          createSystemNotificationMessage(errorMessage, "error"),
+        );
+        store.setError(sessionId, errorMessage);
+        store.setChatState(sessionId, "idle");
+        return "failed" as CompactConversationResult;
+      }
+
       store.setSessionLoading(sessionId, true);
       clearReplayBuffer(sessionId);
 
@@ -449,7 +432,7 @@ export function useChat(
         // transient chunks and refresh the session from replay instead.
         clearReplayBuffer(sessionId);
         const workingDir = getWorkingDir();
-        await acpLoadSession(sessionId, gooseSessionId, workingDir);
+        await acpLoadSession(sessionId, sessionId, workingDir);
 
         store.setSessionLoading(sessionId, false);
 

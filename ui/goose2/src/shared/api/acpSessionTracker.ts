@@ -28,13 +28,6 @@ function restoreGooseRegistration(
   gooseToLocal.set(gooseSessionId, localSessionId);
 }
 
-function makeKey(sessionId: string, personaId?: string): string {
-  if (personaId && personaId.length > 0) {
-    return `${sessionId}__${personaId}`;
-  }
-  return sessionId;
-}
-
 function notifySessionRegistered(
   localSessionId: string,
   gooseSessionId: string,
@@ -59,9 +52,8 @@ export async function prepareSession(
   projectId?: string,
 ): Promise<string> {
   const sid = sessionId.slice(0, 8);
-  const key = makeKey(sessionId, personaId);
 
-  const existing = prepared.get(key) ?? prepared.get(sessionId);
+  const existing = prepared.get(sessionId);
   if (existing) {
     const tReuse = performance.now();
     let changed = false;
@@ -122,7 +114,6 @@ export async function prepareSession(
   );
 
   const entry = { gooseSessionId, providerId, workingDir };
-  prepared.set(key, entry);
   prepared.set(sessionId, entry);
   prepared.set(gooseSessionId, entry);
   gooseToLocal.set(gooseSessionId, sessionId);
@@ -131,16 +122,8 @@ export async function prepareSession(
   return gooseSessionId;
 }
 
-export function getGooseSessionId(
-  sessionId: string,
-  personaId?: string,
-): string | null {
-  const key = makeKey(sessionId, personaId);
-  return (
-    prepared.get(key)?.gooseSessionId ??
-    prepared.get(sessionId)?.gooseSessionId ??
-    null
-  );
+export function getGooseSessionId(sessionId: string): string | null {
+  return prepared.get(sessionId)?.gooseSessionId ?? null;
 }
 
 export function getLocalSessionId(gooseSessionId: string): string | null {

@@ -11,7 +11,6 @@ const mockAcpCancelSession = vi.fn();
 const mockAcpLoadSession = vi.fn();
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
-const mockGetGooseSessionId = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
@@ -19,10 +18,6 @@ vi.mock("@/shared/api/acp", () => ({
   acpLoadSession: (...args: unknown[]) => mockAcpLoadSession(...args),
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
-}));
-
-vi.mock("@/shared/api/acpSessionTracker", () => ({
-  getGooseSessionId: (...args: unknown[]) => mockGetGooseSessionId(...args),
 }));
 
 import { useChat } from "../useChat";
@@ -66,7 +61,6 @@ describe("useChat", () => {
     mockAcpLoadSession.mockReset();
     mockAcpPrepareSession.mockReset();
     mockAcpSetModel.mockReset();
-    mockGetGooseSessionId.mockReset();
     clearReplayBuffer("session-1");
     clearReplayBuffer("session-2");
     useChatStore.setState({
@@ -115,7 +109,6 @@ describe("useChat", () => {
     mockAcpLoadSession.mockResolvedValue(undefined);
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
-    mockGetGooseSessionId.mockReturnValue(null);
   });
 
   it("cancels the active override persona instead of the hook default persona", async () => {
