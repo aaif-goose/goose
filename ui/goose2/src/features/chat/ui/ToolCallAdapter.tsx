@@ -34,6 +34,8 @@ interface ToolCallAdapterProps {
   onOpenChange?: (open: boolean) => void;
   /** When false, the chevron-side status badge is hidden (used inside chains). */
   showStatusBadge?: boolean;
+  /** When false, hides the trailing disclosure chevron in the header. */
+  showChevron?: boolean;
   /** When true, the card sizes to its content rather than filling its parent. */
   fitWidth?: boolean;
 }
@@ -265,6 +267,7 @@ export function ToolCallAdapter({
   open,
   onOpenChange,
   showStatusBadge = true,
+  showChevron = true,
   fitWidth = false,
 }: ToolCallAdapterProps) {
   const { t } = useTranslation("chat");
@@ -352,6 +355,7 @@ export function ToolCallAdapter({
           state={state}
           showIcon={false}
           showStatusBadge={showStatusBadge}
+          showChevron={showChevron}
           splitTrigger={canOpenHeaderFile}
           layout={fitWidth ? "fit" : "fill"}
           elapsedSeconds={elapsedSeconds}

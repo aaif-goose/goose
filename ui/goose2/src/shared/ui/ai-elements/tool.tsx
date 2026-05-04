@@ -70,6 +70,8 @@ export type ToolHeaderProps = {
   className?: string;
   showIcon?: boolean;
   showStatusBadge?: boolean;
+  /** When false, hides the trailing disclosure chevron in the header. */
+  showChevron?: boolean;
   splitTrigger?: boolean;
   layout?: "fill" | "fit";
   elapsedSeconds?: number;
@@ -154,6 +156,7 @@ export const ToolHeader = ({
   toolName,
   showIcon = true,
   showStatusBadge = true,
+  showChevron = true,
   splitTrigger = false,
   layout = "fill",
   elapsedSeconds,
@@ -184,7 +187,9 @@ export const ToolHeader = ({
           {elapsedSeconds}s
         </span>
       )}
-      <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
+      {showChevron && (
+        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
+      )}
     </>
   );
 

@@ -199,19 +199,43 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
 
     if (!options.withRail) {
       return (
-        <div key={item.key}>
-          <ToolCallAdapter
-            name={name}
-            arguments={request?.arguments ?? {}}
-            status={status}
-            locations={request?.locations}
-            result={response?.result}
-            structuredContent={response?.structuredContent}
-            isError={response?.isError}
-            startedAt={request?.startedAt}
-            open={expandedKeys.has(item.key)}
-            onOpenChange={(open) => handleOpenChange(item.key, open)}
-          />
+        <div
+          key={item.key}
+          data-role="tool-single"
+          className="flex max-w-full items-start gap-2.5"
+        >
+          <button
+            type="button"
+            onClick={() => handleOpenChange(item.key, !isOpen)}
+            aria-expanded={isOpen}
+            aria-label={name}
+            className="flex w-4 shrink-0 justify-center pt-1"
+          >
+            <span className="flex size-4 items-center justify-center">
+              <ChevronRight
+                aria-hidden="true"
+                className={cn(
+                  "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                  isOpen && "rotate-90",
+                )}
+              />
+            </span>
+          </button>
+          <div className="min-w-0 flex-1">
+            <ToolCallAdapter
+              name={name}
+              arguments={request?.arguments ?? {}}
+              status={status}
+              locations={request?.locations}
+              result={response?.result}
+              structuredContent={response?.structuredContent}
+              isError={response?.isError}
+              startedAt={request?.startedAt}
+              open={isOpen}
+              onOpenChange={(open) => handleOpenChange(item.key, open)}
+              showChevron={false}
+            />
+          </div>
         </div>
       );
     }

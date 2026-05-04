@@ -140,6 +140,39 @@ describe("ToolChainCards", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("renders a left caret button on a single tool call that toggles its open state", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ToolChainCards toolItems={[pair("Read · src/a.ts")]} />,
+    );
+    const wrapper = container.querySelector('[data-role="tool-single"]');
+    expect(wrapper).not.toBeNull();
+
+    const caret = wrapper?.querySelector(
+      ":scope > button",
+    ) as HTMLButtonElement;
+    expect(caret).toBeTruthy();
+    expect(caret).toHaveAttribute("aria-expanded", "false");
+    await user.click(caret);
+    expect(caret).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("hides the trailing right-side chevron on a single tool call", () => {
+    const { container } = render(
+      <ToolChainCards toolItems={[pair("Read · src/a.ts")]} />,
+    );
+    // The shared ToolHeader's trailing chevron is a CollapsibleTrigger
+    // styled with the group-data-[state=closed]:-rotate-90 class. With
+    // showChevron={false} the icon should not render at all inside the
+    // single-tool wrapper.
+    const wrapper = container.querySelector('[data-role="tool-single"]');
+    expect(wrapper).not.toBeNull();
+    const trailingChevron = wrapper?.querySelector(
+      ".group-data-\\[state\\=closed\\]\\:-rotate-90",
+    );
+    expect(trailingChevron).toBeNull();
+  });
+
   it("counts the internal-steps disclosure as part of the rail", async () => {
     const user = userEvent.setup();
     const { container } = render(
