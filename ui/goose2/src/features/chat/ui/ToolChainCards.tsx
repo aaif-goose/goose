@@ -273,7 +273,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
 
   if (!grouped) {
     return (
-      <div className="my-1 flex w-full min-w-0 max-w-full flex-col gap-3">
+      <div className="my-3 flex w-full min-w-0 max-w-full flex-col gap-3">
         {primaryItems.map((item) => renderToolItem(item, { withRail: false }))}
       </div>
     );
@@ -303,7 +303,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
 
   return (
     <section
-      className="my-1 flex w-full min-w-0 max-w-full flex-col gap-0"
+      className="my-3 flex w-full min-w-0 max-w-full flex-col gap-0"
       data-role="tool-chain-card"
       data-status={aggregateStatus}
     >
