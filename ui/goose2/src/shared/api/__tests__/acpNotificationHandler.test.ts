@@ -11,7 +11,7 @@ import {
   handleSessionNotification,
   setActiveMessageId,
 } from "../acpNotificationHandler";
-import { registerSession } from "../acpSessionRegistry";
+import { registerPreparedSession } from "../acpSessionRegistry";
 
 function createMcpAppPayload(): McpAppPayload {
   return {
@@ -47,7 +47,11 @@ describe("acpNotificationHandler", () => {
   });
 
   it("keeps tool calls that arrive before the first text chunk on the pending assistant message", async () => {
-    registerSession("acp-session", "goose", "/Users/aharvard/.goose/artifacts");
+    registerPreparedSession(
+      "acp-session",
+      "goose",
+      "/Users/aharvard/.goose/artifacts",
+    );
     setActiveMessageId("acp-session", "assistant-1");
 
     await handleSessionNotification({
@@ -341,7 +345,7 @@ describe("acpNotificationHandler", () => {
     });
   });
 
-  it("replay stores the ACP session id in MCP app payloads before tracker registration", async () => {
+  it("replay stores the ACP session id in MCP app payloads before session registration", async () => {
     const replaySessionId = "replay-acp-session-2";
     const replayCreated = 1_700_000_240;
     useChatStore.setState({

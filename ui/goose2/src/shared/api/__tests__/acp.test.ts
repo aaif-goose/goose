@@ -34,13 +34,17 @@ describe("acpLoadSession", () => {
     vi.resetModules();
   });
 
-  it("restores the prior session mapping when replay loading fails", async () => {
+  it("restores the prior prepared session registration when replay loading fails", async () => {
     mockLoadSession.mockRejectedValueOnce(new Error("load failed"));
 
     const sessionRegistry = await import("../acpSessionRegistry");
     const { acpLoadSession } = await import("../acp");
 
-    sessionRegistry.registerSession("acp-session-1", "goose", "/tmp/original");
+    sessionRegistry.registerPreparedSession(
+      "acp-session-1",
+      "goose",
+      "/tmp/original",
+    );
 
     await expect(
       acpLoadSession("acp-session-1", "/tmp/replay"),
@@ -97,7 +101,7 @@ describe("acpPrepareSession", () => {
 
     await expect(
       acpPrepareSession("acp-session-1", "openai", "/tmp/project"),
-    ).resolves.toBe("acp-session-1");
+    ).resolves.toBeUndefined();
 
     expect(mockLoadSession).toHaveBeenCalledWith(
       "acp-session-1",

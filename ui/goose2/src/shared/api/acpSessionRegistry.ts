@@ -12,7 +12,7 @@ export async function prepareSession(
   sessionId: string,
   providerId: string,
   workingDir: string,
-): Promise<string> {
+): Promise<void> {
   const sid = sessionId.slice(0, 8);
 
   const existing = prepared.get(sessionId);
@@ -36,32 +36,32 @@ export async function prepareSession(
     perfLog(
       `[perf:prepare] ${sid} reuse existing session (updates=${changed}) in ${(performance.now() - tReuse).toFixed(1)}ms`,
     );
-    return sessionId;
+    return;
   }
 
   const tLoad = performance.now();
   await acpApi.loadSession(sessionId, workingDir);
   perfLog(
-    `[perf:prepare] ${sid} tracker loadSession ok in ${(performance.now() - tLoad).toFixed(1)}ms`,
+    `[perf:prepare] ${sid} registry loadSession ok in ${(performance.now() - tLoad).toFixed(1)}ms`,
   );
 
   const tProv = performance.now();
   await acpApi.setProvider(sessionId, providerId);
   perfLog(
-    `[perf:prepare] ${sid} tracker setProvider(${providerId}) in ${(performance.now() - tProv).toFixed(1)}ms`,
+    `[perf:prepare] ${sid} registry setProvider(${providerId}) in ${(performance.now() - tProv).toFixed(1)}ms`,
   );
 
   const entry = { providerId, workingDir };
   prepared.set(sessionId, entry);
 
-  return sessionId;
+  return;
 }
 
 export function isSessionPrepared(sessionId: string): boolean {
   return prepared.has(sessionId);
 }
 
-export function registerSession(
+export function registerPreparedSession(
   sessionId: string,
   providerId: string,
   workingDir: string,
@@ -77,8 +77,4 @@ export function registerSession(
       prepared.set(sessionId, previousEntry);
     }
   };
-}
-
-export function unregisterSession(sessionId: string): void {
-  prepared.delete(sessionId);
 }

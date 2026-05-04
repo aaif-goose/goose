@@ -137,21 +137,16 @@ export async function acpPrepareSession(
   sessionId: string,
   providerId: string,
   workingDir: string,
-): Promise<string> {
+): Promise<void> {
   const sid = sessionId.slice(0, 8);
   const t0 = performance.now();
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession start (provider=${providerId})`,
   );
-  const preparedSession = await sessionRegistry.prepareSession(
-    sessionId,
-    providerId,
-    workingDir,
-  );
+  await sessionRegistry.prepareSession(sessionId, providerId, workingDir);
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession done in ${(performance.now() - t0).toFixed(1)}ms`,
   );
-  return preparedSession;
 }
 
 export async function acpCreateSession(
@@ -167,7 +162,7 @@ export async function acpCreateSession(
   );
   const sessionId = response.sessionId;
   await directAcp.setProvider(sessionId, providerId);
-  sessionRegistry.registerSession(sessionId, providerId, workingDir);
+  sessionRegistry.registerPreparedSession(sessionId, providerId, workingDir);
   if (options.modelId) {
     await directAcp.setModel(sessionId, options.modelId);
   }
@@ -216,7 +211,7 @@ export async function acpLoadSession(
   const effectiveWorkingDir = workingDir ?? "~/.goose/artifacts";
   const sid = sessionId.slice(0, 8);
   const t0 = performance.now();
-  const rollbackSessionRegistration = sessionRegistry.registerSession(
+  const rollbackSessionRegistration = sessionRegistry.registerPreparedSession(
     sessionId,
     "goose",
     effectiveWorkingDir,

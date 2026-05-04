@@ -9,7 +9,7 @@ import {
   handleSessionNotification,
   setActiveMessageId,
 } from "../acpNotificationHandler";
-import { registerSession } from "../acpSessionRegistry";
+import { registerPreparedSession } from "../acpSessionRegistry";
 
 describe("ACP tool call status handling", () => {
   beforeEach(() => {
@@ -76,7 +76,11 @@ describe("ACP tool call status handling", () => {
   });
 
   it("marks failed live tool updates as errors", async () => {
-    registerSession("acp-session", "goose", "/Users/aharvard/.goose/artifacts");
+    registerPreparedSession(
+      "acp-session",
+      "goose",
+      "/Users/aharvard/.goose/artifacts",
+    );
     setActiveMessageId("acp-session", "assistant-1");
 
     await handleSessionNotification({
