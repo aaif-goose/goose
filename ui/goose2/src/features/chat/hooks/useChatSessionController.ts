@@ -162,7 +162,6 @@ export function useChatSessionController({
       providerId: string,
       nextProject = project,
       nextWorkspacePath = activeWorkspace?.path,
-      personaId = selectedPersonaId ?? undefined,
       modelSelection?: PreferredModelSelection | null,
     ) => {
       if (!sessionId) {
@@ -193,7 +192,7 @@ export function useChatSessionController({
         modelName: modelSelection.name,
       });
     },
-    [activeWorkspace?.path, project, selectedPersonaId, sessionId],
+    [activeWorkspace?.path, project, sessionId],
   );
   const prepareSelectedProvider = useCallback(
     (providerId: string, modelSelection?: PreferredModelSelection | null) =>
@@ -201,10 +200,9 @@ export function useChatSessionController({
         providerId,
         project,
         activeWorkspace?.path,
-        selectedPersonaId ?? undefined,
         modelSelection,
       ),
-    [activeWorkspace?.path, prepareCurrentSession, project, selectedPersonaId],
+    [activeWorkspace?.path, prepareCurrentSession, project],
   );
 
   const prevProjectIdRef = useRef(session?.projectId);
@@ -328,7 +326,6 @@ export function useChatSessionController({
         selectedProvider,
         nextProject,
         activeWorkspace?.path,
-        selectedPersonaId ?? undefined,
         effectiveModelSelection,
       ).catch((error) => {
         console.error("Failed to update ACP session working directory:", error);
@@ -338,7 +335,6 @@ export function useChatSessionController({
       activeWorkspace?.path,
       effectiveModelSelection,
       prepareCurrentSession,
-      selectedPersonaId,
       selectedProvider,
       sessionId,
     ],
@@ -428,12 +424,11 @@ export function useChatSessionController({
     {
       onMessageAccepted: sessionId ? onMessageAccepted : undefined,
       ensurePrepared: selectedProvider
-        ? (personaId?: string) =>
+        ? () =>
             prepareCurrentSession(
               selectedProvider,
               project,
               activeWorkspace?.path,
-              personaId,
             )
         : undefined,
     },
@@ -724,7 +719,6 @@ export function useChatSessionController({
             nextProviderId,
             nextProject,
             activeWorkspace?.path,
-            nextPersonaId,
             pendingModelSelection,
           );
           if (cancelled) {
