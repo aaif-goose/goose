@@ -319,6 +319,57 @@ static LANGUAGES: &[LangInfo] = &[
             "#,
         },
     },
+    LangInfo {
+        name: "elixir",
+        extensions: &["ex", "exs"],
+        language: || tree_sitter_elixir::LANGUAGE.into(),
+        // Elixir's tree-sitter grammar represents `def`/`defmodule` as `call` nodes,
+        // the same type as regular function calls. Empty fn_kinds/class_kinds disables
+        // enclosing-context attribution in call graphs; semantic mode (function/module/import
+        // listing) works fully via the queries below.
+        fn_kinds: &[],
+        fn_name_kinds: &[],
+        class_kinds: &[],
+        queries: LangQueries {
+            functions: r#"
+                (call
+                  target: (identifier) @_ignore
+                  (arguments
+                    [
+                      (identifier) @name
+                      (call target: (identifier) @name)
+                      (binary_operator
+                        left: (call target: (identifier) @name)
+                        operator: "when")
+                    ])
+                  (#any-of? @_ignore "def" "defp" "defdelegate" "defguard" "defguardp" "defmacro" "defmacrop" "defn" "defnp"))
+            "#,
+            classes: r#"
+                (call
+                  target: (identifier) @_ignore
+                  (arguments (alias) @name)
+                  (#any-of? @_ignore "defmodule" "defprotocol"))
+            "#,
+            imports: r#"
+                (call
+                  target: (identifier) @_method
+                  (arguments . (_) @path)
+                  (#any-of? @_method "import" "alias" "require" "use"))
+            "#,
+            calls: r#"
+                (call target: (identifier) @name
+                     (#not-any-of? @name
+                          "def" "defdelegate" "defexception" "defguard" "defguardp"
+                          "defimpl" "defmacro" "defmacrop" "defmodule" "defn" "defnp"
+                          "defoverridable" "defp" "defprotocol" "defstruct"
+                          "alias" "case" "cond" "else" "for" "if" "import" "quote"
+                          "raise" "receive" "require" "reraise" "super" "throw"
+                          "try" "unless" "unquote" "unquote_splicing" "use" "with"))
+                (call target: (dot right: (identifier) @name))
+                (binary_operator operator: "|>" right: (identifier) @name)
+            "#,
+        },
+    },
 ];
 
 pub fn lang_for_ext(ext: &str) -> Option<&'static LangInfo> {
