@@ -15,6 +15,8 @@ import {
 import { toolStatusMap } from "../lib/toolStatusMap";
 import {
   getToolInputSummaryRows,
+  isHoistableText,
+  isStringifiedCopyOfStructured,
   type ToolInputSummaryRow,
 } from "@/features/chat/lib/toolCallPresentation";
 import type { ToolCallLocation, ToolCallStatus } from "@/shared/types/messages";
@@ -292,6 +294,28 @@ export function ToolCallAdapter({
   );
   const canOpenHeaderFile = Boolean(headerTitleParts && headerFileCandidate);
 
+  const hasStructuredArgs = Object.keys(args).length > 0;
+  const hasOutput = Boolean(result);
+  const hasStructuredContent = !isError && structuredContent !== undefined;
+
+  // De-dupe + title-hoisting matrix: when both a text result and structured
+  // content are present, decide whether the text is a redundant stringified
+  // copy of the structured payload (hide), short enough to hoist into the
+  // header subtitle (lift), or worth rendering in the body alongside the
+  // structured block (keep).
+  const textIsStringifiedCopy =
+    hasOutput &&
+    hasStructuredContent &&
+    isStringifiedCopyOfStructured(result, structuredContent);
+  const canHoistResultIntoHeader =
+    hasOutput &&
+    hasStructuredContent &&
+    !textIsStringifiedCopy &&
+    !headerTitleParts &&
+    isHoistableText(result);
+  const showResultBody =
+    hasOutput && !textIsStringifiedCopy && !canHoistResultIntoHeader;
+
   const headerTitle: ReactNode = headerTitleParts ? (
     <>
       <span data-tool-title-prefix>{headerTitleParts.prefix}</span>
@@ -322,12 +346,20 @@ export function ToolCallAdapter({
       )}
       <span>{headerTitleParts.suffix}</span>
     </>
+  ) : canHoistResultIntoHeader ? (
+    <>
+      <span>{name}</span>
+      <span aria-hidden="true" className="text-muted-foreground">
+        {" · "}
+      </span>
+      <span data-tool-title-hoisted className="truncate text-foreground">
+        {(result ?? "").trim()}
+      </span>
+    </>
   ) : (
     name
   );
 
-  const hasStructuredArgs = Object.keys(args).length > 0;
-  const hasOutput = Boolean(result);
   const showCombinedSurface = summaryRows.length > 0 || hasStructuredArgs;
 
   return (
@@ -355,7 +387,7 @@ export function ToolCallAdapter({
                   <InputSummary rows={summaryRows} isOpen={isOpen} />
                 )}
               />
-              {hasOutput && (
+              {showResultBody && (
                 <ToolOutput
                   output={isError ? undefined : result}
                   errorText={isError ? result : undefined}
@@ -364,7 +396,7 @@ export function ToolCallAdapter({
                   embeddedMaxHeightClass="max-h-32"
                 />
               )}
-              {!isError && structuredContent !== undefined && (
+              {hasStructuredContent && (
                 <ToolOutput
                   output={structuredContent}
                   errorText={undefined}
@@ -376,12 +408,14 @@ export function ToolCallAdapter({
             </ToolSurface>
           ) : (
             <>
-              <ToolOutput
-                output={isError ? undefined : result}
-                errorText={isError ? result : undefined}
-                contentClassName="max-h-[28rem] overflow-y-auto"
-              />
-              {!isError && structuredContent !== undefined && (
+              {showResultBody && (
+                <ToolOutput
+                  output={isError ? undefined : result}
+                  errorText={isError ? result : undefined}
+                  contentClassName="max-h-[28rem] overflow-y-auto"
+                />
+              )}
+              {hasStructuredContent && (
                 <ToolOutput
                   output={structuredContent}
                   errorText={undefined}

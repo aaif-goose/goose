@@ -126,3 +126,51 @@ export function getToolInputSummaryRows({
 
   return [];
 }
+
+/**
+ * Maximum length (in characters, after trim) for a text result to be eligible
+ * for hoisting into the tool header subtitle. Longer values stay in the body.
+ */
+const HOISTABLE_TEXT_MAX_LENGTH = 80;
+
+/**
+ * Returns true when a tool's text `result` is short enough and simple enough
+ * to render as a header subtitle alongside the tool name. Multi-line and
+ * empty/whitespace-only strings are never hoistable.
+ */
+export function isHoistableText(text: string | undefined): text is string {
+  if (typeof text !== "string") return false;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.includes("\n") || trimmed.includes("\r")) return false;
+  return trimmed.length <= HOISTABLE_TEXT_MAX_LENGTH;
+}
+
+/**
+ * Returns true when a text `result` is just a stringified copy of the
+ * `structured` content — e.g. a server that emits `result = JSON.stringify(x)`
+ * alongside `structuredContent = x`. Whitespace- and indent-insensitive: the
+ * comparison normalizes both sides via JSON parse + compact stringify.
+ *
+ * Used by the de-dupe matrix in ToolCallAdapter to suppress the redundant
+ * text result when the structured form will already be rendered.
+ */
+export function isStringifiedCopyOfStructured(
+  text: string | undefined,
+  structured: unknown,
+): boolean {
+  if (typeof text !== "string" || structured === undefined) return false;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+
+  try {
+    return JSON.stringify(parsed) === JSON.stringify(structured);
+  } catch {
+    return false;
+  }
+}

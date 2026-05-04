@@ -112,13 +112,14 @@ describe("ToolCallAdapter — expanded body", () => {
   });
 
   it("shows the text result when expanded", () => {
-    renderAdapter({ open: true });
+    renderAdapter({ open: true, structuredContent: undefined });
     expect(screen.getByText(/created \/project\/output\.md/i)).toBeVisible();
   });
 
-  it("renders structured content when present", () => {
+  it("renders structured content when present without a text result", () => {
     renderAdapter({
       open: true,
+      result: undefined,
       structuredContent: { kind: "summary", count: 3 },
     });
 
@@ -129,5 +130,73 @@ describe("ToolCallAdapter — expanded body", () => {
   it("renders the error result when isError is true", () => {
     renderAdapter({ open: true, isError: true, result: "Boom" });
     expect(screen.getByText("Boom")).toBeInTheDocument();
+  });
+});
+
+describe("ToolCallAdapter — text + structured de-dupe matrix", () => {
+  it("hides redundant text when result is a stringified copy of structured", () => {
+    const structured = { kind: "summary", count: 3 };
+    renderAdapter({
+      open: true,
+      arguments: {},
+      result: JSON.stringify(structured),
+      structuredContent: structured,
+    });
+
+    // The structured payload renders exactly once, not twice.
+    const summaryMatches = screen.getAllByText(/"summary"/);
+    expect(summaryMatches).toHaveLength(1);
+  });
+
+  it("hoists short single-line text into the header when both differ", () => {
+    renderAdapter({
+      open: true,
+      arguments: {},
+      result: "Found 3 matches",
+      structuredContent: { matches: 3 },
+    });
+
+    // The hoisted text renders inside the header subtitle slot.
+    const hoisted = document.querySelector("[data-tool-title-hoisted]");
+    expect(hoisted).not.toBeNull();
+    expect(hoisted?.textContent).toContain("Found 3 matches");
+
+    // Body shows the structured payload but does NOT duplicate the hoisted
+    // text — i.e. "Found 3 matches" appears exactly once across the card.
+    const allMatches = screen.getAllByText(/Found 3 matches/);
+    expect(allMatches).toHaveLength(1);
+    expect(screen.getByText(/"matches"/)).toBeInTheDocument();
+  });
+
+  it("renders both text and structured in the body when text is multi-line", () => {
+    renderAdapter({
+      open: true,
+      arguments: {},
+      result: "line one\nline two\nline three",
+      structuredContent: { matches: 3 },
+    });
+
+    // No header hoisting for multi-line text.
+    expect(document.querySelector("[data-tool-title-hoisted]")).toBeNull();
+
+    // Both blocks render in the body.
+    expect(screen.getByText(/line one/)).toBeInTheDocument();
+    expect(screen.getByText(/"matches"/)).toBeInTheDocument();
+  });
+
+  it("does not hoist text when path-based header hoisting takes precedence", () => {
+    // Tool name contains the basename → path-based hoisting activates.
+    renderAdapter({
+      open: true,
+      name: "Write file output.md",
+      arguments: { path: "/project/output.md" },
+      result: "Wrote file",
+      structuredContent: { bytes: 42 },
+    });
+
+    // Path-based hoisting wins; result text stays in the body.
+    expect(document.querySelector("[data-tool-title-hoisted]")).toBeNull();
+    expect(screen.getByText(/wrote file/i)).toBeInTheDocument();
+    expect(screen.getByText(/"bytes"/)).toBeInTheDocument();
   });
 });
