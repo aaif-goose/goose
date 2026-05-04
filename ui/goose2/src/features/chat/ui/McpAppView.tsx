@@ -327,13 +327,11 @@ export function McpAppView({
       name: string;
       arguments?: Record<string, unknown>;
     }) => {
-      const acpSessionId = payload.gooseSessionId ?? payload.sessionId;
-
       setActiveToolInput(args ?? {});
 
       const client = await getClient();
       const response = (await client.extMethod("_goose/tool/call", {
-        sessionId: acpSessionId,
+        sessionId: payload.sessionId,
         name: `${payload.tool.extensionName}__${name}`,
         arguments: args ?? {},
       })) as GooseToolCallResponse;
@@ -348,22 +346,21 @@ export function McpAppView({
 
       return toolResult;
     },
-    [payload.gooseSessionId, payload.sessionId, payload.tool.extensionName],
+    [payload.sessionId, payload.tool.extensionName],
   );
 
   const handleReadResource = useCallback(
     async ({ uri }: { uri: string }) => {
-      const acpSessionId = payload.gooseSessionId ?? payload.sessionId;
       const client = await getClient();
       const response = await client.goose.GooseResourceRead({
-        sessionId: acpSessionId,
+        sessionId: payload.sessionId,
         uri,
         extensionName: payload.tool.extensionName,
       });
 
       return (response.result ?? { contents: [] }) as ReadResourceResult;
     },
-    [payload.gooseSessionId, payload.sessionId, payload.tool.extensionName],
+    [payload.sessionId, payload.tool.extensionName],
   );
 
   const handleSizeChanged = useCallback(

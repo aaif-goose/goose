@@ -148,16 +148,15 @@ describe("acpNotificationHandler", () => {
   });
 
   it("preserves structured tool output when ACP provides rawOutput", async () => {
-    registerSession(
-      "local-session",
-      "goose-session",
+    registerPreparedSession(
+      "acp-session",
       "goose",
       "/Users/aharvard/.goose/artifacts",
     );
-    setActiveMessageId("goose-session", "assistant-1");
+    setActiveMessageId("acp-session", "assistant-1");
 
     await handleSessionNotification({
-      sessionId: "goose-session",
+      sessionId: "acp-session",
       update: {
         sessionUpdate: "tool_call",
         toolCallId: "tool-1",
@@ -166,7 +165,7 @@ describe("acpNotificationHandler", () => {
     } as never);
 
     await handleSessionNotification({
-      sessionId: "goose-session",
+      sessionId: "acp-session",
       update: {
         sessionUpdate: "tool_call_update",
         toolCallId: "tool-1",
@@ -187,8 +186,7 @@ describe("acpNotificationHandler", () => {
       },
     } as never);
 
-    const [message] =
-      useChatStore.getState().messagesBySession["local-session"];
+    const [message] = useChatStore.getState().messagesBySession["acp-session"];
     expect(message.content[1]).toMatchObject({
       type: "toolResponse",
       id: "tool-1",

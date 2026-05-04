@@ -71,7 +71,6 @@ function createPayload({
 } = {}): McpAppPayload {
   return {
     sessionId: "local-session",
-    gooseSessionId: null,
     toolCallId: "tool-1",
     toolCallTitle: "inspect messaging",
     source: "toolCallUpdateMeta",

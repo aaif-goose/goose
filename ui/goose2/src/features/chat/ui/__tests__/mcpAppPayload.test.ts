@@ -5,7 +5,6 @@ import type { McpAppPayload } from "@/shared/types/messages";
 function createPayload(csp: unknown): McpAppPayload {
   return {
     sessionId: "session-1",
-    gooseSessionId: null,
     toolCallId: "tool-1",
     toolCallTitle: "inspect app",
     source: "toolCallUpdateMeta",
