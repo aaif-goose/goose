@@ -115,6 +115,7 @@ export function ExtensionsSettings() {
     <>
       <PageHeader
         title={t("extensions.title")}
+        description={t("extensions.description")}
         titleClassName="font-normal text-foreground"
         actions={
           <Button

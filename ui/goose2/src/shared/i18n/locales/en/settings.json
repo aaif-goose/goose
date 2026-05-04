@@ -82,6 +82,7 @@
   },
   "extensions": {
     "title": "Extensions",
+    "description": "Connect Goose to apps, services, and built-in capabilities.",
     "search": "Search extensions...",
     "empty": "No extensions configured.",
     "noResults": "No extensions match your search.",
