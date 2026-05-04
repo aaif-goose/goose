@@ -2384,7 +2384,7 @@ dependencies = [
 [[package]]
 name = "cudaforge"
 version = "0.1.6"
-source = "git+https://github.com/jbg/cudaforge?branch=jbg%2Fadd-staticcrt-nvcc-flag#e7c1967340e40673db98dc9e17da0f04834a456f"
+source = "git+https://github.com/jbg/cudaforge?rev=e7c1967340e40673db98dc9e17da0f04834a456f#e7c1967340e40673db98dc9e17da0f04834a456f"
 dependencies = [
  "anyhow",
  "fs2",
