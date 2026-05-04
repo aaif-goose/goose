@@ -121,6 +121,7 @@ impl Connection for AcpServerConnection {
             config.goose_mode,
             config.provider_factory,
             &config.current_model,
+            config.disable_session_naming,
         )
         .await;
 

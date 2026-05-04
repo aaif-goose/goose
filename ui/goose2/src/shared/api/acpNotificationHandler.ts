@@ -27,6 +27,7 @@ import {
   getTrackedReplayAssistantMessageId,
 } from "./acpReplayAssistant";
 import { getReplayCreated, getReplayMessageId } from "./acpReplayMetadata";
+import { handleSessionInfoUpdate } from "./acpSessionInfoUpdate";
 import {
   getLocalSessionId,
   subscribeToSessionRegistration,
@@ -411,17 +412,7 @@ function handleShared(
 ): void {
   switch (update.sessionUpdate) {
     case "session_info_update": {
-      const info = update as SessionUpdate & {
-        sessionUpdate: "session_info_update";
-      };
-      if ("title" in info && info.title) {
-        const session = useChatSessionStore.getState().getSession(sessionId);
-        if (session && !session.userSetName) {
-          useChatSessionStore
-            .getState()
-            .updateSession(sessionId, { title: info.title as string });
-        }
-      }
+      handleSessionInfoUpdate(sessionId, update);
       break;
     }
 

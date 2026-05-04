@@ -43,12 +43,13 @@ use sacp::schema::{
     PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
     RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
     SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionId, SessionInfo, SessionListCapabilities, SessionMode,
-    SessionModeId, SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
-    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
+    SessionConfigSelectOption, SessionId, SessionInfo, SessionInfoUpdate, SessionListCapabilities,
+    SessionMode, SessionModeId, SessionModeState, SessionModelState, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+    SetSessionModeRequest, SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse,
+    StopReason, TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId,
+    ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage,
+    UsageUpdate,
 };
 use sacp::util::MatchDispatchFrom;
 use sacp::{
@@ -266,6 +267,36 @@ fn thread_session_meta(
         );
     }
     meta
+}
+
+fn spawn_session_name_update_notifier(
+    cx: ConnectionTo<Client>,
+) -> tokio::sync::mpsc::UnboundedSender<crate::session::SessionNameUpdate> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::session::SessionNameUpdate>();
+    tokio::spawn(async move {
+        while let Some(update) = rx.recv().await {
+            let thread = update.thread;
+            let thread_id = thread.id.clone();
+            let meta = thread_session_meta(&thread);
+            let notification = SessionNotification::new(
+                SessionId::new(thread_id.clone()),
+                SessionUpdate::SessionInfoUpdate(
+                    SessionInfoUpdate::new()
+                        .title(thread.name)
+                        .updated_at(thread.updated_at.to_rfc3339())
+                        .meta(meta),
+                ),
+            );
+            if let Err(error) = cx.send_notification(notification) {
+                warn!(
+                    thread_id = %thread_id,
+                    error = %error,
+                    "Failed to send generated session name update"
+                );
+            }
+        }
+    });
+    tx
 }
 
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
@@ -1155,6 +1186,9 @@ impl GooseAcpAgent {
                 }
             };
 
+            let session_name_update_tx =
+                (!disable_session_naming).then(|| spawn_session_name_update_notifier(cx.clone()));
+
             // ── Phase 1: create agent + init provider (fast, ~55ms) ──────
             let phase1: Result<Arc<Agent>, String> = async {
                 let agent = Arc::new(Agent::with_config(
@@ -1166,7 +1200,8 @@ impl GooseAcpAgent {
                         disable_session_naming,
                         goose_platform,
                     )
-                    .with_mcp_host_info(client_mcp_host_info),
+                    .with_mcp_host_info(client_mcp_host_info)
+                    .with_session_name_update_tx(session_name_update_tx),
                 ));
 
                 // Init provider — reuse the pre-resolved name + model when

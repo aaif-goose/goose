@@ -256,6 +256,11 @@ pub struct SessionManager {
     storage: Arc<SessionStorage>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionNameUpdate {
+    pub thread: super::thread_manager::Thread,
+}
+
 impl SessionManager {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
@@ -351,11 +356,15 @@ impl SessionManager {
             .await
     }
 
-    pub async fn maybe_update_name(&self, id: &str, provider: Arc<dyn Provider>) -> Result<()> {
+    pub async fn maybe_update_name(
+        &self,
+        id: &str,
+        provider: Arc<dyn Provider>,
+    ) -> Result<Option<SessionNameUpdate>> {
         let session = self.get_session(id, true).await?;
 
         if session.user_set_name {
-            return Ok(());
+            return Ok(None);
         }
 
         let conversation = session
@@ -379,15 +388,16 @@ impl SessionManager {
             if let Some(ref thread_id) = session.thread_id {
                 let thread_mgr = super::thread_manager::ThreadManager::new(self.storage.clone());
                 let thread = thread_mgr.get_thread(thread_id).await?;
-                if !thread.user_set_name {
-                    thread_mgr
+                if !thread.user_set_name && thread.name != name {
+                    let thread = thread_mgr
                         .update_thread(thread_id, Some(name), Some(false), None)
                         .await?;
+                    return Ok(Some(SessionNameUpdate { thread }));
                 }
             }
-            Ok(())
+            Ok(None)
         } else {
-            Ok(())
+            Ok(None)
         }
     }
 
