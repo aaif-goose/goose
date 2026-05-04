@@ -98,3 +98,50 @@ describe("acpCreateSession", () => {
     );
   });
 });
+
+describe("acpPrepareSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("loads the existing ACP session instead of creating a replacement", async () => {
+    mockLoadSession.mockResolvedValue(undefined);
+
+    const sessionTracker = await import("../acpSessionTracker");
+    const { acpPrepareSession } = await import("../acp");
+
+    await expect(
+      acpPrepareSession("acp-session-1", "openai", "/tmp/project", {
+        projectId: "project-1",
+        personaId: "persona-1",
+      }),
+    ).resolves.toBe("acp-session-1");
+
+    expect(mockLoadSession).toHaveBeenCalledWith(
+      "acp-session-1",
+      "/tmp/project",
+    );
+    expect(mockNewSession).not.toHaveBeenCalled();
+    expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
+    expect(sessionTracker.getGooseSessionId("acp-session-1")).toBe(
+      "acp-session-1",
+    );
+    expect(sessionTracker.getLocalSessionId("acp-session-1")).toBe(
+      "acp-session-1",
+    );
+  });
+
+  it("surfaces load failures instead of creating a new ACP session", async () => {
+    mockLoadSession.mockRejectedValueOnce(new Error("missing session"));
+
+    const { acpPrepareSession } = await import("../acp");
+
+    await expect(
+      acpPrepareSession("acp-session-1", "openai", "/tmp/project"),
+    ).rejects.toThrow("missing session");
+
+    expect(mockNewSession).not.toHaveBeenCalled();
+    expect(mockSetProvider).not.toHaveBeenCalled();
+  });
+});

@@ -48,8 +48,8 @@ export async function prepareSession(
   sessionId: string,
   providerId: string,
   workingDir: string,
-  personaId?: string,
-  projectId?: string,
+  _personaId?: string,
+  _projectId?: string,
 ): Promise<string> {
   const sid = sessionId.slice(0, 8);
 
@@ -77,49 +77,25 @@ export async function prepareSession(
     return existing.gooseSessionId;
   }
 
-  let gooseSessionId: string | null = null;
-
   const tLoad = performance.now();
-  try {
-    await acpApi.loadSession(sessionId, workingDir);
-    gooseSessionId = sessionId;
-    perfLog(
-      `[perf:prepare] ${sid} tracker loadSession ok in ${(performance.now() - tLoad).toFixed(1)}ms`,
-    );
-  } catch {
-    perfLog(
-      `[perf:prepare] ${sid} tracker loadSession failed in ${(performance.now() - tLoad).toFixed(1)}ms → newSession`,
-    );
-  }
+  await acpApi.loadSession(sessionId, workingDir);
+  perfLog(
+    `[perf:prepare] ${sid} tracker loadSession ok in ${(performance.now() - tLoad).toFixed(1)}ms`,
+  );
 
-  if (!gooseSessionId) {
-    const tNew = performance.now();
-    const response = await acpApi.newSession(
-      workingDir,
-      providerId,
-      projectId,
-      personaId,
-    );
-    gooseSessionId = response.sessionId;
-    perfLog(
-      `[perf:prepare] ${sid} tracker newSession done in ${(performance.now() - tNew).toFixed(1)}ms (goose_sid=${gooseSessionId.slice(0, 8)})`,
-    );
-  }
-
-  const gooseSid = gooseSessionId.slice(0, 8);
+  const gooseSid = sessionId.slice(0, 8);
   const tProv = performance.now();
-  await acpApi.setProvider(gooseSessionId, providerId);
+  await acpApi.setProvider(sessionId, providerId);
   perfLog(
     `[perf:prepare] ${sid} tracker setProvider(${providerId}) in ${(performance.now() - tProv).toFixed(1)}ms (goose_sid=${gooseSid})`,
   );
 
-  const entry = { gooseSessionId, providerId, workingDir };
+  const entry = { gooseSessionId: sessionId, providerId, workingDir };
   prepared.set(sessionId, entry);
-  prepared.set(gooseSessionId, entry);
-  gooseToLocal.set(gooseSessionId, sessionId);
-  notifySessionRegistered(sessionId, gooseSessionId);
+  gooseToLocal.set(sessionId, sessionId);
+  notifySessionRegistered(sessionId, sessionId);
 
-  return gooseSessionId;
+  return sessionId;
 }
 
 export function getGooseSessionId(sessionId: string): string | null {
