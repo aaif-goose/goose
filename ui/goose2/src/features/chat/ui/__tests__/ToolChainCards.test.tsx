@@ -90,7 +90,28 @@ describe("ToolChainCards", () => {
     ).toBeInTheDocument();
   });
 
-  it("collapses and re-expands the chain when the header is clicked", async () => {
+  it("collapses and re-expands an active chain when the header is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <ToolChainCards
+        toolItems={[
+          pair("Edit · src/a.ts"),
+          pair("Edit · src/b.ts", {
+            status: "executing",
+            completed: false,
+          }),
+        ]}
+      />,
+    );
+    const header = screen.getByRole("button", {
+      name: /working through 2 steps/i,
+    });
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    await user.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("starts collapsed when the chain mounts already complete (replay)", async () => {
     const user = userEvent.setup();
     render(
       <ToolChainCards
@@ -100,9 +121,9 @@ describe("ToolChainCards", () => {
     const header = screen.getByRole("button", {
       name: /updating files.*2 steps/i,
     });
-    expect(header).toHaveAttribute("aria-expanded", "true");
-    await user.click(header);
     expect(header).toHaveAttribute("aria-expanded", "false");
+    await user.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "true");
   });
 
   it("surfaces error status as a data attribute on the chain wrapper", () => {
@@ -124,7 +145,10 @@ describe("ToolChainCards", () => {
         toolItems={[
           pair("Edit · src/a.ts"),
           pair("Edit · src/b.ts"),
-          pair("Edit · src/c.ts"),
+          pair("Edit · src/c.ts", {
+            status: "executing",
+            completed: false,
+          }),
         ]}
       />,
     );
@@ -184,6 +208,11 @@ describe("ToolChainCards", () => {
           pair("cat"),
         ]}
       />,
+    );
+    // The chain mounts as already-complete (default test pair → completed),
+    // so the rail starts collapsed during replay; expand it first.
+    await user.click(
+      screen.getByRole("button", { name: /updating files.*4 steps/i }),
     );
     const disclosure = container.querySelector(
       '[data-role="tool-chain-internal-disclosure"]',

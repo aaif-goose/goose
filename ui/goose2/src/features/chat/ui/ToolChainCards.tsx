@@ -167,14 +167,16 @@ function partitionToolSteps(toolItems: ToolChainItem[]) {
 export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
   const { t } = useTranslation("chat");
   const [showInternalSteps, setShowInternalSteps] = useState(false);
-  const [chainExpanded, setChainExpanded] = useState(true);
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const { primaryItems, hiddenItems } = partitionToolSteps(toolItems);
   const grouped = shouldRenderAsGroupedChain(toolItems);
   const aggregateStatus = getChainAggregateStatus(toolItems);
   const summary = summarizeToolChainSteps(primaryItems);
   const isActiveChain =
     aggregateStatus === "executing" || aggregateStatus === "pending";
+  // Chains that mount as already-complete (history replay) start collapsed;
+  // live chains mount mid-execution and stay open until the user collapses.
+  const [chainExpanded, setChainExpanded] = useState(() => isActiveChain);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   const handleOpenChange = (key: string, open: boolean) => {
     setExpandedKeys((prev) => {
