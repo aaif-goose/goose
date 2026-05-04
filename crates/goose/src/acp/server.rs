@@ -1638,26 +1638,57 @@ impl GooseAcpAgent {
                              checking network connectivity, listing files in src directory";
                         let user_text = format!("Tool: {name}\nArguments: {args_json}");
                         let message = Message::user().with_text(&user_text);
-                        match provider
-                            .complete_fast(&sid.0, system, &[message], &[])
-                            .await
-                        {
-                            Ok((response, _)) => {
-                                let summary: String = response
-                                    .content
-                                    .iter()
-                                    .filter_map(|c: &MessageContent| c.as_text())
-                                    .collect::<String>()
-                                    .trim()
-                                    .to_string();
-                                if summary.is_empty() {
-                                    (fallback_title.clone(), false)
-                                } else {
-                                    (summary, true)
+                        // The fast model occasionally returns an empty response
+                        // under load (rate limiting, transient network). One
+                        // retry with a short backoff is enough to recover the
+                        // common cases without paying for the regular model.
+                        let mut llm_outcome: Option<String> = None;
+                        for attempt in 0..2 {
+                            match provider
+                                .complete_fast(&sid.0, system, std::slice::from_ref(&message), &[])
+                                .await
+                            {
+                                Ok((response, _)) => {
+                                    let summary: String = response
+                                        .content
+                                        .iter()
+                                        .filter_map(|c: &MessageContent| c.as_text())
+                                        .collect::<String>()
+                                        .trim()
+                                        .to_string();
+                                    if !summary.is_empty() {
+                                        llm_outcome = Some(summary);
+                                        break;
+                                    }
+                                    if attempt == 0 {
+                                        warn!(
+                                            "tool call summary: fast_complete returned empty for {request_id} ({name}), retrying once",
+                                        );
+                                        tokio::time::sleep(std::time::Duration::from_millis(150))
+                                            .await;
+                                    }
+                                }
+                                Err(e) => {
+                                    if attempt == 0 {
+                                        warn!(
+                                            "tool call summary: fast_complete errored for {request_id} ({name}): {e}, retrying once",
+                                        );
+                                        tokio::time::sleep(std::time::Duration::from_millis(150))
+                                            .await;
+                                    } else {
+                                        warn!(
+                                            "tool call summary: fast_complete errored for {request_id} ({name}) after retry: {e}",
+                                        );
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                warn!("tool call summary: fast_complete failed: {e}");
+                        }
+                        match llm_outcome {
+                            Some(summary) => (summary, true),
+                            None => {
+                                warn!(
+                                    "tool call summary: falling back to deterministic title for {request_id} ({name}) — replay will not show an LLM summary for this call",
+                                );
                                 (fallback_title.clone(), false)
                             }
                         }
@@ -1679,7 +1710,9 @@ impl GooseAcpAgent {
 
                 // Best-effort persistence: only persist the LLM-generated title
                 // (not the deterministic fallback) so reload uses fallback_title
-                // for older or failed cases just like today.
+                // for older or failed cases just like today. Surface persist
+                // errors at warn level so the "occasional bad replay" symptom is
+                // diagnosable from logs alone.
                 if from_llm {
                     if let Some(msg_id) = message_id_for_persist {
                         let patch = serde_json::json!({
@@ -1694,8 +1727,14 @@ impl GooseAcpAgent {
                             )
                             .await
                         {
-                            debug!("tool call summary: persist failed: {e}");
+                            warn!(
+                                "tool call summary: persist failed for {request_id} in {msg_id}: {e}",
+                            );
                         }
+                    } else {
+                        warn!(
+                            "tool call summary: missing message_id for {request_id} — title will not survive reload",
+                        );
                     }
                 }
             });
@@ -1834,7 +1873,7 @@ impl GooseAcpAgent {
             let provider = match agent.provider().await {
                 Ok(p) => p,
                 Err(e) => {
-                    debug!("tool chain summary: failed to get provider: {e}");
+                    warn!("tool chain summary: failed to get provider: {e}");
                     return;
                 }
             };
@@ -1853,30 +1892,61 @@ impl GooseAcpAgent {
             }
             let message = Message::user().with_text(&user_text);
 
-            let summary = match provider
-                .complete_fast(&sid.0, system, &[message], &[])
-                .await
-            {
-                Ok((response, _)) => response
-                    .content
-                    .iter()
-                    .filter_map(|c: &MessageContent| c.as_text())
-                    .collect::<String>()
-                    .trim()
-                    .to_string(),
-                Err(e) => {
-                    debug!("tool chain summary: complete_fast failed: {e}");
-                    return;
+            let first_id = chain_for_task.ids[0].clone();
+            // Match the per-tool retry policy: one retry on empty/error keeps
+            // the chain header reliable when the fast model is rate-limited or
+            // momentarily flaky, without escalating to the regular model.
+            let mut summary: Option<String> = None;
+            for attempt in 0..2 {
+                match provider
+                    .complete_fast(&sid.0, system, std::slice::from_ref(&message), &[])
+                    .await
+                {
+                    Ok((response, _)) => {
+                        let s = response
+                            .content
+                            .iter()
+                            .filter_map(|c: &MessageContent| c.as_text())
+                            .collect::<String>()
+                            .trim()
+                            .to_string();
+                        if !s.is_empty() {
+                            summary = Some(s);
+                            break;
+                        }
+                        if attempt == 0 {
+                            warn!(
+                                "tool chain summary: fast_complete returned empty for chain anchored at {first_id} ({} steps), retrying once",
+                                steps.len(),
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        }
+                    }
+                    Err(e) => {
+                        if attempt == 0 {
+                            warn!(
+                                "tool chain summary: fast_complete errored for chain anchored at {first_id}: {e}, retrying once",
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        } else {
+                            warn!(
+                                "tool chain summary: fast_complete errored for chain anchored at {first_id} after retry: {e}",
+                            );
+                        }
+                    }
                 }
-            };
-            if summary.is_empty() {
-                return;
             }
+            let Some(summary) = summary else {
+                warn!(
+                    "tool chain summary: no LLM summary produced for chain anchored at {first_id} — replay will fall back to the deterministic phrase",
+                );
+                return;
+            };
 
             let count = chain_for_task.ids.len();
             let patch = serde_json::json!({
                 crate::conversation::message::TOOL_META_CHAIN_SUMMARY_KEY: {
-                    "summary": summary,
+                    "summary": &summary,
                     "count": count,
                 },
             });
@@ -1884,12 +1954,15 @@ impl GooseAcpAgent {
                 .update_tool_request_meta(
                     &thread_id_for_persist,
                     &chain_for_task.message_id,
-                    &chain_for_task.ids[0],
+                    &first_id,
                     patch,
                 )
                 .await
             {
-                debug!("tool chain summary: persist failed: {e}");
+                warn!(
+                    "tool chain summary: persist failed for chain anchored at {first_id} in {}: {e}",
+                    chain_for_task.message_id,
+                );
             }
 
             let meta = with_tool_chain_summary_meta(identity_meta, &summary, count);
@@ -1897,8 +1970,7 @@ impl GooseAcpAgent {
             let _ = cx.send_notification(SessionNotification::new(
                 sid,
                 SessionUpdate::ToolCallUpdate(
-                    ToolCallUpdate::new(ToolCallId::new(chain_for_task.ids[0].clone()), fields)
-                        .meta(meta),
+                    ToolCallUpdate::new(ToolCallId::new(first_id), fields).meta(meta),
                 ),
             ));
         });
@@ -3541,6 +3613,61 @@ print(\"hello, world\")
         assert_eq!(
             goose.get("toolChainSummary"),
             Some(&serde_json::json!({ "summary": "ran two commands", "count": 2 }))
+        );
+    }
+
+    #[test]
+    fn replay_attaches_chain_summary_meta_for_first_tool_request_with_persisted_summary() {
+        let tool_request = ToolRequest {
+            id: "req_first".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta: Some(serde_json::json!({
+                crate::conversation::message::TOOL_META_CHAIN_SUMMARY_KEY: {
+                    "summary": "applied dark mode polish",
+                    "count": 3,
+                },
+            })),
+        };
+
+        let pending_tool_call = pending_tool_call_from_request(&tool_request);
+        let mut meta = pending_tool_call.identity_meta;
+        let chain_summary = tool_request
+            .persisted_chain_summary()
+            .expect("chain summary should be present");
+        meta = with_tool_chain_summary_meta(meta, &chain_summary.summary, chain_summary.count);
+
+        let goose = meta
+            .as_ref()
+            .and_then(|m| m.get("goose"))
+            .expect("replay meta must include a goose namespace");
+        assert_eq!(
+            goose.get("toolCall"),
+            Some(
+                &serde_json::json!({ "toolName": "developer__shell", "extensionName": "developer" })
+            ),
+            "replay must preserve identity meta alongside the chain summary",
+        );
+        assert_eq!(
+            goose.get("toolChainSummary"),
+            Some(&serde_json::json!({ "summary": "applied dark mode polish", "count": 3 })),
+            "replay must attach toolChainSummary so the chain header renders on first paint",
+        );
+    }
+
+    #[test]
+    fn replay_does_not_attach_chain_summary_for_tool_requests_without_persisted_summary() {
+        let tool_request = ToolRequest {
+            id: "req_second".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        let chain_summary = tool_request.persisted_chain_summary();
+        assert!(
+            chain_summary.is_none(),
+            "non-first tool requests must not carry chain summaries",
         );
     }
 
