@@ -16,7 +16,7 @@ import type { EditingSkill, SkillInfo } from "../api/skills";
 interface SkillsDialogsProps {
   dialogOpen: boolean;
   onDialogClose: () => void;
-  onCreated: () => void | Promise<void>;
+  onSaved: (savedSkill?: SkillInfo) => void | Promise<void>;
   editingSkill?: EditingSkill;
   deletingSkill: SkillInfo | null;
   onDeletingSkillChange: (skill: SkillInfo | null) => void;
@@ -26,7 +26,7 @@ interface SkillsDialogsProps {
 export function SkillsDialogs({
   dialogOpen,
   onDialogClose,
-  onCreated,
+  onSaved,
   editingSkill,
   deletingSkill,
   onDeletingSkillChange,
@@ -39,7 +39,7 @@ export function SkillsDialogs({
       <SkillEditor
         isOpen={dialogOpen}
         onClose={onDialogClose}
-        onCreated={onCreated}
+        onSaved={onSaved}
         editingSkill={editingSkill}
       />
 

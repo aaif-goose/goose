@@ -71,6 +71,46 @@ function renderAdapter(
 
 // ── tests ────────────────────────────────────────────────────────────
 
+describe("ToolCallAdapter — output", () => {
+  it("shows content and structured content together in the parent tool accordion", () => {
+    mockResolveToolCardDisplay.mockReturnValue(EMPTY_DISPLAY);
+
+    renderAdapter({
+      open: true,
+      result: JSON.stringify({
+        restaurants: [{ name: "Content Coffee" }],
+      }),
+      structuredContent: {
+        restaurants: [{ name: "Structured Coffee" }],
+      },
+    });
+
+    expect(screen.getByText("Content")).toBeInTheDocument();
+    expect(screen.getByText("Structured content")).toBeInTheDocument();
+    expect(screen.getByText(/Content Coffee/)).toBeInTheDocument();
+    expect(screen.getByText(/Structured Coffee/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/"restaurants":\[\{"name":"Content Coffee"\}\]/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/structured output .*lines/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows falsy primitive structured content", () => {
+    mockResolveToolCardDisplay.mockReturnValue(EMPTY_DISPLAY);
+
+    renderAdapter({
+      open: true,
+      result: "Completed",
+      structuredContent: false,
+    });
+
+    expect(screen.getByText("Structured content")).toBeInTheDocument();
+    expect(screen.getByText("false")).toBeInTheDocument();
+  });
+});
+
 describe("ToolCallAdapter — ArtifactActions", () => {
   it('renders "Open file" button when primary candidate exists', () => {
     const primary = makeCandidate();

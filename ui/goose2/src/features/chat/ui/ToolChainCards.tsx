@@ -133,6 +133,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
         arguments={request?.arguments ?? {}}
         status={status}
         result={response?.result}
+        structuredContent={response?.structuredContent}
         isError={response?.isError}
         startedAt={request?.startedAt}
         open={expandedKeys.has(item.key)}
@@ -142,7 +143,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
   };
 
   return (
-    <div className="my-1 flex flex-col items-start gap-3">
+    <div className="my-1 flex w-full min-w-0 max-w-full flex-col items-stretch gap-3">
       {primaryItems.map((item) => renderToolItem(item))}
 
       {hiddenItems.length > 0 && (

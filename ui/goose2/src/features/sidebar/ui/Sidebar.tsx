@@ -5,11 +5,12 @@ import {
   IconHome,
   IconLayoutSidebar,
   IconLayoutSidebarFilled,
+  IconApps,
   IconRobotFace,
   IconSearch,
   IconSettings,
-  IconStack,
 } from "@tabler/icons-react";
+import { SkillIcon } from "@/features/skills/ui/SkillIcon";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
 import { GooseIcon } from "@/shared/ui/icons/GooseIcon";
 import { cn } from "@/shared/lib/cn";
@@ -131,7 +132,12 @@ export function Sidebar({
     icon: typeof IconRobotFace;
   }[] = [
     { id: "agents", label: t("navigation.agents"), icon: IconRobotFace },
-    { id: "skills", label: t("navigation.skills"), icon: IconStack },
+    { id: "skills", label: t("navigation.skills"), icon: SkillIcon },
+    {
+      id: "extensions",
+      label: t("navigation.extensions"),
+      icon: IconApps,
+    },
     {
       id: "session-history",
       label: t("navigation.sessionHistory"),
@@ -461,7 +467,7 @@ export function Sidebar({
               size={collapsed ? "icon-sm" : "default"}
               onClick={onSettingsClick}
               className={cn(
-                "h-10 w-full rounded-md bg-transparent text-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+                "h-10 w-full rounded-md bg-transparent text-muted-foreground/85 hover:bg-transparent hover:text-foreground active:bg-transparent",
                 collapsed
                   ? "justify-center p-3"
                   : "justify-start gap-2.5 px-3 py-2.5",

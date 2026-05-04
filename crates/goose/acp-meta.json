@@ -16,6 +16,11 @@
       "responseType": "GetToolsResponse"
     },
     {
+      "method": "_goose/tool/call",
+      "requestType": "GooseToolCallRequest",
+      "responseType": "GooseToolCallResponse"
+    },
+    {
       "method": "_goose/resource/read",
       "requestType": "ReadResourceRequest",
       "responseType": "ReadResourceResponse"
@@ -59,6 +64,36 @@
       "method": "_goose/providers/list",
       "requestType": "ListProvidersRequest",
       "responseType": "ListProvidersResponse"
+    },
+    {
+      "method": "_goose/providers/catalog/list",
+      "requestType": "ProviderCatalogListRequest",
+      "responseType": "ProviderCatalogListResponse"
+    },
+    {
+      "method": "_goose/providers/catalog/template",
+      "requestType": "ProviderCatalogTemplateRequest",
+      "responseType": "ProviderCatalogTemplateResponse"
+    },
+    {
+      "method": "_goose/providers/custom/create",
+      "requestType": "CustomProviderCreateRequest",
+      "responseType": "CustomProviderCreateResponse"
+    },
+    {
+      "method": "_goose/providers/custom/read",
+      "requestType": "CustomProviderReadRequest",
+      "responseType": "CustomProviderReadResponse"
+    },
+    {
+      "method": "_goose/providers/custom/update",
+      "requestType": "CustomProviderUpdateRequest",
+      "responseType": "CustomProviderUpdateResponse"
+    },
+    {
+      "method": "_goose/providers/custom/delete",
+      "requestType": "CustomProviderDeleteRequest",
+      "responseType": "CustomProviderDeleteResponse"
     },
     {
       "method": "_goose/providers/inventory/refresh",

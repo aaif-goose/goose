@@ -20,6 +20,7 @@ const LOCALHOST: &str = "127.0.0.1";
 /// concurrent sessions.
 pub struct GooseServeProcess {
     port: u16,
+    secret_key: String,
     _child: Child,
 }
 
@@ -32,6 +33,16 @@ impl GooseServeProcess {
         format!("ws://{LOCALHOST}:{}/acp", self.port)
     }
 
+    /// Return the HTTP base URL for authenticated Goose server routes.
+    pub fn http_base_url(&self) -> String {
+        format!("http://{LOCALHOST}:{}", self.port)
+    }
+
+    /// Return the secret key used to authenticate local HTTP requests.
+    pub fn secret_key(&self) -> &str {
+        &self.secret_key
+    }
+
     /// Get a reference to the running process, or an error if it was never
     /// started (should not happen in normal operation).
     pub async fn get(app_handle: tauri::AppHandle) -> Result<&'static GooseServeProcess, String> {
@@ -42,6 +53,7 @@ impl GooseServeProcess {
 
     async fn spawn(app_handle: tauri::AppHandle) -> Result<GooseServeProcess, String> {
         let port = reserve_free_port()?;
+        let secret_key = format!("goose2-{}", uuid::Uuid::new_v4().simple());
 
         // Use a stable working directory for the long-lived server process.
         // Individual sessions will set their own cwd via the ACP protocol.
@@ -63,6 +75,7 @@ impl GooseServeProcess {
             .arg("--port")
             .arg(port.to_string())
             .current_dir(&working_dir)
+            .env("GOOSE_SERVER__SECRET_KEY", &secret_key)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -86,6 +99,7 @@ impl GooseServeProcess {
 
         Ok(GooseServeProcess {
             port,
+            secret_key,
             _child: child,
         })
     }

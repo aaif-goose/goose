@@ -55,7 +55,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
   const loadRequestIdRef = useRef(0);
 
-  const loadSkills = useCallback(async () => {
+  const loadSkills = useCallback(async (): Promise<SkillViewInfo[]> => {
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
     setLoading(true);
@@ -64,16 +64,19 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
       const projectDirs = projects.flatMap((project) => project.workingDirs);
       const result = await listSkills(projectDirs);
       if (loadRequestIdRef.current !== requestId) {
-        return;
+        return [];
       }
-      setSkills(
-        withInferredSkillCategories(hydrateProjectNames(result, projects)),
+      const nextSkills = withInferredSkillCategories(
+        hydrateProjectNames(result, projects),
       );
+      setSkills(nextSkills);
+      return nextSkills;
     } catch {
       if (loadRequestIdRef.current === requestId) {
         setSkills([]);
         toast.error(t("view.loadError"));
       }
+      return [];
     } finally {
       if (loadRequestIdRef.current === requestId) {
         setLoading(false);
@@ -190,6 +193,23 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     setDialogOpen(true);
   };
 
+  const handleSkillSaved = useCallback(
+    async (savedSkill?: SkillInfo) => {
+      const refreshedSkills = await loadSkills();
+      if (
+        savedSkill &&
+        refreshedSkills.some((skill) => skill.id === savedSkill.id)
+      ) {
+        setActiveSkillId(savedSkill.id);
+      }
+    },
+    [loadSkills],
+  );
+
+  const refreshSkills = useCallback(async () => {
+    await loadSkills();
+  }, [loadSkills]);
+
   const {
     fileInputRef,
     isDragOver,
@@ -197,7 +217,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     handleFileChange,
     openFilePicker,
     handleExport,
-  } = useSkillImportExport(loadSkills);
+  } = useSkillImportExport(refreshSkills);
 
   const handleSelectSkill = (skill: SkillViewInfo) => {
     setActiveSkillId(skill.id);
@@ -207,7 +227,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     <SkillsDialogs
       dialogOpen={dialogOpen}
       onDialogClose={handleDialogClose}
-      onCreated={loadSkills}
+      onSaved={handleSkillSaved}
       editingSkill={editingSkill}
       deletingSkill={deletingSkill}
       onDeletingSkillChange={setDeletingSkill}

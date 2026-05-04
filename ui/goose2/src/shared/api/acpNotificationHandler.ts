@@ -9,6 +9,7 @@ import {
   findLatestUnpairedToolRequest,
 } from "@/features/chat/hooks/replayBuffer";
 import type {
+  ToolCallStatus,
   ToolRequestContent,
   ToolResponseContent,
 } from "@/shared/types/messages";
@@ -16,6 +17,7 @@ import type { AcpNotificationHandler } from "./acpConnection";
 import { handleReplayUserMessageChunk } from "./acpSkillReplayChips";
 import {
   attachMcpAppPayload,
+  extractToolStructuredContent,
   extractToolResultText,
   findReplayMessageWithToolCall,
 } from "./acpToolCallContent";
@@ -25,10 +27,12 @@ import {
   ensureReplayAssistantMessage,
   getTrackedReplayAssistantMessageId,
 } from "./acpReplayAssistant";
+import { getReplayCreated, getReplayMessageId } from "./acpReplayMetadata";
 import {
   getLocalSessionId,
   subscribeToSessionRegistration,
 } from "./acpSessionTracker";
+import { getToolCallIdentity } from "./acpToolCallIdentity";
 import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per goose session
@@ -51,6 +55,9 @@ const pendingUsageUpdates = new Map<
   string,
   { accumulatedTotal: number; contextLimit: number }
 >();
+
+const toolCallStatusFromUpdate = (status: string): ToolCallStatus =>
+  status === "failed" ? "error" : "completed";
 
 subscribeToSessionRegistration((localSessionId, gooseSessionId) => {
   const pendingUsage = pendingUsageUpdates.get(gooseSessionId);
@@ -140,6 +147,12 @@ export function clearReplayPerf(sessionId: string): void {
   replayPerf.delete(sessionId);
 }
 
+function getChunkMessageId(update: SessionUpdate): string | null {
+  return "messageId" in update && typeof update.messageId === "string"
+    ? update.messageId
+    : null;
+}
+
 function handleReplay(
   sessionId: string,
   gooseSessionId: string,
@@ -150,7 +163,8 @@ function handleReplay(
     case "agent_message_chunk": {
       const msg = ensureReplayAssistantMessage(
         sessionId,
-        update.messageId ?? null,
+        getReplayMessageId(update),
+        getReplayCreated(update),
       );
       if (msg && update.content.type === "text" && "text" in update.content) {
         const last = msg.content[msg.content.length - 1];
@@ -166,41 +180,70 @@ function handleReplay(
     case "user_message_chunk": {
       clearReplayAssistantMessage(sessionId);
       if (update.content.type !== "text" || !("text" in update.content)) break;
-      const messageId = update.messageId ?? crypto.randomUUID();
-      handleReplayUserMessageChunk(sessionId, messageId, update.content);
+      const messageId = getReplayMessageId(update) ?? crypto.randomUUID();
+      handleReplayUserMessageChunk(
+        sessionId,
+        messageId,
+        update.content,
+        getReplayCreated(update),
+      );
       break;
     }
 
     case "tool_call": {
-      const msg = ensureReplayAssistantMessage(sessionId);
+      const created = getReplayCreated(update);
+      const identity = getToolCallIdentity(update);
+      const msg = ensureReplayAssistantMessage(
+        sessionId,
+        getReplayMessageId(update),
+        created,
+      );
       msg.content.push({
         type: "toolRequest",
         id: update.toolCallId,
         name: update.title,
+        ...identity,
         arguments: {},
         status: "executing",
-        startedAt: Date.now(),
+        startedAt: created ?? Date.now(),
       });
       break;
     }
 
     case "tool_call_update": {
-      const replayMessageId = getTrackedReplayAssistantMessageId(sessionId);
-      const msg =
-        findReplayMessageWithToolCall(sessionId, update.toolCallId) ??
-        (replayMessageId
-          ? getBufferedMessage(sessionId, replayMessageId)
-          : undefined);
+      const created = getReplayCreated(update);
+      const replayMessageId = getReplayMessageId(update);
+      const identity = getToolCallIdentity(update);
+      const trackedMessageId = getTrackedReplayAssistantMessageId(sessionId);
+      const replayMsg = replayMessageId
+        ? getBufferedMessage(sessionId, replayMessageId)
+        : undefined;
+      const trackedMsg =
+        trackedMessageId && trackedMessageId !== replayMessageId
+          ? getBufferedMessage(sessionId, trackedMessageId)
+          : undefined;
+      const existingMsg = findReplayMessageWithToolCall(
+        sessionId,
+        update.toolCallId,
+      );
+      const msg = existingMsg ?? replayMsg ?? trackedMsg;
       if (msg) {
-        if (update.title) {
+        if (created !== undefined && !existingMsg && msg === replayMsg) {
+          msg.created = created;
+        }
+        if (update.title || Object.keys(identity).length > 0) {
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,
           );
           if (tc && tc.type === "toolRequest") {
-            (tc as ToolRequestContent).name = update.title;
+            Object.assign(tc as ToolRequestContent, {
+              ...(update.title ? { name: update.title } : {}),
+              ...identity,
+            });
           }
         }
         if (update.status === "completed" || update.status === "failed") {
+          const toolCallStatus = toolCallStatusFromUpdate(update.status);
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,
           );
@@ -209,7 +252,8 @@ function handleReplay(
             if (idx >= 0) {
               msg.content[idx] = {
                 ...tc,
-                status: "completed",
+                ...identity,
+                status: toolCallStatus,
               } as ToolRequestContent;
             }
           }
@@ -219,6 +263,7 @@ function handleReplay(
             id: update.toolCallId,
             name: (tc as ToolRequestContent)?.name ?? "",
             result: resultText,
+            structuredContent: extractToolStructuredContent(update),
             isError: update.status === "failed",
           });
           if (update.status === "completed") {
@@ -263,7 +308,7 @@ function handleLive(
       const messageId = ensureLiveAssistantMessage(
         sessionId,
         gooseSessionId,
-        update.messageId,
+        getChunkMessageId(update) ?? undefined,
       );
 
       if (update.content.type === "text" && "text" in update.content) {
@@ -275,11 +320,13 @@ function handleLive(
 
     case "tool_call": {
       const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
+      const identity = getToolCallIdentity(update);
 
       const toolRequest: ToolRequestContent = {
         type: "toolRequest",
         id: update.toolCallId,
         name: update.title,
+        ...identity,
         arguments: {},
         status: "executing",
         startedAt: Date.now(),
@@ -291,19 +338,25 @@ function handleLive(
 
     case "tool_call_update": {
       const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
+      const identity = getToolCallIdentity(update);
 
-      if (update.title) {
+      if (update.title || Object.keys(identity).length > 0) {
         store.updateMessage(sessionId, messageId, (msg) => ({
           ...msg,
           content: msg.content.map((c) =>
             c.type === "toolRequest" && c.id === update.toolCallId
-              ? { ...c, name: update.title ?? "" }
+              ? {
+                  ...c,
+                  ...(update.title ? { name: update.title } : {}),
+                  ...identity,
+                }
               : c,
           ),
         }));
       }
 
       if (update.status === "completed" || update.status === "failed") {
+        const toolCallStatus = toolCallStatusFromUpdate(update.status);
         const streamingMessage = store.messagesBySession[sessionId]?.find(
           (m) => m.id === messageId,
         );
@@ -315,7 +368,11 @@ function handleLive(
           ...msg,
           content: msg.content.map((block) =>
             block.type === "toolRequest" && block.id === update.toolCallId
-              ? { ...block, status: "completed" }
+              ? {
+                  ...block,
+                  ...identity,
+                  status: toolCallStatus,
+                }
               : block,
           ),
         }));
@@ -326,6 +383,7 @@ function handleLive(
           id: update.toolCallId,
           name: toolRequest?.name ?? "",
           result: resultText,
+          structuredContent: extractToolStructuredContent(update),
           isError: update.status === "failed",
         };
         store.setStreamingMessageId(sessionId, messageId);
@@ -337,6 +395,9 @@ function handleLive(
             toolRequest?.name ?? update.title ?? "",
             update,
             false,
+            {
+              gooseSessionId,
+            },
           );
         }
       }

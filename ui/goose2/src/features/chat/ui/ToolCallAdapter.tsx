@@ -20,6 +20,7 @@ interface ToolCallAdapterProps {
   arguments: Record<string, unknown>;
   status: ToolCallStatus;
   result?: string;
+  structuredContent?: unknown;
   isError?: boolean;
   /** Epoch ms when the tool call started executing. */
   startedAt?: number;
@@ -208,19 +209,27 @@ export function ToolCallAdapter({
   arguments: args,
   status,
   result,
+  structuredContent,
   isError,
   startedAt,
   open,
   onOpenChange,
 }: ToolCallAdapterProps) {
+  const { t } = useTranslation("chat");
   const elapsed = useElapsedTime(status, startedAt);
   const state = toolStatusMap[status];
 
   const elapsedSeconds =
     status === "executing" && elapsed >= 3 ? elapsed : undefined;
+  const outputViewportClassName = cn(
+    "max-h-[28rem] overflow-auto",
+    "[scrollbar-color:hsl(var(--muted-foreground))_transparent] [scrollbar-width:thin]",
+    "[&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent",
+    "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/50",
+  );
 
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-full">
       <Tool open={open} onOpenChange={onOpenChange}>
         <ToolHeader
           type="dynamic-tool"
@@ -235,7 +244,18 @@ export function ToolCallAdapter({
           <ToolOutput
             output={isError ? undefined : result}
             errorText={isError ? result : undefined}
+            label={isError ? undefined : t("tools.content")}
+            contentClassName={outputViewportClassName}
+            plainText
           />
+          {!isError && structuredContent !== undefined && (
+            <ToolOutput
+              output={structuredContent}
+              errorText={undefined}
+              label={t("tools.structuredContent")}
+              contentClassName={outputViewportClassName}
+            />
+          )}
         </ToolContent>
       </Tool>
       <ArtifactActions args={args} name={name} result={result} />

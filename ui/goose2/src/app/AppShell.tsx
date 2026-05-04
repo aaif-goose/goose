@@ -38,6 +38,7 @@ export type AppView =
   | "home"
   | "chat"
   | "skills"
+  | "extensions"
   | "agents"
   | "projects"
   | "session-history";
@@ -51,7 +52,6 @@ const SETTINGS_SECTIONS = new Set<SectionId>([
   "appearance",
   "providers",
   "compaction",
-  "extensions",
   "voice",
   "general",
   "projects",

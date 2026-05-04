@@ -18,6 +18,7 @@ import type {
   ProviderDetails,
   ExtensionQuery,
   ExtensionConfig,
+  ExtensionEntry,
 } from '../api';
 
 export type { ExtensionConfig } from '../api/types.gen';
@@ -26,6 +27,12 @@ export type { ExtensionConfig } from '../api/types.gen';
 export type FixedExtensionEntry = ExtensionConfig & {
   enabled: boolean;
 };
+
+const normalizeExtensions = (extensions: ExtensionEntry[]): FixedExtensionEntry[] =>
+  extensions.map((extension) => ({
+    ...extension,
+    enabled: extension.enabled ?? true,
+  }));
 
 interface ConfigContextType {
   config: ConfigResponse['config'];
@@ -126,9 +133,10 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     }
 
     const extensionResponse: ExtensionResponse = result.data!;
-    setExtensionsList(extensionResponse.extensions);
+    const extensions = normalizeExtensions(extensionResponse.extensions);
+    setExtensionsList(extensions);
     setExtensionWarnings(extensionResponse.warnings || []);
-    return extensionResponse.extensions;
+    return extensions;
   }, [extensionsList]);
 
   const addExtension = useCallback(
@@ -213,7 +221,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       // Load extensions
       try {
         const extensionsResponse = await apiGetExtensions();
-        let extensions = extensionsResponse.data?.extensions || [];
+        let extensions = normalizeExtensions(extensionsResponse.data?.extensions || []);
 
         // Always sync bundled extensions from bundled-extensions.json
         // This ensures:
@@ -236,7 +244,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
         await syncBundledExtensions(extensions, addExtensionForSync);
         // Reload extensions after sync
         const refreshedResponse = await apiGetExtensions();
-        extensions = refreshedResponse.data?.extensions || [];
+        extensions = normalizeExtensions(refreshedResponse.data?.extensions || []);
 
         setExtensionsList(extensions);
         setExtensionWarnings(extensionsResponse.data?.warnings || []);

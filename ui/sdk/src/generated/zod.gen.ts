@@ -38,6 +38,25 @@ export const zGetToolsResponse = z.object({
 });
 
 /**
+ * Call a tool from an extension.
+ */
+export const zGooseToolCallRequest = z.object({
+    sessionId: z.string(),
+    name: z.string(),
+    arguments: z.unknown().optional().default(null)
+});
+
+/**
+ * Tool call response.
+ */
+export const zGooseToolCallResponse = z.object({
+    content: z.array(z.unknown()).optional().default([]),
+    structuredContent: z.unknown().optional(),
+    isError: z.boolean(),
+    _meta: z.unknown().optional()
+});
+
+/**
  * Read a resource from an extension.
  */
 export const zReadResourceRequest = z.object({
@@ -196,10 +215,97 @@ export const zListProvidersResponse = z.object({
 });
 
 /**
- * Trigger a background refresh of provider inventories.
+ * List custom-provider catalog entries. Omit `format` to list all formats.
  */
-export const zRefreshProviderInventoryRequest = z.object({
-    providerIds: z.array(z.string()).optional().default([])
+export const zProviderCatalogListRequest = z.object({
+    format: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zProviderCatalogEntryDto = z.object({
+    providerId: z.string(),
+    name: z.string(),
+    format: z.string(),
+    apiUrl: z.string(),
+    modelCount: z.number().int().gte(0),
+    docUrl: z.string(),
+    envVar: z.string()
+});
+
+export const zProviderCatalogListResponse = z.object({
+    providers: z.array(zProviderCatalogEntryDto)
+});
+
+/**
+ * Return the editable template for one catalog provider.
+ */
+export const zProviderCatalogTemplateRequest = z.object({
+    providerId: z.string()
+});
+
+export const zProviderTemplateCapabilitiesDto = z.object({
+    toolCall: z.boolean(),
+    reasoning: z.boolean(),
+    attachment: z.boolean(),
+    temperature: z.boolean()
+});
+
+export const zProviderTemplateModelDto = z.object({
+    id: z.string(),
+    name: z.string(),
+    contextLimit: z.number().int().gte(0),
+    capabilities: zProviderTemplateCapabilitiesDto,
+    deprecated: z.boolean()
+});
+
+export const zProviderTemplateDto = z.object({
+    providerId: z.string(),
+    name: z.string(),
+    format: z.string(),
+    apiUrl: z.string(),
+    models: z.array(zProviderTemplateModelDto),
+    supportsStreaming: z.boolean(),
+    envVar: z.string(),
+    docUrl: z.string()
+});
+
+export const zProviderCatalogTemplateResponse = z.object({
+    template: zProviderTemplateDto
+});
+
+/**
+ * Create a custom provider backed by Goose's declarative provider store.
+ */
+export const zCustomProviderCreateRequest = z.object({
+    engine: z.string(),
+    displayName: z.string(),
+    apiUrl: z.string(),
+    apiKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    models: z.array(z.string()).optional().default([]),
+    supportsStreaming: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    headers: z.record(z.string()).optional().default({}),
+    requiresAuth: z.boolean(),
+    catalogProviderId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    basePath: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zProviderConfigStatusDto = z.object({
+    providerId: z.string(),
+    isConfigured: z.boolean()
 });
 
 export const zRefreshProviderInventorySkipReasonDto = z.enum([
@@ -220,6 +326,106 @@ export const zRefreshProviderInventorySkipDto = z.object({
 export const zRefreshProviderInventoryResponse = z.object({
     started: z.array(z.string()),
     skipped: z.array(zRefreshProviderInventorySkipDto).optional().default([])
+});
+
+export const zCustomProviderCreateResponse = z.object({
+    providerId: z.string(),
+    status: zProviderConfigStatusDto,
+    refresh: zRefreshProviderInventoryResponse
+});
+
+/**
+ * Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
+ */
+export const zCustomProviderReadRequest = z.object({
+    providerId: z.string()
+});
+
+export const zCustomProviderConfigDto = z.object({
+    providerId: z.string(),
+    engine: z.string(),
+    displayName: z.string(),
+    apiUrl: z.string(),
+    models: z.array(z.string()).optional().default([]),
+    supportsStreaming: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    headers: z.record(z.string()).optional().default({}),
+    requiresAuth: z.boolean(),
+    catalogProviderId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    basePath: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    apiKeyEnv: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    apiKeySet: z.boolean()
+});
+
+export const zCustomProviderReadResponse = z.object({
+    provider: zCustomProviderConfigDto,
+    editable: z.boolean(),
+    status: zProviderConfigStatusDto
+});
+
+/**
+ * Update a custom provider backed by Goose's declarative provider store.
+ */
+export const zCustomProviderUpdateRequest = z.object({
+    providerId: z.string(),
+    engine: z.string(),
+    displayName: z.string(),
+    apiUrl: z.string(),
+    apiKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    models: z.array(z.string()).optional().default([]),
+    supportsStreaming: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    headers: z.record(z.string()).optional().default({}),
+    requiresAuth: z.boolean(),
+    catalogProviderId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    basePath: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zCustomProviderUpdateResponse = z.object({
+    providerId: z.string(),
+    status: zProviderConfigStatusDto,
+    refresh: zRefreshProviderInventoryResponse
+});
+
+/**
+ * Delete a custom provider from Goose's declarative provider store.
+ */
+export const zCustomProviderDeleteRequest = z.object({
+    providerId: z.string()
+});
+
+export const zCustomProviderDeleteResponse = z.object({
+    providerId: z.string(),
+    refresh: zRefreshProviderInventoryResponse
+});
+
+/**
+ * Trigger a background refresh of provider inventories.
+ */
+export const zRefreshProviderInventoryRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
 });
 
 /**
@@ -249,11 +455,6 @@ export const zProviderConfigReadResponse = z.object({
  */
 export const zProviderConfigStatusRequest = z.object({
     providerIds: z.array(z.string()).optional().default([])
-});
-
-export const zProviderConfigStatusDto = z.object({
-    providerId: z.string(),
-    isConfigured: z.boolean()
 });
 
 export const zProviderConfigStatusResponse = z.object({
@@ -681,6 +882,7 @@ export const zExtRequest = z.object({
             zAddExtensionRequest,
             zRemoveExtensionRequest,
             zGetToolsRequest,
+            zGooseToolCallRequest,
             zReadResourceRequest,
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
@@ -690,6 +892,12 @@ export const zExtRequest = z.object({
             zToggleConfigExtensionRequest,
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
+            zProviderCatalogListRequest,
+            zProviderCatalogTemplateRequest,
+            zCustomProviderCreateRequest,
+            zCustomProviderReadRequest,
+            zCustomProviderUpdateRequest,
+            zCustomProviderDeleteRequest,
             zRefreshProviderInventoryRequest,
             zProviderConfigReadRequest,
             zProviderConfigStatusRequest,
@@ -736,10 +944,17 @@ export const zExtResponse = z.union([
             z.union([
                 zEmptyResponse,
                 zGetToolsResponse,
+                zGooseToolCallResponse,
                 zReadResourceResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
+                zProviderCatalogListResponse,
+                zProviderCatalogTemplateResponse,
+                zCustomProviderCreateResponse,
+                zCustomProviderReadResponse,
+                zCustomProviderUpdateResponse,
+                zCustomProviderDeleteResponse,
                 zRefreshProviderInventoryResponse,
                 zProviderConfigReadResponse,
                 zProviderConfigStatusResponse,

@@ -13,7 +13,7 @@ import {
   getDefaultFormData,
 } from './utils';
 
-import { activateExtensionDefault, deleteExtension, toggleExtensionDefault } from './index';
+import { activateExtensionDefault, deleteExtension } from './index';
 import { ExtensionConfig } from '../../../api/types.gen';
 
 const i18n = defineMessages({
@@ -44,8 +44,6 @@ interface ExtensionSectionProps {
   showEnvVars?: boolean;
   hideButtons?: boolean;
   disableConfiguration?: boolean;
-  customToggle?: (extension: FixedExtensionEntry) => Promise<boolean | void>;
-  selectedExtensions?: string[]; // Add controlled state
   onModalClose?: (extensionName: string) => void;
   searchTerm?: string;
 }
@@ -55,8 +53,6 @@ export default function ExtensionsSection({
   showEnvVars,
   hideButtons,
   disableConfiguration,
-  customToggle,
-  selectedExtensions = [],
   onModalClose,
   searchTerm = '',
 }: ExtensionSectionProps) {
@@ -80,49 +76,25 @@ export default function ExtensionsSection({
   const extensions = useMemo(() => {
     if (extensionsList.length === 0) return [];
 
-    return [...extensionsList]
-      .sort((a, b) => {
-        // First sort by builtin
-        if (a.type === 'builtin' && b.type !== 'builtin') return -1;
-        if (a.type !== 'builtin' && b.type === 'builtin') return 1;
+    return [...extensionsList].sort((a, b) => {
+      // First sort by builtin
+      if (a.type === 'builtin' && b.type !== 'builtin') return -1;
+      if (a.type !== 'builtin' && b.type === 'builtin') return 1;
 
-        // Then sort by bundled (handle null/undefined cases)
-        const aBundled = 'bundled' in a && a.bundled === true;
-        const bBundled = 'bundled' in b && b.bundled === true;
-        if (aBundled && !bBundled) return -1;
-        if (!aBundled && bBundled) return 1;
+      // Then sort by bundled (handle null/undefined cases)
+      const aBundled = 'bundled' in a && a.bundled === true;
+      const bBundled = 'bundled' in b && b.bundled === true;
+      if (aBundled && !bBundled) return -1;
+      if (!aBundled && bBundled) return 1;
 
-        // Finally sort alphabetically within each group
-        return a.name.localeCompare(b.name);
-      })
-      .map((ext) => ({
-        ...ext,
-        // Use selectedExtensions to determine enabled state in recipe editor
-        enabled: disableConfiguration ? selectedExtensions.includes(ext.name) : ext.enabled,
-      }));
-  }, [extensionsList, disableConfiguration, selectedExtensions]);
+      // Finally sort alphabetically within each group
+      return a.name.localeCompare(b.name);
+    });
+  }, [extensionsList]);
 
   const fetchExtensions = useCallback(async () => {
     await getExtensions(true); // Force refresh - this will update the context
   }, [getExtensions]);
-
-  const handleExtensionToggle = async (extensionConfig: FixedExtensionEntry) => {
-    if (customToggle) {
-      await customToggle(extensionConfig);
-      return true;
-    }
-
-    const toggleDirection = extensionConfig.enabled ? 'toggleOff' : 'toggleOn';
-
-    await toggleExtensionDefault({
-      toggle: toggleDirection,
-      extensionConfig: extensionConfig,
-      addToConfig: addExtension,
-    });
-
-    await fetchExtensions();
-    return true;
-  };
 
   const handleConfigureClick = (extension: FixedExtensionEntry) => {
     setSelectedExtension(extension);
@@ -209,7 +181,6 @@ export default function ExtensionsSection({
       <div className="">
         <ExtensionList
           extensions={extensions}
-          onToggle={handleExtensionToggle}
           onConfigure={handleConfigureClick}
           disableConfiguration={disableConfiguration}
           searchTerm={searchTerm}
@@ -228,9 +199,7 @@ export default function ExtensionsSection({
             <Button
               className="flex items-center gap-2 justify-center"
               variant="secondary"
-              onClick={() =>
-                window.open('https://goose-docs.ai/v1/extensions/', '_blank')
-              }
+              onClick={() => window.open('https://goose-docs.ai/v1/extensions/', '_blank')}
             >
               <GPSIcon size={12} />
               {intl.formatMessage(i18n.browseExtensions)}
@@ -269,7 +238,7 @@ export default function ExtensionsSection({
             title={intl.formatMessage(i18n.addCustomExtension)}
             initialData={extensionToFormData({
               ...deepLinkConfig,
-              enabled: true,
+              enabled: false,
             } as FixedExtensionEntry)}
             onClose={handleModalClose}
             onSubmit={handleAddExtension}

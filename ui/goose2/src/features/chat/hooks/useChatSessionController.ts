@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatSkillDraft } from "../types";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
-import type { ChatSendOptions } from "../types";
+import type { ChatSendOptions, ChatSkillDraft, ModelOption } from "../types";
 import { INITIAL_TOKEN_STATE } from "@/shared/types/chat";
 import { useChat } from "./useChat";
 import { useAutoCompactPreferences } from "./useAutoCompactPreferences";
@@ -287,14 +286,24 @@ export function useChatSessionController({
   );
 
   const handleModelChangeWithContextReset = useCallback(
-    (modelId: string) => {
-      if (modelId === effectiveModelSelection?.id) {
+    (modelId: string, model?: ModelOption) => {
+      const nextProviderId = model?.providerId;
+      if (
+        modelId === effectiveModelSelection?.id &&
+        (!nextProviderId ||
+          nextProviderId === effectiveModelSelection?.providerId)
+      ) {
         return;
       }
       useChatStore.getState().resetTokenState(stateSessionId);
-      handleModelChange(modelId);
+      handleModelChange(modelId, model);
     },
-    [effectiveModelSelection?.id, handleModelChange, stateSessionId],
+    [
+      effectiveModelSelection?.id,
+      effectiveModelSelection?.providerId,
+      handleModelChange,
+      stateSessionId,
+    ],
   );
 
   const handleProjectChange = useCallback(
@@ -816,6 +825,7 @@ export function useChatSessionController({
     selectedProvider: selectedAgentId,
     handleProviderChange: handleProviderChangeWithContextReset,
     currentModelId: effectiveModelSelection?.id ?? null,
+    currentModelProviderId: effectiveModelSelection?.providerId ?? null,
     currentModelName: effectiveModelSelection?.name ?? null,
     availableModels,
     modelsLoading,

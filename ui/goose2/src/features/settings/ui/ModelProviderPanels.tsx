@@ -33,7 +33,7 @@ export function InventorySyncMessage({
         role="status"
         className="flex items-center gap-2 text-xs text-muted-foreground"
       >
-        <IconLoader2 className="size-3 animate-spin text-accent" />
+        <IconLoader2 className="size-3 animate-spin text-brand" />
         <span>{t("providers.loadingModels")}</span>
       </p>
     );

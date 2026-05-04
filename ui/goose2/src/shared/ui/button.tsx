@@ -33,6 +33,7 @@ const buttonVariants = cva(
         link: "text-brand underline-offset-4 hover:underline",
       },
       size: {
+        xxs: "h-6 gap-1.5 px-2 text-[11px]",
         xs: "h-7 px-2.5 text-xs",
         default: "h-9 px-4 py-2",
         sm: "h-8 px-3 text-xs",
@@ -97,6 +98,7 @@ const buttonVariants = cva(
 );
 
 const buttonIconSizeClasses = {
+  xxs: "size-3",
   xs: "size-3",
   default: "size-3.5",
   sm: "size-3",

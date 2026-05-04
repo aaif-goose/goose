@@ -190,11 +190,12 @@ function extractToolCallsFromMessage(
 
   for (const block of message.content) {
     if (block.type === "toolRequest") {
+      const toolName = block.toolName ?? block.name;
       if (!byId.has(block.id)) {
         orderedIds.push(block.id);
         byId.set(block.id, {
           toolCallId: block.id,
-          toolName: block.name,
+          toolName,
           args: toSafeRecord(block.arguments),
           toolCallIndex,
         });
@@ -202,7 +203,7 @@ function extractToolCallsFromMessage(
       } else {
         const existing = byId.get(block.id);
         if (existing) {
-          existing.toolName = block.name || existing.toolName;
+          existing.toolName = toolName || existing.toolName;
           existing.args = toSafeRecord(block.arguments);
         }
       }

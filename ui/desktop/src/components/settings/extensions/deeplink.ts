@@ -178,15 +178,14 @@ export async function addExtensionFromDeepLink(
     return;
   }
 
-  // Note: deeplink activation doesn't have access to sessionId
-  // The extension will be added to config but not activated in the current session
-  // It will be activated when the next session starts
-  await addExtensionFn(config.name, config, true);
+  // Note: deeplink activation doesn't have access to sessionId, so the extension
+  // is saved for on-demand use instead of being globally enabled.
+  await addExtensionFn(config.name, config, false);
 
   // Show success toast and navigate to extensions page
   toastService.success({
     title: 'Extension Installed',
-    msg: `${config.name} extension has been installed successfully. Start a new chat session to use it.`,
+    msg: `${config.name} extension has been installed successfully and is available on demand.`,
   });
 
   // Navigate to extensions page to show the newly installed extension

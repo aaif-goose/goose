@@ -1,6 +1,18 @@
 {
   "about": {
-    "description": "La información de Goose aparecerá aquí.",
+    "buildModes": {
+      "development": "Desarrollo",
+      "production": "Producción"
+    },
+    "fields": {
+      "buildMode": "Modo de compilación",
+      "identifier": "Identificador de la app",
+      "license": "Licencia",
+      "name": "Nombre de la app",
+      "tauriVersion": "Versión de Tauri",
+      "version": "Versión de la app"
+    },
+    "unavailable": "No disponible",
     "title": "Acerca de"
   },
   "appearance": {
@@ -8,8 +20,8 @@
       "colors": {
         "blue": "Azul",
         "cyan": "Cian",
+        "default": "Predeterminado",
         "green": "Verde",
-        "indigo": "Índigo",
         "orange": "Naranja",
         "pink": "Rosa",
         "purple": "Morado",
@@ -39,7 +51,6 @@
     "title": "Apariencia"
   },
   "chats": {
-    "description": "Restaura chats archivados.",
     "empty": "No hay chats archivados.",
     "messageCount_one": "{{displayCount}} mensaje",
     "messageCount_other": "{{displayCount}} mensajes",
@@ -51,19 +62,16 @@
     }
   },
   "compaction": {
-    "description": "Administra cómo Goose compacta el contexto anterior en chats largos.",
     "goose": {
       "autoCompact": {
-        "current": "Umbral",
-        "description": "Elige cuándo Goose debe compactar el contexto anterior antes de responder. Esto se aplica a todos los chats de Goose.",
         "helper": "Ajústalo al 100% para desactivar la compactación automática.",
-        "label": "Compactación automática del contexto",
+        "label": "Umbral de compactación automática",
         "loading": "Cargando...",
         "off": "Desactivado",
         "saveError": "No se pudo guardar la configuración de compactación automática."
       },
       "builtIn": "Integrado",
-      "description": "Controles de contexto específicos de Goose para chats largos.",
+      "description": "Elige cuándo el agente Goose compacta el contexto anterior durante las sesiones. Esto se aplica a todos los chats de Goose.",
       "label": "Goose (Agente)"
     },
     "title": "Compactación"
@@ -74,18 +82,18 @@
   },
   "extensions": {
     "title": "Extensiones",
-    "description": "Administra las extensiones MCP que agregan herramientas y capacidades a Goose.",
     "search": "Buscar extensiones...",
-    "enabled": "Habilitadas",
-    "enabledCount": "Habilitadas ({{count}})",
-    "available": "Disponibles",
-    "availableCount": "Disponibles ({{count}})",
     "empty": "No hay extensiones configuradas.",
     "noResults": "Ninguna extensión coincide con tu búsqueda.",
     "addExtension": "Agregar extensión",
     "editExtension": "Editar extensión",
     "deleteExtension": "Eliminar extensión",
-    "toggle": "Activar/desactivar {{name}}",
+    "deleteConfirmation": {
+      "title": "¿Eliminar \"{{name}}\" de forma permanente?",
+      "description": "Esto eliminará de forma permanente esta extensión y toda su configuración.",
+      "confirm": "Eliminar extensión",
+      "deleting": "Eliminando..."
+    },
     "configure": "Configurar {{name}}",
     "save": "Guardar",
     "cancel": "Cancelar",
@@ -113,8 +121,20 @@
       "streamable_http": "HTTP",
       "builtin": "Integrada"
     },
+    "filters": {
+      "all": "Todas"
+    },
+    "categories": {
+      "appsServices": "Apps y servicios",
+      "gooseCapabilities": "Capacidades de Goose"
+    },
+    "sections": {
+      "extensions": "Extensiones",
+      "gooseCapabilities": "Capacidades integradas de Goose"
+    },
+    "showGooseCapabilities": "Mostrar {{count}} capacidades integradas de Goose",
+    "hideGooseCapabilities": "Ocultar capacidades integradas de Goose",
     "errors": {
-      "toggleFailed": "Error al cambiar la extensión. Inténtalo de nuevo.",
       "saveFailed": "Error al guardar la extensión. Inténtalo de nuevo.",
       "deleteFailed": "Error al eliminar la extensión. Inténtalo de nuevo.",
       "nameConflict": "Ya existe una extensión llamada \"{{name}}\"."
@@ -133,7 +153,6 @@
     "tools": "Herramientas"
   },
   "general": {
-    "description": "Administra el idioma y otras preferencias de la app.",
     "language": {
       "description": "Elige cómo Goose formatea y muestra la interfaz.",
       "english": "Inglés",
@@ -144,7 +163,6 @@
     "title": "General",
     "voiceInput": {
       "label": "Entrada de voz",
-      "description": "Configura el dictado por voz para entrada manos libres.",
       "providerLabel": "Proveedor de transcripción",
       "disabled": "Desactivado",
       "notConfiguredSuffix": "(no configurado)",
@@ -193,12 +211,10 @@
     "doctor": "Diagnóstico",
     "general": "General",
     "projects": "Proyectos",
-    "extensions": "Extensiones",
     "providers": "Proveedores",
     "voice": "Voz"
   },
   "projects": {
-    "description": "Administra tus proyectos.",
     "empty": "No hay proyectos archivados.",
     "sectionTitle": "Proyectos archivados",
     "title": "Proyectos"
@@ -223,6 +239,94 @@
         "setupFailed": "La configuración falló"
       },
       "title": "Arneses de agentes"
+    },
+    "custom": {
+      "actions": {
+        "addHeader": "Agregar encabezado",
+        "addModel": "Agregar modelo",
+        "back": "Atrás",
+        "create": "Crear proveedor",
+        "delete": "Eliminar",
+        "deleteProvider": "Eliminar {{name}}",
+        "deleting": "Eliminando...",
+        "editProvider": "Editar {{name}}",
+        "hideApiKey": "Ocultar clave API",
+        "removeHeader": "Eliminar encabezado",
+        "removeModel": "Eliminar {{model}}",
+        "save": "Guardar cambios",
+        "saving": "Guardando...",
+        "showApiKey": "Mostrar clave API"
+      },
+      "addButton": "Agregar proveedor personalizado",
+      "addTitle": "Agregar proveedor personalizado",
+      "confirmDelete": "Esto elimina {{name}} y cualquier clave API que le pertenezca.",
+      "confirmDeleteTitle": "¿Eliminar {{name}}?",
+      "description": "Conecta un endpoint de modelo compatible con OpenAI, Anthropic o local.",
+      "editTitle": "Editar proveedor personalizado",
+      "emptyHeaders": "No hay encabezados personalizados.",
+      "emptyModels": "Agrega al menos un modelo.",
+      "engines": {
+        "anthropic_compatible": "Compatible con Anthropic",
+        "ollama_compatible": "Compatible con Ollama",
+        "openai_compatible": "Compatible con OpenAI"
+      },
+      "errors": {
+        "deleteFailed": "No se pudo eliminar el proveedor personalizado.",
+        "loadFailed": "No se pudo cargar el proveedor personalizado.",
+        "saveFailed": "No se pudo guardar el proveedor personalizado.",
+        "templatesFailed": "No se pudieron cargar las plantillas de proveedores."
+      },
+      "fields": {
+        "apiKey": "Clave API",
+        "apiKeyEditPlaceholder": "Déjalo en blanco para conservar la clave guardada",
+        "apiKeyPlaceholder": "Pega tu clave API",
+        "apiUrl": "URL de API",
+        "apiUrlPlaceholder": "https://api.example.com/v1",
+        "basePath": "Ruta base",
+        "basePathPlaceholder": "/v1/chat/completions",
+        "displayName": "Nombre visible",
+        "displayNamePlaceholder": "Mi proveedor",
+        "engine": "Motor",
+        "headerKey": "Encabezado",
+        "headerValue": "Valor",
+        "headers": "Encabezados personalizados",
+        "models": "Modelos",
+        "modelsPlaceholder": "gpt-4.1, claude-3-5-sonnet",
+        "requiresAuth": "Requiere autenticación",
+        "requiresAuthDescription": "Guarda una clave API para las solicitudes a este proveedor.",
+        "supportsStreaming": "Admite streaming",
+        "supportsStreamingDescription": "Transmite respuestas mientras el modelo genera tokens."
+      },
+      "modelCount_one": "{{count}} modelo",
+      "modelCount_other": "{{count}} modelos",
+      "notConfigured": "No configurado",
+      "validation": {
+        "apiKeyRequired": "La clave API es obligatoria.",
+        "apiUrlInvalid": "Introduce una URL HTTP o HTTPS válida.",
+        "apiUrlRequired": "La URL de API es obligatoria.",
+        "displayNameRequired": "El nombre visible es obligatorio.",
+        "engineRequired": "Elige un motor de proveedor.",
+        "headerDuplicate": "Los nombres de encabezado deben ser únicos.",
+        "headerNameInvalid": "Los nombres de encabezado solo pueden contener caracteres HTTP token válidos.",
+        "headerNameRequired": "El nombre del encabezado es obligatorio.",
+        "headerValueRequired": "El valor del encabezado es obligatorio.",
+        "modelsRequired": "Agrega al menos un modelo."
+      },
+      "sections": {
+        "template": "Comenzar con plantilla"
+      },
+      "templates": {
+        "compatibility": {
+          "all": "Todos los tipos de compatibilidad"
+        },
+        "clear": "Borrar plantilla",
+        "empty": "Todavía no hay plantillas disponibles.",
+        "manual": "Totalmente personalizado",
+        "manualDescription": "Comienza con una configuración de proveedor en blanco.",
+        "searchPlaceholder": "Buscar plantillas",
+        "useTemplate": "Usar una plantilla",
+        "useTemplateDescription": "Comienza con valores predeterminados de endpoint y modelos para un proveedor conocido."
+      }
     },
     "disconnect": "Desconectar",
     "models": {

@@ -20,7 +20,7 @@ const { createSkill, updateSkill } = await import("../../api/skills");
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
-  onCreated: vi.fn(),
+  onSaved: vi.fn(),
 };
 
 describe("SkillEditor", () => {
@@ -308,10 +308,10 @@ describe("SkillEditor", () => {
       );
     });
 
-    it("calls onCreated callback after successful save", async () => {
+    it("calls onSaved callback after successful save", async () => {
       const user = userEvent.setup();
-      const onCreated = vi.fn();
-      render(<SkillEditor {...defaultProps} onCreated={onCreated} />);
+      const onSaved = vi.fn();
+      render(<SkillEditor {...defaultProps} onSaved={onSaved} />);
 
       await user.type(screen.getByPlaceholderText("my-skill-name"), "my-skill");
       await user.type(
@@ -320,7 +320,7 @@ describe("SkillEditor", () => {
       );
       await user.click(screen.getByRole("button", { name: /create skill/i }));
 
-      expect(onCreated).toHaveBeenCalled();
+      expect(onSaved).toHaveBeenCalled();
     });
 
     it("clears fields after save", async () => {

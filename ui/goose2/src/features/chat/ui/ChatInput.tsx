@@ -46,6 +46,7 @@ export function ChatInput({
   selectedProvider = "goose",
   onProviderChange,
   currentModelId = null,
+  currentModelProviderId = null,
   currentModel,
   availableModels = [],
   modelsLoading = false,
@@ -369,7 +370,7 @@ export function ChatInput({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className={cn("px-4 pb-6 pt-2", className)}>
+      <div className={cn("relative z-10 px-4 pb-6 pt-0", className)}>
         <div className="mx-auto max-w-3xl">
           <Popover open={mentionOpen}>
             {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for file attachments */}
@@ -457,6 +458,7 @@ export function ChatInput({
                 selectedProvider={selectedProvider}
                 onProviderChange={(id) => onProviderChange?.(id)}
                 currentModelId={currentModelId}
+                currentModelProviderId={currentModelProviderId}
                 currentModel={resolvedCurrentModel}
                 availableModels={availableModels}
                 modelsLoading={modelsLoading}
