@@ -67,7 +67,10 @@ impl RepetitionInspector {
     }
 
     pub fn record_error(&self, tool_name: &str, error_text: &str) {
-        let truncated = &error_text[..error_text.len().min(100)];
+        let truncated = error_text
+            .char_indices()
+            .nth(100)
+            .map_or(error_text, |(i, _)| &error_text[..i]);
         let mut state = self.error_state.lock().unwrap();
         if state.last_tool_name.as_deref() == Some(tool_name)
             && state.last_error_text.as_deref() == Some(truncated)

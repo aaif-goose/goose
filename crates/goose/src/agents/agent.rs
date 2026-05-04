@@ -1540,10 +1540,16 @@ impl Agent {
                                                                         self.tool_inspection_manager.record_tool_error(tool_name, &e.to_string());
                                                                     }
                                                                     Ok(r) if r.is_error == Some(true) => {
-                                                                        let error_text = r.content.iter()
+                                                                        let text = r.content.iter()
                                                                             .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
                                                                             .collect::<Vec<_>>()
                                                                             .join(" ");
+                                                                        let error_text = if text.is_empty() {
+                                                                            serde_json::to_string(&r.content)
+                                                                                .unwrap_or_else(|_| "error".to_string())
+                                                                        } else {
+                                                                            text
+                                                                        };
                                                                         self.tool_inspection_manager.record_tool_error(tool_name, &error_text);
                                                                     }
                                                                     Ok(_) => {
