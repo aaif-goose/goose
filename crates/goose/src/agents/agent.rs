@@ -1281,6 +1281,7 @@ impl Agent {
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
             let mut consecutive_text_only_turns: u32 = 0;
+            let mut any_tools_ever_called = false;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1754,6 +1755,7 @@ impl Agent {
 
                 if !no_tools_called {
                     consecutive_text_only_turns = 0;
+                    any_tools_ever_called = true;
                 }
 
                 if no_tools_called {
@@ -1781,7 +1783,7 @@ impl Agent {
                             // continue from last user message after recovery compact
                         }
                         None => {
-                            if !messages_to_add.is_empty() && consecutive_text_only_turns < MAX_TEXT_ONLY_NUDGES {
+                            if !any_tools_ever_called && !messages_to_add.is_empty() && consecutive_text_only_turns < MAX_TEXT_ONLY_NUDGES {
                                 consecutive_text_only_turns += 1;
                                 info!(
                                     "Model produced text without tool calls ({}/{}), nudging to continue",
@@ -1797,6 +1799,7 @@ impl Agent {
                                         if should_retry {
                                             info!("Retry logic triggered, restarting agent loop");
                                             messages_to_add = Conversation::default();
+                                            any_tools_ever_called = false;
                                             session_manager.replace_conversation(&session_config.id, &conversation).await?;
                                             yield AgentEvent::HistoryReplaced(conversation.clone());
                                         } else {
