@@ -106,23 +106,11 @@ export function useChat(
 ) {
   const store = useChatStore();
   const abortRef = useRef<AbortController | null>(null);
-  const streamingPersonaIdRef = useRef<string | null>(null);
 
   const messages = store.messagesBySession[sessionId] ?? [];
   const { chatState, tokenState, error, streamingMessageId } =
     store.getSessionRuntime(sessionId);
   const isStreaming = chatState === "streaming" || streamingMessageId !== null;
-
-  const getStreamingPersonaId = useCallback(() => {
-    if (!streamingMessageId) {
-      return null;
-    }
-
-    return (
-      messages.find((message) => message.id === streamingMessageId)?.metadata
-        ?.personaId ?? null
-    );
-  }, [messages, streamingMessageId]);
 
   const resolvePersonaInfo = useCallback(
     (overridePersonaId?: string, overridePersonaName?: string) => {
@@ -236,7 +224,6 @@ export function useChat(
 
       const abort = new AbortController();
       abortRef.current = abort;
-      streamingPersonaIdRef.current = effectivePersonaInfo?.id ?? null;
 
       try {
         await options?.ensurePrepared?.(effectivePersonaInfo?.id);
@@ -301,7 +288,6 @@ export function useChat(
         store.setPendingAssistantProvider(sessionId, null);
       } finally {
         abortRef.current = null;
-        streamingPersonaIdRef.current = null;
       }
     },
     [
@@ -316,8 +302,6 @@ export function useChat(
 
   const stopGeneration = useCallback(() => {
     abortRef.current?.abort();
-    const activePersonaId =
-      streamingPersonaIdRef.current ?? getStreamingPersonaId();
     const activeStreamingMessageId = useChatStore
       .getState()
       .getSessionRuntime(sessionId).streamingMessageId;
@@ -326,7 +310,7 @@ export function useChat(
     store.setStreamingMessageId(sessionId, null);
     store.setPendingAssistantProvider(sessionId, null);
     // Cancel the backend ACP session to stop orphaned streaming events
-    acpCancelSession(sessionId, activePersonaId ?? undefined)
+    acpCancelSession(sessionId)
       .then((wasCancelled) => {
         if (wasCancelled && activeStreamingMessageId) {
           markMessageStopped(sessionId, activeStreamingMessageId);
@@ -335,7 +319,7 @@ export function useChat(
       .catch(() => {
         // Best-effort cancellation — ignore errors
       });
-  }, [getStreamingPersonaId, store, sessionId]);
+  }, [store, sessionId]);
 
   const retryLastMessage = useCallback(async () => {
     const sessionMessages = store.messagesBySession[sessionId] ?? [];

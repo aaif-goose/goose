@@ -27,12 +27,9 @@ export interface AcpSendMessageOptions {
   images?: [string, string][];
 }
 
-export interface AcpPrepareSessionOptions {
+export interface AcpCreateSessionOptions {
   personaId?: string;
   projectId?: string;
-}
-
-export interface AcpCreateSessionOptions extends AcpPrepareSessionOptions {
   modelId?: string | null;
 }
 
@@ -140,7 +137,6 @@ export async function acpPrepareSession(
   sessionId: string,
   providerId: string,
   workingDir: string,
-  options: AcpPrepareSessionOptions = {},
 ): Promise<string> {
   const sid = sessionId.slice(0, 8);
   const t0 = performance.now();
@@ -151,8 +147,6 @@ export async function acpPrepareSession(
     sessionId,
     providerId,
     workingDir,
-    options.personaId,
-    options.projectId,
   );
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession done in ${(performance.now() - t0).toFixed(1)}ms`,
@@ -257,10 +251,7 @@ export async function acpDuplicateSession(
 }
 
 /** Cancel an in-progress ACP session so the backend stops streaming. */
-export async function acpCancelSession(
-  sessionId: string,
-  _personaId?: string,
-): Promise<boolean> {
+export async function acpCancelSession(sessionId: string): Promise<boolean> {
   await directAcp.cancelSession(sessionId);
   return true;
 }

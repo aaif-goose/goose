@@ -96,10 +96,7 @@ describe("acpPrepareSession", () => {
     const { acpPrepareSession } = await import("../acp");
 
     await expect(
-      acpPrepareSession("acp-session-1", "openai", "/tmp/project", {
-        projectId: "project-1",
-        personaId: "persona-1",
-      }),
+      acpPrepareSession("acp-session-1", "openai", "/tmp/project"),
     ).resolves.toBe("acp-session-1");
 
     expect(mockLoadSession).toHaveBeenCalledWith(

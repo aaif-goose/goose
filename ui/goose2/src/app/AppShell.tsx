@@ -196,9 +196,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           homeSession.id,
           sessionModelPreference.providerId,
           workingDir,
-          {
-            personaId: homeSession.personaId,
-          },
         );
         const shouldClearHomeModel =
           sessionModelPreference.providerId !== homeSession.providerId ||
@@ -467,9 +464,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           sessionId,
           session.providerId ?? agentStore.selectedProvider ?? "goose",
           workingDir,
-          {
-            personaId: session.personaId,
-          },
         );
       })().catch((error) => {
         console.error(

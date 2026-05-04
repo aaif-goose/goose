@@ -12,8 +12,6 @@ export async function prepareSession(
   sessionId: string,
   providerId: string,
   workingDir: string,
-  _personaId?: string,
-  _projectId?: string,
 ): Promise<string> {
   const sid = sessionId.slice(0, 8);
 

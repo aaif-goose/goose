@@ -172,7 +172,7 @@ export function useChatSessionController({
         nextProject,
         nextWorkspacePath,
       );
-      await acpPrepareSession(sessionId, providerId, workingDir, { personaId });
+      await acpPrepareSession(sessionId, providerId, workingDir);
       if (!modelSelection?.id) {
         return;
       }
