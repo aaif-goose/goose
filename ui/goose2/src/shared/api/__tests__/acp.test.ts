@@ -37,16 +37,16 @@ describe("acpLoadSession", () => {
   it("restores the prior session mapping when replay loading fails", async () => {
     mockLoadSession.mockRejectedValueOnce(new Error("load failed"));
 
-    const sessionTracker = await import("../acpSessionTracker");
+    const sessionRegistry = await import("../acpSessionRegistry");
     const { acpLoadSession } = await import("../acp");
 
-    sessionTracker.registerSession("acp-session-1", "goose", "/tmp/original");
+    sessionRegistry.registerSession("acp-session-1", "goose", "/tmp/original");
 
     await expect(
       acpLoadSession("acp-session-1", "/tmp/replay"),
     ).rejects.toThrow("load failed");
 
-    expect(sessionTracker.isSessionPrepared("acp-session-1")).toBe(true);
+    expect(sessionRegistry.isSessionPrepared("acp-session-1")).toBe(true);
   });
 });
 
@@ -59,7 +59,7 @@ describe("acpCreateSession", () => {
   it("uses the ACP session id as the UI session id", async () => {
     mockNewSession.mockResolvedValue({ sessionId: "acp-session-1" });
 
-    const sessionTracker = await import("../acpSessionTracker");
+    const sessionRegistry = await import("../acpSessionRegistry");
     const { acpCreateSession } = await import("../acp");
 
     await expect(
@@ -79,7 +79,7 @@ describe("acpCreateSession", () => {
     expect(mockLoadSession).not.toHaveBeenCalled();
     expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
     expect(mockSetModel).toHaveBeenCalledWith("acp-session-1", "gpt-4.1");
-    expect(sessionTracker.isSessionPrepared("acp-session-1")).toBe(true);
+    expect(sessionRegistry.isSessionPrepared("acp-session-1")).toBe(true);
   });
 });
 
@@ -92,7 +92,7 @@ describe("acpPrepareSession", () => {
   it("loads the existing ACP session instead of creating a replacement", async () => {
     mockLoadSession.mockResolvedValue(undefined);
 
-    const sessionTracker = await import("../acpSessionTracker");
+    const sessionRegistry = await import("../acpSessionRegistry");
     const { acpPrepareSession } = await import("../acp");
 
     await expect(
@@ -108,7 +108,7 @@ describe("acpPrepareSession", () => {
     );
     expect(mockNewSession).not.toHaveBeenCalled();
     expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
-    expect(sessionTracker.isSessionPrepared("acp-session-1")).toBe(true);
+    expect(sessionRegistry.isSessionPrepared("acp-session-1")).toBe(true);
   });
 
   it("surfaces load failures instead of creating a new ACP session", async () => {

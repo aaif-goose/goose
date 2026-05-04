@@ -9,7 +9,7 @@ import {
   handleSessionNotification,
   setActiveMessageId,
 } from "../acpNotificationHandler";
-import { registerSession } from "../acpSessionTracker";
+import { registerSession } from "../acpSessionRegistry";
 
 describe("ACP tool call status handling", () => {
   beforeEach(() => {

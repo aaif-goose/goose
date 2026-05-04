@@ -1,7 +1,7 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
 import type { AcpSessionInfo } from "./acpApi";
-import * as sessionTracker from "./acpSessionTracker";
+import * as sessionRegistry from "./acpSessionRegistry";
 import {
   getCatalogEntry,
   resolveAgentProviderCatalogId,
@@ -85,7 +85,7 @@ export async function acpSendMessage(
   const sid = sessionId.slice(0, 8);
   const tStart = performance.now();
 
-  if (!sessionTracker.isSessionPrepared(sessionId)) {
+  if (!sessionRegistry.isSessionPrepared(sessionId)) {
     throw new Error("Session not prepared. Call acpPrepareSession first.");
   }
 
@@ -147,7 +147,7 @@ export async function acpPrepareSession(
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession start (provider=${providerId})`,
   );
-  const preparedSession = await sessionTracker.prepareSession(
+  const preparedSession = await sessionRegistry.prepareSession(
     sessionId,
     providerId,
     workingDir,
@@ -173,7 +173,7 @@ export async function acpCreateSession(
   );
   const sessionId = response.sessionId;
   await directAcp.setProvider(sessionId, providerId);
-  sessionTracker.registerSession(sessionId, providerId, workingDir);
+  sessionRegistry.registerSession(sessionId, providerId, workingDir);
   if (options.modelId) {
     await directAcp.setModel(sessionId, options.modelId);
   }
@@ -222,7 +222,7 @@ export async function acpLoadSession(
   const effectiveWorkingDir = workingDir ?? "~/.goose/artifacts";
   const sid = sessionId.slice(0, 8);
   const t0 = performance.now();
-  const rollbackSessionRegistration = sessionTracker.registerSession(
+  const rollbackSessionRegistration = sessionRegistry.registerSession(
     sessionId,
     "goose",
     effectiveWorkingDir,

@@ -11,7 +11,7 @@ import {
   handleSessionNotification,
   setActiveMessageId,
 } from "../acpNotificationHandler";
-import { registerSession } from "../acpSessionTracker";
+import { registerSession } from "../acpSessionRegistry";
 
 function createMcpAppPayload(): McpAppPayload {
   return {
