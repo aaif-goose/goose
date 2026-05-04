@@ -74,7 +74,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: windows-msvc-desktop-${{ inputs.windows_variant }}-llama-static-crt-v1
+          key: windows-msvc-desktop-${{ inputs.windows_variant }}
 
       - name: Setup Rust
         shell: bash
@@ -107,19 +107,6 @@ jobs:
           where.exe cl
           where.exe nvcc
           nvcc -V
-
-      - name: Clear cached llama.cpp native build outputs (Windows CUDA)
-        if: ${{ inputs.windows_variant == 'cuda' }}
-        shell: pwsh
-        run: |
-          $paths = @(
-            "./target/release/build/llama-cpp-sys-*",
-            "./target/x86_64-pc-windows-msvc/release/build/llama-cpp-sys-*"
-          )
-
-          foreach ($path in $paths) {
-            Get-ChildItem -Path $path -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-          }
 
       - name: Build Windows executable
         shell: pwsh
