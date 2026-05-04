@@ -293,9 +293,7 @@ export function ToolCallAdapter({
     () => (headerFilePath ? resolveMarkdownHref(headerFilePath) : null),
     [headerFilePath, resolveMarkdownHref],
   );
-  const canOpenHeaderFile = Boolean(
-    headerTitleParts && headerFileCandidate?.allowed,
-  );
+  const canOpenHeaderFile = Boolean(headerTitleParts && headerFileCandidate);
 
   const headerTitle: ReactNode = headerTitleParts ? (
     <>
@@ -306,7 +304,7 @@ export function ToolCallAdapter({
           data-clickable-file
           onClick={(event) => {
             event.stopPropagation();
-            if (!headerFileCandidate?.allowed) return;
+            if (!headerFileCandidate) return;
             void openResolvedPath(headerFileCandidate.resolvedPath).catch(
               () => {},
             );
