@@ -93,6 +93,11 @@ Default to reporting what needs to be fixed. Do not include an "Applied Well" or
 - **Post-PR Shape**: For refactors, review the final code shape. Do not clear a smell just because the PR improved the previous version.
 - **Partial Cleanup**: Do not treat partial extraction, partial deduplication, or partial cleanup as resolution if a verified smell remains in the changed code.
 
+### Naming Reveals Intent
+- **Domain Terms**: Are names based on domain meaning instead of generic placeholders like `data`, `value`, or `handler`?
+- **Helper Names**: Do helper names describe what they return or decide, not how they compute it?
+- **Misleading Names**: Are misleading functions, components, or variables renamed instead of explained with comments?
+
 ### Code Cleanliness
 - **Comments**: Are there unnecessary comments explaining obvious code? (Remove them)
 - **Console Logs**: Are there leftover `console.log` statements? (Remove them)
@@ -127,9 +132,11 @@ Use this focused pass for `ui/goose2` changes, especially when the user asks abo
 - **Confirmed Smells**: Any verified final-shape smell in changed code should become an issue; do not leave it only as a note or mental checklist item.
 - **Mixed Scope**: If a PR mixes feature work and refactoring, review the feature behavior separately from the cleanup quality.
 - **Layer Discipline**: Keep `ui/` for rendering and light view logic, `hooks/` for React state/effect orchestration, `api/` for backend transport and DTO adaptation, `lib/` for pure helpers, and `stores/` for shared feature state.
+- **Library Purity**: Keep `lib/` free of React, DOM, `window`, and I/O.
 - **Boundary Discipline**: Keep frontend-to-core behavior on the `SDK -> ACP -> goose` path. Do not add ad hoc `fetch()` calls or `invoke()` proxies for core Goose behavior, and do not call ACP clients directly from UI components.
 - **Module Encapsulation**: Export the minimum surface. Keep helpers private unless another module genuinely needs them, and remove stale exports.
-- **Hooks vs Helpers**: Prefer hooks for stateful async workflows and `lib/` helpers for React-independent logic. Do not use a hook as the default extraction target for an oversized component.
+- **Hooks vs Helpers**: Prefer hooks for stateful async workflows and `lib/` helpers for React-independent logic. Keep each hook focused on one job with a stable return shape, and do not use a hook as the default extraction target for an oversized component.
+- **Distinct Smells**: If multiple distinct smells remain in one file, report each distinct responsibility problem as its own issue.
 - **Feature Wiring**: Confirm the refactor preserves user-visible behavior, state updates, persistence, and backend calls.
 - **Tests**: Treat coverage loss during refactors as suspicious unless the behavior was intentionally removed.
 - **Second Pass**: Before finalizing, re-check decomposition, layering, hooks/effects, pure helpers, type shapes, duplication, tests, and feature wiring for missed issues.
