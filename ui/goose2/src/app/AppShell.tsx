@@ -107,14 +107,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const t1 = performance.now();
       perfLog(`[perf:load] ${sid} import in ${(t1 - t0).toFixed(1)}ms`);
       const session = useChatSessionStore.getState().getSession(sessionId);
-      const gooseSessionId = session?.acpSessionId ?? sessionId;
       const project = session?.projectId
         ? (useProjectStore
             .getState()
             .projects.find((p) => p.id === session.projectId) ?? null)
         : null;
       const workingDir = await resolveSessionCwd(project);
-      await acpLoadSession(sessionId, gooseSessionId, workingDir);
+      await acpLoadSession(sessionId, sessionId, workingDir);
       const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);

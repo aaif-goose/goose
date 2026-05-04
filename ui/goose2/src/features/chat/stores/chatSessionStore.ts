@@ -4,7 +4,6 @@ import {
   acpListSessions,
   type AcpSessionInfo,
 } from "@/shared/api/acp";
-import type { Session } from "@/shared/types/chat";
 import {
   DEFAULT_CHAT_TITLE,
   normalizeAcpTitle,
@@ -18,7 +17,6 @@ import {
 
 export interface ChatSession {
   id: string;
-  acpSessionId?: string;
   title: string;
   projectId?: string | null;
   providerId?: string;
@@ -78,7 +76,6 @@ interface ChatSessionStoreActions {
   createSession: (opts?: CreateSessionOpts) => Promise<ChatSession>;
   loadSessions: () => Promise<void>;
   updateSession: (id: string, patch: Partial<ChatSession>) => void;
-  addSession: (session: ChatSession) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
 
@@ -99,7 +96,6 @@ function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
   const now = new Date().toISOString();
   return {
     id: session.sessionId,
-    acpSessionId: session.sessionId,
     title: normalizeAcpTitle(session.title) ?? "Untitled",
     projectId: session.projectId ?? undefined,
     providerId: session.providerId ?? undefined,
@@ -117,24 +113,6 @@ function sortByUpdatedAtDesc(sessions: ChatSession[]): ChatSession[] {
   return [...sessions].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
-}
-
-export function sessionToChatSession(session: Session): ChatSession {
-  return {
-    id: session.id,
-    acpSessionId: session.id,
-    title: session.title,
-    projectId: session.projectId,
-    providerId: session.providerId,
-    personaId: session.personaId,
-    modelId: session.modelId,
-    modelName: session.modelName,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    archivedAt: session.archivedAt,
-    messageCount: session.messageCount,
-    userSetName: session.userSetName,
-  };
 }
 
 export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
@@ -158,7 +136,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     });
     const chatSession: ChatSession = {
       id: sessionId,
-      acpSessionId: sessionId,
       title: opts.title ?? DEFAULT_CHAT_TITLE,
       projectId: opts.projectId,
       providerId,
@@ -209,46 +186,27 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }));
 
     const updatedSession = get().sessions.find((session) => session.id === id);
-    const acpSessionId = updatedSession?.acpSessionId;
 
     // Persist title rename to backend
     if (
       "title" in patch &&
       "userSetName" in patch &&
       patch.userSetName &&
-      acpSessionId &&
+      updatedSession &&
       patch.title
     ) {
-      acpRenameSession(acpSessionId, patch.title).catch((err: unknown) =>
+      acpRenameSession(updatedSession.id, patch.title).catch((err: unknown) =>
         console.error("Failed to rename session in backend:", err),
       );
     }
 
     // Persist projectId change to backend
-    if ("projectId" in patch && acpSessionId) {
-      updateSessionProject(acpSessionId, patch.projectId ?? null).catch(
+    if ("projectId" in patch && updatedSession) {
+      updateSessionProject(updatedSession.id, patch.projectId ?? null).catch(
         (err: unknown) =>
           console.error("Failed to update session project in backend:", err),
       );
     }
-  },
-
-  addSession: (session) => {
-    const normalizedSession = {
-      ...session,
-      acpSessionId: session.acpSessionId ?? session.id,
-    };
-    set((state) => {
-      const existing = state.sessions.findIndex(
-        (candidate) => candidate.id === normalizedSession.id,
-      );
-      if (existing >= 0) {
-        const updated = [...state.sessions];
-        updated[existing] = { ...updated[existing], ...normalizedSession };
-        return { sessions: updated };
-      }
-      return { sessions: [normalizedSession, ...state.sessions] };
-    });
   },
 
   archiveSession: async (id) => {
@@ -262,8 +220,8 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         state.activeSessionId === id ? null : state.activeSessionId,
     }));
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session?.acpSessionId) {
-      acpArchiveSession(session.acpSessionId).catch((err: unknown) =>
+    if (session) {
+      acpArchiveSession(session.id).catch((err: unknown) =>
         console.error("Failed to archive session in backend:", err),
       );
     }
@@ -276,8 +234,8 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       ),
     }));
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session?.acpSessionId) {
-      acpUnarchiveSession(session.acpSessionId).catch((err: unknown) =>
+    if (session) {
+      acpUnarchiveSession(session.id).catch((err: unknown) =>
         console.error("Failed to unarchive session in backend:", err),
       );
     }
