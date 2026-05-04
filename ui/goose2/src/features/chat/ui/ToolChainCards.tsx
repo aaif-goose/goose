@@ -328,22 +328,20 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
           setChainExpanded((prev) => !prev);
         }}
         aria-expanded={chainExpanded}
-        className="flex w-full max-w-full items-start gap-2.5 text-left text-sm font-medium text-foreground"
+        className="flex w-full max-w-full items-center gap-2.5 pb-1 text-left text-sm font-medium text-foreground"
       >
         <span
           aria-hidden="true"
-          className="flex w-4 shrink-0 justify-center pt-1"
+          className="flex size-4 shrink-0 items-center justify-center"
         >
-          <span className="flex size-4 items-center justify-center">
-            <ChevronRight
-              className={cn(
-                "size-3.5 shrink-0 text-muted-foreground transition-transform",
-                chainExpanded && "rotate-90",
-              )}
-            />
-          </span>
+          <ChevronRight
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              chainExpanded && "rotate-90",
+            )}
+          />
         </span>
-        <span className="min-w-0 flex-1 truncate pb-1">{headerText}</span>
+        <span className="min-w-0 flex-1 truncate">{headerText}</span>
       </button>
 
       {chainExpanded && (
