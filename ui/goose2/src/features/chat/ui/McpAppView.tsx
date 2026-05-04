@@ -3,7 +3,6 @@ import {
   type AppRendererProps,
   type McpUiHostContext,
 } from "@mcp-ui/client";
-import type { GooseToolCallResponse } from "@aaif/goose-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import packageJson from "../../../../package.json";
@@ -31,18 +30,13 @@ interface McpAppViewProps {
 
 const DEFAULT_APP_HEIGHT = 240;
 // Goose2 currently only implements inline display mode.
-type HostContextDisplayMode = NonNullable<
+const GOOSE2_DISPLAY_MODE = "inline" satisfies NonNullable<
+  McpUiHostContext["displayMode"]
+>;
+const AVAILABLE_DISPLAY_MODES: NonNullable<
   McpUiHostContext["availableDisplayModes"]
->[number];
-type AvailableDisplayMode = Extract<HostContextDisplayMode, "inline">;
-const AVAILABLE_DISPLAY_MODES = [
-  "inline",
-] satisfies readonly AvailableDisplayMode[];
+> = [GOOSE2_DISPLAY_MODE];
 const GOOSE2_USER_AGENT = `${packageJson.name}/${packageJson.version}`;
-const GOOSE2_HOST_INFO = {
-  name: packageJson.name,
-  version: packageJson.version,
-} satisfies NonNullable<AppRendererProps["hostInfo"]>;
 const DESKTOP_SAFE_AREA_INSETS = {
   top: 0,
   right: 0,
@@ -59,6 +53,12 @@ type CallToolResult = Awaited<
 type ReadResourceResult = Awaited<
   ReturnType<NonNullable<AppRendererProps["onReadResource"]>>
 >;
+type GooseToolCallResponse = {
+  content?: unknown[];
+  structuredContent?: unknown;
+  isError: boolean;
+  _meta?: unknown;
+};
 type HostContextToolInfo = NonNullable<McpUiHostContext["toolInfo"]>;
 type HostContextTool = HostContextToolInfo["tool"];
 
@@ -272,7 +272,7 @@ export function McpAppView({
   const hostContext = useMemo<McpUiHostContext>(
     () => ({
       theme: resolvedTheme,
-      displayMode: "inline",
+      displayMode: GOOSE2_DISPLAY_MODE,
       availableDisplayModes: [...AVAILABLE_DISPLAY_MODES],
       containerDimensions:
         containerWidth !== null
@@ -426,7 +426,6 @@ export function McpAppView({
             toolResourceUri={renderableDocument.resourceUri}
             html={renderableDocument.html}
             sandbox={sandbox}
-            hostInfo={GOOSE2_HOST_INFO}
             toolInput={currentToolInput}
             toolResult={currentToolResult}
             hostContext={hostContext}

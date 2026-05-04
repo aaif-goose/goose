@@ -260,7 +260,7 @@ describe("McpAppView nested tool calls", () => {
     expect(borderlessChrome?.className).not.toContain("overflow-hidden");
   });
 
-  it("passes Goose2 package identity as host info", async () => {
+  it("passes Goose2 package identity in host context", async () => {
     render(
       <McpAppView
         payload={createPayload()}
@@ -272,10 +272,9 @@ describe("McpAppView nested tool calls", () => {
       expect(screen.getByTestId("mock-app-renderer")).toBeInTheDocument();
     });
 
-    expect(getLatestAppRendererProps().hostInfo).toEqual({
-      name: packageJson.name,
-      version: packageJson.version,
-    });
+    expect(getLatestAppRendererProps().hostContext?.userAgent).toBe(
+      `${packageJson.name}/${packageJson.version}`,
+    );
   });
 
   it("does not install a fallback handler for non-standard app requests", async () => {
