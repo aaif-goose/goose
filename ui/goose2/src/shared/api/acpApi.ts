@@ -21,6 +21,7 @@ export interface AcpSessionInfo {
   archivedAt: string | null;
   userSetName: boolean;
   messageCount: number;
+  workingDir: string | null;
   projectId?: string | null;
   providerId: string | null;
   modelId: string | null;
@@ -74,6 +75,7 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
     archivedAt: (info._meta?.archivedAt as string) ?? null,
     userSetName: info._meta?.userSetName === true,
     messageCount: (info._meta?.messageCount as number) ?? 0,
+    workingDir: info.cwd ?? null,
     projectId: (info._meta?.projectId as string) ?? null,
     providerId: (info._meta?.providerId as string) ?? null,
     modelId: (info._meta?.modelId as string) ?? null,
@@ -108,6 +110,7 @@ export async function forkSession(sessionId: string): Promise<AcpSessionInfo> {
     archivedAt: (response._meta?.archivedAt as string) ?? null,
     userSetName: response._meta?.userSetName === true,
     messageCount: (response._meta?.messageCount as number) ?? 0,
+    workingDir: null,
     projectId: (response._meta?.projectId as string) ?? null,
     providerId: (response._meta?.providerId as string) ?? null,
     modelId: (response._meta?.modelId as string) ?? null,

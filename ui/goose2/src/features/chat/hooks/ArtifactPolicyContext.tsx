@@ -60,24 +60,6 @@ function normalizeComparablePath(path: string): string {
   return normalizePath(path).replace(/\/+$/, "").toLowerCase();
 }
 
-function inferHomeDirFromRoots(roots: string[]): string | null {
-  for (const root of roots) {
-    const normalized = normalizePath(root);
-    const usersMatch = normalized.match(/^\/Users\/[^/]+/);
-    if (usersMatch) return usersMatch[0];
-    const homeMatch = normalized.match(/^\/home\/[^/]+/);
-    if (homeMatch) return homeMatch[0];
-  }
-  return null;
-}
-
-function shortenPath(fullPath: string, homeDir: string | null): string {
-  if (homeDir && fullPath.startsWith(homeDir)) {
-    return `~${fullPath.slice(homeDir.length)}`;
-  }
-  return fullPath;
-}
-
 function parentDir(path: string): string {
   const lastSlash = path.lastIndexOf("/");
   if (lastSlash <= 0) return "/";
@@ -134,25 +116,21 @@ function resolveRelativeToBase(base: string, relativePath: string): string {
   return `/${resolved}`;
 }
 
-function resolvePath(path: string, roots: string[]): string {
+function resolvePath(path: string, sessionCwd: string | null): string {
   const normalized = normalizePath(path);
   if (!normalized) return "";
-
-  const homeDir = inferHomeDirFromRoots(roots);
-  if (normalized.startsWith("~/") && homeDir) {
-    return `${homeDir}${normalized.slice(1)}`;
-  }
 
   if (normalized.toLowerCase().startsWith("file://")) {
     return normalized.slice("file://".length);
   }
 
-  if (isAbsolutePath(normalized) || normalized.startsWith("~/")) {
+  if (isAbsolutePath(normalized)) {
     return normalized;
   }
 
-  const base = roots.map((root) => normalizePath(root)).find(Boolean);
-  return base ? resolveRelativeToBase(base, normalized) : normalized;
+  return sessionCwd
+    ? resolveRelativeToBase(sessionCwd, normalized)
+    : normalized;
 }
 
 function isNonEmptyLocation(
@@ -163,16 +141,16 @@ function isNonEmptyLocation(
 
 export function ArtifactPolicyProvider({
   messages,
-  allowedRoots,
+  sessionCwd,
   children,
 }: {
   messages: Message[];
-  allowedRoots: string[];
+  sessionCwd: string | null;
   children: ReactNode;
 }) {
-  const normalizedRoots = useMemo(
-    () => [...new Set(allowedRoots.map((root) => root.trim()).filter(Boolean))],
-    [allowedRoots],
+  const normalizedSessionCwd = useMemo(
+    () => sessionCwd?.trim() || null,
+    [sessionCwd],
   );
   const lastOpenAtByPathRef = useRef(new Map<string, number>());
 
@@ -189,21 +167,22 @@ export function ArtifactPolicyProvider({
 
       return {
         rawPath: withoutQuery,
-        resolvedPath: resolvePath(withoutQuery, normalizedRoots),
+        resolvedPath: resolvePath(withoutQuery, normalizedSessionCwd),
       };
     },
-    [normalizedRoots],
+    [normalizedSessionCwd],
   );
 
   const resolveOpenTarget = useCallback(
     async (path: string): Promise<string | null> => {
-      if (await pathExists(path)) {
-        return path;
+      const resolvedPath = resolvePath(path, normalizedSessionCwd);
+      if (await pathExists(resolvedPath)) {
+        return resolvedPath;
       }
 
       return null;
     },
-    [],
+    [normalizedSessionCwd],
   );
 
   const checkPathExists = useCallback(
@@ -215,7 +194,8 @@ export function ArtifactPolicyProvider({
     async (path: string) => {
       const resolvedTarget = await resolveOpenTarget(path);
       if (!resolvedTarget) {
-        throw new Error(`File not found: ${path}`);
+        const cwdMessage = normalizedSessionCwd ?? "<none>";
+        throw new Error(`File not found: ${path} (session cwd: ${cwdMessage})`);
       }
 
       const key = resolvedTarget.trim().toLowerCase();
@@ -227,14 +207,10 @@ export function ArtifactPolicyProvider({
       lastOpenAtByPathRef.current.set(key, now);
       await openPath(resolvedTarget);
     },
-    [resolveOpenTarget],
+    [resolveOpenTarget, normalizedSessionCwd],
   );
 
   const getAllSessionArtifacts = useCallback((): SessionArtifact[] => {
-    const homeDir =
-      normalizedRoots.length > 0
-        ? inferHomeDirFromRoots(normalizedRoots)
-        : null;
     const artifactMap = new Map<string, SessionArtifact>();
 
     for (const message of messages) {
@@ -246,7 +222,7 @@ export function ArtifactPolicyProvider({
         const locations = block.locations?.filter(isNonEmptyLocation) ?? [];
 
         for (const location of locations) {
-          const resolvedPath = resolvePath(location.path, normalizedRoots);
+          const resolvedPath = resolvePath(location.path, normalizedSessionCwd);
           const key = normalizeComparablePath(resolvedPath);
           if (!key) continue;
 
@@ -264,9 +240,9 @@ export function ArtifactPolicyProvider({
 
           artifactMap.set(key, {
             resolvedPath,
-            displayPath: shortenPath(resolvedPath, homeDir),
+            displayPath: resolvedPath,
             filename: basenameOf(resolvedPath),
-            directoryPath: shortenPath(parentDir(resolvedPath), homeDir),
+            directoryPath: parentDir(resolvedPath),
             resolvedDirectoryPath: parentDir(resolvedPath),
             versionCount: 1,
             lastTouchedAt: message.created,
@@ -282,7 +258,7 @@ export function ArtifactPolicyProvider({
     return Array.from(artifactMap.values()).sort(
       (a, b) => b.lastTouchedAt - a.lastTouchedAt,
     );
-  }, [messages, normalizedRoots]);
+  }, [messages, normalizedSessionCwd]);
 
   const contextValue = useMemo<ArtifactPolicyContextValue>(
     () => ({

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence } from "motion/react";
 import { MessageTimeline } from "./MessageTimeline";
@@ -6,7 +6,6 @@ import { ChatInput } from "./ChatInput";
 import { LoadingGoose } from "./LoadingGoose";
 import { ChatLoadingSkeleton } from "./ChatLoadingSkeleton";
 import { useChatSessionStore } from "../stores/chatSessionStore";
-import { defaultGlobalArtifactRoot } from "@/features/projects/lib/chatProjectContext";
 import { ArtifactPolicyProvider } from "../hooks/ArtifactPolicyContext";
 import { ChatContextPanel } from "./ChatContextPanel";
 import { perfLog } from "@/shared/lib/perfLog";
@@ -52,9 +51,6 @@ export function ChatView({
     (s) => s.contextPanelOpenBySession[sessionId] ?? false,
   );
   const setContextPanelOpen = useChatSessionStore((s) => s.setContextPanelOpen);
-  const [globalArtifactRoot, setGlobalArtifactRoot] = useState<string | null>(
-    null,
-  );
   const [isLoadingIndicatorMounted, setIsLoadingIndicatorMounted] =
     useState(false);
   const controller = useChatSessionController({
@@ -64,33 +60,11 @@ export function ChatView({
   const contextPanelLabel = isContextPanelOpen
     ? t("context.closePanel")
     : t("context.openPanel");
-  const allowedArtifactRoots = [
-    ...controller.allowedArtifactRoots,
-    ...(globalArtifactRoot ? [globalArtifactRoot] : []),
-  ];
 
   useEffect(() => {
     const ms = (performance.now() - mountStart.current).toFixed(1);
     perfLog(`[perf:chatview] ${sessionId.slice(0, 8)} mounted in ${ms}ms`);
   }, [sessionId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    defaultGlobalArtifactRoot()
-      .then((artifactRoot) => {
-        if (!cancelled) {
-          setGlobalArtifactRoot(artifactRoot);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setGlobalArtifactRoot(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const showIndicator =
     controller.chatState === "thinking" ||
@@ -114,7 +88,7 @@ export function ChatView({
   return (
     <ArtifactPolicyProvider
       messages={controller.messages}
-      allowedRoots={allowedArtifactRoots}
+      sessionCwd={controller.sessionArtifactCwd}
     >
       <div className="relative flex h-full min-w-0">
         <div className="flex min-w-0 flex-1 flex-col pr-1">

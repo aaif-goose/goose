@@ -68,7 +68,7 @@ describe("ArtifactPolicyContext", () => {
     render(
       <ArtifactPolicyProvider
         messages={messages}
-        allowedRoots={["/Users/test/project-a"]}
+        sessionCwd="/Users/test/project-a"
       >
         <ArtifactsProbe />
       </ArtifactPolicyProvider>,
@@ -103,7 +103,7 @@ describe("ArtifactPolicyContext", () => {
     render(
       <ArtifactPolicyProvider
         messages={messages}
-        allowedRoots={["/Users/test/project-a"]}
+        sessionCwd="/Users/test/project-a"
       >
         <ArtifactsProbe />
       </ArtifactPolicyProvider>,
@@ -114,9 +114,9 @@ describe("ArtifactPolicyContext", () => {
     );
   });
 
-  it("resolves local markdown hrefs relative to the first artifact root", () => {
+  it("resolves local markdown hrefs relative to the session cwd", () => {
     render(
-      <ArtifactPolicyProvider messages={[]} allowedRoots={["/Users/test/app"]}>
+      <ArtifactPolicyProvider messages={[]} sessionCwd="/Users/test/app">
         <LinkProbe href="output/report.md" />
       </ArtifactPolicyProvider>,
     );

@@ -25,6 +25,7 @@ export interface ChatSession {
   personaId?: string;
   modelId?: string;
   modelName?: string;
+  workingDir?: string | null;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
@@ -105,6 +106,7 @@ function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
     providerId: session.providerId ?? undefined,
     personaId: session.personaId ?? undefined,
     modelId: session.modelId ?? undefined,
+    workingDir: session.workingDir ?? undefined,
     createdAt: session.createdAt ?? session.updatedAt ?? now,
     updatedAt: session.updatedAt ?? now,
     archivedAt: session.archivedAt ?? undefined,
@@ -129,6 +131,7 @@ export function sessionToChatSession(session: Session): ChatSession {
     personaId: session.personaId,
     modelId: session.modelId,
     modelName: session.modelName,
+    workingDir: session.workingDir,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     archivedAt: session.archivedAt,
@@ -165,6 +168,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       personaId: opts.personaId,
       modelId: opts.modelId,
       modelName: opts.modelName,
+      workingDir: opts.workingDir,
       createdAt: now,
       updatedAt: now,
       messageCount: 0,

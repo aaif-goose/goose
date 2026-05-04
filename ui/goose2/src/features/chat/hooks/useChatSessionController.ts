@@ -14,7 +14,6 @@ import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/provid
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
-  getProjectArtifactRoots,
   resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
 import { setStoredModelPreference } from "../lib/modelPreferences";
@@ -107,10 +106,10 @@ export function useChatSessionController({
   const selectedPersona = personas.find(
     (persona) => persona.id === selectedPersonaId,
   );
-  const projectArtifactRoots = useMemo(
-    () => getProjectArtifactRoots(project),
-    [project],
-  );
+  const sessionCwd =
+    activeWorkspace?.path ??
+    session?.workingDir ??
+    resolveProjectDefaultArtifactRoot(project);
   const projectDefaultArtifactRoot = useMemo(
     () => resolveProjectDefaultArtifactRoot(project),
     [project],
@@ -118,13 +117,9 @@ export function useChatSessionController({
   const projectMetadataPending = Boolean(
     effectiveProjectId && !projectDefaultArtifactRoot && projectsLoading,
   );
-  const allowedArtifactRoots = useMemo(
-    () => [
-      ...new Set(
-        projectArtifactRoots.map((path) => path.trim()).filter(Boolean),
-      ),
-    ],
-    [projectArtifactRoots],
+  const sessionArtifactCwd = useMemo(
+    () => sessionCwd?.trim() || null,
+    [sessionCwd],
   );
   const availableProjects = useMemo(
     () =>
@@ -792,7 +787,7 @@ export function useChatSessionController({
   return {
     session,
     project,
-    allowedArtifactRoots,
+    sessionArtifactCwd,
     messages,
     chatState,
     tokenState: resolvedTokenState,

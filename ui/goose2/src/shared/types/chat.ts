@@ -60,6 +60,7 @@ export interface Session {
   personaId?: string;
   modelId?: string;
   modelName?: string;
+  workingDir?: string | null;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;

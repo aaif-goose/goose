@@ -81,6 +81,7 @@ describe("chatSessionStore", () => {
         personaId: "persona-1",
         modelId: "gpt-4.1",
         modelName: "GPT-4.1",
+        workingDir: "/tmp/project",
       });
       expect(useChatSessionStore.getState().sessions).toContainEqual(session);
     });
@@ -97,6 +98,7 @@ describe("chatSessionStore", () => {
           archivedAt: null,
           userSetName: false,
           messageCount: 4,
+          workingDir: "/tmp/acp-1",
           providerId: "openai",
           modelId: "gpt-4.1",
         },
@@ -125,6 +127,7 @@ describe("chatSessionStore", () => {
       expect(sessions[1].messageCount).toBe(4);
       expect(sessions[1].providerId).toBe("openai");
       expect(sessions[1].modelId).toBe("gpt-4.1");
+      expect(sessions[1].workingDir).toBe("/tmp/acp-1");
     });
 
     it("reads all metadata fields from backend response", async () => {
@@ -137,6 +140,7 @@ describe("chatSessionStore", () => {
           archivedAt: null,
           userSetName: true,
           messageCount: 7,
+          workingDir: "/tmp/project-123",
           projectId: "project-123",
           providerId: "anthropic",
           personaId: "persona-1",
@@ -156,6 +160,7 @@ describe("chatSessionStore", () => {
       expect(session.messageCount).toBe(7);
       expect(session.userSetName).toBe(true);
       expect(session.modelId).toBe("claude-sonnet-4");
+      expect(session.workingDir).toBe("/tmp/project-123");
     });
 
     it("drops stale sessions that are no longer in ACP", async () => {
