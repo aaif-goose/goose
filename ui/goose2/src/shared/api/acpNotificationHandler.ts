@@ -404,9 +404,18 @@ function handleLive(
     }
 
     case "tool_call_update": {
-      const messageId = ensureLiveAssistantMessage(sessionId, gooseSessionId);
       const identity = getToolCallIdentity(update);
       const chainSummary = getToolChainSummary(update);
+      // Late-arriving updates (chain summaries, async titles) can target a
+      // tool call whose request lives in an older message than the currently
+      // streaming one. Patch the message that actually owns the tool call,
+      // falling back to ensureLiveAssistantMessage only if we can't find it.
+      const ownerMessageId = findLiveMessageIdWithToolCall(
+        sessionId,
+        update.toolCallId,
+      );
+      const messageId =
+        ownerMessageId ?? ensureLiveAssistantMessage(sessionId, gooseSessionId);
 
       const patch = toolCallUpdatePatch(update);
       if (
@@ -433,11 +442,11 @@ function handleLive(
 
       if (update.status === "completed" || update.status === "failed") {
         const toolCallStatus = toolCallStatusFromUpdate(update.status);
-        const streamingMessage = store.messagesBySession[sessionId]?.find(
+        const ownerMessage = store.messagesBySession[sessionId]?.find(
           (m) => m.id === messageId,
         );
-        const toolRequest = streamingMessage
-          ? findLatestUnpairedToolRequest(streamingMessage.content)
+        const toolRequest = ownerMessage
+          ? findLatestUnpairedToolRequest(ownerMessage.content)
           : null;
 
         store.updateMessage(sessionId, messageId, (msg) => ({
@@ -580,6 +589,31 @@ function handleShared(
 function findStreamingMessageId(sessionId: string): string | null {
   return useChatStore.getState().getSessionRuntime(sessionId)
     .streamingMessageId;
+}
+
+/**
+ * Locate the live message that owns a given tool call id by scanning
+ * `messagesBySession` from the most recent message backwards. Used by
+ * `tool_call_update` to keep late-arriving updates (chain summaries, async
+ * titles, status flips) anchored on the request's original message even when
+ * the streaming pointer has moved on to the next assistant turn.
+ */
+function findLiveMessageIdWithToolCall(
+  sessionId: string,
+  toolCallId: string,
+): string | null {
+  const messages = useChatStore.getState().messagesBySession[sessionId];
+  if (!messages) return null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (
+      messages[i].content.some(
+        (c) => c.type === "toolRequest" && c.id === toolCallId,
+      )
+    ) {
+      return messages[i].id;
+    }
+  }
+  return null;
 }
 
 function ensureLiveAssistantMessage(

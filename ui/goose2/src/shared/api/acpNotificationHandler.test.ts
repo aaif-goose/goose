@@ -138,6 +138,94 @@ describe("acpNotificationHandler", () => {
     ).toBeUndefined();
   });
 
+  it("threads tool chain summary onto the first tool call even when the agent has moved to the next assistant message (live)", async () => {
+    registerSession("draft-session-1", "goose-session-1", "goose", "/tmp");
+
+    await handleSessionNotification({
+      sessionId: "goose-session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-1",
+        title: "running ls",
+      },
+    } as SessionNotification);
+
+    await handleSessionNotification({
+      sessionId: "goose-session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-2",
+        title: "running pwd",
+      },
+    } as SessionNotification);
+
+    // Simulate the agent moving on to the next assistant message: the
+    // streamingMessageId now points to a brand-new message that does not
+    // contain the original tool requests. This is what happens in practice
+    // by the time the chain summary task fires (after all tool responses
+    // have been emitted and the next agent turn has begun).
+    const beforeMessages =
+      useChatStore.getState().messagesBySession["draft-session-1"] ?? [];
+    const newAssistantId = "next-assistant-msg";
+    useChatStore.setState((state) => ({
+      ...state,
+      messagesBySession: {
+        ...state.messagesBySession,
+        "draft-session-1": [
+          ...beforeMessages,
+          {
+            id: newAssistantId,
+            role: "assistant",
+            created: Date.now(),
+            content: [{ type: "text", text: "ok" }],
+            metadata: {
+              userVisible: true,
+              agentVisible: true,
+              completionStatus: "inProgress",
+            },
+          },
+        ],
+      },
+    }));
+    useChatStore
+      .getState()
+      .setStreamingMessageId("draft-session-1", newAssistantId);
+
+    await handleSessionNotification({
+      sessionId: "goose-session-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc-1",
+        _meta: {
+          goose: {
+            toolChainSummary: {
+              summary: "inspected working directory",
+              count: 2,
+            },
+          },
+        },
+      },
+    } as SessionNotification);
+
+    const messages =
+      useChatStore.getState().messagesBySession["draft-session-1"];
+    const toolReqs =
+      messages?.flatMap((m) =>
+        m.content.filter((c) => c.type === "toolRequest"),
+      ) ?? [];
+    const first = toolReqs.find(
+      (c) => c.type === "toolRequest" && c.id === "tc-1",
+    );
+    expect(first?.type === "toolRequest" && first.chainSummary).toEqual({
+      summary: "inspected working directory",
+      count: 2,
+    });
+    // The new assistant message must not have been mutated to absorb the
+    // chain summary (regression guard: it doesn't own the tool request).
+    const nextMsg = messages?.find((m) => m.id === newAssistantId);
+    expect(nextMsg?.content.some((c) => c.type === "toolRequest")).toBe(false);
+  });
+
   it("attaches tool chain summary on initial tool_call during replay", async () => {
     await handleSessionNotification({
       sessionId: "goose-session-2",
