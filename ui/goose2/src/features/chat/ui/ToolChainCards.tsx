@@ -38,27 +38,13 @@ const STEP_BULLET_CLASS: Record<ToolCallStatus, string> = {
   stopped: "text-orange-600",
 };
 
-function ChainStepRail({
-  status,
-  isFirst,
-  isLast,
-}: {
-  status: ToolCallStatus;
-  isFirst: boolean;
-  isLast: boolean;
-}) {
+function ChainStepRail({ status }: { status: ToolCallStatus }) {
   const Icon = STEP_BULLET_ICON[status];
   return (
     <div
       aria-hidden="true"
       className="relative flex w-4 shrink-0 justify-center self-stretch"
     >
-      {!isFirst && (
-        <div className="pointer-events-none absolute top-0 bottom-1/2 left-1/2 w-px -translate-x-1/2 bg-border" />
-      )}
-      {!isLast && (
-        <div className="pointer-events-none absolute top-1/2 bottom-0 left-1/2 w-px -translate-x-1/2 bg-border" />
-      )}
       <div className="relative z-10 mt-1 flex h-4 w-4 items-center justify-center rounded-full bg-background ring-2 ring-background">
         <Icon className={cn("size-3.5 shrink-0", STEP_BULLET_CLASS[status])} />
       </div>
@@ -172,8 +158,6 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
 
   const renderToolItem = (
     item: ToolChainItem,
-    index: number,
-    total: number,
     options: { withRail: boolean },
   ) => {
     const name = getToolItemName(item);
@@ -203,13 +187,9 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
       <div
         key={item.key}
         data-role="tool-chain-step"
-        className="flex max-w-full items-stretch gap-2.5"
+        className="relative z-1 flex max-w-full items-stretch gap-2.5"
       >
-        <ChainStepRail
-          status={status}
-          isFirst={index === 0}
-          isLast={index === total - 1}
-        />
+        <ChainStepRail status={status} />
         <div className="min-w-0 flex-1 pb-1">
           <ToolCallAdapter
             name={name}
@@ -233,9 +213,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
   if (!grouped) {
     return (
       <div className="my-1 flex w-full min-w-0 max-w-full flex-col gap-3">
-        {primaryItems.map((item, index) =>
-          renderToolItem(item, index, primaryItems.length, { withRail: false }),
-        )}
+        {primaryItems.map((item) => renderToolItem(item, { withRail: false }))}
       </div>
     );
   }
@@ -261,16 +239,10 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
       });
 
   const hasHiddenDisclosure = hiddenItems.length > 0;
-  const railRowCount =
-    primaryItems.length +
-    (hasHiddenDisclosure ? 1 : 0) +
-    (showInternalSteps ? hiddenItems.length : 0);
-  const disclosureIndex = primaryItems.length;
-  const firstHiddenIndex = disclosureIndex + 1;
 
   return (
     <section
-      className="my-1 flex w-full min-w-0 max-w-full flex-col gap-2"
+      className="my-1 flex w-full min-w-0 max-w-full flex-col gap-1"
       data-role="tool-chain-card"
       data-status={aggregateStatus}
     >
@@ -278,34 +250,38 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
         type="button"
         onClick={() => setChainExpanded((prev) => !prev)}
         aria-expanded={chainExpanded}
-        className="inline-flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-foreground"
+        className="flex w-full max-w-full items-start gap-2.5 text-left text-sm font-medium text-foreground"
       >
-        <ChevronRight
+        <span
           aria-hidden="true"
-          className={cn(
-            "h-3.5 w-3.5 transition-transform",
-            chainExpanded && "rotate-90",
-          )}
-        />
-        <span>{headerText}</span>
+          className="flex w-4 shrink-0 justify-center pt-1"
+        >
+          <span className="flex size-4 items-center justify-center">
+            <ChevronRight
+              className={cn(
+                "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                chainExpanded && "rotate-90",
+              )}
+            />
+          </span>
+        </span>
+        <span className="min-w-0 flex-1 truncate pb-1">{headerText}</span>
       </button>
 
       {chainExpanded && (
-        <div className="flex flex-col">
-          {primaryItems.map((item, index) =>
-            renderToolItem(item, index, railRowCount, { withRail: true }),
-          )}
+        <div className="relative flex flex-col gap-1">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 bottom-0 left-2 z-0 w-px -translate-x-1/2 bg-border"
+          />
+          {primaryItems.map((item) => renderToolItem(item, { withRail: true }))}
 
           {hasHiddenDisclosure && (
             <div
               data-role="tool-chain-internal-disclosure"
-              className="flex max-w-full items-stretch gap-2.5"
+              className="relative z-1 flex max-w-full items-stretch gap-2.5"
             >
-              <ChainStepRail
-                status="completed"
-                isFirst={disclosureIndex === 0}
-                isLast={disclosureIndex === railRowCount - 1}
-              />
+              <ChainStepRail status="completed" />
               <div className="min-w-0 flex-1 pb-1">
                 <button
                   type="button"
@@ -332,11 +308,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
           )}
 
           {showInternalSteps &&
-            hiddenItems.map((item, index) =>
-              renderToolItem(item, firstHiddenIndex + index, railRowCount, {
-                withRail: true,
-              }),
-            )}
+            hiddenItems.map((item) => renderToolItem(item, { withRail: true }))}
         </div>
       )}
     </section>
