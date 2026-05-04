@@ -356,7 +356,11 @@ static LANGUAGES: &[LangInfo] = &[
                   (#any-of? @_method "import" "alias" "require" "use")) @path
             "#,
             calls: r#"
-                (call target: (identifier) @name)
+                (call target: (identifier) @name
+                     (#not-any-of? @name
+                          "def" "defp" "defmacro" "defmacrop" "defn" "defnp"
+                          "defmodule" "defprotocol"
+                          "import" "alias" "require" "use"))
                 (call target: (dot right: (identifier) @name))
                 (binary_operator operator: "|>" right: (identifier) @name)
             "#,
