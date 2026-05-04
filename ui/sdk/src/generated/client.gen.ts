@@ -47,6 +47,8 @@ import type {
   GetSessionExtensionsResponse,
   GetToolsRequest,
   GetToolsResponse,
+  GooseToolCallRequest,
+  GooseToolCallResponse,
   ImportSessionRequest,
   ImportSessionResponse,
   ImportSourcesRequest,
@@ -102,6 +104,7 @@ import {
   zGetExtensionsResponse,
   zGetSessionExtensionsResponse,
   zGetToolsResponse,
+  zGooseToolCallResponse,
   zImportSessionResponse,
   zImportSourcesResponse,
   zListProvidersResponse,
@@ -131,6 +134,13 @@ export class GooseExtClient {
   async GooseTools(params: GetToolsRequest): Promise<GetToolsResponse> {
     const raw = await this.conn.extMethod("_goose/tools", params);
     return zGetToolsResponse.parse(raw) as GetToolsResponse;
+  }
+
+  async GooseToolCall(
+    params: GooseToolCallRequest,
+  ): Promise<GooseToolCallResponse> {
+    const raw = await this.conn.extMethod("_goose/tool/call", params);
+    return zGooseToolCallResponse.parse(raw) as GooseToolCallResponse;
   }
 
   async GooseResourceRead(

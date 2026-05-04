@@ -11,6 +11,7 @@ import { ArtifactPolicyProvider } from "../hooks/ArtifactPolicyContext";
 import { ChatContextPanel } from "./ChatContextPanel";
 import { perfLog } from "@/shared/lib/perfLog";
 import { useChatSessionController } from "../hooks/useChatSessionController";
+import type { Message } from "@/shared/types/messages";
 
 interface ChatViewProps {
   sessionId: string;
@@ -18,6 +19,26 @@ interface ChatViewProps {
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
   }) => void;
+}
+
+function shouldOverlapComposerWithLatestMcpApp(messages: Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (
+      message.metadata?.userVisible === false ||
+      (message.role === "assistant" &&
+        message.content.length === 0 &&
+        message.metadata?.completionStatus === "inProgress")
+    ) {
+      continue;
+    }
+
+    return (
+      message.role === "assistant" && message.content.at(-1)?.type === "mcpApp"
+    );
+  }
+
+  return false;
 }
 
 export function ChatView({
@@ -34,6 +55,8 @@ export function ChatView({
   const [globalArtifactRoot, setGlobalArtifactRoot] = useState<string | null>(
     null,
   );
+  const [isLoadingIndicatorMounted, setIsLoadingIndicatorMounted] =
+    useState(false);
   const controller = useChatSessionController({
     sessionId,
     onCreatePersonaRequested: onCreatePersona,
@@ -74,6 +97,19 @@ export function ChatView({
     controller.chatState === "streaming" ||
     controller.chatState === "waiting" ||
     controller.chatState === "compacting";
+  const shouldShowLoadingIndicator =
+    showIndicator && !controller.isLoadingHistory;
+  const shouldReserveComposerGap =
+    shouldShowLoadingIndicator || isLoadingIndicatorMounted;
+  const shouldOverlapComposer =
+    !shouldReserveComposerGap &&
+    shouldOverlapComposerWithLatestMcpApp(controller.messages);
+
+  useEffect(() => {
+    if (shouldShowLoadingIndicator) {
+      setIsLoadingIndicatorMounted(true);
+    }
+  }, [shouldShowLoadingIndicator]);
 
   return (
     <ArtifactPolicyProvider
@@ -91,11 +127,15 @@ export function ChatView({
               scrollTargetMessageId={controller.scrollTarget?.messageId ?? null}
               scrollTargetQuery={controller.scrollTarget?.query ?? null}
               onScrollTargetHandled={controller.handleScrollTargetHandled}
+              onSendMcpAppMessage={controller.handleSend}
             />
           )}
 
-          <AnimatePresence initial={false}>
-            {showIndicator && !controller.isLoadingHistory ? (
+          <AnimatePresence
+            initial={false}
+            onExitComplete={() => setIsLoadingIndicatorMounted(false)}
+          >
+            {shouldShowLoadingIndicator ? (
               <LoadingGoose
                 key="loading-indicator"
                 chatState={
@@ -110,6 +150,7 @@ export function ChatView({
           </AnimatePresence>
 
           <ChatInput
+            className={shouldOverlapComposer ? "-mt-4" : undefined}
             onSend={controller.handleSend}
             disabled={
               controller.projectMetadataPending ||

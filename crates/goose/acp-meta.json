@@ -16,6 +16,11 @@
       "responseType": "GetToolsResponse"
     },
     {
+      "method": "_goose/tool/call",
+      "requestType": "GooseToolCallRequest",
+      "responseType": "GooseToolCallResponse"
+    },
+    {
       "method": "_goose/resource/read",
       "requestType": "ReadResourceRequest",
       "responseType": "ReadResourceResponse"

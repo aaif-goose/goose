@@ -21,9 +21,14 @@ const EXCEPTIONS = {
       "Session preparation, provider/model handoff, persona-aware sends, cancellation, and compaction replay still live in one chat lifecycle hook.",
   },
   "src/shared/api/acpNotificationHandler.ts": {
-    limit: 550,
+    limit: 570,
     justification:
-      "ACP replay/live update handling, pending session buffering, model/config propagation, and streaming perf tracking still share one notification entrypoint.",
+      "ACP replay/live update handling, pending session buffering, model/config propagation, MCP structured tool output, and streaming perf tracking still share one notification entrypoint.",
+  },
+  "src/shared/api/__tests__/acpNotificationHandler.test.ts": {
+    limit: 540,
+    justification:
+      "Notification handler regression coverage spans live streaming, replay ordering, MCP app payload attachment, and structured tool output preservation in one integration-style suite.",
   },
   "src/features/chat/ui/__tests__/ContextPanel.test.tsx": {
     limit: 550,
@@ -76,9 +81,14 @@ const EXCEPTIONS = {
       "Voice dictation send/stop guards, attachment handling, and mention/picker coordination still share one chat composer component.",
   },
   "src/features/chat/ui/MessageBubble.tsx": {
+    limit: 580,
+    justification:
+      "Bubble rendering still owns assistant identity, grouped tool output, attachments, inline MCP app tool/result wiring, app-initiated message plumbing, full-width inline layout handling, inline auto-scroll callback plumbing, and the inline actions tray pending a later extraction pass.",
+  },
+  "src/features/chat/ui/__tests__/MessageBubble.test.tsx": {
     limit: 520,
     justification:
-      "Bubble rendering still owns assistant identity, grouped tool output, attachments, and the inline actions tray pending a later extraction pass.",
+      "Message bubble regression coverage still keeps copy state, action tray layout, provider/persona identity, tool chains, and shared rendering behavior in one suite while the MCP app-specific assertions live in a companion test file.",
   },
   "src/features/skills/ui/SkillsView.tsx": {
     limit: 620,

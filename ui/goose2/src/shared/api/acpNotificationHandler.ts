@@ -17,6 +17,7 @@ import type { AcpNotificationHandler } from "./acpConnection";
 import { handleReplayUserMessageChunk } from "./acpSkillReplayChips";
 import {
   attachMcpAppPayload,
+  extractToolStructuredContent,
   extractToolResultText,
   findReplayMessageWithToolCall,
 } from "./acpToolCallContent";
@@ -121,6 +122,12 @@ export function getReplayPerf(
 
 export function clearReplayPerf(sessionId: string): void {
   replayPerf.delete(sessionId);
+}
+
+function getChunkMessageId(update: SessionUpdate): string | null {
+  return "messageId" in update && typeof update.messageId === "string"
+    ? update.messageId
+    : null;
 }
 
 function handleReplay(sessionId: string, update: SessionUpdate): void {
@@ -228,6 +235,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
             id: update.toolCallId,
             name: (tc as ToolRequestContent)?.name ?? "",
             result: resultText,
+            structuredContent: extractToolStructuredContent(update),
             isError: update.status === "failed",
           });
           if (update.status === "completed") {
@@ -263,7 +271,10 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
 
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
-      const messageId = ensureLiveAssistantMessage(sessionId, update.messageId);
+      const messageId = ensureLiveAssistantMessage(
+        sessionId,
+        getChunkMessageId(update) ?? undefined,
+      );
 
       if (update.content.type === "text" && "text" in update.content) {
         store.setStreamingMessageId(sessionId, messageId);
@@ -337,6 +348,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
           id: update.toolCallId,
           name: toolRequest?.name ?? "",
           result: resultText,
+          structuredContent: extractToolStructuredContent(update),
           isError: update.status === "failed",
         };
         store.setStreamingMessageId(sessionId, messageId);

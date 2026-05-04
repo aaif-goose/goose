@@ -73,6 +73,48 @@
       "x-side": "agent",
       "x-method": "_goose/tools"
     },
+    "GooseToolCallRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "default": null
+        }
+      },
+      "required": [
+        "sessionId",
+        "name"
+      ],
+      "description": "Call a tool from an extension.",
+      "x-side": "agent",
+      "x-method": "_goose/tool/call"
+    },
+    "GooseToolCallResponse": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {},
+          "default": []
+        },
+        "structuredContent": {},
+        "isError": {
+          "type": "boolean"
+        },
+        "_meta": {}
+      },
+      "required": [
+        "isError"
+      ],
+      "description": "Tool call response.",
+      "x-side": "agent",
+      "x-method": "_goose/tool/call"
+    },
     "ReadResourceRequest": {
       "type": "object",
       "properties": {
@@ -2099,6 +2141,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/GooseToolCallRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/tool/call",
+                  "title": "GooseToolCallRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ReadResourceRequest"
                     }
                   ],
@@ -2555,6 +2606,14 @@
                         }
                       ],
                       "title": "GetToolsResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GooseToolCallResponse"
+                        }
+                      ],
+                      "title": "GooseToolCallResponse"
                     },
                     {
                       "allOf": [

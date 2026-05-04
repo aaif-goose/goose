@@ -27,6 +27,7 @@ pub mod oauth;
 #[cfg(feature = "otel")]
 pub mod otel;
 pub mod permission;
+pub mod plugins;
 #[cfg(feature = "telemetry")]
 pub mod posthog;
 pub mod prompt_template;

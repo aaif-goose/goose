@@ -124,7 +124,9 @@
   "message": {
     "copied": "Copiado",
     "defaultImageAlt": "Adjunto",
-    "mcpAppUnderConstruction": "🚧 La renderización de MCP App está en construcción",
+    "mcpApp": "MCP App",
+    "mcpAppLoading": "Cargando MCP App…",
+    "mcpAppRenderError": "No se pudo renderizar MCP App en línea.",
     "redactedThinking": "(pensamiento redactado)"
   },
   "persona": {
@@ -189,11 +191,15 @@
     "voiceInputAutoSubmitHint": "Di \"enviar\" para enviar"
   },
   "tools": {
+    "content": "Contenido",
     "fileNotFound": "Archivo no encontrado: {{path}}",
     "moreOutputs": "Más salidas ({{count}})",
     "openFile": "Abrir archivo",
     "openFolder": "Abrir carpeta",
     "openPath": "Abrir ruta",
-    "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos."
+    "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos.",
+    "structuredContent": "Contenido estructurado",
+    "structuredOutput": "Salida estructurada",
+    "structuredOutputLines": "{{count}} líneas"
   }
 }

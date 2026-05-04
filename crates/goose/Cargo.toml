@@ -142,7 +142,7 @@ jsonwebtoken = { version = "10.3.0", default-features = false, features = ["use_
 blake3 = "1.8"
 fs2 = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
-tempfile = { workspace = true }
+tempfile.workspace = true
 dashmap = "6.1"
 ahash = "0.8"
 tokio-util = { workspace = true, features = ["compat"] }

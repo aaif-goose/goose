@@ -38,6 +38,25 @@ export const zGetToolsResponse = z.object({
 });
 
 /**
+ * Call a tool from an extension.
+ */
+export const zGooseToolCallRequest = z.object({
+    sessionId: z.string(),
+    name: z.string(),
+    arguments: z.unknown().optional().default(null)
+});
+
+/**
+ * Tool call response.
+ */
+export const zGooseToolCallResponse = z.object({
+    content: z.array(z.unknown()).optional().default([]),
+    structuredContent: z.unknown().optional(),
+    isError: z.boolean(),
+    _meta: z.unknown().optional()
+});
+
+/**
  * Read a resource from an extension.
  */
 export const zReadResourceRequest = z.object({
@@ -863,6 +882,7 @@ export const zExtRequest = z.object({
             zAddExtensionRequest,
             zRemoveExtensionRequest,
             zGetToolsRequest,
+            zGooseToolCallRequest,
             zReadResourceRequest,
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
@@ -924,6 +944,7 @@ export const zExtResponse = z.union([
             z.union([
                 zEmptyResponse,
                 zGetToolsResponse,
+                zGooseToolCallResponse,
                 zReadResourceResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
