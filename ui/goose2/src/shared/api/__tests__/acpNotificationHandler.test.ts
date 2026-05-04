@@ -47,11 +47,7 @@ describe("acpNotificationHandler", () => {
   });
 
   it("keeps tool calls that arrive before the first text chunk on the pending assistant message", async () => {
-    registerPreparedSession(
-      "acp-session",
-      "goose",
-      "/Users/aharvard",
-    );
+    registerPreparedSession("acp-session", "goose", "/Users/aharvard");
     setActiveMessageId("acp-session", "assistant-1");
 
     await handleSessionNotification({
