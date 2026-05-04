@@ -899,6 +899,9 @@
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Failed to update working directory"
   },
+  "elicitationRequest.accept": {
+    "defaultMessage": "Accept"
+  },
   "elicitationRequest.cancelled": {
     "defaultMessage": "Information request was cancelled."
   },
