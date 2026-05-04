@@ -38,13 +38,30 @@ const STEP_BULLET_CLASS: Record<ToolCallStatus, string> = {
   stopped: "text-orange-600",
 };
 
-function ChainStepRail({ status }: { status: ToolCallStatus }) {
+function ChainStepRail({
+  status,
+  isLast = false,
+  lineTailVisible = true,
+}: {
+  status: ToolCallStatus;
+  /** Last row in the expanded chain: hides the spine stub below the bullet until `lineTailVisible`. */
+  isLast?: boolean;
+  lineTailVisible?: boolean;
+}) {
   const Icon = STEP_BULLET_ICON[status];
   return (
     <div
       aria-hidden="true"
       className="relative flex w-4 shrink-0 justify-center self-stretch"
     >
+      {isLast && (
+        <div
+          className={cn(
+            "pointer-events-none absolute top-5 bottom-0 left-1/2 z-11 w-2.5 -translate-x-1/2 bg-background transition-opacity duration-150",
+            lineTailVisible ? "opacity-0" : "opacity-100",
+          )}
+        />
+      )}
       <div className="relative z-10 mt-1 flex h-4 w-4 items-center justify-center rounded-full bg-background ring-2 ring-background">
         <Icon className={cn("size-3.5 shrink-0", STEP_BULLET_CLASS[status])} />
       </div>
@@ -158,11 +175,12 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
 
   const renderToolItem = (
     item: ToolChainItem,
-    options: { withRail: boolean },
+    options: { withRail: boolean; isLastInChain?: boolean },
   ) => {
     const name = getToolItemName(item);
     const status = getToolItemStatus(item);
     const { request, response } = item;
+    const isOpen = expandedKeys.has(item.key);
 
     if (!options.withRail) {
       return (
@@ -189,7 +207,11 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
         data-role="tool-chain-step"
         className="relative z-1 flex max-w-full items-stretch gap-2.5"
       >
-        <ChainStepRail status={status} />
+        <ChainStepRail
+          status={status}
+          isLast={options.isLastInChain}
+          lineTailVisible={isOpen}
+        />
         <div className="min-w-0 flex-1 pb-1">
           <ToolCallAdapter
             name={name}
@@ -200,7 +222,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
             structuredContent={response?.structuredContent}
             isError={response?.isError}
             startedAt={request?.startedAt}
-            open={expandedKeys.has(item.key)}
+            open={isOpen}
             onOpenChange={(open) => handleOpenChange(item.key, open)}
             showStatusBadge={false}
             fitWidth
@@ -242,7 +264,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
 
   return (
     <section
-      className="my-1 flex w-full min-w-0 max-w-full flex-col gap-1"
+      className="my-1 flex w-full min-w-0 max-w-full flex-col gap-0"
       data-role="tool-chain-card"
       data-status={aggregateStatus}
     >
@@ -269,19 +291,33 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
       </button>
 
       {chainExpanded && (
-        <div className="relative flex flex-col gap-1">
+        <div className="relative flex flex-col gap-1 pt-1.5">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute top-0 bottom-0 left-2 z-0 w-px -translate-x-1/2 bg-border"
           />
-          {primaryItems.map((item) => renderToolItem(item, { withRail: true }))}
+          {primaryItems.map((item, index) => {
+            const isLastPrimary = index === primaryItems.length - 1;
+            const isLastInChain =
+              isLastPrimary &&
+              !hasHiddenDisclosure &&
+              !(showInternalSteps && hiddenItems.length > 0);
+            return renderToolItem(item, {
+              withRail: true,
+              isLastInChain,
+            });
+          })}
 
           {hasHiddenDisclosure && (
             <div
               data-role="tool-chain-internal-disclosure"
               className="relative z-1 flex max-w-full items-stretch gap-2.5"
             >
-              <ChainStepRail status="completed" />
+              <ChainStepRail
+                status="completed"
+                isLast={!showInternalSteps}
+                lineTailVisible={showInternalSteps}
+              />
               <div className="min-w-0 flex-1 pb-1">
                 <button
                   type="button"
@@ -308,7 +344,12 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
           )}
 
           {showInternalSteps &&
-            hiddenItems.map((item) => renderToolItem(item, { withRail: true }))}
+            hiddenItems.map((item, index) =>
+              renderToolItem(item, {
+                withRail: true,
+                isLastInChain: index === hiddenItems.length - 1,
+              }),
+            )}
         </div>
       )}
     </section>
