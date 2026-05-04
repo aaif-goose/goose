@@ -1544,11 +1544,14 @@ impl Agent {
                                                                             .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
                                                                             .collect::<Vec<_>>()
                                                                             .join(" ");
-                                                                        let error_text = if text.is_empty() {
-                                                                            serde_json::to_string(&r.content)
+                                                                        let error_text = if !text.is_empty() {
+                                                                            text
+                                                                        } else if let Some(structured) = &r.structured_content {
+                                                                            serde_json::to_string(structured)
                                                                                 .unwrap_or_else(|_| "error".to_string())
                                                                         } else {
-                                                                            text
+                                                                            serde_json::to_string(&r.content)
+                                                                                .unwrap_or_else(|_| "error".to_string())
                                                                         };
                                                                         self.tool_inspection_manager.record_tool_error(tool_name, &error_text);
                                                                     }

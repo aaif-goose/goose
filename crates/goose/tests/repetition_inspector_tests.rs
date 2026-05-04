@@ -51,9 +51,15 @@ async fn test_error_pattern_fires_after_threshold() {
         inspector.record_error("my_tool", "404 Not Found");
     }
     let requests = vec![make_tool_request("my_tool")];
-    let results: Vec<_> = ToolInspector::inspect(&inspector, "session", &requests, &[], goose::config::GooseMode::Auto)
-        .await
-        .unwrap();
+    let results: Vec<_> = ToolInspector::inspect(
+        &inspector,
+        "session",
+        &requests,
+        &[],
+        goose::config::GooseMode::Auto,
+    )
+    .await
+    .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].action, InspectionAction::Deny);
     assert_eq!(results[0].finding_id.as_deref(), Some("REP-002"));
@@ -66,10 +72,18 @@ async fn test_error_pattern_does_not_fire_before_threshold() {
         inspector.record_error("my_tool", "404 Not Found");
     }
     let requests = vec![make_tool_request("my_tool")];
-    let results: Vec<_> = ToolInspector::inspect(&inspector, "session", &requests, &[], goose::config::GooseMode::Auto)
-        .await
-        .unwrap();
-    assert!(results.iter().all(|r| r.finding_id.as_deref() != Some("REP-002")));
+    let results: Vec<_> = ToolInspector::inspect(
+        &inspector,
+        "session",
+        &requests,
+        &[],
+        goose::config::GooseMode::Auto,
+    )
+    .await
+    .unwrap();
+    assert!(results
+        .iter()
+        .all(|r| r.finding_id.as_deref() != Some("REP-002")));
 }
 
 #[tokio::test]
@@ -80,10 +94,18 @@ async fn test_error_pattern_resets_on_success() {
     inspector.record_success();
     inspector.record_error("my_tool", "404 Not Found");
     let requests = vec![make_tool_request("my_tool")];
-    let results: Vec<_> = ToolInspector::inspect(&inspector, "session", &requests, &[], goose::config::GooseMode::Auto)
-        .await
-        .unwrap();
-    assert!(results.iter().all(|r| r.finding_id.as_deref() != Some("REP-002")));
+    let results: Vec<_> = ToolInspector::inspect(
+        &inspector,
+        "session",
+        &requests,
+        &[],
+        goose::config::GooseMode::Auto,
+    )
+    .await
+    .unwrap();
+    assert!(results
+        .iter()
+        .all(|r| r.finding_id.as_deref() != Some("REP-002")));
 }
 
 #[tokio::test]
@@ -93,8 +115,16 @@ async fn test_error_pattern_does_not_cross_tool_names() {
         inspector.record_error("tool_a", "same error");
     }
     let requests = vec![make_tool_request("tool_b")];
-    let results: Vec<_> = ToolInspector::inspect(&inspector, "session", &requests, &[], goose::config::GooseMode::Auto)
-        .await
-        .unwrap();
-    assert!(results.iter().all(|r| r.finding_id.as_deref() != Some("REP-002")));
+    let results: Vec<_> = ToolInspector::inspect(
+        &inspector,
+        "session",
+        &requests,
+        &[],
+        goose::config::GooseMode::Auto,
+    )
+    .await
+    .unwrap();
+    assert!(results
+        .iter()
+        .all(|r| r.finding_id.as_deref() != Some("REP-002")));
 }

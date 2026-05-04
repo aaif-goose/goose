@@ -67,18 +67,15 @@ impl RepetitionInspector {
     }
 
     pub fn record_error(&self, tool_name: &str, error_text: &str) {
-        let truncated = error_text
-            .char_indices()
-            .nth(100)
-            .map_or(error_text, |(i, _)| &error_text[..i]);
+        let truncated: String = error_text.chars().take(100).collect();
         let mut state = self.error_state.lock().unwrap();
         if state.last_tool_name.as_deref() == Some(tool_name)
-            && state.last_error_text.as_deref() == Some(truncated)
+            && state.last_error_text.as_deref() == Some(truncated.as_str())
         {
             state.consecutive_count += 1;
         } else {
             state.last_tool_name = Some(tool_name.to_string());
-            state.last_error_text = Some(truncated.to_string());
+            state.last_error_text = Some(truncated);
             state.consecutive_count = 1;
         }
     }
@@ -179,7 +176,7 @@ impl ToolInspector for RepetitionInspector {
         // Deny a tool that has returned the same error N consecutive times, regardless
         // of whether call parameters changed — catches retry loops with varying inputs.
         {
-            let state = self.error_state.lock().unwrap();
+            let mut state = self.error_state.lock().unwrap();
             if state.consecutive_count >= MAX_CONSECUTIVE_ERROR_FINGERPRINTS {
                 if let Some(ref last_tool) = state.last_tool_name {
                     let error_text = state.last_error_text.as_deref().unwrap_or("");
@@ -201,6 +198,8 @@ impl ToolInspector for RepetitionInspector {
                         }
                     }
                 }
+                // Reset so the model can retry after adapting strategy
+                state.consecutive_count = 0;
             }
         }
 
