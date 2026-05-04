@@ -432,7 +432,7 @@ export function useChat(
         // transient chunks and refresh the session from replay instead.
         clearReplayBuffer(sessionId);
         const workingDir = getWorkingDir();
-        await acpLoadSession(sessionId, sessionId, workingDir);
+        await acpLoadSession(sessionId, workingDir);
 
         store.setSessionLoading(sessionId, false);
 

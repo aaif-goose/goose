@@ -85,11 +85,7 @@ describe("useChat compaction", () => {
       "/compact",
       undefined,
     );
-    expect(mockAcpLoadSession).toHaveBeenCalledWith(
-      "session-1",
-      "session-1",
-      undefined,
-    );
+    expect(mockAcpLoadSession).toHaveBeenCalledWith("session-1", undefined);
 
     const messages = useChatStore.getState().messagesBySession["session-1"];
     const runtime = useChatStore.getState().getSessionRuntime("session-1");
@@ -146,11 +142,7 @@ describe("useChat compaction", () => {
     expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact", {
       personaId: "persona-a",
     });
-    expect(mockAcpLoadSession).toHaveBeenCalledWith(
-      "session-1",
-      "session-1",
-      undefined,
-    );
+    expect(mockAcpLoadSession).toHaveBeenCalledWith("session-1", undefined);
     expect(preparedPersonaId).toBe("persona-a");
   });
 

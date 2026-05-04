@@ -40,24 +40,15 @@ describe("acpLoadSession", () => {
     const sessionTracker = await import("../acpSessionTracker");
     const { acpLoadSession } = await import("../acp");
 
-    sessionTracker.registerSession(
-      "local-session",
-      "goose-session-1",
-      "goose",
-      "/tmp/original",
-    );
+    sessionTracker.registerSession("acp-session-1", "goose", "/tmp/original");
 
     await expect(
-      acpLoadSession("local-session", "goose-session-2", "/tmp/replay"),
+      acpLoadSession("acp-session-1", "/tmp/replay"),
     ).rejects.toThrow("load failed");
 
-    expect(sessionTracker.getGooseSessionId("local-session")).toBe(
-      "goose-session-1",
+    expect(sessionTracker.getGooseSessionId("acp-session-1")).toBe(
+      "acp-session-1",
     );
-    expect(sessionTracker.getLocalSessionId("goose-session-1")).toBe(
-      "local-session",
-    );
-    expect(sessionTracker.getLocalSessionId("goose-session-2")).toBeNull();
   });
 });
 
@@ -93,9 +84,6 @@ describe("acpCreateSession", () => {
     expect(sessionTracker.getGooseSessionId("acp-session-1")).toBe(
       "acp-session-1",
     );
-    expect(sessionTracker.getLocalSessionId("acp-session-1")).toBe(
-      "acp-session-1",
-    );
   });
 });
 
@@ -125,9 +113,6 @@ describe("acpPrepareSession", () => {
     expect(mockNewSession).not.toHaveBeenCalled();
     expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
     expect(sessionTracker.getGooseSessionId("acp-session-1")).toBe(
-      "acp-session-1",
-    );
-    expect(sessionTracker.getLocalSessionId("acp-session-1")).toBe(
       "acp-session-1",
     );
   });

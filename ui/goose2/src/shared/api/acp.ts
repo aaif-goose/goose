@@ -174,12 +174,7 @@ export async function acpCreateSession(
   );
   const gooseSessionId = response.sessionId;
   await directAcp.setProvider(gooseSessionId, providerId);
-  sessionTracker.registerSession(
-    gooseSessionId,
-    gooseSessionId,
-    providerId,
-    workingDir,
-  );
+  sessionTracker.registerSession(gooseSessionId, providerId, workingDir);
   if (options.modelId) {
     await directAcp.setModel(gooseSessionId, options.modelId);
   }
@@ -223,7 +218,6 @@ export async function acpSearchSessions(
  */
 export async function acpLoadSession(
   sessionId: string,
-  gooseSessionId: string,
   workingDir?: string,
 ): Promise<void> {
   const effectiveWorkingDir = workingDir ?? "~/.goose/artifacts";
@@ -231,13 +225,12 @@ export async function acpLoadSession(
   const t0 = performance.now();
   const rollbackSessionRegistration = sessionTracker.registerSession(
     sessionId,
-    gooseSessionId,
     "goose",
     effectiveWorkingDir,
   );
   try {
     perfLog(`[perf:load] ${sid} acpLoadSession → client.loadSession`);
-    await directAcp.loadSession(gooseSessionId, effectiveWorkingDir);
+    await directAcp.loadSession(sessionId, effectiveWorkingDir);
     perfLog(
       `[perf:load] ${sid} client.loadSession resolved in ${(performance.now() - t0).toFixed(1)}ms`,
     );

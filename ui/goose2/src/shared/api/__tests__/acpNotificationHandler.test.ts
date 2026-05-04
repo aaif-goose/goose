@@ -15,8 +15,8 @@ import { registerSession } from "../acpSessionTracker";
 
 function createMcpAppPayload(): McpAppPayload {
   return {
-    sessionId: "local-session",
-    gooseSessionId: "goose-session",
+    sessionId: "acp-session",
+    gooseSessionId: "acp-session",
     toolCallId: "tool-1",
     toolCallTitle: "mcp_app_bench__inspect_host_info",
     source: "toolCallUpdateMeta",
@@ -34,8 +34,7 @@ function createMcpAppPayload(): McpAppPayload {
 describe("acpNotificationHandler", () => {
   beforeEach(() => {
     clearMessageTracking();
-    clearReplayBuffer("local-session");
-    clearReplayBuffer("goose-session");
+    clearReplayBuffer("acp-session");
     useChatStore.setState({
       messagesBySession: {},
       sessionStateById: {},
@@ -49,16 +48,11 @@ describe("acpNotificationHandler", () => {
   });
 
   it("keeps tool calls that arrive before the first text chunk on the pending assistant message", async () => {
-    registerSession(
-      "local-session",
-      "goose-session",
-      "goose",
-      "/Users/aharvard/.goose/artifacts",
-    );
-    setActiveMessageId("goose-session", "assistant-1");
+    registerSession("acp-session", "goose", "/Users/aharvard/.goose/artifacts");
+    setActiveMessageId("acp-session", "assistant-1");
 
     await handleSessionNotification({
-      sessionId: "goose-session",
+      sessionId: "acp-session",
       update: {
         sessionUpdate: "tool_call",
         toolCallId: "tool-1",
@@ -67,7 +61,7 @@ describe("acpNotificationHandler", () => {
     } as never);
 
     await handleSessionNotification({
-      sessionId: "goose-session",
+      sessionId: "acp-session",
       update: {
         sessionUpdate: "tool_call_update",
         toolCallId: "tool-1",
@@ -94,7 +88,7 @@ describe("acpNotificationHandler", () => {
     } as never);
 
     await handleSessionNotification({
-      sessionId: "goose-session",
+      sessionId: "acp-session",
       update: {
         sessionUpdate: "agent_message_chunk",
         content: {
@@ -106,14 +100,13 @@ describe("acpNotificationHandler", () => {
 
     await waitFor(() => {
       const message =
-        useChatStore.getState().messagesBySession["local-session"]?.[0];
+        useChatStore.getState().messagesBySession["acp-session"]?.[0];
       expect(message?.content.some((block) => block.type === "mcpApp")).toBe(
         true,
       );
     });
 
-    const [message] =
-      useChatStore.getState().messagesBySession["local-session"];
+    const [message] = useChatStore.getState().messagesBySession["acp-session"];
     expect(message.id).toBe("assistant-1");
     expect(message.content.map((block) => block.type)).toEqual([
       "toolRequest",
@@ -146,7 +139,7 @@ describe("acpNotificationHandler", () => {
       text: "The Host Info inspector is now open.",
     });
     expect(
-      useChatStore.getState().getSessionRuntime("local-session")
+      useChatStore.getState().getSessionRuntime("acp-session")
         .streamingMessageId,
     ).toBe("assistant-1");
   });

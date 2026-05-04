@@ -113,7 +113,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             .projects.find((p) => p.id === session.projectId) ?? null)
         : null;
       const workingDir = await resolveSessionCwd(project);
-      await acpLoadSession(sessionId, sessionId, workingDir);
+      await acpLoadSession(sessionId, workingDir);
       const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);

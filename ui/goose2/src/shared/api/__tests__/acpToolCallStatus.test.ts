@@ -15,7 +15,7 @@ describe("ACP tool call status handling", () => {
   beforeEach(() => {
     clearMessageTracking();
     clearReplayBuffer("replay-failed-tool-session");
-    clearReplayBuffer("goose-session");
+    clearReplayBuffer("acp-session");
     useChatStore.setState({
       messagesBySession: {},
       sessionStateById: {},
@@ -76,16 +76,11 @@ describe("ACP tool call status handling", () => {
   });
 
   it("marks failed live tool updates as errors", async () => {
-    registerSession(
-      "local-session",
-      "goose-session",
-      "goose",
-      "/Users/aharvard/.goose/artifacts",
-    );
-    setActiveMessageId("goose-session", "assistant-1");
+    registerSession("acp-session", "goose", "/Users/aharvard/.goose/artifacts");
+    setActiveMessageId("acp-session", "assistant-1");
 
     await handleSessionNotification({
-      sessionId: "goose-session",
+      sessionId: "acp-session",
       update: {
         sessionUpdate: "tool_call",
         toolCallId: "tool-1",
@@ -94,7 +89,7 @@ describe("ACP tool call status handling", () => {
     } as never);
 
     await handleSessionNotification({
-      sessionId: "goose-session",
+      sessionId: "acp-session",
       update: {
         sessionUpdate: "tool_call_update",
         toolCallId: "tool-1",
@@ -111,8 +106,7 @@ describe("ACP tool call status handling", () => {
       },
     } as never);
 
-    const [message] =
-      useChatStore.getState().messagesBySession["local-session"];
+    const [message] = useChatStore.getState().messagesBySession["acp-session"];
     expect(message.content[0]).toMatchObject({
       type: "toolRequest",
       id: "tool-1",
