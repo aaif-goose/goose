@@ -382,9 +382,19 @@ impl ThreadManager {
     /// `id == tool_call_id` inside the message identified by `(thread_id,
     /// message_id)`. Existing keys in `tool_meta` are preserved.
     ///
-    /// No-ops (returns `Ok(())`) if the message row or the tool request can't
+    /// No-ops (returns `Ok(())`) if the row containing the tool request can't
     /// be found — callers (e.g. async title tasks) treat persistence as
     /// best-effort.
+    ///
+    /// `message_id` is used as a coarse filter, but multiple `thread_messages`
+    /// rows can share the same `message_id` when the agent splits a single
+    /// LLM response (e.g. text + tool_request) into separate
+    /// `AgentEvent::Message` events. We disambiguate by walking the matching
+    /// rows and picking the one whose content actually contains a
+    /// `ToolRequest` with `tool_call_id`, then update only that row by its
+    /// auto-incremented primary key. Without this, the title for the first
+    /// tool in such a split message never persists, because `fetch_optional`
+    /// returns the text-only row first and finds no matching tool call.
     pub async fn update_tool_request_meta(
         &self,
         thread_id: &str,
@@ -395,45 +405,41 @@ impl ThreadManager {
         let pool = self.storage.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let content_json = sqlx::query_scalar::<_, String>(
-            "SELECT content_json FROM thread_messages \
-             WHERE thread_id = ? AND message_id = ?",
+        let rows = sqlx::query_as::<_, (i64, String)>(
+            "SELECT id, content_json FROM thread_messages \
+             WHERE thread_id = ? AND message_id = ? \
+             ORDER BY id ASC",
         )
         .bind(thread_id)
         .bind(message_id)
-        .fetch_optional(&mut *tx)
+        .fetch_all(&mut *tx)
         .await?;
 
-        let Some(content_json) = content_json else {
-            return Ok(());
-        };
-
-        let mut content: Vec<MessageContent> = serde_json::from_str(&content_json)?;
-        let mut found = false;
-        for block in &mut content {
-            if let MessageContent::ToolRequest(tr) = block {
-                if tr.id == tool_call_id {
-                    tr.tool_meta = Some(merge_tool_meta(tr.tool_meta.take(), &patch));
-                    found = true;
-                    break;
+        for (row_id, content_json) in rows {
+            let mut content: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+            let mut found = false;
+            for block in &mut content {
+                if let MessageContent::ToolRequest(tr) = block {
+                    if tr.id == tool_call_id {
+                        tr.tool_meta = Some(merge_tool_meta(tr.tool_meta.take(), &patch));
+                        found = true;
+                        break;
+                    }
                 }
             }
-        }
+            if !found {
+                continue;
+            }
 
-        if !found {
+            let updated_json = serde_json::to_string(&content)?;
+            sqlx::query("UPDATE thread_messages SET content_json = ? WHERE id = ?")
+                .bind(updated_json)
+                .bind(row_id)
+                .execute(&mut *tx)
+                .await?;
+            tx.commit().await?;
             return Ok(());
         }
-
-        let updated_json = serde_json::to_string(&content)?;
-        sqlx::query(
-            "UPDATE thread_messages SET content_json = ? \
-             WHERE thread_id = ? AND message_id = ?",
-        )
-        .bind(updated_json)
-        .bind(thread_id)
-        .bind(message_id)
-        .execute(&mut *tx)
-        .await?;
 
         tx.commit().await?;
         Ok(())
@@ -702,6 +708,197 @@ mod tests {
         assert!(
             req.persisted_title().is_none(),
             "no-match must leave tool_meta untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_targets_correct_row_when_message_id_is_shared() {
+        // Regression for "first tool call in a chain consistently shows the
+        // deterministic title on reload." Bedrock/Anthropic-style streaming
+        // produces a single LLM message id (e.g. `msg_bdrk_…`) but the agent
+        // splits it across multiple `AgentEvent::Message` events — one for
+        // text, one for the trailing tool_request — and `append_message`
+        // writes a separate row per event. Both rows end up with the SAME
+        // `message_id`. `fetch_optional` returned the text-only row first and
+        // the title never persisted.
+        use crate::conversation::message::ToolRequest;
+        use rmcp::model::CallToolRequestParams;
+
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        let shared_id = "msg_bdrk_shared".to_string();
+
+        let mut text_only = Message::new(
+            Role::Assistant,
+            chrono::Utc::now().timestamp_millis(),
+            vec![MessageContent::text(
+                "Let me look at the project structure.",
+            )],
+        );
+        text_only.id = Some(shared_id.clone());
+        let stored_text = mgr
+            .append_message(&thread.id, None, &text_only)
+            .await
+            .unwrap();
+        assert_eq!(stored_text.id.as_deref(), Some(shared_id.as_str()));
+
+        let mut tool_message = Message::new(
+            Role::Assistant,
+            chrono::Utc::now().timestamp_millis(),
+            vec![MessageContent::ToolRequest(ToolRequest {
+                id: "toolu_tree".to_string(),
+                tool_call: Ok(CallToolRequestParams::new("tree")),
+                metadata: None,
+                tool_meta: None,
+            })],
+        );
+        tool_message.id = Some(shared_id.clone());
+        let stored_tool = mgr
+            .append_message(&thread.id, None, &tool_message)
+            .await
+            .unwrap();
+        assert_eq!(stored_tool.id.as_deref(), Some(shared_id.as_str()));
+
+        mgr.update_tool_request_meta(
+            &thread.id,
+            &shared_id,
+            "toolu_tree",
+            serde_json::json!({ TOOL_META_TITLE_KEY: "exploring project structure" }),
+        )
+        .await
+        .unwrap();
+
+        let messages = mgr.list_messages(&thread.id).await.unwrap();
+        assert_eq!(messages.len(), 2, "two distinct rows must be preserved");
+        let text_msg = &messages[0];
+        let tool_msg = &messages[1];
+        assert!(
+            matches!(&text_msg.content[0], MessageContent::Text(_)),
+            "first row must remain text-only and untouched",
+        );
+        let tr = match &tool_msg.content[0] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request in second row"),
+        };
+        assert_eq!(
+            tr.persisted_title(),
+            Some("exploring project structure"),
+            "title must land on the row that actually contains the tool call",
+        );
+    }
+
+    #[tokio::test]
+    async fn update_tool_request_meta_serializes_concurrent_writes_preserving_all_keys() {
+        // Regression for "occasional bad replay" when multiple persist tasks
+        // (per-tool title for tc-1, per-tool title for tc-2, chain summary on
+        // tc-1) race against each other for the same row's tool_meta. They
+        // must serialize via BEGIN IMMEDIATE and merge rather than clobber.
+        use crate::conversation::message::ToolRequest;
+        use rmcp::model::CallToolRequestParams;
+
+        let temp = TempDir::new().unwrap();
+        let mgr = fresh_thread_manager(&temp).await;
+        let thread = mgr.create_thread(None, None, None).await.unwrap();
+
+        let message = Message::new(
+            Role::Assistant,
+            chrono::Utc::now().timestamp_millis(),
+            vec![
+                MessageContent::ToolRequest(ToolRequest {
+                    id: "tc-1".to_string(),
+                    tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+                    metadata: None,
+                    tool_meta: None,
+                }),
+                MessageContent::ToolRequest(ToolRequest {
+                    id: "tc-2".to_string(),
+                    tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+                    metadata: None,
+                    tool_meta: None,
+                }),
+            ],
+        );
+        let stored = mgr
+            .append_message(&thread.id, None, &message)
+            .await
+            .unwrap();
+        let message_id = stored.id.clone().unwrap();
+
+        let m1 = mgr.clone();
+        let t1 = thread.id.clone();
+        let mid1 = message_id.clone();
+        let h1 = tokio::spawn(async move {
+            m1.update_tool_request_meta(
+                &t1,
+                &mid1,
+                "tc-1",
+                serde_json::json!({ TOOL_META_TITLE_KEY: "ran shell command" }),
+            )
+            .await
+            .unwrap();
+        });
+
+        let m2 = mgr.clone();
+        let t2 = thread.id.clone();
+        let mid2 = message_id.clone();
+        let h2 = tokio::spawn(async move {
+            m2.update_tool_request_meta(
+                &t2,
+                &mid2,
+                "tc-2",
+                serde_json::json!({ TOOL_META_TITLE_KEY: "ran another shell command" }),
+            )
+            .await
+            .unwrap();
+        });
+
+        let m3 = mgr.clone();
+        let t3 = thread.id.clone();
+        let mid3 = message_id.clone();
+        let h3 = tokio::spawn(async move {
+            m3.update_tool_request_meta(
+                &t3,
+                &mid3,
+                "tc-1",
+                serde_json::json!({
+                    TOOL_META_CHAIN_SUMMARY_KEY: { "summary": "inspected codebase", "count": 2 },
+                }),
+            )
+            .await
+            .unwrap();
+        });
+
+        h1.await.unwrap();
+        h2.await.unwrap();
+        h3.await.unwrap();
+
+        let messages = mgr.list_messages(&thread.id).await.unwrap();
+        let content = &messages[0].content;
+        let tc1 = match &content[0] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request"),
+        };
+        let tc2 = match &content[1] {
+            MessageContent::ToolRequest(r) => r,
+            _ => panic!("expected tool request"),
+        };
+
+        assert_eq!(
+            tc1.persisted_title(),
+            Some("ran shell command"),
+            "concurrent writes must not drop tc-1's title",
+        );
+        let chain_summary = tc1
+            .persisted_chain_summary()
+            .expect("tc-1 must keep its chain summary");
+        assert_eq!(chain_summary.summary, "inspected codebase");
+        assert_eq!(chain_summary.count, 2);
+        assert_eq!(
+            tc2.persisted_title(),
+            Some("ran another shell command"),
+            "concurrent writes must not drop tc-2's title",
         );
     }
 
