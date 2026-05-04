@@ -301,12 +301,16 @@ After reviewing all files, provide:
   ```
   1. Short Issue Title (P0) [Must Fix]
      - Description of the issue and why it matters
+     - User effect if this ships
      - Recommended fix
 
   2. Short Issue Title (P3) [Your Call]
      - Description of the issue and why it may or may not need addressing
+     - User effect if this ships
      - Recommended fix if the user chooses to act on it
   ```
+
+  Write the user-effect bullet in product language: describe what the user would experience, misunderstand, lose, or be blocked from doing if the issue reached production.
 
   Use a short, descriptive title (3–6 words max) so issues can be referenced by number (e.g. "fix issue 3").
 
