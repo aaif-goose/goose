@@ -32,6 +32,7 @@ pub const OPENROUTER_KNOWN_MODELS: &[&str] = &[
     "deepseek/deepseek-r1-0528",
     "qwen/qwen3-coder",
     "moonshotai/kimi-k2",
+    "openrouter/auto",
 ];
 pub const OPENROUTER_DOC_URL: &str = "https://openrouter.ai/models";
 
@@ -181,6 +182,10 @@ impl ProviderDef for OpenRouterProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
     }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
 }
 
 #[async_trait]
@@ -193,7 +198,7 @@ impl Provider for OpenRouterProvider {
         self.model.clone()
     }
 
-    /// Fetch supported models from OpenRouter API (only models with tool support)
+    /// Fetch supported models from OpenRouter API
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
         let response = self
             .api_client
