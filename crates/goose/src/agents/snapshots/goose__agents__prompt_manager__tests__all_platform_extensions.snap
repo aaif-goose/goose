@@ -41,7 +41,7 @@ Use list_resources and read_resource to work with extension data and resources.
 ### Instructions
 Analyze code structure using tree-sitter AST parsing. Three auto-selected modes:
 - Directory path → structure overview (file tree with function/class counts)
-- File path → semantic details (functions, classes, imports, call counts)
+- File path → AST symbol details (functions, classes, imports — not for raw file reading; use shell cat for that)
 - Any path + focus parameter → symbol call graph (incoming/outgoing chains)
 
 For large codebases, delegate analysis to a subagent and retain only the summary.
