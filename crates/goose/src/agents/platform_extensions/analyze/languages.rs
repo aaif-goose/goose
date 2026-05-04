@@ -342,7 +342,7 @@ static LANGUAGES: &[LangInfo] = &[
                         left: (call target: (identifier) @name)
                         operator: "when")
                     ])
-                  (#any-of? @_ignore "def" "defp" "defmacro" "defmacrop" "defn" "defnp"))
+                  (#any-of? @_ignore "def" "defp" "defdelegate" "defguard" "defguardp" "defmacro" "defmacrop" "defn" "defnp"))
             "#,
             classes: r#"
                 (call
@@ -358,9 +358,12 @@ static LANGUAGES: &[LangInfo] = &[
             calls: r#"
                 (call target: (identifier) @name
                      (#not-any-of? @name
-                          "def" "defp" "defmacro" "defmacrop" "defn" "defnp"
-                          "defmodule" "defprotocol"
-                          "import" "alias" "require" "use"))
+                          "def" "defdelegate" "defexception" "defguard" "defguardp"
+                          "defimpl" "defmacro" "defmacrop" "defmodule" "defn" "defnp"
+                          "defoverridable" "defp" "defprotocol" "defstruct"
+                          "alias" "case" "cond" "else" "for" "if" "import" "quote"
+                          "raise" "receive" "require" "reraise" "super" "throw"
+                          "try" "unless" "unquote" "unquote_splicing" "use" "with"))
                 (call target: (dot right: (identifier) @name))
                 (binary_operator operator: "|>" right: (identifier) @name)
             "#,
