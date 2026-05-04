@@ -90,13 +90,14 @@ Default to reporting what needs to be fixed. Do not include an "Applied Well" or
 - **Abstractions**: Are abstractions appropriate (not too early, not too late)?
 - **Guard Clauses**: Are early-return guards used to keep code shallow and readable?
 - **Stable Extraction**: If duplication exists in two or more call sites, is the shared shape stable enough to extract without making callers handle a shifting contract?
-- **Post-PR Shape**: For refactors, review the final code shape. Do not clear a smell just because the PR improved the previous version.
-- **Partial Cleanup**: Do not treat partial extraction, partial deduplication, or partial cleanup as resolution if a verified smell remains in the changed code.
+- **Post-PR Shape**: Review the post-PR shape. Do not grade on a curve.
+- **Partial Cleanup**: Partial extraction, partial deduplication, or partial cleanup does not clear a remaining smell.
 
 ### Naming Reveals Intent
-- **Domain Terms**: Are names based on domain meaning instead of generic placeholders like `data`, `value`, or `handler`?
-- **Helper Names**: Do helper names describe what they return or decide, not how they compute it?
-- **Misleading Names**: Are misleading functions, components, or variables renamed instead of explained with comments?
+- Use names that describe intent, not implementation trivia.
+- Prefer domain terms over generic placeholders like `data`, `value`, or `handler`.
+- A helper name should describe what it returns or decides, not how it computes it.
+- Rename misleading functions before adding comments to explain them.
 
 ### Code Cleanliness
 - **Comments**: Are there unnecessary comments explaining obvious code? (Remove them)
@@ -127,19 +128,127 @@ Default to reporting what needs to be fixed. Do not include an "Applied Well" or
 ### UI Refactor Quality
 Use this focused pass for `ui/goose2` changes, especially when the user asks about cleanup, maintainability, decomposition, layering, type hygiene, duplication, dead code, readability, or extensibility.
 
-- **Final Shape**: Judge whether the changed code is easier to maintain and extend after the PR, not whether it is better than before.
-- **No Bug Required**: Report confirmed maintainability smells even when behavior still works.
-- **Confirmed Smells**: Any verified final-shape smell in changed code should become an issue; do not leave it only as a note or mental checklist item.
-- **Mixed Scope**: If a PR mixes feature work and refactoring, review the feature behavior separately from the cleanup quality.
-- **Layer Discipline**: Keep `ui/` for rendering and light view logic, `hooks/` for React state/effect orchestration, `api/` for backend transport and DTO adaptation, `lib/` for pure helpers, and `stores/` for shared feature state.
-- **Library Purity**: Keep `lib/` free of React, DOM, `window`, and I/O.
-- **Boundary Discipline**: Keep frontend-to-core behavior on the `SDK -> ACP -> goose` path. Do not add ad hoc `fetch()` calls or `invoke()` proxies for core Goose behavior, and do not call ACP clients directly from UI components.
-- **Module Encapsulation**: Export the minimum surface. Keep helpers private unless another module genuinely needs them, and remove stale exports.
-- **Hooks vs Helpers**: Prefer hooks for stateful async workflows and `lib/` helpers for React-independent logic. Keep each hook focused on one job with a stable return shape, and do not use a hook as the default extraction target for an oversized component.
-- **Distinct Smells**: If multiple distinct smells remain in one file, report each distinct responsibility problem as its own issue.
-- **Feature Wiring**: Confirm the refactor preserves user-visible behavior, state updates, persistence, and backend calls.
-- **Tests**: Treat coverage loss during refactors as suspicious unless the behavior was intentionally removed.
-- **Second Pass**: Before finalizing, re-check decomposition, layering, hooks/effects, pure helpers, type shapes, duplication, tests, and feature wiring for missed issues.
+Keep the focus on behavior-preserving frontend improvement. Favor the repo's existing architecture and patterns over generic frontend advice.
+
+- Review changed code for refactor quality, not just correctness.
+- Bias toward detecting maintainability smells even when the code is still functionally correct.
+- Review the final shape of the changed code, not whether it is better than what came before.
+- Judge changes by whether they leave the code easier to maintain and extend in future work, not just whether they are correct today.
+- Ask for approval before making code changes unless the user explicitly asks for fixes.
+- Preserve `ui/goose2` boundaries: `ui/`, `hooks/`, `api/`, `lib/`, `stores/`, and `shared/`.
+
+#### Strict Mode
+- Any confirmed smell in the changed code must be reported as an `Issue`.
+- Review the post-PR shape. Do not grade on a curve.
+- Partial extraction, partial deduplication, or partial cleanup does not clear a remaining smell.
+- If multiple distinct smells remain in one file, report each distinct responsibility problem separately.
+
+#### Smell Checklist
+Before finalizing the review, explicitly ask:
+
+- Is any view or page component still doing too many jobs?
+- Is any pure derivation logic still trapped in a component instead of `lib/`?
+- Is any repeated async UI workflow ready for a focused hook?
+- Are helpers duplicated or living in the wrong layer?
+- Are any inline object shapes large enough to deserve a named type?
+- Did logic move without moving or adding the right tests?
+- Did the refactor preserve feature wiring while improving structure?
+
+#### Size And Decomposition
+- Treat these as smell thresholds, not hard limits:
+  - components around 200 lines
+  - functions around 40 lines
+  - files around 300 lines
+  - JSX nesting around 4 levels
+- Treat "many unrelated state variables + many handlers + many effects in one view" as a smell even when the line count is still tolerated.
+- Treat a file that owns multiple unrelated responsibilities across data loading, derivation, mutation, and rendering orchestration as a smell unless there is a strong reason to keep it together.
+- If a component does more than its name claims, rename it or split it.
+- Split by responsibility, not by arbitrary line count.
+- When a view contains substantial pure derivation logic, prefer extracting it into `lib/` helpers with direct tests.
+- When a view contains substantial effectful workflow logic, prefer extracting it into a focused hook.
+- Do not suppress a decomposition `Issue` just because the PR already extracted some responsibilities.
+- If the remaining file still does too many jobs, report that as an `Issue`.
+- File size alone is not the finding. The finding is the number of unrelated responsibilities still owned by the final file.
+
+#### Layer Discipline
+- `ui/`: rendering and light view logic only.
+- `hooks/`: glue between React state/effects and lower layers.
+- `api/`: backend transport wrappers and DTO adaptation only.
+- `lib/`: pure functions and domain helpers only.
+- `stores/`: shared feature state only.
+- Keep business logic out of render-heavy components when a hook or utility would make it clearer.
+- If a component mixes pure transforms and UI event orchestration, split the pure transforms out first.
+- Do not move simple local state into a store unless multiple consumers truly need it.
+- Keep `api/` free of UI imports, path logic, and unrelated domain policy.
+- Keep `lib/` free of React, DOM, `window`, and I/O.
+- Prefer shared domain helpers in `lib/` when the same normalization, formatting, or parsing logic appears in multiple modules.
+- If logic lives in the wrong layer after the PR, report that as an `Issue` even if the PR reduced the amount of misplaced logic.
+
+#### Module Encapsulation
+- Export the minimum surface a module needs to share.
+- Keep helpers, constants, and intermediate transforms private unless another module genuinely needs them.
+- Treat removing stale exports as a quality improvement.
+- If a helper is used in only one module, default to keeping it local.
+- If similar helpers appear across two modules, default to extracting them.
+
+#### DRY And Hooks
+- Extract shared behavior once the duplication is clear and the shared abstraction is stable.
+- Two call sites can be enough when the shared shape is obvious and both call sites become simpler.
+- Prefer a hook when the shared logic is stateful or effectful.
+- Keep each hook focused on one job.
+- Keep hook return shapes stable so callers are not forced to handle shifting contracts.
+- Do not use a hook as the default extraction target for oversized components.
+- If the logic is pure and React-independent, report extraction to `lib/`.
+- If the logic coordinates React state, effects, async actions, or UI event orchestration, report extraction to `hooks/`.
+- Treat repeated pure UI derivation logic as helper extraction candidates.
+- If repeated effectful orchestration remains in the changed code, report that as an `Issue`.
+- If repeated pure transforms remain in the changed code, report that as an `Issue`.
+
+#### Type Hygiene
+- Keep canonical cross-feature types in `src/shared/types/`.
+- Do not duplicate types across features when one shared type should exist.
+- Give inline object types with 3 or more fields a name when they start obscuring the code.
+- Prefer `Pick`, `Omit`, and `Partial` over restating shapes by hand.
+- Avoid `any`, unchecked `as`, non-null assertions, and string-encoded pseudo-unions when a discriminated union would be clearer.
+- Treat repeated or verbose inline object shapes as extraction candidates for named types.
+- If verbose or repeated inline shapes remain after the PR, report that as an `Issue`.
+
+#### React And UI
+- Prefer straight-line render logic, guard clauses, and early returns over deep nesting.
+- Prefer controlled components where practical.
+- Use semantic HTML like `<main>`, `<nav>`, `<header>`, and `<aside>`.
+- Prefer existing shared UI button primitives over plain `<button>` elements.
+- Treat new plain `<button>` usage as a refactor smell unless there is a specific semantic or integration reason.
+- If a plain `<button>` is genuinely necessary, it must use `type="button"` in goose2.
+- Use `cn()` from `@/shared/lib/cn` for Tailwind class merging.
+- Prefer existing shared UI primitives before creating new one-off markup patterns.
+- Avoid inline styles except for truly dynamic values.
+- Respect reduced-motion behavior when touching animation.
+
+#### Notifications, Localization, And Accessibility
+- Route success and error feedback through the app's shared notification primitive.
+- Route user-facing Goose UI copy through `react-i18next` in already-migrated surfaces.
+- Prefer stable translation keys over inline English strings.
+- Avoid raw user-facing strings inside `catch` blocks.
+- Add text alternatives for icon-only or color-only affordances.
+- Keep interactive semantics explicit with labels, roles, and selected state where applicable.
+
+#### Tauri And Backend Boundaries
+- Frontend-to-core communication goes through `SDK -> ACP -> goose`.
+- Do not add ad hoc `fetch()` calls for goose core behavior.
+- Do not add `invoke()` calls as proxies to goose core behavior; reserve them for desktop-shell concerns.
+- Do not call ACP clients directly from UI components; keep backend access in `shared/api/` or `features/*/api/`.
+
+#### Errors, State Drift, And Dead Code
+- Handle errors explicitly and close to the source.
+- Keep the happy path easy to see.
+- In async UI flows, keep local state, persisted state, and backend-confirmed state from drifting apart.
+- Delete unused exports, imports, parameters, fields, and commented-out code.
+- Remove tests that only protect deleted internals rather than user-visible behavior.
+- When logic moves across modules, expect coverage to move with it rather than disappear.
+- Treat coverage loss in refactors as suspicious unless the behavior was intentionally removed.
+- If behavior-preserving logic moved but coverage did not move with it, report that as an `Issue`.
+- Report redundant props, fields, parameters, and intermediate values as `Issues`.
 
 ### General Code Quality
 - **Error Handling**: Are errors handled gracefully with user-friendly messages?
