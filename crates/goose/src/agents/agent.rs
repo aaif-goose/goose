@@ -1783,7 +1783,7 @@ impl Agent {
                             // continue from last user message after recovery compact
                         }
                         None => {
-                            if !any_tools_ever_called && !messages_to_add.is_empty() && consecutive_text_only_turns < MAX_TEXT_ONLY_NUDGES {
+                            if any_tools_ever_called && !messages_to_add.is_empty() && consecutive_text_only_turns < MAX_TEXT_ONLY_NUDGES {
                                 consecutive_text_only_turns += 1;
                                 info!(
                                     "Model produced text without tool calls ({}/{}), nudging to continue",
