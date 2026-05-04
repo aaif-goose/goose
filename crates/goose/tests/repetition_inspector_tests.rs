@@ -109,6 +109,39 @@ async fn test_error_pattern_resets_on_success() {
 }
 
 #[tokio::test]
+async fn test_error_pattern_streak_not_cleared_by_unrelated_tool() {
+    let inspector = RepetitionInspector::new(None);
+    for _ in 0..3 {
+        inspector.record_error("tool_a", "timeout");
+    }
+    // Calling an unrelated tool must not reset tool_a's streak
+    let unrelated = vec![make_tool_request("tool_b")];
+    ToolInspector::inspect(
+        &inspector,
+        "session",
+        &unrelated,
+        &[],
+        goose::config::GooseMode::Auto,
+    )
+    .await
+    .unwrap();
+    // tool_a should still be denied on the next call
+    let requests = vec![make_tool_request("tool_a")];
+    let results: Vec<_> = ToolInspector::inspect(
+        &inspector,
+        "session",
+        &requests,
+        &[],
+        goose::config::GooseMode::Auto,
+    )
+    .await
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].action, InspectionAction::Deny);
+    assert_eq!(results[0].finding_id.as_deref(), Some("REP-002"));
+}
+
+#[tokio::test]
 async fn test_error_pattern_does_not_cross_tool_names() {
     let inspector = RepetitionInspector::new(None);
     for _ in 0..3 {

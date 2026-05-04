@@ -180,6 +180,7 @@ impl ToolInspector for RepetitionInspector {
             if state.consecutive_count >= MAX_CONSECUTIVE_ERROR_FINGERPRINTS {
                 if let Some(ref last_tool) = state.last_tool_name {
                     let error_text = state.last_error_text.as_deref().unwrap_or("");
+                    let mut denied = false;
                     for tool_request in tool_requests {
                         if let Ok(tool_call) = &tool_request.tool_call {
                             if tool_call.name.as_ref() == last_tool.as_str() {
@@ -194,12 +195,16 @@ impl ToolInspector for RepetitionInspector {
                                     inspector_name: "repetition".to_string(),
                                     finding_id: Some(FINDING_ID_REPEATED_ERROR.to_string()),
                                 });
+                                denied = true;
                             }
                         }
                     }
+                    // Reset only after actually denying the failing tool so that an
+                    // intervening turn calling other tools doesn't silently clear the streak
+                    if denied {
+                        state.consecutive_count = 0;
+                    }
                 }
-                // Reset so the model can retry after adapting strategy
-                state.consecutive_count = 0;
             }
         }
 
