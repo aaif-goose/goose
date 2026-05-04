@@ -501,14 +501,19 @@ describe("MessageBubble", () => {
       },
     ]);
 
-    render(<MessageBubble message={msg} />);
+    const { container } = render(<MessageBubble message={msg} />);
+
+    // Completed-on-mount chains render collapsed; expand the parent card first.
+    const chainHeader = container.querySelector<HTMLButtonElement>(
+      '[data-role="tool-chain-card"] > button[aria-expanded]',
+    );
+    if (!chainHeader) throw new Error("expected tool-chain-card header");
+    await user.click(chainHeader);
 
     expect(screen.getByText("Create PDF about whales")).toBeInTheDocument();
     expect(screen.getByText("Write whales.pdf")).toBeInTheDocument();
-    expect(
-      screen.queryByText("python3 create_whales.py"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("ls -lh whales.pdf")).not.toBeInTheDocument();
+    expect(screen.queryByText("python3 create_whales.py")).toBeNull();
+    expect(screen.queryByText("ls -lh whales.pdf")).toBeNull();
     expect(screen.getByText("Show internal steps (2)")).toBeInTheDocument();
 
     await user.click(screen.getByText("Show internal steps (2)"));
