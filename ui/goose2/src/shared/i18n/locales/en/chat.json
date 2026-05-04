@@ -196,6 +196,7 @@
     "moreOutputs": "More outputs ({{count}})",
     "openFile": "Open file",
     "openFolder": "Open folder",
+    "openNamed": "Open {{name}}",
     "openPath": "Open path",
     "pathOutsideRoots": "Path is outside allowed roots",
     "structuredContent": "Structured content",
