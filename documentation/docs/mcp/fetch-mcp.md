@@ -17,6 +17,10 @@ The Fetch extension [does not work](https://github.com/aaif-goose/goose/issues/1
 
 This tutorial covers how to add the [Fetch MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) as a goose extension to retrieve and process content from the web.
 
+:::tip Built-in alternative
+If you only need basic URL retrieval, the built-in `developer` extension exposes a `web_fetch` tool that returns text, JSON, or binary bodies without an extra install. Use the Fetch MCP Server below when you need HTML→markdown conversion or robots.txt enforcement.
+:::
+
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>

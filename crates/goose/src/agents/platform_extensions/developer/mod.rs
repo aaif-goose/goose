@@ -1,6 +1,7 @@
 pub mod edit;
 pub mod shell;
 pub mod tree;
+pub mod web;
 
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
@@ -19,6 +20,7 @@ use shell::{shell_display_name, ShellOutput, ShellParams, ShellTool};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tree::{TreeParams, TreeTool};
+use web::{WebFetchParams, WebFetchTool};
 
 pub static EXTENSION_NAME: &str = "developer";
 
@@ -27,6 +29,7 @@ pub struct DeveloperClient {
     shell_tool: Arc<ShellTool>,
     edit_tools: Arc<EditTools>,
     tree_tool: Arc<TreeTool>,
+    web_fetch_tool: Arc<WebFetchTool>,
 }
 
 fn developer_instructions() -> &'static str {
@@ -72,6 +75,7 @@ impl DeveloperClient {
             shell_tool: Arc::new(ShellTool::new()?),
             edit_tools: Arc::new(EditTools::new()),
             tree_tool: Arc::new(TreeTool::new()),
+            web_fetch_tool: Arc::new(WebFetchTool::new()),
         })
     }
 
@@ -150,6 +154,21 @@ impl DeveloperClient {
                 Some(true),
                 Some(false),
             )),
+            Tool::new(
+                "web_fetch".to_string(),
+                "Fetch the body of an http(s) URL. Returns the response inline for small text or \
+                 JSON bodies, or a path to a temp file for large or binary bodies. Use `save_as` \
+                 to pick text (default), json (validates parse), or binary."
+                    .to_string(),
+                Self::schema::<WebFetchParams>(),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("WebFetch".to_string()),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(true),
+            )),
         ]
     }
 }
@@ -203,6 +222,13 @@ impl McpClientTrait for DeveloperClient {
                 ))
                 .with_priority(0.0)])),
             },
+            "web_fetch" => match Self::parse_args::<WebFetchParams>(arguments) {
+                Ok(params) => Ok(self.web_fetch_tool.fetch(params).await),
+                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Error: {error}"
+                ))
+                .with_priority(0.0)])),
+            },
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
                 "Error: Unknown tool: {name}"
             ))
@@ -230,7 +256,7 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
 
-        assert_eq!(names, vec!["write", "edit", "shell", "tree"]);
+        assert_eq!(names, vec!["write", "edit", "shell", "tree", "web_fetch"]);
     }
 
     fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {

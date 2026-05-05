@@ -188,6 +188,7 @@ The Developer extension provides these tools:
 | `analyze` | Analyze code structure | Understanding codebase, finding dependencies | ✅ Low<br />Read-only code analysis |
 | `screen_capture` | Take screenshots | Debugging UI issues, documenting state | ✅ Low<br />Visual information only |
 | `image_processor` | Process and resize images | Optimizing assets, format conversion | ✅ Low<br />Image manipulation only |
+| `web_fetch` | Fetch the body of an http(s) URL as text, JSON, or binary | Reading docs pages, calling JSON APIs, downloading small files | ⚠️ Medium<br />Performs outbound network requests; same network reach as `shell` + `curl` |
 
 ### Access Control Features
 
