@@ -840,12 +840,12 @@ body,
   grid-column: 1 / -1;
 }
 
-[data-streamdown] code[data-streamdown="inline-code"],
+code[data-streamdown="inline-code"],
 [data-streamdown] :not(pre) > code {
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: 0.375rem;
   background: color-mix(in oklab, var(--background-muted) 82%, transparent);
-  padding: 0.05rem 0.22rem;
+  padding: 0.05rem calc(0.22rem + 1px);
   color: var(--foreground);
   font-size: 1em;
   font-weight: 400;
