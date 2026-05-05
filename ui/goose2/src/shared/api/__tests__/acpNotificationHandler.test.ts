@@ -189,6 +189,77 @@ describe("acpNotificationHandler", () => {
     });
   });
 
+  it("attributes a completed live tool response to the matching request when a sibling is still executing", async () => {
+    // Regression: with two sibling tool requests, completing the first
+    // while the second is still unpaired must label the response with the
+    // first request's name. Previously the live path used the latest
+    // unpaired request, which could swap names across siblings.
+    registerSession("local-session", "goose-session", "goose", "/Users/test");
+    setActiveMessageId("goose-session", "assistant-1");
+
+    await handleSessionNotification({
+      sessionId: "goose-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-a",
+        title: "read_file",
+        rawInput: { path: "/tmp/notes.md" },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "goose-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-b",
+        title: "grep",
+        rawInput: { pattern: "TODO" },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "goose-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-a",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "file contents" },
+          },
+        ],
+      },
+    } as never);
+
+    const [message] =
+      useChatStore.getState().messagesBySession["local-session"];
+    expect(message.content.map((block) => block.type)).toEqual([
+      "toolRequest",
+      "toolRequest",
+      "toolResponse",
+    ]);
+    expect(message.content[0]).toMatchObject({
+      type: "toolRequest",
+      id: "tool-a",
+      name: "read_file",
+      status: "completed",
+    });
+    expect(message.content[1]).toMatchObject({
+      type: "toolRequest",
+      id: "tool-b",
+      name: "grep",
+      status: "executing",
+    });
+    expect(message.content[2]).toMatchObject({
+      type: "toolResponse",
+      id: "tool-a",
+      name: "read_file",
+      result: "file contents",
+      isError: false,
+    });
+  });
+
   it("preserves structured tool output when ACP provides rawOutput", async () => {
     registerSession(
       "local-session",

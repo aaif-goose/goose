@@ -4,10 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
-import {
-  getBufferedMessage,
-  findLatestUnpairedToolRequest,
-} from "@/features/chat/hooks/replayBuffer";
+import { getBufferedMessage } from "@/features/chat/hooks/replayBuffer";
 import type {
   ToolCallLocation,
   ToolCallStatus,
@@ -445,9 +442,15 @@ function handleLive(
         const ownerMessage = store.messagesBySession[sessionId]?.find(
           (m) => m.id === messageId,
         );
-        const toolRequest = ownerMessage
-          ? findLatestUnpairedToolRequest(ownerMessage.content)
-          : null;
+        // Look up the request that this update belongs to by exact id —
+        // sibling tools can complete out of order, so the latest unpaired
+        // request isn't necessarily the one we're updating. Mirrors the
+        // replay branch above.
+        const toolRequest =
+          ownerMessage?.content.find(
+            (block): block is ToolRequestContent =>
+              block.type === "toolRequest" && block.id === update.toolCallId,
+          ) ?? null;
 
         store.updateMessage(sessionId, messageId, (msg) => ({
           ...msg,
@@ -467,7 +470,7 @@ function handleLive(
         const toolResponse: ToolResponseContent = {
           type: "toolResponse",
           id: update.toolCallId,
-          name: toolRequest?.name ?? "",
+          name: toolRequest?.name ?? update.title ?? "",
           result: resultText,
           structuredContent: extractToolStructuredContent(update),
           isError: update.status === "failed",
