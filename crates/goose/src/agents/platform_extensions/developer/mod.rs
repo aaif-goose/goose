@@ -59,7 +59,7 @@ fn developer_instructions() -> &'static str {
             Use write and edit to efficiently make changes. Test and verify as appropriate.
 
             When running Python scripts or commands, always use `python3` instead of `python`.
-            The `python` command is not available on modern macOS and many Linux distributions.
+
         "}
     }
 }
