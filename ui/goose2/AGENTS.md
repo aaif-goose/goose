@@ -39,8 +39,11 @@ Treat this repo as partially Hermit-managed. Do not assume `just`, `pnpm`, `node
 React UI  ──►  features/<feature>/api/  ──►  @aaif/goose-sdk (TS)  ──►  goose-acp  (WebSocket, ACP)  ──►  goose (core)
 ```
 
+**YOU MUST TREAT THE CLIENT as a THIN CLIENT****
+
 - The Tauri shell spawns a long-lived `goose serve` process and exposes its WebSocket URL via the `get_goose_serve_url` Tauri command. That is essentially the only Tauri command the frontend needs for backend work — it is how the renderer discovers the ACP endpoint.
 - The frontend opens a WebSocket to `goose serve` and talks to it using `@aaif/goose-sdk` (published from `ui/sdk/`). The SDK is generated from the ACP custom-method definitions in `crates/goose-sdk/src/custom_requests.rs`, so every backend method has a typed TypeScript client method.
+- The goose2 TypeScript code should only be UI
 - `goose-acp` (`crates/goose-acp/src/server.rs`) is the server side of the WebSocket. It implements handlers for the custom ACP methods and calls into the `goose` core crate to do the actual work (providers, config, sessions, dictation, etc.).
 - `goose` is the pure domain crate. It knows nothing about Tauri or WebSockets — it just exposes Rust APIs that `goose-acp` handlers invoke.
 
@@ -52,8 +55,8 @@ If a feature involves data, persistence, secrets, provider config, sessions, fil
 
 - Stand up a feature whose business logic lives in a Zustand store, a React hook, or a `features/<feature>/api/` adapter that calls `localStorage`, `fetch`, or filesystem APIs directly.
 - Reach for `invoke()` to add a new Tauri command that proxies into `goose` — add an ACP custom method instead.
-- Persist domain state to `localStorage` when goose core already has (or should have) a config/state surface for it. `localStorage` is for **frontend-only** UI state (theme mode, sidebar collapse, last-viewed tab, etc.).
-- Duplicate types between TS and Rust by hand — let the SDK generation produce them from `crates/goose-sdk/src/custom_requests.rs`.
+- Do not use `localStorage`
+- Duplicate types between TS and Rust — let the SDK generation produce them from `crates/goose-sdk/src/custom_requests.rs` and use the generated types ALWAYS. Do not create a shadow of a type you could use from the generated types.
 
 The frontend's job is presentation, navigation, and orchestration of typed SDK calls. If you find a feature growing real logic on the React side, that's a signal to push it down into `goose-acp` + `goose`.
 
@@ -72,10 +75,6 @@ src/
       api/       — Thin wrappers around GooseClient SDK calls (the ONLY place ACP is touched)
       types.ts   — Feature-specific type definitions (when needed)
   shared/
-    types/       — Canonical shared type definitions (single source of truth)
-      agents.ts  — Agent, Persona, Provider types
-      chat.ts    — ChatState, TokenState, Session, SSE events
-      messages.ts — Message, MessageContent, type guards
     ui/          — Reusable UI components (button, etc.)
     lib/         — Utilities (cn.ts for class merging)
     theme/       — Theme provider, appearance settings
