@@ -276,6 +276,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
             open={isOpen}
             onOpenChange={(open) => handleOpenChange(item.key, open)}
             showStatusBadge={false}
+            fitWidth
           />
         </div>
       </div>

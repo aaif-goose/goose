@@ -659,6 +659,13 @@ struct PendingToolCall {
 /// Returns one inner Vec per detected chain, holding the tool_call_ids in
 /// document order. Single-tool runs are included; callers (chain
 /// summarization) gate on `chain.len() >= 2`.
+///
+/// Note: this is the per-message view, kept around for tests and potential
+/// replay use. The live runtime path uses a streaming buffer fed by
+/// [`register_chain_buffer`] so chains that span multiple `AgentEvent::Message`
+/// events (e.g. Bedrock-style streaming, where one LLM message is split across
+/// rows — see `f087fa63c`) are still detected.
+#[allow(dead_code)]
 fn extract_tool_chains(
     content: &[crate::conversation::message::MessageContent],
 ) -> Vec<Vec<String>> {
@@ -686,6 +693,38 @@ fn extract_tool_chains(
         chains.push(current);
     }
     chains
+}
+
+/// If `buffer` holds a multi-tool run (≥ 2 tool requests), (re)register a
+/// [`ToolChain`] in `chain_membership` anchored on the **first** tool's
+/// message_id (the row [`ThreadManager::update_tool_request_meta`] will patch
+/// when persisting the LLM-generated summary). Does **not** clear the buffer
+/// — chains can grow as more tools arrive (sequential tool use), so callers
+/// keep accumulating and re-registering with the larger set of ids.
+///
+/// The buffer contains `(tool_call_id, message_id)` pairs in arrival order,
+/// fed by the prompt stream loop. Sequential tool use (Bedrock/Anthropic)
+/// interleaves request → response → request → response across separate
+/// `AgentEvent::Message` events, so per-event `extract_tool_chains` only
+/// sees length-1 chains and would miss the run. Tool responses are
+/// chain-neutral (they don't split the run); only non-tool content (text,
+/// thinking, image, etc.) does, matching the frontend's
+/// `groupContentSections` behavior.
+fn extend_chain_membership(
+    buffer: &[(String, String)],
+    chain_membership: &mut HashMap<String, Arc<ToolChain>>,
+) {
+    if buffer.len() >= 2 {
+        let anchor_message_id = buffer[0].1.clone();
+        let ids: Vec<String> = buffer.iter().map(|(id, _)| id.clone()).collect();
+        let chain = Arc::new(ToolChain {
+            message_id: anchor_message_id,
+            ids: ids.clone(),
+        });
+        for id in ids {
+            chain_membership.insert(id, chain.clone());
+        }
+    }
 }
 
 fn pending_tool_call_from_request(tool_request: &ToolRequest) -> PendingToolCall {
@@ -1812,6 +1851,9 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
     ) {
         let Some(chain) = session.chain_membership.get(tool_call_id).cloned() else {
+            warn!(
+                "tool chain summary: skipped — no chain registered for tool_call_id {tool_call_id}",
+            );
             return;
         };
         if !chain
@@ -1819,18 +1861,41 @@ impl GooseAcpAgent {
             .iter()
             .all(|id| session.responded_tool_ids.contains(id))
         {
+            let total = chain.ids.len();
+            let responded = chain
+                .ids
+                .iter()
+                .filter(|id| session.responded_tool_ids.contains(*id))
+                .count();
+            let missing: Vec<&String> = chain
+                .ids
+                .iter()
+                .filter(|id| !session.responded_tool_ids.contains(*id))
+                .collect();
+            warn!(
+                "tool chain summary: waiting on {pending}/{total} responses for chain anchored at {anchor:?} (missing: {missing:?})",
+                pending = total - responded,
+                anchor = chain.ids.first(),
+            );
             return;
         }
         let Some(first_id) = chain.ids.first() else {
+            warn!("tool chain summary: skipped — empty chain.ids for tool_call_id {tool_call_id}");
             return;
         };
         if !session.summarized_chains.insert(first_id.clone()) {
+            debug!("tool chain summary: chain anchored at {first_id} already summarized; skipping");
             return;
         }
 
         let agent = match &session.agent {
             AgentHandle::Ready(a) => a.clone(),
-            AgentHandle::Loading(_) => return,
+            AgentHandle::Loading(_) => {
+                warn!(
+                    "tool chain summary: agent still loading; skipping chain anchored at {first_id}",
+                );
+                return;
+            }
         };
 
         // Snapshot (name, args_json) for each step in document order.
@@ -1869,15 +1934,21 @@ impl GooseAcpAgent {
         let cx = cx.clone();
         let thread_manager = self.thread_manager.clone();
 
+        let first_id = first_id.clone();
         tokio::spawn(async move {
             let provider = match agent.provider().await {
                 Ok(p) => p,
                 Err(e) => {
-                    warn!("tool chain summary: failed to get provider: {e}");
+                    warn!(
+                        "tool chain summary: failed to get provider for chain anchored at {first_id}: {e}",
+                    );
                     return;
                 }
             };
             if provider.manages_own_context() {
+                warn!(
+                    "tool chain summary: provider manages own context; skipping chain anchored at {first_id}",
+                );
                 return;
             }
 
@@ -1892,7 +1963,6 @@ impl GooseAcpAgent {
             }
             let message = Message::user().with_text(&user_text);
 
-            let first_id = chain_for_task.ids[0].clone();
             // Match the per-tool retry policy: one retry on empty/error keeps
             // the chain header reliable when the fast model is rate-limited or
             // momentarily flaky, without escalating to the regular model.
@@ -2814,6 +2884,17 @@ impl GooseAcpAgent {
         let mut was_cancelled = false;
         let mut first_event_logged = false;
         let mut event_count: u32 = 0;
+        // Streaming chain buffer: tracks consecutive tool requests across
+        // `AgentEvent::Message` events so chains that span multiple rows are
+        // still registered. Sequential tool use (Bedrock/Anthropic) yields
+        // request → response → request → response across separate
+        // assistant/user messages, so tool responses are chain-neutral; only
+        // non-tool content (text, thinking, image, etc.) breaks the run.
+        // Holds `(tool_call_id, message_id_of_owning_row)` in arrival order;
+        // re-registered eagerly each time a request arrives so
+        // `handle_tool_response` finds the chain when subsequent responses
+        // are processed.
+        let mut chain_buffer: Vec<(String, String)> = Vec::new();
 
         while let Some(event) = stream.next().await {
             if cancel_token.is_cancelled() {
@@ -2846,25 +2927,34 @@ impl GooseAcpAgent {
                             .data(format!("Session not found: {}", thread_id))
                     })?;
 
-                    // Register chain memberships for any multi-tool runs in
-                    // this message so the matching ToolResponses can detect
-                    // chain completion.
-                    if let Some(msg_id) = stored_message_id.as_deref() {
-                        for chain_ids in extract_tool_chains(&stored_message.content) {
-                            if chain_ids.len() < 2 {
-                                continue;
+                    for content_item in &stored_message.content {
+                        match content_item {
+                            MessageContent::ToolRequest(tr) => {
+                                if let Some(msg_id) = stored_message_id.as_deref() {
+                                    chain_buffer.push((tr.id.clone(), msg_id.to_string()));
+                                    // Re-register eagerly so the chain is in
+                                    // place by the time the matching
+                                    // `tool_response` triggers
+                                    // `maybe_summarize_chain` (sequential
+                                    // tool use interleaves request/response
+                                    // events).
+                                    extend_chain_membership(
+                                        &chain_buffer,
+                                        &mut session.chain_membership,
+                                    );
+                                }
                             }
-                            let chain = Arc::new(ToolChain {
-                                message_id: msg_id.to_string(),
-                                ids: chain_ids.clone(),
-                            });
-                            for id in chain_ids {
-                                session.chain_membership.insert(id, chain.clone());
+                            MessageContent::ToolResponse(_) => {
+                                // Chain-neutral: a response between two
+                                // requests doesn't break the run, matching
+                                // the frontend's `groupContentSections`.
+                            }
+                            _ => {
+                                // Text, thinking, image, etc. end the run.
+                                chain_buffer.clear();
                             }
                         }
-                    }
 
-                    for content_item in &stored_message.content {
                         self.handle_message_content(
                             content_item,
                             &args.session_id,
@@ -2888,6 +2978,11 @@ impl GooseAcpAgent {
         {
             let mut sessions = self.sessions.lock().await;
             if let Some(session) = sessions.get_mut(&thread_id) {
+                // Final safety net: in case the stream ended without any
+                // chain-breaking content, make sure a multi-tool buffer is
+                // registered. (Eager registration during the loop usually
+                // covers this.)
+                extend_chain_membership(&chain_buffer, &mut session.chain_membership);
                 session.cancel_token = None;
             }
         }
@@ -3579,6 +3674,103 @@ print(\"hello, world\")
         ];
         let chains = extract_tool_chains(&content);
         assert_eq!(chains, vec![vec!["a".to_string(), "b".to_string()]]);
+    }
+
+    fn buf_entry(tool_id: &str, msg_id: &str) -> (String, String) {
+        (tool_id.to_string(), msg_id.to_string())
+    }
+
+    #[test]
+    fn extend_chain_membership_skips_singleton_and_leaves_buffer() {
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let buffer = vec![buf_entry("a", "row_1")];
+
+        extend_chain_membership(&buffer, &mut membership);
+
+        assert_eq!(buffer.len(), 1, "buffer is left intact for caller");
+        assert!(
+            membership.is_empty(),
+            "single-tool runs should not register a chain",
+        );
+    }
+
+    #[test]
+    fn extend_chain_membership_registers_each_id_against_shared_chain() {
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let buffer = vec![
+            buf_entry("a", "row_first"),
+            buf_entry("b", "row_second"),
+            buf_entry("c", "row_third"),
+        ];
+
+        extend_chain_membership(&buffer, &mut membership);
+
+        assert_eq!(membership.len(), 3);
+        let chain_a = membership.get("a").expect("a registered");
+        let chain_b = membership.get("b").expect("b registered");
+        let chain_c = membership.get("c").expect("c registered");
+        assert!(
+            Arc::ptr_eq(chain_a, chain_b) && Arc::ptr_eq(chain_b, chain_c),
+            "every id in the run must point at the same ToolChain Arc",
+        );
+        assert_eq!(chain_a.message_id, "row_first");
+        assert_eq!(
+            chain_a.ids,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        );
+    }
+
+    #[test]
+    fn extend_chain_membership_anchors_on_first_row_for_split_messages() {
+        // Sequential tool use (Bedrock/Anthropic) emits each tool request as
+        // its own assistant message, with the tool response interleaved in
+        // between. The chain should still form, anchored on the *first*
+        // tool's row id so `update_tool_request_meta` can find that
+        // ToolRequest when persisting the summary.
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let buffer = vec![
+            buf_entry("toolu_bdrk_1", "row_for_tool_1"),
+            buf_entry("toolu_bdrk_2", "row_for_tool_2"),
+        ];
+
+        extend_chain_membership(&buffer, &mut membership);
+
+        let chain = membership
+            .get("toolu_bdrk_1")
+            .expect("first tool registered");
+        assert_eq!(chain.message_id, "row_for_tool_1");
+        assert_eq!(
+            chain.ids,
+            vec!["toolu_bdrk_1".to_string(), "toolu_bdrk_2".to_string()],
+        );
+        let chain_via_second = membership
+            .get("toolu_bdrk_2")
+            .expect("second tool registered");
+        assert!(Arc::ptr_eq(chain, chain_via_second));
+    }
+
+    #[test]
+    fn extend_chain_membership_grows_chain_as_more_requests_arrive() {
+        // The streaming loop re-registers eagerly each time a new request
+        // arrives, so a chain that started at length 2 must grow to include
+        // a third tool whose response is yet to come. Both the original
+        // members and the new member must point at the new (extended) chain.
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let mut buffer = vec![buf_entry("a", "row_1"), buf_entry("b", "row_2")];
+        extend_chain_membership(&buffer, &mut membership);
+
+        buffer.push(buf_entry("c", "row_3"));
+        extend_chain_membership(&buffer, &mut membership);
+
+        let chain_a = membership.get("a").expect("a present");
+        let chain_b = membership.get("b").expect("b present");
+        let chain_c = membership.get("c").expect("c present");
+        assert!(Arc::ptr_eq(chain_a, chain_b) && Arc::ptr_eq(chain_b, chain_c));
+        assert_eq!(chain_a.message_id, "row_1");
+        assert_eq!(
+            chain_a.ids,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        );
     }
 
     #[test]
