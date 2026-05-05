@@ -24,6 +24,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
@@ -647,8 +648,14 @@ impl AcpClientLoop {
     ) -> Result<()> {
         let stdin = child.stdin.take().context("no stdin")?;
         let stdout = child.stdout.take().context("no stdout")?;
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(forward_child_stderr(stderr));
+        }
         let transport = sacp::ByteStreams::new(stdin.compat_write(), stdout.compat());
-        self.run(transport, rx, init_tx).await
+        let result = self.run(transport, rx, init_tx).await;
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        result
     }
 
     async fn run(
@@ -872,12 +879,26 @@ impl AcpClientLoop {
     }
 }
 
+async fn forward_child_stderr(stderr: tokio::process::ChildStderr) {
+    let mut lines = BufReader::new(stderr).lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => tracing::info!(target: "acp::child::stderr", "{line}"),
+            Ok(None) => break,
+            Err(e) => {
+                tracing::debug!(target: "acp::child::stderr", error = %e, "stderr read error");
+                break;
+            }
+        }
+    }
+}
+
 async fn spawn_acp_process(config: &AcpProviderConfig) -> Result<Child> {
     let mut cmd = Command::new(&config.command);
     cmd.args(&config.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
 
     for key in &config.env_remove {
