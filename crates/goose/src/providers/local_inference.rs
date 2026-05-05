@@ -86,6 +86,7 @@ impl InferenceRuntime {
             }
         };
         llama_cpp_2::send_logs_to_tracing(LogOptions::default());
+        log_inference_backend_devices();
         let runtime = Arc::new(Self {
             models: StdMutex::new(HashMap::new()),
             backend,
@@ -156,20 +157,55 @@ pub fn resolve_model_path(model_id: &str) -> Option<ResolvedModelPaths> {
     None
 }
 
+fn is_accelerator_device(device_type: LlamaBackendDeviceType) -> bool {
+    matches!(
+        device_type,
+        LlamaBackendDeviceType::Gpu
+            | LlamaBackendDeviceType::IntegratedGpu
+            | LlamaBackendDeviceType::Accelerator
+    )
+}
+
+fn is_non_cpu_device(device_type: LlamaBackendDeviceType) -> bool {
+    !matches!(device_type, LlamaBackendDeviceType::Cpu)
+}
+
+fn log_inference_backend_devices() {
+    let devices = list_llama_ggml_backend_devices();
+    let non_cpu_devices: Vec<_> = devices
+        .iter()
+        .filter(|device| is_non_cpu_device(device.device_type))
+        .collect();
+
+    if non_cpu_devices.is_empty() {
+        tracing::info!(
+            device_count = devices.len(),
+            "No non-CPU llama.cpp backend devices detected for local inference"
+        );
+        return;
+    }
+
+    for device in non_cpu_devices {
+        tracing::info!(
+            index = device.index,
+            backend = %device.backend,
+            name = %device.name,
+            description = %device.description,
+            device_type = ?device.device_type,
+            memory_total_bytes = device.memory_total as u64,
+            memory_free_bytes = device.memory_free as u64,
+            "Non-CPU llama.cpp backend device detected for local inference"
+        );
+    }
+}
+
 pub fn available_inference_memory_bytes(runtime: &InferenceRuntime) -> u64 {
     let _ = &runtime.backend;
     let devices = list_llama_ggml_backend_devices();
 
     let accel_memory = devices
         .iter()
-        .filter(|d| {
-            matches!(
-                d.device_type,
-                LlamaBackendDeviceType::Gpu
-                    | LlamaBackendDeviceType::IntegratedGpu
-                    | LlamaBackendDeviceType::Accelerator
-            )
-        })
+        .filter(|d| is_accelerator_device(d.device_type))
         .map(|d| d.memory_free as u64)
         .max()
         .unwrap_or(0);

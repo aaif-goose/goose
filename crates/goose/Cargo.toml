@@ -37,6 +37,7 @@ aws-providers = [
     "dep:aws-sdk-sagemakerruntime",
 ]
 cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "llama-cpp-2/cuda"]
+vulkan = ["local-inference", "llama-cpp-2/vulkan"]
 rustls-tls = [
     "reqwest/rustls",
     "rmcp/reqwest",
