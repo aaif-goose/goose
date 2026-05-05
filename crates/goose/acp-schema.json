@@ -1246,118 +1246,114 @@
       "x-side": "agent",
       "x-method": "_goose/providers/config/delete"
     },
-    "ReadConfigRequest": {
+    "PreferencesReadRequest": {
       "type": "object",
       "properties": {
-        "key": {
-          "type": "string"
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceKey"
+          },
+          "default": []
+        }
+      },
+      "description": "Read allowlisted user preferences. Empty `keys` means all supported preferences.",
+      "x-side": "agent",
+      "x-method": "_goose/preferences/read"
+    },
+    "PreferenceKey": {
+      "type": "string",
+      "enum": [
+        "autoCompactThreshold",
+        "voiceAutoSubmitPhrases",
+        "voiceDictationProvider",
+        "voiceDictationPreferredMic"
+      ]
+    },
+    "PreferencesReadResponse": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceValue"
+          }
         }
       },
       "required": [
-        "key"
+        "values"
       ],
-      "description": "Read a single non-secret config value.",
       "x-side": "agent",
-      "x-method": "_goose/config/read"
+      "x-method": "_goose/preferences/read"
     },
-    "ReadConfigResponse": {
+    "PreferenceValue": {
       "type": "object",
       "properties": {
+        "key": {
+          "$ref": "#/$defs/PreferenceKey"
+        },
         "value": {
           "default": null
         }
       },
-      "description": "Config read response.",
-      "x-side": "agent",
-      "x-method": "_goose/config/read"
+      "required": [
+        "key"
+      ]
     },
-    "UpsertConfigRequest": {
+    "PreferencesSaveRequest": {
       "type": "object",
       "properties": {
-        "key": {
-          "type": "string"
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceValue"
+          },
+          "default": []
+        }
+      },
+      "description": "Save allowlisted user preferences.",
+      "x-side": "agent",
+      "x-method": "_goose/preferences/save"
+    },
+    "PreferencesRemoveRequest": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceKey"
+          },
+          "default": []
+        }
+      },
+      "description": "Remove allowlisted user preferences.",
+      "x-side": "agent",
+      "x-method": "_goose/preferences/remove"
+    },
+    "DefaultsReadRequest": {
+      "type": "object",
+      "description": "Read Goose default provider and model configuration.",
+      "x-side": "agent",
+      "x-method": "_goose/defaults/read"
+    },
+    "DefaultsReadResponse": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "value": {}
-      },
-      "required": [
-        "key",
-        "value"
-      ],
-      "description": "Upsert a single non-secret config value.",
-      "x-side": "agent",
-      "x-method": "_goose/config/upsert"
-    },
-    "RemoveConfigRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
+        "modelId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "key"
-      ],
-      "description": "Remove a single non-secret config value.",
       "x-side": "agent",
-      "x-method": "_goose/config/remove"
-    },
-    "CheckSecretRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "key"
-      ],
-      "description": "Check whether a secret exists. Never returns the actual value.",
-      "x-side": "agent",
-      "x-method": "_goose/secret/check"
-    },
-    "CheckSecretResponse": {
-      "type": "object",
-      "properties": {
-        "exists": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "exists"
-      ],
-      "description": "Secret check response.",
-      "x-side": "agent",
-      "x-method": "_goose/secret/check"
-    },
-    "UpsertSecretRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        },
-        "value": {}
-      },
-      "required": [
-        "key",
-        "value"
-      ],
-      "description": "Set a secret value (write-only).",
-      "x-side": "agent",
-      "x-method": "_goose/secret/upsert"
-    },
-    "RemoveSecretRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "key"
-      ],
-      "description": "Remove a secret.",
-      "x-side": "agent",
-      "x-method": "_goose/secret/remove"
+      "x-method": "_goose/defaults/read"
     },
     "ExportSessionRequest": {
       "type": "object",
@@ -1920,6 +1916,38 @@
         "description"
       ]
     },
+    "DictationSecretSaveRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "value"
+      ],
+      "description": "Set a dictation provider secret value.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/secret/save"
+    },
+    "DictationSecretDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "description": "Remove a dictation provider secret value.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/secret/delete"
+    },
     "DictationModelsListRequest": {
       "type": "object",
       "description": "List available local Whisper models with their download status.",
@@ -2330,56 +2358,38 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ReadConfigRequest"
+                      "$ref": "#/$defs/PreferencesReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/config/read",
-                  "title": "ReadConfigRequest"
+                  "description": "Params for _goose/preferences/read",
+                  "title": "PreferencesReadRequest"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/UpsertConfigRequest"
+                      "$ref": "#/$defs/PreferencesSaveRequest"
                     }
                   ],
-                  "description": "Params for _goose/config/upsert",
-                  "title": "UpsertConfigRequest"
+                  "description": "Params for _goose/preferences/save",
+                  "title": "PreferencesSaveRequest"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/RemoveConfigRequest"
+                      "$ref": "#/$defs/PreferencesRemoveRequest"
                     }
                   ],
-                  "description": "Params for _goose/config/remove",
-                  "title": "RemoveConfigRequest"
+                  "description": "Params for _goose/preferences/remove",
+                  "title": "PreferencesRemoveRequest"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/CheckSecretRequest"
+                      "$ref": "#/$defs/DefaultsReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/secret/check",
-                  "title": "CheckSecretRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/UpsertSecretRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/secret/upsert",
-                  "title": "UpsertSecretRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/RemoveSecretRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/secret/remove",
-                  "title": "RemoveSecretRequest"
+                  "description": "Params for _goose/defaults/read",
+                  "title": "DefaultsReadRequest"
                 },
                 {
                   "allOf": [
@@ -2506,6 +2516,24 @@
                   ],
                   "description": "Params for _goose/dictation/config",
                   "title": "DictationConfigRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationSecretSaveRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/secret/save",
+                  "title": "DictationSecretSaveRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationSecretDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/secret/delete",
+                  "title": "DictationSecretDeleteRequest"
                 },
                 {
                   "allOf": [
@@ -2730,18 +2758,18 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ReadConfigResponse"
+                          "$ref": "#/$defs/PreferencesReadResponse"
                         }
                       ],
-                      "title": "ReadConfigResponse"
+                      "title": "PreferencesReadResponse"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/CheckSecretResponse"
+                          "$ref": "#/$defs/DefaultsReadResponse"
                         }
                       ],
-                      "title": "CheckSecretResponse"
+                      "title": "DefaultsReadResponse"
                     },
                     {
                       "allOf": [

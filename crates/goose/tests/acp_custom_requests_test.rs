@@ -69,7 +69,7 @@ fn mock_provider_factory() -> AcpProviderFactory {
 
 #[test]
 fn test_custom_get_tools() {
-    run_test(async {
+    run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
 
@@ -92,7 +92,7 @@ fn test_custom_get_tools() {
 
 #[test]
 fn test_custom_get_extensions() {
-    run_test(async {
+    run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
 
@@ -140,53 +140,289 @@ fn test_custom_provider_inventory_includes_metadata() {
 }
 
 #[test]
-fn test_custom_config_crud() {
+fn test_custom_preferences_read_save_remove() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            data_root
+                .path()
+                .join(goose::config::base::CONFIG_YAML_NAME),
+            "GOOSE_MODEL: gpt-4o\nGOOSE_PROVIDER: openai\nGOOSE_AUTO_COMPACT_THRESHOLD: 0.7\nVOICE_AUTO_SUBMIT_PHRASES: send it\n",
+        )
+        .unwrap();
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let config = TestConnectionConfig {
+            data_root: data_root.path().to_path_buf(),
+            ..Default::default()
+        };
+        let conn = AcpServerConnection::new(config, openai).await;
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/preferences/read",
+            serde_json::json!({
+                "keys": [
+                    "autoCompactThreshold",
+                    "voiceAutoSubmitPhrases",
+                    "voiceDictationPreferredMic"
+                ],
+            }),
+        )
+        .await
+        .expect("preferences read should succeed");
+        assert_eq!(
+            response.get("values"),
+            Some(&serde_json::json!([
+                { "key": "autoCompactThreshold", "value": 0.7 },
+                { "key": "voiceAutoSubmitPhrases", "value": "send it" },
+                { "key": "voiceDictationPreferredMic", "value": null },
+            ]))
+        );
+
+        send_custom(
+            conn.cx(),
+            "_goose/preferences/save",
+            serde_json::json!({
+                "values": [
+                    { "key": "voiceDictationProvider", "value": "__disabled__" },
+                    { "key": "voiceDictationPreferredMic", "value": "mic-1" }
+                ],
+            }),
+        )
+        .await
+        .expect("preferences save should succeed");
+
+        send_custom(
+            conn.cx(),
+            "_goose/preferences/remove",
+            serde_json::json!({
+                "keys": ["voiceDictationProvider"],
+            }),
+        )
+        .await
+        .expect("preferences remove should succeed");
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/preferences/read",
+            serde_json::json!({
+                "keys": ["voiceDictationProvider", "voiceDictationPreferredMic"],
+            }),
+        )
+        .await
+        .expect("preferences read after remove should succeed");
+        assert_eq!(
+            response.get("values"),
+            Some(&serde_json::json!([
+                { "key": "voiceDictationProvider", "value": null },
+                { "key": "voiceDictationPreferredMic", "value": "mic-1" },
+            ]))
+        );
+    });
+}
+
+#[test]
+fn test_custom_preferences_save_rejects_invalid_values() {
     run_test(async {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
 
+        let invalid_payloads = [
+            serde_json::json!({
+                "values": [{ "key": "autoCompactThreshold", "value": 0 }],
+            }),
+            serde_json::json!({
+                "values": [{ "key": "autoCompactThreshold", "value": 1.1 }],
+            }),
+            serde_json::json!({
+                "values": [{ "key": "voiceAutoSubmitPhrases", "value": ["send"] }],
+            }),
+            serde_json::json!({
+                "values": [{ "key": "voiceDictationProvider", "value": "bogus" }],
+            }),
+            serde_json::json!({
+                "values": [{ "key": "voiceDictationPreferredMic", "value": "" }],
+            }),
+        ];
+
+        for payload in invalid_payloads {
+            let result = send_custom(conn.cx(), "_goose/preferences/save", payload).await;
+            assert!(result.is_err(), "expected invalid params error");
+        }
+
+        let result = send_custom(
+            conn.cx(),
+            "_goose/preferences/save",
+            serde_json::json!({
+                "values": [
+                    { "key": "voiceDictationPreferredMic", "value": "mic-1" },
+                    { "key": "voiceDictationProvider", "value": "bogus" }
+                ],
+            }),
+        )
+        .await;
+        assert!(result.is_err(), "expected invalid params error");
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/preferences/read",
+            serde_json::json!({
+                "keys": ["voiceDictationPreferredMic"],
+            }),
+        )
+        .await
+        .expect("preferences read should succeed");
+        assert_eq!(
+            response.get("values"),
+            Some(&serde_json::json!([
+                { "key": "voiceDictationPreferredMic", "value": null },
+            ]))
+        );
+    });
+}
+
+#[test]
+fn test_custom_defaults_read() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            data_root.path().join(goose::config::base::CONFIG_YAML_NAME),
+            "GOOSE_MODEL: claude-3-5-haiku-latest\nGOOSE_PROVIDER: anthropic\n",
+        )
+        .unwrap();
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let config = TestConnectionConfig {
+            data_root: data_root.path().to_path_buf(),
+            ..Default::default()
+        };
+        let conn = AcpServerConnection::new(config, openai).await;
+
+        let response = send_custom(conn.cx(), "_goose/defaults/read", serde_json::json!({}))
+            .await
+            .expect("defaults read should succeed");
+        assert_eq!(
+            response,
+            serde_json::json!({
+                "providerId": "anthropic",
+                "modelId": "claude-3-5-haiku-latest",
+            })
+        );
+    });
+}
+
+#[test]
+fn test_custom_dictation_secret_save_delete() {
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().to_string_lossy().to_string();
+    let _env = env_lock::lock_env([
+        ("GOOSE_PATH_ROOT", Some(root_path.as_str())),
+        ("GOOSE_DISABLE_KEYRING", Some("1")),
+        ("GROQ_API_KEY", None::<&str>),
+    ]);
+    let config_dir = goose::config::paths::Paths::config_dir();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join(goose::config::base::CONFIG_YAML_NAME),
+        "GOOSE_MODEL: gpt-4o\nGOOSE_PROVIDER: openai\nGOOSE_DISABLE_KEYRING: true\n",
+    )
+    .unwrap();
+
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let config = TestConnectionConfig {
+            data_root: config_dir.clone(),
+            ..Default::default()
+        };
+        let conn = AcpServerConnection::new(config, openai).await;
+
         send_custom(
             conn.cx(),
+            "_goose/dictation/secret/save",
+            serde_json::json!({
+                "provider": "groq",
+                "value": "groq-key",
+            }),
+        )
+        .await
+        .expect("dictation secret save should succeed");
+
+        let config = send_custom(conn.cx(), "_goose/dictation/config", serde_json::json!({}))
+            .await
+            .expect("dictation config should succeed");
+        assert_eq!(
+            config
+                .pointer("/providers/groq/configured")
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+
+        let provider_config_result = send_custom(
+            conn.cx(),
+            "_goose/dictation/secret/save",
+            serde_json::json!({
+                "provider": "openai",
+                "value": "openai-key",
+            }),
+        )
+        .await;
+        assert!(
+            provider_config_result.is_err(),
+            "provider-config dictation providers should be rejected"
+        );
+
+        let unknown_result = send_custom(
+            conn.cx(),
+            "_goose/dictation/secret/save",
+            serde_json::json!({
+                "provider": "unknown",
+                "value": "key",
+            }),
+        )
+        .await;
+        assert!(
+            unknown_result.is_err(),
+            "unknown provider should be rejected"
+        );
+
+        send_custom(
+            conn.cx(),
+            "_goose/dictation/secret/delete",
+            serde_json::json!({
+                "provider": "groq",
+            }),
+        )
+        .await
+        .expect("dictation secret delete should succeed");
+
+        let config = send_custom(conn.cx(), "_goose/dictation/config", serde_json::json!({}))
+            .await
+            .expect("dictation config should succeed");
+        assert_eq!(
+            config
+                .pointer("/providers/groq/configured")
+                .and_then(|value| value.as_bool()),
+            Some(false)
+        );
+    });
+}
+
+#[test]
+fn test_raw_config_and_secret_methods_are_removed() {
+    run_test(async {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        for method in [
+            "_goose/config/read",
             "_goose/config/upsert",
-            serde_json::json!({
-                "key": "GOOSE_PROVIDER",
-                "value": "anthropic",
-            }),
-        )
-        .await
-        .expect("config upsert should succeed");
-
-        let response = send_custom(
-            conn.cx(),
-            "_goose/config/read",
-            serde_json::json!({
-                "key": "GOOSE_PROVIDER",
-            }),
-        )
-        .await
-        .expect("config read should succeed");
-        assert_eq!(response.get("value"), Some(&serde_json::json!("anthropic")));
-
-        send_custom(
-            conn.cx(),
             "_goose/config/remove",
-            serde_json::json!({
-                "key": "GOOSE_PROVIDER",
-            }),
-        )
-        .await
-        .expect("config remove should succeed");
-
-        let response = send_custom(
-            conn.cx(),
-            "_goose/config/read",
-            serde_json::json!({
-                "key": "GOOSE_PROVIDER",
-            }),
-        )
-        .await
-        .expect("config read after remove should succeed");
-        assert_eq!(response.get("value"), Some(&serde_json::Value::Null));
+            "_goose/secret/check",
+            "_goose/secret/upsert",
+            "_goose/secret/remove",
+        ] {
+            let result = send_custom(conn.cx(), method, serde_json::json!({})).await;
+            assert!(result.is_err(), "{method} should be removed");
+        }
     });
 }
 

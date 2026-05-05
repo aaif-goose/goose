@@ -169,6 +169,14 @@ The skills → sources migration in [#8675](https://github.com/block/goose/pull/
 
 For a minimal frontend `api/` wrapper using the typed shape, see `ui/goose2/src/features/providers/api/inventory.ts` — ~30 lines, typed SDK calls, thin adapter. For a fully worked end-to-end feature including OS-keychain handling and progress streaming, see the voice dictation feature ([#8609](https://github.com/block/goose/pull/8609)) and `ui/goose2/src/shared/api/dictation.ts`.
 
+### Typed ACP config contracts
+
+Build goose2 config flows around typed ACP methods whose contract matches the domain: provider config, preferences, defaults, dictation secrets, or extension config.
+
+Keep raw Goose storage keys and secret-handling decisions behind backend-owned ACP methods. This lets Goose validate inputs, apply provider metadata, invalidate caches, refresh dependent state, and keep generated SDK types aligned with supported behavior.
+
+For reference, define contracts in `crates/goose-sdk/src/custom_requests.rs`, implement them in `crates/goose/src/acp/server/`, regenerate `ui/sdk/src/generated/`, then call the generated `client.goose.*` methods from a feature or shared `api/` wrapper.
+
 ### When `invoke()` is still appropriate
 
 Tauri commands (`invoke()` from `@tauri-apps/api/core`) are reserved for things that genuinely belong to the desktop shell, not to `goose` core. Provider config or secret mutations that affect the Goose runtime must flow through React → SDK → ACP → goose core so core can validate provider metadata, invalidate secret caches, refresh inventory, and apply provider changes consistently. In practice, Tauri is limited to:

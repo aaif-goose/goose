@@ -359,9 +359,9 @@ export default function ConfigureScreen({
 
         if (initialIntent === "model") {
           try {
-            const cfg = await client.goose.GooseConfigRead({ key: "GOOSE_PROVIDER" });
+            const cfg = await client.goose.GooseDefaultsRead({});
             if (cancelled) return;
-            const current = sorted.find((p) => p.providerId === cfg.value);
+            const current = sorted.find((p) => p.providerId === cfg.providerId);
             if (current) {
               setSelectedProvider(current);
               setPendingConfigValues({});
@@ -395,19 +395,13 @@ export default function ConfigureScreen({
     ) => {
       setPhase("saving");
       try {
-        for (const [key, value] of Object.entries(configValues)) {
-          const configKey = provider.configKeys.find((k) => k.name === key);
-          if (configKey?.secret) {
-            await client.goose.GooseSecretUpsert({ key, value });
-          } else {
-            await client.goose.GooseConfigUpsert({ key, value });
-          }
-        }
-        await client.goose.GooseConfigUpsert({
-          key: "GOOSE_PROVIDER",
-          value: provider.providerId,
+        await client.goose.GooseProvidersConfigSave({
+          providerId: provider.providerId,
+          fields: Object.entries(configValues).map(([key, value]) => ({
+            key,
+            value,
+          })),
         });
-        await client.goose.GooseConfigUpsert({ key: "GOOSE_MODEL", value: model });
         await client.setSessionConfigOption({
           sessionId,
           configId: "provider",

@@ -67,8 +67,7 @@ describe("MessageBubble MCP app rendering", () => {
         type: "mcpApp",
         id: "tool-1",
         payload: {
-          sessionId: "local-session",
-          gooseSessionId: "goose-session",
+          sessionId: "acp-session",
           toolCallId: "tool-1",
           toolCallTitle: "weather: open app",
           source: "toolCallUpdateMeta",

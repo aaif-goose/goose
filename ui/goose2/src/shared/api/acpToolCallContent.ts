@@ -66,7 +66,6 @@ export function attachMcpAppPayload(
   update: SessionUpdate,
   isReplay: boolean,
   options?: {
-    gooseSessionId?: string | null;
     replayMessageId?: string | null;
   },
 ): void {
@@ -75,7 +74,6 @@ export function attachMcpAppPayload(
     toolCallId,
     toolCallTitle,
     update,
-    options?.gooseSessionId,
   );
   if (!payload) {
     return;

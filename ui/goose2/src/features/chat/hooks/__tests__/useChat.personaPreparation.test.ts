@@ -8,16 +8,11 @@ import { clearReplayBuffer } from "../replayBuffer";
 const mockAcpSendMessage = vi.fn();
 const mockAcpCancelSession = vi.fn();
 const mockAcpLoadSession = vi.fn();
-const mockGetGooseSessionId = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
   acpCancelSession: (...args: unknown[]) => mockAcpCancelSession(...args),
   acpLoadSession: (...args: unknown[]) => mockAcpLoadSession(...args),
-}));
-
-vi.mock("@/shared/api/acpSessionTracker", () => ({
-  getGooseSessionId: (...args: unknown[]) => mockGetGooseSessionId(...args),
 }));
 
 import { useChat } from "../useChat";
@@ -27,7 +22,6 @@ describe("useChat persona preparation", () => {
     mockAcpSendMessage.mockReset();
     mockAcpCancelSession.mockReset();
     mockAcpLoadSession.mockReset();
-    mockGetGooseSessionId.mockReset();
     clearReplayBuffer("session-1");
     useChatStore.setState({
       messagesBySession: {},
@@ -72,7 +66,6 @@ describe("useChat persona preparation", () => {
     mockAcpSendMessage.mockResolvedValue(undefined);
     mockAcpCancelSession.mockResolvedValue(true);
     mockAcpLoadSession.mockResolvedValue(undefined);
-    mockGetGooseSessionId.mockReturnValue(null);
   });
 
   it("prepares the override persona before prompting", async () => {

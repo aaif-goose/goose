@@ -131,7 +131,6 @@ export interface ToolResponseContent {
 
 export interface McpAppPayload {
   sessionId: string;
-  gooseSessionId: string | null;
   toolCallId: string;
   toolCallTitle: string;
   source: "toolCallUpdateMeta";

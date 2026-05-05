@@ -173,69 +173,85 @@ pub struct GetSessionExtensionsResponse {
     pub extensions: Vec<serde_json::Value>,
 }
 
-/// Read a single non-secret config value.
+/// Read allowlisted user preferences. Empty `keys` means all supported preferences.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/config/read", response = ReadConfigResponse)]
+#[request(method = "_goose/preferences/read", response = PreferencesReadResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadConfigRequest {
-    pub key: String,
+pub struct PreferencesReadRequest {
+    #[serde(default)]
+    pub keys: Vec<PreferenceKey>,
 }
 
-/// Config read response.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+/// Save allowlisted user preferences.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/preferences/save", response = EmptyResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadConfigResponse {
+pub struct PreferencesSaveRequest {
+    #[serde(default)]
+    pub values: Vec<PreferenceValue>,
+}
+
+/// Remove allowlisted user preferences.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/preferences/remove", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct PreferencesRemoveRequest {
+    #[serde(default)]
+    pub keys: Vec<PreferenceKey>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PreferenceKey {
+    #[default]
+    AutoCompactThreshold,
+    VoiceAutoSubmitPhrases,
+    VoiceDictationProvider,
+    VoiceDictationPreferredMic,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreferenceValue {
+    pub key: PreferenceKey,
     #[serde(default)]
     pub value: serde_json::Value,
 }
 
-/// Upsert a single non-secret config value.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/config/upsert", response = EmptyResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct UpsertConfigRequest {
-    pub key: String,
-    pub value: serde_json::Value,
-}
-
-/// Remove a single non-secret config value.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/config/remove", response = EmptyResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoveConfigRequest {
-    pub key: String,
-}
-
-/// Check whether a secret exists. Never returns the actual value.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/secret/check", response = CheckSecretResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckSecretRequest {
-    pub key: String,
-}
-
-/// Secret check response.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct CheckSecretResponse {
-    pub exists: bool,
+pub struct PreferencesReadResponse {
+    pub values: Vec<PreferenceValue>,
 }
 
-/// Set a secret value (write-only).
+/// Read Goose default provider and model configuration.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/secret/upsert", response = EmptyResponse)]
+#[request(method = "_goose/defaults/read", response = DefaultsReadResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct UpsertSecretRequest {
-    pub key: String,
-    pub value: serde_json::Value,
+pub struct DefaultsReadRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultsReadResponse {
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
 }
 
-/// Remove a secret.
+/// Set a dictation provider secret value.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/secret/remove", response = EmptyResponse)]
+#[request(method = "_goose/dictation/secret/save", response = EmptyResponse)]
 #[serde(rename_all = "camelCase")]
-pub struct RemoveSecretRequest {
-    pub key: String,
+pub struct DictationSecretSaveRequest {
+    pub provider: String,
+    pub value: String,
+}
+
+/// Remove a dictation provider secret value.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/dictation/secret/delete", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationSecretDeleteRequest {
+    pub provider: String,
 }
 
 /// Update the project association for a session.

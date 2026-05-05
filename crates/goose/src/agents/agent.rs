@@ -50,7 +50,7 @@ use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager};
+use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -116,6 +116,7 @@ pub struct AgentConfig {
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
     pub mcp_host_info: Option<GooseMcpHostInfo>,
+    pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
 }
 
 impl AgentConfig {
@@ -135,11 +136,20 @@ impl AgentConfig {
             disable_session_naming,
             goose_platform,
             mcp_host_info: None,
+            session_name_update_tx: None,
         }
     }
 
     pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
         self.mcp_host_info = mcp_host_info;
+        self
+    }
+
+    pub fn with_session_name_update_tx(
+        mut self,
+        tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
+    ) -> Self {
+        self.session_name_update_tx = tx;
         self
     }
 }
@@ -1247,12 +1257,21 @@ impl Agent {
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
             let manager_for_spawn = session_manager.clone();
+            let session_name_update_tx = self.config.session_name_update_tx.clone();
             tokio::spawn(async move {
-                if let Err(e) = manager_for_spawn
+                match manager_for_spawn
                     .maybe_update_name(&session_id, provider)
                     .await
                 {
-                    warn!("Failed to generate session description: {}", e);
+                    Ok(Some(update)) => {
+                        if let Some(tx) = session_name_update_tx {
+                            if tx.send(update).is_err() {
+                                warn!("Failed to publish generated session name");
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => warn!("Failed to generate session description: {}", e),
                 }
             });
         }

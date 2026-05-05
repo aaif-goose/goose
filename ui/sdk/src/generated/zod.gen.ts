@@ -486,62 +486,57 @@ export const zProviderConfigDeleteRequest = z.object({
     providerId: z.string()
 });
 
-/**
- * Read a single non-secret config value.
- */
-export const zReadConfigRequest = z.object({
-    key: z.string()
-});
+export const zPreferenceKey = z.enum([
+    'autoCompactThreshold',
+    'voiceAutoSubmitPhrases',
+    'voiceDictationProvider',
+    'voiceDictationPreferredMic'
+]);
 
 /**
- * Config read response.
+ * Read allowlisted user preferences. Empty `keys` means all supported preferences.
  */
-export const zReadConfigResponse = z.object({
+export const zPreferencesReadRequest = z.object({
+    keys: z.array(zPreferenceKey).optional().default([])
+});
+
+export const zPreferenceValue = z.object({
+    key: zPreferenceKey,
     value: z.unknown().optional().default(null)
 });
 
-/**
- * Upsert a single non-secret config value.
- */
-export const zUpsertConfigRequest = z.object({
-    key: z.string(),
-    value: z.unknown()
+export const zPreferencesReadResponse = z.object({
+    values: z.array(zPreferenceValue)
 });
 
 /**
- * Remove a single non-secret config value.
+ * Save allowlisted user preferences.
  */
-export const zRemoveConfigRequest = z.object({
-    key: z.string()
+export const zPreferencesSaveRequest = z.object({
+    values: z.array(zPreferenceValue).optional().default([])
 });
 
 /**
- * Check whether a secret exists. Never returns the actual value.
+ * Remove allowlisted user preferences.
  */
-export const zCheckSecretRequest = z.object({
-    key: z.string()
+export const zPreferencesRemoveRequest = z.object({
+    keys: z.array(zPreferenceKey).optional().default([])
 });
 
 /**
- * Secret check response.
+ * Read Goose default provider and model configuration.
  */
-export const zCheckSecretResponse = z.object({
-    exists: z.boolean()
-});
+export const zDefaultsReadRequest = z.record(z.unknown());
 
-/**
- * Set a secret value (write-only).
- */
-export const zUpsertSecretRequest = z.object({
-    key: z.string(),
-    value: z.unknown()
-});
-
-/**
- * Remove a secret.
- */
-export const zRemoveSecretRequest = z.object({
-    key: z.string()
+export const zDefaultsReadResponse = z.object({
+    providerId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    modelId: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
 });
 
 /**
@@ -803,6 +798,21 @@ export const zDictationConfigResponse = z.object({
 });
 
 /**
+ * Set a dictation provider secret value.
+ */
+export const zDictationSecretSaveRequest = z.object({
+    provider: z.string(),
+    value: z.string()
+});
+
+/**
+ * Remove a dictation provider secret value.
+ */
+export const zDictationSecretDeleteRequest = z.object({
+    provider: z.string()
+});
+
+/**
  * List available local Whisper models with their download status.
  */
 export const zDictationModelsListRequest = z.record(z.unknown());
@@ -903,12 +913,10 @@ export const zExtRequest = z.object({
             zProviderConfigStatusRequest,
             zProviderConfigSaveRequest,
             zProviderConfigDeleteRequest,
-            zReadConfigRequest,
-            zUpsertConfigRequest,
-            zRemoveConfigRequest,
-            zCheckSecretRequest,
-            zUpsertSecretRequest,
-            zRemoveSecretRequest,
+            zPreferencesReadRequest,
+            zPreferencesSaveRequest,
+            zPreferencesRemoveRequest,
+            zDefaultsReadRequest,
             zExportSessionRequest,
             zImportSessionRequest,
             zUpdateSessionProjectRequest,
@@ -923,6 +931,8 @@ export const zExtRequest = z.object({
             zImportSourcesRequest,
             zDictationTranscribeRequest,
             zDictationConfigRequest,
+            zDictationSecretSaveRequest,
+            zDictationSecretDeleteRequest,
             zDictationModelsListRequest,
             zDictationModelDownloadRequest,
             zDictationModelDownloadProgressRequest,
@@ -959,8 +969,8 @@ export const zExtResponse = z.union([
                 zProviderConfigReadResponse,
                 zProviderConfigStatusResponse,
                 zProviderConfigChangeResponse,
-                zReadConfigResponse,
-                zCheckSecretResponse,
+                zPreferencesReadResponse,
+                zDefaultsReadResponse,
                 zExportSessionResponse,
                 zImportSessionResponse,
                 zCreateSourceResponse,

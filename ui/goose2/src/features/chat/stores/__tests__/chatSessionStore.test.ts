@@ -31,7 +31,6 @@ function resetStore() {
 function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
   return {
     id: "session-1",
-    acpSessionId: "session-1",
     title: "Test Session",
     createdAt: "2026-04-01T00:00:00.000Z",
     updatedAt: "2026-04-01T00:00:00.000Z",
@@ -42,7 +41,9 @@ function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
 
 function seedSession(overrides: Partial<ChatSession> = {}): ChatSession {
   const session = makeSession(overrides);
-  useChatSessionStore.getState().addSession(session);
+  useChatSessionStore.setState((state) => ({
+    sessions: [session, ...state.sessions],
+  }));
   return session;
 }
 
@@ -59,6 +60,7 @@ describe("chatSessionStore", () => {
       const session = await useChatSessionStore.getState().createSession({
         title: "New Chat",
         providerId: "openai",
+        projectId: "project-1",
         personaId: "persona-1",
         modelId: "gpt-4.1",
         modelName: "GPT-4.1",
@@ -69,14 +71,15 @@ describe("chatSessionStore", () => {
         "openai",
         "/tmp/project",
         {
+          projectId: "project-1",
           personaId: "persona-1",
           modelId: "gpt-4.1",
         },
       );
       expect(session).toMatchObject({
         id: "acp-1",
-        acpSessionId: "acp-1",
         title: "New Chat",
+        projectId: "project-1",
         providerId: "openai",
         personaId: "persona-1",
         modelId: "gpt-4.1",
@@ -310,37 +313,6 @@ describe("chatSessionStore", () => {
       await useChatSessionStore.getState().archiveSession(session.id);
 
       expect(useChatSessionStore.getState().activeSessionId).toBeNull();
-    });
-  });
-
-  describe("addSession", () => {
-    it("prepends a new session to the list", () => {
-      const { addSession } = useChatSessionStore.getState();
-      addSession(
-        makeSession({
-          id: "imported-1",
-          title: "Imported Session",
-          messageCount: 5,
-        }),
-      );
-
-      const sessions = useChatSessionStore.getState().sessions;
-      expect(sessions[0].id).toBe("imported-1");
-      expect(sessions[0].title).toBe("Imported Session");
-      expect(sessions[0].messageCount).toBe(5);
-    });
-
-    it("does not create a duplicate if session ID already exists", () => {
-      const { addSession } = useChatSessionStore.getState();
-      addSession(makeSession({ id: "dup-1", title: "First", messageCount: 1 }));
-      addSession(
-        makeSession({ id: "dup-1", title: "Second", messageCount: 2 }),
-      );
-
-      const sessions = useChatSessionStore.getState().sessions;
-      const matches = sessions.filter((session) => session.id === "dup-1");
-      expect(matches).toHaveLength(1);
-      expect(matches[0].title).toBe("Second");
     });
   });
 });

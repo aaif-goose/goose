@@ -162,6 +162,7 @@ impl Connection for AcpProviderConnection {
             goose_mode,
             config.provider_factory,
             &current_model,
+            config.disable_session_naming,
         )
         .await;
 

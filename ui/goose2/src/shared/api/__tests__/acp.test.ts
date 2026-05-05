@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockLoadSession = vi.fn();
+const mockNewSession = vi.fn();
+const mockSetProvider = vi.fn();
+const mockSetModel = vi.fn();
 
 vi.mock("../acpApi", () => ({
   listProviders: vi.fn(),
   prompt: vi.fn(),
-  setModel: vi.fn(),
+  setModel: (...args: unknown[]) => mockSetModel(...args),
+  setProvider: (...args: unknown[]) => mockSetProvider(...args),
   listSessions: vi.fn(),
   loadSession: (...args: unknown[]) => mockLoadSession(...args),
+  newSession: (...args: unknown[]) => mockNewSession(...args),
   exportSession: vi.fn(),
   importSession: vi.fn(),
   forkSession: vi.fn(),
@@ -29,29 +34,94 @@ describe("acpLoadSession", () => {
     vi.resetModules();
   });
 
-  it("restores the prior session mapping when replay loading fails", async () => {
+  it("restores the prior prepared session registration when replay loading fails", async () => {
     mockLoadSession.mockRejectedValueOnce(new Error("load failed"));
 
-    const sessionTracker = await import("../acpSessionTracker");
+    const sessionRegistry = await import("../acpSessionRegistry");
     const { acpLoadSession } = await import("../acp");
 
-    sessionTracker.registerSession(
-      "local-session",
-      "goose-session-1",
+    sessionRegistry.registerPreparedSession(
+      "acp-session-1",
       "goose",
       "/tmp/original",
     );
 
     await expect(
-      acpLoadSession("local-session", "goose-session-2", "/tmp/replay"),
+      acpLoadSession("acp-session-1", "/tmp/replay"),
     ).rejects.toThrow("load failed");
 
-    expect(sessionTracker.getGooseSessionId("local-session")).toBe(
-      "goose-session-1",
+    expect(sessionRegistry.isSessionPrepared("acp-session-1")).toBe(true);
+  });
+});
+
+describe("acpCreateSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("uses the ACP session id as the UI session id", async () => {
+    mockNewSession.mockResolvedValue({ sessionId: "acp-session-1" });
+
+    const sessionRegistry = await import("../acpSessionRegistry");
+    const { acpCreateSession } = await import("../acp");
+
+    await expect(
+      acpCreateSession("openai", "/tmp/project", {
+        projectId: "project-1",
+        personaId: "persona-1",
+        modelId: "gpt-4.1",
+      }),
+    ).resolves.toEqual({ sessionId: "acp-session-1" });
+
+    expect(mockNewSession).toHaveBeenCalledWith(
+      "/tmp/project",
+      "openai",
+      "project-1",
+      "persona-1",
     );
-    expect(sessionTracker.getLocalSessionId("goose-session-1")).toBe(
-      "local-session",
+    expect(mockLoadSession).not.toHaveBeenCalled();
+    expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
+    expect(mockSetModel).toHaveBeenCalledWith("acp-session-1", "gpt-4.1");
+    expect(sessionRegistry.isSessionPrepared("acp-session-1")).toBe(true);
+  });
+});
+
+describe("acpPrepareSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("loads the existing ACP session instead of creating a replacement", async () => {
+    mockLoadSession.mockResolvedValue(undefined);
+
+    const sessionRegistry = await import("../acpSessionRegistry");
+    const { acpPrepareSession } = await import("../acp");
+
+    await expect(
+      acpPrepareSession("acp-session-1", "openai", "/tmp/project"),
+    ).resolves.toBeUndefined();
+
+    expect(mockLoadSession).toHaveBeenCalledWith(
+      "acp-session-1",
+      "/tmp/project",
     );
-    expect(sessionTracker.getLocalSessionId("goose-session-2")).toBeNull();
+    expect(mockNewSession).not.toHaveBeenCalled();
+    expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");
+    expect(sessionRegistry.isSessionPrepared("acp-session-1")).toBe(true);
+  });
+
+  it("surfaces load failures instead of creating a new ACP session", async () => {
+    mockLoadSession.mockRejectedValueOnce(new Error("missing session"));
+
+    const { acpPrepareSession } = await import("../acp");
+
+    await expect(
+      acpPrepareSession("acp-session-1", "openai", "/tmp/project"),
+    ).rejects.toThrow("missing session");
+
+    expect(mockNewSession).not.toHaveBeenCalled();
+    expect(mockSetProvider).not.toHaveBeenCalled();
   });
 });
