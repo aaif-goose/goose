@@ -14,7 +14,7 @@ use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, Tu
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
-use crate::commands::plugin::handle_plugin_install;
+use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
 use crate::commands::project::{handle_project_default, handle_projects_interactive};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
 use crate::commands::term::{
@@ -651,6 +651,13 @@ enum PluginCommand {
     Install {
         #[arg(help = "URL to a git repository containing a supported plugin")]
         url: String,
+    },
+
+    /// Update an installed git-backed plugin
+    #[command(about = "Update an installed git-backed plugin")]
+    Update {
+        #[arg(help = "Name of the installed plugin to update")]
+        name: String,
     },
 }
 
@@ -1551,6 +1558,7 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
 fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     match command {
         PluginCommand::Install { url } => handle_plugin_install(&url),
+        PluginCommand::Update { name } => handle_plugin_update(&name),
     }
 }
 
