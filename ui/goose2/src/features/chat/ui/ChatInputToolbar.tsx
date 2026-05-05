@@ -209,9 +209,19 @@ export function ChatInputToolbar({
   }, [isContextPopoverOpen, showContextUsage]);
 
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-2",
+        isCompact && "flex-wrap gap-y-2",
+      )}
+    >
       {/* Left side: pickers */}
-      <div className="flex items-center gap-0.5">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-0.5",
+          isCompact && "flex-1",
+        )}
+      >
         {(agentProviders.length > 0 || providersLoading) && (
           <AgentModelPicker
             agents={agentProviders}
@@ -281,7 +291,7 @@ export function ChatInputToolbar({
       </div>
 
       {/* Right side: actions */}
-      <div className="flex items-center">
+      <div className={cn("flex shrink-0 items-center", isCompact && "ml-auto")}>
         <div className="flex items-center gap-px">
           {showContextUsage && (
             <Popover
