@@ -6,6 +6,27 @@ import { useAgentStore } from "@/features/agents/stores/agentStore";
 import type { Message } from "@/shared/types/messages";
 import { openPath } from "@tauri-apps/plugin-opener";
 const mockWriteText = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("@mcp-ui/client", () => ({
+  UI_EXTENSION_CONFIG: { mimeTypes: ["text/html;profile=mcp-app"] },
+  AppRenderer: (props: { toolName?: string }) => (
+    <div data-testid="mock-app-renderer">
+      {props.toolName ?? "app-renderer"}
+    </div>
+  ),
+}));
+
+vi.mock("@/shared/api/gooseServeHost", () => ({
+  getGooseServeHostInfo: vi.fn().mockResolvedValue({
+    httpBaseUrl: "http://127.0.0.1:4242",
+    secretKey: "test-secret",
+  }),
+}));
+
+vi.mock("@/shared/theme/ThemeProvider", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+}));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openPath: vi.fn(),
 }));

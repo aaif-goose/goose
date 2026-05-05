@@ -4,7 +4,7 @@ Guidelines for AI agents (and developers) working on this codebase.
 
 ## Project Overview
 
-Goose2 is a Tauri 2 + React 19 desktop app. It uses TypeScript strict mode, Vite, and Tailwind CSS 3. The codebase follows a feature-sliced architecture organized under `src/app/`, `src/features/`, and `src/shared/`.
+Goose2 is a Tauri 2 + React 19 desktop app. It uses TypeScript strict mode, Vite, and Tailwind CSS 4. The codebase follows a feature-sliced architecture organized under `src/app/`, `src/features/`, and `src/shared/`.
 
 ## First Steps
 
@@ -99,7 +99,7 @@ ThemeProvider manages three axes:
 | Axis         | Values                          | Persistence     | Mechanism                                    |
 |--------------|---------------------------------|-----------------|----------------------------------------------|
 | Theme mode   | `light`, `dark`, `system`       | localStorage    | `.dark` class on `<html>`                    |
-| Accent color | Any hex value                   | localStorage    | `--color-accent` CSS variable                |
+| Accent color | Hex color                       | localStorage    | `--brand` / `--color-brand` CSS variables    |
 | Density      | `compact`, `comfortable`, `spacious` | localStorage | `--density-spacing` CSS variable (0.75/1/1.25) |
 
 - CSS variables are defined in `globals.css` with light/dark variants.
@@ -170,6 +170,14 @@ The skills → sources migration in [#8675](https://github.com/block/goose/pull/
 
 For a minimal frontend `api/` wrapper using the typed shape, see `ui/goose2/src/features/providers/api/inventory.ts` — ~30 lines, typed SDK calls, thin adapter. For a fully worked end-to-end feature including OS-keychain handling and progress streaming, see the voice dictation feature ([#8609](https://github.com/block/goose/pull/8609)) and `ui/goose2/src/shared/api/dictation.ts`.
 
+### Typed ACP config contracts
+
+Build goose2 config flows around typed ACP methods whose contract matches the domain: provider config, preferences, defaults, dictation secrets, or extension config.
+
+Keep raw Goose storage keys and secret-handling decisions behind backend-owned ACP methods. This lets Goose validate inputs, apply provider metadata, invalidate caches, refresh dependent state, and keep generated SDK types aligned with supported behavior.
+
+For reference, define contracts in `crates/goose-sdk/src/custom_requests.rs`, implement them in `crates/goose/src/acp/server/`, regenerate `ui/sdk/src/generated/`, then call the generated `client.goose.*` methods from a feature or shared `api/` wrapper.
+
 ### When `invoke()` is still appropriate
 
 Tauri commands (`invoke()` from `@tauri-apps/api/core`) are reserved for things that genuinely belong to the desktop shell, not to `goose` core. Provider config or secret mutations that affect the Goose runtime must flow through React → SDK → ACP → goose core so core can validate provider metadata, invalidate secret caches, refresh inventory, and apply provider changes consistently. In practice, Tauri is limited to:
@@ -220,7 +228,6 @@ Additional tooling notes:
 
 - Unit/component tests use Vitest and Testing Library via `just test` or `pnpm test`.
 - E2E tests use Playwright via `just test-e2e` and `just test-e2e-all`.
-- File size enforcement runs through `pnpm check:file-sizes` and is included in `just check`.
 - Before handing off a change, run the smallest relevant verification step. Use `just ci` when you need the full local gate.
 - GitHub Actions also runs desktop-oriented checks, including Playwright coverage, that are broader than the local pre-push hook.
 

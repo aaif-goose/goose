@@ -21,53 +21,35 @@ export function getProjectFolderName(path: string): string {
   return parts[parts.length - 1] ?? normalized;
 }
 
-function appendArtifactsSegment(path: string): string {
-  return `${path.replace(/[\\/]+$/, "")}/artifacts`;
-}
-
-function resolveProjectArtifactRoots(
-  project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
+function resolveProjectRoots(
+  project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): string[] {
-  const workingDirs = (project?.workingDirs ?? [])
+  return (project?.workingDirs ?? [])
     .map((directory) => trimValue(directory))
     .filter((directory): directory is string => directory !== null);
-
-  if (workingDirs.length > 0) {
-    return workingDirs.map(appendArtifactsSegment);
-  }
-
-  const artifactsDir = trimValue(project?.artifactsDir);
-  return artifactsDir ? [artifactsDir] : [];
 }
 
 export function getProjectArtifactRoots(
-  project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
+  project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): string[] {
-  return resolveProjectArtifactRoots(project);
+  return resolveProjectRoots(project);
 }
 
 export function resolveProjectDefaultArtifactRoot(
   project: ProjectInfo | null | undefined,
 ): string | undefined {
-  const workingDirs = (project?.workingDirs ?? [])
-    .map((directory) => trimValue(directory))
-    .filter((directory): directory is string => directory !== null);
-
-  if (workingDirs.length > 0) {
-    return appendArtifactsSegment(workingDirs[0]);
-  }
-
-  return trimValue(project?.artifactsDir) ?? undefined;
+  const workingDirs = resolveProjectRoots(project);
+  return workingDirs[0];
 }
 
 export async function defaultGlobalArtifactRoot(): Promise<string> {
-  return (await resolvePath({ parts: ["~", ".goose", "artifacts"] })).path;
+  return (await resolvePath({ parts: ["~"] })).path;
 }
 
 export function getProjectFolderOption(
-  project: Pick<ProjectInfo, "workingDirs" | "artifactsDir"> | null | undefined,
+  project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): ProjectFolderOption[] {
-  return resolveProjectArtifactRoots(project).map((d) => ({
+  return resolveProjectRoots(project).map((d) => ({
     id: d,
     name: getProjectFolderName(d),
     path: d,
@@ -81,12 +63,10 @@ export function buildProjectSystemPrompt(
     return undefined;
   }
 
-  const artifactDir = resolveProjectDefaultArtifactRoot(project);
+  const workingDir = resolveProjectDefaultArtifactRoot(project);
   const settings: string[] = [`Project name: ${project.name}`];
   const description = trimValue(project.description);
-  const workingDirs = (project.workingDirs ?? [])
-    .map((d) => trimValue(d))
-    .filter((d): d is string => d !== null);
+  const workingDirs = resolveProjectRoots(project);
   const prompt = trimValue(project.prompt);
 
   if (description) {
@@ -95,8 +75,8 @@ export function buildProjectSystemPrompt(
   if (workingDirs.length > 0) {
     settings.push(`Working directories: ${workingDirs.join(", ")}`);
   }
-  if (artifactDir) {
-    settings.push(`Artifact directory: ${artifactDir}`);
+  if (workingDir) {
+    settings.push(`Default working directory: ${workingDir}`);
   }
   if (project.preferredProvider) {
     settings.push(`Preferred provider: ${project.preferredProvider}`);
@@ -114,13 +94,12 @@ export function buildProjectSystemPrompt(
     `<project-settings>\n${settings.join("\n")}\n</project-settings>`,
   ];
 
-  if (artifactDir) {
+  if (workingDir) {
     sections.push(
       `<project-file-policy>\n` +
-        `Write newly generated files to ${artifactDir} by default.\n` +
-        `When creating translations, variants, summaries, or derived documents from existing project files, save the new file in ${artifactDir} instead of the project root.\n` +
-        `Only write outside ${artifactDir} when the user explicitly asks you to edit or create a file at a specific path.\n` +
-        `If you need to read existing files elsewhere in the project, that is fine, but generated outputs should stay in ${artifactDir} unless the user says otherwise.\n` +
+        `Use ${workingDir} as the default working directory for this project.\n` +
+        `Write newly generated files relative to ${workingDir} by default.\n` +
+        `Only write outside ${workingDir} when the user explicitly asks you to edit or create a file at a specific path.\n` +
         `</project-file-policy>`,
     );
   }

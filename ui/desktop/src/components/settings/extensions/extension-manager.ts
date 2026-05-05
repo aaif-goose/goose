@@ -1,12 +1,6 @@
 import type { ExtensionConfig } from '../../../api/types.gen';
 import { toastService } from '../../../toasts';
-import {
-  trackExtensionAdded,
-  trackExtensionEnabled,
-  trackExtensionDisabled,
-  trackExtensionDeleted,
-  getErrorType,
-} from '../../../utils/analytics';
+import { trackExtensionAdded, trackExtensionDeleted, getErrorType } from '../../../utils/analytics';
 
 function isBuiltinExtension(config: ExtensionConfig): boolean {
   return config.type === 'builtin';
@@ -38,46 +32,6 @@ export async function deleteExtension({
   }
 }
 
-interface ToggleExtensionDefaultProps {
-  toggle: 'toggleOn' | 'toggleOff';
-  extensionConfig: ExtensionConfig;
-  addToConfig: (name: string, extensionConfig: ExtensionConfig, enabled: boolean) => Promise<void>;
-}
-
-export async function toggleExtensionDefault({
-  toggle,
-  extensionConfig,
-  addToConfig,
-}: ToggleExtensionDefaultProps) {
-  const isBuiltin = isBuiltinExtension(extensionConfig);
-  const enabled = toggle === 'toggleOn';
-
-  try {
-    await addToConfig(extensionConfig.name, extensionConfig, enabled);
-    if (enabled) {
-      trackExtensionEnabled(extensionConfig.name, true, undefined, isBuiltin);
-    } else {
-      trackExtensionDisabled(extensionConfig.name, true, undefined, isBuiltin);
-    }
-    toastService.success({
-      title: extensionConfig.name,
-      msg: enabled ? 'Extension enabled in defaults' : 'Extension removed from defaults',
-    });
-  } catch (error) {
-    console.error('Failed to update extension default in config:', error);
-    if (enabled) {
-      trackExtensionEnabled(extensionConfig.name, false, getErrorType(error), isBuiltin);
-    } else {
-      trackExtensionDisabled(extensionConfig.name, false, getErrorType(error), isBuiltin);
-    }
-    toastService.error({
-      title: extensionConfig.name,
-      msg: 'Failed to update extension default',
-    });
-    throw error;
-  }
-}
-
 interface ActivateExtensionDefaultProps {
   addToConfig: (name: string, extensionConfig: ExtensionConfig, enabled: boolean) => Promise<void>;
   extensionConfig: ExtensionConfig;
@@ -90,11 +44,11 @@ export async function activateExtensionDefault({
   const isBuiltin = isBuiltinExtension(extensionConfig);
 
   try {
-    await addToConfig(extensionConfig.name, extensionConfig, true);
+    await addToConfig(extensionConfig.name, extensionConfig, false);
     trackExtensionAdded(extensionConfig.name, true, undefined, isBuiltin);
     toastService.success({
       title: extensionConfig.name,
-      msg: 'Extension added as default',
+      msg: 'Extension added',
     });
   } catch (error) {
     console.error('Failed to add extension to config:', error);

@@ -20,8 +20,8 @@
       "colors": {
         "blue": "Blue",
         "cyan": "Cyan",
+        "default": "Default",
         "green": "Green",
-        "indigo": "Indigo",
         "orange": "Orange",
         "pink": "Pink",
         "purple": "Purple",
@@ -82,17 +82,19 @@
   },
   "extensions": {
     "title": "Extensions",
+    "description": "Connect Goose to apps, services, and built-in capabilities.",
     "search": "Search extensions...",
-    "enabled": "Enabled",
-    "enabledCount": "Enabled ({{count}})",
-    "available": "Available",
-    "availableCount": "Available ({{count}})",
     "empty": "No extensions configured.",
     "noResults": "No extensions match your search.",
     "addExtension": "Add extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
-    "toggle": "Toggle {{name}}",
+    "deleteConfirmation": {
+      "title": "Delete \"{{name}}\" permanently?",
+      "description": "This will permanently remove this extension and all of its settings.",
+      "confirm": "Delete Extension",
+      "deleting": "Deleting..."
+    },
     "configure": "Configure {{name}}",
     "save": "Save",
     "cancel": "Cancel",
@@ -120,8 +122,20 @@
       "streamable_http": "HTTP",
       "builtin": "Built-in"
     },
+    "filters": {
+      "all": "All"
+    },
+    "categories": {
+      "appsServices": "Apps & services",
+      "gooseCapabilities": "Goose capabilities"
+    },
+    "sections": {
+      "extensions": "Extensions",
+      "gooseCapabilities": "Built-in Goose capabilities"
+    },
+    "showGooseCapabilities": "Show {{count}} built-in Goose capabilities",
+    "hideGooseCapabilities": "Hide built-in Goose capabilities",
     "errors": {
-      "toggleFailed": "Failed to toggle extension. Please try again.",
       "saveFailed": "Failed to save extension. Please try again.",
       "deleteFailed": "Failed to delete extension. Please try again.",
       "nameConflict": "An extension named \"{{name}}\" already exists."
@@ -162,6 +176,9 @@
       "addApiKey": "Add API key",
       "updateApiKey": "Update API key",
       "removeApiKey": "Remove API key",
+      "providerConfigLabel": "Provider credentials",
+      "providerConfigDescription": "This transcription provider uses the credentials from its model provider setup.",
+      "openProviders": "Open Providers",
       "localModelLabel": "Local Whisper Model",
       "localModelDescription": "Download a Whisper model to run transcription locally. Selecting a model sets it as your active local transcription model.",
       "noLocalModels": "No local Whisper models available.",
@@ -198,7 +215,6 @@
     "doctor": "Doctor",
     "general": "General",
     "projects": "Projects",
-    "extensions": "Extensions",
     "providers": "Providers",
     "voice": "Voice"
   },

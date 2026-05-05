@@ -19,7 +19,6 @@ describe("chatProjectContext", () => {
       preferredProvider: "goose",
       preferredModel: "claude-sonnet-4",
       workingDirs: ["/Users/wesb/dev/goose2"],
-      artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
       useWorktrees: true,
       order: 0,
       archivedAt: null,
@@ -33,7 +32,7 @@ describe("chatProjectContext", () => {
       "Working directories: /Users/wesb/dev/goose2",
     );
     expect(systemPrompt).toContain(
-      "Artifact directory: /Users/wesb/dev/goose2/artifacts",
+      "Default working directory: /Users/wesb/dev/goose2",
     );
     expect(systemPrompt).toContain("Preferred provider: goose");
     expect(systemPrompt).toContain(
@@ -41,7 +40,7 @@ describe("chatProjectContext", () => {
     );
     expect(systemPrompt).toContain("<project-file-policy>");
     expect(systemPrompt).toContain(
-      "Write newly generated files to /Users/wesb/dev/goose2/artifacts by default.",
+      "Use /Users/wesb/dev/goose2 as the default working directory for this project.",
     );
     expect(systemPrompt).toContain("<project-instructions>");
     expect(systemPrompt).toContain("Always read AGENTS.md before editing.");
@@ -62,18 +61,17 @@ describe("chatProjectContext", () => {
     expect(
       getProjectFolderOption({
         workingDirs: ["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"],
-        artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
       }),
     ).toEqual([
       {
-        id: "/Users/wesb/dev/goose2/artifacts",
-        name: "artifacts",
-        path: "/Users/wesb/dev/goose2/artifacts",
+        id: "/Users/wesb/dev/goose2",
+        name: "goose2",
+        path: "/Users/wesb/dev/goose2",
       },
       {
-        id: "/Users/wesb/dev/other/artifacts",
-        name: "artifacts",
-        path: "/Users/wesb/dev/other/artifacts",
+        id: "/Users/wesb/dev/other",
+        name: "other",
+        path: "/Users/wesb/dev/other",
       },
     ]);
   });
@@ -82,30 +80,19 @@ describe("chatProjectContext", () => {
     expect(
       getProjectFolderOption({
         workingDirs: [],
-        artifactsDir: "/Users/wesb/.goose/projects/sample-project/artifacts",
       }),
-    ).toEqual([
-      {
-        id: "/Users/wesb/.goose/projects/sample-project/artifacts",
-        name: "artifacts",
-        path: "/Users/wesb/.goose/projects/sample-project/artifacts",
-      },
-    ]);
+    ).toEqual([]);
   });
 
   it("returns an empty array when project is null", () => {
     expect(getProjectFolderOption(null)).toEqual([]);
   });
 
-  it("returns only artifact subdirectories for working dirs", () => {
+  it("returns working dirs unchanged", () => {
     expect(
       getProjectArtifactRoots({
         workingDirs: ["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"],
-        artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
       }),
-    ).toEqual([
-      "/Users/wesb/dev/goose2/artifacts",
-      "/Users/wesb/dev/other/artifacts",
-    ]);
+    ).toEqual(["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"]);
   });
 });

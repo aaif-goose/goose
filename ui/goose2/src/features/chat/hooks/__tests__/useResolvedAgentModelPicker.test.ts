@@ -26,7 +26,10 @@ describe("useResolvedAgentModelPicker", () => {
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GooseConfigRead: vi.fn().mockResolvedValue({ value: null }),
+        GooseDefaultsRead: vi.fn().mockResolvedValue({
+          providerId: null,
+          modelId: null,
+        }),
       },
     });
 

@@ -14,7 +14,6 @@ import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/provid
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
-  getProjectArtifactRoots,
   resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
 import { setStoredModelPreference } from "../lib/modelPreferences";
@@ -107,10 +106,10 @@ export function useChatSessionController({
   const selectedPersona = personas.find(
     (persona) => persona.id === selectedPersonaId,
   );
-  const projectArtifactRoots = useMemo(
-    () => getProjectArtifactRoots(project),
-    [project],
-  );
+  const sessionCwd =
+    activeWorkspace?.path ??
+    session?.workingDir ??
+    resolveProjectDefaultArtifactRoot(project);
   const projectDefaultArtifactRoot = useMemo(
     () => resolveProjectDefaultArtifactRoot(project),
     [project],
@@ -118,13 +117,9 @@ export function useChatSessionController({
   const projectMetadataPending = Boolean(
     effectiveProjectId && !projectDefaultArtifactRoot && projectsLoading,
   );
-  const allowedArtifactRoots = useMemo(
-    () => [
-      ...new Set(
-        projectArtifactRoots.map((path) => path.trim()).filter(Boolean),
-      ),
-    ],
-    [projectArtifactRoots],
+  const sessionArtifactCwd = useMemo(
+    () => sessionCwd?.trim() || null,
+    [sessionCwd],
   );
   const availableProjects = useMemo(
     () =>
@@ -162,7 +157,6 @@ export function useChatSessionController({
       providerId: string,
       nextProject = project,
       nextWorkspacePath = activeWorkspace?.path,
-      personaId = selectedPersonaId ?? undefined,
       modelSelection?: PreferredModelSelection | null,
     ) => {
       if (!sessionId) {
@@ -172,7 +166,7 @@ export function useChatSessionController({
         nextProject,
         nextWorkspacePath,
       );
-      await acpPrepareSession(sessionId, providerId, workingDir, { personaId });
+      await acpPrepareSession(sessionId, providerId, workingDir);
       if (!modelSelection?.id) {
         return;
       }
@@ -193,7 +187,7 @@ export function useChatSessionController({
         modelName: modelSelection.name,
       });
     },
-    [activeWorkspace?.path, project, selectedPersonaId, sessionId],
+    [activeWorkspace?.path, project, sessionId],
   );
   const prepareSelectedProvider = useCallback(
     (providerId: string, modelSelection?: PreferredModelSelection | null) =>
@@ -201,10 +195,9 @@ export function useChatSessionController({
         providerId,
         project,
         activeWorkspace?.path,
-        selectedPersonaId ?? undefined,
         modelSelection,
       ),
-    [activeWorkspace?.path, prepareCurrentSession, project, selectedPersonaId],
+    [activeWorkspace?.path, prepareCurrentSession, project],
   );
 
   const prevProjectIdRef = useRef(session?.projectId);
@@ -328,7 +321,6 @@ export function useChatSessionController({
         selectedProvider,
         nextProject,
         activeWorkspace?.path,
-        selectedPersonaId ?? undefined,
         effectiveModelSelection,
       ).catch((error) => {
         console.error("Failed to update ACP session working directory:", error);
@@ -338,7 +330,6 @@ export function useChatSessionController({
       activeWorkspace?.path,
       effectiveModelSelection,
       prepareCurrentSession,
-      selectedPersonaId,
       selectedProvider,
       sessionId,
     ],
@@ -428,12 +419,11 @@ export function useChatSessionController({
     {
       onMessageAccepted: sessionId ? onMessageAccepted : undefined,
       ensurePrepared: selectedProvider
-        ? (personaId?: string) =>
+        ? () =>
             prepareCurrentSession(
               selectedProvider,
               project,
               activeWorkspace?.path,
-              personaId,
             )
         : undefined,
     },
@@ -724,7 +714,6 @@ export function useChatSessionController({
             nextProviderId,
             nextProject,
             activeWorkspace?.path,
-            nextPersonaId,
             pendingModelSelection,
           );
           if (cancelled) {
@@ -792,7 +781,7 @@ export function useChatSessionController({
   return {
     session,
     project,
-    allowedArtifactRoots,
+    sessionArtifactCwd,
     messages,
     chatState,
     tokenState: resolvedTokenState,

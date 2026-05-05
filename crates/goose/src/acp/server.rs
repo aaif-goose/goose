@@ -12,7 +12,7 @@ use crate::config::extensions::get_enabled_extensions_with_config;
 use crate::config::paths::Paths;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
 use crate::mcp_utils::ToolResult;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -43,12 +43,13 @@ use sacp::schema::{
     PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
     RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
     SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionId, SessionInfo, SessionListCapabilities, SessionMode,
-    SessionModeId, SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
-    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
+    SessionConfigSelectOption, SessionId, SessionInfo, SessionInfoUpdate, SessionListCapabilities,
+    SessionMode, SessionModeId, SessionModeState, SessionModelState, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+    SetSessionModeRequest, SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse,
+    StopReason, TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId,
+    ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage,
+    UsageUpdate,
 };
 use sacp::util::MatchDispatchFrom;
 use sacp::{
@@ -73,7 +74,6 @@ mod dispatch;
 mod extensions;
 mod providers;
 mod resources;
-mod secrets;
 mod sessions;
 mod sources;
 mod tools;
@@ -268,6 +268,36 @@ fn thread_session_meta(
     meta
 }
 
+fn spawn_session_name_update_notifier(
+    cx: ConnectionTo<Client>,
+) -> tokio::sync::mpsc::UnboundedSender<crate::session::SessionNameUpdate> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::session::SessionNameUpdate>();
+    tokio::spawn(async move {
+        while let Some(update) = rx.recv().await {
+            let thread = update.thread;
+            let thread_id = thread.id.clone();
+            let meta = thread_session_meta(&thread);
+            let notification = SessionNotification::new(
+                SessionId::new(thread_id.clone()),
+                SessionUpdate::SessionInfoUpdate(
+                    SessionInfoUpdate::new()
+                        .title(thread.name)
+                        .updated_at(thread.updated_at.to_rfc3339())
+                        .meta(meta),
+                ),
+            );
+            if let Err(error) = cx.send_notification(notification) {
+                warn!(
+                    thread_id = %thread_id,
+                    error = %error,
+                    "Failed to send generated session name update"
+                );
+            }
+        }
+    });
+    tx
+}
+
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
     meta.as_ref()
         .and_then(|m| m.get("timeout"))
@@ -367,14 +397,6 @@ fn get_requested_line(arguments: Option<&rmcp::model::JsonObject>) -> Option<u32
         .map(|l| l as u32)
 }
 
-fn create_tool_location(path: &str, line: Option<u32>) -> ToolCallLocation {
-    let mut loc = ToolCallLocation::new(path);
-    if let Some(l) = line {
-        loc = loc.line(l);
-    }
-    loc
-}
-
 fn is_developer_file_tool(tool_name: &str) -> bool {
     matches!(tool_name, "read" | "write" | "edit")
 }
@@ -391,7 +413,7 @@ fn extract_locations_from_meta(
         .filter_map(|entry| {
             let path = entry.get("path")?.as_str()?;
             let line = entry.get("line").and_then(|v| v.as_u64()).map(|l| l as u32);
-            Some(create_tool_location(path, line))
+            Some(ToolCallLocation::new(path).line(line))
         })
         .collect::<Vec<_>>();
     if locations.is_empty() {
@@ -422,12 +444,12 @@ fn extract_tool_locations(
         if let Some(path_str) = path_str {
             if matches!(tool_name, "read") {
                 let line = get_requested_line(tool_call.arguments.as_ref());
-                locations.push(create_tool_location(path_str, line));
+                locations.push(ToolCallLocation::new(path_str).line(line));
                 return locations;
             }
 
             if matches!(tool_name, "write" | "edit") {
-                locations.push(create_tool_location(path_str, Some(1)));
+                locations.push(ToolCallLocation::new(path_str).line(1));
                 return locations;
             }
 
@@ -447,19 +469,19 @@ fn extract_tool_locations(
                                 let line = extract_view_line_range(text)
                                     .map(|range| range.0 as u32)
                                     .or(Some(1));
-                                locations.push(create_tool_location(path_str, line));
+                                locations.push(ToolCallLocation::new(path_str).line(line));
                             }
                             Some("str_replace") | Some("insert") => {
                                 let line = extract_first_line_number(text)
                                     .map(|l| l as u32)
                                     .or(Some(1));
-                                locations.push(create_tool_location(path_str, line));
+                                locations.push(ToolCallLocation::new(path_str).line(line));
                             }
                             Some("write") => {
-                                locations.push(create_tool_location(path_str, Some(1)));
+                                locations.push(ToolCallLocation::new(path_str).line(1));
                             }
                             _ => {
-                                locations.push(create_tool_location(path_str, Some(1)));
+                                locations.push(ToolCallLocation::new(path_str).line(1));
                             }
                         }
                         break;
@@ -468,7 +490,7 @@ fn extract_tool_locations(
             }
 
             if locations.is_empty() {
-                locations.push(create_tool_location(path_str, Some(1)));
+                locations.push(ToolCallLocation::new(path_str).line(1));
             }
         }
     }
@@ -557,6 +579,77 @@ fn summarize_tool_call(tool_name: &str, arguments: Option<&serde_json::Value>) -
     match detail {
         Some(d) => format!("{base} · {d}"),
         None => base,
+    }
+}
+
+fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {
+    let tool_call = tool_request.tool_call.as_ref().ok()?;
+    let tool_name = tool_call.name.to_string();
+    let extension_name = tool_request
+        .tool_meta
+        .as_ref()
+        .and_then(|meta| meta.get("goose_extension"))
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string)
+        .or_else(|| {
+            tool_name
+                .split_once("__")
+                .map(|(extension_name, _)| extension_name.to_string())
+        });
+
+    let mut tool_call_meta = serde_json::Map::new();
+    tool_call_meta.insert("toolName".to_string(), serde_json::Value::String(tool_name));
+    if let Some(extension_name) = extension_name {
+        tool_call_meta.insert(
+            "extensionName".to_string(),
+            serde_json::Value::String(extension_name),
+        );
+    }
+
+    let mut goose_meta = serde_json::Map::new();
+    goose_meta.insert(
+        "toolCall".to_string(),
+        serde_json::Value::Object(tool_call_meta),
+    );
+
+    let mut meta = serde_json::Map::new();
+    meta.insert("goose".to_string(), serde_json::Value::Object(goose_meta));
+    Some(meta)
+}
+
+struct PendingToolCall {
+    tool_call: ToolCall,
+    identity_meta: Option<Meta>,
+    fallback_title: String,
+}
+
+fn pending_tool_call_from_request(tool_request: &ToolRequest) -> PendingToolCall {
+    let tool_name = match &tool_request.tool_call {
+        Ok(tool_call) => tool_call.name.to_string(),
+        Err(_) => "error".to_string(),
+    };
+    let args_value = tool_request
+        .tool_call
+        .as_ref()
+        .ok()
+        .and_then(|tc| tc.arguments.as_ref())
+        .map(|a| serde_json::Value::Object(a.clone()));
+    let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
+    let identity_meta = tool_call_identity_meta(tool_request);
+
+    let mut tool_call = ToolCall::new(
+        ToolCallId::new(tool_request.id.clone()),
+        fallback_title.clone(),
+    )
+    .status(ToolCallStatus::Pending);
+    if let Some(args) = args_value {
+        tool_call = tool_call.raw_input(args);
+    }
+
+    PendingToolCall {
+        tool_call,
+        identity_meta,
+        fallback_title,
     }
 }
 
@@ -1084,6 +1177,9 @@ impl GooseAcpAgent {
                 }
             };
 
+            let session_name_update_tx =
+                (!disable_session_naming).then(|| spawn_session_name_update_notifier(cx.clone()));
+
             // ── Phase 1: create agent + init provider (fast, ~55ms) ──────
             let phase1: Result<Arc<Agent>, String> = async {
                 let agent = Arc::new(Agent::with_config(
@@ -1095,7 +1191,8 @@ impl GooseAcpAgent {
                         disable_session_naming,
                         goose_platform,
                     )
-                    .with_mcp_host_info(client_mcp_host_info),
+                    .with_mcp_host_info(client_mcp_host_info)
+                    .with_session_name_update_tx(session_name_update_tx),
                 ));
 
                 // Init provider — reuse the pre-resolved name + model when
@@ -1405,27 +1502,10 @@ impl GooseAcpAgent {
             .tool_requests
             .insert(tool_request.id.clone(), tool_request.clone());
 
-        let tool_name = match &tool_request.tool_call {
-            Ok(tool_call) => tool_call.name.to_string(),
-            Err(_) => "error".to_string(),
-        };
-
-        let args_value = tool_request
+        let pending_tool_call = pending_tool_call_from_request(tool_request);
+        let initial_tool_call = pending_tool_call
             .tool_call
-            .as_ref()
-            .ok()
-            .and_then(|tc| tc.arguments.as_ref())
-            .map(|a| serde_json::Value::Object(a.clone()));
-        let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
-
-        let mut initial_tool_call = ToolCall::new(
-            ToolCallId::new(tool_request.id.clone()),
-            fallback_title.clone(),
-        )
-        .status(ToolCallStatus::Pending);
-        if let Some(args) = args_value.clone() {
-            initial_tool_call = initial_tool_call.raw_input(args);
-        }
+            .meta(pending_tool_call.identity_meta.clone());
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
             SessionUpdate::ToolCall(initial_tool_call),
@@ -1440,6 +1520,8 @@ impl GooseAcpAgent {
             let request_id = tool_request.id.clone();
             let cx = cx.clone();
             let name = tool_call.name.to_string();
+            let identity_meta = pending_tool_call.identity_meta.clone();
+            let fallback_title = pending_tool_call.fallback_title.clone();
             let args_json = tool_call
                 .arguments
                 .as_ref()
@@ -1454,71 +1536,56 @@ impl GooseAcpAgent {
                 .unwrap_or_default();
 
             tokio::spawn(async move {
-                let provider: Arc<dyn Provider> = match agent.provider().await {
-                    Ok(p) => p,
+                let title = match agent.provider().await {
+                    Ok(provider) => {
+                        if provider.manages_own_context() {
+                            return;
+                        }
+
+                        let system =
+                            "Summarize this tool call in a short lowercase phrase (3-8 words). \
+                             No punctuation. No quotes. Examples: reading project configuration, \
+                             checking network connectivity, listing files in src directory";
+                        let user_text = format!("Tool: {name}\nArguments: {args_json}");
+                        let message = Message::user().with_text(&user_text);
+                        match provider
+                            .complete_fast(&sid.0, system, &[message], &[])
+                            .await
+                        {
+                            Ok((response, _)) => {
+                                let summary: String = response
+                                    .content
+                                    .iter()
+                                    .filter_map(|c: &MessageContent| c.as_text())
+                                    .collect::<String>()
+                                    .trim()
+                                    .to_string();
+                                if summary.is_empty() {
+                                    fallback_title.clone()
+                                } else {
+                                    summary
+                                }
+                            }
+                            Err(e) => {
+                                warn!("tool call summary: fast_complete failed: {e}");
+                                fallback_title.clone()
+                            }
+                        }
+                    }
                     Err(e) => {
                         warn!("tool call summary: failed to get provider: {e}");
-                        let fields = ToolCallUpdateFields::new().title(fallback_title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
-                        ));
-                        return;
+                        fallback_title.clone()
                     }
                 };
 
-                // in these case, the title summarization request would
-                // be added to the conversation which we don't want
-                if provider.manages_own_context() {
-                    return;
-                }
-
-                let system = "Summarize this tool call in a short lowercase phrase (3-8 words). \
-                              No punctuation. No quotes. Examples: reading project configuration, \
-                              checking network connectivity, listing files in src directory";
-                let user_text = format!("Tool: {name}\nArguments: {args_json}");
-                let message = Message::user().with_text(&user_text);
-                match provider
-                    .complete_fast(&sid.0, system, &[message], &[])
-                    .await
-                {
-                    Ok((response, _)) => {
-                        let summary: String = response
-                            .content
-                            .iter()
-                            .filter_map(|c: &MessageContent| c.as_text())
-                            .collect::<String>()
-                            .trim()
-                            .to_string();
-                        let title = if summary.is_empty() {
-                            fallback_title
-                        } else {
-                            summary
-                        };
-                        let fields = ToolCallUpdateFields::new().title(title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
-                        ));
-                    }
-                    Err(e) => {
-                        warn!("tool call summary: fast_complete failed: {e}");
-                        let fields = ToolCallUpdateFields::new().title(fallback_title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
-                        ));
-                    }
-                }
+                let fields = ToolCallUpdateFields::new().title(title);
+                let _ = cx.send_notification(SessionNotification::new(
+                    sid,
+                    SessionUpdate::ToolCallUpdate(
+                        ToolCallUpdate::new(ToolCallId::new(request_id), fields)
+                            .meta(identity_meta),
+                    ),
+                ));
             });
         }
 
@@ -1539,6 +1606,9 @@ impl GooseAcpAgent {
         };
 
         let mut fields = ToolCallUpdateFields::new().status(status);
+        if let Some(raw_output) = extract_tool_raw_output(&tool_response.tool_result) {
+            fields = fields.raw_output(raw_output);
+        }
         if !tool_response
             .tool_result
             .as_ref()
@@ -1748,6 +1818,13 @@ fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<Tool
             .collect(),
         Err(_) => Vec::new(),
     }
+}
+
+fn extract_tool_raw_output(tool_result: &ToolResult<CallToolResult>) -> Option<serde_json::Value> {
+    tool_result
+        .as_ref()
+        .ok()
+        .and_then(|result| result.structured_content.clone())
 }
 
 impl GooseAcpAgent {
@@ -2172,21 +2249,14 @@ impl GooseAcpAgent {
                         // don't require a full GooseAcpSession.
                         replay_tool_requests.insert(tool_request.id.clone(), tool_request.clone());
 
-                        let tool_name = match &tool_request.tool_call {
-                            Ok(tool_call) => tool_call.name.to_string(),
-                            Err(_) => "error".to_string(),
-                        };
+                        let pending_tool_call = pending_tool_call_from_request(tool_request);
+                        let tool_call = pending_tool_call.tool_call.meta(
+                            merge_replay_message_meta(pending_tool_call.identity_meta, message),
+                        );
 
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
-                            SessionUpdate::ToolCall(
-                                ToolCall::new(
-                                    ToolCallId::new(tool_request.id.clone()),
-                                    format_tool_name(&tool_name),
-                                )
-                                .status(ToolCallStatus::Pending)
-                                .meta(replay_message_meta(message)),
-                            ),
+                            SessionUpdate::ToolCall(tool_call),
                         ))?;
                     }
                     MessageContent::ToolResponse(tool_response) => {
@@ -2200,6 +2270,11 @@ impl GooseAcpAgent {
                         };
 
                         let mut fields = ToolCallUpdateFields::new().status(status);
+                        if let Some(raw_output) =
+                            extract_tool_raw_output(&tool_response.tool_result)
+                        {
+                            fields = fields.raw_output(raw_output);
+                        }
                         if !tool_response
                             .tool_result
                             .as_ref()
@@ -3021,6 +3096,28 @@ print(\"hello, world\")
     }
 
     #[test]
+    fn test_tool_call_identity_meta_uses_goose_extension_metadata() {
+        let request = ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("context7__query-docs")),
+            metadata: None,
+            tool_meta: Some(serde_json::json!({"goose_extension": "context7"})),
+        };
+
+        let meta = tool_call_identity_meta(&request).expect("expected metadata");
+
+        assert_eq!(
+            meta.get("goose"),
+            Some(&serde_json::json!({
+                "toolCall": {
+                    "toolName": "context7__query-docs",
+                    "extensionName": "context7",
+                },
+            })),
+        );
+    }
+
+    #[test]
     fn test_summarize_tool_call_long_value_truncated() {
         let long_path = "a".repeat(80);
         let args = serde_json::json!({"path": long_path});
@@ -3351,6 +3448,31 @@ print(\"hello, world\")
             merged.get("goose"),
             Some(&serde_json::json!({
                 "created": 1_700_000_000,
+            })),
+        );
+    }
+
+    #[test]
+    fn test_extract_tool_raw_output_preserves_structured_content() {
+        let mut result = CallToolResult::success(vec![RmcpContent::text("fallback")]);
+        result.structured_content = Some(serde_json::json!({
+            "restaurants": [
+                {
+                    "name": "Coffee Shop",
+                    "unitToken": "unit-1",
+                },
+            ],
+        }));
+
+        assert_eq!(
+            extract_tool_raw_output(&Ok(result)),
+            Some(serde_json::json!({
+                "restaurants": [
+                    {
+                        "name": "Coffee Shop",
+                        "unitToken": "unit-1",
+                    },
+                ],
             })),
         );
     }

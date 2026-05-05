@@ -157,6 +157,7 @@ pub async fn spawn_acp_server_in_process(
     goose_mode: GooseMode,
     provider_factory: Option<AcpProviderFactory>,
     current_model: &str,
+    disable_session_naming: bool,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
     // TODO: Paths::in_state_dir is global, ignoring per-test data_root
@@ -190,7 +191,7 @@ pub async fn spawn_acp_server_in_process(
         data_root.to_path_buf(),
         data_root.to_path_buf(),
         goose_mode,
-        true,
+        disable_session_naming,
         GoosePlatform::GooseCli,
     )
     .await
@@ -221,6 +222,12 @@ pub enum Notification {
     AvailableCommands,
     CurrentMode,
     ConfigOption,
+    SessionInfoUpdate {
+        title: Option<String>,
+        updated_at: Option<String>,
+        message_count: Option<u64>,
+        user_set_name: Option<bool>,
+    },
 }
 
 pub fn to_notifications(updates: &[SessionUpdate]) -> Vec<Notification> {
@@ -266,6 +273,19 @@ pub fn to_notifications(updates: &[SessionUpdate]) -> Vec<Notification> {
             SessionUpdate::AvailableCommandsUpdate(_) => out.push(Notification::AvailableCommands),
             SessionUpdate::CurrentModeUpdate(_) => out.push(Notification::CurrentMode),
             SessionUpdate::ConfigOptionUpdate(_) => out.push(Notification::ConfigOption),
+            SessionUpdate::SessionInfoUpdate(update) => {
+                let meta = update.meta.as_ref();
+                out.push(Notification::SessionInfoUpdate {
+                    title: update.title.value().cloned(),
+                    updated_at: update.updated_at.value().cloned(),
+                    message_count: meta
+                        .and_then(|m| m.get("messageCount"))
+                        .and_then(|v| v.as_u64()),
+                    user_set_name: meta
+                        .and_then(|m| m.get("userSetName"))
+                        .and_then(|v| v.as_bool()),
+                });
+            }
             _ => {}
         }
     }
@@ -482,6 +502,7 @@ pub struct TestConnectionConfig {
     pub strip_config_options: bool,
     // The model the server-side provider starts with. Defaults to TEST_MODEL.
     pub current_model: String,
+    pub disable_session_naming: bool,
 }
 
 impl Default for TestConnectionConfig {
@@ -498,6 +519,7 @@ impl Default for TestConnectionConfig {
             terminal: None,
             strip_config_options: false,
             current_model: TEST_MODEL.to_string(),
+            disable_session_naming: true,
         }
     }
 }

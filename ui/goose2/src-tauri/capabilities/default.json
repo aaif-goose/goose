@@ -20,9 +20,6 @@
           "path": "$HOME/.goose/**"
         },
         {
-          "path": "$HOME/.goose/artifacts/**"
-        },
-        {
           "path": "$TEMP/**"
         },
         {
