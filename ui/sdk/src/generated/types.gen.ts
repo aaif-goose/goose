@@ -283,8 +283,11 @@ export type ProviderInventoryModelDto = {
  * List custom-provider catalog entries. Omit `format` to list all formats.
  */
 export type ProviderCatalogListRequest = {
+    kind?: ProviderCatalogKindDto | null;
     format?: string | null;
 };
+
+export type ProviderCatalogKindDto = 'custom_template' | 'setup';
 
 export type ProviderCatalogListResponse = {
     providers: Array<ProviderCatalogEntryDto>;
@@ -298,7 +301,34 @@ export type ProviderCatalogEntryDto = {
     modelCount: number;
     docUrl: string;
     envVar: string;
+    category?: ProviderSetupCategoryDto | null;
+    description?: string | null;
+    setupMethod?: ProviderSetupMethodDto | null;
+    nativeConnectQuery?: string | null;
+    fields?: Array<ProviderSetupFieldDto>;
+    binaryName?: string | null;
+    tier?: ProviderSetupTierDto | null;
+    showOnlyWhenInstalled?: boolean | null;
+    aliases?: Array<string>;
+    supportsInstall?: boolean | null;
+    supportsAuth?: boolean | null;
+    supportsAuthStatus?: boolean | null;
 };
+
+export type ProviderSetupCategoryDto = 'agent' | 'model';
+
+export type ProviderSetupMethodDto = 'none' | 'single_api_key' | 'config_fields' | 'host_with_oauth_fallback' | 'oauth_browser' | 'oauth_device_code' | 'cloud_credentials' | 'local' | 'cli_auth';
+
+export type ProviderSetupFieldDto = {
+    key: string;
+    label: string;
+    secret: boolean;
+    required: boolean;
+    placeholder?: string | null;
+    defaultValue?: string | null;
+};
+
+export type ProviderSetupTierDto = 'promoted' | 'standard' | 'advanced';
 
 /**
  * Return the editable template for one catalog provider.

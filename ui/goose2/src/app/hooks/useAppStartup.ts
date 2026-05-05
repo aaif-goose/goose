@@ -8,6 +8,7 @@ import notificationHandler from "@/shared/api/acpNotificationHandler";
 import { perfLog } from "@/shared/lib/perfLog";
 import { parseProviderAllowlist } from "@/features/providers/distroProviderConstraints";
 import { getModelProviders } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
 
 export function useAppStartup() {
@@ -28,6 +29,7 @@ export function useAppStartup() {
 
       const store = useAgentStore.getState();
       const inventoryStore = useProviderInventoryStore.getState();
+      const catalogStore = useProviderCatalogStore.getState();
       const distroStore = useDistroStore.getState();
       const loadDistroBundle = async () => {
         try {
@@ -54,6 +56,18 @@ export function useAppStartup() {
           console.error("Failed to load personas on startup:", err);
         } finally {
           store.setPersonasLoading(false);
+        }
+      };
+
+      const loadProviderCatalog = async () => {
+        const t0 = performance.now();
+        try {
+          const entries = await catalogStore.load();
+          perfLog(
+            `[perf:startup] loadProviderCatalog done in ${(performance.now() - t0).toFixed(1)}ms (n=${entries.length})`,
+          );
+        } catch (err) {
+          console.error("Failed to load provider catalog on startup:", err);
         }
       };
 
@@ -117,7 +131,7 @@ export function useAppStartup() {
         setActiveSession(null);
       };
 
-      await loadDistroBundle();
+      await Promise.allSettled([loadDistroBundle(), loadProviderCatalog()]);
 
       const providersAndInventoryLoad = loadProvidersAndInventory();
 

@@ -516,6 +516,16 @@
     "ProviderCatalogListRequest": {
       "type": "object",
       "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderCatalogKindDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "format": {
           "type": [
             "string",
@@ -526,6 +536,13 @@
       "description": "List custom-provider catalog entries. Omit `format` to list all formats.",
       "x-side": "agent",
       "x-method": "_goose/providers/catalog/list"
+    },
+    "ProviderCatalogKindDto": {
+      "type": "string",
+      "enum": [
+        "custom_template",
+        "setup"
+      ]
     },
     "ProviderCatalogListResponse": {
       "type": "object",
@@ -567,6 +584,90 @@
         },
         "envVar": {
           "type": "string"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderSetupCategoryDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "setupMethod": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderSetupMethodDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nativeConnectQuery": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderSetupFieldDto"
+          }
+        },
+        "binaryName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderSetupTierDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "showOnlyWhenInstalled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "supportsInstall": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsAuth": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsAuthStatus": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
@@ -577,6 +678,70 @@
         "modelCount",
         "docUrl",
         "envVar"
+      ]
+    },
+    "ProviderSetupCategoryDto": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "model"
+      ]
+    },
+    "ProviderSetupMethodDto": {
+      "type": "string",
+      "enum": [
+        "none",
+        "single_api_key",
+        "config_fields",
+        "host_with_oauth_fallback",
+        "oauth_browser",
+        "oauth_device_code",
+        "cloud_credentials",
+        "local",
+        "cli_auth"
+      ]
+    },
+    "ProviderSetupFieldDto": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultValue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "secret",
+        "required"
+      ]
+    },
+    "ProviderSetupTierDto": {
+      "type": "string",
+      "enum": [
+        "promoted",
+        "standard",
+        "advanced"
       ]
     },
     "ProviderCatalogTemplateRequest": {

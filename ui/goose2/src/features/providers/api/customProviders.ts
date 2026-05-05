@@ -21,9 +21,10 @@ export async function listCustomProviderCatalog(
   format?: CustomProviderFormat,
 ): Promise<ProviderCatalogEntryDto[]> {
   const client = await getProviderClient();
-  const response = await client.GooseProvidersCatalogList(
-    format ? { format } : {},
-  );
+  const response = await client.GooseProvidersCatalogList({
+    kind: "custom_template",
+    ...(format ? { format } : {}),
+  });
   return response.providers;
 }
 

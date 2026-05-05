@@ -214,15 +214,56 @@ export const zListProvidersResponse = z.object({
     entries: z.array(zProviderInventoryEntryDto)
 });
 
+export const zProviderCatalogKindDto = z.enum(['custom_template', 'setup']);
+
 /**
  * List custom-provider catalog entries. Omit `format` to list all formats.
  */
 export const zProviderCatalogListRequest = z.object({
+    kind: z.union([
+        zProviderCatalogKindDto,
+        z.null()
+    ]).optional(),
     format: z.union([
         z.string(),
         z.null()
     ]).optional()
 });
+
+export const zProviderSetupCategoryDto = z.enum(['agent', 'model']);
+
+export const zProviderSetupMethodDto = z.enum([
+    'none',
+    'single_api_key',
+    'config_fields',
+    'host_with_oauth_fallback',
+    'oauth_browser',
+    'oauth_device_code',
+    'cloud_credentials',
+    'local',
+    'cli_auth'
+]);
+
+export const zProviderSetupFieldDto = z.object({
+    key: z.string(),
+    label: z.string(),
+    secret: z.boolean(),
+    required: z.boolean(),
+    placeholder: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultValue: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zProviderSetupTierDto = z.enum([
+    'promoted',
+    'standard',
+    'advanced'
+]);
 
 export const zProviderCatalogEntryDto = z.object({
     providerId: z.string(),
@@ -231,7 +272,49 @@ export const zProviderCatalogEntryDto = z.object({
     apiUrl: z.string(),
     modelCount: z.number().int().gte(0),
     docUrl: z.string(),
-    envVar: z.string()
+    envVar: z.string(),
+    category: z.union([
+        zProviderSetupCategoryDto,
+        z.null()
+    ]).optional(),
+    description: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    setupMethod: z.union([
+        zProviderSetupMethodDto,
+        z.null()
+    ]).optional(),
+    nativeConnectQuery: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    fields: z.array(zProviderSetupFieldDto).optional(),
+    binaryName: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    tier: z.union([
+        zProviderSetupTierDto,
+        z.null()
+    ]).optional(),
+    showOnlyWhenInstalled: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    aliases: z.array(z.string()).optional(),
+    supportsInstall: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    supportsAuth: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    supportsAuthStatus: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional()
 });
 
 export const zProviderCatalogListResponse = z.object({

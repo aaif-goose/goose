@@ -40,12 +40,13 @@ export interface ProviderCatalogEntry {
   envVar?: string;
   fields?: ProviderField[];
   binaryName?: string;
-  installCommand?: string;
-  authCommand?: string;
-  authStatusCommand?: string;
   docsUrl?: string;
   tier: ProviderTier;
   showOnlyWhenInstalled?: boolean;
+  aliases?: string[];
+  supportsInstall?: boolean;
+  supportsAuth?: boolean;
+  supportsAuthStatus?: boolean;
 }
 
 export type ProviderSetupStatus =

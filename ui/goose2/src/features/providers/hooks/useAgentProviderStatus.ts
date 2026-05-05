@@ -34,11 +34,11 @@ async function checkAgentProviderReady(providerId: string): Promise<boolean> {
       return false;
     }
 
-    if (provider.authStatusCommand) {
+    if (provider.supportsAuthStatus) {
       return checkAgentAuth(provider.id);
     }
 
-    if (provider.authCommand) {
+    if (provider.supportsAuth) {
       return (
         localStorage.getItem(`agent-provider-auth:${provider.id}`) === "true"
       );

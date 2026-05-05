@@ -1,6 +1,7 @@
 import { renderHook } from "@testing-library/react";
 import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { beforeEach, describe, expect, it } from "vitest";
+import { useProviderCatalogStore } from "../stores/providerCatalogStore";
 import { useProviderInventoryStore } from "../stores/providerInventoryStore";
 import { useProviderInventory } from "./useProviderInventory";
 
@@ -28,6 +29,24 @@ function providerEntry(
 
 describe("useProviderInventory", () => {
   beforeEach(() => {
+    useProviderCatalogStore.getState().setEntries([
+      {
+        id: "openai",
+        displayName: "OpenAI",
+        category: "model",
+        description: "GPT and o-series models",
+        setupMethod: "config_fields",
+        tier: "promoted",
+      },
+      {
+        id: "custom_deepseek",
+        displayName: "DeepSeek",
+        category: "model",
+        description: "DeepSeek chat and reasoning models",
+        setupMethod: "single_api_key",
+        tier: "advanced",
+      },
+    ]);
     useProviderInventoryStore.setState({
       entries: new Map(),
       loading: false,

@@ -25,8 +25,8 @@ function createProvider(): ProviderDisplayInfo {
     description: "Claude provider",
     setupMethod: "cli_auth",
     binaryName: "claude",
-    authCommand: "claude auth login",
-    authStatusCommand: "claude auth status",
+    supportsAuth: true,
+    supportsAuthStatus: true,
     tier: "standard",
     status: "not_installed",
   };
@@ -113,9 +113,9 @@ describe("AgentProviderCard", () => {
       <AgentProviderCard
         provider={{
           ...createProvider(),
-          authCommand: undefined,
-          authStatusCommand: undefined,
-          installCommand: "npm install -g claude-agent-acp",
+          supportsAuth: false,
+          supportsAuthStatus: false,
+          supportsInstall: true,
         }}
       />,
     );

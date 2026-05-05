@@ -33,8 +33,9 @@ interface AgentProviderCardProps {
 export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   const { t } = useTranslation(["settings", "common"]);
   const isBuiltIn = provider.status === "built_in";
-  const hasInstallCommand = !!provider.installCommand;
-  const hasAuthCommand = !!provider.authCommand;
+  const supportsInstall = provider.supportsInstall === true;
+  const supportsAuth = provider.supportsAuth === true;
+  const supportsAuthStatus = provider.supportsAuthStatus === true;
   const hasBinary = !!provider.binaryName;
   const [setupPhase, setSetupPhase] = useState<SetupPhase>("idle");
   const [setupOutput, setSetupOutput] = useState<OutputLine[]>([]);
@@ -44,9 +45,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     hasBinary && !isBuiltIn ? "checking" : "installed",
   );
   const [authStatus, setAuthStatus] = useState<AuthStatus>(
-    provider.authStatusCommand && hasBinary && !isBuiltIn
-      ? "checking"
-      : "unknown",
+    supportsAuthStatus && hasBinary && !isBuiltIn ? "checking" : "unknown",
   );
   const outputRef = useRef<HTMLDivElement>(null);
   const outputLengthRef = useRef(0);
@@ -93,13 +92,13 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
       .then((installed) => {
         if (!isMountedRef.current) return;
         setInstallStatus(installed ? "installed" : "missing");
-        if (installed && provider.authStatusCommand) {
+        if (installed && supportsAuthStatus) {
           return checkAgentAuth(provider.id).then((authenticated) => {
             if (!isMountedRef.current) return;
             setAuthStatus(authenticated ? "authenticated" : "unauthenticated");
           });
         }
-        if (installed && !provider.authStatusCommand) {
+        if (installed && !supportsAuthStatus) {
           setAuthStatus(getAuthHint() ? "authenticated" : "unknown");
         }
         if (!installed) {
@@ -118,7 +117,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     isBuiltIn,
     provider.id,
     provider.binaryName,
-    provider.authStatusCommand,
+    supportsAuthStatus,
     setAuthHint,
   ]);
 
@@ -145,15 +144,15 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
     setSetupOutput([]);
     lineCounterRef.current = 0;
 
-    if (hasInstallCommand && installStatus === "missing") {
+    if (supportsInstall && installStatus === "missing") {
       await runInstall();
-    } else if (hasAuthCommand) {
+    } else if (supportsAuth) {
       await runAuth();
     }
   }
 
   async function runInstall() {
-    if (!provider.installCommand) return;
+    if (!supportsInstall) return;
     setSetupPhase("installing");
 
     clearListener();
@@ -183,7 +182,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
         }
       }
 
-      if (hasAuthCommand) {
+      if (supportsAuth) {
         await runAuth();
       } else {
         if (!isMountedRef.current) return;
@@ -198,7 +197,7 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
   }
 
   async function runAuth() {
-    if (!provider.authCommand) return;
+    if (!supportsAuth) return;
     setSetupPhase("authenticating");
     setSetupOutput([]);
 
@@ -232,14 +231,14 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
 
   const isReady =
     isBuiltIn ||
-    (installStatus === "installed" && !hasAuthCommand) ||
+    (installStatus === "installed" && !supportsAuth) ||
     (installStatus === "installed" && authStatus === "authenticated");
   const needsAuth =
     installStatus === "installed" &&
-    hasAuthCommand &&
+    supportsAuth &&
     authStatus !== "checking" &&
     authStatus !== "authenticated";
-  const needsInstall = installStatus === "missing" && hasInstallCommand;
+  const needsInstall = installStatus === "missing" && supportsInstall;
   const isChecking =
     (installStatus === "checking" && hasBinary) ||
     (installStatus === "installed" && authStatus === "checking");
@@ -388,9 +387,9 @@ export function AgentProviderCard({ provider }: AgentProviderCardProps) {
           : t("providers.agents.progress.verifyingInstallation");
 
     const stepInfo =
-      setupPhase === "installing" && hasAuthCommand
+      setupPhase === "installing" && supportsAuth
         ? t("providers.agents.progress.step", { step: 1, total: 2 })
-        : setupPhase === "authenticating" && hasInstallCommand
+        : setupPhase === "authenticating" && supportsInstall
           ? t("providers.agents.progress.step", { step: 2, total: 2 })
           : null;
 
