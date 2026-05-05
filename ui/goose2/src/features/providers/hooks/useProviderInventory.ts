@@ -6,27 +6,22 @@ import type {
   ProviderInventoryModelDto,
 } from "@aaif/goose-sdk";
 import { getModelProviders } from "../providerCatalog";
-
-const MODEL_PROVIDER_IDS = new Set(getModelProviders().map((p) => p.id));
+import { useDistroStore } from "@/features/settings/stores/distroStore";
+import { filterModelProvidersForDistro } from "../distroProviderConstraints";
 
 function isConfiguredGooseModelProvider(
   entry: ProviderInventoryEntryDto,
+  modelProviderIds: Set<string>,
 ): boolean {
   if (!entry.configured) {
     return false;
   }
 
-  const isCuratedModelProvider = MODEL_PROVIDER_IDS.has(entry.providerId);
-
   if (entry.providerType === "Custom") {
     return entry.providerId.startsWith("custom_");
   }
 
-  if (entry.providerType === "Declarative") {
-    return isCuratedModelProvider;
-  }
-
-  return isCuratedModelProvider;
+  return modelProviderIds.has(entry.providerId);
 }
 
 function inventoryModelToOption(
@@ -48,6 +43,7 @@ function inventoryModelToOption(
 export function useProviderInventory() {
   const entries = useProviderInventoryStore((s) => s.entries);
   const loading = useProviderInventoryStore((s) => s.loading);
+  const distro = useDistroStore((s) => s.manifest);
 
   const getEntry = useCallback(
     (providerId: string) => entries.get(providerId),
@@ -63,9 +59,22 @@ export function useProviderInventory() {
     [entries],
   );
 
+  const modelProviderIds = useMemo(
+    () =>
+      new Set(
+        filterModelProvidersForDistro(getModelProviders(), distro).map(
+          (provider) => provider.id,
+        ),
+      ),
+    [distro],
+  );
+
   const configuredModelProviderEntries = useMemo(
-    () => [...entries.values()].filter(isConfiguredGooseModelProvider),
-    [entries],
+    () =>
+      [...entries.values()].filter((entry) =>
+        isConfiguredGooseModelProvider(entry, modelProviderIds),
+      ),
+    [entries, modelProviderIds],
   );
 
   const getModelsForAgent = useCallback(
@@ -84,8 +93,8 @@ export function useProviderInventory() {
   const configuredProviderIds = useMemo(
     () =>
       [...entries.values()]
-        .filter((e) => e.configured)
-        .map((e) => e.providerId),
+        .filter((entry) => entry.configured)
+        .map((entry) => entry.providerId),
     [entries],
   );
 

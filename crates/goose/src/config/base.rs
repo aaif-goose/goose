@@ -151,14 +151,10 @@ fn system_config_path() -> PathBuf {
     }
 }
 
-fn bundled_defaults_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let path = exe.parent()?.join("defaults.yaml");
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
+fn additional_config_paths_from_env() -> Vec<PathBuf> {
+    env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES")
+        .map(|value| env::split_paths(&value).collect())
+        .unwrap_or_default()
 }
 
 impl Default for Config {
@@ -167,9 +163,7 @@ impl Default for Config {
         let user_config_path = config_dir.join(CONFIG_YAML_NAME);
 
         let mut config_paths = vec![system_config_path()];
-        if let Some(defaults) = bundled_defaults_path() {
-            config_paths.insert(0, defaults);
-        }
+        config_paths.extend(additional_config_paths_from_env());
         config_paths.push(user_config_path.clone());
 
         let no_secrets_config = Self {

@@ -46,6 +46,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../distro": "distro"
+    },
     "externalBin": ["../../../target/release/goose"],
     "macOS": {
       "entitlements": "entitlements.plist",

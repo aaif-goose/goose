@@ -130,6 +130,7 @@ ThemeProvider manages three axes:
 - Title bar uses `titleBarStyle: "Overlay"` with `hiddenTitle: true` for a custom titlebar.
 - `tauri-plugin-window-state` persists window size and position.
 - Traffic light offset: `pl-20` (80px) to accommodate macOS window controls.
+- Distro bundle behavior, including feature flags, is documented in `distro/README.md`.
 
 ## Architecture
 

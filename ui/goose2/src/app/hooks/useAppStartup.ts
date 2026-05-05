@@ -6,6 +6,9 @@ import { discoverAcpProvidersFromEntries } from "@/shared/api/acp";
 import { setNotificationHandler, getClient } from "@/shared/api/acpConnection";
 import notificationHandler from "@/shared/api/acpNotificationHandler";
 import { perfLog } from "@/shared/lib/perfLog";
+import { parseProviderAllowlist } from "@/features/providers/distroProviderConstraints";
+import { getModelProviders } from "@/features/providers/providerCatalog";
+import { useDistroStore } from "@/features/settings/stores/distroStore";
 
 export function useAppStartup() {
   useEffect(() => {
@@ -25,6 +28,18 @@ export function useAppStartup() {
 
       const store = useAgentStore.getState();
       const inventoryStore = useProviderInventoryStore.getState();
+      const distroStore = useDistroStore.getState();
+      const loadDistroBundle = async () => {
+        try {
+          const { getDistroBundle } = await import("@/shared/api/distro");
+          const manifest = await getDistroBundle();
+          distroStore.setManifest(manifest);
+        } catch (err) {
+          console.error("Failed to load distro bundle on startup:", err);
+          distroStore.setManifest({ present: false });
+        }
+      };
+
       const loadPersonas = async () => {
         const t0 = performance.now();
         store.setPersonasLoading(true);
@@ -57,7 +72,22 @@ export function useAppStartup() {
 
           // Derive ACP providers from the same response
           const providers = discoverAcpProvidersFromEntries(entries);
-          store.setProviders(providers);
+          const providerAllowlist = parseProviderAllowlist(
+            useDistroStore.getState().manifest,
+          );
+          if (!providerAllowlist) {
+            store.setProviders(providers);
+          } else {
+            const hasAllowedModelProvider = getModelProviders().some(
+              (provider) => providerAllowlist.has(provider.id),
+            );
+            store.setProviders(
+              providers.filter(
+                (provider) =>
+                  provider.id !== "goose" || hasAllowedModelProvider,
+              ),
+            );
+          }
 
           perfLog(
             `[perf:startup] loadProvidersAndInventory done in ${(performance.now() - t0).toFixed(1)}ms (entries=${entries.length}, providers=${providers.length})`,
@@ -86,6 +116,8 @@ export function useAppStartup() {
         );
         setActiveSession(null);
       };
+
+      await loadDistroBundle();
 
       const providersAndInventoryLoad = loadProvidersAndInventory();
 
