@@ -16,24 +16,6 @@
   },
   "view": {
     "backToSkills": "Volver a skills",
-    "category": "Categoría",
-    "categories": {
-      "clear": "Limpiar categorías",
-      "count": "{{count}} categorías",
-      "filter": "Filtrar por categoría",
-      "label": "Categorías",
-      "options": {
-        "design": "Diseño",
-        "engineering": "Ingeniería",
-        "general": "General",
-        "integrations": "Integraciones",
-        "operations": "Operaciones",
-        "productivity": "Productividad",
-        "quality": "Calidad",
-        "research": "Investigación",
-        "writing": "Redacción"
-      }
-    },
     "deleteDescription": "Esta habilidad y su configuración se eliminarán de forma permanente.",
     "deleteError": "Error al eliminar la skill",
     "deleteSuccess": "Skill \"{{name}}\" eliminada",

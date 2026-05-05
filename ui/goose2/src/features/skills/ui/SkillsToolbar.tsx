@@ -3,8 +3,6 @@ import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button } from "@/shared/ui/button";
 import { FilterRow } from "@/shared/ui/page-shell";
-import { SkillCategoryFilter } from "./SkillCategoryFilter";
-import type { SkillCategory } from "../lib/skillCategories";
 import type { SkillsFilter } from "../lib/skillsHelpers";
 
 interface SkillsToolbarProps {
@@ -13,9 +11,6 @@ interface SkillsToolbarProps {
   activeFilter: SkillsFilter;
   onActiveFilterChange: (filter: SkillsFilter) => void;
   projectFilters: { id: string; name: string }[];
-  categoryFilters: SkillCategory[];
-  selectedCategories: SkillCategory[];
-  onSelectedCategoriesChange: (categories: SkillCategory[]) => void;
   dropHandlers?: React.HTMLAttributes<HTMLDivElement>;
   isDragOver?: boolean;
 }
@@ -47,9 +42,6 @@ export function SkillsToolbar({
   activeFilter,
   onActiveFilterChange,
   projectFilters,
-  categoryFilters,
-  selectedCategories,
-  onSelectedCategoriesChange,
   dropHandlers,
   isDragOver,
 }: SkillsToolbarProps) {
@@ -94,13 +86,6 @@ export function SkillsToolbar({
             </FilterButton>
           );
         })}
-        {categoryFilters.length > 0 ? (
-          <SkillCategoryFilter
-            categories={categoryFilters}
-            selectedCategories={selectedCategories}
-            onSelectedCategoriesChange={onSelectedCategoriesChange}
-          />
-        ) : null}
       </FilterRow>
     </div>
   );

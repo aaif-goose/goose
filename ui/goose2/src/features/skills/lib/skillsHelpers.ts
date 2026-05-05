@@ -1,12 +1,11 @@
 import type { SkillInfo } from "../api/skills";
-import type { SkillCategory, SkillViewInfo } from "./skillCategories";
 
 export type SkillsFilter = "all" | "global" | `project:${string}`;
 
 export interface SkillsSection {
   id: string;
   title: string;
-  skills: SkillViewInfo[];
+  skills: SkillInfo[];
 }
 
 // Mirrors crates/goose/src/skills/mod.rs::validate_skill_name.
@@ -59,24 +58,19 @@ export function compareSkillsByName(a: SkillInfo, b: SkillInfo) {
 }
 
 export function filterSkills(
-  skills: SkillViewInfo[],
+  skills: SkillInfo[],
   filters: {
     search: string;
     activeFilter: SkillsFilter;
-    selectedCategories: SkillCategory[];
   },
-  getCategoryLabel: (category: SkillCategory) => string,
-): SkillViewInfo[] {
+): SkillInfo[] {
   const searchTerm = filters.search.trim().toLowerCase();
   return skills.filter((skill) => {
     const matchesSearch =
       searchTerm.length === 0 ||
       skill.name.toLowerCase().includes(searchTerm) ||
       skill.description.toLowerCase().includes(searchTerm) ||
-      skill.sourceLabel.toLowerCase().includes(searchTerm) ||
-      getCategoryLabel(skill.inferredCategory)
-        .toLowerCase()
-        .includes(searchTerm);
+      skill.sourceLabel.toLowerCase().includes(searchTerm);
 
     const matchesFilter =
       filters.activeFilter === "all"
@@ -87,16 +81,12 @@ export function filterSkills(
               (project) => `project:${project.id}` === filters.activeFilter,
             );
 
-    const matchesCategory =
-      filters.selectedCategories.length === 0 ||
-      filters.selectedCategories.includes(skill.inferredCategory);
-
-    return matchesSearch && matchesFilter && matchesCategory;
+    return matchesSearch && matchesFilter;
   });
 }
 
 export function groupSkills(
-  filteredSkills: SkillViewInfo[],
+  filteredSkills: SkillInfo[],
   activeFilter: SkillsFilter,
   projectFilters: { id: string; name: string }[],
   labels: { personalTitle: string; projectsFallback: string },
