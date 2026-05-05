@@ -55,7 +55,7 @@ If a feature involves data, persistence, secrets, provider config, sessions, fil
 
 - Stand up a feature whose business logic lives in a Zustand store, a React hook, or a `features/<feature>/api/` adapter that calls `localStorage`, `fetch`, or filesystem APIs directly.
 - Reach for `invoke()` to add a new Tauri command that proxies into `goose` — add an ACP custom method instead.
-- Do not use `localStorage`
+- Do not use `localStorage` except for things it's absolutely needed for (specifically outlined in other parts of this AGENTS.md)
 - Duplicate types between TS and Rust — let the SDK generation produce them from `crates/goose-sdk/src/custom_requests.rs` and use the generated types ALWAYS. Do not create a shadow of a type you could use from the generated types.
 
 The frontend's job is presentation, navigation, and orchestration of typed SDK calls. If you find a feature growing real logic on the React side, that's a signal to push it down into `goose-acp` + `goose`.
