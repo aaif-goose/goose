@@ -69,6 +69,10 @@ const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation..."
 const MAX_TEXT_ONLY_NUDGES: u32 = 3;
 const TEXT_ONLY_NUDGE_MESSAGE: &str =
     "Please continue by using the available tools to accomplish the task.";
+/// Models that emit pre-task planning text before their first tool call and
+/// need nudging to start using tools. For these we drop the
+/// `any_tools_ever_called` guard so the very first text-only turn is nudged.
+const PRE_TASK_NUDGE_MODELS: &[&str] = &["tencent/hy3-preview"];
 
 /// Context needed for the reply function
 pub struct ReplyContext {
@@ -1246,6 +1250,10 @@ impl Agent {
         self.reset_retry_attempts().await;
 
         let provider = self.provider().await?;
+        let nudge_pre_task = {
+            let model_name = &provider.get_model_config().model_name;
+            PRE_TASK_NUDGE_MODELS.iter().any(|m| model_name.contains(m))
+        };
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
@@ -1783,7 +1791,7 @@ impl Agent {
                             // continue from last user message after recovery compact
                         }
                         None => {
-                            if any_tools_ever_called && !messages_to_add.is_empty() && consecutive_text_only_turns < MAX_TEXT_ONLY_NUDGES {
+                            if (any_tools_ever_called || nudge_pre_task) && !messages_to_add.is_empty() && consecutive_text_only_turns < MAX_TEXT_ONLY_NUDGES {
                                 consecutive_text_only_turns += 1;
                                 info!(
                                     "Model produced text without tool calls ({}/{}), nudging to continue",
