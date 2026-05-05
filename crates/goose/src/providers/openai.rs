@@ -305,12 +305,19 @@ impl OpenAiProvider {
                 Err(e) => {
                     use crate::config::ConfigError;
                     match e {
-                        ConfigError::NotFound(_) if !config.requires_auth => None,
-                        ConfigError::NotFound(_) => anyhow::bail!(
+                        ConfigError::NotFound(_) if config.requires_auth => anyhow::bail!(
                             "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
                             config.api_key_env,
                             config.api_key_env
                         ),
+                        other if !config.requires_auth => {
+                            tracing::warn!(
+                                "Failed to read optional API key {} from secret storage: {}. Proceeding without authentication.",
+                                config.api_key_env,
+                                other
+                            );
+                            None
+                        }
                         other => anyhow::bail!("Failed to read {}: {}", config.api_key_env, other),
                     }
                 }
