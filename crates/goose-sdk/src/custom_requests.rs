@@ -427,7 +427,7 @@ pub struct ProviderConfigChangeResponse {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderCatalogEntryDto {
+pub struct ProviderTemplateCatalogEntryDto {
     pub provider_id: String,
     pub name: String,
     pub format: String,
@@ -551,7 +551,7 @@ pub struct ProviderCatalogListRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderCatalogListResponse {
-    pub providers: Vec<ProviderCatalogEntryDto>,
+    pub providers: Vec<ProviderTemplateCatalogEntryDto>,
 }
 
 /// List provider setup catalog entries for Goose UIs.

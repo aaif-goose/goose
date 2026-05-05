@@ -4,7 +4,7 @@ import type {
   CustomProviderDeleteResponse,
   CustomProviderReadResponse,
   CustomProviderUpdateResponse,
-  ProviderCatalogEntryDto,
+  ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from "@aaif/goose-sdk";
 import type {
@@ -19,11 +19,11 @@ async function getProviderClient() {
 
 export async function listCustomProviderCatalog(
   format?: CustomProviderFormat,
-): Promise<ProviderCatalogEntryDto[]> {
+): Promise<ProviderTemplateCatalogEntryDto[]> {
   const client = await getProviderClient();
-  const response = await client.GooseProvidersCatalogList({
-    ...(format ? { format } : {}),
-  });
+  const response = await client.GooseProvidersCatalogList(
+    format ? { format } : {},
+  );
   return response.providers;
 }
 

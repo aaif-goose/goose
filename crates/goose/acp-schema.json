@@ -533,7 +533,7 @@
         "providers": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ProviderCatalogEntryDto"
+            "$ref": "#/$defs/ProviderTemplateCatalogEntryDto"
           }
         }
       },
@@ -543,7 +543,7 @@
       "x-side": "agent",
       "x-method": "_goose/providers/catalog/list"
     },
-    "ProviderCatalogEntryDto": {
+    "ProviderTemplateCatalogEntryDto": {
       "type": "object",
       "properties": {
         "providerId": {

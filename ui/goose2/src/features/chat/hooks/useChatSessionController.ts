@@ -437,7 +437,7 @@ export function useChatSessionController({
     supportsContextCompactionControls(selectedAgentId);
   const isCompactingContext = chatState === "compacting";
   const resolveAutoCompactAgentId = useCallback(
-    (overridePersona?: { id: string; name?: string }) => {
+    (overridePersona?: { id: string; name?: string }): string | null => {
       if (!overridePersona?.id) {
         return selectedAgentId;
       }
@@ -449,14 +449,22 @@ export function useChatSessionController({
         return selectedAgentId;
       }
 
-      return (
-        resolveAgentProviderCatalogIdStrictFromEntries(
-          catalogEntries,
-          targetPersona.provider,
-        ) ?? "goose"
+      const targetAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+        catalogEntries,
+        targetPersona.provider,
       );
+      if (targetAgentId) {
+        return targetAgentId;
+      }
+
+      const isGooseModelProvider = providers.some(
+        (provider) =>
+          provider.id === targetPersona.provider ||
+          provider.label.toLowerCase().includes(targetPersona.provider ?? ""),
+      );
+      return isGooseModelProvider ? "goose" : null;
     },
-    [catalogEntries, personas, selectedAgentId],
+    [catalogEntries, personas, providers, selectedAgentId],
   );
   const canAutoCompactBeforeSend = useCallback(
     (overridePersona?: { id: string; name?: string }) => {

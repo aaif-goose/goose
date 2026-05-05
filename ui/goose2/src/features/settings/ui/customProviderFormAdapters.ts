@@ -8,7 +8,7 @@ import type {
   CustomProviderDraft,
   CustomProviderEngine,
   CustomProviderReadResponse,
-  ProviderCatalogEntryDto,
+  ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from "@/features/providers/lib/customProviderTypes";
 import type { CustomProviderMutationInput } from "@/features/providers/ui/CustomProviderDialog";
@@ -47,7 +47,7 @@ export function templateToFormValue(
 }
 
 export function catalogEntryToTemplate(
-  entry: ProviderCatalogEntryDto,
+  entry: ProviderTemplateCatalogEntryDto,
 ): ProviderTemplate {
   return {
     id: entry.providerId,

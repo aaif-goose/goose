@@ -3,9 +3,34 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import type { Message } from "@/shared/types/messages";
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
 import { openPath } from "@tauri-apps/plugin-opener";
 const mockWriteText = vi.fn().mockResolvedValue(undefined);
+
+const providerCatalogEntries: ProviderCatalogEntry[] = [
+  {
+    id: "claude-acp",
+    displayName: "Claude Code",
+    category: "agent",
+    description: "Anthropic's agentic coding tool",
+    setupMethod: "cli_auth",
+    binaryName: "claude-agent-acp",
+    tier: "promoted",
+    aliases: ["claude-acp", "claude_code", "claude"],
+  },
+  {
+    id: "codex-acp",
+    displayName: "Codex",
+    category: "agent",
+    description: "OpenAI's coding agent",
+    setupMethod: "cli_auth",
+    binaryName: "codex-acp",
+    tier: "promoted",
+    aliases: ["codex-acp", "codex_cli", "codex"],
+  },
+];
 
 vi.mock("@mcp-ui/client", () => ({
   UI_EXTENSION_CONFIG: { mimeTypes: ["text/html;profile=mcp-app"] },
@@ -57,6 +82,7 @@ function assistantMessage(
 describe("MessageBubble", () => {
   beforeEach(() => {
     useAgentStore.setState({ personas: [] });
+    useProviderCatalogStore.getState().setEntries(providerCatalogEntries);
     vi.mocked(openPath).mockClear();
     mockWriteText.mockClear();
     Object.defineProperty(navigator, "clipboard", {
@@ -69,6 +95,7 @@ describe("MessageBubble", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    useProviderCatalogStore.getState().reset();
   });
 
   it("renders user message with correct alignment", () => {

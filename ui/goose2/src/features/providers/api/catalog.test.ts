@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   listProviderSetupCatalog,
-  mapProviderCatalogEntryDto,
+  mapProviderSetupCatalogEntryDto,
 } from "./catalog";
 
 const mocks = vi.hoisted(() => ({
@@ -25,7 +25,7 @@ describe("provider setup catalog API", () => {
 
   it("maps setup catalog DTO fields to provider catalog entries", () => {
     expect(
-      mapProviderCatalogEntryDto({
+      mapProviderSetupCatalogEntryDto({
         providerId: "claude-acp",
         name: "Claude Code",
         docUrl: "https://docs.anthropic.com/en/docs/claude-code",

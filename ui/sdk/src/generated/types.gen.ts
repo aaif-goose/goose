@@ -287,10 +287,10 @@ export type ProviderCatalogListRequest = {
 };
 
 export type ProviderCatalogListResponse = {
-    providers: Array<ProviderCatalogEntryDto>;
+    providers: Array<ProviderTemplateCatalogEntryDto>;
 };
 
-export type ProviderCatalogEntryDto = {
+export type ProviderTemplateCatalogEntryDto = {
     providerId: string;
     name: string;
     format: string;

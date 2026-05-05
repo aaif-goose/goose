@@ -224,7 +224,7 @@ export const zProviderCatalogListRequest = z.object({
     ]).optional()
 });
 
-export const zProviderCatalogEntryDto = z.object({
+export const zProviderTemplateCatalogEntryDto = z.object({
     providerId: z.string(),
     name: z.string(),
     format: z.string(),
@@ -235,7 +235,7 @@ export const zProviderCatalogEntryDto = z.object({
 });
 
 export const zProviderCatalogListResponse = z.object({
-    providers: z.array(zProviderCatalogEntryDto)
+    providers: z.array(zProviderTemplateCatalogEntryDto)
 });
 
 /**

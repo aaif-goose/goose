@@ -114,8 +114,8 @@ fn provider_config_field_value(
 
 fn provider_catalog_entry_to_dto(
     entry: crate::providers::catalog::ProviderCatalogEntry,
-) -> ProviderCatalogEntryDto {
-    ProviderCatalogEntryDto {
+) -> ProviderTemplateCatalogEntryDto {
+    ProviderTemplateCatalogEntryDto {
         provider_id: entry.id,
         name: entry.name,
         format: entry.format,

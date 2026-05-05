@@ -11,7 +11,7 @@ export function getProviderCatalog(): ProviderCatalogEntry[] {
 export function getCatalogEntry(
   providerId: string,
 ): ProviderCatalogEntry | undefined {
-  return useProviderCatalogStore.getState().entriesById.get(providerId);
+  return getCatalogEntryFromEntries(getProviderCatalog(), providerId);
 }
 
 export function getAgentProviders(): ProviderCatalogEntry[] {

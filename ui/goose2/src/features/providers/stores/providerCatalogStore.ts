@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type { ProviderCatalogEntry } from "@/shared/types/providers";
-import { normalizeProviderKey } from "../lib/providerKey";
 
 export const GOOSE_PROVIDER_CATALOG_ENTRY: ProviderCatalogEntry = {
   id: "goose",
@@ -21,37 +20,8 @@ function withGooseFallback(
   return [GOOSE_PROVIDER_CATALOG_ENTRY, ...entries];
 }
 
-function buildEntriesById(
-  entries: ProviderCatalogEntry[],
-): Map<string, ProviderCatalogEntry> {
-  const entriesById = new Map<string, ProviderCatalogEntry>();
-  for (const entry of entries) {
-    entriesById.set(entry.id, entry);
-  }
-  return entriesById;
-}
-
-function buildAgentAliasMap(
-  entries: ProviderCatalogEntry[],
-): Map<string, string> {
-  const aliasMap = new Map<string, string>();
-  for (const entry of entries) {
-    if (entry.category !== "agent") {
-      continue;
-    }
-
-    aliasMap.set(normalizeProviderKey(entry.id), entry.id);
-    for (const alias of entry.aliases ?? []) {
-      aliasMap.set(normalizeProviderKey(alias), entry.id);
-    }
-  }
-  return aliasMap;
-}
-
 export interface ProviderCatalogState {
   entries: ProviderCatalogEntry[];
-  entriesById: Map<string, ProviderCatalogEntry>;
-  agentAliasMap: Map<string, string>;
   loading: boolean;
   loaded: boolean;
   error: string | null;
@@ -68,18 +38,18 @@ export type ProviderCatalogStore = ProviderCatalogState &
 
 let loadPromise: Promise<ProviderCatalogEntry[]> | null = null;
 
-const EMPTY_STATE: ProviderCatalogState = {
-  entries: [GOOSE_PROVIDER_CATALOG_ENTRY],
-  entriesById: buildEntriesById([GOOSE_PROVIDER_CATALOG_ENTRY]),
-  agentAliasMap: buildAgentAliasMap([GOOSE_PROVIDER_CATALOG_ENTRY]),
-  loading: false,
-  loaded: false,
-  error: null,
-};
+function emptyState(): ProviderCatalogState {
+  return {
+    entries: [GOOSE_PROVIDER_CATALOG_ENTRY],
+    loading: false,
+    loaded: false,
+    error: null,
+  };
+}
 
 export const useProviderCatalogStore = create<ProviderCatalogStore>(
   (set, get) => ({
-    ...EMPTY_STATE,
+    ...emptyState(),
 
     load: async () => {
       if (loadPromise) {
@@ -115,8 +85,6 @@ export const useProviderCatalogStore = create<ProviderCatalogStore>(
       const nextEntries = withGooseFallback(entries);
       set({
         entries: nextEntries,
-        entriesById: buildEntriesById(nextEntries),
-        agentAliasMap: buildAgentAliasMap(nextEntries),
         loading: false,
         loaded: true,
         error: null,
@@ -125,12 +93,7 @@ export const useProviderCatalogStore = create<ProviderCatalogStore>(
 
     reset: () => {
       loadPromise = null;
-      set({
-        ...EMPTY_STATE,
-        entries: [GOOSE_PROVIDER_CATALOG_ENTRY],
-        entriesById: buildEntriesById([GOOSE_PROVIDER_CATALOG_ENTRY]),
-        agentAliasMap: buildAgentAliasMap([GOOSE_PROVIDER_CATALOG_ENTRY]),
-      });
+      set(emptyState());
     },
   }),
 );
