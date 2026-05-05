@@ -2446,11 +2446,13 @@ data: [DONE]"#;
     #[test]
     fn test_delta_tool_call_function_accepts_null_arguments() {
         let raw = r#"{"arguments":null}"#;
-        let parsed: DeltaToolCallFunction = serde_json::from_str(raw).expect("null arguments must deserialize");
+        let parsed: DeltaToolCallFunction =
+            serde_json::from_str(raw).expect("null arguments must deserialize");
         assert_eq!(parsed.arguments, "");
 
         let raw = r#"{}"#;
-        let parsed: DeltaToolCallFunction = serde_json::from_str(raw).expect("missing arguments must deserialize");
+        let parsed: DeltaToolCallFunction =
+            serde_json::from_str(raw).expect("missing arguments must deserialize");
         assert_eq!(parsed.arguments, "");
 
         let raw = r#"{"arguments":"{\"k\":1}"}"#;
