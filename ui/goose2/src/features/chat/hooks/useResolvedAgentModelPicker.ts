@@ -58,28 +58,33 @@ export function useResolvedAgentModelPicker({
   prepareSelectedProvider,
 }: UseResolvedAgentModelPickerOptions) {
   const catalogEntries = useProviderCatalogStore((state) => state.entries);
+  const catalogLoaded = useProviderCatalogStore((state) => state.loaded);
   const { getEntry: getProviderInventoryEntry } = useProviderInventory();
   const [gooseDefaultSelection, setGooseDefaultSelection] =
     useState<PreferredModelSelection | null>(null);
 
-  const selectedAgentId = useMemo(
-    () =>
-      resolveAgentProviderCatalogIdStrictFromEntries(
-        catalogEntries,
-        selectedProvider,
-      ) ?? "goose",
-    [catalogEntries, selectedProvider],
-  );
-  const concreteSelectedProviderId = useMemo(
-    () =>
-      resolveAgentProviderCatalogIdStrictFromEntries(
-        catalogEntries,
-        selectedProvider,
-      ) == null
-        ? selectedProvider
-        : null,
-    [catalogEntries, selectedProvider],
-  );
+  const selectedAgentId = useMemo(() => {
+    const resolvedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+      catalogEntries,
+      selectedProvider,
+    );
+    if (resolvedAgentId) {
+      return resolvedAgentId;
+    }
+
+    return catalogLoaded ? "goose" : selectedProvider;
+  }, [catalogEntries, catalogLoaded, selectedProvider]);
+  const concreteSelectedProviderId = useMemo(() => {
+    const resolvedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+      catalogEntries,
+      selectedProvider,
+    );
+    if (resolvedAgentId || !catalogLoaded) {
+      return null;
+    }
+
+    return selectedProvider;
+  }, [catalogEntries, catalogLoaded, selectedProvider]);
   const storedModelPreference = useMemo(
     () => getStoredModelPreference(selectedAgentId),
     [selectedAgentId],
@@ -196,8 +201,10 @@ export function useResolvedAgentModelPicker({
         catalogEntries,
         providerId,
       );
+      const resolvedRequestedAgentId =
+        requestedAgentId ?? (catalogLoaded ? "goose" : providerId);
       const preferredModelSelection = getPreferredSelectionForAgent(
-        requestedAgentId ?? "goose",
+        resolvedRequestedAgentId,
         providerId,
       );
       const nextProviderId = requestedAgentId

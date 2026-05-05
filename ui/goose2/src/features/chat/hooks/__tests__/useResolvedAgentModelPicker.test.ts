@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { useResolvedAgentModelPicker } from "../useResolvedAgentModelPicker";
@@ -6,6 +6,7 @@ import { useResolvedAgentModelPicker } from "../useResolvedAgentModelPicker";
 const mockUseProviderInventory = vi.fn();
 const mockUseAgentModelPickerState = vi.fn();
 const mockGetClient = vi.fn();
+const mockAcpSetModel = vi.fn();
 
 vi.mock("@/features/providers/hooks/useProviderInventory", () => ({
   useProviderInventory: () => mockUseProviderInventory(),
@@ -18,6 +19,10 @@ vi.mock("../useAgentModelPickerState", () => ({
 
 vi.mock("@/shared/api/acpConnection", () => ({
   getClient: (...args: unknown[]) => mockGetClient(...args),
+}));
+
+vi.mock("@/shared/api/acp", () => ({
+  acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
 }));
 
 describe("useResolvedAgentModelPicker", () => {
@@ -62,6 +67,7 @@ describe("useResolvedAgentModelPicker", () => {
         }),
       },
     });
+    mockAcpSetModel.mockResolvedValue(undefined);
 
     mockUseProviderInventory.mockReturnValue({
       getEntry: (providerId: string) =>
@@ -425,5 +431,92 @@ describe("useResolvedAgentModelPicker", () => {
     );
 
     expect(result.current.effectiveModelSelection).toBeNull();
+  });
+
+  it("preserves unresolved selected provider identity before catalog loads", async () => {
+    useProviderCatalogStore.getState().reset();
+
+    mockUseAgentModelPickerState.mockImplementation(
+      ({
+        onProviderSelected,
+        onModelSelected,
+      }: {
+        onProviderSelected: (providerId: string) => void;
+        onModelSelected?: (model: {
+          id: string;
+          name: string;
+          displayName?: string;
+          providerId?: string;
+        }) => void;
+      }) => ({
+        pickerAgents: [
+          { id: "goose", label: "Goose" },
+          { id: "codex-acp", label: "Codex" },
+        ],
+        availableModels: [
+          {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "codex-acp",
+          },
+        ],
+        modelsLoading: false,
+        modelStatusMessage: null,
+        handleProviderChange: (providerId: string) =>
+          onProviderSelected(providerId),
+        handleModelChange: (modelId: string) =>
+          onModelSelected?.({
+            id: modelId,
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "codex-acp",
+          }),
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "codex-acp", label: "Codex" },
+        ],
+        selectedProvider: "codex-acp",
+        sessionId: "session-1",
+        session: {
+          id: "session-1",
+          title: "Chat",
+          providerId: "codex-acp",
+          modelId: "current",
+          modelName: "current",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("gpt-5.4");
+    });
+
+    await waitFor(() => {
+      expect(
+        JSON.parse(
+          localStorage.getItem("goose:preferredModelsByAgent") ?? "{}",
+        ),
+      ).toEqual({
+        "codex-acp": {
+          modelId: "gpt-5.4",
+          modelName: "GPT-5.4",
+          providerId: "codex-acp",
+        },
+      });
+    });
   });
 });
