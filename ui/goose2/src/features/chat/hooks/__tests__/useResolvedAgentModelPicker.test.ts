@@ -74,6 +74,7 @@ describe("useResolvedAgentModelPicker", () => {
         providerId === "codex-acp"
           ? {
               providerId: "codex-acp",
+              category: "agent",
               defaultModel: "gpt-5.4",
               models: [
                 {
@@ -433,7 +434,7 @@ describe("useResolvedAgentModelPicker", () => {
     expect(result.current.effectiveModelSelection).toBeNull();
   });
 
-  it("preserves unresolved selected provider identity before catalog loads", async () => {
+  it("preserves unresolved agent provider identity before catalog loads", async () => {
     useProviderCatalogStore.getState().reset();
 
     mockUseAgentModelPickerState.mockImplementation(
@@ -515,6 +516,107 @@ describe("useResolvedAgentModelPicker", () => {
           modelId: "gpt-5.4",
           modelName: "GPT-5.4",
           providerId: "codex-acp",
+        },
+      });
+    });
+  });
+
+  it("routes unresolved model provider identity through Goose before catalog loads", async () => {
+    useProviderCatalogStore.getState().reset();
+
+    mockUseProviderInventory.mockReturnValue({
+      getEntry: (providerId: string) =>
+        providerId === "openai"
+          ? {
+              providerId: "openai",
+              category: "model",
+              defaultModel: "gpt-5.4",
+              models: [
+                {
+                  id: "gpt-5.4",
+                  name: "GPT-5.4",
+                  recommended: true,
+                },
+              ],
+            }
+          : undefined,
+    });
+
+    mockUseAgentModelPickerState.mockImplementation(
+      ({
+        onModelSelected,
+      }: {
+        onModelSelected?: (model: {
+          id: string;
+          name: string;
+          displayName?: string;
+          providerId?: string;
+        }) => void;
+      }) => ({
+        pickerAgents: [{ id: "goose", label: "Goose" }],
+        availableModels: [
+          {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "openai",
+          },
+        ],
+        modelsLoading: false,
+        modelStatusMessage: null,
+        handleProviderChange: vi.fn(),
+        handleModelChange: (modelId: string) =>
+          onModelSelected?.({
+            id: modelId,
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "openai",
+          }),
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "openai", label: "OpenAI" },
+        ],
+        selectedProvider: "openai",
+        sessionId: "session-1",
+        session: {
+          id: "session-1",
+          title: "Chat",
+          providerId: "openai",
+          modelId: "current",
+          modelName: "current",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    expect(result.current.selectedAgentId).toBe("goose");
+
+    act(() => {
+      result.current.handleModelChange("gpt-5.4");
+    });
+
+    await waitFor(() => {
+      expect(
+        JSON.parse(
+          localStorage.getItem("goose:preferredModelsByAgent") ?? "{}",
+        ),
+      ).toEqual({
+        goose: {
+          modelId: "gpt-5.4",
+          modelName: "GPT-5.4",
+          providerId: "openai",
         },
       });
     });

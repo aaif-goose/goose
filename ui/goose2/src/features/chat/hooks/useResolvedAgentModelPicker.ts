@@ -15,6 +15,7 @@ import {
   getStoredModelPreference,
   setStoredModelPreference,
 } from "../lib/modelPreferences";
+import { resolveSelectedAgentId } from "../lib/agentProviderResolution";
 
 const MODEL_ALIAS_IDS = new Set(["current", "default"]);
 
@@ -63,17 +64,21 @@ export function useResolvedAgentModelPicker({
   const [gooseDefaultSelection, setGooseDefaultSelection] =
     useState<PreferredModelSelection | null>(null);
 
-  const selectedAgentId = useMemo(() => {
-    const resolvedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+  const selectedAgentId = useMemo(
+    () =>
+      resolveSelectedAgentId({
+        catalogEntries,
+        catalogLoaded,
+        selectedProvider,
+        getProviderInventoryEntry,
+      }),
+    [
       catalogEntries,
+      catalogLoaded,
+      getProviderInventoryEntry,
       selectedProvider,
-    );
-    if (resolvedAgentId) {
-      return resolvedAgentId;
-    }
-
-    return catalogLoaded ? "goose" : selectedProvider;
-  }, [catalogEntries, catalogLoaded, selectedProvider]);
+    ],
+  );
   const concreteSelectedProviderId = useMemo(() => {
     const resolvedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
       catalogEntries,
@@ -202,7 +207,13 @@ export function useResolvedAgentModelPicker({
         providerId,
       );
       const resolvedRequestedAgentId =
-        requestedAgentId ?? (catalogLoaded ? "goose" : providerId);
+        requestedAgentId ??
+        resolveSelectedAgentId({
+          catalogEntries,
+          catalogLoaded,
+          selectedProvider: providerId,
+          getProviderInventoryEntry,
+        });
       const preferredModelSelection = getPreferredSelectionForAgent(
         resolvedRequestedAgentId,
         providerId,

@@ -7,6 +7,7 @@ import {
   resolveAgentProviderCatalogIdStrictFromEntries,
 } from "@/features/providers/providerCatalog";
 import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
+import { resolveSelectedAgentId } from "../lib/agentProviderResolution";
 import type { ModelOption } from "../types";
 
 interface UseAgentModelPickerStateOptions {
@@ -34,21 +35,21 @@ export function useAgentModelPickerState({
     loading: providerInventoryLoading,
   } = useProviderInventory();
 
-  const selectedAgentId = useMemo(() => {
-    if (!selectedProvider) {
-      return "goose";
-    }
-
-    const resolvedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+  const selectedAgentId = useMemo(
+    () =>
+      resolveSelectedAgentId({
+        catalogEntries,
+        catalogLoaded,
+        selectedProvider,
+        getProviderInventoryEntry,
+      }),
+    [
       catalogEntries,
+      catalogLoaded,
+      getProviderInventoryEntry,
       selectedProvider,
-    );
-    if (resolvedAgentId) {
-      return resolvedAgentId;
-    }
-
-    return catalogLoaded ? "goose" : selectedProvider;
-  }, [catalogEntries, catalogLoaded, selectedProvider]);
+    ],
+  );
   const selectedProviderInventory = getProviderInventoryEntry(selectedAgentId);
 
   const pickerAgents = useMemo(() => {
