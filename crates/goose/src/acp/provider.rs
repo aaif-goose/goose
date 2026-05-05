@@ -27,6 +27,7 @@ use std::thread::JoinHandle;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
+use tokio_stream::{wrappers::SplitStream, StreamExt};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
 use crate::acp::{map_permission_response, PermissionDecision};
@@ -880,11 +881,13 @@ impl AcpClientLoop {
 }
 
 async fn forward_child_stderr(stderr: tokio::process::ChildStderr) {
-    let mut lines = BufReader::new(stderr).lines();
-    loop {
-        match lines.next_line().await {
-            Ok(Some(line)) => tracing::info!(target: "acp::child::stderr", "{line}"),
-            Ok(None) => break,
+    let mut lines = SplitStream::new(BufReader::new(stderr).split(b'\n'));
+    while let Some(result) = lines.next().await {
+        match result {
+            Ok(line) => {
+                let line = line.strip_suffix(b"\r").unwrap_or(&line);
+                tracing::info!(target: "acp::child::stderr", "{}", String::from_utf8_lossy(line));
+            }
             Err(e) => {
                 tracing::debug!(target: "acp::child::stderr", error = %e, "stderr read error");
                 break;
