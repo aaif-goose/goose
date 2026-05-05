@@ -299,18 +299,25 @@ impl OpenAiProvider {
     ) -> Result<Self> {
         let global_config = crate::config::Config::global();
 
-        let api_key: Option<String> = if config.requires_auth && !config.api_key_env.is_empty() {
-            Some(global_config.get_secret::<String>(&config.api_key_env).map_err(|e| {
-                use crate::config::ConfigError;
-                match e {
-                    ConfigError::NotFound(_) => anyhow::anyhow!(
-                        "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
-                        config.api_key_env,
-                        config.api_key_env
-                    ),
-                    other => anyhow::anyhow!("Failed to read {}: {}", config.api_key_env, other),
+        let api_key: Option<String> = if !config.api_key_env.is_empty() {
+            match global_config.get_secret::<String>(&config.api_key_env) {
+                Ok(key) => Some(key),
+                Err(e) => {
+                    use crate::config::ConfigError;
+                    if config.requires_auth {
+                        return Err(match e {
+                            ConfigError::NotFound(_) => anyhow::anyhow!(
+                                "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
+                                config.api_key_env,
+                                config.api_key_env
+                            ),
+                            other => anyhow::anyhow!("Failed to read {}: {}", config.api_key_env, other),
+                        });
+                    }
+                    // Optional auth — key not configured, proceed without it
+                    None
                 }
-            })?)
+            }
         } else {
             None
         };
