@@ -440,8 +440,10 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
           structuredContent: extractToolStructuredContent(update),
           isError: update.status === "failed",
         };
-        store.setStreamingMessageId(sessionId, messageId);
-        store.appendToStreamingMessage(sessionId, toolResponse);
+        store.updateMessage(sessionId, messageId, (msg) => ({
+          ...msg,
+          content: [...msg.content, toolResponse],
+        }));
         if (update.status === "completed") {
           attachMcpAppPayload(
             sessionId,

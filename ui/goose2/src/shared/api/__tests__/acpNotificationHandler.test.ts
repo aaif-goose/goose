@@ -250,6 +250,88 @@ describe("acpNotificationHandler", () => {
     });
   });
 
+  it("keeps a late live tool response from moving the streaming pointer back to its owner message", async () => {
+    registerPreparedSession("acp-session", "goose", "/Users/test");
+    setActiveMessageId("acp-session", "assistant-1");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-a",
+        title: "read_file",
+        rawInput: { path: "/tmp/notes.md" },
+      },
+    } as never);
+
+    const beforeMessages =
+      useChatStore.getState().messagesBySession["acp-session"] ?? [];
+    useChatStore.setState((state) => ({
+      ...state,
+      messagesBySession: {
+        ...state.messagesBySession,
+        "acp-session": [
+          ...beforeMessages,
+          {
+            id: "assistant-2",
+            role: "assistant",
+            created: Date.now(),
+            content: [],
+            metadata: {
+              userVisible: true,
+              agentVisible: true,
+              completionStatus: "inProgress",
+            },
+          },
+        ],
+      },
+    }));
+    useChatStore.getState().setStreamingMessageId("acp-session", "assistant-2");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-a",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "file contents" },
+          },
+        ],
+      },
+    } as never);
+
+    expect(
+      useChatStore.getState().getSessionRuntime("acp-session")
+        .streamingMessageId,
+    ).toBe("assistant-2");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Continuing with the answer.",
+        },
+      },
+    } as never);
+
+    const messages = useChatStore.getState().messagesBySession["acp-session"];
+    const ownerMessage = messages.find((m) => m.id === "assistant-1");
+    const currentMessage = messages.find((m) => m.id === "assistant-2");
+
+    expect(ownerMessage?.content.map((block) => block.type)).toEqual([
+      "toolRequest",
+      "toolResponse",
+    ]);
+    expect(currentMessage?.content).toEqual([
+      { type: "text", text: "Continuing with the answer." },
+    ]);
+  });
+
   it("preserves structured tool output when ACP provides rawOutput", async () => {
     registerPreparedSession(
       "acp-session",
