@@ -143,10 +143,20 @@ impl GooseAcpAgent {
         &self,
         req: RenameSessionRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        self.thread_manager
-            .update_thread(&req.session_id, Some(req.title), Some(true), None)
+        let title = req.title;
+        let thread = self
+            .thread_manager
+            .update_thread(&req.session_id, Some(title.clone()), Some(true), None)
             .await
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        if let Some(internal_session_id) = thread.current_session_id {
+            self.session_manager
+                .update(&internal_session_id)
+                .user_provided_name(title)
+                .apply()
+                .await
+                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+        }
         Ok(EmptyResponse {})
     }
 

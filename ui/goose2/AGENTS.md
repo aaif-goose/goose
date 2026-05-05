@@ -219,7 +219,6 @@ Additional tooling notes:
 
 - Unit/component tests use Vitest and Testing Library via `just test` or `pnpm test`.
 - E2E tests use Playwright via `just test-e2e` and `just test-e2e-all`.
-- File size enforcement runs through `pnpm check:file-sizes` and is included in `just check`.
 - Before handing off a change, run the smallest relevant verification step. Use `just ci` when you need the full local gate.
 - GitHub Actions also runs desktop-oriented checks, including Playwright coverage, that are broader than the local pre-push hook.
 

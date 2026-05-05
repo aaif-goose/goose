@@ -6,96 +6,39 @@ import {
   useArtifactPolicyContext,
 } from "../ArtifactPolicyContext";
 
-import { openPath } from "@tauri-apps/plugin-opener";
-
 const mockPathExists = vi.fn<(path: string) => Promise<boolean>>();
 
 vi.mock("@/shared/api/system", () => ({
   pathExists: (path: string) => mockPathExists(path),
 }));
 
-function Probe({
-  readArgs,
-  writeArgs,
-  clonedWriteArgs,
-}: {
-  readArgs: Record<string, unknown>;
-  writeArgs: Record<string, unknown>;
-  clonedWriteArgs: Record<string, unknown>;
-}) {
-  const { resolveToolCardDisplay } = useArtifactPolicyContext();
-  const readDisplay = resolveToolCardDisplay(readArgs, "read_file");
-  const writeDisplay = resolveToolCardDisplay(writeArgs, "write_file");
-  const clonedDisplay = resolveToolCardDisplay(clonedWriteArgs, "write_file");
-
-  return (
-    <div>
-      <span data-testid="read-role">{readDisplay.role}</span>
-      <span data-testid="write-role">{writeDisplay.role}</span>
-      <span data-testid="write-primary">
-        {writeDisplay.primaryCandidate?.resolvedPath ?? ""}
-      </span>
-      <span data-testid="write-secondary-count">
-        {String(writeDisplay.secondaryCandidates.length)}
-      </span>
-      <span data-testid="cloned-role">{clonedDisplay.role}</span>
-    </div>
-  );
-}
-
-function TextFollowupProbe({
-  writeArgs,
-}: {
-  writeArgs: Record<string, unknown>;
-}) {
-  const { resolveToolCardDisplay, getAllSessionArtifacts } =
-    useArtifactPolicyContext();
-  const display = resolveToolCardDisplay(
-    writeArgs,
-    "writing markdown file about alphabet history",
-  );
+function ArtifactsProbe() {
+  const { getAllSessionArtifacts } = useArtifactPolicyContext();
   const artifacts = getAllSessionArtifacts();
 
   return (
     <div>
-      <span data-testid="text-followup-role">{display.role}</span>
-      <span data-testid="text-followup-path">
-        {display.primaryCandidate?.resolvedPath ?? ""}
-      </span>
-      <span data-testid="text-followup-artifacts">
+      <span data-testid="artifact-paths">
         {artifacts.map((artifact) => artifact.resolvedPath).join(",")}
       </span>
+      <span data-testid="artifact-count">{String(artifacts.length)}</span>
     </div>
   );
 }
 
-function ReadOnlyProbe({ readArgs }: { readArgs: Record<string, unknown> }) {
-  const { resolveToolCardDisplay, getAllSessionArtifacts } =
-    useArtifactPolicyContext();
-  const display = resolveToolCardDisplay(readArgs, "read_file");
-  const artifacts = getAllSessionArtifacts();
+function LinkProbe({ href }: { href: string }) {
+  const { resolveMarkdownHref } = useArtifactPolicyContext();
+  const candidate = resolveMarkdownHref(href);
 
   return (
     <div>
-      <span data-testid="read-only-role">{display.role}</span>
-      <span data-testid="read-only-artifacts">
-        {artifacts.map((artifact) => artifact.resolvedPath).join(",")}
-      </span>
+      <span data-testid="link-path">{candidate?.resolvedPath ?? ""}</span>
     </div>
   );
 }
 
 describe("ArtifactPolicyContext", () => {
-  it("computes one primary host per message and resolves tool cards by args identity", () => {
-    mockPathExists.mockReset();
-    vi.mocked(openPath).mockReset();
-    const readArgs = { path: "/Users/test/project-a/notes.md" };
-    const writeArgs = {
-      paths: [
-        "/Users/test/project-a/output/final_report.md",
-        "/Users/test/project-a/output/notes.md",
-      ],
-    };
+  it("uses reported ACP tool locations as session artifacts", () => {
     const messages: Message[] = [
       {
         id: "assistant-1",
@@ -106,28 +49,16 @@ describe("ArtifactPolicyContext", () => {
             type: "toolRequest",
             id: "tool-1",
             name: "read_file",
-            arguments: readArgs,
+            arguments: {},
             status: "completed",
+            toolKind: "read",
+            locations: [{ path: "/Users/test/project-a/notes.md" }],
           },
           {
             type: "toolResponse",
             id: "tool-1",
             name: "read_file",
-            result: "Read /Users/test/project-a/notes.md",
-            isError: false,
-          },
-          {
-            type: "toolRequest",
-            id: "tool-2",
-            name: "write_file",
-            arguments: writeArgs,
-            status: "completed",
-          },
-          {
-            type: "toolResponse",
-            id: "tool-2",
-            name: "write_file",
-            result: "Created /Users/test/project-a/output/final_report.md",
+            result: "Read notes",
             isError: false,
           },
         ],
@@ -137,96 +68,33 @@ describe("ArtifactPolicyContext", () => {
     render(
       <ArtifactPolicyProvider
         messages={messages}
-        allowedRoots={["/Users/test/project-a", "/Users/test"]}
+        sessionCwd="/Users/test/project-a"
       >
-        <Probe
-          readArgs={readArgs}
-          writeArgs={writeArgs}
-          clonedWriteArgs={{ ...writeArgs }}
-        />
+        <ArtifactsProbe />
       </ArtifactPolicyProvider>,
     );
 
-    expect(screen.getByTestId("read-role")).toHaveTextContent("none");
-    expect(screen.getByTestId("write-role")).toHaveTextContent("primary_host");
-    expect(screen.getByTestId("write-primary")).toHaveTextContent(
-      "/Users/test/project-a/output/final_report.md",
+    expect(screen.getByTestId("artifact-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("artifact-paths")).toHaveTextContent(
+      "/Users/test/project-a/notes.md",
     );
-    expect(
-      Number(screen.getByTestId("write-secondary-count").textContent),
-    ).toBeGreaterThan(0);
-    expect(screen.getByTestId("cloned-role")).toHaveTextContent("none");
   });
 
-  it("does not treat read-only tool paths as session artifacts", () => {
-    mockPathExists.mockReset();
-    vi.mocked(openPath).mockReset();
-    const readArgs = { path: "/Users/test/project-a/notes.md" };
-    const messages: Message[] = [
-      {
-        id: "assistant-read-only",
-        role: "assistant",
-        created: Date.now(),
-        content: [
-          {
-            type: "toolRequest",
-            id: "tool-read",
-            name: "read_file",
-            arguments: readArgs,
-            status: "completed",
-          },
-          {
-            type: "toolResponse",
-            id: "tool-read",
-            name: "read_file",
-            result: "Read /Users/test/project-a/notes.md",
-            isError: false,
-          },
-        ],
-      },
-    ];
-
-    render(
-      <ArtifactPolicyProvider
-        messages={messages}
-        allowedRoots={["/Users/test/project-a", "/Users/test"]}
-      >
-        <ReadOnlyProbe readArgs={readArgs} />
-      </ArtifactPolicyProvider>,
-    );
-
-    expect(screen.getByTestId("read-only-role")).toHaveTextContent("none");
-    expect(screen.getByTestId("read-only-artifacts")).toHaveTextContent("");
-  });
-
-  it("uses assistant text after a tool call to populate file actions and the Files tab", () => {
-    mockPathExists.mockReset();
-    vi.mocked(openPath).mockReset();
-    const writeArgs = {};
+  it("does not filter reported locations outside allowed roots", () => {
     const messages: Message[] = [
       {
         id: "assistant-1",
         role: "assistant",
         created: Date.now(),
-        metadata: { userVisible: true, agentVisible: true },
         content: [
           {
             type: "toolRequest",
             id: "tool-1",
-            name: "writing markdown file about alphabet history",
-            arguments: writeArgs,
+            name: "write_file",
+            arguments: {},
             status: "completed",
-          },
-          {
-            type: "toolResponse",
-            id: "tool-1",
-            name: "writing markdown file about alphabet history",
-            result: "completed",
-            isError: false,
-          },
-          {
-            type: "text",
-            text: "The file alpha.md has been created at /Users/test/alpha.md.",
+            toolKind: "edit",
+            locations: [{ path: "/tmp/outside.md" }],
           },
         ],
       },
@@ -235,20 +103,26 @@ describe("ArtifactPolicyContext", () => {
     render(
       <ArtifactPolicyProvider
         messages={messages}
-        allowedRoots={["/Users/test"]}
+        sessionCwd="/Users/test/project-a"
       >
-        <TextFollowupProbe writeArgs={writeArgs} />
+        <ArtifactsProbe />
       </ArtifactPolicyProvider>,
     );
 
-    expect(screen.getByTestId("text-followup-role")).toHaveTextContent(
-      "primary_host",
+    expect(screen.getByTestId("artifact-paths")).toHaveTextContent(
+      "/tmp/outside.md",
     );
-    expect(screen.getByTestId("text-followup-path")).toHaveTextContent(
-      "/Users/test/alpha.md",
+  });
+
+  it("resolves local markdown hrefs relative to the session cwd", () => {
+    render(
+      <ArtifactPolicyProvider messages={[]} sessionCwd="/Users/test/app">
+        <LinkProbe href="output/report.md" />
+      </ArtifactPolicyProvider>,
     );
-    expect(screen.getByTestId("text-followup-artifacts")).toHaveTextContent(
-      "/Users/test/alpha.md",
+
+    expect(screen.getByTestId("link-path")).toHaveTextContent(
+      "/Users/test/app/output/report.md",
     );
   });
 });

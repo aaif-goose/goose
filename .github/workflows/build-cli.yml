@@ -157,12 +157,10 @@ jobs:
         shell: pwsh
         env:
           CUDA_COMPUTE_CAP: ${{ matrix.variant == 'cuda' && '80' || '' }}
-          LLAMA_STATIC_CRT: ${{ matrix.variant == 'cuda' && '1' || '' }}
         run: |
           Write-Output "Building Windows CLI executable..."
           if ("${{ matrix.variant }}" -eq "cuda") {
-            $cudaRustflagsConfig = 'target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]'
-            cargo build --config $cudaRustflagsConfig --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
           } else {
             cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
           }

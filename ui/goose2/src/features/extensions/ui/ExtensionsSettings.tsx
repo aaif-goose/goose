@@ -3,8 +3,7 @@ import { useTranslation } from "react-i18next";
 import { IconChevronDown, IconPlus } from "@tabler/icons-react";
 import { Button } from "@/shared/ui/button";
 import { SearchBar } from "@/shared/ui/SearchBar";
-import { FilterRow } from "@/shared/ui/page-shell";
-import { SettingsPage } from "@/shared/ui/SettingsPage";
+import { FilterRow, PageHeader } from "@/shared/ui/page-shell";
 import { useExtensionsSettings } from "../hooks/useExtensionsSettings";
 import {
   EXTENSION_CATEGORIES,
@@ -113,50 +112,52 @@ export function ExtensionsSettings() {
   };
 
   return (
-    <SettingsPage
-      title={t("extensions.title")}
-      actions={
-        <Button
-          type="button"
-          variant="outline-flat"
-          size="xs"
-          onClick={handleAdd}
-        >
-          <IconPlus className="size-3.5" />
-          {t("extensions.addExtension")}
-        </Button>
-      }
-      controls={
-        <div className="space-y-3">
-          <SearchBar
-            value={searchTerm}
-            onChange={setSearchTerm}
-            placeholder={t("extensions.search")}
-            aria-label={t("extensions.search")}
-            size="compact"
-          />
-          <FilterRow>
-            <FilterButton
-              active={activeFilter === "all"}
-              onClick={() => setActiveFilter("all")}
-            >
-              {t("extensions.filters.all")}
-            </FilterButton>
-            {EXTENSION_CATEGORIES.map((category) =>
-              categoryCounts[category] > 0 ? (
-                <FilterButton
-                  key={category}
-                  active={activeFilter === category}
-                  onClick={() => setActiveFilter(category)}
-                >
-                  {t(`extensions.categories.${category}`)}
-                </FilterButton>
-              ) : null,
-            )}
-          </FilterRow>
-        </div>
-      }
-    >
+    <>
+      <PageHeader
+        title={t("extensions.title")}
+        description={t("extensions.description")}
+        titleClassName="font-normal text-foreground"
+        actions={
+          <Button
+            type="button"
+            variant="outline-flat"
+            size="xs"
+            onClick={handleAdd}
+          >
+            <IconPlus className="size-3.5" />
+            {t("extensions.addExtension")}
+          </Button>
+        }
+      />
+
+      <div className="space-y-3">
+        <SearchBar
+          value={searchTerm}
+          onChange={setSearchTerm}
+          placeholder={t("extensions.search")}
+          aria-label={t("extensions.search")}
+        />
+        <FilterRow>
+          <FilterButton
+            active={activeFilter === "all"}
+            onClick={() => setActiveFilter("all")}
+          >
+            {t("extensions.filters.all")}
+          </FilterButton>
+          {EXTENSION_CATEGORIES.map((category) =>
+            categoryCounts[category] > 0 ? (
+              <FilterButton
+                key={category}
+                active={activeFilter === category}
+                onClick={() => setActiveFilter(category)}
+              >
+                {t(`extensions.categories.${category}`)}
+              </FilterButton>
+            ) : null,
+          )}
+        </FilterRow>
+      </div>
+
       {isLoading ? (
         <div className="grid gap-x-12 sm:grid-cols-2">
           {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -225,6 +226,6 @@ export function ExtensionsSettings() {
           onClose={handleModalClose}
         />
       )}
-    </SettingsPage>
+    </>
   );
 }

@@ -132,6 +132,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
         name={name}
         arguments={request?.arguments ?? {}}
         status={status}
+        locations={request?.locations}
         result={response?.result}
         structuredContent={response?.structuredContent}
         isError={response?.isError}

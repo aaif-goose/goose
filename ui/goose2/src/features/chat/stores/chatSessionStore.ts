@@ -4,6 +4,7 @@ import {
   acpListSessions,
   type AcpSessionInfo,
 } from "@/shared/api/acp";
+import type { Session } from "@/shared/types/chat";
 import {
   DEFAULT_CHAT_TITLE,
   normalizeAcpTitle,
@@ -23,6 +24,7 @@ export interface ChatSession {
   personaId?: string;
   modelId?: string;
   modelName?: string;
+  workingDir?: string | null;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
@@ -76,6 +78,7 @@ interface ChatSessionStoreActions {
   createSession: (opts?: CreateSessionOpts) => Promise<ChatSession>;
   loadSessions: () => Promise<void>;
   updateSession: (id: string, patch: Partial<ChatSession>) => void;
+  addSession: (session: ChatSession) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
 
@@ -101,6 +104,7 @@ function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
     providerId: session.providerId ?? undefined,
     personaId: session.personaId ?? undefined,
     modelId: session.modelId ?? undefined,
+    workingDir: session.workingDir ?? undefined,
     createdAt: session.createdAt ?? session.updatedAt ?? now,
     updatedAt: session.updatedAt ?? now,
     archivedAt: session.archivedAt ?? undefined,
@@ -113,6 +117,24 @@ function sortByUpdatedAtDesc(sessions: ChatSession[]): ChatSession[] {
   return [...sessions].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
+}
+
+export function sessionToChatSession(session: Session): ChatSession {
+  return {
+    id: session.id,
+    title: session.title,
+    projectId: session.projectId,
+    providerId: session.providerId,
+    personaId: session.personaId,
+    modelId: session.modelId,
+    modelName: session.modelName,
+    workingDir: session.workingDir,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    archivedAt: session.archivedAt,
+    messageCount: session.messageCount,
+    userSetName: session.userSetName,
+  };
 }
 
 export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
@@ -142,6 +164,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       personaId: opts.personaId,
       modelId: opts.modelId,
       modelName: opts.modelName,
+      workingDir: opts.workingDir,
       createdAt: now,
       updatedAt: now,
       messageCount: 0,
@@ -207,6 +230,20 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
           console.error("Failed to update session project in backend:", err),
       );
     }
+  },
+
+  addSession: (session) => {
+    set((state) => {
+      const existing = state.sessions.findIndex(
+        (candidate) => candidate.id === session.id,
+      );
+      if (existing >= 0) {
+        const updated = [...state.sessions];
+        updated[existing] = { ...updated[existing], ...session };
+        return { sessions: updated };
+      }
+      return { sessions: [session, ...state.sessions] };
+    });
   },
 
   archiveSession: async (id) => {

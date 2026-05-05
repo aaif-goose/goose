@@ -109,7 +109,7 @@ describe("ChatView MCP app messaging", () => {
       compactConversation: vi.fn(),
       canCompactContext: false,
       supportsCompactionControls: false,
-      allowedArtifactRoots: [],
+      sessionArtifactCwd: null,
       project: null,
     });
   });

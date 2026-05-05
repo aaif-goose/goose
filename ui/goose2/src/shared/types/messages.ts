@@ -68,6 +68,23 @@ export type ToolCallStatus =
   | "error"
   | "stopped";
 
+export type ToolKind =
+  | "read"
+  | "edit"
+  | "delete"
+  | "move"
+  | "search"
+  | "execute"
+  | "think"
+  | "fetch"
+  | "switch_mode"
+  | "other";
+
+export interface ToolCallLocation {
+  path: string;
+  line?: number | null;
+}
+
 export type MessageCompletionStatus =
   | "inProgress"
   | "completed"
@@ -82,6 +99,8 @@ export interface ToolRequestContent {
   extensionName?: string;
   arguments: Record<string, unknown>;
   status: ToolCallStatus;
+  toolKind?: ToolKind;
+  locations?: ToolCallLocation[];
   /** Epoch ms when the tool call started executing (set on event receipt). */
   startedAt?: number;
   annotations?: ContentAnnotations;

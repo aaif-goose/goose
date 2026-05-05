@@ -12,6 +12,12 @@ use fs_err as fs;
 use goose::acp::server::AcpProviderFactory;
 use goose::config::base::CONFIG_YAML_NAME;
 use goose::config::GooseMode;
+use goose::conversation::message::Message;
+use goose::model::ModelConfig;
+use goose::providers::base::{
+    stream_from_single_message, MessageStream, Provider, ProviderUsage, Usage,
+};
+use goose::providers::errors::ProviderError;
 use goose_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
 use sacp::schema::{
     ListSessionsResponse, McpServer, McpServerHttp, ModelId, SessionInfo, SessionModeId,
@@ -19,6 +25,7 @@ use sacp::schema::{
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
+use std::time::Duration;
 
 const SHELL_TEST_CONTENT: &str = "test-shell-content-98765";
 
@@ -51,6 +58,46 @@ async fn new_basic_session<C: Connection>(config: TestConnectionConfig) -> Basic
     BasicSession { conn, session }
 }
 
+struct NamingProvider {
+    model_config: ModelConfig,
+}
+
+#[async_trait::async_trait]
+impl Provider for NamingProvider {
+    fn get_name(&self) -> &str {
+        "naming-test"
+    }
+
+    async fn stream(
+        &self,
+        _model_config: &ModelConfig,
+        _session_id: &str,
+        system: &str,
+        _messages: &[Message],
+        _tools: &[rmcp::model::Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        let text = if system.contains("four words or less") || system.contains("4 words or less") {
+            "Generated Test Title"
+        } else {
+            "2"
+        };
+        Ok(stream_from_single_message(
+            Message::assistant().with_text(text),
+            ProviderUsage::new(self.model_config.model_name.clone(), Usage::default()),
+        ))
+    }
+
+    fn get_model_config(&self) -> ModelConfig {
+        self.model_config.clone()
+    }
+}
+
+fn naming_provider_factory() -> AcpProviderFactory {
+    Arc::new(|_provider_name, model_config, _extensions| {
+        Box::pin(async move { Ok(Arc::new(NamingProvider { model_config }) as Arc<dyn Provider>) })
+    })
+}
+
 pub async fn run_list_sessions<C: Connection>() {
     let BasicSession { conn, session } =
         new_basic_session::<C>(TestConnectionConfig::default()).await;
@@ -78,6 +125,56 @@ pub async fn run_list_sessions<C: Connection>() {
         .title("New Chat".to_string())
         .meta(expected_meta)])
     );
+}
+
+pub async fn run_session_name_update_notification<C: Connection>() {
+    let expected_session_id = C::expected_session_id();
+    let openai = OpenAiFixture::new(vec![], expected_session_id.clone()).await;
+    let config = TestConnectionConfig {
+        provider_factory: Some(naming_provider_factory()),
+        disable_session_naming: false,
+        ..Default::default()
+    };
+    let mut conn = C::new(config, openai).await;
+    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+    expected_session_id.set(&session.session_id().0);
+
+    let output = session
+        .prompt(
+            "what should we call this conversation?",
+            PermissionDecision::Cancel,
+        )
+        .await
+        .unwrap();
+    assert_eq!(output.text, "2");
+
+    let mut notifications = session.notifications();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while !notifications
+        .iter()
+        .any(|n| matches!(n, Notification::SessionInfoUpdate { .. }))
+        && tokio::time::Instant::now() < deadline
+    {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        notifications.extend(session.notifications());
+    }
+
+    let update = notifications
+        .iter()
+        .find_map(|notification| match notification {
+            Notification::SessionInfoUpdate {
+                title,
+                updated_at,
+                message_count,
+                user_set_name,
+            } => Some((title, updated_at, message_count, user_set_name)),
+            _ => None,
+        })
+        .expect("expected generated session name notification");
+    assert_eq!(update.0.as_deref(), Some("Generated Test Title"));
+    assert!(update.1.is_some());
+    assert!(update.2.unwrap_or_default() >= 1);
+    assert_eq!(*update.3, Some(false));
 }
 
 pub async fn run_close_session<C: Connection>() {

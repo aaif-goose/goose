@@ -43,12 +43,13 @@ use sacp::schema::{
     PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
     RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
     SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionId, SessionInfo, SessionListCapabilities, SessionMode,
-    SessionModeId, SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
-    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
+    SessionConfigSelectOption, SessionId, SessionInfo, SessionInfoUpdate, SessionListCapabilities,
+    SessionMode, SessionModeId, SessionModeState, SessionModelState, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+    SetSessionModeRequest, SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse,
+    StopReason, TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId,
+    ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage,
+    UsageUpdate,
 };
 use sacp::util::MatchDispatchFrom;
 use sacp::{
@@ -268,6 +269,36 @@ fn thread_session_meta(
     meta
 }
 
+fn spawn_session_name_update_notifier(
+    cx: ConnectionTo<Client>,
+) -> tokio::sync::mpsc::UnboundedSender<crate::session::SessionNameUpdate> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::session::SessionNameUpdate>();
+    tokio::spawn(async move {
+        while let Some(update) = rx.recv().await {
+            let thread = update.thread;
+            let thread_id = thread.id.clone();
+            let meta = thread_session_meta(&thread);
+            let notification = SessionNotification::new(
+                SessionId::new(thread_id.clone()),
+                SessionUpdate::SessionInfoUpdate(
+                    SessionInfoUpdate::new()
+                        .title(thread.name)
+                        .updated_at(thread.updated_at.to_rfc3339())
+                        .meta(meta),
+                ),
+            );
+            if let Err(error) = cx.send_notification(notification) {
+                warn!(
+                    thread_id = %thread_id,
+                    error = %error,
+                    "Failed to send generated session name update"
+                );
+            }
+        }
+    });
+    tx
+}
+
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
     meta.as_ref()
         .and_then(|m| m.get("timeout"))
@@ -367,14 +398,6 @@ fn get_requested_line(arguments: Option<&rmcp::model::JsonObject>) -> Option<u32
         .map(|l| l as u32)
 }
 
-fn create_tool_location(path: &str, line: Option<u32>) -> ToolCallLocation {
-    let mut loc = ToolCallLocation::new(path);
-    if let Some(l) = line {
-        loc = loc.line(l);
-    }
-    loc
-}
-
 fn is_developer_file_tool(tool_name: &str) -> bool {
     matches!(tool_name, "read" | "write" | "edit")
 }
@@ -391,7 +414,7 @@ fn extract_locations_from_meta(
         .filter_map(|entry| {
             let path = entry.get("path")?.as_str()?;
             let line = entry.get("line").and_then(|v| v.as_u64()).map(|l| l as u32);
-            Some(create_tool_location(path, line))
+            Some(ToolCallLocation::new(path).line(line))
         })
         .collect::<Vec<_>>();
     if locations.is_empty() {
@@ -422,12 +445,12 @@ fn extract_tool_locations(
         if let Some(path_str) = path_str {
             if matches!(tool_name, "read") {
                 let line = get_requested_line(tool_call.arguments.as_ref());
-                locations.push(create_tool_location(path_str, line));
+                locations.push(ToolCallLocation::new(path_str).line(line));
                 return locations;
             }
 
             if matches!(tool_name, "write" | "edit") {
-                locations.push(create_tool_location(path_str, Some(1)));
+                locations.push(ToolCallLocation::new(path_str).line(1));
                 return locations;
             }
 
@@ -447,19 +470,19 @@ fn extract_tool_locations(
                                 let line = extract_view_line_range(text)
                                     .map(|range| range.0 as u32)
                                     .or(Some(1));
-                                locations.push(create_tool_location(path_str, line));
+                                locations.push(ToolCallLocation::new(path_str).line(line));
                             }
                             Some("str_replace") | Some("insert") => {
                                 let line = extract_first_line_number(text)
                                     .map(|l| l as u32)
                                     .or(Some(1));
-                                locations.push(create_tool_location(path_str, line));
+                                locations.push(ToolCallLocation::new(path_str).line(line));
                             }
                             Some("write") => {
-                                locations.push(create_tool_location(path_str, Some(1)));
+                                locations.push(ToolCallLocation::new(path_str).line(1));
                             }
                             _ => {
-                                locations.push(create_tool_location(path_str, Some(1)));
+                                locations.push(ToolCallLocation::new(path_str).line(1));
                             }
                         }
                         break;
@@ -468,7 +491,7 @@ fn extract_tool_locations(
             }
 
             if locations.is_empty() {
-                locations.push(create_tool_location(path_str, Some(1)));
+                locations.push(ToolCallLocation::new(path_str).line(1));
             }
         }
     }
@@ -1155,6 +1178,9 @@ impl GooseAcpAgent {
                 }
             };
 
+            let session_name_update_tx =
+                (!disable_session_naming).then(|| spawn_session_name_update_notifier(cx.clone()));
+
             // ── Phase 1: create agent + init provider (fast, ~55ms) ──────
             let phase1: Result<Arc<Agent>, String> = async {
                 let agent = Arc::new(Agent::with_config(
@@ -1166,7 +1192,8 @@ impl GooseAcpAgent {
                         disable_session_naming,
                         goose_platform,
                     )
-                    .with_mcp_host_info(client_mcp_host_info),
+                    .with_mcp_host_info(client_mcp_host_info)
+                    .with_session_name_update_tx(session_name_update_tx),
                 ));
 
                 // Init provider — reuse the pre-resolved name + model when

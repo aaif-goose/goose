@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
@@ -11,14 +11,14 @@ import {
   ToolOutput,
 } from "@/shared/ui/ai-elements/tool";
 import { toolStatusMap } from "../lib/toolStatusMap";
-import type { ToolCallStatus } from "@/shared/types/messages";
+import type { ToolCallLocation, ToolCallStatus } from "@/shared/types/messages";
 import { useArtifactPolicyContext } from "@/features/chat/hooks/ArtifactPolicyContext";
-import type { ArtifactPathCandidate } from "@/features/chat/lib/artifactPathPolicy";
 
 interface ToolCallAdapterProps {
   name: string;
   arguments: Record<string, unknown>;
   status: ToolCallStatus;
+  locations?: ToolCallLocation[];
   result?: string;
   structuredContent?: unknown;
   isError?: boolean;
@@ -47,105 +47,96 @@ function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
   return elapsed;
 }
 
-function ArtifactActions({
-  args,
-  name,
-  result,
-}: {
-  args: Record<string, unknown>;
-  name: string;
-  result?: string;
-}) {
+function getLocationKind(path: string): "file" | "folder" | "path" {
+  const normalized = path.trim();
+  if (normalized.endsWith("/") || normalized.endsWith("\\")) return "folder";
+  const name =
+    normalized
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() ?? normalized;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? "file" : "path";
+}
+
+function visibleLocations(locations: ToolCallLocation[] | undefined) {
+  const seen = new Set<string>();
+  return (locations ?? []).filter(
+    (location): location is ToolCallLocation & { path: string } => {
+      if (
+        typeof location.path !== "string" ||
+        location.path.trim().length === 0
+      ) {
+        return false;
+      }
+      const key = `${location.path}:${location.line ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    },
+  );
+}
+
+function ArtifactActions({ locations }: { locations?: ToolCallLocation[] }) {
   const { t } = useTranslation(["chat", "common"]);
   const [moreOutputsOpen, setMoreOutputsOpen] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
-  const { resolveToolCardDisplay, pathExists, openResolvedPath } =
-    useArtifactPolicyContext();
+  const { openResolvedPath } = useArtifactPolicyContext();
+  const artifactLocations = visibleLocations(locations);
 
-  const display = useMemo(
-    () => resolveToolCardDisplay(args, name, result),
-    [args, name, resolveToolCardDisplay, result],
-  );
+  if (artifactLocations.length === 0) return null;
 
-  if (display.role !== "primary_host" || !display.primaryCandidate) return null;
-
-  const openCandidate = async (
-    candidate: ArtifactPathCandidate,
-    allowFallback: boolean,
-  ) => {
-    const candidates = allowFallback
-      ? [
-          candidate,
-          ...display.secondaryCandidates.filter((c) => c.id !== candidate.id),
-        ]
-      : [candidate];
-
+  const openLocation = async (location: ToolCallLocation) => {
     try {
       setOpenError(null);
-      for (const c of candidates) {
-        const exists = await pathExists(c.resolvedPath);
-        if (c.allowed && exists) {
-          await openResolvedPath(c.resolvedPath);
-          return;
-        }
-      }
-      for (const c of candidates) {
-        const exists = await pathExists(c.resolvedPath);
-        if (exists && !c.allowed) {
-          setOpenError(c.blockedReason || t("tools.pathOutsideRoots"));
-          return;
-        }
-      }
-      const firstAllowed = candidates.find((c) => c.allowed);
-      if (firstAllowed) {
-        setOpenError(
-          t("tools.fileNotFound", { path: firstAllowed.resolvedPath }),
-        );
-        return;
-      }
-      setOpenError(candidate.blockedReason || t("tools.pathOutsideRoots"));
+      await openResolvedPath(location.path);
     } catch (error) {
       setOpenError(error instanceof Error ? error.message : String(error));
     }
   };
 
-  const primary = display.primaryCandidate;
+  const primary = artifactLocations[0];
+  const secondaryLocations = artifactLocations.slice(1);
   const kindLabel: Record<string, string> = {
     file: t("tools.openFile"),
     folder: t("tools.openFolder"),
     path: t("tools.openPath"),
   };
 
-  return (
-    <div className="mt-1.5 ml-1 space-y-1.5">
+  const renderLocationButton = (
+    location: ToolCallLocation & { path: string },
+    className: string,
+    iconClassName: string,
+  ) => {
+    const kind = getLocationKind(location.path);
+    return (
       <Button
         type="button"
         variant="outline-flat"
-        onClick={() => void openCandidate(primary, true)}
-        className={cn(
-          "h-auto max-w-full justify-start rounded-md px-2.5 py-1 text-xs",
-          primary.allowed
-            ? "border-accent/45 bg-background text-accent-foreground hover:bg-accent/55"
-            : "cursor-not-allowed border-red-500/30 bg-red-500/[0.04] text-red-500/70",
-        )}
-        disabled={!primary.allowed}
-        title={primary.resolvedPath}
+        onClick={() => void openLocation(location)}
+        className={className}
+        title={location.path}
       >
-        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        <FolderOpen className={iconClassName} />
         <span className="truncate">
-          {kindLabel[primary.kind] ?? t("common:actions.open")}
+          {kindLabel[kind] ?? t("common:actions.open")}
         </span>
         <span className="truncate text-[10px] text-muted-foreground">
-          {primary.rawPath || primary.resolvedPath}
+          {location.path}
         </span>
       </Button>
-      {!primary.allowed && primary.blockedReason && (
-        <p className="text-[11px] text-destructive ml-1">
-          {primary.blockedReason}
-        </p>
+    );
+  };
+
+  return (
+    <div className="mt-1.5 ml-1 space-y-1.5">
+      {renderLocationButton(
+        primary,
+        "h-auto max-w-full justify-start rounded-md border-accent/45 bg-background px-2.5 py-1 text-xs text-accent-foreground hover:bg-accent/55",
+        "h-3.5 w-3.5 shrink-0",
       )}
 
-      {display.secondaryCandidates.length > 0 && (
+      {secondaryLocations.length > 0 && (
         <div className="space-y-1">
           <button
             type="button"
@@ -159,38 +150,20 @@ function ArtifactActions({
               )}
             />
             {t("tools.moreOutputs", {
-              count: display.secondaryCandidates.length,
+              count: secondaryLocations.length,
             })}
           </button>
           {moreOutputsOpen && (
             <div className="space-y-1.5 pl-4">
-              {display.secondaryCandidates.map((candidate) => (
-                <div key={candidate.id} className="space-y-0.5">
-                  <Button
-                    type="button"
-                    variant="outline-flat"
-                    onClick={() => void openCandidate(candidate, false)}
-                    className={cn(
-                      "h-auto max-w-full justify-start rounded-md px-2 py-1 text-[11px]",
-                      candidate.allowed
-                        ? "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
-                        : "cursor-not-allowed border-red-500/20 bg-red-500/[0.03] text-red-500/70",
-                    )}
-                    disabled={!candidate.allowed}
-                    title={candidate.resolvedPath}
-                  >
-                    <FolderOpen className="h-3 w-3 shrink-0" />
-                    <span className="truncate">
-                      {kindLabel[candidate.kind] ?? t("common:actions.open")}
-                    </span>
-                    <span className="truncate text-[10px] text-muted-foreground">
-                      {candidate.rawPath || candidate.resolvedPath}
-                    </span>
-                  </Button>
-                  {!candidate.allowed && candidate.blockedReason && (
-                    <p className="text-[11px] text-destructive">
-                      {candidate.blockedReason}
-                    </p>
+              {secondaryLocations.map((location) => (
+                <div
+                  key={`${location.path}:${location.line ?? ""}`}
+                  className="space-y-0.5"
+                >
+                  {renderLocationButton(
+                    location,
+                    "h-auto max-w-full justify-start rounded-md border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground",
+                    "h-3 w-3 shrink-0",
                   )}
                 </div>
               ))}
@@ -208,6 +181,7 @@ export function ToolCallAdapter({
   name,
   arguments: args,
   status,
+  locations,
   result,
   structuredContent,
   isError,
@@ -258,7 +232,7 @@ export function ToolCallAdapter({
           )}
         </ToolContent>
       </Tool>
-      <ArtifactActions args={args} name={name} result={result} />
+      <ArtifactActions locations={locations} />
     </div>
   );
 }
