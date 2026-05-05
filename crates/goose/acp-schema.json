@@ -581,7 +581,7 @@
     },
     "ProviderSetupCatalogListRequest": {
       "type": "object",
-      "description": "List provider setup catalog entries for Goose UIs.",
+      "description": "List provider setup catalog entries",
       "x-side": "agent",
       "x-method": "_goose/providers/setup/catalog/list"
     },
@@ -644,8 +644,8 @@
             "null"
           ]
         },
-        "tier": {
-          "$ref": "#/$defs/ProviderSetupTierDto"
+        "group": {
+          "$ref": "#/$defs/ProviderSetupGroupDto"
         },
         "showOnlyWhenInstalled": {
           "type": "boolean"
@@ -673,7 +673,7 @@
         "category",
         "description",
         "setupMethod",
-        "tier",
+        "group",
         "showOnlyWhenInstalled",
         "supportsInstall",
         "supportsAuth",
@@ -736,12 +736,11 @@
         "required"
       ]
     },
-    "ProviderSetupTierDto": {
+    "ProviderSetupGroupDto": {
       "type": "string",
       "enum": [
-        "promoted",
-        "standard",
-        "advanced"
+        "default",
+        "additional"
       ]
     },
     "ProviderCatalogTemplateRequest": {

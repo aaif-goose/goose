@@ -92,9 +92,12 @@ export function useAppStartup() {
           if (!providerAllowlist) {
             store.setProviders(providers);
           } else {
-            const hasAllowedModelProvider = getModelProviders().some(
-              (provider) => providerAllowlist.has(provider.id),
-            );
+            const catalogLoaded = useProviderCatalogStore.getState().loaded;
+            const hasAllowedModelProvider =
+              !catalogLoaded ||
+              getModelProviders().some((provider) =>
+                providerAllowlist.has(provider.id),
+              );
             store.setProviders(
               providers.filter(
                 (provider) =>

@@ -239,7 +239,7 @@ export const zProviderCatalogListResponse = z.object({
 });
 
 /**
- * List provider setup catalog entries for Goose UIs.
+ * List provider setup catalog entries
  */
 export const zProviderSetupCatalogListRequest = z.record(z.unknown());
 
@@ -272,11 +272,7 @@ export const zProviderSetupFieldDto = z.object({
     ]).optional()
 });
 
-export const zProviderSetupTierDto = z.enum([
-    'promoted',
-    'standard',
-    'advanced'
-]);
+export const zProviderSetupGroupDto = z.enum(['default', 'additional']);
 
 export const zProviderSetupCatalogEntryDto = z.object({
     providerId: z.string(),
@@ -297,7 +293,7 @@ export const zProviderSetupCatalogEntryDto = z.object({
         z.string(),
         z.null()
     ]).optional(),
-    tier: zProviderSetupTierDto,
+    group: zProviderSetupGroupDto,
     showOnlyWhenInstalled: z.boolean(),
     aliases: z.array(z.string()).optional().default([]),
     supportsInstall: z.boolean(),

@@ -45,7 +45,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
         placeholder: "Paste your access token",
       },
     ],
-    tier: "promoted",
+    group: "default",
   },
   {
     id: "ollama",
@@ -63,7 +63,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
         defaultValue: "http://localhost:11434",
       },
     ],
-    tier: "promoted",
+    group: "default",
   },
   {
     id: "anthropic",
@@ -71,7 +71,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
     category: "model",
     description: "Claude models",
     setupMethod: "single_api_key",
-    tier: "promoted",
+    group: "default",
   },
   {
     id: "google",
@@ -88,7 +88,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
         placeholder: "Paste your API key",
       },
     ],
-    tier: "promoted",
+    group: "default",
   },
 ];
 

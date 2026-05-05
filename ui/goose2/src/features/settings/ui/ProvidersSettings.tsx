@@ -202,11 +202,11 @@ export function ProvidersSettings() {
     });
   }, [allModels, modelOrder, sortedModels]);
 
-  const promotedModels = orderedModels.filter(
-    (m) => m.tier === "promoted" || m.tier === "standard",
+  const defaultModels = orderedModels.filter((m) => m.group === "default");
+  const additionalModels = orderedModels.filter(
+    (m) => m.group === "additional",
   );
-  const advancedModels = orderedModels.filter((m) => m.tier === "advanced");
-  const visibleModels = showAllModels ? orderedModels : promotedModels;
+  const visibleModels = showAllModels ? orderedModels : defaultModels;
 
   const customProviders = useMemo(
     () =>
@@ -458,7 +458,7 @@ export function ProvidersSettings() {
           ))}
         </div>
 
-        {!showAllModels && advancedModels.length > 0 && (
+        {!showAllModels && additionalModels.length > 0 && (
           <Button
             type="button"
             variant="ghost"
@@ -466,12 +466,12 @@ export function ProvidersSettings() {
             onClick={() => setShowAllModels(true)}
             className="mt-2 w-full text-muted-foreground"
           >
-            {t("providers.showMore", { count: advancedModels.length })}
+            {t("providers.showMore", { count: additionalModels.length })}
             <IconChevronDown className="size-3" />
           </Button>
         )}
 
-        {showAllModels && advancedModels.length > 0 && (
+        {showAllModels && additionalModels.length > 0 && (
           <Button
             type="button"
             variant="ghost"

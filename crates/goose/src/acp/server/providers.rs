@@ -163,13 +163,14 @@ fn provider_setup_method_to_dto(
     }
 }
 
-fn provider_setup_tier_to_dto(
-    tier: crate::providers::catalog::ProviderSetupTier,
-) -> ProviderSetupTierDto {
-    match tier {
-        crate::providers::catalog::ProviderSetupTier::Promoted => ProviderSetupTierDto::Promoted,
-        crate::providers::catalog::ProviderSetupTier::Standard => ProviderSetupTierDto::Standard,
-        crate::providers::catalog::ProviderSetupTier::Advanced => ProviderSetupTierDto::Advanced,
+fn provider_setup_group_to_dto(
+    group: crate::providers::catalog::ProviderSetupGroup,
+) -> ProviderSetupGroupDto {
+    match group {
+        crate::providers::catalog::ProviderSetupGroup::Default => ProviderSetupGroupDto::Default,
+        crate::providers::catalog::ProviderSetupGroup::Additional => {
+            ProviderSetupGroupDto::Additional
+        }
     }
 }
 
@@ -197,7 +198,7 @@ fn provider_setup_entry_to_dto(
             .collect(),
         binary_name: entry.binary_name,
         doc_url: entry.docs_url,
-        tier: provider_setup_tier_to_dto(entry.tier),
+        group: provider_setup_group_to_dto(entry.group),
         show_only_when_installed: entry.show_only_when_installed,
         aliases: entry.aliases,
         supports_install: entry.setup_capabilities.install,

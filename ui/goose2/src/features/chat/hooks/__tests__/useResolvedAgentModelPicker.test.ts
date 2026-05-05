@@ -32,7 +32,7 @@ describe("useResolvedAgentModelPicker", () => {
         category: "agent",
         description: "Codex CLI",
         setupMethod: "cli_auth",
-        tier: "promoted",
+        group: "default",
         aliases: ["codex-acp", "codex_cli", "codex"],
       },
       {
@@ -41,7 +41,7 @@ describe("useResolvedAgentModelPicker", () => {
         category: "agent",
         description: "Claude Code",
         setupMethod: "cli_auth",
-        tier: "promoted",
+        group: "default",
         aliases: ["claude-acp", "claude_code", "claude"],
       },
       {
@@ -50,7 +50,7 @@ describe("useResolvedAgentModelPicker", () => {
         category: "model",
         description: "OpenAI",
         setupMethod: "single_api_key",
-        tier: "promoted",
+        group: "default",
       },
     ]);
 

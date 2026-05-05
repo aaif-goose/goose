@@ -47,7 +47,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
     category: "agent",
     description: "Block's open-source coding agent",
     setupMethod: "none",
-    tier: "promoted",
+    group: "default",
   },
   {
     id: "openai",
@@ -55,7 +55,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
     category: "model",
     description: "GPT and o-series models",
     setupMethod: "config_fields",
-    tier: "promoted",
+    group: "default",
   },
   {
     id: "databricks",
@@ -63,7 +63,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
     category: "model",
     description: "Databricks Foundation Models",
     setupMethod: "host_with_oauth_fallback",
-    tier: "promoted",
+    group: "default",
   },
   {
     id: "anthropic",
@@ -71,7 +71,7 @@ const providerCatalog: ProviderCatalogEntry[] = [
     category: "model",
     description: "Claude models",
     setupMethod: "single_api_key",
-    tier: "promoted",
+    group: "default",
   },
 ];
 

@@ -9,7 +9,7 @@ describe("filterModelProvidersForDistro", () => {
       category: "model",
       description: "Claude models",
       setupMethod: "single_api_key",
-      tier: "promoted",
+      group: "default",
     },
     {
       id: "openai",
@@ -17,7 +17,7 @@ describe("filterModelProvidersForDistro", () => {
       category: "model",
       description: "GPT models",
       setupMethod: "single_api_key",
-      tier: "promoted",
+      group: "default",
     },
     {
       id: "ollama",
@@ -25,7 +25,7 @@ describe("filterModelProvidersForDistro", () => {
       category: "model",
       description: "Local models",
       setupMethod: "local",
-      tier: "promoted",
+      group: "default",
     },
   ] as const;
 

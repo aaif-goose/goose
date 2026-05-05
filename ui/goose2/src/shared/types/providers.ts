@@ -3,12 +3,12 @@ import type {
   ProviderSetupCategoryDto,
   ProviderSetupFieldDto,
   ProviderSetupMethodDto,
-  ProviderSetupTierDto,
+  ProviderSetupGroupDto,
 } from "@aaif/goose-sdk";
 
 export type ProviderCategory = ProviderSetupCategoryDto;
 export type ProviderSetupMethod = ProviderSetupMethodDto;
-export type ProviderTier = ProviderSetupTierDto;
+export type ProviderGroup = ProviderSetupGroupDto;
 export type ProviderField = ProviderSetupFieldDto;
 
 export interface ProviderFieldValue {

@@ -460,10 +460,9 @@ pub enum ProviderSetupMethodDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum ProviderSetupTierDto {
-    Promoted,
-    Standard,
-    Advanced,
+pub enum ProviderSetupGroupDto {
+    Default,
+    Additional,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -495,7 +494,7 @@ pub struct ProviderSetupCatalogEntryDto {
     pub binary_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc_url: Option<String>,
-    pub tier: ProviderSetupTierDto,
+    pub group: ProviderSetupGroupDto,
     pub show_only_when_installed: bool,
     #[serde(default)]
     pub aliases: Vec<String>,
@@ -554,7 +553,7 @@ pub struct ProviderCatalogListResponse {
     pub providers: Vec<ProviderTemplateCatalogEntryDto>,
 }
 
-/// List provider setup catalog entries for Goose UIs.
+/// List provider setup catalog entries
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/providers/setup/catalog/list",

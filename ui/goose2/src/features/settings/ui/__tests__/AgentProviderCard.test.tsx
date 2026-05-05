@@ -27,7 +27,7 @@ function createProvider(): ProviderDisplayInfo {
     binaryName: "claude",
     supportsAuth: true,
     supportsAuthStatus: true,
-    tier: "standard",
+    group: "default",
     status: "not_installed",
   };
 }

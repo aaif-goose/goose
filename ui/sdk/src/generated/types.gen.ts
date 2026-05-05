@@ -301,7 +301,7 @@ export type ProviderTemplateCatalogEntryDto = {
 };
 
 /**
- * List provider setup catalog entries for Goose UIs.
+ * List provider setup catalog entries
  */
 export type ProviderSetupCatalogListRequest = {
     [key: string]: unknown;
@@ -321,7 +321,7 @@ export type ProviderSetupCatalogEntryDto = {
     fields?: Array<ProviderSetupFieldDto>;
     binaryName?: string | null;
     docUrl?: string | null;
-    tier: ProviderSetupTierDto;
+    group: ProviderSetupGroupDto;
     showOnlyWhenInstalled: boolean;
     aliases?: Array<string>;
     supportsInstall: boolean;
@@ -342,7 +342,7 @@ export type ProviderSetupFieldDto = {
     defaultValue?: string | null;
 };
 
-export type ProviderSetupTierDto = 'promoted' | 'standard' | 'advanced';
+export type ProviderSetupGroupDto = 'default' | 'additional';
 
 /**
  * Return the editable template for one catalog provider.

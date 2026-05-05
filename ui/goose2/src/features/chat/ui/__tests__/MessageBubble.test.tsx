@@ -17,7 +17,7 @@ const providerCatalogEntries: ProviderCatalogEntry[] = [
     description: "Anthropic's agentic coding tool",
     setupMethod: "cli_auth",
     binaryName: "claude-agent-acp",
-    tier: "promoted",
+    group: "default",
     aliases: ["claude-acp", "claude_code", "claude"],
   },
   {
@@ -27,7 +27,7 @@ const providerCatalogEntries: ProviderCatalogEntry[] = [
     description: "OpenAI's coding agent",
     setupMethod: "cli_auth",
     binaryName: "codex-acp",
-    tier: "promoted",
+    group: "default",
     aliases: ["codex-acp", "codex_cli", "codex"],
   },
 ];

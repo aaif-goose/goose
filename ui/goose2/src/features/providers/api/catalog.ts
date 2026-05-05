@@ -18,7 +18,7 @@ export function mapProviderSetupCatalogEntryDto(
     ...(dto.fields?.length ? { fields: dto.fields } : {}),
     ...(dto.binaryName ? { binaryName: dto.binaryName } : {}),
     ...(dto.docUrl ? { docsUrl: dto.docUrl } : {}),
-    tier: dto.tier,
+    group: dto.group,
     showOnlyWhenInstalled: dto.showOnlyWhenInstalled,
     ...(dto.aliases?.length ? { aliases: dto.aliases } : {}),
     supportsInstall: dto.supportsInstall,

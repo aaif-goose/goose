@@ -7,7 +7,7 @@ export const GOOSE_PROVIDER_CATALOG_ENTRY: ProviderCatalogEntry = {
   category: "agent",
   description: "Block's open-source coding agent",
   setupMethod: "none",
-  tier: "promoted",
+  group: "default",
   aliases: ["goose"],
 };
 

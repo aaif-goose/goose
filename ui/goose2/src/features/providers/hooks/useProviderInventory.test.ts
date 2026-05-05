@@ -36,7 +36,7 @@ describe("useProviderInventory", () => {
         category: "model",
         description: "GPT and o-series models",
         setupMethod: "config_fields",
-        tier: "promoted",
+        group: "default",
       },
       {
         id: "custom_deepseek",
@@ -44,7 +44,7 @@ describe("useProviderInventory", () => {
         category: "model",
         description: "DeepSeek chat and reasoning models",
         setupMethod: "single_api_key",
-        tier: "advanced",
+        group: "additional",
       },
     ]);
     useProviderInventoryStore.setState({
@@ -100,6 +100,54 @@ describe("useProviderInventory", () => {
         (entry) => entry.providerId,
       ),
     ).toEqual(["openai", "custom_acme_openai", "custom_deepseek"]);
+  });
+
+  it("falls back to configured inventory providers before the catalog loads", () => {
+    useProviderCatalogStore.getState().reset();
+    useProviderInventoryStore.getState().setEntries([
+      providerEntry({
+        providerId: "openai",
+        providerName: "OpenAI",
+        providerType: "Preferred",
+        models: [{ id: "gpt-4o", name: "GPT-4o", recommended: true }],
+      }),
+      providerEntry({
+        providerId: "custom_acme_openai",
+        providerName: "Acme OpenAI",
+        providerType: "Custom",
+      }),
+      providerEntry({
+        providerId: "local",
+        providerName: "Local",
+        providerType: "Custom",
+      }),
+      providerEntry({
+        providerId: "unconfigured_anthropic",
+        providerName: "Anthropic",
+        providerType: "Preferred",
+        configured: false,
+      }),
+    ]);
+
+    const { result } = renderHook(() => useProviderInventory());
+
+    expect(
+      result.current.configuredModelProviderEntries.map(
+        (entry) => entry.providerId,
+      ),
+    ).toEqual(["openai", "custom_acme_openai"]);
+    expect(result.current.getModelsForAgent("goose")).toEqual([
+      {
+        id: "gpt-4o",
+        name: "GPT-4o",
+        displayName: "GPT-4o",
+        provider: undefined,
+        providerId: "openai",
+        providerName: "OpenAI",
+        contextLimit: undefined,
+        recommended: true,
+      },
+    ]);
   });
 
   it("aggregates custom provider models under Goose", () => {

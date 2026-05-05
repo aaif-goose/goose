@@ -13,6 +13,7 @@ import { useProviderCatalogStore } from "../stores/providerCatalogStore";
 function isConfiguredGooseModelProvider(
   entry: ProviderInventoryEntryDto,
   modelProviderIds: Set<string>,
+  catalogLoaded: boolean,
 ): boolean {
   if (!entry.configured) {
     return false;
@@ -20,6 +21,10 @@ function isConfiguredGooseModelProvider(
 
   if (entry.providerType === "Custom") {
     return entry.providerId.startsWith("custom_");
+  }
+
+  if (!catalogLoaded) {
+    return true;
   }
 
   return modelProviderIds.has(entry.providerId);
@@ -46,6 +51,7 @@ export function useProviderInventory() {
   const loading = useProviderInventoryStore((s) => s.loading);
   const distro = useDistroStore((s) => s.manifest);
   const catalogEntries = useProviderCatalogStore((s) => s.entries);
+  const catalogLoaded = useProviderCatalogStore((s) => s.loaded);
 
   const getEntry = useCallback(
     (providerId: string) => entries.get(providerId),
@@ -75,9 +81,9 @@ export function useProviderInventory() {
   const configuredModelProviderEntries = useMemo(
     () =>
       [...entries.values()].filter((entry) =>
-        isConfiguredGooseModelProvider(entry, modelProviderIds),
+        isConfiguredGooseModelProvider(entry, modelProviderIds, catalogLoaded),
       ),
-    [entries, modelProviderIds],
+    [catalogLoaded, entries, modelProviderIds],
   );
 
   const getModelsForAgent = useCallback(

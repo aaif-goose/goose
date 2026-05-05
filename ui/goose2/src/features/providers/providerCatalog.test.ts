@@ -15,7 +15,7 @@ const catalogEntries: ProviderCatalogEntry[] = [
     category: "agent",
     description: "Block's open-source coding agent",
     setupMethod: "none",
-    tier: "promoted",
+    group: "default",
     aliases: ["goose"],
   },
   {
@@ -25,7 +25,7 @@ const catalogEntries: ProviderCatalogEntry[] = [
     description: "Anthropic's agentic coding tool",
     setupMethod: "cli_auth",
     binaryName: "claude-agent-acp",
-    tier: "promoted",
+    group: "default",
     aliases: ["claude-acp", "claude_code", "claude"],
     supportsInstall: true,
     supportsAuth: true,
@@ -38,7 +38,7 @@ const catalogEntries: ProviderCatalogEntry[] = [
     description: "OpenAI's coding agent",
     setupMethod: "cli_auth",
     binaryName: "codex-acp",
-    tier: "promoted",
+    group: "default",
     aliases: ["codex-acp", "codex_cli", "codex"],
   },
   {
@@ -58,7 +58,7 @@ const catalogEntries: ProviderCatalogEntry[] = [
       },
     ],
     docsUrl: "https://ollama.com",
-    tier: "promoted",
+    group: "default",
   },
 ];
 
