@@ -113,6 +113,40 @@ fn test_custom_get_extensions() {
 }
 
 #[test]
+fn test_custom_list_builtin_skill_sources() {
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/sources/list",
+            serde_json::json!({ "type": "builtinSkill" }),
+        )
+        .await
+        .expect("builtin skill sources list should succeed");
+        let sources = response
+            .get("sources")
+            .and_then(|value| value.as_array())
+            .expect("missing sources array");
+        let builtin = sources
+            .iter()
+            .find(|source| source.get("name") == Some(&serde_json::json!("goose-doc-guide")))
+            .expect("expected goose-doc-guide builtin skill");
+
+        assert_eq!(
+            builtin.get("type"),
+            Some(&serde_json::json!("builtinSkill"))
+        );
+        assert_eq!(builtin.get("global"), Some(&serde_json::json!(true)));
+        assert_eq!(
+            builtin.get("directory"),
+            Some(&serde_json::json!("builtin://skills/goose-doc-guide"))
+        );
+    });
+}
+
+#[test]
 fn test_custom_provider_inventory_includes_metadata() {
     run_test(async {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;

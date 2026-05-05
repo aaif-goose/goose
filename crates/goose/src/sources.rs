@@ -36,6 +36,17 @@ fn require_skill_type(source_type: SourceType) -> Result<(), Error> {
     Ok(())
 }
 
+fn require_listable_type(source_type: Option<SourceType>) -> Result<SourceType, Error> {
+    match source_type.unwrap_or(SourceType::Skill) {
+        SourceType::Skill => Ok(SourceType::Skill),
+        SourceType::BuiltinSkill => Ok(SourceType::BuiltinSkill),
+        other => Err(Error::invalid_params().data(format!(
+            "Source type '{}' is not supported. Only 'skill' and 'builtinSkill' are currently supported for listing.",
+            other
+        ))),
+    }
+}
+
 fn source_entry(
     source_type: SourceType,
     name: &str,
@@ -53,6 +64,14 @@ fn source_entry(
         global,
         supporting_files: Vec::new(),
     }
+}
+
+fn builtin_skill_entry(mut source: SourceEntry) -> SourceEntry {
+    source.source_type = SourceType::BuiltinSkill;
+    source.directory = format!("builtin://skills/{}", source.name);
+    source.global = true;
+    source.supporting_files.clear();
+    source
 }
 
 pub fn create_source(
@@ -155,9 +174,7 @@ pub fn list_sources(
     source_type: Option<SourceType>,
     project_dir: Option<&str>,
 ) -> Result<Vec<SourceEntry>, Error> {
-    if let Some(t) = source_type {
-        require_skill_type(t)?;
-    }
+    let listed_type = require_listable_type(source_type)?;
 
     let working_dir = project_dir
         .map(str::trim)
@@ -166,7 +183,14 @@ pub fn list_sources(
 
     let mut sources: Vec<SourceEntry> = discover_skills(working_dir.as_deref())
         .into_iter()
-        .filter(|s| s.source_type == SourceType::Skill)
+        .filter(|s| s.source_type == listed_type)
+        .map(|s| {
+            if listed_type == SourceType::BuiltinSkill {
+                builtin_skill_entry(s)
+            } else {
+                s
+            }
+        })
         .collect();
 
     sources.sort_by(|a, b| a.name.cmp(&b.name));
@@ -495,7 +519,64 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_skill_source_type() {
+    fn list_sources_lists_builtin_skills() {
+        let listed = list_sources(Some(SourceType::BuiltinSkill), None).unwrap();
+        let builtin = listed
+            .iter()
+            .find(|source| source.name == "goose-doc-guide")
+            .expect("expected goose-doc-guide builtin skill");
+
+        assert_eq!(builtin.source_type, SourceType::BuiltinSkill);
+        assert!(builtin.global);
+        assert_eq!(builtin.directory, "builtin://skills/goose-doc-guide");
+        assert!(builtin.supporting_files.is_empty());
+        assert!(!builtin.content.is_empty());
+    }
+
+    #[test]
+    fn list_skill_excludes_builtin_skills() {
+        let listed = list_sources(Some(SourceType::Skill), None).unwrap();
+        assert!(!listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
+    }
+
+    #[test]
+    fn filesystem_skill_suppresses_same_named_builtin() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        let skill_dir = project
+            .join(".agents")
+            .join("skills")
+            .join("goose-doc-guide");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            build_skill_md("goose-doc-guide", "project override", "Use project docs"),
+        )
+        .unwrap();
+
+        let builtins = list_sources(
+            Some(SourceType::BuiltinSkill),
+            Some(project.to_str().unwrap()),
+        )
+        .unwrap();
+        assert!(!builtins
+            .iter()
+            .any(|source| source.name == "goose-doc-guide"));
+
+        let skills =
+            list_sources(Some(SourceType::Skill), Some(project.to_str().unwrap())).unwrap();
+        let project_skill = skills
+            .iter()
+            .find(|source| source.name == "goose-doc-guide")
+            .expect("expected project skill");
+        assert_eq!(project_skill.source_type, SourceType::Skill);
+        assert_eq!(project_skill.description, "project override");
+    }
+
+    #[test]
+    fn mutations_reject_non_writable_source_types() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
 
@@ -510,16 +591,48 @@ mod tests {
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
+        let err = update_source(
+            SourceType::BuiltinSkill,
+            "builtin://skills/x",
+            "x",
+            "d",
+            "c",
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
         let err = update_source(SourceType::Recipe, "x", "x", "d", "c").unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = delete_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = list_sources(Some(SourceType::BuiltinSkill), Some(project)).unwrap_err();
+        let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project)).unwrap();
+        assert!(listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
+
+        let err = list_sources(Some(SourceType::Recipe), Some(project)).unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = export_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = export_source(SourceType::Recipe, "x").unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let payload = serde_json::json!({
+            "version": 1,
+            "type": "builtinSkill",
+            "name": "x",
+            "description": "d",
+            "content": "c",
+        })
+        .to_string();
+        let err = import_sources(&payload, false, Some(project)).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
     }
 
