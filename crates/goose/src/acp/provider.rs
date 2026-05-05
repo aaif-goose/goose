@@ -24,10 +24,9 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
-use tokio_stream::{wrappers::SplitStream, StreamExt};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
 use crate::acp::{map_permission_response, PermissionDecision};
@@ -880,13 +879,31 @@ impl AcpClientLoop {
     }
 }
 
-async fn forward_child_stderr(stderr: tokio::process::ChildStderr) {
-    let mut lines = SplitStream::new(BufReader::new(stderr).split(b'\n'));
-    while let Some(result) = lines.next().await {
-        match result {
-            Ok(line) => {
-                let line = line.strip_suffix(b"\r").unwrap_or(&line);
-                tracing::info!(target: "acp::child::stderr", "{}", String::from_utf8_lossy(line));
+/// Forwards an ACP child's stderr to tracing line by line.
+///
+/// Lines longer than `MAX_LINE_LEN` are flushed in chunks so a child that
+/// emits unbounded output without newlines (e.g. carriage-return progress
+/// bars or binary data) cannot cause unbounded memory growth.
+async fn forward_child_stderr(mut stderr: tokio::process::ChildStderr) {
+    const MAX_LINE_LEN: usize = 8192;
+    const READ_CHUNK: usize = 1024;
+
+    let mut line: Vec<u8> = Vec::with_capacity(256);
+    let mut chunk = [0u8; READ_CHUNK];
+    loop {
+        match stderr.read(&mut chunk).await {
+            Ok(0) => break,
+            Ok(n) => {
+                for &b in &chunk[..n] {
+                    if b == b'\n' {
+                        emit_stderr_line(&mut line);
+                    } else {
+                        line.push(b);
+                        if line.len() >= MAX_LINE_LEN {
+                            emit_stderr_line(&mut line);
+                        }
+                    }
+                }
             }
             Err(e) => {
                 tracing::debug!(target: "acp::child::stderr", error = %e, "stderr read error");
@@ -894,6 +911,16 @@ async fn forward_child_stderr(stderr: tokio::process::ChildStderr) {
             }
         }
     }
+    emit_stderr_line(&mut line);
+}
+
+fn emit_stderr_line(line: &mut Vec<u8>) {
+    if line.is_empty() {
+        return;
+    }
+    let trimmed = line.strip_suffix(b"\r").unwrap_or(line);
+    tracing::info!(target: "acp::child::stderr", "{}", String::from_utf8_lossy(trimmed));
+    line.clear();
 }
 
 async fn spawn_acp_process(config: &AcpProviderConfig) -> Result<Child> {
