@@ -894,4 +894,35 @@ impl GooseAcpAgent {
         let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
         Ok(ProviderConfigChangeResponse { status, refresh })
     }
+
+    pub(super) async fn on_authenticate_provider_config(
+        &self,
+        req: ProviderConfigAuthenticateRequest,
+    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
+        let entry = crate::providers::get_from_registry(&req.provider_id)
+            .await
+            .invalid_params_err_ctx("Unknown provider")?;
+        let metadata = entry.metadata().clone();
+        if !metadata.config_keys.iter().any(|key| key.oauth_flow) {
+            return Err(sacp::Error::invalid_params().data(format!(
+                "Provider does not support native authentication: {}",
+                req.provider_id
+            )));
+        }
+
+        let provider = entry
+            .create_with_default_model(Vec::new())
+            .await
+            .internal_err_ctx("Failed to initialize provider")?;
+        provider
+            .configure_oauth()
+            .await
+            .internal_err_ctx("Failed to authenticate provider")?;
+        Config::global().invalidate_secrets_cache();
+
+        let provider_ids = [req.provider_id.clone()];
+        let status = Self::provider_config_status(req.provider_id.clone()).await;
+        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
+        Ok(ProviderConfigChangeResponse { status, refresh })
+    }
 }

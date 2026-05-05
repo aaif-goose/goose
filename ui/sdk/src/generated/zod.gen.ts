@@ -554,6 +554,13 @@ export const zProviderConfigDeleteRequest = z.object({
     providerId: z.string()
 });
 
+/**
+ * Run a provider-owned native authentication flow and start an inventory refresh when supported.
+ */
+export const zProviderConfigAuthenticateRequest = z.object({
+    providerId: z.string()
+});
+
 export const zPreferenceKey = z.enum([
     'autoCompactThreshold',
     'voiceAutoSubmitPhrases',
@@ -603,6 +610,69 @@ export const zDefaultsReadResponse = z.object({
     ]).optional(),
     modelId: z.union([
         z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Save Goose default provider and model configuration.
+ */
+export const zDefaultsSaveRequest = z.object({
+    providerId: z.string(),
+    modelId: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Sources that onboarding knows how to discover and import.
+ */
+export const zOnboardingImportSourceKind = z.enum(['goose_config', 'claude_desktop']);
+
+/**
+ * Scan for existing Goose and compatible app data that onboarding can import.
+ */
+export const zOnboardingImportScanRequest = z.object({
+    sources: z.array(zOnboardingImportSourceKind).optional().default([])
+});
+
+export const zOnboardingImportCounts = z.object({
+    providers: z.number().int().gte(0),
+    extensions: z.number().int().gte(0),
+    sessions: z.number().int().gte(0),
+    skills: z.number().int().gte(0),
+    projects: z.number().int().gte(0),
+    preferences: z.number().int().gte(0)
+});
+
+export const zOnboardingImportCandidate = z.object({
+    id: z.string(),
+    sourceKind: zOnboardingImportSourceKind,
+    displayName: z.string(),
+    path: z.string(),
+    counts: zOnboardingImportCounts,
+    warnings: z.array(z.string()).optional().default([])
+});
+
+export const zOnboardingImportScanResponse = z.object({
+    candidates: z.array(zOnboardingImportCandidate)
+});
+
+/**
+ * Import selected onboarding candidates.
+ */
+export const zOnboardingImportApplyRequest = z.object({
+    candidateIds: z.array(z.string()).optional().default([]),
+    enableImportedExtensions: z.boolean().optional().default(false)
+});
+
+export const zOnboardingImportApplyResponse = z.object({
+    imported: zOnboardingImportCounts,
+    skipped: zOnboardingImportCounts,
+    warnings: z.array(z.string()).optional().default([]),
+    providerDefaults: z.union([
+        zDefaultsReadResponse,
         z.null()
     ]).optional()
 });
@@ -982,10 +1052,14 @@ export const zExtRequest = z.object({
             zProviderConfigStatusRequest,
             zProviderConfigSaveRequest,
             zProviderConfigDeleteRequest,
+            zProviderConfigAuthenticateRequest,
             zPreferencesReadRequest,
             zPreferencesSaveRequest,
             zPreferencesRemoveRequest,
             zDefaultsReadRequest,
+            zDefaultsSaveRequest,
+            zOnboardingImportScanRequest,
+            zOnboardingImportApplyRequest,
             zExportSessionRequest,
             zImportSessionRequest,
             zUpdateSessionProjectRequest,
@@ -1041,6 +1115,8 @@ export const zExtResponse = z.union([
                 zProviderConfigChangeResponse,
                 zPreferencesReadResponse,
                 zDefaultsReadResponse,
+                zOnboardingImportScanResponse,
+                zOnboardingImportApplyResponse,
                 zExportSessionResponse,
                 zImportSessionResponse,
                 zCreateSourceResponse,

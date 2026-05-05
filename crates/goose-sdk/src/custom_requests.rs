@@ -237,6 +237,92 @@ pub struct DefaultsReadResponse {
     pub model_id: Option<String>,
 }
 
+/// Save Goose default provider and model configuration.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/defaults/save", response = DefaultsReadResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultsSaveRequest {
+    pub provider_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+}
+
+/// Sources that onboarding knows how to discover and import.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingImportSourceKind {
+    #[default]
+    GooseConfig,
+    ClaudeDesktop,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportCounts {
+    pub providers: u32,
+    pub extensions: u32,
+    pub sessions: u32,
+    pub skills: u32,
+    pub projects: u32,
+    pub preferences: u32,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportCandidate {
+    pub id: String,
+    pub source_kind: OnboardingImportSourceKind,
+    pub display_name: String,
+    pub path: String,
+    pub counts: OnboardingImportCounts,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+/// Scan for existing Goose and compatible app data that onboarding can import.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/onboarding/import/scan",
+    response = OnboardingImportScanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportScanRequest {
+    /// Empty means all supported import sources.
+    #[serde(default)]
+    pub sources: Vec<OnboardingImportSourceKind>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportScanResponse {
+    pub candidates: Vec<OnboardingImportCandidate>,
+}
+
+/// Import selected onboarding candidates.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/onboarding/import/apply",
+    response = OnboardingImportApplyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportApplyRequest {
+    #[serde(default)]
+    pub candidate_ids: Vec<String>,
+    #[serde(default)]
+    pub enable_imported_extensions: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportApplyResponse {
+    pub imported: OnboardingImportCounts,
+    pub skipped: OnboardingImportCounts,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_defaults: Option<DefaultsReadResponse>,
+}
+
 /// Set a dictation provider secret value.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/dictation/secret/save", response = EmptyResponse)]
@@ -415,6 +501,17 @@ pub struct ProviderConfigSaveRequest {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigDeleteRequest {
+    pub provider_id: String,
+}
+
+/// Run a provider-owned native authentication flow and start an inventory refresh when supported.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/config/authenticate",
+    response = ProviderConfigChangeResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigAuthenticateRequest {
     pub provider_id: String,
 }
 

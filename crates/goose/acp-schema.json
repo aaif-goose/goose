@@ -1415,6 +1415,20 @@
       "x-side": "agent",
       "x-method": "_goose/providers/config/delete"
     },
+    "ProviderConfigAuthenticateRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Run a provider-owned native authentication flow and start an inventory refresh when supported.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/authenticate"
+    },
     "PreferencesReadRequest": {
       "type": "object",
       "properties": {
@@ -1521,8 +1535,191 @@
           ]
         }
       },
+      "x-side": "agent"
+    },
+    "DefaultsSaveRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Save Goose default provider and model configuration.",
       "x-side": "agent",
-      "x-method": "_goose/defaults/read"
+      "x-method": "_goose/defaults/save"
+    },
+    "OnboardingImportScanRequest": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OnboardingImportSourceKind"
+          },
+          "description": "Empty means all supported import sources.",
+          "default": []
+        }
+      },
+      "description": "Scan for existing Goose and compatible app data that onboarding can import.",
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/scan"
+    },
+    "OnboardingImportSourceKind": {
+      "type": "string",
+      "enum": [
+        "goose_config",
+        "claude_desktop"
+      ],
+      "description": "Sources that onboarding knows how to discover and import."
+    },
+    "OnboardingImportScanResponse": {
+      "type": "object",
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OnboardingImportCandidate"
+          }
+        }
+      },
+      "required": [
+        "candidates"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/scan"
+    },
+    "OnboardingImportCandidate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sourceKind": {
+          "$ref": "#/$defs/OnboardingImportSourceKind"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/OnboardingImportCounts"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "id",
+        "sourceKind",
+        "displayName",
+        "path",
+        "counts"
+      ]
+    },
+    "OnboardingImportCounts": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "extensions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skills": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "projects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preferences": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "providers",
+        "extensions",
+        "sessions",
+        "skills",
+        "projects",
+        "preferences"
+      ]
+    },
+    "OnboardingImportApplyRequest": {
+      "type": "object",
+      "properties": {
+        "candidateIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "enableImportedExtensions": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "description": "Import selected onboarding candidates.",
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/apply"
+    },
+    "OnboardingImportApplyResponse": {
+      "type": "object",
+      "properties": {
+        "imported": {
+          "$ref": "#/$defs/OnboardingImportCounts"
+        },
+        "skipped": {
+          "$ref": "#/$defs/OnboardingImportCounts"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "providerDefaults": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DefaultsReadResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "imported",
+        "skipped"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/apply"
     },
     "ExportSessionRequest": {
       "type": "object",
@@ -2536,6 +2733,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ProviderConfigAuthenticateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/authenticate",
+                  "title": "ProviderConfigAuthenticateRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/PreferencesReadRequest"
                     }
                   ],
@@ -2568,6 +2774,33 @@
                   ],
                   "description": "Params for _goose/defaults/read",
                   "title": "DefaultsReadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DefaultsSaveRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/defaults/save",
+                  "title": "DefaultsSaveRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/OnboardingImportScanRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/onboarding/import/scan",
+                  "title": "OnboardingImportScanRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/OnboardingImportApplyRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/onboarding/import/apply",
+                  "title": "OnboardingImportApplyRequest"
                 },
                 {
                   "allOf": [
@@ -2956,6 +3189,22 @@
                         }
                       ],
                       "title": "DefaultsReadResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/OnboardingImportScanResponse"
+                        }
+                      ],
+                      "title": "OnboardingImportScanResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/OnboardingImportApplyResponse"
+                        }
+                      ],
+                      "title": "OnboardingImportApplyResponse"
                     },
                     {
                       "allOf": [

@@ -65,6 +65,72 @@ impl GooseAcpAgent {
             model_id: optional_config_string(&config, "GOOSE_MODEL")?,
         })
     }
+
+    pub(super) async fn on_defaults_save(
+        &self,
+        req: DefaultsSaveRequest,
+    ) -> Result<DefaultsReadResponse, sacp::Error> {
+        let provider_id = req.provider_id.trim().to_string();
+        if provider_id.is_empty() {
+            return Err(sacp::Error::invalid_params().data("providerId cannot be empty"));
+        }
+
+        let model_id = req.model_id.and_then(|model| {
+            let model = model.trim().to_string();
+            (!model.is_empty()).then_some(model)
+        });
+
+        let entries = self
+            .provider_inventory
+            .entries(std::slice::from_ref(&provider_id))
+            .await
+            .internal_err_ctx("Failed to read provider inventory")?;
+        let Some(entry) = entries
+            .into_iter()
+            .find(|entry| entry.provider_id == provider_id)
+        else {
+            return Err(
+                sacp::Error::invalid_params().data(format!("Unknown provider: {provider_id}"))
+            );
+        };
+
+        if !entry.configured {
+            return Err(sacp::Error::invalid_params()
+                .data(format!("Provider is not configured: {provider_id}")));
+        }
+
+        if let Some(model_id) = model_id.as_deref() {
+            let model_exists = entry.default_model == model_id
+                || entry.models.iter().any(|model| model.id == model_id);
+            if !model_exists {
+                return Err(sacp::Error::invalid_params().data(format!(
+                    "Model '{model_id}' is not available for provider '{provider_id}'"
+                )));
+            }
+        }
+
+        let config = self.config()?;
+        config
+            .set_param_values(&[(
+                "GOOSE_PROVIDER".to_string(),
+                serde_json::Value::String(provider_id.clone()),
+            )])
+            .internal_err_ctx("Failed to save default provider")?;
+        if let Some(model_id) = model_id.as_deref() {
+            config
+                .set_param("GOOSE_MODEL", model_id)
+                .internal_err_ctx("Failed to save default model")?;
+        } else {
+            config
+                .delete("GOOSE_MODEL")
+                .internal_err_ctx("Failed to clear default model")?;
+        }
+
+        Ok(DefaultsReadResponse {
+            provider_id: Some(provider_id),
+            model_id,
+        })
+    }
 }
 
 struct PreferenceDef {

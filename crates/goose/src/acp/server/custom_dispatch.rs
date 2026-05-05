@@ -208,6 +208,14 @@ impl GooseAcpAgent {
         self.on_delete_provider_config(req).await
     }
 
+    #[custom_method(ProviderConfigAuthenticateRequest)]
+    async fn dispatch_authenticate_provider_config(
+        &self,
+        req: ProviderConfigAuthenticateRequest,
+    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
+        self.on_authenticate_provider_config(req).await
+    }
+
     #[custom_method(PreferencesReadRequest)]
     async fn dispatch_preferences_read(
         &self,
@@ -238,6 +246,30 @@ impl GooseAcpAgent {
         req: DefaultsReadRequest,
     ) -> Result<DefaultsReadResponse, sacp::Error> {
         self.on_defaults_read(req).await
+    }
+
+    #[custom_method(DefaultsSaveRequest)]
+    async fn dispatch_defaults_save(
+        &self,
+        req: DefaultsSaveRequest,
+    ) -> Result<DefaultsReadResponse, sacp::Error> {
+        self.on_defaults_save(req).await
+    }
+
+    #[custom_method(OnboardingImportScanRequest)]
+    async fn dispatch_onboarding_import_scan(
+        &self,
+        req: OnboardingImportScanRequest,
+    ) -> Result<OnboardingImportScanResponse, sacp::Error> {
+        self.on_onboarding_import_scan(req).await
+    }
+
+    #[custom_method(OnboardingImportApplyRequest)]
+    async fn dispatch_onboarding_import_apply(
+        &self,
+        req: OnboardingImportApplyRequest,
+    ) -> Result<OnboardingImportApplyResponse, sacp::Error> {
+        self.on_onboarding_import_apply(req).await
     }
 
     #[custom_method(ExportSessionRequest)]
