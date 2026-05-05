@@ -129,6 +129,10 @@ fn build_extended_path() -> String {
                 }
             }
         }
+
+        // mise (formerly rtx) puts shims for every globally installed binary
+        // under one directory, regardless of which language runtime owns them.
+        paths.push(home.join(".local/share/mise/shims"));
     }
 
     let mut seen = std::collections::HashSet::new();
