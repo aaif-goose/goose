@@ -170,15 +170,17 @@ export default function SettingsView({
     <>
       <MainPanelLayout>
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="bg-background-primary px-8 pb-8 pt-16">
+          <div className="bg-background-primary px-4 pb-5 pt-12 sm:px-6 sm:pb-6 sm:pt-14 lg:px-8 lg:pb-8 lg:pt-16">
             <div className="flex flex-col page-transition">
               <div className="flex justify-between items-center mb-1">
-                <h1 className="text-4xl font-light">{intl.formatMessage(i18n.title)}</h1>
+                <h1 className="text-3xl font-light sm:text-4xl">
+                  {intl.formatMessage(i18n.title)}
+                </h1>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 relative px-6">
+          <div className="flex-1 min-h-0 relative px-3 sm:px-6">
             <Tabs
               value={activeTab}
               onValueChange={handleTabChange}
@@ -188,7 +190,7 @@ export default function SettingsView({
                 <TabsList className="w-full mb-2 justify-start overflow-x-auto flex-nowrap">
                   <TabsTrigger
                     value="models"
-                    className="flex gap-2"
+                    className="flex shrink-0 gap-2"
                     data-testid="settings-models-tab"
                   >
                     <Bot className="h-4 w-4" />
@@ -197,7 +199,7 @@ export default function SettingsView({
                   {localInference && (
                     <TabsTrigger
                       value="local-inference"
-                      className="flex gap-2"
+                      className="flex shrink-0 gap-2"
                       data-testid="settings-local-inference-tab"
                     >
                       <HardDrive className="h-4 w-4" />
@@ -207,20 +209,24 @@ export default function SettingsView({
                   {!tunnelDisabled && (
                     <TabsTrigger
                       value="mesh"
-                      className="flex gap-2"
+                      className="flex shrink-0 gap-2"
                       data-testid="settings-mesh-tab"
                     >
                       <Network className="h-4 w-4" />
                       Mesh
                     </TabsTrigger>
                   )}
-                  <TabsTrigger value="chat" className="flex gap-2" data-testid="settings-chat-tab">
+                  <TabsTrigger
+                    value="chat"
+                    className="flex shrink-0 gap-2"
+                    data-testid="settings-chat-tab"
+                  >
                     <MessageSquare className="h-4 w-4" />
                     {intl.formatMessage(i18n.tabChat)}
                   </TabsTrigger>
                   <TabsTrigger
                     value="sharing"
-                    className="flex gap-2"
+                    className="flex shrink-0 gap-2"
                     data-testid="settings-sharing-tab"
                   >
                     <Share2 className="h-4 w-4" />
@@ -228,7 +234,7 @@ export default function SettingsView({
                   </TabsTrigger>
                   <TabsTrigger
                     value="prompts"
-                    className="flex gap-2"
+                    className="flex shrink-0 gap-2"
                     data-testid="settings-prompts-tab"
                   >
                     <FileText className="h-4 w-4" />
@@ -236,13 +242,17 @@ export default function SettingsView({
                   </TabsTrigger>
                   <TabsTrigger
                     value="keyboard"
-                    className="flex gap-2"
+                    className="flex shrink-0 gap-2"
                     data-testid="settings-keyboard-tab"
                   >
                     <Keyboard className="h-4 w-4" />
                     {intl.formatMessage(i18n.tabKeyboard)}
                   </TabsTrigger>
-                  <TabsTrigger value="app" className="flex gap-2" data-testid="settings-app-tab">
+                  <TabsTrigger
+                    value="app"
+                    className="flex shrink-0 gap-2"
+                    data-testid="settings-app-tab"
+                  >
                     <Monitor className="h-4 w-4" />
                     {intl.formatMessage(i18n.tabApp)}
                   </TabsTrigger>

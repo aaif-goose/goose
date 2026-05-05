@@ -1287,7 +1287,7 @@ export default function ChatInput({
 
   return (
     <div
-      className={`flex flex-col relative h-auto p-4 transition-colors ${
+      className={`flex flex-col relative h-auto p-3 sm:p-4 transition-colors ${
         disableAnimation ? '' : 'page-transition'
       } ${
         isFocused
@@ -1343,7 +1343,9 @@ export default function ChatInput({
               minHeight: `${minTextareaHeight}px`,
               maxHeight: `${maxHeight}px`,
               overflowY: 'auto',
-              paddingRight: dictationProvider ? '180px' : '120px',
+              paddingRight: dictationProvider
+                ? 'clamp(120px, 34vw, 180px)'
+                : 'clamp(76px, 24vw, 120px)',
             }}
             className="w-full outline-none border-none focus:ring-0 bg-transparent px-3 pt-3 pb-1.5 text-sm resize-none text-text-primary placeholder:text-text-secondary"
           />
@@ -1364,7 +1366,7 @@ export default function ChatInput({
                           variant="outline"
                           onClick={() => {}}
                           disabled={true}
-                          className="bg-slate-600 text-white cursor-not-allowed opacity-50 border-slate-600 rounded-full px-6 py-2"
+                          className="bg-slate-600 text-white cursor-not-allowed opacity-50 border-slate-600 rounded-full px-4 py-2 sm:px-6"
                         >
                           <Microphone />
                         </Button>
@@ -1409,7 +1411,7 @@ export default function ChatInput({
                           }
                         }}
                         disabled={isTranscribing}
-                        className={`rounded-full px-6 py-2 ${
+                        className={`rounded-full px-4 py-2 sm:px-6 ${
                           isRecording
                             ? 'bg-red-500 text-white hover:bg-red-600 border-red-500'
                             : isTranscribing
@@ -1439,7 +1441,7 @@ export default function ChatInput({
                 size="sm"
                 shape="round"
                 variant="outline"
-                className="bg-slate-600 text-white hover:bg-slate-700 border-slate-600 rounded-full px-6 py-2"
+                className="bg-slate-600 text-white hover:bg-slate-700 border-slate-600 rounded-full px-4 py-2 sm:px-6"
               >
                 <Stop />
               </Button>
@@ -1453,14 +1455,14 @@ export default function ChatInput({
                       shape="round"
                       variant="outline"
                       disabled={isSubmitButtonDisabled}
-                      className={`rounded-full px-10 py-2 flex items-center gap-2 ${
+                      className={`rounded-full px-4 py-2 flex items-center gap-2 sm:px-10 ${
                         isSubmitButtonDisabled
                           ? 'bg-slate-600 text-white cursor-not-allowed opacity-50 border-slate-600'
                           : 'bg-slate-600 text-white hover:bg-slate-700 border-slate-600 hover:cursor-pointer'
                       }`}
                     >
                       <Send className="w-4 h-4" />
-                      <span className="text-sm">Send</span>
+                      <span className="hidden text-sm sm:inline">Send</span>
                     </Button>
                   </span>
                 </TooltipTrigger>
