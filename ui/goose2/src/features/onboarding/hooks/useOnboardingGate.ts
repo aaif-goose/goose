@@ -74,18 +74,16 @@ export function useOnboardingGate(startupReady: boolean) {
       const models = getModelsForAgent(selectedAgentId);
       const entry = entries.get(selectedAgentId);
       const isReady = !!entry?.configured && models.length > 0;
-      return {
-        hasCompletedOnboarding: !!completion,
-        isUsable: isReady,
-        providerId: selectedAgentId,
-        modelId: models[0]?.id,
-        modelName: models[0]?.name,
-        reason: isReady
-          ? "ready"
-          : completion
-            ? "missing_model"
-            : "not_completed",
-      };
+      if (isReady) {
+        return {
+          hasCompletedOnboarding: !!completion,
+          isUsable: true,
+          providerId: selectedAgentId,
+          modelId: models[0]?.id,
+          modelName: models[0]?.name,
+          reason: "ready",
+        };
+      }
     }
 
     const storedGooseModel = getStoredModelPreference("goose");

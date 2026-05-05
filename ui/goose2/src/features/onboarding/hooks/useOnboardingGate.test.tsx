@@ -135,6 +135,34 @@ describe("useOnboardingGate", () => {
     expect(result.current.readiness.reason).toBe("ready");
   });
 
+  it("falls back to a usable Goose model when the selected ACP agent is unusable", () => {
+    writeCompletedOnboarding("claude-acp", "claude-acp-session");
+    setStoredModelPreference("goose", {
+      providerId: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      modelName: "Claude Sonnet 4.5",
+    });
+    useAgentStore.setState({ selectedProvider: "claude-acp" });
+    useProviderInventoryStore.getState().setEntries([
+      providerEntry({}),
+      providerEntry({
+        providerId: "claude-acp",
+        providerName: "Claude Code",
+        providerType: "Acp",
+        defaultModel: "claude-acp-session",
+        configured: false,
+        models: [],
+      }),
+    ]);
+
+    const { result } = renderHook(() => useOnboardingGate(true));
+
+    expect(result.current.shouldShowOnboarding).toBe(false);
+    expect(result.current.readiness.isUsable).toBe(true);
+    expect(result.current.readiness.providerId).toBe("anthropic");
+    expect(result.current.readiness.reason).toBe("ready");
+  });
+
   it("persists completion from the onboarding flow", () => {
     const { result } = renderHook(() => useOnboardingGate(true));
 

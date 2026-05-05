@@ -406,8 +406,14 @@ fn import_skill_dirs(source_root: &Path, target_root: &Path) -> anyhow::Result<I
     let mut counts = ImportPairCount::default();
     fs::create_dir_all(target_root)?;
     for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() || file_type.is_symlink() {
+            continue;
+        }
         let source = entry.path();
-        if !source.is_dir() || !source.join("SKILL.md").exists() {
+        if !source.join("SKILL.md").exists() {
             continue;
         }
         let Some(name) = source.file_name() else {
@@ -430,9 +436,13 @@ fn copy_dir_recursively(source: &Path, target: &Path) -> anyhow::Result<()> {
         let entry = entry?;
         let source_path = entry.path();
         let target_path = target.join(entry.file_name());
-        if source_path.is_dir() {
+        let file_type = fs::symlink_metadata(&source_path)?.file_type();
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             copy_dir_recursively(&source_path, &target_path)?;
-        } else if source_path.is_file() {
+        } else if file_type.is_file() {
             fs::copy(&source_path, &target_path)?;
         }
     }
@@ -587,5 +597,22 @@ extensions:
             "openai"
         );
         assert!(target.path().join("skills").join("reviewer").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn import_skill_dirs_skips_symlink_cycles() {
+        let source = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+        let skill_dir = source.path().join("reviewer");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(skill_dir.join("SKILL.md"), "# Reviewer").unwrap();
+        std::os::unix::fs::symlink(&skill_dir, skill_dir.join("loop")).unwrap();
+
+        let result = import_skill_dirs(source.path(), target.path()).unwrap();
+
+        assert_eq!(result.imported, 1);
+        assert!(target.path().join("reviewer").join("SKILL.md").exists());
+        assert!(!target.path().join("reviewer").join("loop").exists());
     }
 }
