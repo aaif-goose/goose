@@ -649,6 +649,12 @@ enum PluginCommand {
     /// Install a plugin from a git repository URL
     #[command(about = "Install a plugin from a git repository URL")]
     Install {
+        #[arg(
+            long,
+            help = "Automatically update this plugin before plugin skills are loaded"
+        )]
+        auto_update: bool,
+
         #[arg(help = "URL to a git repository containing a supported plugin")]
         url: String,
     },
@@ -1557,7 +1563,7 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
 
 fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     match command {
-        PluginCommand::Install { url } => handle_plugin_install(&url),
+        PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
         PluginCommand::Update { name } => handle_plugin_update(&name),
     }
 }

@@ -3,12 +3,15 @@ pub mod formats;
 use crate::config::paths::Paths;
 use crate::subprocess::SubprocessExt;
 use anyhow::{anyhow, bail, Result};
+use chrono::{DateTime, Duration, Utc};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tracing::warn;
 
 const INSTALL_METADATA: &str = ".goose-plugin-install.json";
+const AUTO_UPDATE_INTERVAL_HOURS: i64 = 24;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginFormat {
@@ -33,6 +36,17 @@ pub struct PluginInstall {
     pub skills: Vec<ImportedSkill>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct PluginInstallOptions {
+    pub auto_update: bool,
+}
+
+#[derive(Debug)]
+pub struct PluginAutoUpdateResult {
+    pub name: String,
+    pub result: Result<PluginInstall>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportedSkill {
     pub name: String,
@@ -47,7 +61,12 @@ pub struct FormatNotSupported;
 struct InstallMetadata {
     source: String,
     source_type: String,
+    #[allow(dead_code)]
     format: String,
+    #[serde(default)]
+    auto_update: bool,
+    #[serde(default)]
+    last_update_check: Option<DateTime<Utc>>,
 }
 
 pub fn plugin_install_dir() -> PathBuf {
@@ -55,6 +74,15 @@ pub fn plugin_install_dir() -> PathBuf {
 }
 
 pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
+    for update in auto_update_plugins() {
+        if let Err(err) = update.result {
+            warn!(
+                "Failed to auto-update plugin '{}': {}. Using currently installed version.",
+                update.name, err
+            );
+        }
+    }
+
     let plugins_dir = plugin_install_dir();
     let entries = match fs::read_dir(plugins_dir) {
         Ok(entries) => entries,
@@ -69,6 +97,13 @@ pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
 }
 
 pub fn install_plugin(source: &str) -> Result<PluginInstall> {
+    install_plugin_with_options(source, PluginInstallOptions::default())
+}
+
+pub fn install_plugin_with_options(
+    source: &str,
+    options: PluginInstallOptions,
+) -> Result<PluginInstall> {
     if source.trim().is_empty() {
         bail!("Plugin source URL must not be empty");
     }
@@ -77,10 +112,68 @@ pub fn install_plugin(source: &str) -> Result<PluginInstall> {
     let checkout_dir = temp_dir.path().join("checkout");
     clone_git_repo(source, &checkout_dir)?;
 
-    install_from_checkout(source, &checkout_dir)
+    install_from_checkout(
+        source,
+        &checkout_dir,
+        &options,
+        options.auto_update.then_some(Utc::now()),
+    )
 }
 
 pub fn update_plugin(name: &str) -> Result<PluginInstall> {
+    update_plugin_at(Utc::now(), name)
+}
+
+pub fn auto_update_plugins() -> Vec<PluginAutoUpdateResult> {
+    auto_update_plugins_at(Utc::now())
+}
+
+fn auto_update_plugins_at(now: DateTime<Utc>) -> Vec<PluginAutoUpdateResult> {
+    let plugins_dir = plugin_install_dir();
+    let entries = match fs::read_dir(plugins_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let plugin_dir = entry.path();
+            if !plugin_dir.is_dir() {
+                return None;
+            }
+
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let metadata = match read_install_metadata(&plugin_dir) {
+                Ok(metadata) => metadata,
+                Err(_) => return None,
+            };
+
+            if !metadata.auto_update || metadata.source_type != "git" {
+                return None;
+            }
+
+            if !should_auto_update(now, metadata.last_update_check) {
+                return None;
+            }
+
+            let result =
+                mark_last_update_check(&plugin_dir, now).and_then(|_| update_plugin_at(now, &name));
+
+            Some(PluginAutoUpdateResult {
+                name: name.clone(),
+                result,
+            })
+        })
+        .collect()
+}
+
+fn should_auto_update(now: DateTime<Utc>, last_update_check: Option<DateTime<Utc>>) -> bool {
+    last_update_check
+        .is_none_or(|checked_at| now - checked_at >= Duration::hours(AUTO_UPDATE_INTERVAL_HOURS))
+}
+
+fn update_plugin_at(now: DateTime<Utc>, name: &str) -> Result<PluginInstall> {
     if name.trim().is_empty() {
         bail!("Plugin name must not be empty");
     }
@@ -105,7 +198,16 @@ pub fn update_plugin(name: &str) -> Result<PluginInstall> {
     let checkout_dir = temp_dir.path().join("checkout");
     clone_git_repo(&metadata.source, &checkout_dir)?;
 
-    let updated = install_from_checkout_at_root(&metadata.source, &checkout_dir, temp_dir.path())?;
+    let options = PluginInstallOptions {
+        auto_update: metadata.auto_update,
+    };
+    let updated = install_from_checkout_at_root(
+        &metadata.source,
+        &checkout_dir,
+        temp_dir.path(),
+        &options,
+        Some(now),
+    )?;
     if updated.name != name {
         bail!(
             "Updated plugin name '{}' does not match installed plugin '{}'",
@@ -122,8 +224,18 @@ pub fn update_plugin(name: &str) -> Result<PluginInstall> {
     })
 }
 
-fn install_from_checkout(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
-    match formats::gemini::try_install_from_manifest(source, checkout_dir) {
+fn install_from_checkout(
+    source: &str,
+    checkout_dir: &Path,
+    options: &PluginInstallOptions,
+    last_update_check: Option<DateTime<Utc>>,
+) -> Result<PluginInstall> {
+    match formats::gemini::try_install_from_manifest(
+        source,
+        checkout_dir,
+        options,
+        last_update_check,
+    ) {
         Ok(install) => Ok(install),
         Err(err) if err.is::<FormatNotSupported>() => bail!("No supported plugin format found"),
         Err(err) => Err(err),
@@ -134,8 +246,16 @@ fn install_from_checkout_at_root(
     source: &str,
     checkout_dir: &Path,
     install_root: &Path,
+    options: &PluginInstallOptions,
+    last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
-    match formats::gemini::try_install_from_manifest_at_root(source, checkout_dir, install_root) {
+    match formats::gemini::try_install_from_manifest_at_root(
+        source,
+        checkout_dir,
+        install_root,
+        options,
+        last_update_check,
+    ) {
         Ok(install) => Ok(install),
         Err(err) if err.is::<FormatNotSupported>() => bail!("No supported plugin format found"),
         Err(err) => Err(err),
@@ -175,11 +295,29 @@ fn read_install_metadata(directory: &Path) -> Result<InstallMetadata> {
     Ok(serde_json::from_str(&fs::read_to_string(metadata_path)?)?)
 }
 
-fn write_install_metadata(destination: &Path, source: &str, format: &str) -> Result<()> {
+fn mark_last_update_check(directory: &Path, checked_at: DateTime<Utc>) -> Result<()> {
+    let mut metadata = read_install_metadata(directory)?;
+    metadata.last_update_check = Some(checked_at);
+    fs::write(
+        directory.join(INSTALL_METADATA),
+        serde_json::to_string_pretty(&metadata)?,
+    )?;
+    Ok(())
+}
+
+fn write_install_metadata(
+    destination: &Path,
+    source: &str,
+    format: &str,
+    auto_update: bool,
+    last_update_check: Option<DateTime<Utc>>,
+) -> Result<()> {
     let metadata = InstallMetadata {
         source: source.to_string(),
         source_type: "git".to_string(),
         format: format.to_string(),
+        auto_update,
+        last_update_check,
     };
     fs::write(
         destination.join(INSTALL_METADATA),
@@ -256,8 +394,13 @@ mod tests {
         std::env::set_var("GOOSE_PATH_ROOT", root.path());
         let repo = tempfile::tempdir().unwrap();
 
-        let err =
-            install_from_checkout("https://example.invalid/repo.git", repo.path()).unwrap_err();
+        let err = install_from_checkout(
+            "https://example.invalid/repo.git",
+            repo.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap_err();
 
         assert!(err.to_string().contains("No supported plugin format found"));
         std::env::remove_var("GOOSE_PATH_ROOT");
@@ -292,6 +435,107 @@ mod tests {
         );
         assert!(updated.directory.join(".git").is_dir());
         std::env::remove_var("GOOSE_PATH_ROOT");
+    }
+
+    #[test]
+    fn installs_auto_update_metadata() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", root.path());
+        let repo = tempfile::tempdir().unwrap();
+        write_gemini_plugin(repo.path(), "1.0.0", "Audit code");
+        init_git_repo(repo.path());
+        commit_git_repo(repo.path(), "initial");
+
+        let installed = install_plugin_with_options(
+            repo.path().to_str().unwrap(),
+            PluginInstallOptions { auto_update: true },
+        )
+        .unwrap();
+        let metadata = read_install_metadata(&installed.directory).unwrap();
+
+        assert!(metadata.auto_update);
+        assert!(metadata.last_update_check.is_some());
+        std::env::remove_var("GOOSE_PATH_ROOT");
+    }
+
+    #[test]
+    fn auto_update_plugins_updates_enabled_plugins() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", root.path());
+        let repo = tempfile::tempdir().unwrap();
+        write_gemini_plugin(repo.path(), "1.0.0", "Audit code");
+        init_git_repo(repo.path());
+        commit_git_repo(repo.path(), "initial");
+        let source = repo.path().to_path_buf();
+
+        let installed = install_plugin_with_options(
+            source.to_str().unwrap(),
+            PluginInstallOptions { auto_update: true },
+        )
+        .unwrap();
+        let old_check = Utc::now() - Duration::hours(AUTO_UPDATE_INTERVAL_HOURS + 1);
+        mark_last_update_check(&installed.directory, old_check).unwrap();
+
+        write_gemini_plugin(&source, "2.0.0", "Audit updated code");
+        commit_git_repo(&source, "update");
+
+        let updates = auto_update_plugins_at(Utc::now());
+
+        assert_eq!(updates.len(), 1);
+        assert!(updates[0].result.is_ok());
+        assert_eq!(
+            fs::read_to_string(installed.directory.join("skills/audit/SKILL.md")).unwrap(),
+            "---\nname: audit\ndescription: Audit updated code\n---\nDo an audit."
+        );
+        let metadata = read_install_metadata(&installed.directory).unwrap();
+        assert!(metadata.auto_update);
+        assert!(metadata.last_update_check.unwrap() > old_check);
+        std::env::remove_var("GOOSE_PATH_ROOT");
+    }
+
+    #[test]
+    fn auto_update_plugins_skips_recently_checked_plugins() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", root.path());
+        let repo = tempfile::tempdir().unwrap();
+        write_gemini_plugin(repo.path(), "1.0.0", "Audit code");
+        init_git_repo(repo.path());
+        commit_git_repo(repo.path(), "initial");
+        let source = repo.path().to_path_buf();
+
+        let installed = install_plugin_with_options(
+            source.to_str().unwrap(),
+            PluginInstallOptions { auto_update: true },
+        )
+        .unwrap();
+        let recent_check = Utc::now();
+        mark_last_update_check(&installed.directory, recent_check).unwrap();
+
+        write_gemini_plugin(&source, "2.0.0", "Audit updated code");
+        commit_git_repo(&source, "update");
+
+        let updates = auto_update_plugins_at(recent_check + Duration::hours(1));
+
+        assert!(updates.is_empty());
+        assert_eq!(
+            fs::read_to_string(installed.directory.join("skills/audit/SKILL.md")).unwrap(),
+            "---\nname: audit\ndescription: Audit code\n---\nDo an audit."
+        );
+        std::env::remove_var("GOOSE_PATH_ROOT");
+    }
+
+    #[test]
+    fn old_metadata_defaults_to_auto_update_disabled() {
+        let metadata: InstallMetadata = serde_json::from_str(
+            r#"{"source":"/tmp/test-plugin","source_type":"git","format":"gemini"}"#,
+        )
+        .unwrap();
+
+        assert!(!metadata.auto_update);
+        assert!(metadata.last_update_check.is_none());
     }
 
     #[test]

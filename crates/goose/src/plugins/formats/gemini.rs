@@ -1,8 +1,9 @@
 use crate::plugins::{
     copy_dir_all, plugin_install_dir, write_install_metadata, FormatNotSupported, ImportedSkill,
-    PluginFormat, PluginInstall,
+    PluginFormat, PluginInstall, PluginInstallOptions,
 };
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use fs_err as fs;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -20,14 +21,27 @@ struct SkillCandidate {
     relative_directory: PathBuf,
 }
 
-pub fn try_install_from_manifest(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
-    try_install_from_manifest_at_root(source, checkout_dir, &plugin_install_dir())
+pub fn try_install_from_manifest(
+    source: &str,
+    checkout_dir: &Path,
+    options: &PluginInstallOptions,
+    last_update_check: Option<DateTime<Utc>>,
+) -> Result<PluginInstall> {
+    try_install_from_manifest_at_root(
+        source,
+        checkout_dir,
+        &plugin_install_dir(),
+        options,
+        last_update_check,
+    )
 }
 
 pub(in crate::plugins) fn try_install_from_manifest_at_root(
     source: &str,
     checkout_dir: &Path,
     install_root: &Path,
+    options: &PluginInstallOptions,
+    last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
     let manifest_path = checkout_dir.join(MANIFEST);
     if !manifest_path.is_file() {
@@ -58,7 +72,13 @@ pub(in crate::plugins) fn try_install_from_manifest_at_root(
     }
 
     copy_dir_all(checkout_dir, &destination)?;
-    write_install_metadata(&destination, source, "gemini")?;
+    write_install_metadata(
+        &destination,
+        source,
+        "gemini",
+        options.auto_update,
+        last_update_check,
+    )?;
 
     Ok(PluginInstall {
         name: manifest.name,
@@ -174,6 +194,8 @@ mod tests {
             "https://example.invalid/repo.git",
             repo.path(),
             install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
         )
         .unwrap();
 
