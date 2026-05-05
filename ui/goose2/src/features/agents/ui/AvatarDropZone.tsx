@@ -190,9 +190,9 @@ export function AvatarDropZone({
           onDrop={handleDrop}
           onClick={handleClick}
           className={cn(
-            "size-16 overflow-hidden border-2 bg-muted shadow-sm",
+            "size-16 overflow-hidden border-2 bg-muted shadow-none",
             isDragOver
-              ? "scale-105 border-brand bg-brand/10 shadow-md ring-4 ring-brand/20"
+              ? "scale-105 border-brand bg-brand/10 shadow-none ring-4 ring-brand/20"
               : "border-border hover:border-brand/50 hover:bg-brand/10",
             disabled && "opacity-70 cursor-not-allowed",
             isUploading && "animate-pulse",
@@ -220,7 +220,7 @@ export function AvatarDropZone({
             size="icon-xs"
             aria-label={t("avatar.removeAria")}
             onClick={handleClear}
-            className="absolute -top-0.5 -right-0.5 z-10 size-5 bg-background text-muted-foreground shadow-sm hover:text-foreground"
+            className="absolute -top-0.5 -right-0.5 z-10 size-5 bg-background text-muted-foreground shadow-none hover:text-foreground"
           >
             <X className="size-3" />
           </Button>
