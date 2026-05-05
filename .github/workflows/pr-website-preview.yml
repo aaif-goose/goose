@@ -6,33 +6,29 @@ on:
       - opened
       - reopened
       - synchronize
-      - closed
     paths:
       - 'documentation/**'
 
 concurrency:
-  group: pr-preview
-  cancel-in-progress: false
+  group: docs-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - name: Checkout the branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
 
       - name: Setup Node.js
-        if: github.event.action != 'closed'
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
         with:
           node-version: 20
 
       - name: Install dependencies and build docs
         working-directory: ./documentation
-        if: github.event.action != 'closed'
         env:
           INKEEP_API_KEY: ${{ secrets.INKEEP_API_KEY }}
           INKEEP_INTEGRATION_ID: ${{ secrets.INKEEP_INTEGRATION_ID }}
@@ -42,26 +38,6 @@ jobs:
           npm install
           npm run build
 
-      - name: Deploy preview
-        uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9  # v1.8.1
-        if: ${{ github.event.pull_request.head.repo.full_name == 'aaif-goose/goose' }}
-        with:
-          source-dir: documentation/build
-
-  cleanup:
-    runs-on: ubuntu-latest
-    needs: deploy
-    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == 'aaif-goose/goose'
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b  # v7.2.0
-
-      - name: Clean up gh-pages branch
-        run: |
-          bash scripts/clean-gh-pages.sh
-          git push origin $(git rev-parse origin/gh-pages):gh-pages --force
+      - name: Verify docs map was generated
+        working-directory: ./documentation
+        run: ./scripts/verify-build.sh
