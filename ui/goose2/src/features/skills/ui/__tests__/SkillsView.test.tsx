@@ -88,10 +88,11 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
   ) => selector({ projects: mockProjects }),
 }));
 
-const { listSkills, deleteSkill, updateSkill } = (await import(
+const { listSkills, createSkill, deleteSkill, updateSkill } = (await import(
   "../../api/skills"
 )) as unknown as {
   listSkills: ReturnType<typeof vi.fn>;
+  createSkill: ReturnType<typeof vi.fn>;
   deleteSkill: ReturnType<typeof vi.fn>;
   updateSkill: ReturnType<typeof vi.fn>;
 };
@@ -401,6 +402,28 @@ describe("SkillsView", () => {
       expect.objectContaining({ name: "code-review" }),
       null,
     );
+  });
+
+  it("duplicates project skills into the same project scope", async () => {
+    listSkills.mockResolvedValue(mockSkills);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("test-writer");
+
+    await user.click(
+      screen.getByRole("button", { name: "Options for test-writer" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+
+    await waitFor(() => {
+      expect(createSkill).toHaveBeenCalledWith(
+        "test-writer-copy",
+        "Writes tests",
+        "Write tests...",
+        { projectDir: "/tmp/alpha" },
+      );
+    });
   });
 
   it("returns to the list without losing filters", async () => {

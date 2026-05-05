@@ -115,7 +115,18 @@ fn is_shareable_skill_file(path: &Path) -> bool {
             || has_sequence_with_remaining(path, &[".goose", "skills"], 2)
             || has_sequence_with_remaining(path, &[".claude", "skills"], 2)
             || has_sequence_with_remaining(path, &[".config", "agents", "skills"], 2)
-            || has_sequence_with_remaining(path, &["goose", "skills"], 2))
+            || has_sequence_with_remaining(path, &["goose", "skills"], 2)
+            || is_plugin_skill_file(path))
+}
+
+fn is_plugin_skill_file(path: &Path) -> bool {
+    let components = path_components(path);
+    components.windows(6).enumerate().any(|(index, window)| {
+        window[0] == "goose"
+            && window[1] == "plugins"
+            && window[3] == "skills"
+            && components.len() == index + 6
+    })
 }
 
 fn validate_shareable_source_file(path: &Path) -> Result<PathBuf, String> {
@@ -138,6 +149,7 @@ fn validate_shareable_source_file(path: &Path) -> Result<PathBuf, String> {
 
 #[tauri::command]
 pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let source = validate_shareable_source_file(Path::new(&path))?;
 
     #[cfg(target_os = "macos")]
@@ -194,6 +206,7 @@ pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        validate_shareable_source_file(Path::new(&path))?;
         Err("Copy file is not supported on this platform yet.".to_string())
     }
 }

@@ -288,17 +288,30 @@ fn shareable_source_validation_accepts_agent_and_skill_files() {
         .join("skills")
         .join("legacy")
         .join("SKILL.md");
+    let plugin_skill_file = dir
+        .path()
+        .join("Block")
+        .join("goose")
+        .join("plugins")
+        .join("plugin-a")
+        .join("skills")
+        .join("plugin-review")
+        .join("SKILL.md");
     fs::create_dir_all(agent_file.parent().expect("agent parent")).expect("agent dir");
     fs::create_dir_all(skill_file.parent().expect("skill parent")).expect("skill dir");
     fs::create_dir_all(config_skill_file.parent().expect("config skill parent"))
         .expect("config skill dir");
+    fs::create_dir_all(plugin_skill_file.parent().expect("plugin skill parent"))
+        .expect("plugin skill dir");
     fs::write(&agent_file, "---\nname: Helper\n---\n").expect("agent file");
     fs::write(&skill_file, "---\nname: review\n---\n").expect("skill file");
     fs::write(&config_skill_file, "---\nname: legacy\n---\n").expect("config skill file");
+    fs::write(&plugin_skill_file, "---\nname: plugin-review\n---\n").expect("plugin skill file");
 
     assert!(validate_shareable_source_file(&agent_file).is_ok());
     assert!(validate_shareable_source_file(&skill_file).is_ok());
     assert!(validate_shareable_source_file(&config_skill_file).is_ok());
+    assert!(validate_shareable_source_file(&plugin_skill_file).is_ok());
 }
 
 #[test]

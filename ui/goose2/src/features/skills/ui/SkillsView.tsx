@@ -282,7 +282,14 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
       );
 
       try {
-        await createSkill(duplicateName, skill.description, skill.instructions);
+        await createSkill(
+          duplicateName,
+          skill.description,
+          skill.instructions,
+          {
+            projectDir: skill.projectLinks[0]?.workingDir,
+          },
+        );
         const refreshedSkills = await loadSkills();
         if (refreshedSkills) {
           toast.success(t("view.duplicated", { name: duplicateName }));

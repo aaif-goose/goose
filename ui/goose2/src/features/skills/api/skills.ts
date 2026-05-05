@@ -78,14 +78,17 @@ export async function createSkill(
   name: string,
   description: string,
   instructions: string,
+  options: { projectDir?: string | null } = {},
 ): Promise<void> {
   const client = await getClient();
+  const projectDir = options.projectDir?.trim();
   await client.goose.GooseSourcesCreate({
     type: SKILL_SOURCE_TYPE,
     name,
     description,
     content: instructions,
-    global: true,
+    global: !projectDir,
+    ...(projectDir ? { projectDir } : {}),
   });
 }
 
