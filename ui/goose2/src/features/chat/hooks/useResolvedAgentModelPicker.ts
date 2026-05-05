@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AcpProvider } from "@/shared/api/acp";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
-import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
+import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { getClient } from "@/shared/api/acpConnection";
 import { acpSetModel } from "@/shared/api/acp";
 import {
@@ -56,16 +57,29 @@ export function useResolvedAgentModelPicker({
   setGlobalSelectedProvider,
   prepareSelectedProvider,
 }: UseResolvedAgentModelPickerOptions) {
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const { getEntry: getProviderInventoryEntry } = useProviderInventory();
   const [gooseDefaultSelection, setGooseDefaultSelection] =
     useState<PreferredModelSelection | null>(null);
 
-  const selectedAgentId =
-    resolveAgentProviderCatalogIdStrict(selectedProvider) ?? "goose";
-  const concreteSelectedProviderId =
-    resolveAgentProviderCatalogIdStrict(selectedProvider) == null
-      ? selectedProvider
-      : null;
+  const selectedAgentId = useMemo(
+    () =>
+      resolveAgentProviderCatalogIdStrictFromEntries(
+        catalogEntries,
+        selectedProvider,
+      ) ?? "goose",
+    [catalogEntries, selectedProvider],
+  );
+  const concreteSelectedProviderId = useMemo(
+    () =>
+      resolveAgentProviderCatalogIdStrictFromEntries(
+        catalogEntries,
+        selectedProvider,
+      ) == null
+        ? selectedProvider
+        : null,
+    [catalogEntries, selectedProvider],
+  );
   const storedModelPreference = useMemo(
     () => getStoredModelPreference(selectedAgentId),
     [selectedAgentId],
@@ -178,7 +192,10 @@ export function useResolvedAgentModelPicker({
     providers,
     selectedProvider,
     onProviderSelected: (providerId) => {
-      const requestedAgentId = resolveAgentProviderCatalogIdStrict(providerId);
+      const requestedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+        catalogEntries,
+        providerId,
+      );
       const preferredModelSelection = getPreferredSelectionForAgent(
         requestedAgentId ?? "goose",
         providerId,

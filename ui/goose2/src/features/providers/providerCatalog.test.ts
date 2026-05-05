@@ -26,7 +26,7 @@ const catalogEntries: ProviderCatalogEntry[] = [
     setupMethod: "cli_auth",
     binaryName: "claude-agent-acp",
     tier: "promoted",
-    aliases: ["claude-code", "Claude Code", "Claude Code (ACP)"],
+    aliases: ["claude-acp", "claude_code", "claude"],
     supportsInstall: true,
     supportsAuth: true,
     supportsAuthStatus: true,
@@ -39,7 +39,7 @@ const catalogEntries: ProviderCatalogEntry[] = [
     setupMethod: "cli_auth",
     binaryName: "codex-acp",
     tier: "promoted",
-    aliases: ["codex-cli", "Codex CLI"],
+    aliases: ["codex-acp", "codex_cli", "codex"],
   },
   {
     id: "ollama",
@@ -67,9 +67,11 @@ describe("provider catalog selectors", () => {
     useProviderCatalogStore.getState().reset();
   });
 
-  it("returns empty catalog data before the cache is loaded", () => {
+  it("returns the Goose fallback before the cache is loaded", () => {
     expect(getCatalogEntry("ollama")).toBeUndefined();
-    expect(getAgentProviders()).toEqual([]);
+    expect(getAgentProviders().map((provider) => provider.id)).toEqual([
+      "goose",
+    ]);
     expect(getModelProviders()).toEqual([]);
   });
 
@@ -115,12 +117,23 @@ describe("provider catalog selectors", () => {
     ).toBe("claude-acp");
   });
 
-  it("does not use static fuzzy agent aliases", () => {
+  it("matches suffixed agent labels from backend aliases", () => {
     useProviderCatalogStore.getState().setEntries(catalogEntries);
 
     expect(resolveAgentProviderCatalogId("custom-id", "Codex CLI (ACP)")).toBe(
-      null,
+      "codex-acp",
     );
+  });
+
+  it("does not match aliases embedded in unrelated labels", () => {
+    useProviderCatalogStore.getState().setEntries(catalogEntries);
+
+    expect(
+      resolveAgentProviderCatalogId("custom-id", "Acme Claude Tools"),
+    ).toBeNull();
+    expect(
+      resolveAgentProviderCatalogId("custom-id", "Codex compatible API"),
+    ).toBeNull();
   });
 
   it("does not treat model providers as agents", () => {

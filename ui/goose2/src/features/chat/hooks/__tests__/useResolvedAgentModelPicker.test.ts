@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { useResolvedAgentModelPicker } from "../useResolvedAgentModelPicker";
 
 const mockUseProviderInventory = vi.fn();
@@ -23,6 +24,35 @@ describe("useResolvedAgentModelPicker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    useProviderCatalogStore.getState().reset();
+    useProviderCatalogStore.getState().setEntries([
+      {
+        id: "codex-acp",
+        displayName: "Codex CLI",
+        category: "agent",
+        description: "Codex CLI",
+        setupMethod: "cli_auth",
+        tier: "promoted",
+        aliases: ["codex-acp", "codex_cli", "codex"],
+      },
+      {
+        id: "claude-acp",
+        displayName: "Claude Code",
+        category: "agent",
+        description: "Claude Code",
+        setupMethod: "cli_auth",
+        tier: "promoted",
+        aliases: ["claude-acp", "claude_code", "claude"],
+      },
+      {
+        id: "openai",
+        displayName: "OpenAI",
+        category: "model",
+        description: "OpenAI",
+        setupMethod: "single_api_key",
+        tier: "promoted",
+      },
+    ]);
 
     mockGetClient.mockResolvedValue({
       goose: {

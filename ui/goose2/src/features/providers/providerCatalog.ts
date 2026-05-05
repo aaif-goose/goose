@@ -1,13 +1,8 @@
 import type { ProviderCatalogEntry } from "@/shared/types/providers";
 import { useProviderCatalogStore } from "./stores/providerCatalogStore";
+import { normalizeProviderKey } from "./lib/providerKey";
 
-export function normalizeProviderKey(value: string): string {
-  return value
-    .toLowerCase()
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .join("_");
-}
+export { normalizeProviderKey };
 
 export function getProviderCatalog(): ProviderCatalogEntry[] {
   return useProviderCatalogStore.getState().entries;
@@ -20,57 +15,118 @@ export function getCatalogEntry(
 }
 
 export function getAgentProviders(): ProviderCatalogEntry[] {
-  return getProviderCatalog().filter(
-    (provider) => provider.category === "agent",
-  );
+  return getAgentProvidersFromEntries(getProviderCatalog());
 }
 
 export function getModelProviders(): ProviderCatalogEntry[] {
-  return getProviderCatalog().filter(
-    (provider) => provider.category === "model",
-  );
+  return getModelProvidersFromEntries(getProviderCatalog());
+}
+
+export function getCatalogEntryFromEntries(
+  entries: ProviderCatalogEntry[],
+  providerId: string,
+): ProviderCatalogEntry | undefined {
+  return entries.find((provider) => provider.id === providerId);
+}
+
+export function getAgentProvidersFromEntries(
+  entries: ProviderCatalogEntry[],
+): ProviderCatalogEntry[] {
+  return entries.filter((provider) => provider.category === "agent");
+}
+
+export function getModelProvidersFromEntries(
+  entries: ProviderCatalogEntry[],
+): ProviderCatalogEntry[] {
+  return entries.filter((provider) => provider.category === "model");
+}
+
+export function resolveAgentProviderCatalogIdStrictFromEntries(
+  entries: ProviderCatalogEntry[],
+  providerId: string,
+): string | null {
+  const directMatch = entries.find((provider) => provider.id === providerId);
+  if (directMatch?.category === "agent") {
+    return directMatch.id;
+  }
+
+  const normalized = normalizeProviderKey(providerId);
+  for (const provider of entries) {
+    if (provider.category !== "agent") {
+      continue;
+    }
+    const aliases = [provider.id, ...(provider.aliases ?? [])];
+    if (aliases.some((alias) => normalizeProviderKey(alias) === normalized)) {
+      return provider.id;
+    }
+  }
+
+  return null;
 }
 
 export function resolveAgentProviderCatalogIdStrict(
   providerId: string,
 ): string | null {
-  if (providerId === "goose") {
-    return "goose";
+  return resolveAgentProviderCatalogIdStrictFromEntries(
+    getProviderCatalog(),
+    providerId,
+  );
+}
+
+function normalizedAliasMatchesCandidate(alias: string, candidate: string) {
+  const normalizedAlias = normalizeProviderKey(alias);
+  if (!normalizedAlias) {
+    return false;
   }
 
-  const directMatch = getAgentProviders().find(
-    (provider) => provider.id === providerId,
+  const candidates = new Set([candidate]);
+  if (candidate.endsWith("_acp")) {
+    candidates.add(candidate.slice(0, -"_acp".length));
+  }
+
+  return candidates.has(normalizedAlias);
+}
+
+export function resolveAgentProviderCatalogIdFromEntries(
+  entries: ProviderCatalogEntry[],
+  providerId: string,
+  label?: string,
+): string | null {
+  const directMatch = resolveAgentProviderCatalogIdStrictFromEntries(
+    entries,
+    providerId,
   );
   if (directMatch) {
-    return directMatch.id;
+    return directMatch;
   }
 
-  const normalized = normalizeProviderKey(providerId);
-  return (
-    useProviderCatalogStore.getState().agentAliasMap.get(normalized) ?? null
-  );
+  const normalizedCandidates = [providerId, label ?? ""]
+    .map((value) => normalizeProviderKey(value))
+    .filter(Boolean);
+
+  for (const candidate of normalizedCandidates) {
+    for (const provider of entries) {
+      if (provider.category !== "agent") {
+        continue;
+      }
+      for (const alias of [provider.id, ...(provider.aliases ?? [])]) {
+        if (normalizedAliasMatchesCandidate(alias, candidate)) {
+          return provider.id;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 export function resolveAgentProviderCatalogId(
   providerId: string,
   label?: string,
 ): string | null {
-  const directMatch = resolveAgentProviderCatalogIdStrict(providerId);
-  if (directMatch) {
-    return directMatch;
-  }
-
-  const aliasMap = useProviderCatalogStore.getState().agentAliasMap;
-  const normalizedCandidates = [providerId, label ?? ""]
-    .map((value) => normalizeProviderKey(value))
-    .filter(Boolean);
-
-  for (const candidate of normalizedCandidates) {
-    const aliasMatch = aliasMap.get(candidate);
-    if (aliasMatch) {
-      return aliasMatch;
-    }
-  }
-
-  return null;
+  return resolveAgentProviderCatalogIdFromEntries(
+    getProviderCatalog(),
+    providerId,
+    label,
+  );
 }

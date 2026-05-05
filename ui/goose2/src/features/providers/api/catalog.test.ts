@@ -18,7 +18,7 @@ describe("provider setup catalog API", () => {
     vi.clearAllMocks();
     mocks.getClient.mockResolvedValue({
       goose: {
-        GooseProvidersCatalogList: mocks.catalogList,
+        GooseProvidersSetupCatalogList: mocks.catalogList,
       },
     });
   });
@@ -28,23 +28,18 @@ describe("provider setup catalog API", () => {
       mapProviderCatalogEntryDto({
         providerId: "claude-acp",
         name: "Claude Code",
-        format: "",
-        apiUrl: "",
-        modelCount: 0,
         docUrl: "https://docs.anthropic.com/en/docs/claude-code",
-        envVar: "",
-        kind: "setup",
         category: "agent",
         description: "Anthropic's agentic coding tool",
         setupMethod: "cli_auth",
         binaryName: "claude-agent-acp",
         tier: "promoted",
         showOnlyWhenInstalled: false,
-        aliases: ["claude-code", "Claude Code"],
+        aliases: ["claude-acp", "claude_code", "claude"],
         supportsInstall: true,
         supportsAuth: true,
         supportsAuthStatus: true,
-      } as unknown as Parameters<typeof mapProviderCatalogEntryDto>[0]),
+      }),
     ).toEqual({
       id: "claude-acp",
       displayName: "Claude Code",
@@ -55,7 +50,7 @@ describe("provider setup catalog API", () => {
       docsUrl: "https://docs.anthropic.com/en/docs/claude-code",
       tier: "promoted",
       showOnlyWhenInstalled: false,
-      aliases: ["claude-code", "Claude Code"],
+      aliases: ["claude-acp", "claude_code", "claude"],
       supportsInstall: true,
       supportsAuth: true,
       supportsAuthStatus: true,
@@ -68,12 +63,6 @@ describe("provider setup catalog API", () => {
         {
           providerId: "ollama",
           name: "Ollama",
-          format: "",
-          apiUrl: "",
-          modelCount: 0,
-          docUrl: "",
-          envVar: "",
-          kind: "setup",
           category: "model",
           description: "Run local models",
           setupMethod: "config_fields",
@@ -86,6 +75,10 @@ describe("provider setup catalog API", () => {
             },
           ],
           tier: "promoted",
+          showOnlyWhenInstalled: false,
+          supportsInstall: false,
+          supportsAuth: false,
+          supportsAuthStatus: false,
         },
       ],
     });
@@ -106,26 +99,12 @@ describe("provider setup catalog API", () => {
           },
         ],
         tier: "promoted",
+        showOnlyWhenInstalled: false,
+        supportsInstall: false,
+        supportsAuth: false,
+        supportsAuthStatus: false,
       },
     ]);
-    expect(mocks.catalogList).toHaveBeenCalledWith({ kind: "setup" });
-  });
-
-  it("ignores non-setup catalog entries without a provider category", async () => {
-    mocks.catalogList.mockResolvedValue({
-      providers: [
-        {
-          providerId: "acme",
-          name: "Acme AI",
-          format: "openai",
-          apiUrl: "https://api.acme.test/v1",
-          modelCount: 1,
-          docUrl: "https://acme.test/docs",
-          envVar: "ACME_API_KEY",
-        },
-      ],
-    });
-
-    await expect(listProviderSetupCatalog()).resolves.toEqual([]);
+    expect(mocks.catalogList).toHaveBeenCalledWith({});
   });
 });

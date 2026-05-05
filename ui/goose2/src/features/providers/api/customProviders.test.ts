@@ -70,10 +70,7 @@ describe("custom provider API", () => {
       providers,
     );
 
-    expect(mocks.catalogList).toHaveBeenCalledWith({
-      kind: "custom_template",
-      format: "openai",
-    });
+    expect(mocks.catalogList).toHaveBeenCalledWith({ format: "openai" });
   });
 
   it("reads a catalog template through the planned typed ACP method", async () => {

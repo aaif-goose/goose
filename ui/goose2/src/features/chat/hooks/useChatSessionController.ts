@@ -10,7 +10,8 @@ import { useChatSessionStore } from "../stores/chatSessionStore";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProviderSelection } from "@/features/agents/hooks/useProviderSelection";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
-import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
+import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
@@ -64,6 +65,7 @@ export function useChatSessionController({
   );
   const projects = useProjectStore((s) => s.projects);
   const projectsLoading = useProjectStore((s) => s.loading);
+  const catalogEntries = useProviderCatalogStore((s) => s.entries);
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>();
   const [pendingProjectId, setPendingProjectId] = useState<string | null>();
   const [pendingProviderId, setPendingProviderId] = useState<string>();
@@ -448,10 +450,13 @@ export function useChatSessionController({
       }
 
       return (
-        resolveAgentProviderCatalogIdStrict(targetPersona.provider) ?? "goose"
+        resolveAgentProviderCatalogIdStrictFromEntries(
+          catalogEntries,
+          targetPersona.provider,
+        ) ?? "goose"
       );
     },
-    [personas, selectedAgentId],
+    [catalogEntries, personas, selectedAgentId],
   );
   const canAutoCompactBeforeSend = useCallback(
     (overridePersona?: { id: string; name?: string }) => {
@@ -721,7 +726,8 @@ export function useChatSessionController({
           }
           if (pendingModelSelection?.source === "explicit") {
             const agentId =
-              resolveAgentProviderCatalogIdStrict(
+              resolveAgentProviderCatalogIdStrictFromEntries(
+                catalogEntries,
                 pendingModelSelection.providerId ?? nextProviderId,
               ) ?? "goose";
             setStoredModelPreference(agentId, {
@@ -764,6 +770,7 @@ export function useChatSessionController({
     };
   }, [
     activeWorkspace?.path,
+    catalogEntries,
     pendingDraftValue,
     pendingSkillDrafts,
     pendingModelSelection,

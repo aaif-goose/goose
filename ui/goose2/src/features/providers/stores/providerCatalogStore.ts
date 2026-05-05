@@ -1,12 +1,24 @@
 import { create } from "zustand";
 import type { ProviderCatalogEntry } from "@/shared/types/providers";
+import { normalizeProviderKey } from "../lib/providerKey";
 
-function normalizeProviderKey(value: string): string {
-  return value
-    .toLowerCase()
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .join("_");
+export const GOOSE_PROVIDER_CATALOG_ENTRY: ProviderCatalogEntry = {
+  id: "goose",
+  displayName: "Goose",
+  category: "agent",
+  description: "Block's open-source coding agent",
+  setupMethod: "none",
+  tier: "promoted",
+  aliases: ["goose"],
+};
+
+function withGooseFallback(
+  entries: ProviderCatalogEntry[],
+): ProviderCatalogEntry[] {
+  if (entries.some((entry) => entry.id === GOOSE_PROVIDER_CATALOG_ENTRY.id)) {
+    return entries;
+  }
+  return [GOOSE_PROVIDER_CATALOG_ENTRY, ...entries];
 }
 
 function buildEntriesById(
@@ -57,9 +69,9 @@ export type ProviderCatalogStore = ProviderCatalogState &
 let loadPromise: Promise<ProviderCatalogEntry[]> | null = null;
 
 const EMPTY_STATE: ProviderCatalogState = {
-  entries: [],
-  entriesById: new Map(),
-  agentAliasMap: new Map(),
+  entries: [GOOSE_PROVIDER_CATALOG_ENTRY],
+  entriesById: buildEntriesById([GOOSE_PROVIDER_CATALOG_ENTRY]),
+  agentAliasMap: buildAgentAliasMap([GOOSE_PROVIDER_CATALOG_ENTRY]),
   loading: false,
   loaded: false,
   error: null,
@@ -100,10 +112,11 @@ export const useProviderCatalogStore = create<ProviderCatalogStore>(
     },
 
     setEntries: (entries) => {
+      const nextEntries = withGooseFallback(entries);
       set({
-        entries,
-        entriesById: buildEntriesById(entries),
-        agentAliasMap: buildAgentAliasMap(entries),
+        entries: nextEntries,
+        entriesById: buildEntriesById(nextEntries),
+        agentAliasMap: buildAgentAliasMap(nextEntries),
         loading: false,
         loaded: true,
         error: null,
@@ -114,8 +127,9 @@ export const useProviderCatalogStore = create<ProviderCatalogStore>(
       loadPromise = null;
       set({
         ...EMPTY_STATE,
-        entriesById: new Map(),
-        agentAliasMap: new Map(),
+        entries: [GOOSE_PROVIDER_CATALOG_ENTRY],
+        entriesById: buildEntriesById([GOOSE_PROVIDER_CATALOG_ENTRY]),
+        agentAliasMap: buildAgentAliasMap([GOOSE_PROVIDER_CATALOG_ENTRY]),
       });
     },
   }),

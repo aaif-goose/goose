@@ -5,9 +5,10 @@ import type {
   ProviderInventoryEntryDto,
   ProviderInventoryModelDto,
 } from "@aaif/goose-sdk";
-import { getModelProviders } from "../providerCatalog";
+import { getModelProvidersFromEntries } from "../providerCatalog";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
 import { filterModelProvidersForDistro } from "../distroProviderConstraints";
+import { useProviderCatalogStore } from "../stores/providerCatalogStore";
 
 function isConfiguredGooseModelProvider(
   entry: ProviderInventoryEntryDto,
@@ -44,6 +45,7 @@ export function useProviderInventory() {
   const entries = useProviderInventoryStore((s) => s.entries);
   const loading = useProviderInventoryStore((s) => s.loading);
   const distro = useDistroStore((s) => s.manifest);
+  const catalogEntries = useProviderCatalogStore((s) => s.entries);
 
   const getEntry = useCallback(
     (providerId: string) => entries.get(providerId),
@@ -62,11 +64,12 @@ export function useProviderInventory() {
   const modelProviderIds = useMemo(
     () =>
       new Set(
-        filterModelProvidersForDistro(getModelProviders(), distro).map(
-          (provider) => provider.id,
-        ),
+        filterModelProvidersForDistro(
+          getModelProvidersFromEntries(catalogEntries),
+          distro,
+        ).map((provider) => provider.id),
       ),
-    [distro],
+    [catalogEntries, distro],
   );
 
   const configuredModelProviderEntries = useMemo(

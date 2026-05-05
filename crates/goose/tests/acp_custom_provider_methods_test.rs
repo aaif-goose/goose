@@ -74,8 +74,8 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
 
         let setup_catalog = send_custom(
             conn.cx(),
-            "_goose/providers/catalog/list",
-            serde_json::json!({ "kind": "setup" }),
+            "_goose/providers/setup/catalog/list",
+            serde_json::json!({}),
         )
         .await
         .expect("provider setup catalog list should succeed");

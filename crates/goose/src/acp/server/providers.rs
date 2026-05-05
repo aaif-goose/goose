@@ -123,18 +123,6 @@ fn provider_catalog_entry_to_dto(
         model_count: entry.model_count,
         doc_url: entry.doc_url,
         env_var: entry.env_var,
-        category: None,
-        description: None,
-        setup_method: None,
-        native_connect_query: None,
-        fields: Vec::new(),
-        binary_name: None,
-        tier: None,
-        show_only_when_installed: None,
-        aliases: Vec::new(),
-        supports_install: None,
-        supports_auth: None,
-        supports_auth_status: None,
     }
 }
 
@@ -187,26 +175,13 @@ fn provider_setup_tier_to_dto(
 
 fn provider_setup_entry_to_dto(
     entry: crate::providers::catalog::ProviderSetupCatalogEntry,
-) -> ProviderCatalogEntryDto {
-    let env_var = entry
-        .fields
-        .iter()
-        .find(|field| field.secret)
-        .or_else(|| entry.fields.first())
-        .map(|field| field.key.clone())
-        .unwrap_or_default();
-
-    ProviderCatalogEntryDto {
+) -> ProviderSetupCatalogEntryDto {
+    ProviderSetupCatalogEntryDto {
         provider_id: entry.provider_id,
         name: entry.display_name,
-        format: String::new(),
-        api_url: String::new(),
-        model_count: 0,
-        doc_url: entry.docs_url.unwrap_or_default(),
-        env_var,
-        category: Some(provider_setup_category_to_dto(entry.category)),
-        description: Some(entry.description),
-        setup_method: Some(provider_setup_method_to_dto(entry.setup_method)),
+        category: provider_setup_category_to_dto(entry.category),
+        description: entry.description,
+        setup_method: provider_setup_method_to_dto(entry.setup_method),
         native_connect_query: entry.native_connect_query,
         fields: entry
             .fields
@@ -221,12 +196,13 @@ fn provider_setup_entry_to_dto(
             })
             .collect(),
         binary_name: entry.binary_name,
-        tier: Some(provider_setup_tier_to_dto(entry.tier)),
-        show_only_when_installed: Some(entry.show_only_when_installed),
+        doc_url: entry.docs_url,
+        tier: provider_setup_tier_to_dto(entry.tier),
+        show_only_when_installed: entry.show_only_when_installed,
         aliases: entry.aliases,
-        supports_install: Some(entry.setup_capabilities.install),
-        supports_auth: Some(entry.setup_capabilities.auth),
-        supports_auth_status: Some(entry.setup_capabilities.auth_status),
+        supports_install: entry.setup_capabilities.install,
+        supports_auth: entry.setup_capabilities.auth,
+        supports_auth_status: entry.setup_capabilities.auth_status,
     }
 }
 
@@ -455,15 +431,6 @@ impl GooseAcpAgent {
         &self,
         req: ProviderCatalogListRequest,
     ) -> Result<ProviderCatalogListResponse, sacp::Error> {
-        if matches!(req.kind, Some(ProviderCatalogKindDto::Setup)) {
-            let providers = crate::providers::catalog::get_setup_catalog_entries()
-                .await
-                .into_iter()
-                .map(provider_setup_entry_to_dto)
-                .collect();
-            return Ok(ProviderCatalogListResponse { providers });
-        }
-
         let formats = match req.format {
             Some(format) => vec![format
                 .parse::<crate::providers::catalog::ProviderFormat>()
@@ -491,6 +458,18 @@ impl GooseAcpAgent {
         });
 
         Ok(ProviderCatalogListResponse { providers })
+    }
+
+    pub(super) async fn on_list_provider_setup_catalog(
+        &self,
+        _req: ProviderSetupCatalogListRequest,
+    ) -> Result<ProviderSetupCatalogListResponse, sacp::Error> {
+        let providers = crate::providers::catalog::get_setup_catalog_entries()
+            .await
+            .into_iter()
+            .map(provider_setup_entry_to_dto)
+            .collect();
+        Ok(ProviderSetupCatalogListResponse { providers })
     }
 
     pub(super) async fn on_get_provider_catalog_template(

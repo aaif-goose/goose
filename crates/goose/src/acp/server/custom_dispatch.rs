@@ -120,6 +120,14 @@ impl GooseAcpAgent {
         self.on_list_provider_catalog(req).await
     }
 
+    #[custom_method(ProviderSetupCatalogListRequest)]
+    async fn dispatch_list_provider_setup_catalog(
+        &self,
+        req: ProviderSetupCatalogListRequest,
+    ) -> Result<ProviderSetupCatalogListResponse, sacp::Error> {
+        self.on_list_provider_setup_catalog(req).await
+    }
+
     #[custom_method(ProviderCatalogTemplateRequest)]
     async fn dispatch_get_provider_catalog_template(
         &self,

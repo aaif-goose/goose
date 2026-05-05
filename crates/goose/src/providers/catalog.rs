@@ -190,6 +190,8 @@ struct CuratedSetupMetadata {
     binary_name: Option<&'static str>,
     setup_capabilities: ProviderSetupCapabilities,
     show_only_when_installed: bool,
+    synthetic: bool,
+    secret_field_default: Option<CuratedFieldMetadata>,
     field_overrides: &'static [CuratedFieldMetadata],
 }
 
@@ -198,6 +200,7 @@ struct CuratedFieldMetadata {
     key: &'static str,
     label: &'static str,
     placeholder: Option<&'static str>,
+    default_value: Option<&'static str>,
 }
 
 const fn setup_capabilities(
@@ -212,11 +215,12 @@ const fn setup_capabilities(
     }
 }
 
-const API_KEY_FIELD: &[CuratedFieldMetadata] = &[CuratedFieldMetadata {
-    key: "__api_key__",
+const API_KEY_FIELD: CuratedFieldMetadata = CuratedFieldMetadata {
+    key: "",
     label: "API Key",
     placeholder: Some("Paste your API key"),
-}];
+    default_value: None,
+};
 
 const SETUP_METADATA: &[CuratedSetupMetadata] = &[
     CuratedSetupMetadata {
@@ -232,6 +236,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: true,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -247,6 +253,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: Some("claude-agent-acp"),
         setup_capabilities: setup_capabilities(true, true, true),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -262,6 +270,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: Some("codex-acp"),
         setup_capabilities: setup_capabilities(true, true, true),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -277,6 +287,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: Some("copilot"),
         setup_capabilities: setup_capabilities(true, true, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -292,6 +304,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: Some("amp-acp"),
         setup_capabilities: setup_capabilities(true, true, true),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -307,6 +321,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: Some("cursor-agent"),
         setup_capabilities: setup_capabilities(true, true, true),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -322,6 +338,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: Some("pi-acp"),
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: true,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -337,7 +355,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "google",
@@ -352,7 +372,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "chatgpt_codex",
@@ -367,6 +389,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, true, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -382,7 +406,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "mistral",
@@ -397,7 +423,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "ollama",
@@ -412,10 +440,13 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[CuratedFieldMetadata {
             key: "OLLAMA_HOST",
             label: "Host",
             placeholder: Some("localhost or http://localhost:11434"),
+            default_value: Some("http://localhost:11434"),
         }],
     },
     CuratedSetupMetadata {
@@ -431,7 +462,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "databricks",
@@ -446,16 +479,20 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, true, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[
             CuratedFieldMetadata {
                 key: "DATABRICKS_HOST",
                 label: "Host URL",
                 placeholder: Some("https://dbc-...cloud.databricks.com"),
+                default_value: None,
             },
             CuratedFieldMetadata {
                 key: "DATABRICKS_TOKEN",
                 label: "Access Token",
                 placeholder: Some("Paste your access token"),
+                default_value: None,
             },
         ],
     },
@@ -472,6 +509,8 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, true, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[],
     },
     CuratedSetupMetadata {
@@ -487,7 +526,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "xai",
@@ -502,7 +543,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "groq",
@@ -517,7 +560,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "azure_openai",
@@ -532,21 +577,26 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[
             CuratedFieldMetadata {
                 key: "AZURE_OPENAI_ENDPOINT",
                 label: "Endpoint",
                 placeholder: Some("https://your-resource.openai.azure.com"),
+                default_value: None,
             },
             CuratedFieldMetadata {
                 key: "AZURE_OPENAI_DEPLOYMENT_NAME",
                 label: "Deployment",
                 placeholder: Some("gpt-4o"),
+                default_value: None,
             },
             CuratedFieldMetadata {
                 key: "AZURE_OPENAI_API_KEY",
                 label: "API Key",
                 placeholder: Some("Paste your API key"),
+                default_value: None,
             },
         ],
     },
@@ -563,10 +613,13 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[CuratedFieldMetadata {
             key: "AWS_REGION",
             label: "AWS Region",
             placeholder: Some("us-west-2"),
+            default_value: None,
         }],
     },
     CuratedSetupMetadata {
@@ -582,16 +635,20 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[
             CuratedFieldMetadata {
                 key: "GCP_PROJECT_ID",
                 label: "Project ID",
                 placeholder: Some("my-gcp-project"),
+                default_value: None,
             },
             CuratedFieldMetadata {
                 key: "GCP_LOCATION",
                 label: "Location",
                 placeholder: Some("us-central1"),
+                default_value: None,
             },
         ],
     },
@@ -608,16 +665,20 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[
             CuratedFieldMetadata {
                 key: "LITELLM_HOST",
                 label: "Host URL",
                 placeholder: Some("https://your-proxy.example.com"),
+                default_value: None,
             },
             CuratedFieldMetadata {
                 key: "LITELLM_API_KEY",
                 label: "API Key",
                 placeholder: Some("Paste your API key"),
+                default_value: None,
             },
         ],
     },
@@ -634,10 +695,13 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[CuratedFieldMetadata {
             key: "LMSTUDIO_HOST",
             label: "Host URL",
             placeholder: Some("http://localhost:1234/v1/chat/completions"),
+            default_value: None,
         }],
     },
     CuratedSetupMetadata {
@@ -653,7 +717,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "cerebras",
@@ -668,7 +734,9 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
-        field_overrides: API_KEY_FIELD,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
     },
     CuratedSetupMetadata {
         provider_id: "snowflake",
@@ -683,16 +751,20 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         binary_name: None,
         setup_capabilities: setup_capabilities(false, false, false),
         show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
         field_overrides: &[
             CuratedFieldMetadata {
                 key: "SNOWFLAKE_HOST",
                 label: "Host URL",
                 placeholder: Some("https://your-account.snowflakecomputing.com"),
+                default_value: None,
             },
             CuratedFieldMetadata {
                 key: "SNOWFLAKE_TOKEN",
                 label: "Access Token",
                 placeholder: Some("Paste your access token"),
+                default_value: None,
             },
         ],
     },
@@ -707,7 +779,10 @@ fn field_label(key: &str) -> String {
     label
         .split_whitespace()
         .map(|word| {
-            if matches!(word, "api" | "url" | "id") {
+            if matches!(
+                word,
+                "api" | "url" | "id" | "openai" | "aws" | "gcp" | "llm" | "oauth"
+            ) {
                 word.to_uppercase()
             } else {
                 let mut chars = word.chars();
@@ -726,18 +801,19 @@ fn field_override<'a>(
     config_key: &ConfigKey,
     curated: &'a CuratedSetupMetadata,
 ) -> Option<&'a CuratedFieldMetadata> {
-    curated
+    if let Some(field) = curated
         .field_overrides
         .iter()
         .find(|field| field.key == key)
-        .or_else(|| {
-            config_key.secret.then(|| {
-                curated
-                    .field_overrides
-                    .iter()
-                    .find(|field| field.key == "__api_key__")
-            })?
-        })
+    {
+        return Some(field);
+    }
+
+    if config_key.secret {
+        return curated.secret_field_default.as_ref();
+    }
+
+    None
 }
 
 fn setup_field(config_key: &ConfigKey, curated: &CuratedSetupMetadata) -> ProviderSetupField {
@@ -750,7 +826,9 @@ fn setup_field(config_key: &ConfigKey, curated: &CuratedSetupMetadata) -> Provid
         secret: config_key.secret,
         required: config_key.required,
         placeholder: field_override.and_then(|field| field.placeholder.map(str::to_string)),
-        default_value: config_key.default.clone(),
+        default_value: field_override
+            .and_then(|field| field.default_value.map(str::to_string))
+            .or_else(|| config_key.default.clone()),
     }
 }
 
@@ -787,7 +865,7 @@ fn setup_entry_from_metadata(
             .collect(),
         native_connect_query: curated.native_connect_query.map(str::to_string),
         binary_name: curated.binary_name.map(str::to_string),
-        setup_capabilities: curated.setup_capabilities.clone(),
+        setup_capabilities: curated.setup_capabilities,
         show_only_when_installed: curated.show_only_when_installed,
     }
 }
@@ -809,7 +887,7 @@ fn synthetic_goose_setup_entry(curated: &CuratedSetupMetadata) -> ProviderSetupC
             .collect(),
         native_connect_query: None,
         binary_name: None,
-        setup_capabilities: curated.setup_capabilities.clone(),
+        setup_capabilities: curated.setup_capabilities,
         show_only_when_installed: false,
     }
 }
@@ -868,7 +946,7 @@ pub async fn get_setup_catalog_entries() -> Vec<ProviderSetupCatalogEntry> {
     SETUP_METADATA
         .iter()
         .filter_map(|curated| {
-            if curated.provider_id == "goose" {
+            if curated.synthetic {
                 return Some(synthetic_goose_setup_entry(curated));
             }
 
@@ -966,5 +1044,63 @@ mod tests {
             !template.models.is_empty(),
             "z.ai template should have models"
         );
+    }
+
+    #[tokio::test]
+    async fn setup_catalog_includes_goose_and_curated_fields() {
+        let entries = get_setup_catalog_entries().await;
+
+        let goose = entries
+            .iter()
+            .find(|entry| entry.provider_id == "goose")
+            .expect("setup catalog should include synthetic goose");
+        assert_eq!(goose.category, ProviderSetupCategory::Agent);
+        assert_eq!(goose.setup_method, ProviderSetupMethod::None);
+        assert!(goose.fields.is_empty());
+
+        let ollama = entries
+            .iter()
+            .find(|entry| entry.provider_id == "ollama")
+            .expect("setup catalog should include ollama");
+        assert_eq!(ollama.setup_method, ProviderSetupMethod::ConfigFields);
+        assert_eq!(ollama.fields.len(), 1);
+        assert_eq!(ollama.fields[0].key, "OLLAMA_HOST");
+        assert_eq!(ollama.fields[0].label, "Host");
+        assert_eq!(
+            ollama.fields[0].default_value.as_deref(),
+            Some("http://localhost:11434")
+        );
+
+        let databricks = entries
+            .iter()
+            .find(|entry| entry.provider_id == "databricks")
+            .expect("setup catalog should include databricks");
+        assert_eq!(
+            databricks.setup_method,
+            ProviderSetupMethod::HostWithOauthFallback
+        );
+        assert_eq!(
+            databricks
+                .fields
+                .iter()
+                .map(|field| field.key.as_str())
+                .collect::<Vec<_>>(),
+            ["DATABRICKS_HOST", "DATABRICKS_TOKEN"]
+        );
+    }
+
+    #[tokio::test]
+    async fn setup_catalog_excludes_uncurated_deprecated_providers() {
+        let provider_ids = get_setup_catalog_entries()
+            .await
+            .into_iter()
+            .map(|entry| entry.provider_id)
+            .collect::<std::collections::HashSet<_>>();
+
+        assert!(provider_ids.contains("claude-acp"));
+        assert!(provider_ids.contains("codex-acp"));
+        assert!(!provider_ids.contains("claude_code"));
+        assert!(!provider_ids.contains("codex"));
+        assert!(!provider_ids.contains("gemini_cli"));
     }
 }

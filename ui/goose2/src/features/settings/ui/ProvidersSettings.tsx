@@ -15,8 +15,8 @@ import { Separator } from "@/shared/ui/separator";
 import { Spinner } from "@/shared/ui/spinner";
 import { IconChevronDown, IconPlus } from "@tabler/icons-react";
 import {
-  getAgentProviders,
-  getModelProviders,
+  getAgentProvidersFromEntries,
+  getModelProvidersFromEntries,
 } from "@/features/providers/providerCatalog";
 import { useCredentials } from "@/features/providers/hooks/useCredentials";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
@@ -35,6 +35,7 @@ import type {
   ProviderTemplate,
 } from "@/features/providers/ui/CustomProviderForm";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { AgentProviderCard } from "./AgentProviderCard";
 import { ModelProviderRow } from "./ModelProviderRow";
 import { SettingsPage } from "@/shared/ui/SettingsPage";
@@ -120,6 +121,10 @@ export function ProvidersSettings() {
   const [pendingCustomProviderDelete, setPendingCustomProviderDelete] =
     useState<PendingCustomProviderDelete | null>(null);
   const inventoryEntries = useProviderInventoryStore((state) => state.entries);
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
+  const catalogLoading = useProviderCatalogStore((state) => state.loading);
+  const catalogError = useProviderCatalogStore((state) => state.error);
+  const loadCatalog = useProviderCatalogStore((state) => state.load);
 
   const {
     configuredIds,
@@ -135,17 +140,24 @@ export function ProvidersSettings() {
   const customProvidersApi = useCustomProviders();
 
   const agents = useMemo(
-    () => toDisplayInfo(getAgentProviders(), configuredIds),
-    [configuredIds],
+    () =>
+      toDisplayInfo(
+        getAgentProvidersFromEntries(catalogEntries),
+        configuredIds,
+      ),
+    [configuredIds, catalogEntries],
   );
 
   const allModels = useMemo(
     () =>
       toDisplayInfo(
-        filterModelProvidersForDistro(getModelProviders(), distro),
+        filterModelProvidersForDistro(
+          getModelProvidersFromEntries(catalogEntries),
+          distro,
+        ),
         configuredIds,
       ),
-    [configuredIds, distro],
+    [configuredIds, distro, catalogEntries],
   );
 
   const sortedModels = useMemo(() => {
@@ -329,6 +341,35 @@ export function ProvidersSettings() {
         </Button>
       }
     >
+      {catalogError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-md border border-danger/30 bg-danger/10 p-3"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-danger">{catalogError}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => void loadCatalog()}
+            >
+              {t("common:actions.retry")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {catalogLoading && (
+        <div
+          role="status"
+          className="mb-4 flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          <Spinner className="size-3.5" />
+          {t("providers.catalog.loading")}
+        </div>
+      )}
+
       <section>
         <div className="mb-3">
           <h4 className="text-sm font-semibold">

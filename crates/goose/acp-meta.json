@@ -71,6 +71,11 @@
       "responseType": "ProviderCatalogListResponse"
     },
     {
+      "method": "_goose/providers/setup/catalog/list",
+      "requestType": "ProviderSetupCatalogListRequest",
+      "responseType": "ProviderSetupCatalogListResponse"
+    },
+    {
       "method": "_goose/providers/catalog/template",
       "requestType": "ProviderCatalogTemplateRequest",
       "responseType": "ProviderCatalogTemplateResponse"
