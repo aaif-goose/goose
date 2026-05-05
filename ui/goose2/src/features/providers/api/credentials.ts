@@ -28,6 +28,13 @@ export async function saveProviderConfig(
   return client.goose.GooseProvidersConfigSave({ providerId, fields });
 }
 
+export async function authenticateProviderConfig(
+  providerId: string,
+): Promise<ProviderConfigChangeResponse> {
+  const client = await getClient();
+  return client.goose.GooseProvidersConfigAuthenticate({ providerId });
+}
+
 export async function deleteProviderConfig(
   providerId: string,
 ): Promise<ProviderConfigChangeResponse> {
