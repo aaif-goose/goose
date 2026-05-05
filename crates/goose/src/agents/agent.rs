@@ -69,10 +69,13 @@ const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation..."
 const MAX_TEXT_ONLY_NUDGES: u32 = 3;
 const TEXT_ONLY_NUDGE_MESSAGE: &str =
     "Please continue by using the available tools to accomplish the task.";
-/// Models that emit pre-task planning text before their first tool call and
-/// need nudging to start using tools. For these we drop the
-/// `any_tools_ever_called` guard so the very first text-only turn is nudged.
-const PRE_TASK_NUDGE_MODELS: &[&str] = &["tencent/hy3-preview"];
+/// Substrings of model names that emit pre-task planning text before their
+/// first tool call and need nudging to start using tools. Matched with
+/// `contains`, so a short fragment like "hy3" covers the whole family
+/// (hy3-preview, hy3-large, future variants, etc.). For these models we drop
+/// the `any_tools_ever_called` guard so the very first text-only turn is
+/// nudged.
+const PRE_TASK_NUDGE_MODELS: &[&str] = &["hy3"];
 
 /// Context needed for the reply function
 pub struct ReplyContext {
