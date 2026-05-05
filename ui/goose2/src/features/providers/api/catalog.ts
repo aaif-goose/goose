@@ -8,7 +8,7 @@ export function mapProviderSetupCatalogEntryDto(
 ): ProviderCatalogEntry {
   return {
     id: dto.providerId,
-    displayName: dto.name || dto.providerId,
+    displayName: dto.name,
     category: dto.category,
     description: dto.description,
     setupMethod: dto.setupMethod,
