@@ -13,8 +13,25 @@ const PATH_KEYS = [
 ];
 const URL_KEYS = ["url", "uri", "href"];
 
+/**
+ * Stable, locale-independent identifier for a row's label. The renderer
+ * resolves this to a translated string at draw time via
+ * `chat.tools.inputSummary.<kind>`. Keeping the identifier on the row
+ * (rather than baking the English label in here) lets downstream code
+ * branch on row identity (e.g. headers that pull the path row) without
+ * snapping to a particular locale.
+ */
+export type ToolInputSummaryRowKind =
+  | "command"
+  | "workingDirectory"
+  | "query"
+  | "path"
+  | "resource"
+  | "line"
+  | "tool";
+
 export interface ToolInputSummaryRow {
-  label: string;
+  kind: ToolInputSummaryRowKind;
   value: string;
   monospace?: boolean;
   /** Full path/value for hover tooltip when `value` was shortened. */
@@ -80,13 +97,19 @@ export function getToolInputSummaryRows({
     const cwd = getStringArgument(args, ["cwd"]);
     return [
       {
-        label: "Command",
+        kind: "command",
         value: command,
         monospace: true,
         renderAs: "bash",
       },
       ...(cwd
-        ? [{ label: "Working directory", value: cwd, monospace: true }]
+        ? [
+            {
+              kind: "workingDirectory" as const,
+              value: cwd,
+              monospace: true,
+            },
+          ]
         : []),
     ];
   }
@@ -95,14 +118,16 @@ export function getToolInputSummaryRows({
   if (query) {
     const path = getStringArgument(args, PATH_KEYS);
     return [
-      { label: "Query", value: query, monospace: true },
-      ...(path ? [{ label: "Path", value: path, monospace: true }] : []),
+      { kind: "query", value: query, monospace: true },
+      ...(path
+        ? [{ kind: "path" as const, value: path, monospace: true }]
+        : []),
     ];
   }
 
   const url = getStringArgument(args, URL_KEYS);
   if (url) {
-    return [{ label: "Resource", value: url, monospace: true }];
+    return [{ kind: "resource", value: url, monospace: true }];
   }
 
   const path = getStringArgument(args, PATH_KEYS);
@@ -111,17 +136,17 @@ export function getToolInputSummaryRows({
     const displayPath = basenameOf(path);
     return [
       {
-        label: "Path",
+        kind: "path",
         value: displayPath,
         monospace: true,
         title: path,
       },
-      ...(line ? [{ label: "Line", value: String(line) }] : []),
+      ...(line ? [{ kind: "line" as const, value: String(line) }] : []),
     ];
   }
 
   if (name.trim().length > 0) {
-    return [{ label: "Tool", value: name }];
+    return [{ kind: "tool", value: name }];
   }
 
   return [];

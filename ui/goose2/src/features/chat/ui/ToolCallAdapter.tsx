@@ -200,17 +200,19 @@ function InputSummary({
   rows: ToolInputSummaryRow[];
   isOpen: boolean;
 }) {
+  const { t } = useTranslation("chat");
   if (rows.length === 0) return null;
 
   return (
     <dl className="space-y-1.5">
       {rows.map((row) => {
-        const key = `${row.label}:${row.value}`;
+        const label = t(`tools.inputSummary.${row.kind}`);
+        const key = `${row.kind}:${row.value}`;
         if (row.renderAs === "bash") {
           return (
             <div key={key} className="space-y-0.5">
               <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                {row.label}
+                {label}
               </dt>
               <dd>
                 <CodeBlock
@@ -229,7 +231,7 @@ function InputSummary({
         return (
           <div key={key} className="flex items-baseline gap-2">
             <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {row.label}
+              {label}
             </dt>
             <dd
               className={cn(
@@ -284,7 +286,7 @@ export function ToolCallAdapter({
 
   const { resolveMarkdownHref, openResolvedPath } = useArtifactPolicyContext();
 
-  const pathRow = summaryRows.find((row) => row.label === "Path");
+  const pathRow = summaryRows.find((row) => row.kind === "path");
   const headerFileLabel = pathRow?.value;
   const headerFilePath = pathRow?.title ?? pathRow?.value;
   const headerTitleParts =

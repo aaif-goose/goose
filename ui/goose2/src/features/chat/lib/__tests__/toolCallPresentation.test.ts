@@ -6,40 +6,40 @@ import {
 } from "../toolCallPresentation";
 
 describe("getToolInputSummaryRows", () => {
-  it("returns Command + Working directory rows for shell-style args", () => {
+  it("returns command + working directory rows for shell-style args", () => {
     const rows = getToolInputSummaryRows({
       name: "developer__shell",
       arguments: { command: "npm test", cwd: "/repo" },
     });
     expect(rows).toEqual([
       {
-        label: "Command",
+        kind: "command",
         value: "npm test",
         monospace: true,
         renderAs: "bash",
       },
-      { label: "Working directory", value: "/repo", monospace: true },
+      { kind: "workingDirectory", value: "/repo", monospace: true },
     ]);
   });
 
-  it("returns a Resource row for url args", () => {
+  it("returns a resource row for url args", () => {
     const rows = getToolInputSummaryRows({
       name: "fetch",
       arguments: { url: "https://example.com" },
     });
     expect(rows).toEqual([
-      { label: "Resource", value: "https://example.com", monospace: true },
+      { kind: "resource", value: "https://example.com", monospace: true },
     ]);
   });
 
-  it("returns Query + Path rows for search-style args", () => {
+  it("returns query + path rows for search-style args", () => {
     const rows = getToolInputSummaryRows({
       name: "developer__grep",
       arguments: { query: "TODO", path: "/repo/src" },
     });
     expect(rows).toEqual([
-      { label: "Query", value: "TODO", monospace: true },
-      { label: "Path", value: "/repo/src", monospace: true },
+      { kind: "query", value: "TODO", monospace: true },
+      { kind: "path", value: "/repo/src", monospace: true },
     ]);
   });
 
@@ -50,7 +50,7 @@ describe("getToolInputSummaryRows", () => {
     });
     expect(rows).toEqual([
       {
-        label: "Path",
+        kind: "path",
         value: "index.ts",
         monospace: true,
         title: "/Users/tho/repo/src/lib/index.ts",
@@ -58,28 +58,28 @@ describe("getToolInputSummaryRows", () => {
     ]);
   });
 
-  it("includes Line when present alongside a path", () => {
+  it("includes line row when present alongside a path", () => {
     const rows = getToolInputSummaryRows({
       name: "developer__read",
       arguments: { path: "/repo/foo.ts", line: 42 },
     });
     expect(rows).toEqual([
       {
-        label: "Path",
+        kind: "path",
         value: "foo.ts",
         monospace: true,
         title: "/repo/foo.ts",
       },
-      { label: "Line", value: "42" },
+      { kind: "line", value: "42" },
     ]);
   });
 
-  it("falls back to Tool name when no familiar arg keys are present", () => {
+  it("falls back to a tool row with the tool name when no familiar arg keys are present", () => {
     const rows = getToolInputSummaryRows({
       name: "custom-extension",
       arguments: { foo: 1 },
     });
-    expect(rows).toEqual([{ label: "Tool", value: "custom-extension" }]);
+    expect(rows).toEqual([{ kind: "tool", value: "custom-extension" }]);
   });
 
   it("returns an empty list when args and name are both empty", () => {
@@ -93,7 +93,7 @@ describe("getToolInputSummaryRows", () => {
     });
     expect(rows).toEqual([
       {
-        label: "Path",
+        kind: "path",
         value: "repo",
         monospace: true,
         title: "/repo",

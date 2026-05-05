@@ -193,6 +193,15 @@
   "tools": {
     "content": "Content",
     "fileNotFound": "File not found: {{path}}",
+    "inputSummary": {
+      "command": "Command",
+      "line": "Line",
+      "path": "Path",
+      "query": "Query",
+      "resource": "Resource",
+      "tool": "Tool",
+      "workingDirectory": "Working directory"
+    },
     "moreOutputs": "More outputs ({{count}})",
     "openFile": "Open file",
     "openFolder": "Open folder",

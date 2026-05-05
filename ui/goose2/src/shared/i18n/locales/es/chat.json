@@ -193,6 +193,15 @@
   "tools": {
     "content": "Contenido",
     "fileNotFound": "Archivo no encontrado: {{path}}",
+    "inputSummary": {
+      "command": "Comando",
+      "line": "Línea",
+      "path": "Ruta",
+      "query": "Búsqueda",
+      "resource": "Recurso",
+      "tool": "Herramienta",
+      "workingDirectory": "Directorio de trabajo"
+    },
     "moreOutputs": "Más salidas ({{count}})",
     "openFile": "Abrir archivo",
     "openFolder": "Abrir carpeta",
