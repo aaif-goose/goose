@@ -200,7 +200,7 @@ pub struct PreferencesRemoveRequest {
     pub keys: Vec<PreferenceKey>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum PreferenceKey {
     #[default]
