@@ -956,6 +956,13 @@ pub async fn get_setup_catalog_entries() -> Vec<ProviderSetupCatalogEntry> {
         .collect()
 }
 
+pub fn get_provider_setup_category(provider_id: &str) -> Option<ProviderSetupCategory> {
+    SETUP_METADATA
+        .iter()
+        .find(|curated| curated.provider_id == provider_id)
+        .map(|curated| curated.category)
+}
+
 pub fn get_provider_template(provider_id: &str) -> Option<ProviderTemplate> {
     let metadata = PROVIDER_METADATA.get(provider_id)?;
 

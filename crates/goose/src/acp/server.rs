@@ -3189,6 +3189,7 @@ print(\"hello, world\")
             default_model: "unused".to_string(),
             configured: true,
             provider_type: crate::providers::base::ProviderType::Builtin,
+            category: crate::providers::catalog::ProviderSetupCategory::Model,
             config_keys: vec![],
             setup_steps: vec![],
             supports_refresh: true,

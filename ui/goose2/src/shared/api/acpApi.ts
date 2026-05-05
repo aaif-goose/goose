@@ -5,6 +5,7 @@ import type {
   PromptResponse,
   SessionInfo,
 } from "@agentclientprotocol/sdk";
+import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { getClient } from "./acpConnection";
 import { perfLog } from "@/shared/lib/perfLog";
 
@@ -46,12 +47,15 @@ export const DEFAULT_PROVIDER: AcpProvider = {
  * already-fetched entries at startup).
  */
 export function buildProviderListFromEntries(
-  entries: Array<{ providerId: string; providerName: string }>,
+  entries: Array<
+    Pick<ProviderInventoryEntryDto, "providerId" | "providerName" | "category">
+  >,
 ): AcpProvider[] {
   return [
     DEFAULT_PROVIDER,
     ...entries
       .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+      .filter((entry) => entry.category === "agent")
       .map((entry) => ({ id: entry.providerId, label: entry.providerName })),
   ];
 }

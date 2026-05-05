@@ -44,7 +44,7 @@ export async function discoverAcpProviders(): Promise<AcpProvider[]> {
  * avoiding a duplicate `_goose/providers/list` RPC.
  */
 export function discoverAcpProvidersFromEntries(
-  entries: Array<{ providerId: string; providerName: string }>,
+  entries: Parameters<typeof directAcp.buildProviderListFromEntries>[0],
 ): AcpProvider[] {
   return resolveProvidersCatalog(
     directAcp.buildProviderListFromEntries(entries),
@@ -60,13 +60,14 @@ function resolveProvidersCatalog(providers: AcpProvider[]): AcpProvider[] {
         provider.id,
         provider.label,
       );
-      if (!catalogId || seen.has(catalogId)) {
+      const resolvedId = catalogId ?? provider.id;
+      if (seen.has(resolvedId)) {
         return null;
       }
-      seen.add(catalogId);
+      seen.add(resolvedId);
       return {
-        id: catalogId,
-        label: getCatalogEntry(catalogId)?.displayName ?? provider.label,
+        id: resolvedId,
+        label: getCatalogEntry(resolvedId)?.displayName ?? provider.label,
       };
     })
     .filter((provider): provider is AcpProvider => provider !== null);

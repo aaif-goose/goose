@@ -17,6 +17,7 @@ function providerEntry(
     defaultModel: "",
     configured: true,
     providerType: "Preferred",
+    category: "model",
     configKeys: [],
     setupSteps: [],
     supportsRefresh: true,
@@ -115,6 +116,13 @@ describe("useProviderInventory", () => {
         providerId: "custom_acme_openai",
         providerName: "Acme OpenAI",
         providerType: "Custom",
+      }),
+      providerEntry({
+        providerId: "codex-acp",
+        providerName: "Codex",
+        providerType: "Builtin",
+        category: "agent",
+        models: [{ id: "current", name: "Current", recommended: true }],
       }),
       providerEntry({
         providerId: "local",

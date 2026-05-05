@@ -351,6 +351,10 @@
           "type": "string",
           "description": "Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`."
         },
+        "category": {
+          "$ref": "#/$defs/ProviderSetupCategoryDto",
+          "description": "Whether this inventory entry represents an agent provider or a model provider."
+        },
         "configKeys": {
           "type": "array",
           "items": {
@@ -420,6 +424,7 @@
         "defaultModel",
         "configured",
         "providerType",
+        "category",
         "configKeys",
         "setupSteps",
         "supportsRefresh",
@@ -428,6 +433,13 @@
         "stale"
       ],
       "description": "Provider inventory entry."
+    },
+    "ProviderSetupCategoryDto": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "model"
+      ]
     },
     "ProviderConfigKey": {
       "type": "object",
@@ -678,13 +690,6 @@
         "supportsInstall",
         "supportsAuth",
         "supportsAuthStatus"
-      ]
-    },
-    "ProviderSetupCategoryDto": {
-      "type": "string",
-      "enum": [
-        "agent",
-        "model"
       ]
     },
     "ProviderSetupMethodDto": {

@@ -30,6 +30,7 @@ function providerEntry(
     defaultModel: "",
     configured: true,
     providerType: "Custom",
+    category: "model",
     configKeys: [],
     setupSteps: [],
     supportsRefresh: true,

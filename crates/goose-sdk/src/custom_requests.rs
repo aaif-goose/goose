@@ -437,10 +437,11 @@ pub struct ProviderTemplateCatalogEntryDto {
     pub env_var: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderSetupCategoryDto {
     Agent,
+    #[default]
     Model,
 }
 
@@ -1030,6 +1031,8 @@ pub struct ProviderInventoryEntryDto {
     pub configured: bool,
     /// Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
     pub provider_type: String,
+    /// Whether this inventory entry represents an agent provider or a model provider.
+    pub category: ProviderSetupCategoryDto,
     /// Required configuration keys and setup metadata.
     pub config_keys: Vec<ProviderConfigKey>,
     /// Step-by-step setup instructions, when present.

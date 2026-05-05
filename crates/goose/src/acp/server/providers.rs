@@ -11,6 +11,7 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         default_model: entry.default_model,
         configured: entry.configured,
         provider_type: format!("{:?}", entry.provider_type),
+        category: provider_setup_category_to_dto(entry.category),
         config_keys: entry
             .config_keys
             .into_iter()

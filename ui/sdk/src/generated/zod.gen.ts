@@ -139,6 +139,8 @@ export const zListProvidersRequest = z.object({
     providerIds: z.array(z.string()).optional().default([])
 });
 
+export const zProviderSetupCategoryDto = z.enum(['agent', 'model']);
+
 export const zProviderConfigKey = z.object({
     name: z.string(),
     required: z.boolean(),
@@ -183,6 +185,7 @@ export const zProviderInventoryEntryDto = z.object({
     defaultModel: z.string(),
     configured: z.boolean(),
     providerType: z.string(),
+    category: zProviderSetupCategoryDto,
     configKeys: z.array(zProviderConfigKey),
     setupSteps: z.array(z.string()),
     supportsRefresh: z.boolean(),
@@ -242,8 +245,6 @@ export const zProviderCatalogListResponse = z.object({
  * List provider setup catalog entries
  */
 export const zProviderSetupCatalogListRequest = z.record(z.unknown());
-
-export const zProviderSetupCategoryDto = z.enum(['agent', 'model']);
 
 export const zProviderSetupMethodDto = z.enum([
     'none',

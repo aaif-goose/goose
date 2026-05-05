@@ -19,12 +19,16 @@ function isConfiguredGooseModelProvider(
     return false;
   }
 
+  if (entry.category === "agent") {
+    return false;
+  }
+
   if (entry.providerType === "Custom") {
     return entry.providerId.startsWith("custom_");
   }
 
   if (!catalogLoaded) {
-    return true;
+    return entry.category === "model";
   }
 
   return modelProviderIds.has(entry.providerId);
