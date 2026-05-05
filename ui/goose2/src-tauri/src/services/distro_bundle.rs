@@ -8,7 +8,6 @@ const DISTRO_DIR_NAME: &str = "distro";
 const DISTRO_JSON_NAME: &str = "distro.json";
 const DISTRO_CONFIG_NAME: &str = "config.yaml";
 const DISTRO_BIN_DIR_NAME: &str = "bin";
-const DISTRO_OVERRIDE_ENV: &str = "GOOSE_DISTRO_DIR";
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,7 +101,7 @@ fn load_distro_bundle(app_handle: &AppHandle) -> Result<Option<DistroBundle>, St
 }
 
 fn resolve_distro_root(app_handle: &AppHandle) -> Result<Option<PathBuf>, String> {
-    if let Ok(override_dir) = env::var(DISTRO_OVERRIDE_ENV) {
+    if let Ok(override_dir) = env::var("GOOSE_DISTRO_DIR") {
         let path = PathBuf::from(override_dir);
         if path.is_dir() {
             return Ok(Some(path));
