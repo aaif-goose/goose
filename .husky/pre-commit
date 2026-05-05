@@ -17,11 +17,12 @@ if git diff --cached --no-renames --name-only | grep -q '^ui/goose2/'; then
     echo "Running goose2 pre-commit checks..."
 
     # Auto-format only staged files that biome can process, then re-stage them.
-    # Exclude justfile and .swift files — biome doesn't understand these formats
-    # and would fail with "no files were processed" when only such files are staged.
+    # Biome handles JS/TS/JSX/TSX/JSON/CSS/HTML — restrict to those extensions
+    # so staged Rust, Swift, TOML, justfile, etc. don't trigger "no files were
+    # processed" failures when no biome-supported file is staged.
     STAGED_FILES=$(git diff --cached --no-renames --diff-filter=ACMR --name-only \
       | grep '^ui/goose2/' \
-      | grep -v -E '(^ui/goose2/justfile$|\.swift$)' \
+      | grep -E '\.(js|jsx|ts|tsx|mjs|cjs|json|jsonc|css|html)$' \
       | sed 's|^ui/goose2/||' || true)
     if [ -n "$STAGED_FILES" ]; then
       cd ui/goose2
