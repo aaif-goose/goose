@@ -354,14 +354,15 @@ fn parse_dictation_provider(provider: &str) -> Result<DictationProvider, sacp::E
 fn dictation_secret_config_key(provider: DictationProvider) -> Result<&'static str, sacp::Error> {
     let def = get_provider_def(provider);
     if def.uses_provider_config {
-        return Err(
-            sacp::Error::invalid_params().data("Dictation provider uses provider configuration")
-        );
+        return Err(sacp::Error::invalid_params().data(
+            "Dictation provider uses the main provider configuration. Configure its credentials in provider settings instead.",
+        ));
     }
 
     #[cfg(feature = "local-inference")]
     if provider == DictationProvider::Local {
-        return Err(sacp::Error::invalid_params().data("Dictation provider does not use a secret"));
+        return Err(sacp::Error::invalid_params()
+            .data("Dictation provider does not use an API key or secret."));
     }
 
     Ok(def.config_key)
