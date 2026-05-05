@@ -847,7 +847,7 @@ code[data-streamdown="inline-code"],
   background: color-mix(in oklab, var(--background-muted) 82%, transparent);
   padding: 0.05rem calc(0.22rem + 1px);
   color: var(--foreground);
-  font-size: 1em;
+  font-size: calc(1em - 1px);
   font-weight: 400;
   line-height: inherit;
   vertical-align: baseline;
