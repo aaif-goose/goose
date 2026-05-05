@@ -7,12 +7,17 @@ import type {
 } from "@aaif/goose-sdk";
 import { getModelProvidersFromEntries } from "../providerCatalog";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
-import { filterModelProvidersForDistro } from "../distroProviderConstraints";
+import {
+  filterModelProvidersForDistro,
+  isProviderAllowedByAllowlist,
+  parseProviderAllowlist,
+} from "../distroProviderConstraints";
 import { useProviderCatalogStore } from "../stores/providerCatalogStore";
 
 function isConfiguredGooseModelProvider(
   entry: ProviderInventoryEntryDto,
   modelProviderIds: Set<string>,
+  providerAllowlist: Set<string> | null,
   catalogLoaded: boolean,
 ): boolean {
   if (!entry.configured) {
@@ -28,7 +33,7 @@ function isConfiguredGooseModelProvider(
   }
 
   if (!catalogLoaded) {
-    return entry.category === "model";
+    return isProviderAllowedByAllowlist(entry.providerId, providerAllowlist);
   }
 
   return modelProviderIds.has(entry.providerId);
@@ -56,6 +61,10 @@ export function useProviderInventory() {
   const distro = useDistroStore((s) => s.manifest);
   const catalogEntries = useProviderCatalogStore((s) => s.entries);
   const catalogLoaded = useProviderCatalogStore((s) => s.loaded);
+  const providerAllowlist = useMemo(
+    () => parseProviderAllowlist(distro),
+    [distro],
+  );
 
   const getEntry = useCallback(
     (providerId: string) => entries.get(providerId),
@@ -85,9 +94,14 @@ export function useProviderInventory() {
   const configuredModelProviderEntries = useMemo(
     () =>
       [...entries.values()].filter((entry) =>
-        isConfiguredGooseModelProvider(entry, modelProviderIds, catalogLoaded),
+        isConfiguredGooseModelProvider(
+          entry,
+          modelProviderIds,
+          providerAllowlist,
+          catalogLoaded,
+        ),
       ),
-    [catalogLoaded, entries, modelProviderIds],
+    [catalogLoaded, entries, modelProviderIds, providerAllowlist],
   );
 
   const getModelsForAgent = useCallback(

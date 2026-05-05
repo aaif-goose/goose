@@ -1,6 +1,7 @@
 import { renderHook } from "@testing-library/react";
 import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { beforeEach, describe, expect, it } from "vitest";
+import { useDistroStore } from "@/features/settings/stores/distroStore";
 import { useProviderCatalogStore } from "../stores/providerCatalogStore";
 import { useProviderInventoryStore } from "../stores/providerInventoryStore";
 import { useProviderInventory } from "./useProviderInventory";
@@ -48,6 +49,7 @@ describe("useProviderInventory", () => {
         group: "additional",
       },
     ]);
+    useDistroStore.setState({ loaded: false, manifest: { present: false } });
     useProviderInventoryStore.setState({
       entries: new Map(),
       loading: false,
@@ -154,6 +156,48 @@ describe("useProviderInventory", () => {
         providerName: "OpenAI",
         contextLimit: undefined,
         recommended: true,
+      },
+    ]);
+  });
+
+  it("applies the provider allowlist before the catalog loads", () => {
+    useProviderCatalogStore.getState().reset();
+    useDistroStore.setState({
+      loaded: true,
+      manifest: { present: true, providerAllowlist: "anthropic" },
+    });
+    useProviderInventoryStore.getState().setEntries([
+      providerEntry({
+        providerId: "openai",
+        providerName: "OpenAI",
+        providerType: "Preferred",
+        models: [{ id: "gpt-4o", name: "GPT-4o", recommended: true }],
+      }),
+      providerEntry({
+        providerId: "anthropic",
+        providerName: "Anthropic",
+        providerType: "Preferred",
+        models: [{ id: "claude-sonnet", name: "Claude Sonnet" }],
+      }),
+    ]);
+
+    const { result } = renderHook(() => useProviderInventory());
+
+    expect(
+      result.current.configuredModelProviderEntries.map(
+        (entry) => entry.providerId,
+      ),
+    ).toEqual(["anthropic"]);
+    expect(result.current.getModelsForAgent("goose")).toEqual([
+      {
+        id: "claude-sonnet",
+        name: "Claude Sonnet",
+        displayName: "Claude Sonnet",
+        provider: undefined,
+        providerId: "anthropic",
+        providerName: "Anthropic",
+        contextLimit: undefined,
+        recommended: false,
       },
     ]);
   });

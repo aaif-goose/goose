@@ -32,3 +32,19 @@ export function filterModelProvidersForDistro(
 
   return providers.filter((provider) => allowlist.has(provider.id));
 }
+
+export function isProviderAllowedByAllowlist(
+  providerId: string,
+  allowlist: Set<string> | null,
+): boolean {
+  return !allowlist || allowlist.has(providerId);
+}
+
+export function hasAllowedModelProvider(
+  providers: Pick<ProviderCatalogEntry, "id">[],
+  allowlist: Set<string> | null,
+): boolean {
+  return providers.some((provider) =>
+    isProviderAllowedByAllowlist(provider.id, allowlist),
+  );
+}

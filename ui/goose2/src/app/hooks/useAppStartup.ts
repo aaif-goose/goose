@@ -9,7 +9,10 @@ import {
 import { setNotificationHandler, getClient } from "@/shared/api/acpConnection";
 import notificationHandler from "@/shared/api/acpNotificationHandler";
 import { perfLog } from "@/shared/lib/perfLog";
-import { parseProviderAllowlist } from "@/features/providers/distroProviderConstraints";
+import {
+  hasAllowedModelProvider,
+  parseProviderAllowlist,
+} from "@/features/providers/distroProviderConstraints";
 import { getModelProviders } from "@/features/providers/providerCatalog";
 import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
@@ -19,18 +22,18 @@ export function filterStartupProvidersForDistro(
   providers: AcpProvider[],
   providerAllowlist: Set<string> | null,
   modelProviders: Pick<ProviderCatalogEntry, "id">[],
-  catalogLoaded: boolean,
 ): AcpProvider[] {
   if (!providerAllowlist) {
     return providers;
   }
 
-  const hasAllowedModelProvider =
-    !catalogLoaded ||
-    modelProviders.some((provider) => providerAllowlist.has(provider.id));
+  const shouldKeepGoose = hasAllowedModelProvider(
+    modelProviders,
+    providerAllowlist,
+  );
 
   return providers.filter(
-    (provider) => provider.id !== "goose" || hasAllowedModelProvider,
+    (provider) => provider.id !== "goose" || shouldKeepGoose,
   );
 }
 
@@ -67,7 +70,6 @@ export function useAppStartup() {
             providers,
             providerAllowlist,
             getModelProviders(),
-            useProviderCatalogStore.getState().loaded,
           ),
         );
         return providers;
