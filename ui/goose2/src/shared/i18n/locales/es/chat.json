@@ -196,6 +196,7 @@
     "moreOutputs": "Más salidas ({{count}})",
     "openFile": "Abrir archivo",
     "openFolder": "Abrir carpeta",
+    "openNamed": "Abrir {{name}}",
     "openPath": "Abrir ruta",
     "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos.",
     "structuredContent": "Contenido estructurado",
