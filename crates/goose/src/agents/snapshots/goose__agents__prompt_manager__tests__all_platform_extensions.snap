@@ -91,7 +91,6 @@ content. Then use cat or sed to gather the context you need, always reading befo
 Use write and edit to efficiently make changes. Test and verify as appropriate.
 
 When running Python scripts or commands, always use `python3` instead of `python`.
-The `python` command is not available on modern macOS and many Linux distributions.
 
 ## orchestrator
 
