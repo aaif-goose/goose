@@ -40,6 +40,7 @@ describe("acpNotificationHandler", () => {
       queuedMessageBySession: {},
       draftsBySession: {},
       activeSessionId: null,
+      viewedSessionId: null,
       isConnected: false,
       loadingSessionIds: new Set<string>(),
       scrollTargetMessageBySession: {},
@@ -141,6 +142,82 @@ describe("acpNotificationHandler", () => {
       useChatStore.getState().getSessionRuntime("acp-session")
         .streamingMessageId,
     ).toBe("assistant-1");
+  });
+
+  it("marks unviewed sessions unread when live agent output arrives", async () => {
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Background answer.",
+        },
+      },
+    } as never);
+
+    expect(
+      useChatStore.getState().getSessionRuntime("acp-session").hasUnread,
+    ).toBe(true);
+  });
+
+  it("keeps live output read when the session is being viewed", async () => {
+    useChatStore.getState().setViewedSession("acp-session");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Visible answer.",
+        },
+      },
+    } as never);
+
+    expect(
+      useChatStore.getState().getSessionRuntime("acp-session").hasUnread,
+    ).toBe(false);
+  });
+
+  it("marks active sessions unread when they are not being viewed", async () => {
+    useChatStore.getState().setActiveSession("acp-session");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Answer while another view is open.",
+        },
+      },
+    } as never);
+
+    expect(
+      useChatStore.getState().getSessionRuntime("acp-session").hasUnread,
+    ).toBe(true);
+  });
+
+  it("does not mark replayed agent output unread", async () => {
+    useChatStore.setState({
+      loadingSessionIds: new Set<string>(["acp-session"]),
+    });
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Historical answer.",
+        },
+      },
+    } as never);
+
+    expect(
+      useChatStore.getState().getSessionRuntime("acp-session").hasUnread,
+    ).toBe(false);
   });
 
   it("preserves ACP tool kind and locations on tool requests", async () => {

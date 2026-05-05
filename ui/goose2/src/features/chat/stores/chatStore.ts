@@ -43,6 +43,7 @@ interface ChatStoreState {
   draftsBySession: Record<string, string>;
   skillDraftsBySession: Record<string, ChatSkillDraft[]>;
   activeSessionId: string | null;
+  viewedSessionId: string | null;
   isConnected: boolean;
   loadingSessionIds: Set<string>;
   scrollTargetMessageBySession: Record<string, ScrollTargetMessage | null>;
@@ -50,6 +51,7 @@ interface ChatStoreState {
 
 interface ChatStoreActions {
   setActiveSession: (sessionId: string) => void;
+  setViewedSession: (sessionId: string | null) => void;
   addMessage: (sessionId: string, message: Message) => void;
   updateMessage: (
     sessionId: string,
@@ -109,6 +111,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   draftsBySession: loadCachedDrafts(),
   skillDraftsBySession: {},
   activeSessionId: null,
+  viewedSessionId: null,
   isConnected: false,
   loadingSessionIds: new Set<string>(),
   scrollTargetMessageBySession: {},
@@ -124,6 +127,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             [sessionId]: createInitialSessionRuntime(),
           },
     })),
+
+  setViewedSession: (sessionId) => set({ viewedSessionId: sessionId }),
 
   // Message management
   addMessage: (sessionId, message) =>
@@ -508,6 +513,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         scrollTargetMessageBySession: remainingTargets,
         activeSessionId:
           state.activeSessionId === sessionId ? null : state.activeSessionId,
+        viewedSessionId:
+          state.viewedSessionId === sessionId ? null : state.viewedSessionId,
       };
     });
     persistDrafts(get().draftsBySession);

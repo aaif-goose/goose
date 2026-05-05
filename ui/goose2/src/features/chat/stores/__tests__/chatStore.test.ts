@@ -27,6 +27,7 @@ describe("chatStore", () => {
       draftsBySession: {},
       skillDraftsBySession: {},
       activeSessionId: null,
+      viewedSessionId: null,
       isConnected: false,
     });
   });
@@ -108,17 +109,29 @@ describe("chatStore", () => {
     expect(getRuntime("s1").hasUnread).toBe(false);
   });
 
+  it("tracks which session is currently visible", () => {
+    const store = useChatStore.getState();
+
+    store.setViewedSession("s1");
+    expect(useChatStore.getState().viewedSessionId).toBe("s1");
+
+    store.setViewedSession(null);
+    expect(useChatStore.getState().viewedSessionId).toBeNull();
+  });
+
   it("clears messages and runtime state for a single session", () => {
     useChatStore.getState().addMessage("s1", makeMessage());
     useChatStore.getState().setChatState("s1", "streaming");
     useChatStore.getState().setStreamingMessageId("s1", "stream-1");
     useChatStore.getState().markSessionUnread("s1");
+    useChatStore.getState().setViewedSession("s1");
     useChatStore.getState().clearMessages("s1");
 
     expect(useChatStore.getState().messagesBySession.s1).toEqual([]);
     expect(getRuntime("s1").chatState).toBe("idle");
     expect(getRuntime("s1").streamingMessageId).toBeNull();
     expect(getRuntime("s1").hasUnread).toBe(false);
+    expect(useChatStore.getState().viewedSessionId).toBe("s1");
   });
 
   it("enqueues and dismisses messages per session", () => {
@@ -166,14 +179,17 @@ describe("chatStore", () => {
     store.setDraft("s1", "draft text");
     store.setSkillDrafts("s1", [{ id: "skill-1", name: "code-review" }]);
     store.setActiveSession("s1");
+    store.setViewedSession("s1");
     store.cleanupSession("s1");
 
-    expect(store.messagesBySession.s1).toBeUndefined();
-    expect(store.sessionStateById.s1).toBeUndefined();
-    expect(store.queuedMessageBySession.s1).toBeUndefined();
-    expect(store.draftsBySession.s1).toBeUndefined();
+    const state = useChatStore.getState();
+    expect(state.messagesBySession.s1).toBeUndefined();
+    expect(state.sessionStateById.s1).toBeUndefined();
+    expect(state.queuedMessageBySession.s1).toBeUndefined();
+    expect(state.draftsBySession.s1).toBeUndefined();
     expect(useChatStore.getState().skillDraftsBySession.s1).toBeUndefined();
-    expect(store.activeSessionId).toBeNull();
+    expect(state.activeSessionId).toBeNull();
+    expect(state.viewedSessionId).toBeNull();
   });
 
   it("stores and clears scroll targets per session", () => {
@@ -204,6 +220,7 @@ describe("chatStore draft localStorage persistence", () => {
       draftsBySession: {},
       skillDraftsBySession: {},
       activeSessionId: null,
+      viewedSessionId: null,
       isConnected: false,
     });
   });

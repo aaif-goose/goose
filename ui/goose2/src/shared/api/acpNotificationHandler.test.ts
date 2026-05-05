@@ -18,6 +18,7 @@ describe("acpNotificationHandler", () => {
       queuedMessageBySession: {},
       draftsBySession: {},
       activeSessionId: null,
+      viewedSessionId: null,
       isConnected: false,
       loadingSessionIds: new Set<string>(),
       scrollTargetMessageBySession: {},

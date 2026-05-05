@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
@@ -59,6 +65,19 @@ const SETTINGS_SECTIONS = new Set<SectionId>([
   "doctor",
   "about",
 ]);
+
+function syncViewedSessionForView(
+  view: AppView,
+  sessionId: string | null,
+): void {
+  const viewedSessionId = view === "chat" ? sessionId : null;
+  const liveChatStore = useChatStore.getState();
+  liveChatStore.setViewedSession(viewedSessionId);
+  if (viewedSessionId) {
+    liveChatStore.markSessionRead(viewedSessionId);
+  }
+}
+
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
@@ -144,10 +163,16 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   const { activeSessionId } = sessionStore;
 
-  useEffect(() => {
-    if (activeView === "chat" && activeSessionId) {
-      useChatStore.getState().markSessionRead(activeSessionId);
-    }
+  const setActiveViewWithViewedSession = useCallback(
+    (view: AppView, sessionId: string | null = activeSessionId) => {
+      syncViewedSessionForView(view, sessionId);
+      setActiveView(view);
+    },
+    [activeSessionId],
+  );
+
+  useLayoutEffect(() => {
+    syncViewedSessionForView(activeView, activeSessionId);
   }, [activeSessionId, activeView]);
 
   const activeSession = activeSessionId
@@ -288,7 +313,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
       if (existingDraft) {
         sessionStore.setActiveSession(existingDraft.id);
-        setActiveView("chat");
+        setActiveViewWithViewedSession("chat", existingDraft.id);
         chatStore.setActiveSession(existingDraft.id);
         perfLog(
           `[perf:newtab] ${existingDraft.id.slice(0, 8)} reused draft in ${(performance.now() - tStart).toFixed(1)}ms`,
@@ -306,7 +331,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         modelName: sessionModelPreference.modelName,
       });
       sessionStore.setActiveSession(session.id);
-      setActiveView("chat");
+      setActiveViewWithViewedSession("chat", session.id);
       chatStore.setActiveSession(session.id);
       perfLog(
         `[perf:newtab] ${session.id.slice(0, 8)} created session in ${(performance.now() - tStart).toFixed(1)}ms`,
@@ -317,6 +342,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       agentStore.selectedProvider,
       chatStore,
       providerInventoryEntries,
+      setActiveViewWithViewedSession,
       sessionStore,
     ],
   );
@@ -373,9 +399,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     (sessionId: string) => {
       chatStore.cleanupSession(sessionId);
       sessionStore.setActiveSession(null);
-      setActiveView("home");
+      setActiveViewWithViewedSession("home", null);
     },
-    [chatStore, sessionStore],
+    [chatStore, sessionStore, setActiveViewWithViewedSession],
   );
   const openSettings = useCallback((section: SectionId = "appearance") => {
     setSettingsInitialSection(section);
@@ -421,12 +447,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         }
 
         sessionStore.setActiveSession(null);
-        setActiveView("home");
+        setActiveViewWithViewedSession("home", null);
       } catch {
         // best-effort
       }
     },
-    [chatStore, sessionStore],
+    [chatStore, sessionStore, setActiveViewWithViewedSession],
   );
 
   const handleEditProject = useCallback(
@@ -504,22 +530,25 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         setHomeSessionId(null);
       }
       sessionStore.setActiveSession(sessionId);
-      setActiveView("chat");
+      setActiveViewWithViewedSession("chat", sessionId);
       chatStore.setActiveSession(sessionId);
-      useChatStore.getState().markSessionRead(sessionId);
     },
-    [chatStore, homeSessionId, sessionStore],
+    [chatStore, homeSessionId, sessionStore, setActiveViewWithViewedSession],
   );
 
   const handleSelectSession = useCallback(
     (id: string) => {
       sessionStore.setActiveSession(id);
-      setActiveView("chat");
+      setActiveViewWithViewedSession("chat", id);
       chatStore.setActiveSession(id);
-      useChatStore.getState().markSessionRead(id);
       loadSessionMessages(id);
     },
-    [sessionStore, chatStore, loadSessionMessages],
+    [
+      sessionStore,
+      chatStore,
+      loadSessionMessages,
+      setActiveViewWithViewedSession,
+    ],
   );
 
   const handleSelectSearchResult = useCallback(
@@ -536,12 +565,14 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   const handleNavigate = useCallback(
     (view: AppView) => {
+      const nextSessionId =
+        view === "chat" ? useChatSessionStore.getState().activeSessionId : null;
       if (view !== "chat") {
         sessionStore.setActiveSession(null);
       }
-      setActiveView(view);
+      setActiveViewWithViewedSession(view, nextSessionId);
     },
-    [sessionStore],
+    [sessionStore, setActiveViewWithViewedSession],
   );
 
   const handleCreatePersona = useCreatePersonaNavigation(() =>
@@ -623,12 +654,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       if (e.key === "n" && e.metaKey) {
         e.preventDefault();
         sessionStore.setActiveSession(null);
-        setActiveView("home");
+        setActiveViewWithViewedSession("home", null);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [clearActiveSession, sessionStore]);
+  }, [clearActiveSession, sessionStore, setActiveViewWithViewedSession]);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -654,7 +685,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onNewChatInProject={handleNewChatInProject}
             onNewChat={() => {
               sessionStore.setActiveSession(null);
-              setActiveView("home");
+              setActiveViewWithViewedSession("home", null);
             }}
             onCreateProject={() => openCreateProjectDialog()}
             onEditProject={handleEditProject}

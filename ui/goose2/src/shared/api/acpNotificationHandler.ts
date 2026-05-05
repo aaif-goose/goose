@@ -332,6 +332,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
         sessionId,
         getChunkMessageId(update) ?? undefined,
       );
+      markUnreadIfNotViewed(sessionId);
 
       if (update.content.type === "text" && "text" in update.content) {
         store.setStreamingMessageId(sessionId, messageId);
@@ -356,6 +357,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
       };
       store.setStreamingMessageId(sessionId, messageId);
       store.appendToStreamingMessage(sessionId, toolRequest);
+      markUnreadIfNotViewed(sessionId);
       break;
     }
 
@@ -418,6 +420,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
         };
         store.setStreamingMessageId(sessionId, messageId);
         store.appendToStreamingMessage(sessionId, toolResponse);
+        markUnreadIfNotViewed(sessionId);
         if (update.status === "completed") {
           attachMcpAppPayload(
             sessionId,
@@ -439,6 +442,13 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
 
     default:
       break;
+  }
+}
+
+function markUnreadIfNotViewed(sessionId: string): void {
+  const store = useChatStore.getState();
+  if (store.viewedSessionId !== sessionId) {
+    store.markSessionUnread(sessionId);
   }
 }
 
