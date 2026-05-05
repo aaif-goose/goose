@@ -9,6 +9,8 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-show",
     "core:window:allow-close",
+    "core:window:allow-set-size",
+    "core:window:allow-set-min-size",
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
