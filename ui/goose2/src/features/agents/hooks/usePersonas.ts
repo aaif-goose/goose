@@ -1,5 +1,9 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useAgentStore } from "../stores/agentStore";
+import {
+  selectPersonas,
+  selectPersonasLoading,
+} from "../stores/agentSelectors";
 import type {
   CreatePersonaRequest,
   UpdatePersonaRequest,
@@ -9,8 +13,8 @@ import * as api from "@/shared/api/agents";
 const REFRESH_INTERVAL_MS = 60_000;
 
 export function usePersonas() {
-  const personas = useAgentStore((s) => s.personas);
-  const personasLoading = useAgentStore((s) => s.personasLoading);
+  const personas = useAgentStore(selectPersonas);
+  const personasLoading = useAgentStore(selectPersonasLoading);
   const setPersonas = useAgentStore((s) => s.setPersonas);
   const addPersona = useAgentStore((s) => s.addPersona);
   const updatePersonaInStore = useAgentStore((s) => s.updatePersona);

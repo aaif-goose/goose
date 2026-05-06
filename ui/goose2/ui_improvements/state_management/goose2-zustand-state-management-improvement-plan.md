@@ -119,12 +119,13 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 
 **Detailed tasks**
 - Create selector helpers for repeated reads:
-  - active session
+  - session lists and active session id
   - session runtime by id
   - visible messages for session
-  - active project
-  - active agent
+  - project list and project lookup helpers
+  - agent/persona/provider simple reads
   - provider selection state
+- Keep active session, Home session, active project, and similar composed values derived from existing state. Do not add duplicate store attributes just to make reads easier.
 - Introduce grouped selectors with `useShallow` where components need multiple values together.
 - Keep primitive selectors simple and do not wrap them in `useShallow`.
 - Refactor any repetitive inline lookup logic into selector helpers or pure `lib/` helpers if it is not inherently store-specific.

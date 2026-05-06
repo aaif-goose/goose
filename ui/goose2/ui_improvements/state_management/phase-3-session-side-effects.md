@@ -7,6 +7,7 @@
 - Make session mutation semantics explicit.
 - Ensure generic local patch actions do not hide backend writes.
 - Preserve existing user-visible behavior while changing ownership boundaries.
+- Keep this phase focused on side-effect semantics even though Phase 2 identified broader `chatSessionStore` responsibility overload.
 
 **Scope**
 - `ui/goose2/src/features/chat/stores/chatSessionStore.ts`
@@ -20,11 +21,13 @@
 - Do not refactor `projectStore`.
 - Do not change ACP API behavior.
 - Do not change title generation, archive, unarchive, or project assignment UX.
+- Do not solve `chatSessionStore` context-panel or workspace UI ownership here; that belongs in Phase 4B.
 
 **Execution Steps**
 
 1. Identify all `updateSession` call sites.
    - Classify each call as local-only, title rename, project update, timestamp update, provider/model update, archive-related, or other.
+   - Keep a note of calls that also reveal broad `chatSessionStore` ownership, but do not expand this phase beyond mutation semantics.
 
 2. Add a local-only action.
    - Introduce a clearly named store action such as `patchSessionLocal`.

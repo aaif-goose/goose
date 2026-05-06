@@ -8,8 +8,10 @@ import { useMessageQueue } from "./useMessageQueue";
 import { useChatStore } from "../stores/chatStore";
 import { useChatSessionStore } from "../stores/chatSessionStore";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { selectPersonas } from "@/features/agents/stores/agentSelectors";
 import { useProviderSelection } from "@/features/agents/hooks/useProviderSelection";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
 import {
   buildProjectSystemPrompt,
@@ -50,7 +52,7 @@ export function useChatSessionController({
     selectedProvider: globalSelectedProvider,
     setSelectedProvider: setGlobalSelectedProvider,
   } = useProviderSelection();
-  const personas = useAgentStore((s) => s.personas);
+  const personas = useAgentStore(selectPersonas);
   const session = useChatSessionStore((s) =>
     sessionId
       ? s.sessions.find((candidate) => candidate.id === sessionId)
@@ -62,7 +64,7 @@ export function useChatSessionController({
   const clearActiveWorkspace = useChatSessionStore(
     (s) => s.clearActiveWorkspace,
   );
-  const projects = useProjectStore((s) => s.projects);
+  const projects = useProjectStore(selectProjects);
   const projectsLoading = useProjectStore((s) => s.loading);
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>();
   const [pendingProjectId, setPendingProjectId] = useState<string | null>();

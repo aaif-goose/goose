@@ -52,6 +52,9 @@
 6. Remove stale assumptions from tests.
    - Tests should not rely on fields that moved to UI stores.
    - Tests should reset every store touched by the scenario.
+   - Component-test mocks for Zustand bound hooks should support selector-style calls. Phase 1 moved production code from `useStore()` to `useStore((state) => ...)`, so mocks should accept an optional selector and invoke it with the mocked state shape.
+   - Tests that import Phase 2 selector files should still match the final store boundaries after Phases 4 and 5. Remove or move selector imports if the selected state moved to a new store.
+   - Recheck test reset assumptions around legacy/general fields such as `agentStore.isLoading`. If Phase 4 removes or narrows those fields, reset helpers should not preserve stale state shape.
 
 **Validation**
 - `cd ui/goose2 && pnpm test`

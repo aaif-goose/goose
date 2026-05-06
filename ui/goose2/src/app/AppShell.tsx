@@ -8,12 +8,21 @@ import type { SectionId } from "@/features/settings/ui/SettingsModal";
 import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import { TopBar } from "./ui/TopBar";
 import { useChatStore } from "@/features/chat/stores/chatStore";
+import { selectMessagesBySession } from "@/features/chat/stores/chatSelectors";
 import {
   type ChatSession,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
+import {
+  selectActiveSessionId,
+  selectHasHydratedSessions,
+  selectSessions,
+  selectSessionsLoading,
+} from "@/features/chat/stores/chatSessionSelectors";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { selectSelectedProvider } from "@/features/agents/stores/agentSelectors";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { findExistingDraft } from "@/features/chat/lib/newChat";
 import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
 import { useAppStartup } from "./hooks/useAppStartup";
@@ -77,19 +86,19 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     loadStoredHomeSessionId(),
   );
 
-  const messagesBySession = useChatStore((s) => s.messagesBySession);
+  const messagesBySession = useChatStore(selectMessagesBySession);
   const setChatActiveSession = useChatStore((s) => s.setActiveSession);
   const cleanupChatSession = useChatStore((s) => s.cleanupSession);
-  const sessions = useChatSessionStore((s) => s.sessions);
-  const activeSessionId = useChatSessionStore((s) => s.activeSessionId);
-  const hasHydratedSessions = useChatSessionStore((s) => s.hasHydratedSessions);
-  const sessionsLoading = useChatSessionStore((s) => s.isLoading);
+  const sessions = useChatSessionStore(selectSessions);
+  const activeSessionId = useChatSessionStore(selectActiveSessionId);
+  const hasHydratedSessions = useChatSessionStore(selectHasHydratedSessions);
+  const sessionsLoading = useChatSessionStore(selectSessionsLoading);
   const createSession = useChatSessionStore((s) => s.createSession);
   const updateSession = useChatSessionStore((s) => s.updateSession);
   const setActiveSession = useChatSessionStore((s) => s.setActiveSession);
   const archiveSession = useChatSessionStore((s) => s.archiveSession);
-  const selectedProvider = useAgentStore((s) => s.selectedProvider);
-  const projects = useProjectStore((s) => s.projects);
+  const selectedProvider = useAgentStore(selectSelectedProvider);
+  const projects = useProjectStore(selectProjects);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const reorderProjects = useProjectStore((s) => s.reorderProjects);
   const providerInventoryEntries = useProviderInventoryStore((s) => s.entries);

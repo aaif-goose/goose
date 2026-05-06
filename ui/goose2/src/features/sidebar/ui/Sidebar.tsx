@@ -17,14 +17,20 @@ import { cn } from "@/shared/lib/cn";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
+import {
+  selectMessagesBySession,
+  selectSessionStateById,
+} from "@/features/chat/stores/chatSelectors";
 import { INITIAL_SESSION_CHAT_RUNTIME } from "@/shared/types/chat";
 import {
   getVisibleSessions,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
+import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
 import { isSessionRunning } from "@/features/chat/lib/sessionActivity";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { Button } from "@/shared/ui/button";
 import { useSessionSearch } from "@/features/sessions/hooks/useSessionSearch";
 import { SidebarProjectsSection } from "./SidebarProjectsSection";
@@ -102,11 +108,11 @@ export function Sidebar({
     }
   });
 
-  const messagesBySession = useChatStore((s) => s.messagesBySession);
-  const sessionStateById = useChatStore((s) => s.sessionStateById);
-  const sessions = useChatSessionStore((s) => s.sessions);
+  const messagesBySession = useChatStore(selectMessagesBySession);
+  const sessionStateById = useChatStore(selectSessionStateById);
+  const sessions = useChatSessionStore(selectSessions);
   const getPersonaById = useAgentStore((s) => s.getPersonaById);
-  const projectStoreProjects = useProjectStore((s) => s.projects);
+  const projectStoreProjects = useProjectStore(selectProjects);
   const visibleSessions = getVisibleSessions(sessions, messagesBySession);
   const activeSessions = visibleSessions.filter(
     (session) => !session.archivedAt,
