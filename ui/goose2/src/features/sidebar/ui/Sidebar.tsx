@@ -562,12 +562,6 @@ export function Sidebar({
                   )}
                 </button>
 
-                {!collapsed && (
-                  <div className="px-3 pb-1 pt-1 text-xs font-medium text-muted-foreground">
-                    {t("settings:title")}
-                  </div>
-                )}
-
                 {SETTINGS_SECTIONS.map((item, index) => (
                   <SidebarNavItem
                     key={item.id}
