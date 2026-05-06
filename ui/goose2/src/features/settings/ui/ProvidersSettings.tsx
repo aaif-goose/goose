@@ -123,6 +123,7 @@ export function ProvidersSettings() {
   const inventoryEntries = useProviderInventoryStore((state) => state.entries);
   const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const catalogLoading = useProviderCatalogStore((state) => state.loading);
+  const catalogLoaded = useProviderCatalogStore((state) => state.loaded);
   const catalogError = useProviderCatalogStore((state) => state.error);
   const loadCatalog = useProviderCatalogStore((state) => state.load);
 
@@ -171,10 +172,10 @@ export function ProvidersSettings() {
   }, [allModels]);
 
   useEffect(() => {
-    if (!loading && modelOrder === null) {
+    if (!loading && catalogLoaded && modelOrder === null) {
       setModelOrder(sortedModels.map((model) => model.id));
     }
-  }, [loading, modelOrder, sortedModels]);
+  }, [loading, catalogLoaded, modelOrder, sortedModels]);
 
   const orderedModels = useMemo(() => {
     if (!modelOrder) {
