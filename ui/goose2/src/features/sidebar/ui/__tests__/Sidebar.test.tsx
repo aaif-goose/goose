@@ -131,4 +131,42 @@ describe("Sidebar", () => {
 
     expect(screen.getByRole("button", { name: /home/i })).toBeInTheDocument();
   });
+
+  it("renders settings navigation as the active sidebar surface", async () => {
+    const user = userEvent.setup();
+    const onSettingsBack = vi.fn();
+    const onSettingsSectionChange = vi.fn();
+
+    render(
+      <Sidebar
+        collapsed={false}
+        activeView="settings"
+        activeSettingsSection="providers"
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSettingsBack={onSettingsBack}
+        onSettingsSectionChange={onSettingsSectionChange}
+        projects={[]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("navigation", { name: /settings navigation/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /providers/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      screen.queryByRole("button", { name: /^home$/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /back to main navigation/i }),
+    );
+    expect(onSettingsBack).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: /general/i }));
+    expect(onSettingsSectionChange).toHaveBeenCalledWith("general");
+  });
 });

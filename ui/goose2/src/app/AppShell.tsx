@@ -3,8 +3,11 @@ import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
 import type { ProjectInfo } from "@/features/projects/api/projects";
-import { SettingsModal } from "@/features/settings/ui/SettingsModal";
-import type { SectionId } from "@/features/settings/ui/SettingsModal";
+import {
+  DEFAULT_SETTINGS_SECTION,
+  isSettingsSection,
+  type SectionId,
+} from "@/features/settings/ui/settingsSections";
 import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import { TopBar } from "./ui/TopBar";
 import { useChatStore } from "@/features/chat/stores/chatStore";
@@ -44,7 +47,8 @@ export type AppView =
   | "extensions"
   | "agents"
   | "projects"
-  | "session-history";
+  | "session-history"
+  | "settings";
 
 const SIDEBAR_DEFAULT_WIDTH = 240;
 const SIDEBAR_MIN_WIDTH = 180;
@@ -58,22 +62,36 @@ const COLLAPSED_WINDOW_MIN_WIDTH =
   SIDEBAR_COLLAPSED_WIDTH +
   APP_SHELL_HORIZONTAL_CHROME_WIDTH +
   MIN_MAIN_CONTENT_WIDTH;
-const SETTINGS_SECTIONS = new Set<SectionId>([
-  "appearance",
-  "providers",
-  "compaction",
-  "voice",
-  "general",
-  "projects",
-  "chats",
-  "doctor",
-  "about",
-]);
-
 function getExpandedSidebarFitWidth(sidebarWidth: number) {
   return (
     sidebarWidth + APP_SHELL_HORIZONTAL_CHROME_WIDTH + MIN_MAIN_CONTENT_WIDTH
   );
+}
+
+function getInitialSettingsSection(): SectionId | null {
+  if (typeof window === "undefined") return null;
+  if (window.location.pathname !== "/settings") return null;
+  const section = new URLSearchParams(window.location.search).get("section");
+  if (!section) return DEFAULT_SETTINGS_SECTION;
+  return isSettingsSection(section) ? section : DEFAULT_SETTINGS_SECTION;
+}
+
+function setSettingsSectionUrl(section: SectionId) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.pathname = "/settings";
+  url.searchParams.set("section", section);
+  window.history.replaceState(window.history.state, "", url);
+}
+
+function clearSettingsSectionUrl() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (url.pathname === "/settings") {
+    url.pathname = "/";
+  }
+  url.searchParams.delete("section");
+  window.history.replaceState(window.history.state, "", url);
 }
 
 async function ensureWindowWidth(minWidth: number) {
@@ -106,16 +124,19 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] =
-    useState<SectionId>("appearance");
+  const initialSettingsSection = getInitialSettingsSection();
+  const [activeSettingsSection, setActiveSettingsSection] = useState<SectionId>(
+    initialSettingsSection ?? DEFAULT_SETTINGS_SECTION,
+  );
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [createProjectInitialWorkingDir, setCreateProjectInitialWorkingDir] =
     useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectInfo | null>(
     null,
   );
-  const [activeView, setActiveView] = useState<AppView>("home");
+  const [activeView, setActiveView] = useState<AppView>(
+    initialSettingsSection ? "settings" : "home",
+  );
   const [homeSessionId, setHomeSessionId] = useState<string | null>(() =>
     loadStoredHomeSessionId(),
   );
@@ -130,6 +151,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const pendingProjectCreatedRef = useRef<((projectId: string) => void) | null>(
     null,
   );
+  const lastNonSettingsViewRef = useRef<AppView>("home");
   const homeSessionRequestRef = useRef<Promise<ChatSession | null> | null>(
     null,
   );
@@ -192,6 +214,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       useChatStore.getState().markSessionRead(activeSessionId);
     }
   }, [activeSessionId, activeView]);
+
+  useEffect(() => {
+    if (activeView !== "settings") {
+      lastNonSettingsViewRef.current = activeView;
+    }
+  }, [activeView]);
 
   const activeSession = activeSessionId
     ? sessionStore.getSession(activeSessionId)
@@ -331,6 +359,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
       if (existingDraft) {
         sessionStore.setActiveSession(existingDraft.id);
+        clearSettingsSectionUrl();
         setActiveView("chat");
         chatStore.setActiveSession(existingDraft.id);
         perfLog(
@@ -349,6 +378,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         modelName: sessionModelPreference.modelName,
       });
       sessionStore.setActiveSession(session.id);
+      clearSettingsSectionUrl();
       setActiveView("chat");
       chatStore.setActiveSession(session.id);
       perfLog(
@@ -416,21 +446,43 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     (sessionId: string) => {
       chatStore.cleanupSession(sessionId);
       sessionStore.setActiveSession(null);
+      clearSettingsSectionUrl();
       setActiveView("home");
     },
     [chatStore, sessionStore],
   );
-  const openSettings = useCallback((section: SectionId = "appearance") => {
-    setSettingsInitialSection(section);
-    setSettingsOpen(true);
+
+  const openSettings = useCallback(
+    (section: SectionId = DEFAULT_SETTINGS_SECTION) => {
+      if (activeView !== "settings") {
+        lastNonSettingsViewRef.current = activeView;
+      }
+      setActiveSettingsSection(section);
+      setSettingsSectionUrl(section);
+      setActiveView("settings");
+      if (sidebarCollapsed) {
+        setSidebarCollapsed(false);
+      }
+    },
+    [activeView, sidebarCollapsed],
+  );
+
+  const leaveSettings = useCallback(() => {
+    clearSettingsSectionUrl();
+    setActiveView(lastNonSettingsViewRef.current);
+  }, []);
+
+  const selectSettingsSection = useCallback((section: SectionId) => {
+    setActiveSettingsSection(section);
+    setSettingsSectionUrl(section);
   }, []);
 
   useEffect(() => {
     const handleOpenSettingsEvent = (event: Event) => {
       const section = (event as CustomEvent<{ section?: string }>).detail
         ?.section;
-      if (section && SETTINGS_SECTIONS.has(section as SectionId)) {
-        openSettings(section as SectionId);
+      if (section && isSettingsSection(section)) {
+        openSettings(section);
         return;
       }
 
@@ -547,6 +599,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         setHomeSessionId(null);
       }
       sessionStore.setActiveSession(sessionId);
+      clearSettingsSectionUrl();
       setActiveView("chat");
       chatStore.setActiveSession(sessionId);
       useChatStore.getState().markSessionRead(sessionId);
@@ -557,6 +610,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const handleSelectSession = useCallback(
     (id: string) => {
       sessionStore.setActiveSession(id);
+      clearSettingsSectionUrl();
       setActiveView("chat");
       chatStore.setActiveSession(id);
       useChatStore.getState().markSessionRead(id);
@@ -579,12 +633,17 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   const handleNavigate = useCallback(
     (view: AppView) => {
+      if (view === "settings") {
+        openSettings();
+        return;
+      }
       if (view !== "chat") {
         sessionStore.setActiveSession(null);
       }
+      clearSettingsSectionUrl();
       setActiveView(view);
     },
-    [sessionStore],
+    [openSettings, sessionStore],
   );
 
   const handleCreatePersona = useCreatePersonaNavigation(() =>
@@ -699,7 +758,11 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       // Cmd+, for settings
       if (e.key === "," && e.metaKey) {
         e.preventDefault();
-        setSettingsOpen((prev) => !prev);
+        if (activeView === "settings") {
+          leaveSettings();
+          return;
+        }
+        openSettings();
       }
       // Cmd+B for sidebar toggle
       if (e.key === "b" && e.metaKey) {
@@ -712,18 +775,29 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         const { activeSessionId } = useChatSessionStore.getState();
         if (activeSessionId) {
           clearActiveSession(activeSessionId);
+        } else if (activeView === "settings") {
+          clearSettingsSectionUrl();
+          setActiveView("home");
         }
       }
       // Cmd+N opens new conversation screen
       if (e.key === "n" && e.metaKey) {
         e.preventDefault();
         sessionStore.setActiveSession(null);
+        clearSettingsSectionUrl();
         setActiveView("home");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [clearActiveSession, sessionStore, toggleSidebar]);
+  }, [
+    activeView,
+    clearActiveSession,
+    leaveSettings,
+    openSettings,
+    sessionStore,
+    toggleSidebar,
+  ]);
 
   if (!startup.ready) {
     return (
@@ -765,10 +839,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             isResizing={isResizing}
             onCollapse={toggleSidebar}
             onSettingsClick={() => openSettings()}
+            onSettingsBack={leaveSettings}
+            onSettingsSectionChange={selectSettingsSection}
             onNavigate={handleNavigate}
             onNewChatInProject={handleNewChatInProject}
             onNewChat={() => {
               sessionStore.setActiveSession(null);
+              clearSettingsSectionUrl();
               setActiveView("home");
             }}
             onCreateProject={() => openCreateProjectDialog()}
@@ -781,6 +858,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onSelectSession={handleSelectSession}
             onSelectSearchResult={handleSelectSearchResult}
             activeView={activeView}
+            activeSettingsSection={activeSettingsSection}
             activeSessionId={activeSessionId}
             projects={projectStore.projects}
             className="h-full rounded-xl"
@@ -800,6 +878,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           {children ?? (
             <AppShellContent
               activeView={activeView}
+              activeSettingsSection={activeSettingsSection}
               activeSession={activeSession}
               homeSessionId={homeSessionId}
               onCreatePersona={handleCreatePersona}
@@ -815,13 +894,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           )}
         </main>
       </div>
-
-      {settingsOpen && (
-        <SettingsModal
-          initialSection={settingsInitialSection}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
 
       <CreateProjectDialog
         isOpen={createProjectOpen}
