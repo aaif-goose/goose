@@ -17,6 +17,7 @@ import { cn } from "@/shared/lib/cn";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
+import { INITIAL_SESSION_CHAT_RUNTIME } from "@/shared/types/chat";
 import {
   getVisibleSessions,
   useChatSessionStore,
@@ -101,12 +102,12 @@ export function Sidebar({
     }
   });
 
-  const chatStore = useChatStore();
-  const { sessions } = useChatSessionStore();
-  const visibleSessions = getVisibleSessions(
-    sessions,
-    chatStore.messagesBySession,
-  );
+  const messagesBySession = useChatStore((s) => s.messagesBySession);
+  const sessionStateById = useChatStore((s) => s.sessionStateById);
+  const sessions = useChatSessionStore((s) => s.sessions);
+  const getPersonaById = useAgentStore((s) => s.getPersonaById);
+  const projectStoreProjects = useProjectStore((s) => s.projects);
+  const visibleSessions = getVisibleSessions(sessions, messagesBySession);
   const activeSessions = visibleSessions.filter(
     (session) => !session.archivedAt,
   );
@@ -162,7 +163,8 @@ export function Sidebar({
     const standalone: SessionItem[] = [];
     for (const session of visibleSessions) {
       if (session.archivedAt) continue;
-      const runtime = chatStore.getSessionRuntime(session.id);
+      const runtime =
+        sessionStateById[session.id] ?? INITIAL_SESSION_CHAT_RUNTIME;
       const item: SessionItem = {
         id: session.id,
         title: session.title,
@@ -194,15 +196,11 @@ export function Sidebar({
     return { byProject, standalone: limitedStandalone };
   })();
 
-  const agentStoreState = useAgentStore();
-  const projectStoreState = useProjectStore();
-
   const sidebarResolvers = {
     getPersonaName: (personaId: string) =>
-      agentStoreState.getPersonaById(personaId)?.displayName,
+      getPersonaById(personaId)?.displayName,
     getProjectName: (projectId: string) =>
-      projectStoreState.projects.find((p: { id: string }) => p.id === projectId)
-        ?.name,
+      projectStoreProjects.find((p) => p.id === projectId)?.name,
   };
   const sidebarSearch = useSessionSearch({
     sessions: activeSessions,

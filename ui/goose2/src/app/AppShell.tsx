@@ -77,10 +77,21 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     loadStoredHomeSessionId(),
   );
 
-  const chatStore = useChatStore();
-  const sessionStore = useChatSessionStore();
-  const agentStore = useAgentStore();
-  const projectStore = useProjectStore();
+  const messagesBySession = useChatStore((s) => s.messagesBySession);
+  const setChatActiveSession = useChatStore((s) => s.setActiveSession);
+  const cleanupChatSession = useChatStore((s) => s.cleanupSession);
+  const sessions = useChatSessionStore((s) => s.sessions);
+  const activeSessionId = useChatSessionStore((s) => s.activeSessionId);
+  const hasHydratedSessions = useChatSessionStore((s) => s.hasHydratedSessions);
+  const sessionsLoading = useChatSessionStore((s) => s.isLoading);
+  const createSession = useChatSessionStore((s) => s.createSession);
+  const updateSession = useChatSessionStore((s) => s.updateSession);
+  const setActiveSession = useChatSessionStore((s) => s.setActiveSession);
+  const archiveSession = useChatSessionStore((s) => s.archiveSession);
+  const selectedProvider = useAgentStore((s) => s.selectedProvider);
+  const projects = useProjectStore((s) => s.projects);
+  const fetchProjects = useProjectStore((s) => s.fetchProjects);
+  const reorderProjects = useProjectStore((s) => s.reorderProjects);
   const providerInventoryEntries = useProviderInventoryStore((s) => s.entries);
   const pendingProjectCreatedRef = useRef<((projectId: string) => void) | null>(
     null,
@@ -139,10 +150,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   useAppStartup();
 
   useEffect(() => {
-    projectStore.fetchProjects();
-  }, [projectStore.fetchProjects]);
-
-  const { activeSessionId } = sessionStore;
+    fetchProjects();
+  }, [fetchProjects]);
 
   useEffect(() => {
     if (activeView === "chat" && activeSessionId) {
@@ -151,23 +160,23 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   }, [activeSessionId, activeView]);
 
   const activeSession = activeSessionId
-    ? sessionStore.getSession(activeSessionId)
+    ? sessions.find((session) => session.id === activeSessionId)
     : undefined;
   const homeSession = homeSessionId
-    ? sessionStore.getSession(homeSessionId)
+    ? sessions.find((session) => session.id === homeSessionId)
     : undefined;
 
   useHomeSessionStateSync({
     homeSessionId,
     homeSession,
-    messagesBySession: chatStore.messagesBySession,
-    hasHydratedSessions: sessionStore.hasHydratedSessions,
-    isLoading: sessionStore.isLoading,
+    messagesBySession,
+    hasHydratedSessions,
+    isLoading: sessionsLoading,
     setHomeSessionId,
   });
 
   const ensureHomeSession = useCallback(async () => {
-    if (!sessionStore.hasHydratedSessions || sessionStore.isLoading) {
+    if (!hasHydratedSessions || sessionsLoading) {
       return null;
     }
 
@@ -183,11 +192,11 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       ) {
         const sessionModelPreference =
           await resolveSupportedSessionModelPreference(
-            agentStore.selectedProvider ?? "goose",
+            selectedProvider ?? "goose",
             providerInventoryEntries,
           );
         const project = homeSession.projectId
-          ? (projectStore.projects.find(
+          ? (projects.find(
               (candidate) => candidate.id === homeSession.projectId,
             ) ?? null)
           : null;
@@ -200,14 +209,14 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         const shouldClearHomeModel =
           sessionModelPreference.providerId !== homeSession.providerId ||
           !sessionModelPreference.modelId;
-        sessionStore.updateSession(homeSession.id, {
+        updateSession(homeSession.id, {
           providerId: sessionModelPreference.providerId,
           modelId: shouldClearHomeModel ? undefined : homeSession.modelId,
           modelName: shouldClearHomeModel ? undefined : homeSession.modelName,
         });
         if (sessionModelPreference.modelId) {
           await acpSetModel(homeSession.id, sessionModelPreference.modelId);
-          sessionStore.updateSession(homeSession.id, {
+          updateSession(homeSession.id, {
             modelId: sessionModelPreference.modelId,
             modelName: sessionModelPreference.modelName,
           });
@@ -218,10 +227,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const workingDir = await resolveSessionCwd(null);
       const sessionModelPreference =
         await resolveSupportedSessionModelPreference(
-          agentStore.selectedProvider ?? "goose",
+          selectedProvider ?? "goose",
           providerInventoryEntries,
         );
-      const session = await sessionStore.createSession({
+      const session = await createSession({
         title: DEFAULT_CHAT_TITLE,
         providerId: sessionModelPreference.providerId,
         workingDir,
@@ -241,13 +250,14 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       }
     }
   }, [
-    agentStore.selectedProvider,
+    selectedProvider,
+    createSession,
+    hasHydratedSessions,
     homeSession,
     providerInventoryEntries,
-    projectStore.projects,
-    sessionStore.hasHydratedSessions,
-    sessionStore,
-    sessionStore.isLoading,
+    projects,
+    sessionsLoading,
+    updateSession,
   ]);
 
   useEffect(() => {
@@ -266,7 +276,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         `[perf:newtab] createNewTab start (project=${project?.id ?? "none"})`,
       );
       const providerId =
-        project?.preferredProvider ?? agentStore.selectedProvider ?? "goose";
+        project?.preferredProvider ?? selectedProvider ?? "goose";
       const sessionModelPreference =
         await resolveSupportedSessionModelPreference(
           providerId,
@@ -287,9 +297,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       });
 
       if (existingDraft) {
-        sessionStore.setActiveSession(existingDraft.id);
+        setActiveSession(existingDraft.id);
         setActiveView("chat");
-        chatStore.setActiveSession(existingDraft.id);
+        setChatActiveSession(existingDraft.id);
         perfLog(
           `[perf:newtab] ${existingDraft.id.slice(0, 8)} reused draft in ${(performance.now() - tStart).toFixed(1)}ms`,
         );
@@ -297,7 +307,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       }
 
       const workingDir = await resolveSessionCwd(project);
-      const session = await sessionStore.createSession({
+      const session = await createSession({
         title,
         projectId: project?.id,
         providerId: sessionModelPreference.providerId,
@@ -305,19 +315,20 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         modelId: sessionModelPreference.modelId,
         modelName: sessionModelPreference.modelName,
       });
-      sessionStore.setActiveSession(session.id);
+      setActiveSession(session.id);
       setActiveView("chat");
-      chatStore.setActiveSession(session.id);
+      setChatActiveSession(session.id);
       perfLog(
         `[perf:newtab] ${session.id.slice(0, 8)} created session in ${(performance.now() - tStart).toFixed(1)}ms`,
       );
       return session;
     },
     [
-      agentStore.selectedProvider,
-      chatStore,
+      selectedProvider,
+      createSession,
       providerInventoryEntries,
-      sessionStore,
+      setActiveSession,
+      setChatActiveSession,
     ],
   );
 
@@ -331,7 +342,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const handleStartChatWithSkill = useCallback(
     (skill: SkillInfo, projectId?: string | null) => {
       const project = projectId
-        ? projectStore.projects.find((candidate) => candidate.id === projectId)
+        ? projects.find((candidate) => candidate.id === projectId)
         : undefined;
 
       void createNewTab(DEFAULT_CHAT_TITLE, project)
@@ -344,38 +355,38 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           console.error("Failed to start chat with skill:", error);
         });
     },
-    [createNewTab, projectStore.projects],
+    [createNewTab, projects],
   );
 
   const handleNewChatInProject = useCallback(
     (projectId: string) => {
-      const project = projectStore.projects.find((p) => p.id === projectId);
+      const project = projects.find((p) => p.id === projectId);
       if (project) {
         void createNewTab(DEFAULT_CHAT_TITLE, project);
       }
     },
-    [createNewTab, projectStore.projects],
+    [createNewTab, projects],
   );
 
   const handleArchiveProject = useCallback(
     async (projectId: string) => {
       try {
         await archiveProject(projectId);
-        projectStore.fetchProjects();
+        fetchProjects();
       } catch {
         // best-effort
       }
     },
-    [projectStore.fetchProjects],
+    [fetchProjects],
   );
 
   const clearActiveSession = useCallback(
     (sessionId: string) => {
-      chatStore.cleanupSession(sessionId);
-      sessionStore.setActiveSession(null);
+      cleanupChatSession(sessionId);
+      setActiveSession(null);
       setActiveView("home");
     },
-    [chatStore, sessionStore],
+    [cleanupChatSession, setActiveSession],
   );
   const openSettings = useCallback((section: SectionId = "appearance") => {
     setSettingsInitialSection(section);
@@ -413,36 +424,36 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const wasActiveSession = currentActiveSessionId === sessionId;
 
       try {
-        await sessionStore.archiveSession(sessionId);
-        chatStore.cleanupSession(sessionId);
+        await archiveSession(sessionId);
+        cleanupChatSession(sessionId);
 
         if (!wasActiveSession) {
           return;
         }
 
-        sessionStore.setActiveSession(null);
+        setActiveSession(null);
         setActiveView("home");
       } catch {
         // best-effort
       }
     },
-    [chatStore, sessionStore],
+    [archiveSession, cleanupChatSession, setActiveSession],
   );
 
   const handleEditProject = useCallback(
     (projectId: string) => {
-      const project = projectStore.projects.find((p) => p.id === projectId);
+      const project = projects.find((p) => p.id === projectId);
       if (project) {
         setEditingProject(project);
         setCreateProjectOpen(true);
       }
     },
-    [projectStore.projects],
+    [projects],
   );
 
   const handleMoveToProject = useCallback(
     (sessionId: string, projectId: string | null) => {
-      sessionStore.updateSession(sessionId, { projectId });
+      updateSession(sessionId, { projectId });
 
       const session = useChatSessionStore.getState().getSession(sessionId);
       if (!session) {
@@ -462,7 +473,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         }
         await acpPrepareSession(
           sessionId,
-          session.providerId ?? agentStore.selectedProvider ?? "goose",
+          session.providerId ?? selectedProvider ?? "goose",
           workingDir,
         );
       })().catch((error) => {
@@ -472,17 +483,17 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         );
       });
     },
-    [agentStore.selectedProvider, sessionStore],
+    [selectedProvider, updateSession],
   );
 
   const handleRenameChat = useCallback(
     (sessionId: string, nextTitle: string) => {
-      sessionStore.updateSession(sessionId, {
+      updateSession(sessionId, {
         title: nextTitle,
         userSetName: true,
       });
     },
-    [sessionStore],
+    [updateSession],
   );
 
   const openCreateProjectDialog = useCallback(
@@ -503,23 +514,23 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       if (homeSessionId === sessionId) {
         setHomeSessionId(null);
       }
-      sessionStore.setActiveSession(sessionId);
+      setActiveSession(sessionId);
       setActiveView("chat");
-      chatStore.setActiveSession(sessionId);
+      setChatActiveSession(sessionId);
       useChatStore.getState().markSessionRead(sessionId);
     },
-    [chatStore, homeSessionId, sessionStore],
+    [homeSessionId, setActiveSession, setChatActiveSession],
   );
 
   const handleSelectSession = useCallback(
     (id: string) => {
-      sessionStore.setActiveSession(id);
+      setActiveSession(id);
       setActiveView("chat");
-      chatStore.setActiveSession(id);
+      setChatActiveSession(id);
       useChatStore.getState().markSessionRead(id);
       loadSessionMessages(id);
     },
-    [sessionStore, chatStore, loadSessionMessages],
+    [setActiveSession, setChatActiveSession, loadSessionMessages],
   );
 
   const handleSelectSearchResult = useCallback(
@@ -537,11 +548,11 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const handleNavigate = useCallback(
     (view: AppView) => {
       if (view !== "chat") {
-        sessionStore.setActiveSession(null);
+        setActiveSession(null);
       }
       setActiveView(view);
     },
-    [sessionStore],
+    [setActiveSession],
   );
 
   const handleCreatePersona = useCreatePersonaNavigation(() =>
@@ -622,13 +633,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       // Cmd+N opens new conversation screen
       if (e.key === "n" && e.metaKey) {
         e.preventDefault();
-        sessionStore.setActiveSession(null);
+        setActiveSession(null);
         setActiveView("home");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [clearActiveSession, sessionStore]);
+  }, [clearActiveSession, setActiveSession]);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -653,7 +664,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onNavigate={handleNavigate}
             onNewChatInProject={handleNewChatInProject}
             onNewChat={() => {
-              sessionStore.setActiveSession(null);
+              setActiveSession(null);
               setActiveView("home");
             }}
             onCreateProject={() => openCreateProjectDialog()}
@@ -662,12 +673,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onArchiveChat={handleArchiveChat}
             onRenameChat={handleRenameChat}
             onMoveToProject={handleMoveToProject}
-            onReorderProject={projectStore.reorderProjects}
+            onReorderProject={reorderProjects}
             onSelectSession={handleSelectSession}
             onSelectSearchResult={handleSelectSearchResult}
             activeView={activeView}
             activeSessionId={activeSessionId}
-            projects={projectStore.projects}
+            projects={projects}
             className="h-full rounded-xl"
           />
         </div>
@@ -717,7 +728,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           pendingProjectCreatedRef.current = null;
         }}
         onCreated={(project) => {
-          projectStore.fetchProjects();
+          fetchProjects();
           pendingProjectCreatedRef.current?.(project.id);
           pendingProjectCreatedRef.current = null;
           setCreateProjectInitialWorkingDir(null);

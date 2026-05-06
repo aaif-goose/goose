@@ -38,13 +38,20 @@
    - Chat sessions: sessions, active session, active session id, archived sessions.
    - Agents: selected provider, active agent, persona lookup inputs.
    - Projects: project list, active project id, active project.
+   - Sidebar: evaluate whether derived sidebar session items should be produced by selector/helper code instead of selecting the whole `sessionStateById` record during render.
 
-4. Introduce `useShallow` selectively.
+4. Revisit hooks that mix read state and command functions.
+   - `usePersonas()` currently returns `personas` and `isLoading` as well as command functions.
+   - `AgentsView` already reads `personas` and `personasLoading` directly with store selectors and only uses `usePersonas()` for command functions.
+   - Decide whether to keep the current contract or split toward a clearer read-selector plus command-hook pattern.
+   - Do not make this contract change in Phase 1.
+
+5. Introduce `useShallow` selectively.
    - Use it for grouped object selectors in high-level consumers.
    - Use it for derived array/object selectors where reference churn causes unnecessary rerenders.
    - Do not use it for primitive values or single function selectors.
 
-5. Refactor consumers to use selector helpers where they remove duplication.
+6. Refactor consumers to use selector helpers where they remove duplication.
    - Keep call sites readable.
    - Avoid turning every selector into an abstraction.
 
