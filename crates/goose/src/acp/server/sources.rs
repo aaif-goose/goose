@@ -4,7 +4,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_create_source(
         &self,
         req: CreateSourceRequest,
-    ) -> Result<CreateSourceResponse, sacp::Error> {
+    ) -> Result<CreateSourceResponse, agent_client_protocol::Error> {
         let source = crate::sources::create_source(
             req.source_type,
             &req.name,
@@ -19,7 +19,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_list_sources(
         &self,
         req: ListSourcesRequest,
-    ) -> Result<ListSourcesResponse, sacp::Error> {
+    ) -> Result<ListSourcesResponse, agent_client_protocol::Error> {
         let sources = crate::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
         Ok(ListSourcesResponse { sources })
     }
@@ -27,7 +27,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_update_source(
         &self,
         req: UpdateSourceRequest,
-    ) -> Result<UpdateSourceResponse, sacp::Error> {
+    ) -> Result<UpdateSourceResponse, agent_client_protocol::Error> {
         let source = crate::sources::update_source(
             req.source_type,
             &req.path,
@@ -41,7 +41,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_delete_source(
         &self,
         req: DeleteSourceRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         crate::sources::delete_source(req.source_type, &req.path)?;
         Ok(EmptyResponse {})
     }
@@ -49,7 +49,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_export_source(
         &self,
         req: ExportSourceRequest,
-    ) -> Result<ExportSourceResponse, sacp::Error> {
+    ) -> Result<ExportSourceResponse, agent_client_protocol::Error> {
         let (json, filename) = crate::sources::export_source(req.source_type, &req.path)?;
         Ok(ExportSourceResponse { json, filename })
     }
@@ -57,7 +57,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_import_sources(
         &self,
         req: ImportSourcesRequest,
-    ) -> Result<ImportSourcesResponse, sacp::Error> {
+    ) -> Result<ImportSourcesResponse, agent_client_protocol::Error> {
         let sources =
             crate::sources::import_sources(&req.data, req.global, req.project_dir.as_deref())?;
         Ok(ImportSourcesResponse { sources })

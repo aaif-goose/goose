@@ -5,9 +5,9 @@ use crate::skills::{
     parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
     validate_skill_name,
 };
+use agent_client_protocol::Error;
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
-use sacp::Error;
 use serde::Deserialize;
 use std::path::PathBuf;
 

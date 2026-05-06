@@ -147,7 +147,7 @@ dashmap = "6.1"
 ahash = "0.8"
 tokio-util = { workspace = true, features = ["compat"] }
 agent-client-protocol-schema = { workspace = true }
-sacp = { workspace = true, features = ["unstable"] }
+agent-client-protocol = { workspace = true, features = ["unstable"] }
 unicode-normalization = "0.1"
 
 # For local Whisper transcription (optional, behind "local-inference" feature)
@@ -258,7 +258,7 @@ path = "src/bin/generate_acp_schema.rs"
 ignored = [
     # Used only on windows
     "winapi",
-    # Used to provide extras imports for sacp
+    # Used to provide extras imports for agent-client-protocol
     "agent-client-protocol-schema",
     # Used via http transport
     "http-body-util",

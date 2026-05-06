@@ -4,7 +4,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_preferences_read(
         &self,
         req: PreferencesReadRequest,
-    ) -> Result<PreferencesReadResponse, sacp::Error> {
+    ) -> Result<PreferencesReadResponse, agent_client_protocol::Error> {
         let config = self.config()?;
         let keys = if req.keys.is_empty() {
             PREFERENCE_DEFS.iter().map(|def| def.key).collect()
@@ -18,7 +18,9 @@ impl GooseAcpAgent {
             let value = match config.get_param::<serde_json::Value>(def.config_key) {
                 Ok(value) => value,
                 Err(crate::config::ConfigError::NotFound(_)) => serde_json::Value::Null,
-                Err(e) => return Err(sacp::Error::internal_error().data(e.to_string())),
+                Err(e) => {
+                    return Err(agent_client_protocol::Error::internal_error().data(e.to_string()))
+                }
             };
             values.push(PreferenceValue { key, value });
         }
@@ -29,7 +31,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_preferences_save(
         &self,
         req: PreferencesSaveRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let config = self.config()?;
         let mut updates = Vec::with_capacity(req.values.len());
 
@@ -46,7 +48,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_preferences_remove(
         &self,
         req: PreferencesRemoveRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let config = self.config()?;
         for key in req.keys {
             let def = preference_def(key)?;
@@ -58,7 +60,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_defaults_read(
         &self,
         _req: DefaultsReadRequest,
-    ) -> Result<DefaultsReadResponse, sacp::Error> {
+    ) -> Result<DefaultsReadResponse, agent_client_protocol::Error> {
         let config = self.config()?;
         Ok(DefaultsReadResponse {
             provider_id: optional_config_string(&config, "GOOSE_PROVIDER")?,
@@ -69,10 +71,12 @@ impl GooseAcpAgent {
     pub(super) async fn on_defaults_save(
         &self,
         req: DefaultsSaveRequest,
-    ) -> Result<DefaultsReadResponse, sacp::Error> {
+    ) -> Result<DefaultsReadResponse, agent_client_protocol::Error> {
         let provider_id = req.provider_id.trim().to_string();
         if provider_id.is_empty() {
-            return Err(sacp::Error::invalid_params().data("providerId cannot be empty"));
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("providerId cannot be empty")
+            );
         }
 
         let model_id = req.model_id.and_then(|model| {
@@ -89,13 +93,12 @@ impl GooseAcpAgent {
             .into_iter()
             .find(|entry| entry.provider_id == provider_id)
         else {
-            return Err(
-                sacp::Error::invalid_params().data(format!("Unknown provider: {provider_id}"))
-            );
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data(format!("Unknown provider: {provider_id}")));
         };
 
         if !entry.configured {
-            return Err(sacp::Error::invalid_params()
+            return Err(agent_client_protocol::Error::invalid_params()
                 .data(format!("Provider is not configured: {provider_id}")));
         }
 
@@ -103,7 +106,7 @@ impl GooseAcpAgent {
             let model_exists = entry.default_model == model_id
                 || entry.models.iter().any(|model| model.id == model_id);
             if !model_exists {
-                return Err(sacp::Error::invalid_params().data(format!(
+                return Err(agent_client_protocol::Error::invalid_params().data(format!(
                     "Model '{model_id}' is not available for provider '{provider_id}'"
                 )));
             }
@@ -136,7 +139,7 @@ impl GooseAcpAgent {
 struct PreferenceDef {
     key: PreferenceKey,
     config_key: &'static str,
-    validate: fn(&serde_json::Value) -> Result<(), sacp::Error>,
+    validate: fn(&serde_json::Value) -> Result<(), agent_client_protocol::Error>,
 }
 
 const PREFERENCE_DEFS: &[PreferenceDef] = &[
@@ -162,56 +165,69 @@ const PREFERENCE_DEFS: &[PreferenceDef] = &[
     },
 ];
 
-fn preference_def(key: PreferenceKey) -> Result<&'static PreferenceDef, sacp::Error> {
+fn preference_def(
+    key: PreferenceKey,
+) -> Result<&'static PreferenceDef, agent_client_protocol::Error> {
     PREFERENCE_DEFS
         .iter()
         .find(|def| def.key == key)
         .ok_or_else(|| {
-            sacp::Error::internal_error().data(format!("Missing preference definition for {key:?}"))
+            agent_client_protocol::Error::internal_error()
+                .data(format!("Missing preference definition for {key:?}"))
         })
 }
 
-fn validate_auto_compact_threshold(value: &serde_json::Value) -> Result<(), sacp::Error> {
+fn validate_auto_compact_threshold(
+    value: &serde_json::Value,
+) -> Result<(), agent_client_protocol::Error> {
     let Some(value) = value.as_f64() else {
-        return Err(sacp::Error::invalid_params().data("autoCompactThreshold must be a number"));
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("autoCompactThreshold must be a number"));
     };
     if !value.is_finite() || value <= 0.0 || value > 1.0 {
-        return Err(sacp::Error::invalid_params()
+        return Err(agent_client_protocol::Error::invalid_params()
             .data("autoCompactThreshold must be greater than 0 and at most 1"));
     }
 
     Ok(())
 }
 
-fn validate_voice_auto_submit_phrases(value: &serde_json::Value) -> Result<(), sacp::Error> {
+fn validate_voice_auto_submit_phrases(
+    value: &serde_json::Value,
+) -> Result<(), agent_client_protocol::Error> {
     if !value.is_string() {
-        return Err(sacp::Error::invalid_params().data("voiceAutoSubmitPhrases must be a string"));
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("voiceAutoSubmitPhrases must be a string"));
     }
 
     Ok(())
 }
 
-fn validate_voice_dictation_provider(value: &serde_json::Value) -> Result<(), sacp::Error> {
+fn validate_voice_dictation_provider(
+    value: &serde_json::Value,
+) -> Result<(), agent_client_protocol::Error> {
     let Some(value) = value.as_str() else {
-        return Err(sacp::Error::invalid_params().data("voiceDictationProvider must be a string"));
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("voiceDictationProvider must be a string"));
     };
     if !is_supported_voice_dictation_provider(value) {
-        return Err(sacp::Error::invalid_params().data("voiceDictationProvider is not supported"));
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("voiceDictationProvider is not supported"));
     }
 
     Ok(())
 }
 
-fn validate_voice_dictation_preferred_mic(value: &serde_json::Value) -> Result<(), sacp::Error> {
+fn validate_voice_dictation_preferred_mic(
+    value: &serde_json::Value,
+) -> Result<(), agent_client_protocol::Error> {
     let Some(value) = value.as_str() else {
-        return Err(
-            sacp::Error::invalid_params().data("voiceDictationPreferredMic must be a string")
-        );
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("voiceDictationPreferredMic must be a string"));
     };
     if value.is_empty() {
-        return Err(
-            sacp::Error::invalid_params().data("voiceDictationPreferredMic must be non-empty")
-        );
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("voiceDictationPreferredMic must be non-empty"));
     }
 
     Ok(())
@@ -230,10 +246,13 @@ fn is_supported_voice_dictation_provider(value: &str) -> bool {
     }
 }
 
-fn optional_config_string(config: &Config, key: &str) -> Result<Option<String>, sacp::Error> {
+fn optional_config_string(
+    config: &Config,
+    key: &str,
+) -> Result<Option<String>, agent_client_protocol::Error> {
     match config.get_param::<String>(key) {
         Ok(value) => Ok(Some(value)),
         Err(crate::config::ConfigError::NotFound(_)) => Ok(None),
-        Err(e) => Err(sacp::Error::internal_error().data(e.to_string())),
+        Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.to_string())),
     }
 }

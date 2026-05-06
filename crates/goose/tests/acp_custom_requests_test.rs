@@ -526,7 +526,7 @@ fn test_developer_fs_requests_use_acp_session_id() {
             builtins: vec!["developer".to_string()],
             read_text_file: Some(Arc::new(move |req| {
                 *seen_session_id_clone.lock().unwrap() = Some(req.session_id.0.to_string());
-                Ok(sacp::schema::ReadTextFileResponse::new(
+                Ok(agent_client_protocol::schema::ReadTextFileResponse::new(
                     "test-read-content-12345",
                 ))
             })),
