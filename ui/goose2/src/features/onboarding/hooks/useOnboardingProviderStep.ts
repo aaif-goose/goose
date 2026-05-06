@@ -157,14 +157,51 @@ export function useOnboardingProviderStep({
     onReady();
   }
 
-  function continueWithCurrentDefault() {
-    if (readiness.isUsable && readiness.providerId) {
-      onSelectedSetup({
-        providerId: readiness.providerId,
-        modelId: readiness.modelId,
-        modelName: readiness.modelName,
-      });
+  async function continueWithCurrentDefault() {
+    if (!readiness.isUsable || !readiness.providerId) {
+      return;
+    }
+
+    const setup = {
+      providerId: readiness.providerId,
+      modelId: readiness.modelId,
+      modelName: readiness.modelName,
+    };
+    const isAgentProvider = getAgentProviders().some(
+      (provider) => provider.id === readiness.providerId,
+    );
+
+    setProviderError("");
+    setSelectingProviderId(readiness.providerId);
+    try {
+      if (isAgentProvider) {
+        agentStore.setSelectedProvider(readiness.providerId);
+      } else {
+        if (!readiness.modelId || !readiness.modelName) {
+          setProviderError(t("onboarding:provider.noModels"));
+          return;
+        }
+        await saveDefaults({
+          providerId: readiness.providerId,
+          modelId: readiness.modelId,
+        });
+        setStoredModelPreference("goose", {
+          providerId: readiness.providerId,
+          modelId: readiness.modelId,
+          modelName: readiness.modelName,
+        });
+        agentStore.setSelectedProvider("goose");
+      }
+      onSelectedSetup(setup);
       onReady();
+    } catch (error) {
+      setProviderError(
+        error instanceof Error
+          ? error.message
+          : t("onboarding:provider.selectFailed"),
+      );
+    } finally {
+      setSelectingProviderId(null);
     }
   }
 
@@ -188,6 +225,6 @@ export function useOnboardingProviderStep({
       void selectModelProvider(entry),
     onSelectAgentProvider: selectAgentProvider,
     onBrowseAllProviders: () => setShowAllProviders(true),
-    onContinue: continueWithCurrentDefault,
+    onContinue: () => void continueWithCurrentDefault(),
   };
 }
