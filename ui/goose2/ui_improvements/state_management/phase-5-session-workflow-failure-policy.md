@@ -1,11 +1,12 @@
-**Phase 3B: Decide Chat Session Workflow Failure Policy**
+**Phase 5: Decide Chat Session Workflow Failure Policy**
 
 **Status**
 - Not started.
 
 **Goal**
 - Decide whether chat-session workflow actions should keep optimistic-without-rollback behavior or move to a stronger consistency policy.
-- Keep this as a separate behavior-change decision after Phase 3 makes workflow actions explicit.
+- Keep this as a separate behavior-change decision after Phase 3 makes title/project workflow actions explicit.
+- Revisit archive/unarchive after Phase 4 clarifies store boundaries, because those workflows still live in `chatSessionStore` today.
 
 **Why This Is Separate**
 - Phase 3 removes hidden side effects without changing behavior.
@@ -16,6 +17,7 @@
 - Chat-session workflow actions created in Phase 3:
   - rename session
   - update session project
+- Chat-session workflow actions to revisit after Phase 4:
   - archive session
   - unarchive session
 - User-visible error handling for those workflows, if policy changes require it.
@@ -23,8 +25,8 @@
 - Focused tests for success and failure behavior.
 
 **Out Of Scope**
-- Do not refactor `projectStore`; that remains Phase 5.
-- Do not standardize all persistence; that remains Phase 6.
+- Do not refactor `projectStore`; that remains Phase 6.
+- Do not standardize all persistence; that remains Phase 7.
 - Do not change unrelated chat send, replay, or model-selection behavior.
 
 **Policy Options To Evaluate**
@@ -62,7 +64,7 @@
 2. Choose policy per workflow.
    - Rename may be able to use backend-first or rollback.
    - Project assignment may need extra care because it affects sidebar grouping.
-   - Archive/unarchive may need refresh-on-failure or rollback because it changes visibility.
+   - Archive/unarchive should be evaluated after Phase 4. Current behavior is optimistic without rollback: local visibility changes immediately, backend failures are logged, and local state is not restored. Moving these workflows out of `chatSessionStore` should happen after store boundaries are clearer.
 
 3. Implement one workflow policy at a time.
    - Keep each behavior change small.

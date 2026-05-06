@@ -1,7 +1,7 @@
 **Phase 3: Separate Chat Session Side Effects From Generic Store Actions**
 
 **Status**
-- Not started.
+- Complete.
 
 **Goal**
 - Make session mutation semantics explicit.
@@ -22,7 +22,7 @@
 - Do not refactor `projectStore`.
 - Do not change ACP API behavior.
 - Do not change title generation, archive, unarchive, or project assignment UX.
-- Do not solve `chatSessionStore` context-panel or workspace UI ownership here; that belongs in Phase 4B.
+- Do not solve `chatSessionStore` context-panel or workspace UI ownership here; that belongs in Phase 4.
 - Do not introduce rollback, refresh-on-failure, or broad user-visible error policy in this phase.
 - Do not use `commands` naming for the new module, because Tauri backend commands already use that term.
 
@@ -84,7 +84,7 @@
 
 8. Record failure-policy follow-up.
    - After this phase, evaluate whether archive and unarchive should also move to operation functions and whether persisted operations need user-visible error handling.
-   - Track that decision in `phase-3b-session-workflow-failure-policy.md`.
+   - Track that decision in `phase-5-session-workflow-failure-policy.md`.
 
 **Validation**
 - `rg "updateSession\\(" ui/goose2/src`

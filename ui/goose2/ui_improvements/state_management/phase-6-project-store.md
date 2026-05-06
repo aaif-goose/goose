@@ -1,4 +1,4 @@
-**Phase 5: Refactor Project Store Into Clearer Layers**
+**Phase 6: Refactor Project Store Into Clearer Layers**
 
 **Status**
 - Not started.

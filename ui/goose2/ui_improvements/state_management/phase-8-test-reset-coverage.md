@@ -1,4 +1,4 @@
-**Phase 7: Standardize Test Reset Patterns And Close Coverage Gaps**
+**Phase 8: Standardize Test Reset Patterns And Close Coverage Gaps**
 
 **Status**
 - Not started.

@@ -35,10 +35,11 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 2. Introduce a selector-first read layer and add `useShallow` where appropriate.
 3. Separate backend side effects from generic store actions.
 4. Split the broadest stores by responsibility.
-5. Refactor `projectStore` into clearer layers.
-6. Standardize persistence boundaries.
-7. Standardize store reset/testing patterns and close coverage gaps.
-8. Optionally adopt Immer for nested update-heavy stores.
+5. Decide chat-session workflow failure policy.
+6. Refactor `projectStore` into clearer layers.
+7. Standardize persistence boundaries.
+8. Standardize store reset/testing patterns and close coverage gaps.
+9. Optionally adopt Immer for nested update-heavy stores.
 
 **Priority Snapshot**
 
@@ -48,24 +49,25 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - Phase 3: hidden backend side effects in `chatSessionStore`
 
 **Medium priority**
-- Phase 4A: split `agentStore`
-- Phase 4B: split `chatSessionStore`
-- Phase 5: refactor `projectStore`
-- Phase 7: testing/reset cleanup for touched stores
+- Phase 4: split `agentStore` UI state and `chatSessionStore` UI state
+- Phase 5: decide chat-session workflow failure policy
+- Phase 6: refactor `projectStore`
+- Phase 8: testing/reset cleanup for touched stores
 
 **Lower priority but useful**
-- Phase 6: persistence standardization rollout
-- Phase 8: selective Immer adoption
+- Phase 7: persistence standardization rollout
+- Phase 9: selective Immer adoption
 
 **Dependency Logic**
 
 - Phases 1 and 2 come first because they reduce consumer coupling and make later store splits safer.
 - Phase 3 comes before major store splits because current action semantics are one of the biggest bug risks.
 - Phase 4 is safer after read patterns and action semantics are clearer.
-- Phase 5 depends on lessons from earlier store cleanup and should not be the first major refactor.
-- Phase 6 depends on clearer decisions about what state is truly durable.
-- Phase 7 should happen incrementally, but a dedicated cleanup pass is still needed.
-- Phase 8 is intentionally last because it improves update ergonomics, not architecture.
+- Phase 5 follows Phase 4 so archive/unarchive workflow policy can be decided after session-store boundaries are clearer.
+- Phase 6 depends on lessons from earlier store cleanup and should not be the first major refactor.
+- Phase 7 depends on clearer decisions about what state is truly durable.
+- Phase 8 should happen incrementally, but a dedicated cleanup pass is still needed.
+- Phase 9 is intentionally last because it improves update ergonomics, not architecture.
 
 **Phase 1: Remove Whole-Store Subscriptions**
 
@@ -191,7 +193,7 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 **Why fourth**
 - Consumer coupling and action semantics should be cleaner before changing boundaries.
 
-**Phase 4A: Split `agentStore`**
+**AgentStore Boundary Work**
 
 **Primary file**
 - [agentStore.ts](/Users/lifei/Development/goose/ui/goose2/src/features/agents/stores/agentStore.ts:34)
@@ -223,7 +225,7 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - `agentCatalogStore.ts`
 - `agentUiStore.ts`
 
-**Phase 4B: Split `chatSessionStore`**
+**ChatSessionStore Boundary Work**
 
 **Primary file**
 - [chatSessionStore.ts](/Users/lifei/Development/goose/ui/goose2/src/features/chat/stores/chatSessionStore.ts:55)
@@ -249,7 +251,7 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - `chatSessionStore.ts`
 - `chatSessionUiStore.ts`
 
-**Phase 4C: Re-evaluate `chatStore`**
+**ChatStore Re-Evaluation**
 
 **Primary file**
 - [chatStore.ts](/Users/lifei/Development/goose/ui/goose2/src/features/chat/stores/chatStore.ts:39)
@@ -265,7 +267,7 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - cleanup
 
 **Detailed tasks**
-- Do not split this immediately unless Phases 1-4B are already complete.
+- Do not split this immediately unless the earlier Phase 4 boundary work is already complete.
 - Reassess whether the app needs a separation between:
   - message state
   - runtime state
@@ -276,7 +278,33 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - UI-only state is no longer co-located with unrelated domain-heavy stores where that separation is clear and useful.
 - Store boundaries reflect actual shared-state responsibilities more closely.
 
-**Phase 5: Refactor `projectStore` Into Clearer Layers**
+**Phase 5: Decide Chat Session Workflow Failure Policy**
+
+**Goal**
+- Make chat-session workflow failure behavior explicit after Phase 4 clarifies session-store boundaries.
+
+**Why this phase matters**
+- Phase 3 removes hidden side effects from generic session patching.
+- Phase 4 clarifies which session state should remain in `chatSessionStore`.
+- Archive/unarchive still have API calls in the store and currently use optimistic-without-rollback behavior.
+- Failure-policy changes are user-visible, so they should be handled separately from the mechanical side-effect extraction.
+
+**Detailed tasks**
+- Review title/project workflows introduced in Phase 3.
+- Revisit archive/unarchive after Phase 4.
+- Decide policy per workflow:
+  - backend-first
+  - optimistic without rollback
+  - optimistic with rollback
+  - refresh-on-failure
+  - optimistic with user-visible error
+- Add focused tests for selected success/failure behavior.
+
+**Success criteria**
+- Each chat-session workflow has one clear implementation point.
+- Local/backend consistency behavior is intentional and tested.
+
+**Phase 6: Refactor `projectStore` Into Clearer Layers**
 
 **Goal**
 - Reduce architectural overreach in the project feature state layer.
@@ -321,7 +349,7 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - Explicit mutation policy for reorder and CRUD flows.
 - Less orchestration logic living in the store itself.
 
-**Phase 6: Standardize Persistence Boundaries**
+**Phase 7: Standardize Persistence Boundaries**
 
 **Goal**
 - Replace ad hoc per-store durability choices with a clearer persistence policy.
@@ -357,7 +385,7 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - persisted state is minimal and intentional
 - persistence code is no longer scattered ad hoc through stores
 
-**Phase 7: Standardize Test Reset Patterns and Close Coverage Gaps**
+**Phase 8: Standardize Test Reset Patterns and Close Coverage Gaps**
 
 **Goal**
 - Make store tests safer and add coverage to the riskiest state-management paths.
@@ -392,7 +420,7 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - tests reset stores from a known initial state
 - risky persistence and mutation behaviors have direct coverage
 
-**Phase 8: Optional Immer Adoption for Nested Update Ergonomics**
+**Phase 9: Optional Immer Adoption for Nested Update Ergonomics**
 
 **Goal**
 - Improve readability where nested immutable updates remain noisy after structural cleanup.
@@ -433,4 +461,4 @@ This is a single master plan. It is intentionally sequenced so that higher-lever
 - Use this as the master sequencing document.
 - Do not try to execute every phase in a single refactor.
 - For implementation, create smaller phase-specific execution notes only when a phase is about to start.
-- Re-check the plan after Phase 3 and again after Phase 5, because store boundaries and actual consumer patterns may change enough to adjust later phases.
+- Re-check the plan after Phase 3 and again after Phase 6, because store boundaries and actual consumer patterns may change enough to adjust later phases.

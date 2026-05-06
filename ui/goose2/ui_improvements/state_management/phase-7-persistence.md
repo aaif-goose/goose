@@ -1,4 +1,4 @@
-**Phase 6: Standardize Persistence Boundaries**
+**Phase 7: Standardize Persistence Boundaries**
 
 **Status**
 - Not started.
