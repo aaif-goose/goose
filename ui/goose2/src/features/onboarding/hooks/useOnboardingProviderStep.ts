@@ -72,7 +72,7 @@ export function useOnboardingProviderStep({
   const visibleModelProviders = modelProviders.filter(
     (provider) =>
       showAllProviders ||
-      provider.tier !== "advanced" ||
+      provider.group !== "additional" ||
       configuredIds.has(provider.id) ||
       inventoryEntries.get(provider.id)?.configured,
   );

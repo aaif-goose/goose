@@ -3,6 +3,7 @@ import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { setStoredModelPreference } from "@/features/chat/lib/modelPreferences";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { ONBOARDING_STORAGE_KEY } from "../types";
 import { useOnboardingGate } from "./useOnboardingGate";
@@ -19,6 +20,7 @@ function providerEntry(
     defaultModel: "claude-sonnet-4-5",
     configured: true,
     providerType: "Preferred",
+    category: "model",
     configKeys: [],
     setupSteps: [],
     supportsRefresh: true,
@@ -59,6 +61,24 @@ describe("useOnboardingGate", () => {
       entries: new Map(),
       loading: false,
     });
+    useProviderCatalogStore.getState().setEntries([
+      {
+        id: "anthropic",
+        displayName: "Anthropic",
+        category: "model",
+        description: "",
+        setupMethod: "single_api_key",
+        group: "default",
+      },
+      {
+        id: "claude-acp",
+        displayName: "Claude Code",
+        category: "agent",
+        description: "",
+        setupMethod: "cli_auth",
+        group: "additional",
+      },
+    ]);
   });
 
   it("shows onboarding after startup when there is no completed state", () => {
@@ -115,6 +135,7 @@ describe("useOnboardingGate", () => {
         providerId: "claude-acp",
         providerName: "Claude Code",
         providerType: "Acp",
+        category: "agent",
         defaultModel: "claude-acp-session",
         models: [
           {
@@ -149,6 +170,7 @@ describe("useOnboardingGate", () => {
         providerId: "claude-acp",
         providerName: "Claude Code",
         providerType: "Acp",
+        category: "agent",
         defaultModel: "claude-acp-session",
         configured: false,
         models: [],
