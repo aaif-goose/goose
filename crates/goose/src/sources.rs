@@ -120,6 +120,29 @@ fn validate_project_slug(slug: &str) -> Result<(), Error> {
     validate_skill_name(slug)
 }
 
+/// Read the `metadata:` field out of an existing SKILL.md, returning an
+/// empty map if the file is missing, malformed, or carries no metadata.
+fn read_existing_skill_properties(skill_dir: &Path) -> HashMap<String, serde_json::Value> {
+    let raw = match fs::read_to_string(skill_dir.join("SKILL.md")) {
+        Ok(s) => s,
+        Err(_) => return HashMap::new(),
+    };
+    match parse_frontmatter::<crate::skills::SkillFrontmatter>(&raw) {
+        Ok(Some((meta, _))) => meta.metadata,
+        _ => HashMap::new(),
+    }
+}
+
+/// Read the properties bag out of an existing project file.
+fn read_existing_project_properties(file: &Path) -> HashMap<String, serde_json::Value> {
+    let raw = match fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(_) => return HashMap::new(),
+    };
+    let (_, _, _, properties) = parse_project_frontmatter(&raw);
+    properties
+}
+
 fn project_entry_from_file(file: &Path) -> Option<SourceEntry> {
     let slug = file.file_stem().and_then(|s| s.to_str())?.to_string();
     if slug.is_empty() {
@@ -322,7 +345,7 @@ pub fn update_source(
     name: &str,
     description: &str,
     content: &str,
-    properties: HashMap<String, serde_json::Value>,
+    properties: Option<HashMap<String, serde_json::Value>>,
 ) -> Result<SourceEntry, Error> {
     require_mutable_type(source_type)?;
 
@@ -337,6 +360,14 @@ pub fn update_source(
                 .ok_or_else(|| {
                     Error::internal_error().data("Failed to resolve source directory name")
                 })?;
+
+            // When the caller doesn't supply properties, preserve whatever
+            // is already on disk so per-skill frontmatter metadata isn't
+            // silently erased on edit.
+            let resolved_properties = match properties {
+                Some(p) => p,
+                None => read_existing_skill_properties(&dir),
+            };
 
             let target_dir = if name == current_dir_name {
                 dir.clone()
@@ -359,7 +390,7 @@ pub fn update_source(
             };
 
             let file_path = target_dir.join("SKILL.md");
-            let md = build_skill_md(name, description, content, &properties);
+            let md = build_skill_md(name, description, content, &resolved_properties);
             fs::write(&file_path, md).map_err(|e| {
                 Error::internal_error().data(format!("Failed to write SKILL.md: {e}"))
             })?;
@@ -370,7 +401,7 @@ pub fn update_source(
                 content,
                 &target_dir,
                 is_global_skill_dir(&target_dir),
-                properties,
+                resolved_properties,
             ))
         }
         SourceType::Project => {
@@ -391,11 +422,17 @@ pub fn update_source(
                 )));
             }
 
-            let display_name = properties
+            // Same preserve-on-None semantics as skills.
+            let resolved_properties = match properties {
+                Some(p) => p,
+                None => read_existing_project_properties(&file),
+            };
+
+            let display_name = resolved_properties
                 .get("title")
                 .and_then(|v| v.as_str())
                 .unwrap_or(name);
-            let md = build_project_md(display_name, description, content, &properties);
+            let md = build_project_md(display_name, description, content, &resolved_properties);
             fs::write(&file, md).map_err(|e| {
                 Error::internal_error().data(format!("Failed to write project file: {e}"))
             })?;
@@ -750,7 +787,7 @@ mod tests {
             "my-skill",
             "now does a different thing",
             "step three",
-            HashMap::new(),
+            Some(HashMap::new()),
         )
         .unwrap();
         assert_eq!(updated.description, "now does a different thing");
@@ -759,7 +796,6 @@ mod tests {
         delete_source(SourceType::Skill, created.path.as_str()).unwrap();
         assert!(!dir.exists());
     }
-
 
     #[test]
     fn create_rejects_duplicate_name() {
@@ -843,7 +879,12 @@ mod tests {
         std::fs::create_dir_all(&claude_skill_dir).unwrap();
         std::fs::write(
             claude_skill_dir.join("SKILL.md"),
-            build_skill_md("portable", "describes itself", "body goes here", &HashMap::new()),
+            build_skill_md(
+                "portable",
+                "describes itself",
+                "body goes here",
+                &HashMap::new(),
+            ),
         )
         .unwrap();
 
@@ -872,7 +913,12 @@ mod tests {
         std::fs::create_dir_all(&claude_skill_dir).unwrap();
         std::fs::write(
             claude_skill_dir.join("SKILL.md"),
-            build_skill_md("portable", "describes itself", "body goes here", &HashMap::new()),
+            build_skill_md(
+                "portable",
+                "describes itself",
+                "body goes here",
+                &HashMap::new(),
+            ),
         )
         .unwrap();
 
@@ -882,7 +928,7 @@ mod tests {
             "portable",
             "updated description",
             "updated body",
-            HashMap::new(),
+            Some(HashMap::new()),
         )
         .unwrap();
 
@@ -937,7 +983,7 @@ mod tests {
             "no-such-skill",
             "d",
             "c",
-            HashMap::new(),
+            Some(HashMap::new()),
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
@@ -973,7 +1019,7 @@ mod tests {
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err =
-            update_source(SourceType::Recipe, "x", "x", "d", "c", HashMap::new()).unwrap_err();
+            update_source(SourceType::Recipe, "x", "x", "d", "c", Some(HashMap::new())).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
@@ -1006,7 +1052,7 @@ mod tests {
             "my-dir",
             "new description",
             "new body",
-            HashMap::new(),
+            Some(HashMap::new()),
         )
         .unwrap();
         // Name is derived from the frontmatter written by create_source
@@ -1101,7 +1147,7 @@ mod tests {
             "escaped",
             "new description",
             "new content",
-            HashMap::new(),
+            Some(HashMap::new()),
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));

@@ -842,8 +842,13 @@ pub struct UpdateSourceRequest {
     pub name: String,
     pub description: String,
     pub content: String,
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub properties: std::collections::HashMap<String, serde_json::Value>,
+    /// When `Some`, replaces all stored properties on the source. When
+    /// `None` (or omitted), the source's existing properties are
+    /// preserved. Callers that don't model the full property bag (e.g.
+    /// the skills editor, which only edits name/description/content)
+    /// should omit this so per-skill metadata isn't silently erased.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub properties: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
