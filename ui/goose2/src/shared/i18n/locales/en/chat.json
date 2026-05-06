@@ -13,6 +13,9 @@
     "openPanel": "Open context panel",
     "ringAria": "Context: {{percent}}% used"
   },
+  "errors": {
+    "sessionPreparationSuperseded": "Session configuration changed while preparing. Try sending again."
+  },
   "contextPanel": {
     "actions": {
       "chooseCreateAction": "Choose create action",

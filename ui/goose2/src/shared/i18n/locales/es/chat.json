@@ -13,6 +13,9 @@
     "openPanel": "Abrir panel de contexto",
     "ringAria": "Contexto: {{percent}}% usado"
   },
+  "errors": {
+    "sessionPreparationSuperseded": "La configuración de la sesión cambió durante la preparación. Intenta enviar de nuevo."
+  },
   "contextPanel": {
     "actions": {
       "chooseCreateAction": "Elegir acción de creación",

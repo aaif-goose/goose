@@ -34,6 +34,7 @@ import type { ChatSendOptions } from "../types";
 const MANUAL_COMPACT_TRIGGER = "/compact";
 const EMPTY_MESSAGES: Message[] = [];
 type CompactConversationResult = "completed" | "failed" | "skipped";
+type EnsurePrepared = (personaId?: string) => Promise<boolean | undefined>;
 
 function createCompactionConfirmationMessage() {
   return createSystemNotificationMessage(
@@ -64,6 +65,16 @@ function getErrorMessage(error: unknown): string {
   }
 
   return "Unknown error";
+}
+
+async function ensurePreparedForPrompt(
+  ensurePrepared: EnsurePrepared | undefined,
+  personaId?: string,
+) {
+  const prepared = await ensurePrepared?.(personaId);
+  if (prepared === false) {
+    throw new Error(i18n.t("chat:errors.sessionPreparationSuperseded"));
+  }
 }
 
 function markMessageStopped(sessionId: string, messageId: string) {
@@ -102,7 +113,7 @@ export function useChat(
   personaInfo?: { id: string; name: string },
   options?: {
     onMessageAccepted?: (sessionId: string) => void;
-    ensurePrepared?: (personaId?: string) => Promise<void>;
+    ensurePrepared?: EnsurePrepared;
   },
 ) {
   const abortRef = useRef<AbortController | null>(null);
@@ -243,7 +254,10 @@ export function useChat(
       abortRef.current = abort;
 
       try {
-        await options?.ensurePrepared?.(effectivePersonaInfo?.id);
+        await ensurePreparedForPrompt(
+          options?.ensurePrepared,
+          effectivePersonaInfo?.id,
+        );
 
         setChatState(sessionId, "streaming");
         const promptWithPaths = appendAttachmentPaths(text.trim(), attachments);
@@ -386,7 +400,10 @@ export function useChat(
       setError(sessionId, null);
 
       try {
-        await options?.ensurePrepared?.(effectivePersonaInfo?.id);
+        await ensurePreparedForPrompt(
+          options?.ensurePrepared,
+          effectivePersonaInfo?.id,
+        );
       } catch (err) {
         const errorMessage = getErrorMessage(err);
         addMessage(

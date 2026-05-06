@@ -428,14 +428,13 @@ export function useChatSessionController({
     {
       onMessageAccepted: sessionId ? onMessageAccepted : undefined,
       ensurePrepared: selectedProvider
-        ? async () => {
-            await prepareCurrentSession(
+        ? () =>
+            prepareCurrentSession(
               selectedProvider,
               project,
               activeWorkspace?.path,
               effectiveModelSelection,
-            );
-          }
+            )
         : undefined,
     },
   );
