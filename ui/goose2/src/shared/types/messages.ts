@@ -91,6 +91,13 @@ export type MessageCompletionStatus =
   | "error"
   | "stopped";
 
+export interface ToolChainSummary {
+  /** Lowercase phrase covering the chain's tool calls (e.g. "applied dark mode polish"). */
+  summary: string;
+  /** Number of tool calls the summary covers. */
+  count: number;
+}
+
 export interface ToolRequestContent {
   type: "toolRequest";
   id: string;
@@ -104,6 +111,12 @@ export interface ToolRequestContent {
   /** Epoch ms when the tool call started executing (set on event receipt). */
   startedAt?: number;
   annotations?: ContentAnnotations;
+  /**
+   * Server-generated summary of a multi-tool chain that starts at this tool
+   * call. Only set on the FIRST tool call of a chain (>= 2 tools); the rest of
+   * the chain has this field undefined.
+   */
+  chainSummary?: ToolChainSummary;
 }
 
 export interface ToolResponseContent {

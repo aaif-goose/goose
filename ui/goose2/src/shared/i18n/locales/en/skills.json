@@ -20,24 +20,6 @@
     "deleteError": "Failed to delete skill",
     "deleteSuccess": "Deleted \"{{name}}\"",
     "deleteTitle": "Delete \"{{name}}\" permanently?",
-    "category": "Category",
-    "categories": {
-      "clear": "Clear categories",
-      "count": "{{count}} categories",
-      "filter": "Filter by category",
-      "label": "Categories",
-      "options": {
-        "design": "Design",
-        "engineering": "Engineering",
-        "general": "General",
-        "integrations": "Integrations",
-        "operations": "Operations",
-        "productivity": "Productivity",
-        "quality": "Quality",
-        "research": "Research",
-        "writing": "Writing"
-      }
-    },
     "description": "Use skills to add specific instructions or behaviors to any agent.",
     "detailEmptyDescription": "Select a skill to inspect its source, location, and instructions.",
     "detailEmptyTitle": "Choose a skill",

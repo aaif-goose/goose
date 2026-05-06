@@ -193,13 +193,44 @@
   "tools": {
     "content": "Content",
     "fileNotFound": "File not found: {{path}}",
+    "inputSummary": {
+      "command": "Command",
+      "line": "Line",
+      "path": "Path",
+      "query": "Query",
+      "resource": "Resource",
+      "tool": "Tool",
+      "workingDirectory": "Working directory"
+    },
     "moreOutputs": "More outputs ({{count}})",
     "openFile": "Open file",
     "openFolder": "Open folder",
+    "openNamed": "Open {{name}}",
     "openPath": "Open path",
     "pathOutsideRoots": "Path is outside allowed roots",
     "structuredContent": "Structured content",
     "structuredOutput": "Structured output",
     "structuredOutputLines": "{{count}} lines"
+  },
+  "tool_chain": {
+    "summary": {
+      "active": "working",
+      "reviewing_files": "reviewing files",
+      "running_commands": "running commands",
+      "checking_resources": "checking resources",
+      "updating_files": "updating files",
+      "steps_one": "{{count}} step",
+      "steps_other": "{{count}} steps"
+    },
+    "internalSteps": {
+      "show": "Show internal steps ({{count}})",
+      "hide": "Hide internal steps ({{count}})"
+    },
+    "title": {
+      "active": "working through {{count}} step",
+      "active_other": "working through {{count}} steps",
+      "labeled": "{{label}} ({{count}} step)",
+      "labeled_other": "{{label}} ({{count}} steps)"
+    }
   }
 }

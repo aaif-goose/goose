@@ -332,6 +332,9 @@
         "useTemplateDescription": "Start with endpoint and model defaults for a known provider."
       }
     },
+    "catalog": {
+      "loading": "Loading provider catalog..."
+    },
     "disconnect": "Disconnect",
     "models": {
       "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",

@@ -71,6 +71,7 @@ export function ChatInputSelector({
           className={cn(
             "min-w-0",
             triggerVariant === "default" && "justify-between",
+            triggerVariant === "toolbar" && "max-w-40",
           )}
         >
           <span className="truncate">{triggerLabel}</span>

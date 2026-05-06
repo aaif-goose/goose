@@ -42,30 +42,9 @@ test.describe("Skills view", () => {
       page.getByRole("button", { name: "Back to skills" }),
     ).toBeVisible();
     await expect(page.getByText("alpha").first()).toBeVisible();
-    await expect(page.getByText("Quality")).toBeVisible();
     await expect(
       page.getByText("/tmp/alpha/.goose/skills/test-writer/SKILL.md"),
     ).toBeVisible();
-  });
-
-  test("category filtering isolates inferred groups", async ({
-    tauriMocked: page,
-  }) => {
-    await navigateToSkills(page);
-
-    await page.getByRole("button", { name: "Filter by category" }).click();
-    await page.getByRole("menuitemcheckbox", { name: "Design" }).click();
-    await page.keyboard.press("Escape");
-
-    await expect(
-      page.getByRole("button", { name: "Open layout details" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Open code-review details" }),
-    ).not.toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Open test-writer details" }),
-    ).not.toBeVisible();
   });
 
   test("search filters the list", async ({ tauriMocked: page }) => {

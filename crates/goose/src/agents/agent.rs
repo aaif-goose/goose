@@ -1042,18 +1042,19 @@ impl Agent {
                 if let ActionRequiredData::ElicitationResponse { id, user_data } =
                     &action_required.data
                 {
-                    if let Err(e) = ActionRequiredManager::global()
+                    // Surface stale/cancelled/timed-out elicitations as a hard
+                    // error so callers (e.g. the HTTP handler) can propagate
+                    // failure to the client instead of silently reporting
+                    // success while the blocked tool call stays unblocked.
+                    // The success path returns an empty stream; an Err here
+                    // makes the contract: Ok(empty) on accept, Err on reject.
+                    ActionRequiredManager::global()
                         .submit_response(id.clone(), user_data.clone())
                         .await
-                    {
-                        let error_text = format!("Failed to submit elicitation response: {}", e);
-                        error!(error_text);
-                        return Ok(Box::pin(stream::once(async {
-                            Ok(AgentEvent::Message(
-                                Message::assistant().with_text(error_text),
-                            ))
-                        })));
-                    }
+                        .map_err(|e| {
+                            error!("Failed to submit elicitation response: {}", e);
+                            anyhow!("Failed to submit elicitation response: {}", e)
+                        })?;
                     session_manager
                         .add_message(&session_config.id, &user_message)
                         .await?;

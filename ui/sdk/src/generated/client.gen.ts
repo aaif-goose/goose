@@ -74,6 +74,8 @@ import type {
   ProviderConfigSaveRequest,
   ProviderConfigStatusRequest,
   ProviderConfigStatusResponse,
+  ProviderSetupCatalogListRequest,
+  ProviderSetupCatalogListResponse,
   ReadResourceRequest,
   ReadResourceResponse,
   RefreshProviderInventoryRequest,
@@ -115,6 +117,7 @@ import {
   zProviderConfigChangeResponse,
   zProviderConfigReadResponse,
   zProviderConfigStatusResponse,
+  zProviderSetupCatalogListResponse,
   zReadResourceResponse,
   zRefreshProviderInventoryResponse,
   zUpdateSourceResponse,
@@ -209,6 +212,18 @@ export class GooseExtClient {
     return zProviderCatalogListResponse.parse(
       raw,
     ) as ProviderCatalogListResponse;
+  }
+
+  async GooseProvidersSetupCatalogList(
+    params: ProviderSetupCatalogListRequest,
+  ): Promise<ProviderSetupCatalogListResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/setup/catalog/list",
+      params,
+    );
+    return zProviderSetupCatalogListResponse.parse(
+      raw,
+    ) as ProviderSetupCatalogListResponse;
   }
 
   async GooseProvidersCatalogTemplate(

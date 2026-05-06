@@ -24,6 +24,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
@@ -647,8 +648,14 @@ impl AcpClientLoop {
     ) -> Result<()> {
         let stdin = child.stdin.take().context("no stdin")?;
         let stdout = child.stdout.take().context("no stdout")?;
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(forward_child_stderr(stderr));
+        }
         let transport = sacp::ByteStreams::new(stdin.compat_write(), stdout.compat());
-        self.run(transport, rx, init_tx).await
+        let result = self.run(transport, rx, init_tx).await;
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        result
     }
 
     async fn run(
@@ -872,12 +879,56 @@ impl AcpClientLoop {
     }
 }
 
+/// Forwards an ACP child's stderr to tracing line by line.
+///
+/// Lines longer than `MAX_LINE_LEN` are flushed in chunks so a child that
+/// emits unbounded output without newlines (e.g. carriage-return progress
+/// bars or binary data) cannot cause unbounded memory growth.
+async fn forward_child_stderr(mut stderr: tokio::process::ChildStderr) {
+    const MAX_LINE_LEN: usize = 8192;
+    const READ_CHUNK: usize = 1024;
+
+    let mut line: Vec<u8> = Vec::with_capacity(256);
+    let mut chunk = [0u8; READ_CHUNK];
+    loop {
+        match stderr.read(&mut chunk).await {
+            Ok(0) => break,
+            Ok(n) => {
+                for &b in &chunk[..n] {
+                    if b == b'\n' {
+                        emit_stderr_line(&mut line);
+                    } else {
+                        line.push(b);
+                        if line.len() >= MAX_LINE_LEN {
+                            emit_stderr_line(&mut line);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!(target: "acp::child::stderr", error = %e, "stderr read error");
+                break;
+            }
+        }
+    }
+    emit_stderr_line(&mut line);
+}
+
+fn emit_stderr_line(line: &mut Vec<u8>) {
+    if line.is_empty() {
+        return;
+    }
+    let trimmed = line.strip_suffix(b"\r").unwrap_or(line);
+    tracing::info!(target: "acp::child::stderr", "{}", String::from_utf8_lossy(trimmed));
+    line.clear();
+}
+
 async fn spawn_acp_process(config: &AcpProviderConfig) -> Result<Child> {
     let mut cmd = Command::new(&config.command);
     cmd.args(&config.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
 
     for key in &config.env_remove {

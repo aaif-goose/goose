@@ -12,7 +12,8 @@ import { selectPersonas } from "@/features/agents/stores/agentSelectors";
 import { useProviderSelection } from "@/features/agents/hooks/useProviderSelection";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { selectProjects } from "@/features/projects/stores/projectSelectors";
-import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
+import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import {
   buildProjectSystemPrompt,
   composeSystemPrompt,
@@ -67,6 +68,7 @@ export function useChatSessionController({
   );
   const projects = useProjectStore(selectProjects);
   const projectsLoading = useProjectStore((s) => s.loading);
+  const catalogEntries = useProviderCatalogStore((s) => s.entries);
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>();
   const [pendingProjectId, setPendingProjectId] = useState<string | null>();
   const [pendingProviderId, setPendingProviderId] = useState<string>();
@@ -440,7 +442,7 @@ export function useChatSessionController({
     supportsContextCompactionControls(selectedAgentId);
   const isCompactingContext = chatState === "compacting";
   const resolveAutoCompactAgentId = useCallback(
-    (overridePersona?: { id: string; name?: string }) => {
+    (overridePersona?: { id: string; name?: string }): string | null => {
       if (!overridePersona?.id) {
         return selectedAgentId;
       }
@@ -452,11 +454,22 @@ export function useChatSessionController({
         return selectedAgentId;
       }
 
-      return (
-        resolveAgentProviderCatalogIdStrict(targetPersona.provider) ?? "goose"
+      const targetAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+        catalogEntries,
+        targetPersona.provider,
       );
+      if (targetAgentId) {
+        return targetAgentId;
+      }
+
+      const isGooseModelProvider = providers.some(
+        (provider) =>
+          provider.id === targetPersona.provider ||
+          provider.label.toLowerCase().includes(targetPersona.provider ?? ""),
+      );
+      return isGooseModelProvider ? "goose" : null;
     },
-    [personas, selectedAgentId],
+    [catalogEntries, personas, providers, selectedAgentId],
   );
   const canAutoCompactBeforeSend = useCallback(
     (overridePersona?: { id: string; name?: string }) => {
@@ -726,7 +739,8 @@ export function useChatSessionController({
           }
           if (pendingModelSelection?.source === "explicit") {
             const agentId =
-              resolveAgentProviderCatalogIdStrict(
+              resolveAgentProviderCatalogIdStrictFromEntries(
+                catalogEntries,
                 pendingModelSelection.providerId ?? nextProviderId,
               ) ?? "goose";
             setStoredModelPreference(agentId, {
@@ -769,6 +783,7 @@ export function useChatSessionController({
     };
   }, [
     activeWorkspace?.path,
+    catalogEntries,
     pendingDraftValue,
     pendingSkillDrafts,
     pendingModelSelection,

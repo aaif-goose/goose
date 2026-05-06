@@ -180,6 +180,158 @@ describe("acpNotificationHandler", () => {
     });
   });
 
+  it("attributes a completed live tool response to the matching request when a sibling is still executing", async () => {
+    // Regression: with two sibling tool requests, completing the first
+    // while the second is still unpaired must label the response with the
+    // first request's name. Previously the live path used the latest
+    // unpaired request, which could swap names across siblings.
+    registerPreparedSession("acp-session", "goose", "/Users/test");
+    setActiveMessageId("acp-session", "assistant-1");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-a",
+        title: "read_file",
+        rawInput: { path: "/tmp/notes.md" },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-b",
+        title: "grep",
+        rawInput: { pattern: "TODO" },
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-a",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "file contents" },
+          },
+        ],
+      },
+    } as never);
+
+    const [message] = useChatStore.getState().messagesBySession["acp-session"];
+    expect(message.content.map((block) => block.type)).toEqual([
+      "toolRequest",
+      "toolRequest",
+      "toolResponse",
+    ]);
+    expect(message.content[0]).toMatchObject({
+      type: "toolRequest",
+      id: "tool-a",
+      name: "read_file",
+      status: "completed",
+    });
+    expect(message.content[1]).toMatchObject({
+      type: "toolRequest",
+      id: "tool-b",
+      name: "grep",
+      status: "executing",
+    });
+    expect(message.content[2]).toMatchObject({
+      type: "toolResponse",
+      id: "tool-a",
+      name: "read_file",
+      result: "file contents",
+      isError: false,
+    });
+  });
+
+  it("keeps a late live tool response from moving the streaming pointer back to its owner message", async () => {
+    registerPreparedSession("acp-session", "goose", "/Users/test");
+    setActiveMessageId("acp-session", "assistant-1");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-a",
+        title: "read_file",
+        rawInput: { path: "/tmp/notes.md" },
+      },
+    } as never);
+
+    const beforeMessages =
+      useChatStore.getState().messagesBySession["acp-session"] ?? [];
+    useChatStore.setState((state) => ({
+      ...state,
+      messagesBySession: {
+        ...state.messagesBySession,
+        "acp-session": [
+          ...beforeMessages,
+          {
+            id: "assistant-2",
+            role: "assistant",
+            created: Date.now(),
+            content: [],
+            metadata: {
+              userVisible: true,
+              agentVisible: true,
+              completionStatus: "inProgress",
+            },
+          },
+        ],
+      },
+    }));
+    useChatStore.getState().setStreamingMessageId("acp-session", "assistant-2");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-a",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "file contents" },
+          },
+        ],
+      },
+    } as never);
+
+    expect(
+      useChatStore.getState().getSessionRuntime("acp-session")
+        .streamingMessageId,
+    ).toBe("assistant-2");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Continuing with the answer.",
+        },
+      },
+    } as never);
+
+    const messages = useChatStore.getState().messagesBySession["acp-session"];
+    const ownerMessage = messages.find((m) => m.id === "assistant-1");
+    const currentMessage = messages.find((m) => m.id === "assistant-2");
+
+    expect(ownerMessage?.content.map((block) => block.type)).toEqual([
+      "toolRequest",
+      "toolResponse",
+    ]);
+    expect(currentMessage?.content).toEqual([
+      { type: "text", text: "Continuing with the answer." },
+    ]);
+  });
+
   it("preserves structured tool output when ACP provides rawOutput", async () => {
     registerPreparedSession(
       "acp-session",
@@ -553,6 +705,185 @@ describe("acpNotificationHandler", () => {
       id: "tool-1",
       result: "Tool completed.",
       isError: false,
+    });
+  });
+
+  it("threads tool chain summary onto the streaming tool request (live)", async () => {
+    registerPreparedSession("acp-session", "goose", "/tmp");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-1",
+        title: "running ls",
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-2",
+        title: "running pwd",
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc-1",
+        _meta: {
+          goose: {
+            toolChainSummary: {
+              summary: "inspected working directory",
+              count: 2,
+            },
+          },
+        },
+      },
+    } as never);
+
+    const messages = useChatStore.getState().messagesBySession["acp-session"];
+    expect(messages).toBeTruthy();
+    const toolReqs =
+      messages?.flatMap((m) =>
+        m.content.filter((c) => c.type === "toolRequest"),
+      ) ?? [];
+    const first = toolReqs.find(
+      (c) => c.type === "toolRequest" && c.id === "tc-1",
+    );
+    const second = toolReqs.find(
+      (c) => c.type === "toolRequest" && c.id === "tc-2",
+    );
+    expect(first?.type === "toolRequest" && first.chainSummary).toEqual({
+      summary: "inspected working directory",
+      count: 2,
+    });
+    expect(
+      second?.type === "toolRequest" && second.chainSummary,
+    ).toBeUndefined();
+  });
+
+  it("threads tool chain summary onto the first tool call even when the agent has moved to the next assistant message (live)", async () => {
+    registerPreparedSession("acp-session", "goose", "/tmp");
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-1",
+        title: "running ls",
+      },
+    } as never);
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-2",
+        title: "running pwd",
+      },
+    } as never);
+
+    // Simulate the agent moving on to the next assistant message: the
+    // streamingMessageId now points to a brand-new message that does not
+    // contain the original tool requests. This is what happens in practice
+    // by the time the chain summary task fires (after all tool responses
+    // have been emitted and the next agent turn has begun).
+    const beforeMessages =
+      useChatStore.getState().messagesBySession["acp-session"] ?? [];
+    const newAssistantId = "next-assistant-msg";
+    useChatStore.setState((state) => ({
+      ...state,
+      messagesBySession: {
+        ...state.messagesBySession,
+        "acp-session": [
+          ...beforeMessages,
+          {
+            id: newAssistantId,
+            role: "assistant",
+            created: Date.now(),
+            content: [{ type: "text", text: "ok" }],
+            metadata: {
+              userVisible: true,
+              agentVisible: true,
+              completionStatus: "inProgress",
+            },
+          },
+        ],
+      },
+    }));
+    useChatStore
+      .getState()
+      .setStreamingMessageId("acp-session", newAssistantId);
+
+    await handleSessionNotification({
+      sessionId: "acp-session",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc-1",
+        _meta: {
+          goose: {
+            toolChainSummary: {
+              summary: "inspected working directory",
+              count: 2,
+            },
+          },
+        },
+      },
+    } as never);
+
+    const messages = useChatStore.getState().messagesBySession["acp-session"];
+    const toolReqs =
+      messages?.flatMap((m) =>
+        m.content.filter((c) => c.type === "toolRequest"),
+      ) ?? [];
+    const first = toolReqs.find(
+      (c) => c.type === "toolRequest" && c.id === "tc-1",
+    );
+    expect(first?.type === "toolRequest" && first.chainSummary).toEqual({
+      summary: "inspected working directory",
+      count: 2,
+    });
+    // The new assistant message must not have been mutated to absorb the
+    // chain summary (regression guard: it doesn't own the tool request).
+    const nextMsg = messages?.find((m) => m.id === newAssistantId);
+    expect(nextMsg?.content.some((c) => c.type === "toolRequest")).toBe(false);
+  });
+
+  it("attaches tool chain summary on initial tool_call during replay", async () => {
+    const replaySessionId = "replay-chain-summary-session";
+    useChatStore.setState({
+      loadingSessionIds: new Set<string>([replaySessionId]),
+    });
+
+    await handleSessionNotification({
+      sessionId: replaySessionId,
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-1",
+        title: "ran two things",
+        _meta: {
+          goose: {
+            toolChainSummary: {
+              summary: "applied dark mode polish",
+              count: 4,
+            },
+          },
+        },
+      },
+    } as never);
+
+    const buffer = getReplayBuffer(replaySessionId);
+    expect(buffer).toBeTruthy();
+    const tc = buffer
+      ?.flatMap((m) => m.content)
+      .find((c) => c.type === "toolRequest" && c.id === "tc-1");
+    expect(tc?.type === "toolRequest" && tc.chainSummary).toEqual({
+      summary: "applied dark mode polish",
+      count: 4,
     });
   });
 });

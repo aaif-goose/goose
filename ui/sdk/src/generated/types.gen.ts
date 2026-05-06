@@ -198,6 +198,10 @@ export type ProviderInventoryEntryDto = {
      */
     providerType: string;
     /**
+     * Whether this inventory entry represents an agent provider or a model provider.
+     */
+    category: ProviderSetupCategoryDto;
+    /**
      * Required configuration keys and setup metadata.
      */
     configKeys: Array<ProviderConfigKey>;
@@ -238,6 +242,8 @@ export type ProviderInventoryEntryDto = {
      */
     modelSelectionHint?: string | null;
 };
+
+export type ProviderSetupCategoryDto = 'agent' | 'model';
 
 export type ProviderConfigKey = {
     name: string;
@@ -287,10 +293,10 @@ export type ProviderCatalogListRequest = {
 };
 
 export type ProviderCatalogListResponse = {
-    providers: Array<ProviderCatalogEntryDto>;
+    providers: Array<ProviderTemplateCatalogEntryDto>;
 };
 
-export type ProviderCatalogEntryDto = {
+export type ProviderTemplateCatalogEntryDto = {
     providerId: string;
     name: string;
     format: string;
@@ -299,6 +305,48 @@ export type ProviderCatalogEntryDto = {
     docUrl: string;
     envVar: string;
 };
+
+/**
+ * List provider setup catalog entries
+ */
+export type ProviderSetupCatalogListRequest = {
+    [key: string]: unknown;
+};
+
+export type ProviderSetupCatalogListResponse = {
+    providers: Array<ProviderSetupCatalogEntryDto>;
+};
+
+export type ProviderSetupCatalogEntryDto = {
+    providerId: string;
+    name: string;
+    category: ProviderSetupCategoryDto;
+    description: string;
+    setupMethod: ProviderSetupMethodDto;
+    nativeConnectQuery?: string | null;
+    fields?: Array<ProviderSetupFieldDto>;
+    binaryName?: string | null;
+    docUrl?: string | null;
+    group: ProviderSetupGroupDto;
+    showOnlyWhenInstalled: boolean;
+    aliases?: Array<string>;
+    supportsInstall: boolean;
+    supportsAuth: boolean;
+    supportsAuthStatus: boolean;
+};
+
+export type ProviderSetupMethodDto = 'none' | 'single_api_key' | 'config_fields' | 'host_with_oauth_fallback' | 'oauth_browser' | 'oauth_device_code' | 'cloud_credentials' | 'local' | 'cli_auth';
+
+export type ProviderSetupFieldDto = {
+    key: string;
+    label: string;
+    secret: boolean;
+    required: boolean;
+    placeholder?: string | null;
+    defaultValue?: string | null;
+};
+
+export type ProviderSetupGroupDto = 'default' | 'additional';
 
 /**
  * Return the editable template for one catalog provider.
@@ -896,14 +944,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | GooseToolCallRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | PreferencesReadRequest | PreferencesSaveRequest | PreferencesRemoveRequest | DefaultsReadRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationSecretSaveRequest | DictationSecretDeleteRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | GooseToolCallRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderSetupCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | PreferencesReadRequest | PreferencesSaveRequest | PreferencesRemoveRequest | DefaultsReadRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationSecretSaveRequest | DictationSecretDeleteRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | GooseToolCallResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | PreferencesReadResponse | DefaultsReadResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | GooseToolCallResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderSetupCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | PreferencesReadResponse | DefaultsReadResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

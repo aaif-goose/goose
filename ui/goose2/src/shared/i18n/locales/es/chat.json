@@ -193,13 +193,44 @@
   "tools": {
     "content": "Contenido",
     "fileNotFound": "Archivo no encontrado: {{path}}",
+    "inputSummary": {
+      "command": "Comando",
+      "line": "Línea",
+      "path": "Ruta",
+      "query": "Búsqueda",
+      "resource": "Recurso",
+      "tool": "Herramienta",
+      "workingDirectory": "Directorio de trabajo"
+    },
     "moreOutputs": "Más salidas ({{count}})",
     "openFile": "Abrir archivo",
     "openFolder": "Abrir carpeta",
+    "openNamed": "Abrir {{name}}",
     "openPath": "Abrir ruta",
     "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos.",
     "structuredContent": "Contenido estructurado",
     "structuredOutput": "Salida estructurada",
     "structuredOutputLines": "{{count}} líneas"
+  },
+  "tool_chain": {
+    "summary": {
+      "active": "trabajando",
+      "reviewing_files": "revisando archivos",
+      "running_commands": "ejecutando comandos",
+      "checking_resources": "consultando recursos",
+      "updating_files": "actualizando archivos",
+      "steps_one": "{{count}} paso",
+      "steps_other": "{{count}} pasos"
+    },
+    "internalSteps": {
+      "show": "Mostrar pasos internos ({{count}})",
+      "hide": "Ocultar pasos internos ({{count}})"
+    },
+    "title": {
+      "active": "trabajando en {{count}} paso",
+      "active_other": "trabajando en {{count}} pasos",
+      "labeled": "{{label}} ({{count}} paso)",
+      "labeled_other": "{{label}} ({{count}} pasos)"
+    }
   }
 }

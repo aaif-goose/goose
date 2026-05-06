@@ -139,6 +139,8 @@ export const zListProvidersRequest = z.object({
     providerIds: z.array(z.string()).optional().default([])
 });
 
+export const zProviderSetupCategoryDto = z.enum(['agent', 'model']);
+
 export const zProviderConfigKey = z.object({
     name: z.string(),
     required: z.boolean(),
@@ -183,6 +185,7 @@ export const zProviderInventoryEntryDto = z.object({
     defaultModel: z.string(),
     configured: z.boolean(),
     providerType: z.string(),
+    category: zProviderSetupCategoryDto,
     configKeys: z.array(zProviderConfigKey),
     setupSteps: z.array(z.string()),
     supportsRefresh: z.boolean(),
@@ -224,7 +227,7 @@ export const zProviderCatalogListRequest = z.object({
     ]).optional()
 });
 
-export const zProviderCatalogEntryDto = z.object({
+export const zProviderTemplateCatalogEntryDto = z.object({
     providerId: z.string(),
     name: z.string(),
     format: z.string(),
@@ -235,7 +238,72 @@ export const zProviderCatalogEntryDto = z.object({
 });
 
 export const zProviderCatalogListResponse = z.object({
-    providers: z.array(zProviderCatalogEntryDto)
+    providers: z.array(zProviderTemplateCatalogEntryDto)
+});
+
+/**
+ * List provider setup catalog entries
+ */
+export const zProviderSetupCatalogListRequest = z.record(z.unknown());
+
+export const zProviderSetupMethodDto = z.enum([
+    'none',
+    'single_api_key',
+    'config_fields',
+    'host_with_oauth_fallback',
+    'oauth_browser',
+    'oauth_device_code',
+    'cloud_credentials',
+    'local',
+    'cli_auth'
+]);
+
+export const zProviderSetupFieldDto = z.object({
+    key: z.string(),
+    label: z.string(),
+    secret: z.boolean(),
+    required: z.boolean(),
+    placeholder: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultValue: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zProviderSetupGroupDto = z.enum(['default', 'additional']);
+
+export const zProviderSetupCatalogEntryDto = z.object({
+    providerId: z.string(),
+    name: z.string(),
+    category: zProviderSetupCategoryDto,
+    description: z.string(),
+    setupMethod: zProviderSetupMethodDto,
+    nativeConnectQuery: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    fields: z.array(zProviderSetupFieldDto).optional().default([]),
+    binaryName: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    docUrl: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    group: zProviderSetupGroupDto,
+    showOnlyWhenInstalled: z.boolean(),
+    aliases: z.array(z.string()).optional().default([]),
+    supportsInstall: z.boolean(),
+    supportsAuth: z.boolean(),
+    supportsAuthStatus: z.boolean()
+});
+
+export const zProviderSetupCatalogListResponse = z.object({
+    providers: z.array(zProviderSetupCatalogEntryDto)
 });
 
 /**
@@ -903,6 +971,7 @@ export const zExtRequest = z.object({
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
             zProviderCatalogListRequest,
+            zProviderSetupCatalogListRequest,
             zProviderCatalogTemplateRequest,
             zCustomProviderCreateRequest,
             zCustomProviderReadRequest,
@@ -960,6 +1029,7 @@ export const zExtResponse = z.union([
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
                 zProviderCatalogListResponse,
+                zProviderSetupCatalogListResponse,
                 zProviderCatalogTemplateResponse,
                 zCustomProviderCreateResponse,
                 zCustomProviderReadResponse,

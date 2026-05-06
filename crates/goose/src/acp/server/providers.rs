@@ -11,6 +11,7 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         default_model: entry.default_model,
         configured: entry.configured,
         provider_type: format!("{:?}", entry.provider_type),
+        category: provider_setup_category_to_dto(entry.category),
         config_keys: entry
             .config_keys
             .into_iter()
@@ -114,8 +115,8 @@ fn provider_config_field_value(
 
 fn provider_catalog_entry_to_dto(
     entry: crate::providers::catalog::ProviderCatalogEntry,
-) -> ProviderCatalogEntryDto {
-    ProviderCatalogEntryDto {
+) -> ProviderTemplateCatalogEntryDto {
+    ProviderTemplateCatalogEntryDto {
         provider_id: entry.id,
         name: entry.name,
         format: entry.format,
@@ -123,6 +124,87 @@ fn provider_catalog_entry_to_dto(
         model_count: entry.model_count,
         doc_url: entry.doc_url,
         env_var: entry.env_var,
+    }
+}
+
+fn provider_setup_category_to_dto(
+    category: crate::providers::catalog::ProviderSetupCategory,
+) -> ProviderSetupCategoryDto {
+    match category {
+        crate::providers::catalog::ProviderSetupCategory::Agent => ProviderSetupCategoryDto::Agent,
+        crate::providers::catalog::ProviderSetupCategory::Model => ProviderSetupCategoryDto::Model,
+    }
+}
+
+fn provider_setup_method_to_dto(
+    method: crate::providers::catalog::ProviderSetupMethod,
+) -> ProviderSetupMethodDto {
+    match method {
+        crate::providers::catalog::ProviderSetupMethod::None => ProviderSetupMethodDto::None,
+        crate::providers::catalog::ProviderSetupMethod::SingleApiKey => {
+            ProviderSetupMethodDto::SingleApiKey
+        }
+        crate::providers::catalog::ProviderSetupMethod::ConfigFields => {
+            ProviderSetupMethodDto::ConfigFields
+        }
+        crate::providers::catalog::ProviderSetupMethod::HostWithOauthFallback => {
+            ProviderSetupMethodDto::HostWithOauthFallback
+        }
+        crate::providers::catalog::ProviderSetupMethod::OauthBrowser => {
+            ProviderSetupMethodDto::OauthBrowser
+        }
+        crate::providers::catalog::ProviderSetupMethod::OauthDeviceCode => {
+            ProviderSetupMethodDto::OauthDeviceCode
+        }
+        crate::providers::catalog::ProviderSetupMethod::CloudCredentials => {
+            ProviderSetupMethodDto::CloudCredentials
+        }
+        crate::providers::catalog::ProviderSetupMethod::Local => ProviderSetupMethodDto::Local,
+        crate::providers::catalog::ProviderSetupMethod::CliAuth => ProviderSetupMethodDto::CliAuth,
+    }
+}
+
+fn provider_setup_group_to_dto(
+    group: crate::providers::catalog::ProviderSetupGroup,
+) -> ProviderSetupGroupDto {
+    match group {
+        crate::providers::catalog::ProviderSetupGroup::Default => ProviderSetupGroupDto::Default,
+        crate::providers::catalog::ProviderSetupGroup::Additional => {
+            ProviderSetupGroupDto::Additional
+        }
+    }
+}
+
+fn provider_setup_entry_to_dto(
+    entry: crate::providers::catalog::ProviderSetupCatalogEntry,
+) -> ProviderSetupCatalogEntryDto {
+    ProviderSetupCatalogEntryDto {
+        provider_id: entry.provider_id,
+        name: entry.display_name,
+        category: provider_setup_category_to_dto(entry.category),
+        description: entry.description,
+        setup_method: provider_setup_method_to_dto(entry.setup_method),
+        native_connect_query: entry.native_connect_query,
+        fields: entry
+            .fields
+            .into_iter()
+            .map(|field| ProviderSetupFieldDto {
+                key: field.key,
+                label: field.label,
+                secret: field.secret,
+                required: field.required,
+                placeholder: field.placeholder,
+                default_value: field.default_value,
+            })
+            .collect(),
+        binary_name: entry.binary_name,
+        doc_url: entry.docs_url,
+        group: provider_setup_group_to_dto(entry.group),
+        show_only_when_installed: entry.show_only_when_installed,
+        aliases: entry.aliases,
+        supports_install: entry.setup_capabilities.install,
+        supports_auth: entry.setup_capabilities.auth,
+        supports_auth_status: entry.setup_capabilities.auth_status,
     }
 }
 
@@ -378,6 +460,18 @@ impl GooseAcpAgent {
         });
 
         Ok(ProviderCatalogListResponse { providers })
+    }
+
+    pub(super) async fn on_list_provider_setup_catalog(
+        &self,
+        _req: ProviderSetupCatalogListRequest,
+    ) -> Result<ProviderSetupCatalogListResponse, sacp::Error> {
+        let providers = crate::providers::catalog::get_setup_catalog_entries()
+            .await
+            .into_iter()
+            .map(provider_setup_entry_to_dto)
+            .collect();
+        Ok(ProviderSetupCatalogListResponse { providers })
     }
 
     pub(super) async fn on_get_provider_catalog_template(

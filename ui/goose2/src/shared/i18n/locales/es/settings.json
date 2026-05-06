@@ -332,6 +332,9 @@
         "useTemplateDescription": "Comienza con valores predeterminados de endpoint y modelos para un proveedor conocido."
       }
     },
+    "catalog": {
+      "loading": "Cargando catálogo de proveedores..."
+    },
     "disconnect": "Desconectar",
     "models": {
       "description": "Necesitas al menos un proveedor de modelos para usar el agente Goose. Algunos agentes pueden traer sus propias conexiones de modelo.",

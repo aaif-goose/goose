@@ -351,6 +351,10 @@
           "type": "string",
           "description": "Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`."
         },
+        "category": {
+          "$ref": "#/$defs/ProviderSetupCategoryDto",
+          "description": "Whether this inventory entry represents an agent provider or a model provider."
+        },
         "configKeys": {
           "type": "array",
           "items": {
@@ -420,6 +424,7 @@
         "defaultModel",
         "configured",
         "providerType",
+        "category",
         "configKeys",
         "setupSteps",
         "supportsRefresh",
@@ -428,6 +433,13 @@
         "stale"
       ],
       "description": "Provider inventory entry."
+    },
+    "ProviderSetupCategoryDto": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "model"
+      ]
     },
     "ProviderConfigKey": {
       "type": "object",
@@ -533,7 +545,7 @@
         "providers": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ProviderCatalogEntryDto"
+            "$ref": "#/$defs/ProviderTemplateCatalogEntryDto"
           }
         }
       },
@@ -543,7 +555,7 @@
       "x-side": "agent",
       "x-method": "_goose/providers/catalog/list"
     },
-    "ProviderCatalogEntryDto": {
+    "ProviderTemplateCatalogEntryDto": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -577,6 +589,163 @@
         "modelCount",
         "docUrl",
         "envVar"
+      ]
+    },
+    "ProviderSetupCatalogListRequest": {
+      "type": "object",
+      "description": "List provider setup catalog entries",
+      "x-side": "agent",
+      "x-method": "_goose/providers/setup/catalog/list"
+    },
+    "ProviderSetupCatalogListResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderSetupCatalogEntryDto"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/setup/catalog/list"
+    },
+    "ProviderSetupCatalogEntryDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/ProviderSetupCategoryDto"
+        },
+        "description": {
+          "type": "string"
+        },
+        "setupMethod": {
+          "$ref": "#/$defs/ProviderSetupMethodDto"
+        },
+        "nativeConnectQuery": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderSetupFieldDto"
+          },
+          "default": []
+        },
+        "binaryName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "docUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "$ref": "#/$defs/ProviderSetupGroupDto"
+        },
+        "showOnlyWhenInstalled": {
+          "type": "boolean"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "supportsInstall": {
+          "type": "boolean"
+        },
+        "supportsAuth": {
+          "type": "boolean"
+        },
+        "supportsAuthStatus": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "name",
+        "category",
+        "description",
+        "setupMethod",
+        "group",
+        "showOnlyWhenInstalled",
+        "supportsInstall",
+        "supportsAuth",
+        "supportsAuthStatus"
+      ]
+    },
+    "ProviderSetupMethodDto": {
+      "type": "string",
+      "enum": [
+        "none",
+        "single_api_key",
+        "config_fields",
+        "host_with_oauth_fallback",
+        "oauth_browser",
+        "oauth_device_code",
+        "cloud_credentials",
+        "local",
+        "cli_auth"
+      ]
+    },
+    "ProviderSetupFieldDto": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultValue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "secret",
+        "required"
+      ]
+    },
+    "ProviderSetupGroupDto": {
+      "type": "string",
+      "enum": [
+        "default",
+        "additional"
       ]
     },
     "ProviderCatalogTemplateRequest": {
@@ -2268,6 +2437,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ProviderSetupCatalogListRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/setup/catalog/list",
+                  "title": "ProviderSetupCatalogListRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ProviderCatalogTemplateRequest"
                     }
                   ],
@@ -2682,6 +2860,14 @@
                         }
                       ],
                       "title": "ProviderCatalogListResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderSetupCatalogListResponse"
+                        }
+                      ],
+                      "title": "ProviderSetupCatalogListResponse"
                     },
                     {
                       "allOf": [

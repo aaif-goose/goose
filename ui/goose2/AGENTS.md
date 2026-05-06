@@ -29,7 +29,40 @@ Treat this repo as partially Hermit-managed. Do not assume `just`, `pnpm`, `node
 - `just ci` is the main local verification gate.
 - `just clean` removes Rust build artifacts, `dist`, and `node_modules`, so `just setup` is required again before `just dev`.
 
-## Architecture & File Structure
+## Architecture
+
+### The frontend → ACP → goose core path
+
+**All frontend ↔ backend communication in goose2 flows through a single path:**
+
+```
+React UI  ──►  features/<feature>/api/  ──►  @aaif/goose-sdk (TS)  ──►  goose-acp  (WebSocket, ACP)  ──►  goose (core)
+```
+
+**YOU MUST TREAT THE CLIENT as a THIN CLIENT****
+
+- The Tauri shell spawns a long-lived `goose serve` process and exposes its WebSocket URL via the `get_goose_serve_url` Tauri command. That is essentially the only Tauri command the frontend needs for backend work — it is how the renderer discovers the ACP endpoint.
+- The frontend opens a WebSocket to `goose serve` and talks to it using `@aaif/goose-sdk` (published from `ui/sdk/`). The SDK is generated from the ACP custom-method definitions in `crates/goose-sdk/src/custom_requests.rs`, so every backend method has a typed TypeScript client method.
+- The goose2 TypeScript code should only be UI
+- `goose-acp` (`crates/goose-acp/src/server.rs`) is the server side of the WebSocket. It implements handlers for the custom ACP methods and calls into the `goose` core crate to do the actual work (providers, config, sessions, dictation, etc.).
+- `goose` is the pure domain crate. It knows nothing about Tauri or WebSockets — it just exposes Rust APIs that `goose-acp` handlers invoke.
+
+**This is the pattern you must follow when adding any new backend-touching feature.** When you are vibecoding in this app, it is very tempting to reach for `invoke()` or add an HTTP fetch — don't. The rule is: if a feature needs to talk to `goose` core, it goes through the SDK → ACP → goose chain above.
+
+### Don't build features entirely in the frontend
+
+If a feature involves data, persistence, secrets, provider config, sessions, filesystem access, network calls to external services, or anything else that could plausibly be reused by the CLI or another goose surface, **the logic belongs in the `goose` core crate, exposed via a typed ACP method.** Do not:
+
+- Stand up a feature whose business logic lives in a Zustand store, a React hook, or a `features/<feature>/api/` adapter that calls `localStorage`, `fetch`, or filesystem APIs directly.
+- Reach for `invoke()` to add a new Tauri command that proxies into `goose` — add an ACP custom method instead.
+- Do not use `localStorage` except for things it's absolutely needed for (specifically outlined in other parts of this AGENTS.md)
+- Duplicate types between TS and Rust — let the SDK generation produce them from `crates/goose-sdk/src/custom_requests.rs` and use the generated types ALWAYS. Do not create a shadow of a type you could use from the generated types.
+
+The frontend's job is presentation, navigation, and orchestration of typed SDK calls. If you find a feature growing real logic on the React side, that's a signal to push it down into `goose-acp` + `goose`.
+
+### File structure
+
+The directory layout is organized to reinforce the path above. Every feature that touches the backend has an `api/` module that wraps `GooseClient` calls — UI and stores never touch the SDK directly.
 
 ```
 src/
@@ -38,35 +71,33 @@ src/
     <feature>/
       ui/        — React components (required)
       hooks/     — Custom React hooks for feature logic (when needed)
-      stores/    — Zustand state management (when feature needs shared state)
-      api/       — Backend API integration (when feature calls backend)
+      stores/    — Zustand state management (frontend-only UI state; not a substitute for goose core)
+      api/       — Thin wrappers around GooseClient SDK calls (the ONLY place ACP is touched)
       types.ts   — Feature-specific type definitions (when needed)
   shared/
-    types/       — Canonical shared type definitions (single source of truth)
-      agents.ts  — Agent, Persona, Provider types
-      chat.ts    — ChatState, TokenState, Session, SSE events
-      messages.ts — Message, MessageContent, type guards
     ui/          — Reusable UI components (button, etc.)
     lib/         — Utilities (cn.ts for class merging)
     theme/       — Theme provider, appearance settings
     styles/      — Global CSS, design tokens
     hooks/       — Shared hooks
-    api/         — API integration
+    api/         — Shared GooseClient wrappers used by multiple features (e.g. dictation)
     constants/   — Shared constants
     context/     — Shared contexts
 ```
 
 ### Feature Organization
 
-Not every feature needs every subdirectory. Use only what the feature requires:
+Not every feature needs every subdirectory. Use only what the feature requires. Note that anything beyond `ui/` only — i.e. anything with state or backend calls — should already have a corresponding ACP method on the goose side.
 
-| Pattern              | Structure                        | Examples             |
-|----------------------|----------------------------------|----------------------|
-| **Full-featured**    | `stores/` + `hooks/` + `ui/`    | agents, chat         |
-| **Data-driven**      | `stores/` + `api/` + `ui/`      | projects             |
-| **API features**     | `api/` + `ui/`                   | skills               |
-| **Simple features**  | `ui/` only                       | home, settings, sidebar, status |
-| **Tabs**             | `ui/` + `types.ts`               | tabs                 |
+| Pattern              | Structure                        | Examples                        | Backend shape                                  |
+|----------------------|----------------------------------|---------------------------------|------------------------------------------------|
+| **Full-featured**    | `stores/` + `hooks/` + `ui/` + `api/` | agents, chat                | Typed ACP methods drive the store              |
+| **Data-driven**      | `stores/` + `api/` + `ui/`       | projects                        | CRUD via ACP, store caches results             |
+| **API features**     | `api/` + `ui/`                   | skills, providers               | Pure pass-through to ACP                       |
+| **Simple features**  | `ui/` only                       | home, settings, sidebar, status | No backend (pure presentation)                 |
+| **Tabs**             | `ui/` + `types.ts`               | tabs                            | No backend (frontend-only UI state)            |
+
+If you're tempted to build a "Full-featured" or "Data-driven" feature without a corresponding `api/` module that calls a typed ACP method, stop and add the ACP method first. See "The canonical example" below.
 
 ### Import Rules for Features
 
@@ -74,6 +105,7 @@ Not every feature needs every subdirectory. Use only what the feature requires:
 - There should be NO root-level `src/stores/` or `src/types/` directories.
 - Feature stores use feature-relative imports (e.g., `../stores/featureStore`).
 - Cross-feature imports use `@/features/*/stores/` or `@/shared/types/`.
+- Only `features/<feature>/api/` and `shared/api/` modules may import from `@aaif/goose-sdk` or call `getClient()`. UI components, hooks, and stores must go through those wrappers.
 
 ## Coding Conventions
 
@@ -130,21 +162,9 @@ ThemeProvider manages three axes:
 - Title bar uses `titleBarStyle: "Overlay"` with `hiddenTitle: true` for a custom titlebar.
 - `tauri-plugin-window-state` persists window size and position.
 - Traffic light offset: `pl-20` (80px) to accommodate macOS window controls.
+- Distro bundle behavior, including feature flags, is documented in `distro/README.md`.
 
-## Architecture
-
-**All frontend ↔ backend communication in goose2 flows through a single path:**
-
-```
-React UI  ──►  @aaif/goose-sdk (TS)  ──►  goose-acp  (WebSocket, ACP)  ──►  goose (core)
-```
-
-- The Tauri shell spawns a long-lived `goose serve` process and exposes its WebSocket URL via the `get_goose_serve_url` Tauri command. That is essentially the only Tauri command the frontend needs for backend work — it is how the renderer discovers the ACP endpoint.
-- The frontend opens a WebSocket to `goose serve` and talks to it using `@aaif/goose-sdk` (published from `ui/sdk/`). The SDK is generated from the ACP custom-method definitions in `crates/goose-sdk/src/custom_requests.rs`, so every backend method has a typed TypeScript client method.
-- `goose-acp` (`crates/goose-acp/src/server.rs`) is the server side of the WebSocket. It implements handlers for the custom ACP methods and calls into the `goose` core crate to do the actual work (providers, config, sessions, dictation, etc.).
-- `goose` is the pure domain crate. It knows nothing about Tauri or WebSockets — it just exposes Rust APIs that `goose-acp` handlers invoke.
-
-**This is the pattern you must follow when adding any new backend-touching feature.** When you are vibecoding in this app, it is very tempting to reach for `invoke()` or add an HTTP fetch — don't. The rule is: if a feature needs to talk to `goose` core, it goes through the SDK → ACP → goose chain above.
+## Working in the ACP path: examples and rules
 
 ### The canonical example: skills-as-sources (PR #8675)
 
@@ -252,3 +272,4 @@ Additional tooling notes:
 - Never use `--no-verify` when pushing — fix the underlying lint/hook issues.
 - Don't create root-level `src/types/` or `src/stores/` directories — types belong in `src/shared/types/`, stores belong in `src/features/<feature>/stores/`.
 - Don't duplicate type definitions across files — each type has one canonical location.
+- Don't build features end-to-end in the frontend. If it talks to data, secrets, providers, sessions, or the filesystem, it goes through `goose` core via a typed ACP method. See **Architecture → Don't build features entirely in the frontend**.

@@ -19,7 +19,7 @@
         "title": "Goose",
         "width": 800,
         "height": 600,
-        "minWidth": 800,
+        "minWidth": 608,
         "minHeight": 600,
         "visible": false,
         "titleBarStyle": "Overlay",
@@ -46,6 +46,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../distro": "distro"
+    },
     "externalBin": ["../../../target/release/goose"],
     "macOS": {
       "entitlements": "entitlements.plist",

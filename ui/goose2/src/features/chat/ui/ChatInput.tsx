@@ -370,14 +370,19 @@ export function ChatInput({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className={cn("relative z-10 px-4 pb-6 pt-0", className)}>
+      <div
+        className={cn(
+          "relative z-10 px-2 pb-3 pt-0 sm:px-4 sm:pb-6",
+          className,
+        )}
+      >
         <div className="mx-auto max-w-3xl">
           <Popover open={mentionOpen}>
             {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for file attachments */}
             <div
               ref={containerRef}
               className={cn(
-                "relative rounded-2xl border border-border bg-background px-4 pb-3 pt-4 transition-colors",
+                "relative rounded-2xl border border-border bg-background px-3 pb-3 pt-4 transition-colors sm:px-4",
                 isAttachmentDragOver && "bg-muted/20",
               )}
               onDragEnter={handleDragEnter}

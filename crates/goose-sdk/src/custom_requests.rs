@@ -427,7 +427,7 @@ pub struct ProviderConfigChangeResponse {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderCatalogEntryDto {
+pub struct ProviderTemplateCatalogEntryDto {
     pub provider_id: String,
     pub name: String,
     pub format: String,
@@ -435,6 +435,73 @@ pub struct ProviderCatalogEntryDto {
     pub model_count: usize,
     pub doc_url: String,
     pub env_var: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSetupCategoryDto {
+    Agent,
+    #[default]
+    Model,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSetupMethodDto {
+    None,
+    SingleApiKey,
+    ConfigFields,
+    HostWithOauthFallback,
+    OauthBrowser,
+    OauthDeviceCode,
+    CloudCredentials,
+    Local,
+    CliAuth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSetupGroupDto {
+    Default,
+    Additional,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupFieldDto {
+    pub key: String,
+    pub label: String,
+    pub secret: bool,
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupCatalogEntryDto {
+    pub provider_id: String,
+    pub name: String,
+    pub category: ProviderSetupCategoryDto,
+    pub description: String,
+    pub setup_method: ProviderSetupMethodDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_connect_query: Option<String>,
+    #[serde(default)]
+    pub fields: Vec<ProviderSetupFieldDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_url: Option<String>,
+    pub group: ProviderSetupGroupDto,
+    pub show_only_when_installed: bool,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    pub supports_install: bool,
+    pub supports_auth: bool,
+    pub supports_auth_status: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -484,7 +551,22 @@ pub struct ProviderCatalogListRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderCatalogListResponse {
-    pub providers: Vec<ProviderCatalogEntryDto>,
+    pub providers: Vec<ProviderTemplateCatalogEntryDto>,
+}
+
+/// List provider setup catalog entries
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/setup/catalog/list",
+    response = ProviderSetupCatalogListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupCatalogListRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupCatalogListResponse {
+    pub providers: Vec<ProviderSetupCatalogEntryDto>,
 }
 
 /// Return the editable template for one catalog provider.
@@ -949,6 +1031,8 @@ pub struct ProviderInventoryEntryDto {
     pub configured: bool,
     /// Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
     pub provider_type: String,
+    /// Whether this inventory entry represents an agent provider or a model provider.
+    pub category: ProviderSetupCategoryDto,
     /// Required configuration keys and setup metadata.
     pub config_keys: Vec<ProviderConfigKey>,
     /// Step-by-step setup instructions, when present.

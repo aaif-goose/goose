@@ -1,7 +1,11 @@
+use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+use crate::services::distro_bundle::DistroBundleState;
 
 use tokio::process::{Child, Command};
 use tokio::sync::OnceCell;
@@ -67,6 +71,18 @@ impl GooseServeProcess {
 
         let mut command: Command = get_goose_command(&app_handle)?;
         let binary_display = command.as_std().get_program().to_string_lossy().to_string();
+
+        if let Some(distro_state) = app_handle.try_state::<DistroBundleState>() {
+            if let Some(bundle) = distro_state.bundle() {
+                if let Some(bin_dir) = &bundle.bin_dir {
+                    prepend_path_env(&mut command, bin_dir);
+                }
+                if let Some(config_path) = &bundle.config_path {
+                    append_additional_config_env(&mut command, config_path);
+                }
+                command.env("GOOSE_DISTRO_DIR", &bundle.root_dir);
+            }
+        }
 
         command
             .arg("serve")
@@ -147,6 +163,54 @@ async fn wait_for_server_ready(port: u16, child: &mut Child) -> Result<(), Strin
 
 fn default_serve_working_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"))
+}
+
+fn prepend_path_env(command: &mut Command, extra_dir: &std::path::Path) {
+    let mut paths = vec![extra_dir.to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+
+    set_path_list_env(command, "PATH", paths, Some(extra_dir.as_os_str()));
+}
+
+fn append_additional_config_env(command: &mut Command, config_path: &std::path::Path) {
+    let existing = std::env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES");
+    let mut paths: Vec<PathBuf> = existing
+        .as_ref()
+        .map(std::env::split_paths)
+        .map(Iterator::collect)
+        .unwrap_or_default();
+    paths.push(config_path.to_path_buf());
+
+    if let Ok(joined) = std::env::join_paths(&paths) {
+        command.env("GOOSE_ADDITIONAL_CONFIG_FILES", joined);
+    } else {
+        let mut fallback = existing.unwrap_or_default();
+        if !fallback.is_empty() {
+            fallback.push(if cfg!(windows) { ";" } else { ":" });
+        }
+        fallback.push(config_path.as_os_str());
+        command.env("GOOSE_ADDITIONAL_CONFIG_FILES", fallback);
+    }
+}
+
+fn set_path_list_env(
+    command: &mut Command,
+    key: &str,
+    paths: Vec<PathBuf>,
+    fallback_prefix: Option<&std::ffi::OsStr>,
+) {
+    if let Ok(joined) = std::env::join_paths(&paths) {
+        command.env(key, joined);
+    } else if let Some(prefix) = fallback_prefix {
+        let mut fallback = OsString::from(prefix);
+        for path in paths.iter().skip(1) {
+            fallback.push(if cfg!(windows) { ";" } else { ":" });
+            fallback.push(path.as_os_str());
+        }
+        command.env(key, fallback);
+    }
 }
 
 fn reserve_free_port() -> Result<u16, String> {

@@ -1,16 +1,24 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen, ChevronRight } from "lucide-react";
+import { ChevronRight, FolderOpen } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import { CodeBlock } from "@/shared/ui/ai-elements/code-block";
 import {
   Tool,
-  ToolHeader,
   ToolContent,
+  ToolHeader,
   ToolInput,
   ToolOutput,
+  ToolSurface,
 } from "@/shared/ui/ai-elements/tool";
 import { toolStatusMap } from "../lib/toolStatusMap";
+import {
+  getToolInputSummaryRows,
+  isHoistableText,
+  isStringifiedCopyOfStructured,
+  type ToolInputSummaryRow,
+} from "@/features/chat/lib/toolCallPresentation";
 import type { ToolCallLocation, ToolCallStatus } from "@/shared/types/messages";
 import { useArtifactPolicyContext } from "@/features/chat/hooks/ArtifactPolicyContext";
 
@@ -26,6 +34,12 @@ interface ToolCallAdapterProps {
   startedAt?: number;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** When false, the chevron-side status badge is hidden (used inside chains). */
+  showStatusBadge?: boolean;
+  /** When false, hides the trailing disclosure chevron in the header. */
+  showChevron?: boolean;
+  /** When true, the card sizes to its content rather than filling its parent. */
+  fitWidth?: boolean;
 }
 
 function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
@@ -34,7 +48,6 @@ function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
   useEffect(() => {
     if (status === "executing") {
       const origin = startedAt ?? Date.now();
-      // Compute initial elapsed immediately so the first render is accurate.
       setElapsed(Math.floor((Date.now() - origin) / 1000));
       const interval = setInterval(() => {
         setElapsed(Math.floor((Date.now() - origin) / 1000));
@@ -177,6 +190,75 @@ function ArtifactActions({ locations }: { locations?: ToolCallLocation[] }) {
   );
 }
 
+const COMMAND_PREVIEW_CODEBLOCK_CLASSES =
+  "rounded-none border-0 bg-transparent shadow-none [&>div]:overflow-hidden [&_pre]:m-0 [&_pre]:bg-transparent [&_pre]:p-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:text-[12px] [&_pre]:leading-5 [&_code]:font-mono [&_code]:text-[12px] [&_code]:leading-5";
+
+function InputSummary({
+  rows,
+  isOpen,
+}: {
+  rows: ToolInputSummaryRow[];
+  isOpen: boolean;
+}) {
+  const { t } = useTranslation("chat");
+  if (rows.length === 0) return null;
+
+  return (
+    <dl className="space-y-1.5">
+      {rows.map((row) => {
+        const label = t(`tools.inputSummary.${row.kind}`);
+        const key = `${row.kind}:${row.value}`;
+        if (row.renderAs === "bash") {
+          return (
+            <div key={key} className="space-y-0.5">
+              <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {label}
+              </dt>
+              <dd>
+                <CodeBlock
+                  code={row.value}
+                  language="bash"
+                  data-tool-command-preview={!isOpen ? "" : undefined}
+                  className={cn(
+                    COMMAND_PREVIEW_CODEBLOCK_CLASSES,
+                    !isOpen && "[&_pre]:line-clamp-3 [&_pre]:overflow-hidden",
+                  )}
+                />
+              </dd>
+            </div>
+          );
+        }
+        return (
+          <div key={key} className="flex items-baseline gap-2">
+            <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {label}
+            </dt>
+            <dd
+              className={cn(
+                "min-w-0 truncate text-[12px] text-foreground",
+                row.monospace && "font-mono",
+              )}
+              title={row.title ?? row.value}
+            >
+              {row.value}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+function splitHeaderTitleByPath(name: string, fileLabel: string) {
+  const index = name.toLowerCase().lastIndexOf(fileLabel.toLowerCase());
+  if (index === -1) return null;
+  return {
+    prefix: name.slice(0, index),
+    fileLabel: name.slice(index, index + fileLabel.length),
+    suffix: name.slice(index + fileLabel.length),
+  };
+}
+
 export function ToolCallAdapter({
   name,
   arguments: args,
@@ -188,19 +270,102 @@ export function ToolCallAdapter({
   startedAt,
   open,
   onOpenChange,
+  showStatusBadge = true,
+  showChevron = true,
+  fitWidth = false,
 }: ToolCallAdapterProps) {
   const { t } = useTranslation("chat");
   const elapsed = useElapsedTime(status, startedAt);
   const state = toolStatusMap[status];
-
+  const summaryRows = useMemo(
+    () => getToolInputSummaryRows({ name, arguments: args }),
+    [args, name],
+  );
   const elapsedSeconds =
     status === "executing" && elapsed >= 3 ? elapsed : undefined;
-  const outputViewportClassName = cn(
-    "max-h-[28rem] overflow-auto",
-    "[scrollbar-color:hsl(var(--muted-foreground))_transparent] [scrollbar-width:thin]",
-    "[&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent",
-    "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/50",
+
+  const { resolveMarkdownHref, openResolvedPath } = useArtifactPolicyContext();
+
+  const pathRow = summaryRows.find((row) => row.kind === "path");
+  const headerFileLabel = pathRow?.value;
+  const headerFilePath = pathRow?.title ?? pathRow?.value;
+  const headerTitleParts =
+    headerFileLabel && headerFilePath
+      ? splitHeaderTitleByPath(name, headerFileLabel)
+      : null;
+  const headerFileCandidate = useMemo(
+    () => (headerFilePath ? resolveMarkdownHref(headerFilePath) : null),
+    [headerFilePath, resolveMarkdownHref],
   );
+  const canOpenHeaderFile = Boolean(headerTitleParts && headerFileCandidate);
+
+  const hasStructuredArgs = Object.keys(args).length > 0;
+  const hasOutput = Boolean(result);
+  const hasStructuredContent = !isError && structuredContent !== undefined;
+
+  // De-dupe + title-hoisting matrix: when both a text result and structured
+  // content are present, decide whether the text is a redundant stringified
+  // copy of the structured payload (hide), short enough to hoist into the
+  // header subtitle (lift), or worth rendering in the body alongside the
+  // structured block (keep).
+  const textIsStringifiedCopy =
+    hasOutput &&
+    hasStructuredContent &&
+    isStringifiedCopyOfStructured(result, structuredContent);
+  const canHoistResultIntoHeader =
+    hasOutput &&
+    hasStructuredContent &&
+    !textIsStringifiedCopy &&
+    !headerTitleParts &&
+    isHoistableText(result);
+  const showResultBody =
+    hasOutput && !textIsStringifiedCopy && !canHoistResultIntoHeader;
+
+  const headerTitle: ReactNode = headerTitleParts ? (
+    <>
+      <span data-tool-title-prefix>{headerTitleParts.prefix}</span>
+      {canOpenHeaderFile ? (
+        <button
+          type="button"
+          data-clickable-file
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!headerFileCandidate) return;
+            void openResolvedPath(headerFileCandidate.resolvedPath).catch(
+              () => {},
+            );
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
+          title={headerFileCandidate?.resolvedPath ?? headerFilePath}
+          aria-label={t("tools.openNamed", {
+            name: headerTitleParts.fileLabel,
+          })}
+          className="inline truncate text-foreground underline-offset-2 hover:underline"
+        >
+          {headerTitleParts.fileLabel}
+        </button>
+      ) : (
+        <span>{headerTitleParts.fileLabel}</span>
+      )}
+      <span>{headerTitleParts.suffix}</span>
+    </>
+  ) : canHoistResultIntoHeader ? (
+    <>
+      <span>{name}</span>
+      <span aria-hidden="true" className="text-muted-foreground">
+        {" · "}
+      </span>
+      <span data-tool-title-hoisted className="truncate text-foreground">
+        {(result ?? "").trim()}
+      </span>
+    </>
+  ) : (
+    name
+  );
+
+  const showCombinedSurface = summaryRows.length > 0 || hasStructuredArgs;
 
   return (
     <div className="w-full min-w-0 max-w-full">
@@ -208,27 +373,63 @@ export function ToolCallAdapter({
         <ToolHeader
           type="dynamic-tool"
           toolName={name}
-          title={name}
+          title={headerTitle}
           state={state}
           showIcon={false}
+          showStatusBadge={showStatusBadge}
+          showChevron={showChevron}
+          splitTrigger={canOpenHeaderFile}
+          layout={fitWidth ? "fit" : "fill"}
           elapsedSeconds={elapsedSeconds}
         />
         <ToolContent>
-          {Object.keys(args).length > 0 && <ToolInput input={args} />}
-          <ToolOutput
-            output={isError ? undefined : result}
-            errorText={isError ? result : undefined}
-            label={isError ? undefined : t("tools.content")}
-            contentClassName={outputViewportClassName}
-            plainText
-          />
-          {!isError && structuredContent !== undefined && (
-            <ToolOutput
-              output={structuredContent}
-              errorText={undefined}
-              label={t("tools.structuredContent")}
-              contentClassName={outputViewportClassName}
-            />
+          {showCombinedSurface ? (
+            <ToolSurface tone="muted" className="bg-muted">
+              <ToolInput
+                input={args}
+                showLabel={false}
+                embedded
+                summary={({ isOpen }) => (
+                  <InputSummary rows={summaryRows} isOpen={isOpen} />
+                )}
+              />
+              {showResultBody && (
+                <ToolOutput
+                  output={isError ? undefined : result}
+                  errorText={isError ? result : undefined}
+                  showLabel={false}
+                  embedded
+                  embeddedMaxHeightClass="max-h-32"
+                />
+              )}
+              {hasStructuredContent && (
+                <ToolOutput
+                  output={structuredContent}
+                  errorText={undefined}
+                  showLabel={false}
+                  embedded
+                  embeddedMaxHeightClass="max-h-32"
+                />
+              )}
+            </ToolSurface>
+          ) : (
+            <>
+              {showResultBody && (
+                <ToolOutput
+                  output={isError ? undefined : result}
+                  errorText={isError ? result : undefined}
+                  contentClassName="max-h-[28rem] overflow-y-auto"
+                />
+              )}
+              {hasStructuredContent && (
+                <ToolOutput
+                  output={structuredContent}
+                  errorText={undefined}
+                  label={t("tools.structuredContent")}
+                  contentClassName="max-h-[28rem] overflow-y-auto"
+                />
+              )}
+            </>
           )}
         </ToolContent>
       </Tool>

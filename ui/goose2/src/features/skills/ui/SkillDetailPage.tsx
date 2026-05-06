@@ -21,10 +21,9 @@ import { PageColumns } from "@/shared/ui/page-columns";
 import { DetailPageShell, PageHeader } from "@/shared/ui/page-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import type { SkillInfo } from "../api/skills";
-import type { SkillViewInfo } from "../lib/skillCategories";
 
 interface SkillDetailPageProps {
-  skill: SkillViewInfo | null;
+  skill: SkillInfo | null;
   onBack: () => void;
   onEdit: (skill: SkillInfo) => void;
   onReveal: (skill: SkillInfo) => void;
@@ -180,14 +179,6 @@ export function SkillDetailPage({
         sidebar={
           <aside className="space-y-5">
             <section className="space-y-5 border-b border-border pb-5">
-              <DetailField
-                label={t("view.category")}
-                contentAs="p"
-                contentClassName="text-foreground"
-              >
-                {t(`view.categories.options.${skill.inferredCategory}`)}
-              </DetailField>
-
               <DetailField
                 label={t("view.source")}
                 contentClassName="space-y-1 text-foreground"

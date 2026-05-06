@@ -4,10 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
-import {
-  getBufferedMessage,
-  findLatestUnpairedToolRequest,
-} from "@/features/chat/hooks/replayBuffer";
+import { getBufferedMessage } from "@/features/chat/hooks/replayBuffer";
 import type {
   ToolCallLocation,
   ToolCallStatus,
@@ -31,7 +28,10 @@ import {
 } from "./acpReplayAssistant";
 import { getReplayCreated, getReplayMessageId } from "./acpReplayMetadata";
 import { handleSessionInfoUpdate } from "./acpSessionInfoUpdate";
-import { getToolCallIdentity } from "./acpToolCallIdentity";
+import {
+  getToolCallIdentity,
+  getToolChainSummary,
+} from "./acpToolCallIdentity";
 import { perfLog } from "@/shared/lib/perfLog";
 
 // Pre-set message ID for the next live stream per session.
@@ -214,6 +214,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     case "tool_call": {
       const created = getReplayCreated(update);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
       const msg = ensureReplayAssistantMessage(
         sessionId,
         getReplayMessageId(update),
@@ -228,6 +229,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
         status: "executing",
         ...toolCallUpdatePatch(update),
         startedAt: created ?? Date.now(),
+        ...(chainSummary ? { chainSummary } : {}),
       });
       break;
     }
@@ -236,6 +238,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
       const created = getReplayCreated(update);
       const replayMessageId = getReplayMessageId(update);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
       const trackedMessageId = getTrackedReplayAssistantMessageId(sessionId);
       const replayMsg = replayMessageId
         ? getBufferedMessage(sessionId, replayMessageId)
@@ -257,7 +260,8 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
         if (
           update.title ||
           Object.keys(identity).length > 0 ||
-          Object.keys(patch).length > 0
+          Object.keys(patch).length > 0 ||
+          chainSummary
         ) {
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,
@@ -267,6 +271,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
               ...(update.title ? { name: update.title } : {}),
               ...identity,
               ...patch,
+              ...(chainSummary ? { chainSummary } : {}),
             });
           }
         }
@@ -343,6 +348,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
     case "tool_call": {
       const messageId = ensureLiveAssistantMessage(sessionId);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
 
       const toolRequest: ToolRequestContent = {
         type: "toolRequest",
@@ -353,6 +359,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
         status: "executing",
         ...toolCallUpdatePatch(update),
         startedAt: Date.now(),
+        ...(chainSummary ? { chainSummary } : {}),
       };
       store.setStreamingMessageId(sessionId, messageId);
       store.appendToStreamingMessage(sessionId, toolRequest);
@@ -360,14 +367,24 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
     }
 
     case "tool_call_update": {
-      const messageId = ensureLiveAssistantMessage(sessionId);
       const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
+      // Late-arriving updates (chain summaries, async titles) can target a
+      // tool call whose request lives in an older message than the currently
+      // streaming one. Patch the message that actually owns the tool call,
+      // falling back to ensureLiveAssistantMessage only if we can't find it.
+      const ownerMessageId = findLiveMessageIdWithToolCall(
+        sessionId,
+        update.toolCallId,
+      );
+      const messageId = ownerMessageId ?? ensureLiveAssistantMessage(sessionId);
 
       const patch = toolCallUpdatePatch(update);
       if (
         update.title ||
         Object.keys(identity).length > 0 ||
-        Object.keys(patch).length > 0
+        Object.keys(patch).length > 0 ||
+        chainSummary
       ) {
         store.updateMessage(sessionId, messageId, (msg) => ({
           ...msg,
@@ -378,6 +395,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
                   ...(update.title ? { name: update.title } : {}),
                   ...identity,
                   ...patch,
+                  ...(chainSummary ? { chainSummary } : {}),
                 }
               : c,
           ),
@@ -386,12 +404,18 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
 
       if (update.status === "completed" || update.status === "failed") {
         const toolCallStatus = toolCallStatusFromUpdate(update.status);
-        const streamingMessage = store.messagesBySession[sessionId]?.find(
+        const ownerMessage = store.messagesBySession[sessionId]?.find(
           (m) => m.id === messageId,
         );
-        const toolRequest = streamingMessage
-          ? findLatestUnpairedToolRequest(streamingMessage.content)
-          : null;
+        // Look up the request that this update belongs to by exact id —
+        // sibling tools can complete out of order, so the latest unpaired
+        // request isn't necessarily the one we're updating. Mirrors the
+        // replay branch above.
+        const toolRequest =
+          ownerMessage?.content.find(
+            (block): block is ToolRequestContent =>
+              block.type === "toolRequest" && block.id === update.toolCallId,
+          ) ?? null;
 
         store.updateMessage(sessionId, messageId, (msg) => ({
           ...msg,
@@ -411,13 +435,15 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
         const toolResponse: ToolResponseContent = {
           type: "toolResponse",
           id: update.toolCallId,
-          name: toolRequest?.name ?? "",
+          name: toolRequest?.name ?? update.title ?? "",
           result: resultText,
           structuredContent: extractToolStructuredContent(update),
           isError: update.status === "failed",
         };
-        store.setStreamingMessageId(sessionId, messageId);
-        store.appendToStreamingMessage(sessionId, toolResponse);
+        store.updateMessage(sessionId, messageId, (msg) => ({
+          ...msg,
+          content: [...msg.content, toolResponse],
+        }));
         if (update.status === "completed") {
           attachMcpAppPayload(
             sessionId,
@@ -507,6 +533,31 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
 function findStreamingMessageId(sessionId: string): string | null {
   return useChatStore.getState().getSessionRuntime(sessionId)
     .streamingMessageId;
+}
+
+/**
+ * Locate the live message that owns a given tool call id by scanning
+ * `messagesBySession` from the most recent message backwards. Used by
+ * `tool_call_update` to keep late-arriving updates (chain summaries, async
+ * titles, status flips) anchored on the request's original message even when
+ * the streaming pointer has moved on to the next assistant turn.
+ */
+function findLiveMessageIdWithToolCall(
+  sessionId: string,
+  toolCallId: string,
+): string | null {
+  const messages = useChatStore.getState().messagesBySession[sessionId];
+  if (!messages) return null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (
+      messages[i].content.some(
+        (c) => c.type === "toolRequest" && c.id === toolCallId,
+      )
+    ) {
+      return messages[i].id;
+    }
+  }
+  return null;
 }
 
 function ensureLiveAssistantMessage(
