@@ -119,7 +119,9 @@
     "filesTitle": "Archivos"
   },
   "notifications": {
-    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio."
+    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio.",
+    "moveError": "No se pudo mover el chat",
+    "renameError": "No se pudo cambiar el nombre del chat"
   },
   "message": {
     "copied": "Copiado",

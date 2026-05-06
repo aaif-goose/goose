@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
@@ -114,6 +115,7 @@ async function syncWindowMinimumSize() {
 }
 
 export function AppShell({ children }: { children?: React.ReactNode }) {
+  const { t } = useTranslation("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -532,20 +534,20 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         );
       })().catch((error) => {
         console.error("Failed to move chat to project:", error);
-        toast.error("Failed to move chat");
+        toast.error(t("notifications.moveError"));
       });
     },
-    [selectedProvider],
+    [selectedProvider, t],
   );
 
   const handleRenameChat = useCallback(
     (sessionId: string, nextTitle: string) => {
       void updateSessionTitle(sessionId, nextTitle).catch((error) => {
         console.error("Failed to rename session:", error);
-        toast.error("Failed to rename chat");
+        toast.error(t("notifications.renameError"));
       });
     },
-    [],
+    [t],
   );
 
   const openCreateProjectDialog = useCallback(
