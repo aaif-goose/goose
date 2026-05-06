@@ -43,6 +43,7 @@ export function handleReplayUserMessageChunk(
   sessionId: string,
   messageId: string,
   content: { text: string },
+  created?: number,
 ): void {
   const buffer = ensureReplayBuffer(sessionId);
   const existing = getBufferedMessage(sessionId, messageId);
@@ -62,7 +63,7 @@ export function handleReplayUserMessageChunk(
     buffer.push({
       id: messageId,
       role: "user",
-      created: Date.now(),
+      created: created ?? Date.now(),
       content: [textBlock],
       metadata: {
         userVisible: true,
@@ -71,6 +72,9 @@ export function handleReplayUserMessageChunk(
       },
     });
   } else {
+    if (created !== undefined) {
+      existing.created = created;
+    }
     existing.content.push(textBlock);
     attachReplayChips(sessionId, messageId, existing, chips);
   }

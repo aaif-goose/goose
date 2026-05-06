@@ -13,8 +13,13 @@ pub const DEFAULT_EXTENSION_DESCRIPTION: &str = "";
 pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
 
+fn default_extension_enabled() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
 pub struct ExtensionEntry {
+    #[serde(default = "default_extension_enabled")]
     pub enabled: bool,
     #[serde(flatten)]
     pub config: ExtensionConfig,
@@ -209,5 +214,23 @@ mod tests {
 
         assert!(!is_extension_available(&unknown_platform));
         assert!(is_extension_available(&builtin));
+    }
+
+    #[test]
+    fn test_extension_entry_defaults_missing_enabled_to_true() {
+        let value = serde_yaml::from_str(
+            r#"
+type: stdio
+name: github
+description: GitHub tools
+cmd: npx
+args: []
+"#,
+        )
+        .unwrap();
+
+        let entry: ExtensionEntry = serde_yaml::from_value(value).unwrap();
+
+        assert!(entry.enabled);
     }
 }

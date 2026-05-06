@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles, User, Zap } from "lucide-react";
+import { Sparkles, User } from "lucide-react";
 import { IconFile, IconFolder } from "@tabler/icons-react";
+import { SkillIcon } from "@/features/skills/ui/SkillIcon";
 import { cn } from "@/shared/lib/cn";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
 import { PopoverContent } from "@/shared/ui/popover";
@@ -165,7 +166,7 @@ export function MentionAutocomplete({
               onMouseEnter={() => setInternalIndex(globalIndex)}
             >
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand">
-                <Zap className="h-3.5 w-3.5" />
+                <SkillIcon className="h-3.5 w-3.5" />
               </div>
               <div className="flex min-w-0 flex-col">
                 <span className="text-sm font-medium">{skill.name}</span>

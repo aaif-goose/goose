@@ -102,7 +102,7 @@ export function AgentModelPicker({
           disabled={loading && !selectedAgentLabel}
           leftIcon={getProviderIcon(selectedAgentId, "size-3.5")}
           rightIcon={<IconChevronDown className="opacity-50" />}
-          className="min-w-0"
+          className="min-w-0 max-w-full"
         >
           <span className={cn("truncate", isCompact ? "max-w-32" : "max-w-56")}>
             {triggerModelLabel ??

@@ -244,7 +244,6 @@ describe("SkillsView", () => {
     expect(
       screen.getByText("/tmp/alpha/.goose/skills/test-writer/SKILL.md"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Quality")).toBeInTheDocument();
   });
 
   it("starts a chat with the selected skill from the list", async () => {
@@ -376,23 +375,6 @@ describe("SkillsView", () => {
 
     expect(screen.queryByText("code-review")).not.toBeInTheDocument();
     expect(screen.getByText("test-writer")).toBeInTheDocument();
-  });
-
-  it("filters skills by inferred category from the dropdown", async () => {
-    listSkills.mockResolvedValue(mockSkills);
-    const user = userEvent.setup();
-
-    render(<SkillsView />);
-    await screen.findByText("code-review");
-
-    await user.click(
-      screen.getByRole("button", { name: "Filter by category" }),
-    );
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Design" }));
-
-    expect(screen.getByText("layout")).toBeInTheDocument();
-    expect(screen.queryByText("code-review")).not.toBeInTheDocument();
-    expect(screen.queryByText("test-writer")).not.toBeInTheDocument();
   });
 
   it("shows a delete confirmation from the detail panel", async () => {

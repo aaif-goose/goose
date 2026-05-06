@@ -34,6 +34,9 @@ export function buildInitScript(options?: {
       const PERSONAS = ${personas};
       const SKILLS = ${skills};
       const PROJECTS = ${projects};
+      const DISTRO = {
+        present: false,
+      };
       const FAKE_ACP_URL = "ws://127.0.0.1:0/mock-acp";
       const ACP_SESSIONS = [];
       const PROVIDER_INVENTORY = [
@@ -285,6 +288,8 @@ export function buildInitScript(options?: {
             // ---- ACP transport ----
             case "get_goose_serve_url":
               return Promise.resolve(FAKE_ACP_URL);
+            case "get_distro_bundle":
+              return Promise.resolve(DISTRO);
 
             // ---- Personas ----
             case "list_personas":

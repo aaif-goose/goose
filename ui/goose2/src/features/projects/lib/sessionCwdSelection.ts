@@ -22,7 +22,7 @@ function buildSessionCwdParts(
     return [workingDirs[0]];
   }
 
-  return ["~", ".goose", "artifacts"];
+  return ["~"];
 }
 
 export async function resolveSessionCwd(

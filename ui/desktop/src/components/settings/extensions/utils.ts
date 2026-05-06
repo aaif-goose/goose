@@ -47,7 +47,7 @@ export function getDefaultFormData(): ExtensionFormData {
     type: 'stdio',
     cmd: '',
     endpoint: '',
-    enabled: true,
+    enabled: false,
     timeout: 300,
     envVars: [],
     headers: [],

@@ -38,6 +38,7 @@ export type AppView =
   | "home"
   | "chat"
   | "skills"
+  | "extensions"
   | "agents"
   | "projects"
   | "session-history";
@@ -47,11 +48,17 @@ const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 380;
 const SIDEBAR_SNAP_COLLAPSE_THRESHOLD = 100;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
+const APP_SHELL_HORIZONTAL_CHROME_WIDTH = 28;
+const MIN_MAIN_CONTENT_WIDTH = 532;
+const MIN_WINDOW_HEIGHT = 600;
+const COLLAPSED_WINDOW_MIN_WIDTH =
+  SIDEBAR_COLLAPSED_WIDTH +
+  APP_SHELL_HORIZONTAL_CHROME_WIDTH +
+  MIN_MAIN_CONTENT_WIDTH;
 const SETTINGS_SECTIONS = new Set<SectionId>([
   "appearance",
   "providers",
   "compaction",
-  "extensions",
   "voice",
   "general",
   "projects",
@@ -59,6 +66,39 @@ const SETTINGS_SECTIONS = new Set<SectionId>([
   "doctor",
   "about",
 ]);
+
+function getExpandedSidebarFitWidth(sidebarWidth: number) {
+  return (
+    sidebarWidth + APP_SHELL_HORIZONTAL_CHROME_WIDTH + MIN_MAIN_CONTENT_WIDTH
+  );
+}
+
+async function ensureWindowWidth(minWidth: number) {
+  if (!window.__TAURI_INTERNALS__ || window.innerWidth >= minWidth) {
+    return;
+  }
+
+  const { getCurrentWindow, LogicalSize } = await import(
+    "@tauri-apps/api/window"
+  );
+  await getCurrentWindow().setSize(
+    new LogicalSize(minWidth, window.innerHeight),
+  );
+}
+
+async function syncWindowMinimumSize() {
+  if (!window.__TAURI_INTERNALS__) {
+    return;
+  }
+
+  const { getCurrentWindow, LogicalSize } = await import(
+    "@tauri-apps/api/window"
+  );
+  await getCurrentWindow().setMinSize(
+    new LogicalSize(COLLAPSED_WINDOW_MIN_WIDTH, MIN_WINDOW_HEIGHT),
+  );
+}
+
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
@@ -107,14 +147,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const t1 = performance.now();
       perfLog(`[perf:load] ${sid} import in ${(t1 - t0).toFixed(1)}ms`);
       const session = useChatSessionStore.getState().getSession(sessionId);
-      const gooseSessionId = session?.acpSessionId ?? sessionId;
       const project = session?.projectId
         ? (useProjectStore
             .getState()
             .projects.find((p) => p.id === session.projectId) ?? null)
         : null;
       const workingDir = await resolveSessionCwd(project);
-      await acpLoadSession(sessionId, gooseSessionId, workingDir);
+      await acpLoadSession(sessionId, workingDir);
       const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
@@ -197,9 +236,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           homeSession.id,
           sessionModelPreference.providerId,
           workingDir,
-          {
-            personaId: homeSession.personaId,
-          },
         );
         const shouldClearHomeModel =
           sessionModelPreference.providerId !== homeSession.providerId ||
@@ -468,9 +504,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           sessionId,
           session.providerId ?? agentStore.selectedProvider ?? "goose",
           workingDir,
-          {
-            personaId: session.personaId,
-          },
         );
       })().catch((error) => {
         console.error(
@@ -555,7 +588,30 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     handleNavigate("agents"),
   );
 
-  const toggleSidebar = () => setSidebarCollapsed((prev) => !prev);
+  const collapseSidebar = useCallback(() => {
+    setSidebarCollapsed(true);
+  }, []);
+
+  const expandSidebar = useCallback(async () => {
+    const expandedFitWidth = getExpandedSidebarFitWidth(sidebarWidth);
+
+    try {
+      await ensureWindowWidth(expandedFitWidth);
+    } catch (error) {
+      console.warn("Failed to resize window before expanding sidebar:", error);
+    }
+
+    setSidebarCollapsed(false);
+  }, [sidebarWidth]);
+
+  const toggleSidebar = useCallback(() => {
+    if (sidebarCollapsed) {
+      void expandSidebar();
+      return;
+    }
+
+    collapseSidebar();
+  }, [collapseSidebar, expandSidebar, sidebarCollapsed]);
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -602,9 +658,38 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   );
 
   const handleResizeDoubleClick = useCallback(() => {
-    setSidebarCollapsed(false);
     setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+    void ensureWindowWidth(getExpandedSidebarFitWidth(SIDEBAR_DEFAULT_WIDTH))
+      .catch((error) => {
+        console.warn(
+          "Failed to resize window before resetting sidebar:",
+          error,
+        );
+      })
+      .finally(() => setSidebarCollapsed(false));
   }, []);
+
+  useEffect(() => {
+    void syncWindowMinimumSize().catch((error) => {
+      console.warn("Failed to update window minimum size:", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (sidebarCollapsed) {
+      return;
+    }
+
+    const handleWindowResize = () => {
+      if (window.innerWidth < getExpandedSidebarFitWidth(sidebarWidth)) {
+        setSidebarCollapsed(true);
+      }
+    };
+
+    handleWindowResize();
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [sidebarCollapsed, sidebarWidth]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -616,7 +701,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       // Cmd+B for sidebar toggle
       if (e.key === "b" && e.metaKey) {
         e.preventDefault();
-        setSidebarCollapsed((prev) => !prev);
+        toggleSidebar();
       }
       // Cmd+W returns to home instead of closing the window
       if (e.key === "w" && e.metaKey) {
@@ -635,7 +720,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [clearActiveSession, sessionStore]);
+  }, [clearActiveSession, sessionStore, toggleSidebar]);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">

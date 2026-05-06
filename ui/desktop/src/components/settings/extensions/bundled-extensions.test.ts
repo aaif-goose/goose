@@ -9,7 +9,7 @@ vi.mock('./bundled-extensions.json', () => ({
       name: 'developer',
       display_name: 'Developer',
       description: 'General development tools.',
-      enabled: true,
+      enabled: false,
       type: 'builtin',
       timeout: 300,
     },
@@ -18,7 +18,7 @@ vi.mock('./bundled-extensions.json', () => ({
       name: 'googledrive',
       display_name: 'Google Drive',
       description: 'Google Drive integration.',
-      enabled: true,
+      enabled: false,
       type: 'stdio',
       cmd: 'googledrive-mcp',
       args: [],
@@ -130,7 +130,7 @@ describe('pruneDeprecatedBundledExtensions', () => {
         name: 'googledrive',
         bundled: true,
       }),
-      true
+      false
     );
   });
 });

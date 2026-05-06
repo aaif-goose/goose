@@ -25,34 +25,35 @@ describe("chatProjectContext", () => {
       }),
     ).toEqual([
       {
-        id: "/Users/wesb/dev/goose2/artifacts",
-        name: "artifacts",
-        path: "/Users/wesb/dev/goose2/artifacts",
+        id: "/Users/wesb/dev/goose2",
+        name: "goose2",
+        path: "/Users/wesb/dev/goose2",
       },
       {
-        id: "/Users/wesb/dev/other/artifacts",
-        name: "artifacts",
-        path: "/Users/wesb/dev/other/artifacts",
+        id: "/Users/wesb/dev/other",
+        name: "other",
+        path: "/Users/wesb/dev/other",
       },
     ]);
   });
 
   it("returns an empty array when workingDirs is empty", () => {
-    expect(getProjectFolderOption({ workingDirs: [] })).toEqual([]);
+    expect(
+      getProjectFolderOption({
+        workingDirs: [],
+      }),
+    ).toEqual([]);
   });
 
   it("returns an empty array when project is null", () => {
     expect(getProjectFolderOption(null)).toEqual([]);
   });
 
-  it("returns only artifact subdirectories for working dirs", () => {
+  it("returns working dirs unchanged", () => {
     expect(
       getProjectArtifactRoots({
         workingDirs: ["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"],
       }),
-    ).toEqual([
-      "/Users/wesb/dev/goose2/artifacts",
-      "/Users/wesb/dev/other/artifacts",
-    ]);
+    ).toEqual(["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"]);
   });
 });

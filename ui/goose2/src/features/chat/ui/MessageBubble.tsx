@@ -7,7 +7,8 @@ import { cn } from "@/shared/lib/cn";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
-import { getCatalogEntry } from "@/features/providers/providerCatalog";
+import { getCatalogEntryFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import {
   getProviderIcon,
   formatProviderLabel,
@@ -19,6 +20,7 @@ import {
   ReasoningTrigger,
   ReasoningContent,
 } from "@/shared/ui/ai-elements/reasoning";
+import type { McpAppMessageHandler } from "./mcpAppTypes";
 import { ToolChainCards, type ToolChainItem } from "./ToolChainCards";
 import { ClickableImage } from "./ClickableImage";
 import { McpAppView } from "./McpAppView";
@@ -29,6 +31,8 @@ import type {
   MessageContent,
   TextContent,
   ImageContent,
+  McpAppContent,
+  ToolRequestContent,
   ToolResponseContent,
   ThinkingContent,
   ReasoningContent as ReasoningContentType,
@@ -81,6 +85,8 @@ interface MessageBubbleProps {
   onCopy?: () => void;
   onRetryMessage?: (messageId: string) => void;
   onEditMessage?: (messageId: string) => void;
+  onSendMcpAppMessage?: McpAppMessageHandler;
+  onMcpAppAutoScroll?: (element: HTMLElement | null) => void;
 }
 
 interface ContentSection {
@@ -185,6 +191,9 @@ function renderContentBlock(
   options: {
     defaultImageAlt: string;
     redactedThinking: string;
+    contentBlocks: MessageContent[];
+    onSendMcpAppMessage?: McpAppMessageHandler;
+    onMcpAppAutoScroll?: (element: HTMLElement | null) => void;
   },
   isStreamingMsg?: boolean,
   isUserMessage?: boolean,
@@ -226,8 +235,30 @@ function renderContentBlock(
     case "toolResponse":
       // Handled by groupContentSections toolChain rendering
       return null;
-    case "mcpApp":
-      return <McpAppView key={`mcp-app-${index}`} payload={content.payload} />;
+    case "mcpApp": {
+      const mcpApp = content as McpAppContent;
+      const matchingToolInput = options.contentBlocks.find(
+        (block): block is ToolRequestContent =>
+          block.type === "toolRequest" &&
+          block.id === mcpApp.payload.toolCallId,
+      );
+      const matchingToolResponse = options.contentBlocks.find(
+        (block): block is ToolResponseContent =>
+          block.type === "toolResponse" &&
+          block.id === mcpApp.payload.toolCallId,
+      );
+
+      return (
+        <McpAppView
+          key={`mcp-app-${index}`}
+          payload={mcpApp.payload}
+          toolInput={matchingToolInput?.arguments}
+          toolResponse={matchingToolResponse}
+          onSendMessage={options.onSendMcpAppMessage}
+          onAutoScrollRequest={options.onMcpAppAutoScroll}
+        />
+      );
+    }
     case "thinking":
     case "reasoning": {
       const text = (content as ThinkingContent | ReasoningContentType).text;
@@ -282,6 +313,8 @@ export const MessageBubble = memo(function MessageBubble({
   isStreaming,
   onRetryMessage,
   onEditMessage,
+  onSendMcpAppMessage,
+  onMcpAppAutoScroll,
 }: MessageBubbleProps) {
   const { t } = useTranslation(["chat", "common"]);
   const { formatDate } = useLocaleFormatting();
@@ -297,6 +330,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
   const { isCopied: isCopyConfirmed, copyToClipboard } = useCopyToClipboard();
   const personaAvatarUrl = useAvatarSrc(persona?.avatar);
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
 
   // Skip empty user bubbles (all blocks filtered as assistant-only).
   if (role === "user" && content.length === 0) return null;
@@ -305,6 +339,7 @@ export const MessageBubble = memo(function MessageBubble({
     .filter((c): c is TextContent => c.type === "text")
     .map((c) => c.text)
     .join("\n");
+  const hasMcpApp = content.some((block) => block.type === "mcpApp");
 
   if (role === "system") {
     return (
@@ -314,6 +349,7 @@ export const MessageBubble = memo(function MessageBubble({
             renderContentBlock(c, i, {
               defaultImageAlt: t("message.defaultImageAlt"),
               redactedThinking: t("message.redactedThinking"),
+              contentBlocks: content,
             }),
           )}
         </div>
@@ -323,8 +359,8 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = role === "user";
   const assistantProviderId = message.metadata?.providerId;
   const assistantProviderName = assistantProviderId
-    ? (getCatalogEntry(assistantProviderId)?.displayName ??
-      formatProviderLabel(assistantProviderId))
+    ? (getCatalogEntryFromEntries(catalogEntries, assistantProviderId)
+        ?.displayName ?? formatProviderLabel(assistantProviderId))
     : undefined;
   const assistantDisplayName =
     message.metadata?.personaName ??
@@ -363,7 +399,11 @@ export const MessageBubble = memo(function MessageBubble({
       <div
         className={cn(
           "group relative min-w-0 flex flex-col gap-1 pb-8",
-          isUser ? "max-w-[640px] items-end" : "w-full items-start",
+          isUser
+            ? "max-w-[640px] items-end"
+            : hasMcpApp
+              ? "w-full items-start"
+              : "max-w-[85%] items-start",
         )}
       >
         {showAssistantIdentity ? (
@@ -434,6 +474,9 @@ export const MessageBubble = memo(function MessageBubble({
                   {
                     defaultImageAlt: t("message.defaultImageAlt"),
                     redactedThinking: t("message.redactedThinking"),
+                    contentBlocks: content,
+                    onSendMcpAppMessage,
+                    onMcpAppAutoScroll,
                   },
                   isStreaming,
                   isUser,

@@ -2,7 +2,7 @@ use super::*;
 #[cfg(feature = "local-inference")]
 use crate::dictation::providers::transcribe_local;
 use crate::dictation::providers::{
-    all_providers, is_configured, transcribe_with_provider, DictationProvider,
+    all_providers, get_provider_def, is_configured, transcribe_with_provider, DictationProvider,
 };
 #[cfg(feature = "local-inference")]
 use crate::dictation::whisper;
@@ -123,6 +123,30 @@ impl GooseAcpAgent {
         }
 
         Ok(DictationConfigResponse { providers })
+    }
+
+    pub(super) async fn on_dictation_secret_save(
+        &self,
+        req: DictationSecretSaveRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let provider = parse_dictation_provider(&req.provider)?;
+        let key = dictation_secret_config_key(provider)?;
+        let config = self.config()?;
+        config.set_secret(key, &req.value).internal_err()?;
+        Config::global().invalidate_secrets_cache();
+        Ok(EmptyResponse {})
+    }
+
+    pub(super) async fn on_dictation_secret_delete(
+        &self,
+        req: DictationSecretDeleteRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let provider = parse_dictation_provider(&req.provider)?;
+        let key = dictation_secret_config_key(provider)?;
+        let config = self.config()?;
+        config.delete_secret(key).internal_err()?;
+        Config::global().invalidate_secrets_cache();
+        Ok(EmptyResponse {})
     }
 
     pub(super) async fn on_dictation_models_list(
@@ -321,6 +345,29 @@ impl GooseAcpAgent {
         Ok(EmptyResponse {})
     }
 }
+
+fn parse_dictation_provider(provider: &str) -> Result<DictationProvider, sacp::Error> {
+    serde_json::from_value(serde_json::Value::String(provider.to_string()))
+        .map_err(|_| sacp::Error::invalid_params().data(format!("Unknown provider: {provider}")))
+}
+
+fn dictation_secret_config_key(provider: DictationProvider) -> Result<&'static str, sacp::Error> {
+    let def = get_provider_def(provider);
+    if def.uses_provider_config {
+        return Err(sacp::Error::invalid_params().data(
+            "Dictation provider uses the main provider configuration. Configure its credentials in provider settings instead.",
+        ));
+    }
+
+    #[cfg(feature = "local-inference")]
+    if provider == DictationProvider::Local {
+        return Err(sacp::Error::invalid_params()
+            .data("Dictation provider does not use an API key or secret."));
+    }
+
+    Ok(def.config_key)
+}
+
 fn dictation_model_config_key(provider: DictationProvider) -> Option<String> {
     match provider {
         DictationProvider::OpenAI => Some(OPENAI_TRANSCRIPTION_MODEL_CONFIG_KEY.to_string()),

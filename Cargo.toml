@@ -98,6 +98,7 @@ tree-sitter-typescript = "0.23"
 
 [patch.crates-io]
 v8 = { path = "vendor/v8" }
+cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 # TODO: switch to crates.io release once it includes the unstable feature and updates org from symposium-dev to agentclientprotocol
 sacp = { git = "https://github.com/agentclientprotocol/symposium-acp", rev = "14086c9" }
 sacp-derive = { git = "https://github.com/agentclientprotocol/symposium-acp", rev = "14086c9" }

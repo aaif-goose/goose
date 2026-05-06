@@ -14,6 +14,7 @@ use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, Tu
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
+use crate::commands::plugin::handle_plugin_install;
 use crate::commands::project::{handle_project_default, handle_projects_interactive};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
 use crate::commands::term::{
@@ -35,6 +36,17 @@ use goose::session::SessionManager;
 use std::io::Read;
 use std::path::PathBuf;
 use tracing::warn;
+
+const GOOSE_SERVER_SECRET_KEY_ENV: &str = "GOOSE_SERVER__SECRET_KEY";
+
+fn generate_serve_secret_key() -> String {
+    use rand::distributions::{Alphanumeric, DistString};
+
+    format!(
+        "goose-acp-{}",
+        Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
+    )
+}
 
 #[derive(Parser)]
 #[command(name = "goose", author, version, display_name = "", about, long_about = None)]
@@ -633,6 +645,16 @@ enum GatewayCommand {
 }
 
 #[derive(Subcommand)]
+enum PluginCommand {
+    /// Install a plugin from a git repository URL
+    #[command(about = "Install a plugin from a git repository URL")]
+    Install {
+        #[arg(help = "URL to a git repository containing a supported plugin")]
+        url: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum RecipeCommand {
     /// Validate a recipe file
     #[command(about = "Validate a recipe")]
@@ -843,6 +865,13 @@ enum Command {
         command: RecipeCommand,
     },
 
+    /// Manage plugins
+    #[command(about = "Manage plugins")]
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
+
     /// Manage scheduled jobs
     #[command(about = "Manage scheduled jobs", visible_alias = "sched")]
     Schedule {
@@ -1045,6 +1074,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Schedule { .. }) => "schedule",
         Some(Command::Update { .. }) => "update",
         Some(Command::Recipe { .. }) => "recipe",
+        Some(Command::Plugin { .. }) => "plugin",
         Some(Command::Term { .. }) => "term",
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
@@ -1086,13 +1116,22 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         config_dir: Paths::config_dir(),
         goose_platform: GoosePlatform::GooseCli,
     }));
-    let router = create_router(server);
+    let secret_key = std::env::var(GOOSE_SERVER_SECRET_KEY_ENV)
+        .ok()
+        .map(|secret| secret.trim().to_string())
+        .filter(|secret| !secret.is_empty())
+        .unwrap_or_else(generate_serve_secret_key);
+    let router = create_router(server, secret_key);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, router).await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -1509,6 +1548,12 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
     }
 }
 
+fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
+    match command {
+        PluginCommand::Install { url } => handle_plugin_install(&url),
+    }
+}
+
 fn handle_recipe_subcommand(command: RecipeCommand) -> Result<()> {
     match command {
         RecipeCommand::Validate { recipe_name } => handle_validate(&recipe_name),
@@ -1837,6 +1882,7 @@ pub async fn cli() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
+        Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,

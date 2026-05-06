@@ -3,7 +3,9 @@ import {
   IconLayoutSidebarRightFilled,
 } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useEffect, useState } from "react";
 import { Button } from "@/shared/ui/button";
+import { cn } from "@/shared/lib/cn";
 import { ContextPanel } from "./ContextPanel";
 
 const CP_PAD = 12;
@@ -12,6 +14,7 @@ const CP_TOGGLE_RIGHT = CP_PAD + 12;
 const CP_TOGGLE_TOP = CP_PAD + 10;
 const CP_FADE_S = 0.15;
 const CP_REFLOW_MS = 200;
+const CP_COMPACT_QUERY = "(max-width: 900px)";
 
 interface ChatContextPanelProps {
   activeSessionId: string;
@@ -33,15 +36,33 @@ export function ChatContextPanel({
   setOpen,
 }: ChatContextPanelProps) {
   const shouldReduceMotion = useReducedMotion();
+  const [isCompactViewport, setIsCompactViewport] = useState(false);
   const fadeTransition = { duration: shouldReduceMotion ? 0 : CP_FADE_S };
   const reflowDuration = shouldReduceMotion ? 0 : CP_REFLOW_MS;
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+
+    const mediaQuery = window.matchMedia(CP_COMPACT_QUERY);
+    setIsCompactViewport(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsCompactViewport(event.matches);
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
 
   return (
     <>
       <div
-        className="shrink-0 overflow-hidden"
+        className={cn(
+          "shrink-0",
+          isCompactViewport ? "overflow-visible" : "overflow-hidden",
+        )}
         style={{
-          width: isOpen ? CP_TOTAL_W : 0,
+          width: isOpen && !isCompactViewport ? CP_TOTAL_W : 0,
           transition: `width ${reflowDuration}ms ease`,
         }}
       >
@@ -49,17 +70,31 @@ export function ChatContextPanel({
           {isOpen ? (
             <motion.div
               key="context-panel"
-              className="flex h-full"
-              style={{
-                width: CP_TOTAL_W,
-                padding: CP_PAD,
-              }}
+              className={cn(
+                "flex",
+                isCompactViewport
+                  ? "absolute bottom-3 right-3 top-12 z-10 w-[min(340px,calc(100%-1.5rem))]"
+                  : "h-full",
+              )}
+              style={
+                isCompactViewport
+                  ? undefined
+                  : {
+                      width: CP_TOTAL_W,
+                      padding: CP_PAD,
+                    }
+              }
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={fadeTransition}
             >
-              <aside className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-background">
+              <aside
+                className={cn(
+                  "flex min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-background",
+                  isCompactViewport && "shadow-modal",
+                )}
+              >
                 <ContextPanel
                   sessionId={activeSessionId}
                   projectName={project?.name}

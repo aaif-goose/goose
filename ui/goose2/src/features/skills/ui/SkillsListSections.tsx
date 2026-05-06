@@ -8,15 +8,15 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { IconMessagePlus } from "@tabler/icons-react";
-import type { SkillViewInfo } from "../lib/skillCategories";
+import type { SkillInfo } from "../api/skills";
 import type { SkillsSection } from "../lib/skillsHelpers";
 
 interface SkillsListSectionsProps {
   sections: SkillsSection[];
   expandedSectionIds: string[];
   onExpandedSectionIdsChange: (ids: string[]) => void;
-  onSelectSkill: (skill: SkillViewInfo) => void;
-  onStartChat?: (skill: SkillViewInfo) => void;
+  onSelectSkill: (skill: SkillInfo) => void;
+  onStartChat?: (skill: SkillInfo) => void;
 }
 
 export function SkillsListSections({

@@ -151,14 +151,10 @@ fn system_config_path() -> PathBuf {
     }
 }
 
-fn bundled_defaults_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let path = exe.parent()?.join("defaults.yaml");
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
+fn additional_config_paths_from_env() -> Vec<PathBuf> {
+    env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES")
+        .map(|value| env::split_paths(&value).collect())
+        .unwrap_or_default()
 }
 
 impl Default for Config {
@@ -167,9 +163,7 @@ impl Default for Config {
         let user_config_path = config_dir.join(CONFIG_YAML_NAME);
 
         let mut config_paths = vec![system_config_path()];
-        if let Some(defaults) = bundled_defaults_path() {
-            config_paths.insert(0, defaults);
-        }
+        config_paths.extend(additional_config_paths_from_env());
         config_paths.push(user_config_path.clone());
 
         let no_secrets_config = Self {
@@ -716,6 +710,20 @@ impl Config {
         let _guard = self.guard.lock().unwrap();
         let mut values = self.load_write_config()?;
         values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
+        self.save_values(&values)
+    }
+
+    /// Set multiple configuration values in the config file with one read and one write.
+    pub fn set_param_values(&self, updates: &[(String, Value)]) -> Result<(), ConfigError> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        let _guard = self.guard.lock().unwrap();
+        let mut values = self.load_write_config()?;
+        for (key, value) in updates {
+            values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
+        }
         self.save_values(&values)
     }
 
@@ -1986,10 +1994,12 @@ extensions:
         )
         .unwrap();
 
-        // User config (higher priority / write target) disables developer and adds a new extension
+        // User config (higher priority / write target) has already migrated, then disables
+        // developer and adds a new extension.
         std::fs::write(
             local_file.path(),
             r#"
+extensions_on_demand_migration: true
 extensions:
   developer:
     enabled: false
@@ -2014,7 +2024,7 @@ extensions:
         let values = config.load()?;
         let extensions = values.get("extensions").unwrap().as_mapping().unwrap();
 
-        // developer should be disabled (user config overrides system)
+        // developer should be disabled (user config overrides system after migration)
         let dev = extensions.get("developer").unwrap().as_mapping().unwrap();
         assert!(!dev.get("enabled").unwrap().as_bool().unwrap());
         // Fields from the system config should be preserved via merge

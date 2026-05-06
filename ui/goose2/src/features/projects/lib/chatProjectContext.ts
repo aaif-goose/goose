@@ -22,48 +22,35 @@ export function getProjectFolderName(path: string): string {
   return parts[parts.length - 1] ?? normalized;
 }
 
-function appendArtifactsSegment(path: string): string {
-  return `${path.replace(/[\\/]+$/, "")}/artifacts`;
-}
-
-function resolveProjectArtifactRoots(
+function resolveProjectRoots(
   project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): string[] {
-  const workingDirs = (project?.workingDirs ?? [])
+  return (project?.workingDirs ?? [])
     .map((directory) => trimValue(directory))
     .filter((directory): directory is string => directory !== null);
-
-  return workingDirs.map(appendArtifactsSegment);
 }
 
 export function getProjectArtifactRoots(
   project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): string[] {
-  return resolveProjectArtifactRoots(project);
+  return resolveProjectRoots(project);
 }
 
 export function resolveProjectDefaultArtifactRoot(
   project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): string | undefined {
-  const workingDirs = (project?.workingDirs ?? [])
-    .map((directory) => trimValue(directory))
-    .filter((directory): directory is string => directory !== null);
-
-  if (workingDirs.length > 0) {
-    return appendArtifactsSegment(workingDirs[0]);
-  }
-
-  return undefined;
+  const workingDirs = resolveProjectRoots(project);
+  return workingDirs[0];
 }
 
 export async function defaultGlobalArtifactRoot(): Promise<string> {
-  return (await resolvePath({ parts: ["~", ".goose", "artifacts"] })).path;
+  return (await resolvePath({ parts: ["~"] })).path;
 }
 
 export function getProjectFolderOption(
   project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): ProjectFolderOption[] {
-  return resolveProjectArtifactRoots(project).map((d) => ({
+  return resolveProjectRoots(project).map((d) => ({
     id: d,
     name: getProjectFolderName(d),
     path: d,

@@ -73,6 +73,48 @@
       "x-side": "agent",
       "x-method": "_goose/tools"
     },
+    "GooseToolCallRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "default": null
+        }
+      },
+      "required": [
+        "sessionId",
+        "name"
+      ],
+      "description": "Call a tool from an extension.",
+      "x-side": "agent",
+      "x-method": "_goose/tool/call"
+    },
+    "GooseToolCallResponse": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {},
+          "default": []
+        },
+        "structuredContent": {},
+        "isError": {
+          "type": "boolean"
+        },
+        "_meta": {}
+      },
+      "required": [
+        "isError"
+      ],
+      "description": "Tool call response.",
+      "x-side": "agent",
+      "x-method": "_goose/tool/call"
+    },
     "ReadResourceRequest": {
       "type": "object",
       "properties": {
@@ -309,6 +351,10 @@
           "type": "string",
           "description": "Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`."
         },
+        "category": {
+          "$ref": "#/$defs/ProviderSetupCategoryDto",
+          "description": "Whether this inventory entry represents an agent provider or a model provider."
+        },
         "configKeys": {
           "type": "array",
           "items": {
@@ -378,6 +424,7 @@
         "defaultModel",
         "configured",
         "providerType",
+        "category",
         "configKeys",
         "setupSteps",
         "supportsRefresh",
@@ -386,6 +433,13 @@
         "stale"
       ],
       "description": "Provider inventory entry."
+    },
+    "ProviderSetupCategoryDto": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "model"
+      ]
     },
     "ProviderConfigKey": {
       "type": "object",
@@ -491,7 +545,7 @@
         "providers": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ProviderCatalogEntryDto"
+            "$ref": "#/$defs/ProviderTemplateCatalogEntryDto"
           }
         }
       },
@@ -501,7 +555,7 @@
       "x-side": "agent",
       "x-method": "_goose/providers/catalog/list"
     },
-    "ProviderCatalogEntryDto": {
+    "ProviderTemplateCatalogEntryDto": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -535,6 +589,163 @@
         "modelCount",
         "docUrl",
         "envVar"
+      ]
+    },
+    "ProviderSetupCatalogListRequest": {
+      "type": "object",
+      "description": "List provider setup catalog entries",
+      "x-side": "agent",
+      "x-method": "_goose/providers/setup/catalog/list"
+    },
+    "ProviderSetupCatalogListResponse": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderSetupCatalogEntryDto"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/providers/setup/catalog/list"
+    },
+    "ProviderSetupCatalogEntryDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/ProviderSetupCategoryDto"
+        },
+        "description": {
+          "type": "string"
+        },
+        "setupMethod": {
+          "$ref": "#/$defs/ProviderSetupMethodDto"
+        },
+        "nativeConnectQuery": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderSetupFieldDto"
+          },
+          "default": []
+        },
+        "binaryName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "docUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "$ref": "#/$defs/ProviderSetupGroupDto"
+        },
+        "showOnlyWhenInstalled": {
+          "type": "boolean"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "supportsInstall": {
+          "type": "boolean"
+        },
+        "supportsAuth": {
+          "type": "boolean"
+        },
+        "supportsAuthStatus": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "name",
+        "category",
+        "description",
+        "setupMethod",
+        "group",
+        "showOnlyWhenInstalled",
+        "supportsInstall",
+        "supportsAuth",
+        "supportsAuthStatus"
+      ]
+    },
+    "ProviderSetupMethodDto": {
+      "type": "string",
+      "enum": [
+        "none",
+        "single_api_key",
+        "config_fields",
+        "host_with_oauth_fallback",
+        "oauth_browser",
+        "oauth_device_code",
+        "cloud_credentials",
+        "local",
+        "cli_auth"
+      ]
+    },
+    "ProviderSetupFieldDto": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultValue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "secret",
+        "required"
+      ]
+    },
+    "ProviderSetupGroupDto": {
+      "type": "string",
+      "enum": [
+        "default",
+        "additional"
       ]
     },
     "ProviderCatalogTemplateRequest": {
@@ -1204,118 +1415,114 @@
       "x-side": "agent",
       "x-method": "_goose/providers/config/delete"
     },
-    "ReadConfigRequest": {
+    "PreferencesReadRequest": {
       "type": "object",
       "properties": {
-        "key": {
-          "type": "string"
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceKey"
+          },
+          "default": []
+        }
+      },
+      "description": "Read allowlisted user preferences. Empty `keys` means all supported preferences.",
+      "x-side": "agent",
+      "x-method": "_goose/preferences/read"
+    },
+    "PreferenceKey": {
+      "type": "string",
+      "enum": [
+        "autoCompactThreshold",
+        "voiceAutoSubmitPhrases",
+        "voiceDictationProvider",
+        "voiceDictationPreferredMic"
+      ]
+    },
+    "PreferencesReadResponse": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceValue"
+          }
         }
       },
       "required": [
-        "key"
+        "values"
       ],
-      "description": "Read a single non-secret config value.",
       "x-side": "agent",
-      "x-method": "_goose/config/read"
+      "x-method": "_goose/preferences/read"
     },
-    "ReadConfigResponse": {
+    "PreferenceValue": {
       "type": "object",
       "properties": {
+        "key": {
+          "$ref": "#/$defs/PreferenceKey"
+        },
         "value": {
           "default": null
         }
       },
-      "description": "Config read response.",
-      "x-side": "agent",
-      "x-method": "_goose/config/read"
+      "required": [
+        "key"
+      ]
     },
-    "UpsertConfigRequest": {
+    "PreferencesSaveRequest": {
       "type": "object",
       "properties": {
-        "key": {
-          "type": "string"
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceValue"
+          },
+          "default": []
+        }
+      },
+      "description": "Save allowlisted user preferences.",
+      "x-side": "agent",
+      "x-method": "_goose/preferences/save"
+    },
+    "PreferencesRemoveRequest": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceKey"
+          },
+          "default": []
+        }
+      },
+      "description": "Remove allowlisted user preferences.",
+      "x-side": "agent",
+      "x-method": "_goose/preferences/remove"
+    },
+    "DefaultsReadRequest": {
+      "type": "object",
+      "description": "Read Goose default provider and model configuration.",
+      "x-side": "agent",
+      "x-method": "_goose/defaults/read"
+    },
+    "DefaultsReadResponse": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "value": {}
-      },
-      "required": [
-        "key",
-        "value"
-      ],
-      "description": "Upsert a single non-secret config value.",
-      "x-side": "agent",
-      "x-method": "_goose/config/upsert"
-    },
-    "RemoveConfigRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
+        "modelId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "key"
-      ],
-      "description": "Remove a single non-secret config value.",
       "x-side": "agent",
-      "x-method": "_goose/config/remove"
-    },
-    "CheckSecretRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "key"
-      ],
-      "description": "Check whether a secret exists. Never returns the actual value.",
-      "x-side": "agent",
-      "x-method": "_goose/secret/check"
-    },
-    "CheckSecretResponse": {
-      "type": "object",
-      "properties": {
-        "exists": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "exists"
-      ],
-      "description": "Secret check response.",
-      "x-side": "agent",
-      "x-method": "_goose/secret/check"
-    },
-    "UpsertSecretRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        },
-        "value": {}
-      },
-      "required": [
-        "key",
-        "value"
-      ],
-      "description": "Set a secret value (write-only).",
-      "x-side": "agent",
-      "x-method": "_goose/secret/upsert"
-    },
-    "RemoveSecretRequest": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "key"
-      ],
-      "description": "Remove a secret.",
-      "x-side": "agent",
-      "x-method": "_goose/secret/remove"
+      "x-method": "_goose/defaults/read"
     },
     "ExportSessionRequest": {
       "type": "object",
@@ -1906,6 +2113,38 @@
         "description"
       ]
     },
+    "DictationSecretSaveRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "value"
+      ],
+      "description": "Set a dictation provider secret value.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/secret/save"
+    },
+    "DictationSecretDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "description": "Remove a dictation provider secret value.",
+      "x-side": "agent",
+      "x-method": "_goose/dictation/secret/delete"
+    },
     "DictationModelsListRequest": {
       "type": "object",
       "description": "List available local Whisper models with their download status.",
@@ -2127,6 +2366,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/GooseToolCallRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/tool/call",
+                  "title": "GooseToolCallRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ReadResourceRequest"
                     }
                   ],
@@ -2213,6 +2461,15 @@
                   ],
                   "description": "Params for _goose/providers/catalog/list",
                   "title": "ProviderCatalogListRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderSetupCatalogListRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/setup/catalog/list",
+                  "title": "ProviderSetupCatalogListRequest"
                 },
                 {
                   "allOf": [
@@ -2307,56 +2564,38 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ReadConfigRequest"
+                      "$ref": "#/$defs/PreferencesReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/config/read",
-                  "title": "ReadConfigRequest"
+                  "description": "Params for _goose/preferences/read",
+                  "title": "PreferencesReadRequest"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/UpsertConfigRequest"
+                      "$ref": "#/$defs/PreferencesSaveRequest"
                     }
                   ],
-                  "description": "Params for _goose/config/upsert",
-                  "title": "UpsertConfigRequest"
+                  "description": "Params for _goose/preferences/save",
+                  "title": "PreferencesSaveRequest"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/RemoveConfigRequest"
+                      "$ref": "#/$defs/PreferencesRemoveRequest"
                     }
                   ],
-                  "description": "Params for _goose/config/remove",
-                  "title": "RemoveConfigRequest"
+                  "description": "Params for _goose/preferences/remove",
+                  "title": "PreferencesRemoveRequest"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/CheckSecretRequest"
+                      "$ref": "#/$defs/DefaultsReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/secret/check",
-                  "title": "CheckSecretRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/UpsertSecretRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/secret/upsert",
-                  "title": "UpsertSecretRequest"
-                },
-                {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/RemoveSecretRequest"
-                    }
-                  ],
-                  "description": "Params for _goose/secret/remove",
-                  "title": "RemoveSecretRequest"
+                  "description": "Params for _goose/defaults/read",
+                  "title": "DefaultsReadRequest"
                 },
                 {
                   "allOf": [
@@ -2487,6 +2726,24 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/DictationSecretSaveRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/secret/save",
+                  "title": "DictationSecretSaveRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DictationSecretDeleteRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/dictation/secret/delete",
+                  "title": "DictationSecretDeleteRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DictationModelsListRequest"
                     }
                   ],
@@ -2587,6 +2844,14 @@
                     {
                       "allOf": [
                         {
+                          "$ref": "#/$defs/GooseToolCallResponse"
+                        }
+                      ],
+                      "title": "GooseToolCallResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
                           "$ref": "#/$defs/ReadResourceResponse"
                         }
                       ],
@@ -2623,6 +2888,14 @@
                         }
                       ],
                       "title": "ProviderCatalogListResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProviderSetupCatalogListResponse"
+                        }
+                      ],
+                      "title": "ProviderSetupCatalogListResponse"
                     },
                     {
                       "allOf": [
@@ -2699,18 +2972,18 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ReadConfigResponse"
+                          "$ref": "#/$defs/PreferencesReadResponse"
                         }
                       ],
-                      "title": "ReadConfigResponse"
+                      "title": "PreferencesReadResponse"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/CheckSecretResponse"
+                          "$ref": "#/$defs/DefaultsReadResponse"
                         }
                       ],
-                      "title": "CheckSecretResponse"
+                      "title": "DefaultsReadResponse"
                     },
                     {
                       "allOf": [

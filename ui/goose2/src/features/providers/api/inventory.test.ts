@@ -23,6 +23,7 @@ function providerEntry(
     defaultModel: "",
     configured: false,
     providerType: "Preferred",
+    category: "model",
     configKeys: [],
     setupSteps: [],
     supportsRefresh: false,

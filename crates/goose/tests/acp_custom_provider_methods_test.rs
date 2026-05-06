@@ -72,6 +72,69 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
             "OpenAI-compatible catalog should include z.ai"
         );
 
+        let setup_catalog = send_custom(
+            conn.cx(),
+            "_goose/providers/setup/catalog/list",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("provider setup catalog list should succeed");
+        let setup_providers = setup_catalog
+            .get("providers")
+            .and_then(|providers| providers.as_array())
+            .expect("setup catalog response should include providers");
+        for provider_id in [
+            "goose",
+            "anthropic",
+            "openai",
+            "claude-acp",
+            "codex-acp",
+            "copilot-acp",
+            "amp-acp",
+            "cursor-agent",
+            "pi-acp",
+        ] {
+            assert!(
+                setup_providers
+                    .iter()
+                    .any(|provider| provider.get("providerId")
+                        == Some(&serde_json::json!(provider_id))),
+                "setup catalog should include {provider_id}"
+            );
+        }
+        for provider_id in ["codex", "claude_code", "gemini_cli"] {
+            assert!(
+                setup_providers
+                    .iter()
+                    .all(|provider| provider.get("providerId")
+                        != Some(&serde_json::json!(provider_id))),
+                "setup catalog should exclude deprecated provider {provider_id}"
+            );
+        }
+        let codex_setup = setup_providers
+            .iter()
+            .find(|provider| provider.get("providerId") == Some(&serde_json::json!("codex-acp")))
+            .expect("setup catalog should include codex-acp");
+        assert_eq!(
+            codex_setup.get("category"),
+            Some(&serde_json::json!("agent"))
+        );
+        assert_eq!(
+            codex_setup.get("setupMethod"),
+            Some(&serde_json::json!("cli_auth"))
+        );
+        assert_eq!(
+            codex_setup.get("supportsInstall"),
+            Some(&serde_json::json!(true))
+        );
+        assert!(
+            codex_setup
+                .get("aliases")
+                .and_then(|aliases| aliases.as_array())
+                .is_some_and(|aliases| aliases.contains(&serde_json::json!("codex"))),
+            "codex-acp setup aliases should include codex"
+        );
+
         let template = send_custom(
             conn.cx(),
             "_goose/providers/catalog/template",

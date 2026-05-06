@@ -3,8 +3,7 @@ import type {
   DictationProviderStatus,
 } from "@/shared/types/dictation";
 
-// goose config keys — stored in the user's goose config.yaml via the
-// _goose/config/{read,upsert,remove} ACP methods, not localStorage.
+// Stored in the user's goose config.yaml via typed ACP preference methods, not localStorage.
 export const VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY = "VOICE_AUTO_SUBMIT_PHRASES";
 export const VOICE_DICTATION_PROVIDER_CONFIG_KEY = "VOICE_DICTATION_PROVIDER";
 export const VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY =

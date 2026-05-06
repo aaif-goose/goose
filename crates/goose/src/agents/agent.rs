@@ -50,7 +50,7 @@ use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager};
+use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -116,6 +116,7 @@ pub struct AgentConfig {
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
     pub mcp_host_info: Option<GooseMcpHostInfo>,
+    pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
 }
 
 impl AgentConfig {
@@ -135,11 +136,20 @@ impl AgentConfig {
             disable_session_naming,
             goose_platform,
             mcp_host_info: None,
+            session_name_update_tx: None,
         }
     }
 
     pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
         self.mcp_host_info = mcp_host_info;
+        self
+    }
+
+    pub fn with_session_name_update_tx(
+        mut self,
+        tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
+    ) -> Self {
+        self.session_name_update_tx = tx;
         self
     }
 }
@@ -801,13 +811,6 @@ impl Agent {
 
         let results = futures::future::join_all(extension_futures).await;
 
-        // Persist once after all extensions are loaded
-        if results.iter().any(|r| r.success) {
-            if let Err(e) = self.persist_extension_state(&session_id).await {
-                warn!("Failed to persist extension state after bulk load: {}", e);
-            }
-        }
-
         results
     }
 
@@ -1057,18 +1060,19 @@ impl Agent {
                 if let ActionRequiredData::ElicitationResponse { id, user_data } =
                     &action_required.data
                 {
-                    if let Err(e) = ActionRequiredManager::global()
+                    // Surface stale/cancelled/timed-out elicitations as a hard
+                    // error so callers (e.g. the HTTP handler) can propagate
+                    // failure to the client instead of silently reporting
+                    // success while the blocked tool call stays unblocked.
+                    // The success path returns an empty stream; an Err here
+                    // makes the contract: Ok(empty) on accept, Err on reject.
+                    ActionRequiredManager::global()
                         .submit_response(id.clone(), user_data.clone())
                         .await
-                    {
-                        let error_text = format!("Failed to submit elicitation response: {}", e);
-                        error!(error_text);
-                        return Ok(Box::pin(stream::once(async {
-                            Ok(AgentEvent::Message(
-                                Message::assistant().with_text(error_text),
-                            ))
-                        })));
-                    }
+                        .map_err(|e| {
+                            error!("Failed to submit elicitation response: {}", e);
+                            anyhow!("Failed to submit elicitation response: {}", e)
+                        })?;
                     session_manager
                         .add_message(&session_config.id, &user_message)
                         .await?;
@@ -1277,12 +1281,21 @@ impl Agent {
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
             let manager_for_spawn = session_manager.clone();
+            let session_name_update_tx = self.config.session_name_update_tx.clone();
             tokio::spawn(async move {
-                if let Err(e) = manager_for_spawn
+                match manager_for_spawn
                     .maybe_update_name(&session_id, provider)
                     .await
                 {
-                    warn!("Failed to generate session description: {}", e);
+                    Ok(Some(update)) => {
+                        if let Some(tx) = session_name_update_tx {
+                            if tx.send(update).is_err() {
+                                warn!("Failed to publish generated session name");
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => warn!("Failed to generate session description: {}", e),
                 }
             });
         }

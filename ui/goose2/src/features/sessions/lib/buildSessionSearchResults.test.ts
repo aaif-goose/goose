@@ -23,8 +23,7 @@ describe("buildSessionSearchResults", () => {
   it("merges metadata and message matches, preferring message details", () => {
     const sessions = [
       makeSession({
-        id: "session-1",
-        acpSessionId: "acp-1",
+        id: "acp-1",
         title: "Needle session",
         updatedAt: "2026-04-10T12:00:00Z",
       }),
@@ -59,7 +58,7 @@ describe("buildSessionSearchResults", () => {
       messageId: "message-1",
       matchCount: 2,
     });
-    expect(results[0].session.id).toBe("session-1");
+    expect(results[0].session.id).toBe("acp-1");
   });
 
   it("includes metadata-only matches and sorts by updatedAt descending", () => {
