@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(config.name, "llama_swap");
         assert_eq!(config.display_name, "Llama Swap");
         assert!(matches!(config.engine, ProviderEngine::OpenAI));
-        assert_eq!(config.api_key_env, "");
+        assert_eq!(config.api_key_env, "LLAMA_SWAP_API_KEY");
         assert!(!config.requires_auth);
         assert!(config.skip_canonical_filtering);
         assert_eq!(config.dynamic_models, Some(true));
