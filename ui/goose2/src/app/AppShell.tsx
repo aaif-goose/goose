@@ -772,12 +772,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       // Cmd+W returns to home instead of closing the window
       if (e.key === "w" && e.metaKey) {
         e.preventDefault();
+        if (activeView === "settings") {
+          leaveSettings();
+          return;
+        }
         const { activeSessionId } = useChatSessionStore.getState();
         if (activeSessionId) {
           clearActiveSession(activeSessionId);
-        } else if (activeView === "settings") {
-          clearSettingsSectionUrl();
-          setActiveView("home");
         }
       }
       // Cmd+N opens new conversation screen
