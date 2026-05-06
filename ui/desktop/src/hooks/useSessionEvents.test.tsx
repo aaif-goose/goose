@@ -164,4 +164,95 @@ describe('useSessionEvents reconnect (issue #8717)', () => {
 
     unmount();
   });
+
+  // Scoped terminal fallback: if the SSE stream stays down for longer than
+  // any plausible transient outage (App Nap, sleep/wake) and a chat request
+  // is actively waiting on events, the loop must synthesise a terminal
+  // `Error` so `useChatStream` can leave `ChatState.Streaming` and unblock
+  // new submits. This is the regression guard requested in PR review for
+  // PR #8846: keep the long-retry behaviour of issue #8717's fix, but stop
+  // chats from getting stuck indefinitely on truly unrecoverable streaks.
+  it('synthesises a terminal Error for active listeners after a sustained failure streak', async () => {
+    const realDateNow = Date.now;
+    let fakeNow = 1_000_000;
+    Date.now = () => fakeNow;
+
+    try {
+      // Each attempt advances the simulated clock by ~10s so the cumulative
+      // failure window crosses the 5-minute terminal threshold quickly.
+      sessionEventsMock.mockImplementation(
+        boundedMock(60, () => {
+          fakeNow += 10_000;
+          return Promise.resolve(emptyStream());
+        })
+      );
+
+      const { result, unmount } = renderHook(() => useSessionEvents('sess-1'));
+
+      const handler = vi.fn();
+      act(() => {
+        result.current.addListener('req-1', handler);
+      });
+
+      await flush();
+
+      const errorCalls = handler.mock.calls.filter(
+        (args) => (args[0] as SessionEvent).type === 'Error'
+      );
+      expect(errorCalls.length).toBeGreaterThanOrEqual(1);
+
+      const firstError = errorCalls[0][0] as SessionEvent & { error: string };
+      expect(firstError.error).toBe('Lost connection to server');
+      // The synthetic event must be routed back to the active listener so
+      // `useChatStream`'s per-request handler picks it up.
+      expect(firstError.request_id).toBe('req-1');
+      expect(firstError.chat_request_id).toBe('req-1');
+
+      unmount();
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
+  // Companion to the test above: when the failure streak runs without any
+  // active listeners (e.g. the chat is idle), the loop must NOT emit any
+  // synthetic events — there is nothing to unblock and broadcasting would
+  // surface as a phantom error the next time a listener attaches.
+  it('does not synthesise a terminal Error when no listeners are registered', async () => {
+    const realDateNow = Date.now;
+    let fakeNow = 1_000_000;
+    Date.now = () => fakeNow;
+
+    try {
+      sessionEventsMock.mockImplementation(
+        boundedMock(60, () => {
+          fakeNow += 10_000;
+          return Promise.resolve(emptyStream());
+        })
+      );
+
+      const { result, unmount } = renderHook(() => useSessionEvents('sess-1'));
+
+      // Only register the listener AFTER the failure streak has run long
+      // enough to cross the threshold, to confirm the late-attached listener
+      // does not retroactively receive a stale synthetic Error.
+      await flush();
+
+      const handler = vi.fn();
+      act(() => {
+        result.current.addListener('req-late', handler);
+      });
+
+      await flush();
+
+      const errorCalls = handler.mock.calls.filter(
+        (args) => (args[0] as SessionEvent).type === 'Error'
+      );
+      expect(errorCalls).toEqual([]);
+
+      unmount();
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
 });

@@ -27,15 +27,57 @@ export function useSessionEvents(sessionId: string) {
     abortRef.current = abortController;
 
     (async () => {
-      // The reconnect loop runs for the lifetime of the hook and never
-      // surfaces a terminal "Error" event to listeners on its own. Transient
-      // disconnects (App Nap, sleep/wake, network blips) recover via the
-      // SSE `Last-Event-ID` replay protocol; the only fatal case — the
-      // server's replay buffer overflowing — is signalled by a real `Error`
-      // event from goosed and handled by the chat-stream consumer.
+      // The reconnect loop runs for the lifetime of the hook and keeps
+      // retrying indefinitely so transient disconnects (App Nap, sleep/wake,
+      // network blips) recover via the SSE `Last-Event-ID` replay protocol
+      // without surfacing a synthetic terminal error (issue #8717).
+      //
+      // To prevent in-flight chat requests from getting stuck forever when
+      // the connection truly cannot recover (e.g. `goosed` crashed or the
+      // network stays offline well past any plausible App Nap duration),
+      // a scoped fallback synthesises an `Error` event for any active
+      // listeners after `TERMINAL_ERROR_AFTER_MS` of continuous failure.
+      // `useChatStream`'s event processor maps that to `STREAM_FINISH`,
+      // unblocking new submits while the loop continues to retry in the
+      // background.
       let retryDelay = 500;
       const MAX_RETRY_DELAY = 10_000;
+      // Long enough to absorb typical App Nap / sleep-wake durations, short
+      // enough that a stuck chat unblocks within a reasonable user wait.
+      const TERMINAL_ERROR_AFTER_MS = 5 * 60 * 1000;
       let lastEventId: string | undefined;
+      let failureStreakStartedAt: number | null = null;
+
+      // Synthesise a terminal `Error` event for every active listener once
+      // the failure streak has lasted long enough that the outage is no
+      // longer plausibly transient. Resets the streak timer afterwards so a
+      // continuing outage will fire again for any requests submitted after
+      // the previous broadcast (instead of leaving them stuck indefinitely).
+      const broadcastTerminalErrorIfStuck = () => {
+        if (failureStreakStartedAt === null) return;
+        if (Date.now() - failureStreakStartedAt < TERMINAL_ERROR_AFTER_MS) return;
+        if (listenersRef.current.size === 0) {
+          // No active listeners means no in-flight request is waiting on
+          // events; nothing to unblock. Reset so the next broadcast window
+          // starts fresh whenever a request is actually submitted.
+          failureStreakStartedAt = Date.now();
+          return;
+        }
+
+        const errorEvent: SessionEvent = {
+          type: 'Error',
+          error: 'Lost connection to server',
+        } as SessionEvent;
+        for (const [id, handlers] of listenersRef.current) {
+          // Snapshot the handler set: terminal-event handlers in
+          // `useChatStream` unsubscribe themselves and would otherwise
+          // mutate the set during iteration.
+          for (const handler of [...handlers]) {
+            handler({ ...errorEvent, request_id: id, chat_request_id: id });
+          }
+        }
+        failureStreakStartedAt = Date.now();
+      };
 
       while (!abortController.signal.aborted) {
         try {
@@ -64,6 +106,7 @@ export function useSessionEvents(sessionId: string) {
               receivedEvent = true;
               setConnected(true);
               retryDelay = 500;
+              failureStreakStartedAt = null;
             }
 
             // The server adds chat_request_id (the chat UUID) and request_id
@@ -105,10 +148,12 @@ export function useSessionEvents(sessionId: string) {
 
           // If the stream ended without delivering any events, the connection
           // likely failed silently (e.g. 404 with sseMaxRetryAttempts: 1).
-          // Back off and reconnect; do NOT synthesize a terminal Error — doing
-          // so used to make any in-flight chat session fail permanently after
-          // ~1 minute of disconnect (issue #8717).
+          // Back off and reconnect; only synthesise a terminal Error after a
+          // long, continuous failure streak (see `broadcastTerminalErrorIfStuck`)
+          // so transient blips do not regress issue #8717.
           if (!receivedEvent) {
+            if (failureStreakStartedAt === null) failureStreakStartedAt = Date.now();
+            broadcastTerminalErrorIfStuck();
             await new Promise((r) => setTimeout(r, retryDelay));
             retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
           }
@@ -117,9 +162,12 @@ export function useSessionEvents(sessionId: string) {
           console.warn('SSE connection error, reconnecting:', error);
           setConnected(false);
 
-          // Back off before retrying. We deliberately keep reconnecting
-          // forever rather than giving up, so that idle windows transparently
-          // resume their SSE stream when the renderer wakes from suspension.
+          // Back off before retrying. We keep reconnecting forever so idle
+          // windows transparently resume their SSE stream when the renderer
+          // wakes from suspension; the scoped terminal fallback above is the
+          // only mechanism that surfaces a stream error to listeners.
+          if (failureStreakStartedAt === null) failureStreakStartedAt = Date.now();
+          broadcastTerminalErrorIfStuck();
           await new Promise((r) => setTimeout(r, retryDelay));
           retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
         }
