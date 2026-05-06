@@ -7,7 +7,6 @@ import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { getBufferedMessage } from "@/features/chat/hooks/replayBuffer";
 import type {
   ToolCallLocation,
-  ToolCallStatus,
   ToolKind,
   ToolRequestContent,
   ToolResponseContent,
@@ -51,9 +50,6 @@ interface LivePerf {
 }
 const livePerf = new Map<string, LivePerf>();
 
-const toolCallStatusFromUpdate = (status: string): ToolCallStatus =>
-  status === "failed" ? "error" : "completed";
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -90,7 +86,7 @@ function locationsFromUpdate(
 
 function toolCallUpdatePatch(
   update: SessionUpdate,
-): Partial<ToolRequestContent> {
+): Pick<Partial<ToolRequestContent>, "toolKind" | "locations"> {
   const toolKind = toolKindFromUpdate(update);
   const locations = locationsFromUpdate(update);
 
@@ -226,7 +222,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
         name: update.title,
         ...identity,
         arguments: rawInputToArguments(update.rawInput),
-        status: "executing",
+        status: "in_progress",
         ...toolCallUpdatePatch(update),
         startedAt: created ?? Date.now(),
         ...(chainSummary ? { chainSummary } : {}),
@@ -276,7 +272,6 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
           }
         }
         if (update.status === "completed" || update.status === "failed") {
-          const toolCallStatus = toolCallStatusFromUpdate(update.status);
           const tc = msg.content.find(
             (c) => c.type === "toolRequest" && c.id === update.toolCallId,
           );
@@ -287,7 +282,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
                 ...tc,
                 ...identity,
                 ...toolCallUpdatePatch(update),
-                status: toolCallStatus,
+                status: update.status,
               } as ToolRequestContent;
             }
           }
@@ -356,7 +351,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
         name: update.title,
         ...identity,
         arguments: rawInputToArguments(update.rawInput),
-        status: "executing",
+        status: "in_progress",
         ...toolCallUpdatePatch(update),
         startedAt: Date.now(),
         ...(chainSummary ? { chainSummary } : {}),
@@ -403,7 +398,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
       }
 
       if (update.status === "completed" || update.status === "failed") {
-        const toolCallStatus = toolCallStatusFromUpdate(update.status);
+        const { status: resolvedStatus } = update;
         const ownerMessage = store.messagesBySession[sessionId]?.find(
           (m) => m.id === messageId,
         );
@@ -425,7 +420,7 @@ function handleLive(sessionId: string, update: SessionUpdate): void {
                   ...block,
                   ...identity,
                   ...toolCallUpdatePatch(update),
-                  status: toolCallStatus,
+                  status: resolvedStatus,
                 }
               : block,
           ),

@@ -82,7 +82,7 @@ function markMessageStopped(sessionId: string, messageId: string) {
         completionStatus: "stopped",
       },
       content: message.content.map((block) =>
-        block.type === "toolRequest" && block.status === "executing"
+        block.type === "toolRequest" && block.status === "in_progress"
           ? { ...block, status: "stopped" }
           : block,
       ),

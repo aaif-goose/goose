@@ -2,6 +2,10 @@ import type {
   GooseReadResourceResult,
   GooseToolMetadata,
 } from "@aaif/goose-sdk";
+import type {
+  ToolKind as AcpToolKind,
+  ToolCallLocation as AcpToolCallLocation,
+} from "@agentclientprotocol/sdk";
 
 export type ChatAttachmentKind = "image" | "file" | "directory";
 
@@ -61,29 +65,25 @@ export interface ImageContent {
   annotations?: ContentAnnotations;
 }
 
+/**
+ * Tool call execution status.
+ *
+ * `"pending"`, `"in_progress"`, `"completed"`, and `"failed"` match the ACP
+ * wire values exactly (see `ToolCallStatus` in `@agentclientprotocol/sdk`).
+ * `"stopped"` is a renderer-only extension for user-cancelled tool calls.
+ */
 export type ToolCallStatus =
   | "pending"
-  | "executing"
+  | "in_progress"
   | "completed"
-  | "error"
+  | "failed"
   | "stopped";
 
-export type ToolKind =
-  | "read"
-  | "edit"
-  | "delete"
-  | "move"
-  | "search"
-  | "execute"
-  | "think"
-  | "fetch"
-  | "switch_mode"
-  | "other";
+/** Re-exported from ACP SDK — tool category for icon/UI treatment. */
+export type ToolKind = AcpToolKind;
 
-export interface ToolCallLocation {
-  path: string;
-  line?: number | null;
-}
+/** Re-exported from ACP SDK — file location affected by a tool call. */
+export type ToolCallLocation = Omit<AcpToolCallLocation, "_meta">;
 
 export type MessageCompletionStatus =
   | "inProgress"

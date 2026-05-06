@@ -23,7 +23,7 @@ export function getToolItemName(item: ToolChainItem): string {
 
 export function getToolItemStatus(item: ToolChainItem): ToolCallStatus {
   if (item.response) {
-    return item.response.isError ? "error" : "completed";
+    return item.response.isError ? "failed" : "completed";
   }
   return item.request?.status ?? "completed";
 }
@@ -35,10 +35,10 @@ export function getToolItemStatus(item: ToolChainItem): ToolCallStatus {
 export function getChainAggregateStatus(
   items: ToolChainItem[],
 ): ToolCallStatus {
-  if (items.some((i) => getToolItemStatus(i) === "error")) return "error";
+  if (items.some((i) => getToolItemStatus(i) === "failed")) return "failed";
   if (items.some((i) => getToolItemStatus(i) === "stopped")) return "stopped";
-  if (items.some((i) => getToolItemStatus(i) === "executing"))
-    return "executing";
+  if (items.some((i) => getToolItemStatus(i) === "in_progress"))
+    return "in_progress";
   if (items.some((i) => getToolItemStatus(i) === "pending")) return "pending";
   return "completed";
 }
