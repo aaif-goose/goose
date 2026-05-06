@@ -274,8 +274,6 @@ export function useResolvedAgentModelPicker({
       );
     },
     onModelSelected: (model) => {
-      selectionVersionRef.current += 1;
-      const versionAtSelection = selectionVersionRef.current;
       const modelId = model.id;
       const modelName = model.displayName ?? model.name ?? model.id;
       const nextProviderId = model.providerId ?? selectedProvider;
@@ -300,6 +298,10 @@ export function useResolvedAgentModelPicker({
         return;
       }
 
+      // No-op guard: if the selected model/provider already matches the
+      // session, bail out without bumping the version counter. Bumping
+      // before this check would invalidate in-flight async work from the
+      // original selection that is still correctly configuring the backend.
       if (
         !session ||
         (modelId === session.modelId &&
@@ -307,6 +309,9 @@ export function useResolvedAgentModelPicker({
       ) {
         return;
       }
+
+      selectionVersionRef.current += 1;
+      const versionAtSelection = selectionVersionRef.current;
 
       const previousStoredModelPreference =
         getStoredModelPreference(selectedAgentId);
