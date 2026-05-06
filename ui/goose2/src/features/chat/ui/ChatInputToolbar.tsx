@@ -203,7 +203,7 @@ export function ChatInputToolbar({
 
   const handleOpenAutoCompactSettings = () => {
     setIsContextPopoverOpen(false);
-    requestOpenSettings("compaction");
+    requestOpenSettings("general");
   };
 
   useEffect(() => {

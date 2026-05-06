@@ -315,7 +315,7 @@ describe("ChatInput", () => {
     expect(dispatchEventSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         type: OPEN_SETTINGS_EVENT,
-        detail: { section: "compaction" },
+        detail: { section: "general" },
       }),
     );
 

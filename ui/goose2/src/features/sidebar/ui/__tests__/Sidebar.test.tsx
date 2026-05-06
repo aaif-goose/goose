@@ -167,4 +167,26 @@ describe("Sidebar", () => {
     await user.click(screen.getByRole("button", { name: /general/i }));
     expect(onSettingsSectionChange).toHaveBeenCalledWith("general");
   });
+
+  it("shows an expand control in collapsed settings navigation", async () => {
+    const user = userEvent.setup();
+    const onCollapse = vi.fn();
+
+    render(
+      <Sidebar
+        collapsed
+        activeView="settings"
+        activeSettingsSection="general"
+        onCollapse={onCollapse}
+        onNavigate={vi.fn()}
+        onSettingsBack={vi.fn()}
+        onSettingsSectionChange={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /expand sidebar/i }));
+
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
 });

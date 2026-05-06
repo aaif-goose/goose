@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { ThemeProvider } from "@/shared/theme/ThemeProvider";
 import { renderWithProviders } from "@/test/render";
-import { AppearanceSettings } from "../AppearanceSettings";
+import { GeneralSettings } from "../GeneralSettings";
 
-describe("AppearanceSettings", () => {
+describe("GeneralSettings appearance section", () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.removeAttribute("data-density");
@@ -19,7 +19,7 @@ describe("AppearanceSettings", () => {
 
     renderWithProviders(
       <ThemeProvider>
-        <AppearanceSettings />
+        <GeneralSettings />
       </ThemeProvider>,
     );
 

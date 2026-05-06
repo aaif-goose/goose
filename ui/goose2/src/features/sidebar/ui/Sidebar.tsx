@@ -532,6 +532,19 @@ export function Sidebar({
               aria-label={t("settings:navigationLabel")}
             >
               <div className="space-y-0.5">
+                {collapsed && (
+                  <button
+                    type="button"
+                    onClick={onCollapse}
+                    title={t("actions.expand")}
+                    className="flex w-full items-center justify-center rounded-md px-3 py-1.5 text-sm text-foreground transition-colors duration-200 hover:text-foreground"
+                    aria-label={t("actions.expand")}
+                  >
+                    <IconLayoutSidebar className="size-4 flex-shrink-0" />
+                    <span className="sr-only">{t("actions.expand")}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={onSettingsBack}
