@@ -47,5 +47,12 @@
     "esbuild": "^0.25.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
+  },
+  "optionalDependencies": {
+    "@aaif/goose-binary-darwin-arm64": "workspace:*",
+    "@aaif/goose-binary-darwin-x64": "workspace:*",
+    "@aaif/goose-binary-linux-arm64": "workspace:*",
+    "@aaif/goose-binary-linux-x64": "workspace:*",
+    "@aaif/goose-binary-win32-x64": "workspace:*"
   }
 }

@@ -7,9 +7,6 @@
     "type": "git",
     "url": "git+https://github.com/aaif-goose/goose.git"
   },
-  "bin": {
-    "goose": "bin/goose"
-  },
   "keywords": [
     "goose",
     "ai",

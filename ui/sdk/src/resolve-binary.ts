@@ -16,7 +16,11 @@ const PLATFORMS: Record<string, string> = {
  *   1. `GOOSE_BINARY` environment variable (explicit override)
  *   2. Platform-specific `@aaif/goose-binary-*` optional dependency
  *
- * @throws if no binary can be found
+ * Always returns an absolute path. Callers must spawn this directly
+ * without going through a shell so PATH lookups can't accidentally
+ * resolve a different `goose` binary.
+ *
+ * @throws if the current platform isn't supported
  */
 export function resolveGooseBinary(): string {
   const envBinary = process.env.GOOSE_BINARY;
@@ -30,14 +34,8 @@ export function resolveGooseBinary(): string {
     );
   }
 
-  try {
-    const require = createRequire(import.meta.url);
-    const pkgDir = dirname(require.resolve(`${pkg}/package.json`));
-    const binName = process.platform === "win32" ? "goose.exe" : "goose";
-    return join(pkgDir, "bin", binName);
-  } catch {
-    throw new Error(
-      `goose binary package ${pkg} is not installed. Set GOOSE_BINARY or install the native package.`,
-    );
-  }
+  const require = createRequire(import.meta.url);
+  const pkgDir = dirname(require.resolve(`${pkg}/package.json`));
+  const binName = process.platform === "win32" ? "goose.exe" : "goose";
+  return join(pkgDir, "bin", binName);
 }
