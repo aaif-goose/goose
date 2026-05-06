@@ -138,55 +138,97 @@ describe("applyLatestSessionConfig", () => {
     await expect(newResult).resolves.toEqual({ applied: true });
   });
 
-  it("treats superseded requests as applied when the latest provider and model match", async () => {
-    const oldPrepare = deferred();
-    const oldSetModel = deferred();
-    const newPrepare = deferred();
-    const newSetModel = deferred();
+  it("treats superseded requests as applied when the full session config matches", async () => {
+    const firstPrepare = deferred();
+    const firstSetModel = deferred();
 
-    mockAcpPrepareSession.mockImplementation(
-      (_sessionId: string, _providerId: string, workingDir: string) =>
-        workingDir === "/old" ? oldPrepare.promise : newPrepare.promise,
-    );
-    mockAcpSetModel
-      .mockReturnValueOnce(oldSetModel.promise)
-      .mockReturnValueOnce(newSetModel.promise);
+    // First call gets deferred promises; subsequent calls resolve immediately
+    mockAcpPrepareSession.mockReturnValueOnce(firstPrepare.promise);
+    mockAcpSetModel.mockReturnValueOnce(firstSetModel.promise);
+
+    // Both requests have identical config (provider, workingDir, model)
+    const oldResult = applyLatestSessionConfig({
+      sessionId: "session-same-config",
+      providerId: "openai",
+      workingDir: "/project",
+      modelId: "gpt-5.4",
+    });
+    const newResult = applyLatestSessionConfig({
+      sessionId: "session-same-config",
+      providerId: "openai",
+      workingDir: "/project",
+      modelId: "gpt-5.4",
+    });
+
+    // The queue executes the first request's prepare (stale)
+    await vi.waitFor(() => {
+      expect(mockAcpPrepareSession).toHaveBeenCalledWith(
+        "session-same-config",
+        "openai",
+        "/project",
+      );
+    });
+    firstPrepare.resolve();
+
+    // Then the first request's setModel
+    await vi.waitFor(() => {
+      expect(mockAcpSetModel).toHaveBeenCalledWith(
+        "session-same-config",
+        "gpt-5.4",
+      );
+    });
+    firstSetModel.resolve();
+
+    // After the stale request finishes, the queue replays the latest
+    // (which has the same config and resolves immediately via default mock)
+    // Both resolve as applied since the final config matches both requests
+    await expect(oldResult).resolves.toEqual({ applied: true });
+    await expect(newResult).resolves.toEqual({ applied: true });
+  });
+
+  it("treats superseded requests as not applied when workingDir differs", async () => {
+    const firstPrepare = deferred();
+    const firstSetModel = deferred();
+
+    // First call gets deferred promises; subsequent calls resolve immediately
+    mockAcpPrepareSession.mockReturnValueOnce(firstPrepare.promise);
+    mockAcpSetModel.mockReturnValueOnce(firstSetModel.promise);
 
     const oldResult = applyLatestSessionConfig({
-      sessionId: "session-same-model",
+      sessionId: "session-diff-dir",
       providerId: "openai",
       workingDir: "/old",
       modelId: "gpt-5.4",
     });
     const newResult = applyLatestSessionConfig({
-      sessionId: "session-same-model",
+      sessionId: "session-diff-dir",
       providerId: "openai",
       workingDir: "/new",
       modelId: "gpt-5.4",
     });
 
-    oldPrepare.resolve();
+    // First request executes (stale) with workingDir "/old"
+    await vi.waitFor(() => {
+      expect(mockAcpPrepareSession).toHaveBeenCalledWith(
+        "session-diff-dir",
+        "openai",
+        "/old",
+      );
+    });
+    firstPrepare.resolve();
+
     await vi.waitFor(() => {
       expect(mockAcpSetModel).toHaveBeenCalledWith(
-        "session-same-model",
+        "session-diff-dir",
         "gpt-5.4",
       );
     });
-    oldSetModel.resolve();
-    await vi.waitFor(() => {
-      expect(mockAcpPrepareSession).toHaveBeenCalledWith(
-        "session-same-model",
-        "openai",
-        "/new",
-      );
-    });
-    newPrepare.resolve();
-    await vi.waitFor(() => {
-      expect(mockAcpSetModel).toHaveBeenCalledTimes(2);
-    });
-    newSetModel.resolve();
+    firstSetModel.resolve();
 
-    await expect(oldResult).resolves.toEqual({ applied: true });
+    // After the stale request finishes, the queue replays the latest
+    // with workingDir "/new" (resolves immediately via default mock)
+    // Old request is not applied (workingDir differs), new one is applied
+    await expect(oldResult).resolves.toEqual({ applied: false });
     await expect(newResult).resolves.toEqual({ applied: true });
   });
 });

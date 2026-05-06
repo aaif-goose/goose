@@ -93,7 +93,6 @@ export function useChatSessionController({
       : undefined,
   );
   const project = storedProject ?? null;
-  const prepareVersionRef = useRef(0);
   const { autoCompactThreshold, isHydrated: isAutoCompactThresholdHydrated } =
     useAutoCompactPreferences();
   const hasContextUsageSnapshot = useChatStore(
@@ -167,15 +166,10 @@ export function useChatSessionController({
       if (!sessionId) {
         return false;
       }
-      prepareVersionRef.current += 1;
-      const versionAtStart = prepareVersionRef.current;
       const workingDir = await resolveSessionCwd(
         nextProject,
         nextWorkspacePath,
       );
-      if (prepareVersionRef.current !== versionAtStart) {
-        return false;
-      }
       const result = await applyLatestSessionConfig({
         sessionId,
         providerId,

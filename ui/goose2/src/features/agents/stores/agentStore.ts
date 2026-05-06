@@ -163,7 +163,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setAgentsLoading: (agentsLoading) => set({ agentsLoading }),
 
   // Provider management
-  setProviders: (providers, validated = false) => {
+  setProviders: (providers, validated = true) => {
     const { selectedProvider } = get();
     const isValid = providers.some((p) => p.id === selectedProvider);
     if (!isValid && providers.length > 0 && validated) {

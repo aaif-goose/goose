@@ -45,12 +45,14 @@ function getQueue(sessionId: string): SessionConfigQueue {
   return queue;
 }
 
-function sameProviderAndModel(
+function sameSessionConfig(
   a: SessionConfigRequest,
   b: SessionConfigRequest,
 ): boolean {
   return (
-    a.providerId === b.providerId && (a.modelId ?? null) === (b.modelId ?? null)
+    a.providerId === b.providerId &&
+    a.workingDir === b.workingDir &&
+    (a.modelId ?? null) === (b.modelId ?? null)
   );
 }
 
@@ -87,7 +89,7 @@ function settleAppliedWaiters(
     }
 
     waiter.resolve({
-      applied: sameProviderAndModel(waiter.request, request),
+      applied: sameSessionConfig(waiter.request, request),
     });
   }
   queue.waiters = remaining;
