@@ -207,8 +207,8 @@ fn update_plugin_at_root(
         );
     }
 
-    fs::create_dir_all(&install_root)?;
-    let temp_dir = tempfile::tempdir_in(&install_root)?;
+    fs::create_dir_all(install_root)?;
+    let temp_dir = tempfile::tempdir_in(install_root)?;
     let checkout_dir = temp_dir.path().join("checkout");
     clone_git_repo(&metadata.source, &checkout_dir)?;
 
