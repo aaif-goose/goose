@@ -24,6 +24,7 @@ import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSelectionChips } from "./ChatInputSelectionChips";
 import { useChatInputSubmit } from "../hooks/useChatInputSubmit";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
+import { resolveDisplayModelLabel } from "../lib/modelDisplayLabel";
 import type { ChatInputProps, ChatSkillDraft } from "../types";
 
 export function ChatInput({
@@ -354,17 +355,15 @@ export function ChatInput({
     providerDisplayName,
   );
   const resolvedCurrentModel = useMemo(() => {
-    if (currentModel) {
-      return currentModel;
-    }
-    if (!currentModelId) {
-      return undefined;
-    }
-    const selectedModel = availableModels.find(
-      (model) => model.id === currentModelId,
+    return (
+      resolveDisplayModelLabel({
+        currentModelId,
+        currentModelName: currentModel,
+        currentModelProviderId,
+        availableModels,
+      }) ?? undefined
     );
-    return selectedModel?.displayName ?? selectedModel?.name ?? currentModelId;
-  }, [availableModels, currentModel, currentModelId]);
+  }, [availableModels, currentModel, currentModelId, currentModelProviderId]);
   const inputPlaceholder = getChatInputPlaceholder(
     t,
     agentDisplayName,

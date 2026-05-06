@@ -167,6 +167,26 @@ describe("ChatInput", () => {
     ).toHaveTextContent("Goose");
   });
 
+  it("shows provider label while the current model id is unresolved", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModel="opus"
+        availableModels={[]}
+        providers={[{ id: "claude-acp", label: "Claude Code" }]}
+        selectedProvider="claude-acp"
+      />,
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: /choose agent and model/i,
+    });
+    expect(trigger).toHaveTextContent("Claude Code");
+    expect(trigger).not.toHaveTextContent("opus");
+  });
+
   it("shows default provider label", () => {
     render(
       <ChatInput

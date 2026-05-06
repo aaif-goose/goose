@@ -14,6 +14,7 @@ globalThis.ResizeObserver ??=
 
 const AGENTS = [
   { id: "goose", label: "Goose" },
+  { id: "claude-acp", label: "Claude Code" },
   { id: "codex-acp", label: "Codex" },
 ];
 
@@ -34,6 +35,108 @@ describe("AgentModelPicker", () => {
     expect(
       screen.getByRole("button", { name: /choose agent and model/i }),
     ).toHaveTextContent("GPT-4o");
+  });
+
+  it("uses the selected agent label while a raw model id is unresolved", () => {
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="claude-acp"
+        onAgentChange={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModelName="opus"
+        availableModels={[]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: /choose agent and model/i,
+    });
+    expect(trigger).toHaveTextContent("Claude Code");
+    expect(trigger).not.toHaveTextContent("opus");
+  });
+
+  it("uses the inventory model label for a matching raw model id", () => {
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="claude-acp"
+        onAgentChange={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModelName="opus"
+        availableModels={[{ id: "opus", name: "Claude Opus 4.6" }]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    ).toHaveTextContent("Claude Opus 4.6");
+  });
+
+  it("uses a stored human model name before inventory resolves", () => {
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="claude-acp"
+        onAgentChange={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModelName="Claude Opus 4.6"
+        availableModels={[]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    ).toHaveTextContent("Claude Opus 4.6");
+  });
+
+  it("allows id-as-display-name labels after inventory resolves", () => {
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="goose"
+        onAgentChange={vi.fn()}
+        currentModelId="gpt-5.4"
+        currentModelName="gpt-5.4"
+        availableModels={[{ id: "gpt-5.4", name: "gpt-5.4" }]}
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    ).toHaveTextContent("gpt-5.4");
+  });
+
+  it("does not show a raw model id in the loading row", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AgentModelPicker
+        agents={AGENTS}
+        selectedAgentId="claude-acp"
+        onAgentChange={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModelName="opus"
+        availableModels={[]}
+        modelsLoading
+        onModelChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
+    );
+
+    expect(screen.getByText("Loading models...")).toBeInTheDocument();
+    expect(screen.queryByText("opus")).not.toBeInTheDocument();
   });
 
   it("calls onModelChange when a model is selected", async () => {
