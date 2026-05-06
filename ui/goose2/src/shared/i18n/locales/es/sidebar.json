@@ -1,6 +1,6 @@
 {
   "actions": {
-    "backToMainNavigation": "Volver a la navegación principal",
+    "backToMainNavigation": "Atrás",
     "collapse": "Contraer barra lateral",
     "expand": "Expandir barra lateral",
     "newChat": "Nuevo chat",

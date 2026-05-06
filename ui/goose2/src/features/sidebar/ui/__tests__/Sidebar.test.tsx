@@ -161,9 +161,7 @@ describe("Sidebar", () => {
       screen.queryByRole("button", { name: /^home$/i }),
     ).not.toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: /back to main navigation/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /^back$/i }));
     expect(onSettingsBack).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: /general/i }));
