@@ -33,11 +33,8 @@ import { loadStoredHomeSessionId } from "./lib/homeSessionStorage";
 import { resolveSupportedSessionModelPreference } from "./lib/resolveSupportedSessionModelPreference";
 import { useCreatePersonaNavigation } from "./hooks/useCreatePersonaNavigation";
 import { AppShellContent } from "./ui/AppShellContent";
-import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
-import {
-  updateSessionProject,
-  updateSessionTitle,
-} from "@/features/chat/stores/chatSessionOperations";
+import { applyLatestSessionConfig } from "@/features/chat/lib/sessionConfigRequests";
+import { updateSessionTitle } from "@/features/chat/stores/chatSessionOperations";
 import {
   clearReplayBuffer,
   getAndDeleteReplayBuffer,
@@ -282,26 +279,35 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           providerAtStart,
           sessionModelPreference,
         );
-        await acpPrepareSession(homeSession.id, resolvedProviderId, workingDir);
+        const modelIdToApply =
+          resolvedProviderId === sessionModelPreference.providerId
+            ? sessionModelPreference.modelId
+            : undefined;
+        const result = await applyLatestSessionConfig({
+          sessionId: homeSession.id,
+          providerId: resolvedProviderId,
+          workingDir,
+          modelId: modelIdToApply,
+        });
+        if (!result.applied) {
+          return homeSession;
+        }
+
         const shouldClearHomeModel =
-          resolvedProviderId !== homeSession.providerId ||
-          !sessionModelPreference.modelId;
+          resolvedProviderId !== homeSession.providerId || !modelIdToApply;
         patchSession(homeSession.id, {
           providerId: resolvedProviderId,
-          modelId: shouldClearHomeModel ? undefined : homeSession.modelId,
-          modelName: shouldClearHomeModel ? undefined : homeSession.modelName,
+          modelId:
+            modelIdToApply ??
+            (shouldClearHomeModel ? undefined : homeSession.modelId),
+          modelName:
+            modelIdToApply != null
+              ? sessionModelPreference.modelName
+              : shouldClearHomeModel
+                ? undefined
+                : homeSession.modelName,
         });
-        if (
-          sessionModelPreference.modelId &&
-          resolvedProviderId === sessionModelPreference.providerId
-        ) {
-          await acpSetModel(homeSession.id, sessionModelPreference.modelId);
-          patchSession(homeSession.id, {
-            modelId: sessionModelPreference.modelId,
-            modelName: sessionModelPreference.modelName,
-          });
-        }
-        return homeSession;
+        return useChatSessionStore.getState().getSession(homeSession.id) ?? homeSession;
       }
 
       const providerAtStart = currentProvider();
@@ -543,14 +549,14 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   const handleMoveToProject = useCallback(
     (sessionId: string, projectId: string | null) => {
+      useChatSessionStore.getState().patchSession(sessionId, { projectId });
+
       const session = useChatSessionStore.getState().getSession(sessionId);
       if (!session) {
         return;
       }
 
       void (async () => {
-        await updateSessionProject(sessionId, projectId);
-
         const nextProject =
           projectId == null
             ? null
@@ -561,14 +567,18 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         if (!workingDir) {
           return;
         }
-        await acpPrepareSession(
+        await applyLatestSessionConfig({
           sessionId,
-          session.providerId ?? selectedProvider ?? "goose",
+          providerId:
+            session.providerId ?? selectedProvider ?? "goose",
           workingDir,
-        );
+          modelId: session.modelId,
+        });
       })().catch((error) => {
-        console.error("Failed to move chat to project:", error);
-        toast.error(t("notifications.moveError"));
+        console.error(
+          "Failed to update ACP session project working directory:",
+          error,
+        );
       });
     },
     [selectedProvider, t],

@@ -565,7 +565,7 @@ describe("useResolvedAgentModelPicker", () => {
         setPendingProviderId: vi.fn(),
         setPendingModelSelection: vi.fn(),
         setGlobalSelectedProvider: vi.fn(),
-        prepareSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn().mockResolvedValue(true),
       }),
     );
 
@@ -664,7 +664,7 @@ describe("useResolvedAgentModelPicker", () => {
         setPendingProviderId: vi.fn(),
         setPendingModelSelection: vi.fn(),
         setGlobalSelectedProvider: vi.fn(),
-        prepareSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn().mockResolvedValue(true),
       }),
     );
 
@@ -687,6 +687,83 @@ describe("useResolvedAgentModelPicker", () => {
         },
       });
     });
+  });
+
+  it("does not persist a superseded explicit model selection", async () => {
+    const prepareSelectedProvider = vi.fn().mockResolvedValue(false);
+
+    mockUseAgentModelPickerState.mockImplementation(
+      ({
+        onModelSelected,
+      }: {
+        onModelSelected?: (model: {
+          id: string;
+          name: string;
+          displayName?: string;
+          providerId?: string;
+        }) => void;
+      }) => ({
+        pickerAgents: [{ id: "goose", label: "Goose" }],
+        availableModels: [
+          {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "openai",
+          },
+        ],
+        modelsLoading: false,
+        modelStatusMessage: null,
+        handleProviderChange: vi.fn(),
+        handleModelChange: (modelId: string) =>
+          onModelSelected?.({
+            id: modelId,
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "openai",
+          }),
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "openai", label: "OpenAI" },
+        ],
+        selectedProvider: "openai",
+        sessionId: "session-1",
+        session: {
+          id: "session-1",
+          title: "Chat",
+          providerId: "openai",
+          modelId: "current",
+          modelName: "current",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider,
+      }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("gpt-5.4");
+    });
+
+    await waitFor(() => {
+      expect(prepareSelectedProvider).toHaveBeenCalledWith("openai", {
+        id: "gpt-5.4",
+        name: "GPT-5.4",
+        providerId: "openai",
+        source: "explicit",
+      });
+    });
+    expect(localStorage.getItem("goose:preferredModelsByAgent")).toBeNull();
   });
 
   it("preserves persisted Claude Code / Opus during empty inventory and catalog", () => {

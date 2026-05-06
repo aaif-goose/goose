@@ -20,14 +20,13 @@ import {
   resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
 import { setStoredModelPreference } from "../lib/modelPreferences";
+import { applyLatestSessionConfig } from "../lib/sessionConfigRequests";
 import {
   shouldAutoCompactContext,
   supportsContextAutoCompaction,
   supportsContextCompactionControls,
 } from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
-import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
-import { updateSessionProject } from "../stores/chatSessionOperations";
 import {
   useResolvedAgentModelPicker,
   type PreferredModelSelection,
@@ -166,7 +165,7 @@ export function useChatSessionController({
       modelSelection?: PreferredModelSelection | null,
     ) => {
       if (!sessionId) {
-        return;
+        return false;
       }
       prepareVersionRef.current += 1;
       const versionAtStart = prepareVersionRef.current;
@@ -175,14 +174,16 @@ export function useChatSessionController({
         nextWorkspacePath,
       );
       if (prepareVersionRef.current !== versionAtStart) {
-        return;
+        return false;
       }
-      await acpPrepareSession(sessionId, providerId, workingDir);
-      if (prepareVersionRef.current !== versionAtStart) {
-        return;
-      }
-      if (!modelSelection?.id) {
-        return;
+      const result = await applyLatestSessionConfig({
+        sessionId,
+        providerId,
+        workingDir,
+        modelId: modelSelection?.id,
+      });
+      if (!result.applied || !modelSelection?.id) {
+        return result.applied;
       }
 
       const sessionStore = useChatSessionStore.getState();
@@ -192,17 +193,14 @@ export function useChatSessionController({
         liveSession?.modelName === modelSelection.name;
 
       if (modelAlreadyApplied) {
-        return;
+        return true;
       }
 
-      await acpSetModel(sessionId, modelSelection.id);
-      if (prepareVersionRef.current !== versionAtStart) {
-        return;
-      }
       sessionStore.patchSession(sessionId, {
         modelId: modelSelection.id,
         modelName: modelSelection.name,
       });
+      return true;
     },
     [activeWorkspace?.path, project, sessionId],
   );
@@ -330,18 +328,16 @@ export function useChatSessionController({
               .projects.find((candidate) => candidate.id === projectId) ??
             null);
 
-      void (async () => {
-        await updateSessionProject(sessionId, projectId);
-        if (!selectedProvider) {
-          return;
-        }
-        await prepareCurrentSession(
-          selectedProvider,
-          nextProject,
-          activeWorkspace?.path,
-          effectiveModelSelection,
-        );
-      })().catch((error) => {
+      useChatSessionStore.getState().patchSession(sessionId, { projectId });
+      if (!selectedProvider) {
+        return;
+      }
+      void prepareCurrentSession(
+        selectedProvider,
+        nextProject,
+        activeWorkspace?.path,
+        effectiveModelSelection,
+      ).catch((error) => {
         console.error("Failed to update ACP session working directory:", error);
       });
     },
@@ -438,12 +434,14 @@ export function useChatSessionController({
     {
       onMessageAccepted: sessionId ? onMessageAccepted : undefined,
       ensurePrepared: selectedProvider
-        ? () =>
-            prepareCurrentSession(
+        ? async () => {
+            await prepareCurrentSession(
               selectedProvider,
               project,
               activeWorkspace?.path,
-            )
+              effectiveModelSelection,
+            );
+          }
         : undefined,
     },
   );
@@ -732,21 +730,20 @@ export function useChatSessionController({
         if (hasPendingPersona) {
           patch.personaId = nextPersonaId;
         }
-        if (Object.keys(patch).length > 0) {
-          useChatSessionStore.getState().patchSession(sessionId, patch);
+        if (hasPendingProject) {
+          patch.projectId = nextProjectId ?? null;
         }
 
+        useChatSessionStore.getState().patchSession(sessionId, patch);
+
         try {
-          if (hasPendingProject) {
-            await updateSessionProject(sessionId, nextProjectId ?? null);
-          }
-          await prepareCurrentSession(
+          const applied = await prepareCurrentSession(
             nextProviderId,
             nextProject,
             activeWorkspace?.path,
             pendingModelSelection,
           );
-          if (cancelled) {
+          if (cancelled || !applied) {
             return;
           }
           if (pendingModelSelection?.source === "explicit") {

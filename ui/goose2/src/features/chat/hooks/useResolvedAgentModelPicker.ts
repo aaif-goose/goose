@@ -4,7 +4,6 @@ import { useProviderInventory } from "@/features/providers/hooks/useProviderInve
 import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
 import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { getClient } from "@/shared/api/acpConnection";
-import { acpSetModel } from "@/shared/api/acp";
 import {
   useChatSessionStore,
   type ChatSession,
@@ -40,7 +39,7 @@ interface UseResolvedAgentModelPickerOptions {
   prepareSelectedProvider: (
     providerId: string,
     modelSelection?: PreferredModelSelection | null,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 }
 
 function isModelAlias(modelId?: string | null): boolean {
@@ -219,6 +218,7 @@ export function useResolvedAgentModelPicker({
     selectedProvider,
     onProviderSelected: (providerId) => {
       selectionVersionRef.current += 1;
+      const versionAtSelection = selectionVersionRef.current;
       const requestedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
         catalogEntries,
         providerId,
@@ -266,6 +266,9 @@ export function useResolvedAgentModelPicker({
       setGlobalSelectedProvider(nextProviderId);
       void prepareSelectedProvider(nextProviderId, nextModelSelection).catch(
         (error) => {
+          if (selectionVersionRef.current !== versionAtSelection) {
+            return;
+          }
           console.error("Failed to update ACP session provider:", error);
         },
       );
@@ -276,6 +279,12 @@ export function useResolvedAgentModelPicker({
       const modelId = model.id;
       const modelName = model.displayName ?? model.name ?? model.id;
       const nextProviderId = model.providerId ?? selectedProvider;
+      const nextModelSelection: PreferredModelSelection = {
+        id: modelId,
+        name: modelName,
+        providerId: nextProviderId,
+        source: "explicit",
+      };
       const nextStoredModelPreference = {
         modelId,
         modelName,
@@ -287,12 +296,7 @@ export function useResolvedAgentModelPicker({
           setPendingProviderId(nextProviderId);
           setGlobalSelectedProvider(nextProviderId);
         }
-        setPendingModelSelection({
-          id: modelId,
-          name: modelName,
-          providerId: nextProviderId,
-          source: "explicit",
-        });
+        setPendingModelSelection(nextModelSelection);
         return;
       }
 
@@ -326,14 +330,11 @@ export function useResolvedAgentModelPicker({
 
       void (async () => {
         try {
-          if (providerChanged && nextProviderId) {
-            await prepareSelectedProvider(nextProviderId);
-          }
-          if (selectionVersionRef.current !== versionAtSelection) {
-            return;
-          }
-          await acpSetModel(sessionId, modelId);
-          if (selectionVersionRef.current !== versionAtSelection) {
+          const applied = await prepareSelectedProvider(
+            nextProviderId,
+            nextModelSelection,
+          );
+          if (!applied || selectionVersionRef.current !== versionAtSelection) {
             return;
           }
           setStoredModelPreference(selectedAgentId, nextStoredModelPreference);
@@ -360,11 +361,18 @@ export function useResolvedAgentModelPicker({
           });
           void (async () => {
             try {
-              if (providerChanged && previousProviderId) {
-                await prepareSelectedProvider(previousProviderId);
-              }
-              if (previousModelId) {
-                await acpSetModel(sessionId, previousModelId);
+              if (previousProviderId) {
+                await prepareSelectedProvider(
+                  previousProviderId,
+                  previousModelId
+                    ? {
+                        id: previousModelId,
+                        name: previousModelName ?? previousModelId,
+                        providerId: previousProviderId,
+                        source: "explicit",
+                      }
+                    : null,
+                );
               }
             } catch (rollbackError) {
               console.error(
