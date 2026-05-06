@@ -75,18 +75,22 @@ impl CanonicalModelRegistry {
     }
 
     pub fn register(&mut self, provider: &str, model: &str, canonical_model: CanonicalModel) {
-        self.models
-            .insert((provider.to_string(), model.to_string()), canonical_model);
+        self.models.insert(
+            (provider.to_lowercase(), model.to_lowercase()),
+            canonical_model,
+        );
     }
 
     pub fn get(&self, provider: &str, model: &str) -> Option<&CanonicalModel> {
-        self.models.get(&(provider.to_string(), model.to_string()))
+        self.models
+            .get(&(provider.to_lowercase(), model.to_lowercase()))
     }
 
     pub fn get_all_models_for_provider(&self, provider: &str) -> Vec<CanonicalModel> {
+        let provider_lower = provider.to_lowercase();
         self.models
             .iter()
-            .filter(|((p, _), _)| p == provider)
+            .filter(|((p, _), _)| *p == provider_lower)
             .map(|(_, model)| model.clone())
             .collect()
     }
@@ -103,5 +107,47 @@ impl CanonicalModelRegistry {
 impl Default for CanonicalModelRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::canonical::model::{CanonicalModel, Limit};
+
+    fn make_model(id: &str) -> CanonicalModel {
+        CanonicalModel {
+            id: id.to_string(),
+            name: id.to_string(),
+            family: None,
+            attachment: None,
+            reasoning: None,
+            tool_call: true,
+            temperature: None,
+            knowledge: None,
+            release_date: None,
+            last_updated: None,
+            modalities: Default::default(),
+            open_weights: None,
+            cost: Default::default(),
+            limit: Limit {
+                context: 32_000,
+                output: None,
+            },
+        }
+    }
+
+    #[test]
+    fn test_get_is_case_insensitive() {
+        let mut registry = CanonicalModelRegistry::new();
+        // Register with uppercase model name (as a custom provider might store it)
+        registry.register("openai", "GLM-4.5", make_model("openai/GLM-4.5"));
+
+        // Lookup with lowercase (as GOOSE_MODEL in config.yaml would store it)
+        assert!(registry.get("openai", "glm-4.5").is_some());
+        // Lookup with original casing also works
+        assert!(registry.get("openai", "GLM-4.5").is_some());
+        // Mixed case works too
+        assert!(registry.get("OPENAI", "Glm-4.5").is_some());
     }
 }

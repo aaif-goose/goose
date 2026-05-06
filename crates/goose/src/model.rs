@@ -28,10 +28,22 @@ fn get_predefined_models() -> Vec<PredefinedModel> {
     PREDEFINED_MODELS.clone()
 }
 
+fn find_in_models(models: &[PredefinedModel], model_name: &str) -> Option<PredefinedModel> {
+    // Exact match first so callers that pass a precise name always get the right entry,
+    // even when two entries differ only by case in GOOSE_PREDEFINED_MODELS.
+    if let Some(m) = models.iter().find(|m| m.name == model_name) {
+        return Some(m.clone());
+    }
+    // Case-insensitive fallback for callers whose casing differs from the stored name.
+    let model_name_lower = model_name.to_lowercase();
+    models
+        .iter()
+        .find(|m| m.name.to_lowercase() == model_name_lower)
+        .cloned()
+}
+
 fn find_predefined_model(model_name: &str) -> Option<PredefinedModel> {
-    get_predefined_models()
-        .into_iter()
-        .find(|m| m.name == model_name)
+    find_in_models(&get_predefined_models(), model_name)
 }
 
 #[derive(Error, Debug)]
@@ -578,5 +590,49 @@ mod tests {
             assert!(!ModelConfig::new_or_fail("goose-claude-sonnet-4").is_openai_reasoning_model());
             assert!(!ModelConfig::new_or_fail("llama-3-70b").is_openai_reasoning_model());
         }
+    }
+
+    #[test]
+    fn test_find_predefined_model_case_insensitive() {
+        // Test the lookup logic directly against an inline slice — avoids the
+        // static Lazy cache which is initialized once per process and would make
+        // env-var tricks order-dependent in parallel test runs.
+        let models = vec![PredefinedModel {
+            name: "GLM-5.1".to_string(),
+            context_limit: Some(131072),
+            request_params: None,
+        }];
+
+        assert!(find_in_models(&models, "GLM-5.1").is_some());
+        assert!(find_in_models(&models, "glm-5.1").is_some());
+        assert!(find_in_models(&models, "Glm-5.1").is_some());
+        assert!(find_in_models(&models, "unknown-model").is_none());
+    }
+
+    #[test]
+    fn test_find_in_models_exact_match_wins() {
+        // When two entries differ only by case, an exact-case query must return
+        // the matching entry, not the first one found by case-insensitive scan.
+        let models = vec![
+            PredefinedModel {
+                name: "GLM-5.1".to_string(),
+                context_limit: Some(262_144),
+                request_params: None,
+            },
+            PredefinedModel {
+                name: "glm-5.1".to_string(),
+                context_limit: Some(131_072),
+                request_params: None,
+            },
+        ];
+
+        assert_eq!(
+            find_in_models(&models, "GLM-5.1").map(|m| m.context_limit),
+            Some(Some(262_144))
+        );
+        assert_eq!(
+            find_in_models(&models, "glm-5.1").map(|m| m.context_limit),
+            Some(Some(131_072))
+        );
     }
 }
