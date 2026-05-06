@@ -688,4 +688,121 @@ describe("useResolvedAgentModelPicker", () => {
       });
     });
   });
+
+  it("preserves persisted Claude Code / Opus during empty inventory and catalog", () => {
+    useProviderCatalogStore.getState().reset();
+
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        "claude-acp": {
+          modelId: "opus",
+          modelName: "Claude Opus",
+          providerId: "claude-acp",
+        },
+      }),
+    );
+
+    mockUseProviderInventory.mockReturnValue({
+      getEntry: () => undefined,
+    });
+
+    mockUseAgentModelPickerState.mockImplementation(() => ({
+      pickerAgents: [{ id: "goose", label: "Goose" }],
+      availableModels: [],
+      modelsLoading: true,
+      modelStatusMessage: null,
+      handleProviderChange: vi.fn(),
+      handleModelChange: vi.fn(),
+    }));
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [],
+        selectedProvider: "claude-acp",
+        sessionId: null,
+        session: undefined,
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    expect(result.current.selectedAgentId).toBe("claude-acp");
+    expect(result.current.effectiveModelSelection).toEqual({
+      id: "opus",
+      name: "Claude Opus",
+      providerId: "claude-acp",
+      source: "explicit",
+    });
+  });
+
+  it("retains selection after validated inventory confirms the agent", () => {
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        "claude-acp": {
+          modelId: "opus",
+          modelName: "Claude Opus",
+          providerId: "claude-acp",
+        },
+      }),
+    );
+
+    mockUseProviderInventory.mockReturnValue({
+      getEntry: (id: string) =>
+        id === "claude-acp"
+          ? {
+              providerId: "claude-acp",
+              category: "agent",
+              models: [
+                { id: "opus", name: "Claude Opus", recommended: false },
+                { id: "sonnet", name: "Claude Sonnet", recommended: true },
+              ],
+            }
+          : undefined,
+    });
+
+    mockUseAgentModelPickerState.mockImplementation(() => ({
+      pickerAgents: [
+        { id: "goose", label: "Goose" },
+        { id: "claude-acp", label: "Claude Code" },
+      ],
+      availableModels: [
+        { id: "opus", name: "Claude Opus", providerId: "claude-acp" },
+        { id: "sonnet", name: "Claude Sonnet", providerId: "claude-acp" },
+      ],
+      modelsLoading: false,
+      modelStatusMessage: null,
+      handleProviderChange: vi.fn(),
+      handleModelChange: vi.fn(),
+    }));
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "claude-acp", label: "Claude Code" },
+        ],
+        selectedProvider: "claude-acp",
+        sessionId: null,
+        session: undefined,
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    expect(result.current.selectedAgentId).toBe("claude-acp");
+    expect(result.current.effectiveModelSelection).toEqual({
+      id: "opus",
+      name: "Claude Opus",
+      providerId: "claude-acp",
+      source: "explicit",
+    });
+  });
 });

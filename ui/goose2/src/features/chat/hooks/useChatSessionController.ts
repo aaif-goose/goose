@@ -94,6 +94,7 @@ export function useChatSessionController({
       : undefined,
   );
   const project = storedProject ?? null;
+  const prepareVersionRef = useRef(0);
   const { autoCompactThreshold, isHydrated: isAutoCompactThresholdHydrated } =
     useAutoCompactPreferences();
   const hasContextUsageSnapshot = useChatStore(
@@ -167,11 +168,19 @@ export function useChatSessionController({
       if (!sessionId) {
         return;
       }
+      prepareVersionRef.current += 1;
+      const versionAtStart = prepareVersionRef.current;
       const workingDir = await resolveSessionCwd(
         nextProject,
         nextWorkspacePath,
       );
+      if (prepareVersionRef.current !== versionAtStart) {
+        return;
+      }
       await acpPrepareSession(sessionId, providerId, workingDir);
+      if (prepareVersionRef.current !== versionAtStart) {
+        return;
+      }
       if (!modelSelection?.id) {
         return;
       }
@@ -187,6 +196,9 @@ export function useChatSessionController({
       }
 
       await acpSetModel(sessionId, modelSelection.id);
+      if (prepareVersionRef.current !== versionAtStart) {
+        return;
+      }
       sessionStore.patchSession(sessionId, {
         modelId: modelSelection.id,
         modelName: modelSelection.name,

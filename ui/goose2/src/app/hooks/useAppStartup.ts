@@ -65,6 +65,7 @@ export function useAppStartup() {
 
       const applyProvidersFromInventory = (
         entries: Parameters<typeof discoverAcpProvidersFromEntries>[0],
+        validated = false,
       ) => {
         const providers = discoverAcpProvidersFromEntries(entries);
         const providerAllowlist = parseProviderAllowlist(
@@ -76,6 +77,7 @@ export function useAppStartup() {
             providerAllowlist,
             getModelProviders(),
           ),
+          validated,
         );
         return providers;
       };
@@ -116,7 +118,7 @@ export function useAppStartup() {
             ...useProviderInventoryStore.getState().entries.values(),
           ];
           if (inventoryEntries.length > 0) {
-            applyProvidersFromInventory(inventoryEntries);
+            applyProvidersFromInventory(inventoryEntries, true);
           }
           perfLog(
             `[perf:startup] loadProviderCatalog done in ${(performance.now() - t0).toFixed(1)}ms (n=${entries.length})`,
@@ -140,7 +142,7 @@ export function useAppStartup() {
           inventoryStore.setEntries(entries);
 
           // Derive ACP providers from the same response
-          const providers = applyProvidersFromInventory(entries);
+          const providers = applyProvidersFromInventory(entries, true);
 
           perfLog(
             `[perf:startup] loadProvidersAndInventory done in ${(performance.now() - t0).toFixed(1)}ms (entries=${entries.length}, providers=${providers.length})`,

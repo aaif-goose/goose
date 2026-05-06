@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AcpProvider } from "@/shared/api/acp";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
 import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
@@ -61,6 +61,7 @@ export function useResolvedAgentModelPicker({
   const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const catalogLoaded = useProviderCatalogStore((state) => state.loaded);
   const { getEntry: getProviderInventoryEntry } = useProviderInventory();
+  const selectionVersionRef = useRef(0);
   const [gooseDefaultSelection, setGooseDefaultSelection] =
     useState<PreferredModelSelection | null>(null);
 
@@ -212,6 +213,7 @@ export function useResolvedAgentModelPicker({
     providers,
     selectedProvider,
     onProviderSelected: (providerId) => {
+      selectionVersionRef.current += 1;
       const requestedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
         catalogEntries,
         providerId,
@@ -264,6 +266,8 @@ export function useResolvedAgentModelPicker({
       );
     },
     onModelSelected: (model) => {
+      selectionVersionRef.current += 1;
+      const versionAtSelection = selectionVersionRef.current;
       const modelId = model.id;
       const modelName = model.displayName ?? model.name ?? model.id;
       const nextProviderId = model.providerId ?? selectedProvider;
@@ -320,9 +324,18 @@ export function useResolvedAgentModelPicker({
           if (providerChanged && nextProviderId) {
             await prepareSelectedProvider(nextProviderId);
           }
+          if (selectionVersionRef.current !== versionAtSelection) {
+            return;
+          }
           await acpSetModel(sessionId, modelId);
+          if (selectionVersionRef.current !== versionAtSelection) {
+            return;
+          }
           setStoredModelPreference(selectedAgentId, nextStoredModelPreference);
         } catch (error) {
+          if (selectionVersionRef.current !== versionAtSelection) {
+            return;
+          }
           console.error("Failed to set model:", error);
           if (providerChanged && previousProviderId) {
             setGlobalSelectedProvider(previousProviderId);

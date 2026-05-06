@@ -244,6 +244,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     }
 
     const request = (async () => {
+      const currentProvider = () =>
+        useAgentStore.getState().selectedProvider ?? "goose";
+
       if (
         homeSession &&
         !homeSession.archivedAt &&
@@ -251,7 +254,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       ) {
         const sessionModelPreference =
           await resolveSupportedSessionModelPreference(
-            selectedProvider ?? "goose",
+            currentProvider(),
             providerInventoryEntries,
           );
         const project = homeSession.projectId
@@ -260,20 +263,24 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             ) ?? null)
           : null;
         const workingDir = await resolveSessionCwd(project);
-        await acpPrepareSession(
-          homeSession.id,
-          sessionModelPreference.providerId,
-          workingDir,
-        );
+        const liveProvider = currentProvider();
+        const resolvedProviderId =
+          liveProvider !== (useAgentStore.getState().selectedProvider ?? "goose")
+            ? liveProvider
+            : sessionModelPreference.providerId;
+        await acpPrepareSession(homeSession.id, resolvedProviderId, workingDir);
         const shouldClearHomeModel =
-          sessionModelPreference.providerId !== homeSession.providerId ||
+          resolvedProviderId !== homeSession.providerId ||
           !sessionModelPreference.modelId;
         patchSession(homeSession.id, {
-          providerId: sessionModelPreference.providerId,
+          providerId: resolvedProviderId,
           modelId: shouldClearHomeModel ? undefined : homeSession.modelId,
           modelName: shouldClearHomeModel ? undefined : homeSession.modelName,
         });
-        if (sessionModelPreference.modelId) {
+        if (
+          sessionModelPreference.modelId &&
+          resolvedProviderId === sessionModelPreference.providerId
+        ) {
           await acpSetModel(homeSession.id, sessionModelPreference.modelId);
           patchSession(homeSession.id, {
             modelId: sessionModelPreference.modelId,
@@ -286,15 +293,26 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const workingDir = await resolveSessionCwd(null);
       const sessionModelPreference =
         await resolveSupportedSessionModelPreference(
-          selectedProvider ?? "goose",
+          currentProvider(),
           providerInventoryEntries,
         );
+      const liveProvider = currentProvider();
+      const resolvedProviderId =
+        liveProvider !== (useAgentStore.getState().selectedProvider ?? "goose")
+          ? liveProvider
+          : sessionModelPreference.providerId;
       const session = await createSession({
         title: DEFAULT_CHAT_TITLE,
-        providerId: sessionModelPreference.providerId,
+        providerId: resolvedProviderId,
         workingDir,
-        modelId: sessionModelPreference.modelId,
-        modelName: sessionModelPreference.modelName,
+        modelId:
+          resolvedProviderId === sessionModelPreference.providerId
+            ? sessionModelPreference.modelId
+            : undefined,
+        modelName:
+          resolvedProviderId === sessionModelPreference.providerId
+            ? sessionModelPreference.modelName
+            : undefined,
       });
       setHomeSessionId(session.id);
       return session;
