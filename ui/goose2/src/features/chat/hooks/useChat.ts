@@ -187,11 +187,8 @@ export function useChat(
         for (const img of images) {
           userMessage.content.push({
             type: "image",
-            source: {
-              type: "base64",
-              mediaType: img.mimeType,
-              data: img.base64,
-            },
+            data: img.base64,
+            mimeType: img.mimeType,
           });
         }
       }

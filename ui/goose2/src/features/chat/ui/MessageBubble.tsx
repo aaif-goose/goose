@@ -219,10 +219,7 @@ function renderContentBlock(
     }
     case "image": {
       const ic = content as ImageContent;
-      const src =
-        ic.source.type === "base64"
-          ? `data:${ic.source.mediaType};base64,${ic.source.data}`
-          : ic.source.url;
+      const src = ic.uri ?? `data:${ic.mimeType};base64,${ic.data}`;
       return (
         <ClickableImage
           key={`image-${index}`}
