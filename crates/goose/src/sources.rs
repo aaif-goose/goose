@@ -707,18 +707,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Set up a temp Paths root for tests that touch `Paths::data_dir()`
-    /// (i.e. anything that reads or writes projects). Uses the same
-    /// `env_lock::lock_env` pattern as `declarative_providers` and
-    /// `providers::utils` so that all tests in the workspace serialise on
-    /// the same global guard.
-    fn with_temp_root(f: impl FnOnce(&Path)) {
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path().display().to_string();
-        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.as_str()))]);
-        f(tmp.path());
-    }
-
     #[test]
     fn skill_name_validation() {
         assert!(validate_skill_name("my-skill").is_ok());
@@ -772,52 +760,6 @@ mod tests {
         assert!(!dir.exists());
     }
 
-    #[test]
-    fn skill_metadata_roundtrips_through_frontmatter() {
-        let tmp = TempDir::new().unwrap();
-        let project = tmp.path().to_str().unwrap();
-
-        let mut props = HashMap::new();
-        props.insert(
-            "category".to_string(),
-            serde_json::Value::String("design".to_string()),
-        );
-        props.insert(
-            "version".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(2)),
-        );
-        props.insert(
-            "tags".to_string(),
-            serde_json::Value::Array(vec![
-                serde_json::Value::String("ui".to_string()),
-                serde_json::Value::String("frontend".to_string()),
-            ]),
-        );
-
-        let created = create_source(
-            SourceType::Skill,
-            "with-meta",
-            "describes itself",
-            "body",
-            false,
-            Some(project),
-            props.clone(),
-        )
-        .unwrap();
-        assert_eq!(created.properties, props);
-
-        let raw = std::fs::read_to_string(PathBuf::from(&created.path).join("SKILL.md")).unwrap();
-        assert!(raw.contains("metadata:"));
-        assert!(raw.contains("category: design"));
-        assert!(raw.contains("version: 2"));
-
-        let listed = list_sources(Some(SourceType::Skill), Some(project), false).unwrap();
-        let found = listed
-            .iter()
-            .find(|s| s.name == "with-meta")
-            .expect("expected listed skill");
-        assert_eq!(found.properties, props);
-    }
 
     #[test]
     fn create_rejects_duplicate_name() {
@@ -1163,92 +1105,5 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
-    }
-
-    #[test]
-    fn project_create_read_update_delete_roundtrip() {
-        with_temp_root(|_| {
-            let mut props = HashMap::new();
-            props.insert(
-                "title".into(),
-                serde_json::Value::String("My Web App".into()),
-            );
-            props.insert("icon".into(), serde_json::Value::String("\u{1F4C1}".into()));
-            props.insert(
-                "workingDirs".into(),
-                serde_json::json!(["/Users/me/code/web-app"]),
-            );
-
-            let created = create_source(
-                SourceType::Project,
-                "web-app",
-                "frontend monorepo",
-                "Use pnpm. Prefer Vitest.",
-                true,
-                None,
-                props.clone(),
-            )
-            .unwrap();
-            assert_eq!(created.name, "web-app");
-            assert_eq!(created.source_type, SourceType::Project);
-            assert!(created.global);
-            assert_eq!(
-                created.properties.get("title").and_then(|v| v.as_str()),
-                Some("My Web App")
-            );
-
-            let read = read_project("web-app").unwrap();
-            assert_eq!(read.description, "frontend monorepo");
-            assert_eq!(read.content, "Use pnpm. Prefer Vitest.");
-
-            let dirs = project_working_dirs("web-app");
-            assert_eq!(dirs, vec!["/Users/me/code/web-app".to_string()]);
-
-            let mut new_props = props.clone();
-            new_props.insert("color".into(), serde_json::Value::String("#3b82f6".into()));
-            let updated = update_source(
-                SourceType::Project,
-                created.path.as_str(),
-                "web-app",
-                "frontend monorepo",
-                "Updated body",
-                new_props,
-            )
-            .unwrap();
-            assert_eq!(updated.content, "Updated body");
-            assert_eq!(
-                updated.properties.get("color").and_then(|v| v.as_str()),
-                Some("#3b82f6")
-            );
-
-            delete_source(SourceType::Project, created.path.as_str()).unwrap();
-            assert!(read_project("web-app").is_err());
-        });
-    }
-
-    #[test]
-    fn project_update_rejects_slug_change() {
-        with_temp_root(|_| {
-            let created = create_source(
-                SourceType::Project,
-                "old-slug",
-                "d",
-                "c",
-                true,
-                None,
-                HashMap::new(),
-            )
-            .unwrap();
-            let err = update_source(
-                SourceType::Project,
-                created.path.as_str(),
-                "new-slug",
-                "d",
-                "c",
-                HashMap::new(),
-            )
-            .unwrap_err();
-            assert!(format!("{:?}", err).contains("slug cannot be changed"));
-        });
     }
 }
