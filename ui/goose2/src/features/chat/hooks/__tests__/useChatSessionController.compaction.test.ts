@@ -302,7 +302,7 @@ describe("useChatSessionController compaction behavior", () => {
       .replaceTokenState("session-1", mockTokenState, true);
     useChatSessionStore.getState().updateSession("session-1", {
       providerId: "goose",
-      personaId: "persona-b",
+      agentId: "persona-b",
     });
 
     renderHook(() => useChatSessionController({ sessionId: "session-1" }));

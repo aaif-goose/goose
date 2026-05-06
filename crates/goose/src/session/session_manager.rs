@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 11;
+pub const CURRENT_SCHEMA_VERSION: i32 = 12;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -83,6 +83,10 @@ pub struct Session {
     pub goose_mode: GooseMode,
     #[serde(default)]
     pub thread_id: Option<String>,
+    #[serde(default)]
+    pub archived_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub struct SessionUpdateBuilder<'a> {
@@ -106,6 +110,9 @@ pub struct SessionUpdateBuilder<'a> {
     model_config: Option<Option<ModelConfig>>,
     goose_mode: Option<GooseMode>,
     thread_id: Option<Option<String>>,
+    archived_at: Option<Option<DateTime<Utc>>>,
+
+    project_id: Option<Option<String>>,
 }
 
 #[derive(Serialize, ToSchema, Debug)]
@@ -138,6 +145,8 @@ impl<'a> SessionUpdateBuilder<'a> {
             model_config: None,
             goose_mode: None,
             thread_id: None,
+            archived_at: None,
+            project_id: None,
         }
     }
 
@@ -250,6 +259,16 @@ impl<'a> SessionUpdateBuilder<'a> {
         self.thread_id = Some(thread_id);
         self
     }
+
+    pub fn archived_at(mut self, archived_at: Option<DateTime<Utc>>) -> Self {
+        self.archived_at = Some(archived_at);
+        self
+    }
+
+    pub fn project_id(mut self, project_id: Option<String>) -> Self {
+        self.project_id = Some(project_id);
+        self
+    }
 }
 
 pub struct SessionManager {
@@ -258,7 +277,8 @@ pub struct SessionManager {
 
 #[derive(Debug, Clone)]
 pub struct SessionNameUpdate {
-    pub thread: super::thread_manager::Thread,
+    pub session_id: String,
+    pub name: String,
 }
 
 impl SessionManager {
@@ -384,21 +404,12 @@ impl SessionManager {
                 .apply()
                 .await?;
 
-            // Also update the thread name so ACP clients see it via session/list.
-            if let Some(ref thread_id) = session.thread_id {
-                let thread_mgr = super::thread_manager::ThreadManager::new(self.storage.clone());
-                let thread = thread_mgr.get_thread(thread_id).await?;
-                if !thread.user_set_name && thread.name != name {
-                    let thread = thread_mgr
-                        .update_thread(thread_id, Some(name), Some(false), None)
-                        .await?;
-                    return Ok(Some(SessionNameUpdate { thread }));
-                }
-            }
-            Ok(None)
-        } else {
-            Ok(None)
+            return Ok(Some(SessionNameUpdate {
+                session_id: id.to_string(),
+                name,
+            }));
         }
+        Ok(None)
     }
 
     pub async fn search_chat_history(
@@ -474,6 +485,8 @@ impl Default for Session {
             model_config: None,
             goose_mode: GooseMode::default(),
             thread_id: None,
+            archived_at: None,
+            project_id: None,
         }
     }
 }
@@ -544,6 +557,8 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             thread_id: row.try_get("thread_id").ok().flatten(),
+            archived_at: row.try_get("archived_at").ok(),
+            project_id: row.try_get("project_id").ok().flatten(),
         })
     }
 }
@@ -644,7 +659,9 @@ impl SessionStorage {
                 provider_name TEXT,
                 model_config_json TEXT,
                 goose_mode TEXT NOT NULL DEFAULT 'auto',
-                thread_id TEXT
+                thread_id TEXT,
+                archived_at TIMESTAMP,
+                project_id TEXT
             )
         "#,
         )
@@ -684,49 +701,6 @@ impl SessionStorage {
         sqlx::query("CREATE INDEX idx_sessions_type ON sessions(session_type)")
             .execute(pool)
             .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_thread ON sessions(thread_id)")
-            .execute(pool)
-            .await?;
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS threads (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL DEFAULT 'New Chat',
-                user_set_name BOOLEAN DEFAULT FALSE,
-                working_dir TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                archived_at TIMESTAMP,
-                metadata_json TEXT DEFAULT '{}'
-            )",
-        )
-        .execute(pool)
-        .await?;
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS thread_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                thread_id TEXT NOT NULL REFERENCES threads(id),
-                session_id TEXT,
-                message_id TEXT,
-                role TEXT NOT NULL,
-                content_json TEXT NOT NULL,
-                created_timestamp INTEGER NOT NULL,
-                metadata_json TEXT DEFAULT '{}'
-            )",
-        )
-        .execute(pool)
-        .await?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_thread_messages_thread ON thread_messages(thread_id)",
-        )
-        .execute(pool)
-        .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_thread_messages_message_id ON thread_messages(message_id)")
-            .execute(pool)
-            .await?;
-
         crate::providers::inventory::create_tables(pool).await?;
 
         Ok(())
@@ -1075,6 +1049,40 @@ impl SessionStorage {
             11 => {
                 crate::providers::inventory::create_tables_in_tx(tx).await?;
             }
+            12 => {
+                // Add archived_at, project_id columns to sessions.
+                let has_archived_at = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'archived_at'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_archived_at {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN archived_at TIMESTAMP")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+
+                let has_project_id = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'project_id'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_project_id {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN project_id TEXT")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+
+                // Drop thread tables (no longer used).
+                sqlx::query("DROP TABLE IF EXISTS thread_messages")
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query("DROP TABLE IF EXISTS threads")
+                    .execute(&mut **tx)
+                    .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1136,7 +1144,8 @@ impl SessionStorage {
                total_tokens, input_tokens, output_tokens,
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
                schedule_id, recipe_json, user_recipe_values_json,
-               provider_name, model_config_json, goose_mode, thread_id
+               provider_name, model_config_json, goose_mode, thread_id,
+               archived_at, project_id
         FROM sessions
         WHERE id = ?
     "#,
@@ -1201,6 +1210,9 @@ impl SessionStorage {
         add_update!(builder.model_config, "model_config_json");
         add_update!(builder.goose_mode, "goose_mode");
         add_update!(builder.thread_id, "thread_id");
+        add_update!(builder.archived_at, "archived_at");
+
+        add_update!(builder.project_id, "project_id");
 
         if updates.is_empty() {
             return Ok(());
@@ -1271,6 +1283,13 @@ impl SessionStorage {
         }
         if let Some(thread_id) = builder.thread_id {
             q = q.bind(thread_id);
+        }
+        if let Some(ref archived_at) = builder.archived_at {
+            q = q.bind(archived_at.as_ref());
+        }
+
+        if let Some(ref project_id) = builder.project_id {
+            q = q.bind(project_id.as_ref());
         }
 
         let pool = self.pool().await?;
@@ -1424,6 +1443,7 @@ impl SessionStorage {
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
                    s.provider_name, s.model_config_json, s.goose_mode, s.thread_id,
+                   s.archived_at, s.project_id,
                    COUNT(m.id) as message_count
             FROM sessions s
             LEFT JOIN messages m ON s.id = m.session_id

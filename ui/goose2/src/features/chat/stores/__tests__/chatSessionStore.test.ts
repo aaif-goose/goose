@@ -61,7 +61,7 @@ describe("chatSessionStore", () => {
         title: "New Chat",
         providerId: "openai",
         projectId: "project-1",
-        personaId: "persona-1",
+        agentId: "persona-1",
         modelId: "gpt-4.1",
         modelName: "GPT-4.1",
         workingDir: "/tmp/project",
@@ -72,7 +72,6 @@ describe("chatSessionStore", () => {
         "/tmp/project",
         {
           projectId: "project-1",
-          personaId: "persona-1",
           modelId: "gpt-4.1",
         },
       );
@@ -81,7 +80,7 @@ describe("chatSessionStore", () => {
         title: "New Chat",
         projectId: "project-1",
         providerId: "openai",
-        personaId: "persona-1",
+        agentId: "persona-1",
         modelId: "gpt-4.1",
         modelName: "GPT-4.1",
         workingDir: "/tmp/project",
@@ -146,7 +145,6 @@ describe("chatSessionStore", () => {
           workingDir: "/tmp/project-123",
           projectId: "project-123",
           providerId: "anthropic",
-          personaId: "persona-1",
           modelId: "claude-sonnet-4",
         },
       ]);
@@ -157,7 +155,6 @@ describe("chatSessionStore", () => {
       expect(session.title).toBe("Renamed Chat");
       expect(session.projectId).toBe("project-123");
       expect(session.providerId).toBe("anthropic");
-      expect(session.personaId).toBe("persona-1");
       expect(session.createdAt).toBe("2026-03-31");
       expect(session.updatedAt).toBe("2026-04-02");
       expect(session.messageCount).toBe(7);

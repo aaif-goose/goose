@@ -57,7 +57,6 @@ export interface Session {
   title: string;
   projectId?: string | null;
   providerId?: string;
-  personaId?: string;
   modelId?: string;
   modelName?: string;
   workingDir?: string | null;

@@ -104,7 +104,7 @@ export function useChatSessionController({
   const selectedPersonaId =
     pendingPersonaId !== undefined
       ? pendingPersonaId
-      : (session?.personaId ?? null);
+      : (session?.agentId ?? null);
   const selectedPersona = personas.find(
     (persona) => persona.id === selectedPersonaId,
   );
@@ -374,7 +374,7 @@ export function useChatSessionController({
       }
       useChatSessionStore
         .getState()
-        .updateSession(sessionId, { personaId: personaId ?? undefined });
+        .updateSession(sessionId, { agentId: personaId ?? undefined });
     },
     [
       handleProviderChange,
@@ -395,7 +395,7 @@ export function useChatSessionController({
       if (sessionId) {
         useChatSessionStore
           .getState()
-          .updateSession(sessionId, { personaId: undefined });
+          .updateSession(sessionId, { agentId: undefined });
       } else {
         setPendingPersonaId(undefined);
       }
@@ -687,7 +687,7 @@ export function useChatSessionController({
         const nextPersonaId =
           pendingPersonaId !== undefined
             ? (pendingPersonaId ?? undefined)
-            : session?.personaId;
+            : session?.agentId;
         const nextProjectId =
           pendingProjectId !== undefined
             ? pendingProjectId
@@ -702,7 +702,7 @@ export function useChatSessionController({
 
         const patch: {
           providerId?: string;
-          personaId?: string | undefined;
+          agentId?: string | undefined;
           projectId?: string | null;
           modelId?: string | undefined;
           modelName?: string | undefined;
@@ -714,7 +714,7 @@ export function useChatSessionController({
           patch.modelName = undefined;
         }
         if (hasPendingPersona) {
-          patch.personaId = nextPersonaId;
+          patch.agentId = nextPersonaId;
         }
         if (hasPendingProject) {
           patch.projectId = nextProjectId ?? null;
@@ -788,7 +788,7 @@ export function useChatSessionController({
     pendingQueuedMessage,
     prepareCurrentSession,
     selectedProvider,
-    session?.personaId,
+    session?.agentId,
     session?.projectId,
     sessionId,
   ]);
