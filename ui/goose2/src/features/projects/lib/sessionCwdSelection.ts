@@ -19,7 +19,7 @@ function buildSessionCwdParts(
     .map((directory) => trimValue(directory))
     .filter((directory): directory is string => directory !== null);
   if (workingDirs.length > 0) {
-    return [workingDirs[0], "artifacts"];
+    return [workingDirs[0]];
   }
 
   return ["~", ".goose", "artifacts"];
