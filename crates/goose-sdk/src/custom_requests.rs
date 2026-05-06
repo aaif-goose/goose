@@ -748,8 +748,8 @@ pub struct SourceEntry {
     pub content: String,
     /// Stable on-disk path identifying this source. Pass it back to
     /// update/delete/export to operate on this entry. The shape varies by
-    /// source type: skills use the directory containing `SKILL.md`, projects
-    /// and recipes use the markdown file path itself.
+    /// source type: skills use the directory containing `SKILL.md`; projects
+    /// use the project file path itself; recipes use the recipe file path.
     pub path: String,
     /// True when the source lives in the user's global sources directory; false
     /// when it lives inside a specific project.

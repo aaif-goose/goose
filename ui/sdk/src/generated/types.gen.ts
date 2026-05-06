@@ -720,8 +720,8 @@ export type SourceEntry = {
     /**
      * Stable on-disk path identifying this source. Pass it back to
      * update/delete/export to operate on this entry. The shape varies by
-     * source type: skills use the directory containing `SKILL.md`, projects
-     * and recipes use the markdown file path itself.
+     * source type: skills use the directory containing `SKILL.md`; projects
+     * use the project file path itself; recipes use the recipe file path.
      */
     path: string;
     /**
@@ -773,11 +773,6 @@ export type UpdateSourceRequest = {
     name: string;
     description: string;
     content: string;
-    /**
-     * Arbitrary key/value metadata. When non-empty, replaces all existing
-     * properties on the source. Used for type-specific fields like project
-     * icon/color/workingDirs.
-     */
     properties?: {
         [key: string]: unknown;
     };

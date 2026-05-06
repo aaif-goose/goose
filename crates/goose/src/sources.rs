@@ -233,6 +233,7 @@ fn skill_source_entry(
     content: &str,
     dir: &Path,
     global: bool,
+    properties: HashMap<String, serde_json::Value>,
 ) -> SourceEntry {
     SourceEntry {
         source_type: SourceType::Skill,
@@ -242,7 +243,7 @@ fn skill_source_entry(
         path: dir.to_string_lossy().to_string(),
         global,
         supporting_files: Vec::new(),
-        properties: HashMap::new(),
+        properties,
     }
 }
 
@@ -273,12 +274,19 @@ pub fn create_source(
                 Error::internal_error().data(format!("Failed to create source directory: {e}"))
             })?;
             let file_path = dir.join("SKILL.md");
-            let md = build_skill_md(name, description, content);
+            let md = build_skill_md(name, description, content, &properties);
             fs::write(&file_path, md).map_err(|e| {
                 Error::internal_error().data(format!("Failed to write SKILL.md: {e}"))
             })?;
 
-            Ok(skill_source_entry(name, description, content, &dir, global))
+            Ok(skill_source_entry(
+                name,
+                description,
+                content,
+                &dir,
+                global,
+                properties,
+            ))
         }
         SourceType::Project => {
             validate_project_slug(name)?;
@@ -351,14 +359,10 @@ pub fn update_source(
             };
 
             let file_path = target_dir.join("SKILL.md");
-            let md = build_skill_md(name, description, content);
+            let md = build_skill_md(name, description, content, &properties);
             fs::write(&file_path, md).map_err(|e| {
                 Error::internal_error().data(format!("Failed to write SKILL.md: {e}"))
             })?;
-
-            // Skills don't carry user-defined properties yet; ignore the
-            // incoming bag rather than silently dropping it elsewhere.
-            let _ = properties;
 
             Ok(skill_source_entry(
                 name,
@@ -366,6 +370,7 @@ pub fn update_source(
                 content,
                 &target_dir,
                 is_global_skill_dir(&target_dir),
+                properties,
             ))
         }
         SourceType::Project => {
@@ -700,19 +705,18 @@ pub fn import_sources(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use tempfile::TempDir;
 
-    // Tests that set GOOSE_PATH_ROOT must run serially because it's a global
-    // env var.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
+    /// Set up a temp Paths root for tests that touch `Paths::data_dir()`
+    /// (i.e. anything that reads or writes projects). Uses the same
+    /// `env_lock::lock_env` pattern as `declarative_providers` and
+    /// `providers::utils` so that all tests in the workspace serialise on
+    /// the same global guard.
     fn with_temp_root(f: impl FnOnce(&Path)) {
-        let _guard = ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("GOOSE_PATH_ROOT", tmp.path()) };
+        let root = tmp.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.as_str()))]);
         f(tmp.path());
-        unsafe { std::env::remove_var("GOOSE_PATH_ROOT") };
     }
 
     #[test]
@@ -766,6 +770,53 @@ mod tests {
 
         delete_source(SourceType::Skill, created.path.as_str()).unwrap();
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn skill_metadata_roundtrips_through_frontmatter() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().to_str().unwrap();
+
+        let mut props = HashMap::new();
+        props.insert(
+            "category".to_string(),
+            serde_json::Value::String("design".to_string()),
+        );
+        props.insert(
+            "version".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(2)),
+        );
+        props.insert(
+            "tags".to_string(),
+            serde_json::Value::Array(vec![
+                serde_json::Value::String("ui".to_string()),
+                serde_json::Value::String("frontend".to_string()),
+            ]),
+        );
+
+        let created = create_source(
+            SourceType::Skill,
+            "with-meta",
+            "describes itself",
+            "body",
+            false,
+            Some(project),
+            props.clone(),
+        )
+        .unwrap();
+        assert_eq!(created.properties, props);
+
+        let raw = std::fs::read_to_string(PathBuf::from(&created.path).join("SKILL.md")).unwrap();
+        assert!(raw.contains("metadata:"));
+        assert!(raw.contains("category: design"));
+        assert!(raw.contains("version: 2"));
+
+        let listed = list_sources(Some(SourceType::Skill), Some(project), false).unwrap();
+        let found = listed
+            .iter()
+            .find(|s| s.name == "with-meta")
+            .expect("expected listed skill");
+        assert_eq!(found.properties, props);
     }
 
     #[test]
@@ -850,7 +901,7 @@ mod tests {
         std::fs::create_dir_all(&claude_skill_dir).unwrap();
         std::fs::write(
             claude_skill_dir.join("SKILL.md"),
-            build_skill_md("portable", "describes itself", "body goes here"),
+            build_skill_md("portable", "describes itself", "body goes here", &HashMap::new()),
         )
         .unwrap();
 
@@ -879,7 +930,7 @@ mod tests {
         std::fs::create_dir_all(&claude_skill_dir).unwrap();
         std::fs::write(
             claude_skill_dir.join("SKILL.md"),
-            build_skill_md("portable", "describes itself", "body goes here"),
+            build_skill_md("portable", "describes itself", "body goes here", &HashMap::new()),
         )
         .unwrap();
 
@@ -1027,7 +1078,7 @@ mod tests {
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(
             skill_dir.join("SKILL.md"),
-            build_skill_md("test-skill", "from agents", "Body"),
+            build_skill_md("test-skill", "from agents", "Body", &HashMap::new()),
         )
         .unwrap();
 
@@ -1062,12 +1113,12 @@ mod tests {
         std::fs::create_dir_all(&legacy_skill_dir).unwrap();
         std::fs::write(
             agents_skill_dir.join("SKILL.md"),
-            build_skill_md("shared-skill", "preferred", "Agents"),
+            build_skill_md("shared-skill", "preferred", "Agents", &HashMap::new()),
         )
         .unwrap();
         std::fs::write(
             legacy_skill_dir.join("SKILL.md"),
-            build_skill_md("shared-skill", "legacy", "Goose"),
+            build_skill_md("shared-skill", "legacy", "Goose", &HashMap::new()),
         )
         .unwrap();
 
