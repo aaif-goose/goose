@@ -21,8 +21,8 @@ import {
 import { findLastIndex } from "@/shared/lib/arrays";
 import { perfLog } from "@/shared/lib/perfLog";
 import {
+  appendAttachmentPaths,
   buildAcpImages,
-  buildAttachmentPromptPreamble,
   buildMessageAttachments,
 } from "../lib/attachments";
 import { sanitizeReplayMessages } from "../lib/replaySanitizer";
@@ -229,12 +229,9 @@ export function useChat(
         await options?.ensurePrepared?.(effectivePersonaInfo?.id);
 
         store.setChatState(sessionId, "streaming");
-        // When images are present with no text, pass a single space so the ACP
-        // driver doesn't send an empty text content block that goose rejects.
-        const attachmentPromptPreamble =
-          buildAttachmentPromptPreamble(attachments);
-        const promptBody = text.trim() || (images?.length ? " " : text);
-        const acpPrompt = `${attachmentPromptPreamble}${promptBody}`;
+        const promptWithPaths = appendAttachmentPaths(text.trim(), attachments);
+        const acpPrompt =
+          promptWithPaths || (images?.length ? " " : promptWithPaths);
         const tAcp = performance.now();
         perfLog(
           `[perf:send] ${sid} → acpSendMessage (setup took ${(tAcp - tSendStart).toFixed(1)}ms)`,
