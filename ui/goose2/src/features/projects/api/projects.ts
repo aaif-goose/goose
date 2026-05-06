@@ -82,6 +82,22 @@ function slugify(name: string): string {
   return slug || "project";
 }
 
+/** Pick a slug for `name` that does not collide with any existing project ID
+ *  (active or archived). Two display names that normalize to the same slug
+ *  (e.g. "My App" and "my-app", or both collapsing to "project" because they
+ *  contain no ASCII alphanumerics) are disambiguated with a numeric suffix. */
+function uniqueProjectSlug(name: string, existingIds: Set<string>): string {
+  const base = slugify(name);
+  if (!existingIds.has(base)) {
+    return base;
+  }
+  let counter = 2;
+  while (existingIds.has(`${base}-${counter}`)) {
+    counter += 1;
+  }
+  return `${base}-${counter}`;
+}
+
 export interface ProjectIconCandidate {
   id: string;
   label: string;
@@ -127,7 +143,8 @@ export async function createProject(
   useWorktrees: boolean,
 ): Promise<ProjectInfo> {
   const client = await getClient();
-  const id = slugify(name);
+  const existing = await listAllProjects();
+  const id = uniqueProjectSlug(name, new Set(existing.map((p) => p.id)));
   const raw = await client.extMethod("_goose/sources/create", {
     type: "project",
     name: id,
