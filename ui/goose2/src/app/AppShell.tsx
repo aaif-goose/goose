@@ -452,6 +452,18 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     [chatStore, sessionStore],
   );
 
+  const expandSidebar = useCallback(async () => {
+    const expandedFitWidth = getExpandedSidebarFitWidth(sidebarWidth);
+
+    try {
+      await ensureWindowWidth(expandedFitWidth);
+    } catch (error) {
+      console.warn("Failed to resize window before expanding sidebar:", error);
+    }
+
+    setSidebarCollapsed(false);
+  }, [sidebarWidth]);
+
   const openSettings = useCallback(
     (section: SectionId = DEFAULT_SETTINGS_SECTION) => {
       if (activeView !== "settings") {
@@ -461,10 +473,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       setSettingsSectionUrl(section);
       setActiveView("settings");
       if (sidebarCollapsed) {
-        setSidebarCollapsed(false);
+        void expandSidebar();
       }
     },
-    [activeView, sidebarCollapsed],
+    [activeView, expandSidebar, sidebarCollapsed],
   );
 
   const leaveSettings = useCallback(() => {
@@ -653,18 +665,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const collapseSidebar = useCallback(() => {
     setSidebarCollapsed(true);
   }, []);
-
-  const expandSidebar = useCallback(async () => {
-    const expandedFitWidth = getExpandedSidebarFitWidth(sidebarWidth);
-
-    try {
-      await ensureWindowWidth(expandedFitWidth);
-    } catch (error) {
-      console.warn("Failed to resize window before expanding sidebar:", error);
-    }
-
-    setSidebarCollapsed(false);
-  }, [sidebarWidth]);
 
   const toggleSidebar = useCallback(() => {
     if (sidebarCollapsed) {
