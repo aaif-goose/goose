@@ -41,6 +41,15 @@ interface UseChatSessionControllerOptions {
 const PENDING_HOME_SESSION_ID = "__home_pending__";
 const EMPTY_SKILL_DRAFTS: ChatSkillDraft[] = [];
 
+function movePendingHomeQueuedMessage(sessionId: string) {
+  const chatState = useChatStore.getState();
+  const pendingQueue =
+    chatState.queuedMessageBySession[PENDING_HOME_SESSION_ID] ?? null;
+  if (pendingQueue && !chatState.queuedMessageBySession[sessionId]) {
+    chatState.enqueueMessage(sessionId, pendingQueue);
+  }
+}
+
 export function useChatSessionController({
   sessionId,
   onMessageAccepted,
@@ -736,10 +745,10 @@ export function useChatSessionController({
             activeWorkspace?.path,
             pendingModelSelection,
           );
-          if (cancelled || !applied) {
+          if (cancelled) {
             return;
           }
-          if (pendingModelSelection?.source === "explicit") {
+          if (applied && pendingModelSelection?.source === "explicit") {
             const agentId =
               resolveAgentProviderCatalogIdStrictFromEntries(
                 catalogEntries,
@@ -762,16 +771,7 @@ export function useChatSessionController({
         setPendingModelSelection(undefined);
       }
 
-      const latestChatState = useChatStore.getState();
-      const latestPendingQueue =
-        latestChatState.queuedMessageBySession[PENDING_HOME_SESSION_ID] ?? null;
-      if (
-        latestPendingQueue &&
-        !latestChatState.queuedMessageBySession[sessionId]
-      ) {
-        latestChatState.enqueueMessage(sessionId, latestPendingQueue);
-      }
-
+      movePendingHomeQueuedMessage(sessionId);
       useChatStore.getState().clearDraft(PENDING_HOME_SESSION_ID);
       useChatStore.getState().clearSkillDrafts(PENDING_HOME_SESSION_ID);
       useChatStore.getState().dismissQueuedMessage(PENDING_HOME_SESSION_ID);
