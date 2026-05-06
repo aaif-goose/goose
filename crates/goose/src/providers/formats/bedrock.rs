@@ -422,12 +422,27 @@ fn from_bedrock_reasoning_content_block(
             Some(MessageContent::redacted_thinking(encoded))
         }
         other => {
+            // Log only the stable variant identifier; never debug-print the
+            // payload, which could contain raw reasoning text or encrypted
+            // bytes from the model.
             tracing::warn!(
-                "Skipping unknown Bedrock ReasoningContent variant: {:?}",
-                other
+                "Skipping unknown Bedrock ReasoningContent variant: {}",
+                bedrock_reasoning_content_block_kind(other)
             );
             None
         }
+    }
+}
+
+/// Returns a short, stable identifier describing the variant of a
+/// `ReasoningContentBlock` for logging purposes. The block itself is not
+/// included to avoid leaking model reasoning output (plaintext or encrypted)
+/// into logs.
+fn bedrock_reasoning_content_block_kind(block: &bedrock::ReasoningContentBlock) -> &'static str {
+    match block {
+        bedrock::ReasoningContentBlock::ReasoningText(_) => "ReasoningText",
+        bedrock::ReasoningContentBlock::RedactedContent(_) => "RedactedContent",
+        _ => "Unknown",
     }
 }
 
