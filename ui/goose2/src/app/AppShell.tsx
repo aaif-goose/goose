@@ -247,14 +247,29 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const currentProvider = () =>
         useAgentStore.getState().selectedProvider ?? "goose";
 
+      // Resolve the provider to use after an async gap. If the user changed
+      // their selection while we were awaiting (liveProvider differs from what
+      // it was before the await), prefer the live value; otherwise use the
+      // model-preference resolution result.
+      const resolveProviderAfterAwait = (
+        providerAtStart: string,
+        sessionModelPreference: { providerId: string },
+      ): string => {
+        const liveProvider = currentProvider();
+        return liveProvider !== providerAtStart
+          ? liveProvider
+          : sessionModelPreference.providerId;
+      };
+
       if (
         homeSession &&
         !homeSession.archivedAt &&
         homeSession.messageCount === 0
       ) {
+        const providerAtStart = currentProvider();
         const sessionModelPreference =
           await resolveSupportedSessionModelPreference(
-            currentProvider(),
+            providerAtStart,
             providerInventoryEntries,
           );
         const project = homeSession.projectId
@@ -263,11 +278,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             ) ?? null)
           : null;
         const workingDir = await resolveSessionCwd(project);
-        const liveProvider = currentProvider();
-        const resolvedProviderId =
-          liveProvider !== (useAgentStore.getState().selectedProvider ?? "goose")
-            ? liveProvider
-            : sessionModelPreference.providerId;
+        const resolvedProviderId = resolveProviderAfterAwait(
+          providerAtStart,
+          sessionModelPreference,
+        );
         await acpPrepareSession(homeSession.id, resolvedProviderId, workingDir);
         const shouldClearHomeModel =
           resolvedProviderId !== homeSession.providerId ||
@@ -290,17 +304,17 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         return homeSession;
       }
 
+      const providerAtStart = currentProvider();
       const workingDir = await resolveSessionCwd(null);
       const sessionModelPreference =
         await resolveSupportedSessionModelPreference(
-          currentProvider(),
+          providerAtStart,
           providerInventoryEntries,
         );
-      const liveProvider = currentProvider();
-      const resolvedProviderId =
-        liveProvider !== (useAgentStore.getState().selectedProvider ?? "goose")
-          ? liveProvider
-          : sessionModelPreference.providerId;
+      const resolvedProviderId = resolveProviderAfterAwait(
+        providerAtStart,
+        sessionModelPreference,
+      );
       const session = await createSession({
         title: DEFAULT_CHAT_TITLE,
         providerId: resolvedProviderId,
@@ -327,7 +341,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       }
     }
   }, [
-    selectedProvider,
     createSession,
     hasHydratedSessions,
     homeSession,

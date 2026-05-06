@@ -61,6 +61,11 @@ export function useResolvedAgentModelPicker({
   const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const catalogLoaded = useProviderCatalogStore((state) => state.loaded);
   const { getEntry: getProviderInventoryEntry } = useProviderInventory();
+  // Monotonic version counter shared across onProviderSelected and
+  // onModelSelected. Any user interaction (provider OR model change) bumps
+  // this, which invalidates in-flight async work from either callback —
+  // intentionally cross-callback so a rapid provider switch also cancels a
+  // stale model mutation and vice versa.
   const selectionVersionRef = useRef(0);
   const [gooseDefaultSelection, setGooseDefaultSelection] =
     useState<PreferredModelSelection | null>(null);
