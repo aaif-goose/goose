@@ -58,46 +58,69 @@ impl GooseAcpAgent {
         req: OnboardingImportApplyRequest,
     ) -> Result<OnboardingImportApplyResponse, sacp::Error> {
         let config = self.config()?;
-        let mut imported = OnboardingImportCounts::default();
-        let mut skipped = OnboardingImportCounts::default();
-        let mut warnings = Vec::new();
-        let mut provider_defaults = None;
+        Ok(apply_onboarding_import_candidates(
+            &config,
+            &self.config_dir,
+            &req,
+        ))
+    }
+}
 
-        for candidate_id in &req.candidate_ids {
-            match parse_candidate_id(candidate_id) {
-                Some((OnboardingImportSourceKind::GooseConfig, path)) => {
-                    let result = apply_goose_config_candidate(&config, &self.config_dir, &path)
-                        .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-                    add_counts(&mut imported, &result.imported);
-                    add_counts(&mut skipped, &result.skipped);
-                    warnings.extend(result.warnings);
-                    if result.provider_defaults.provider_id.is_some()
-                        || result.provider_defaults.model_id.is_some()
-                    {
-                        provider_defaults = Some(result.provider_defaults);
+fn apply_onboarding_import_candidates(
+    config: &Config,
+    target_config_dir: &Path,
+    req: &OnboardingImportApplyRequest,
+) -> OnboardingImportApplyResponse {
+    let mut imported = OnboardingImportCounts::default();
+    let mut skipped = OnboardingImportCounts::default();
+    let mut warnings = Vec::new();
+    let mut provider_defaults = None;
+
+    for candidate_id in &req.candidate_ids {
+        match parse_candidate_id(candidate_id) {
+            Some((OnboardingImportSourceKind::GooseConfig, path)) => {
+                match apply_goose_config_candidate(config, target_config_dir, &path) {
+                    Ok(result) => {
+                        add_counts(&mut imported, &result.imported);
+                        add_counts(&mut skipped, &result.skipped);
+                        warnings.extend(result.warnings);
+                        if result.provider_defaults.provider_id.is_some()
+                            || result.provider_defaults.model_id.is_some()
+                        {
+                            provider_defaults = Some(result.provider_defaults);
+                        }
                     }
-                }
-                Some((OnboardingImportSourceKind::ClaudeDesktop, path)) => {
-                    let result = apply_claude_desktop_candidate(
-                        &config,
+                    Err(error) => warnings.push(import_failure_warning(
+                        OnboardingImportSourceKind::GooseConfig,
                         &path,
-                        req.enable_imported_extensions,
-                    )
-                    .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-                    add_counts(&mut imported, &result.imported);
-                    add_counts(&mut skipped, &result.skipped);
-                    warnings.extend(result.warnings);
+                        &error,
+                    )),
                 }
-                None => warnings.push(format!("Skipped unknown import candidate: {candidate_id}")),
             }
+            Some((OnboardingImportSourceKind::ClaudeDesktop, path)) => {
+                match apply_claude_desktop_candidate(config, &path, req.enable_imported_extensions)
+                {
+                    Ok(result) => {
+                        add_counts(&mut imported, &result.imported);
+                        add_counts(&mut skipped, &result.skipped);
+                        warnings.extend(result.warnings);
+                    }
+                    Err(error) => warnings.push(import_failure_warning(
+                        OnboardingImportSourceKind::ClaudeDesktop,
+                        &path,
+                        &error,
+                    )),
+                }
+            }
+            None => warnings.push(format!("Skipped unknown import candidate: {candidate_id}")),
         }
+    }
 
-        Ok(OnboardingImportApplyResponse {
-            imported,
-            skipped,
-            warnings,
-            provider_defaults,
-        })
+    OnboardingImportApplyResponse {
+        imported,
+        skipped,
+        warnings,
+        provider_defaults,
     }
 }
 
@@ -129,6 +152,21 @@ fn add_counts(target: &mut OnboardingImportCounts, source: &OnboardingImportCoun
     target.skills += source.skills;
     target.projects += source.projects;
     target.preferences += source.preferences;
+}
+
+fn import_failure_warning(
+    source_kind: OnboardingImportSourceKind,
+    path: &Path,
+    error: &anyhow::Error,
+) -> String {
+    let source_name = match source_kind {
+        OnboardingImportSourceKind::GooseConfig => "Goose configuration",
+        OnboardingImportSourceKind::ClaudeDesktop => "Claude Desktop tools",
+    };
+    format!(
+        "Skipped {source_name} import at {}: {error}",
+        path.display()
+    )
 }
 
 fn goose_config_candidate_paths(config_dir: &Path) -> Vec<PathBuf> {
@@ -553,6 +591,45 @@ mod tests {
         let candidate = scan_claude_desktop_candidate(&path).unwrap();
         assert_eq!(candidate.counts.extensions, 1);
         assert_eq!(candidate.warnings.len(), 1);
+    }
+
+    #[test]
+    fn apply_onboarding_imports_continues_after_candidate_failure() {
+        let source = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+        let missing_goose_config = source.path().join("missing-config.yaml");
+        let claude_config = source.path().join("claude_desktop_config.json");
+        fs::write(
+            &claude_config,
+            r#"{
+              "mcpServers": {
+                "github": { "command": "npx", "args": ["github-mcp"] }
+              }
+            }"#,
+        )
+        .unwrap();
+        let target_config = Config::new_with_file_secrets(
+            target.path().join(CONFIG_YAML_NAME),
+            target.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let req = OnboardingImportApplyRequest {
+            candidate_ids: vec![
+                candidate_id(GOOSE_CONFIG_PREFIX, &missing_goose_config),
+                candidate_id(CLAUDE_DESKTOP_PREFIX, &claude_config),
+            ],
+            enable_imported_extensions: false,
+        };
+
+        let response = apply_onboarding_import_candidates(&target_config, target.path(), &req);
+
+        assert_eq!(response.imported.extensions, 1);
+        assert!(response
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("Skipped Goose configuration import at ")));
+        let extensions = target_config.get_param::<Mapping>("extensions").unwrap();
+        assert!(extensions.contains_key(serde_yaml::Value::String(name_to_key("github"))));
     }
 
     #[test]
