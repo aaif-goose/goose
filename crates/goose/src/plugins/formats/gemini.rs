@@ -1,6 +1,6 @@
 use crate::plugins::{
-    copy_dir_all, plugin_install_dir, write_install_metadata, FormatNotSupported, ImportedSkill,
-    PluginFormat, PluginInstall, PluginInstallOptions,
+    copy_dir_all, write_install_metadata, FormatNotSupported, ImportedSkill, PluginFormat,
+    PluginInstall, PluginInstallOptions,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -19,21 +19,6 @@ struct GeminiManifest {
 struct SkillCandidate {
     name: String,
     relative_directory: PathBuf,
-}
-
-pub fn try_install_from_manifest(
-    source: &str,
-    checkout_dir: &Path,
-    options: &PluginInstallOptions,
-    last_update_check: Option<DateTime<Utc>>,
-) -> Result<PluginInstall> {
-    try_install_from_manifest_at_root(
-        source,
-        checkout_dir,
-        &plugin_install_dir(),
-        options,
-        last_update_check,
-    )
 }
 
 pub(in crate::plugins) fn try_install_from_manifest_at_root(
