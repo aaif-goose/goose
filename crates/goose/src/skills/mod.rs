@@ -399,8 +399,10 @@ pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
         if let Some(source) = parse_skill_content(content, &PathBuf::new(), true) {
             if !seen.contains(&source.name) {
                 seen.insert(source.name.clone());
+                let path = format!("builtin://skills/{}", source.name);
                 sources.push(SourceEntry {
                     source_type: SourceType::BuiltinSkill,
+                    path,
                     ..source
                 });
             }

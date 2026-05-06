@@ -39,6 +39,18 @@ fn require_mutable_type(source_type: SourceType) -> Result<(), Error> {
     }
 }
 
+fn require_listable_type(source_type: Option<SourceType>) -> Result<SourceType, Error> {
+    match source_type.unwrap_or(SourceType::Skill) {
+        SourceType::Skill => Ok(SourceType::Skill),
+        SourceType::BuiltinSkill => Ok(SourceType::BuiltinSkill),
+        SourceType::Project => Ok(SourceType::Project),
+        other => Err(Error::invalid_params().data(format!(
+            "Source type '{}' is not supported for listing.",
+            other
+        ))),
+    }
+}
+
 // --- Project helpers ---
 
 #[derive(Deserialize)]
@@ -268,6 +280,14 @@ fn skill_source_entry(
         supporting_files: Vec::new(),
         properties,
     }
+}
+
+fn builtin_skill_entry(mut source: SourceEntry) -> SourceEntry {
+    source.source_type = SourceType::BuiltinSkill;
+    source.path = format!("builtin://skills/{}", source.name);
+    source.global = true;
+    source.supporting_files.clear();
+    source
 }
 
 // --- Public CRUD ---
@@ -534,7 +554,8 @@ pub fn list_sources(
                 sources.extend(
                     discover_skills(working_dir.as_deref())
                         .into_iter()
-                        .filter(|s| s.source_type == SourceType::BuiltinSkill),
+                        .filter(|s| s.source_type == SourceType::BuiltinSkill)
+                        .map(builtin_skill_entry),
                 );
             }
             SourceType::Project => {
@@ -546,6 +567,7 @@ pub fn list_sources(
             }
         }
     }
+
 
     sources.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(sources)
@@ -1002,6 +1024,68 @@ mod tests {
     }
 
     #[test]
+    fn list_sources_lists_builtin_skills() {
+        let listed = list_sources(Some(SourceType::BuiltinSkill), None, false).unwrap();
+        let builtin = listed
+            .iter()
+            .find(|source| source.name == "goose-doc-guide")
+            .expect("expected goose-doc-guide builtin skill");
+
+        assert_eq!(builtin.source_type, SourceType::BuiltinSkill);
+        assert!(builtin.global);
+        assert_eq!(builtin.path, "builtin://skills/goose-doc-guide");
+        assert!(builtin.supporting_files.is_empty());
+        assert!(!builtin.content.is_empty());
+    }
+
+    #[test]
+    fn list_skill_excludes_builtin_skills() {
+        let listed = list_sources(Some(SourceType::Skill), None, false).unwrap();
+        assert!(!listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
+    }
+
+    #[test]
+    fn filesystem_skill_suppresses_same_named_builtin() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        let skill_dir = project
+            .join(".agents")
+            .join("skills")
+            .join("goose-doc-guide");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            build_skill_md("goose-doc-guide", "project override", "Use project docs", &HashMap::new()),
+        )
+        .unwrap();
+
+        let builtins = list_sources(
+            Some(SourceType::BuiltinSkill),
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+        assert!(!builtins
+            .iter()
+            .any(|source| source.name == "goose-doc-guide"));
+
+        let skills = list_sources(
+            Some(SourceType::Skill),
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+        let project_skill = skills
+            .iter()
+            .find(|source| source.name == "goose-doc-guide")
+            .expect("expected project skill");
+        assert_eq!(project_skill.source_type, SourceType::Skill);
+        assert_eq!(project_skill.description, "project override");
+    }
+
+    #[test]
     fn rejects_unsupported_source_type_for_mutation() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
@@ -1018,14 +1102,51 @@ mod tests {
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err =
-            update_source(SourceType::Recipe, "x", "x", "d", "c", Some(HashMap::new())).unwrap_err();
+        let err = update_source(
+            SourceType::BuiltinSkill,
+            "builtin://skills/x",
+            "x",
+            "d",
+            "c",
+            Some(HashMap::new()),
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = update_source(SourceType::Recipe, "x", "x", "d", "c", Some(HashMap::new()))
+            .unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = delete_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
+        let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project), false).unwrap();
+        assert!(listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
+
+        let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let err = export_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+
         let err = export_source(SourceType::Recipe, "x").unwrap_err();
+        assert!(format!("{:?}", err).contains("not supported"));
+
+        let payload = serde_json::json!({
+            "version": 1,
+            "type": "builtinSkill",
+            "name": "x",
+            "description": "d",
+            "content": "c",
+        })
+        .to_string();
+        let err = import_sources(&payload, false, Some(project)).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
     }
 

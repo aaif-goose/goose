@@ -33,6 +33,9 @@ import { useProviderInventoryStore } from "@/features/providers/stores/providerI
 import { sanitizeReplayMessages } from "@/features/chat/lib/replaySanitizer";
 import type { SkillInfo } from "@/features/skills/api/skills";
 import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
+import { OnboardingFlow } from "@/features/onboarding/ui/OnboardingFlow";
+import { useOnboardingGate } from "@/features/onboarding/hooks/useOnboardingGate";
+import { Spinner } from "@/shared/ui/spinner";
 
 export type AppView =
   | "home"
@@ -122,6 +125,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const agentStore = useAgentStore();
   const projectStore = useProjectStore();
   const providerInventoryEntries = useProviderInventoryStore((s) => s.entries);
+  const startup = useAppStartup();
+  const onboardingGate = useOnboardingGate(startup.ready);
   const pendingProjectCreatedRef = useRef<((projectId: string) => void) | null>(
     null,
   );
@@ -175,8 +180,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       useChatStore.getState().setSessionLoading(sessionId, false);
     }
   }, []);
-
-  useAppStartup();
 
   useEffect(() => {
     projectStore.fetchProjects();
@@ -291,13 +294,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   ]);
 
   useEffect(() => {
-    if (activeView !== "home") {
+    if (activeView !== "home" || onboardingGate.shouldShowOnboarding) {
       return;
     }
     void ensureHomeSession().catch((error) => {
       console.error("Failed to ensure Home session:", error);
     });
-  }, [activeView, ensureHomeSession]);
+  }, [activeView, ensureHomeSession, onboardingGate.shouldShowOnboarding]);
 
   const createNewTab = useCallback(
     async (title = DEFAULT_CHAT_TITLE, project?: ProjectInfo) => {
@@ -721,6 +724,26 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [clearActiveSession, sessionStore, toggleSidebar]);
+
+  if (!startup.ready) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
+        <Spinner className="size-5 text-brand" />
+      </div>
+    );
+  }
+
+  if (onboardingGate.shouldShowOnboarding) {
+    return (
+      <OnboardingFlow
+        readiness={onboardingGate.readiness}
+        onComplete={(setup) => {
+          onboardingGate.completeOnboarding(setup);
+          setActiveView("home");
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">

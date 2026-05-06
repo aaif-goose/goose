@@ -72,6 +72,7 @@ mod custom_dispatch;
 mod dictation;
 mod dispatch;
 mod extensions;
+mod onboarding;
 mod providers;
 mod resources;
 mod sessions;
