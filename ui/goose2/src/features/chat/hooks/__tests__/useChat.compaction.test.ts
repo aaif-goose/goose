@@ -90,14 +90,17 @@ describe("useChat compaction", () => {
     const messages = useChatStore.getState().messagesBySession["session-1"];
     const runtime = useChatStore.getState().getSessionRuntime("session-1");
 
-    expect(messages).toHaveLength(3);
+    expect(messages).toHaveLength(4);
     expect(messages[0]).toEqual(
       createTextMessage("user-1", "user", "Before compact"),
     );
     expect(messages[1]).toEqual(
+      createTextMessage("compact-1", "user", "/compact/compact"),
+    );
+    expect(messages[2]).toEqual(
       createTextMessage("assistant-1", "assistant", "After compact"),
     );
-    expect(messages[2]).toMatchObject({
+    expect(messages[3]).toMatchObject({
       role: "system",
       content: [
         {

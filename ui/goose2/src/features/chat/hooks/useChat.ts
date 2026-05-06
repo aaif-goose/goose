@@ -25,7 +25,6 @@ import {
   buildAttachmentPromptPreamble,
   buildMessageAttachments,
 } from "../lib/attachments";
-import { sanitizeReplayMessages } from "../lib/replaySanitizer";
 import { i18n } from "@/shared/i18n";
 import type { ChatSendOptions } from "../types";
 import { buildSkillRetryOptions } from "../lib/skillSendPayload";
@@ -423,7 +422,7 @@ export function useChat(
         const buffer = getAndDeleteReplayBuffer(sessionId);
         if (buffer) {
           store.setMessages(sessionId, [
-            ...sanitizeReplayMessages(buffer),
+            ...buffer,
             createCompactionConfirmationMessage(),
           ]);
         } else {
