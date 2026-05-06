@@ -220,9 +220,7 @@ fn resolve_project_path(path: &str) -> Result<PathBuf, Error> {
         );
     }
     if !canonical_path.is_file() {
-        return Err(
-            Error::invalid_params().data(format!("Project source \"{}\" not found", path))
-        );
+        return Err(Error::invalid_params().data(format!("Project source \"{}\" not found", path)));
     }
     Ok(canonical_path)
 }
@@ -325,9 +323,12 @@ pub fn update_source(
             validate_skill_name(name)?;
 
             let dir = resolve_discoverable_skill_dir(path)?;
-            let current_dir_name = dir.file_name().and_then(|value| value.to_str()).ok_or_else(
-                || Error::internal_error().data("Failed to resolve source directory name"),
-            )?;
+            let current_dir_name = dir
+                .file_name()
+                .and_then(|value| value.to_str())
+                .ok_or_else(|| {
+                    Error::internal_error().data("Failed to resolve source directory name")
+                })?;
 
             let target_dir = if name == current_dir_name {
                 dir.clone()
@@ -343,8 +344,7 @@ pub fn update_source(
                 }
 
                 fs::rename(&dir, &target_dir).map_err(|e| {
-                    Error::internal_error()
-                        .data(format!("Failed to rename source directory: {e}"))
+                    Error::internal_error().data(format!("Failed to rename source directory: {e}"))
                 })?;
 
                 target_dir
@@ -499,10 +499,8 @@ pub fn list_sources(
                 sources.extend(read_project_dir()?);
             }
             SourceType::Recipe | SourceType::Subrecipe | SourceType::Agent => {
-                return Err(Error::invalid_params().data(format!(
-                    "Source type '{}' listing is not supported.",
-                    kind
-                )));
+                return Err(Error::invalid_params()
+                    .data(format!("Source type '{}' listing is not supported.", kind)));
             }
         }
     }
@@ -604,10 +602,8 @@ pub fn import_sources(
         "skill" => SourceType::Skill,
         "project" => SourceType::Project,
         other => {
-            return Err(Error::invalid_params().data(format!(
-                "Source type '{}' import is not supported.",
-                other
-            )));
+            return Err(Error::invalid_params()
+                .data(format!("Source type '{}' import is not supported.", other)));
         }
     };
 
@@ -869,7 +865,8 @@ mod tests {
             .find(|skill| skill.name == "portable")
             .expect("expected listed skill");
 
-        let (json, filename) = export_source(SourceType::Skill, exported_skill.path.as_str()).unwrap();
+        let (json, filename) =
+            export_source(SourceType::Skill, exported_skill.path.as_str()).unwrap();
         assert_eq!(filename, "portable.skill.json");
         assert!(json.contains("\"name\": \"portable\""));
     }
@@ -1125,10 +1122,7 @@ mod tests {
                 "title".into(),
                 serde_json::Value::String("My Web App".into()),
             );
-            props.insert(
-                "icon".into(),
-                serde_json::Value::String("\u{1F4C1}".into()),
-            );
+            props.insert("icon".into(), serde_json::Value::String("\u{1F4C1}".into()));
             props.insert(
                 "workingDirs".into(),
                 serde_json::json!(["/Users/me/code/web-app"]),
