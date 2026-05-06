@@ -86,6 +86,8 @@
 8. Recheck component responsibility after the UI-store splits.
    - `AgentsView` should be simpler after persona editor UI state moves out of `agentStore`; if it still mixes list filtering, editor orchestration, import/export, delete confirmation, and mutation flows too heavily, record a focused component-decomposition follow-up.
    - `useChatSessionController`, `ChatView`, and context-panel consumers should be rechecked after context panel and workspace UI state move out of `chatSessionStore`.
+   - Recheck chat/session actions that are owned too high in `AppShell` and prop-drilled through multiple surfaces, especially rename from `SidebarChatRow` and `SessionCard`.
+   - Recheck whether rename/archive/move actions need a surface-level action hook or controller after state boundaries are clearer.
    - Do not decompose components in this phase unless the split requires it for safe wiring; record the follow-up with concrete files and responsibilities.
 
 **Validation**

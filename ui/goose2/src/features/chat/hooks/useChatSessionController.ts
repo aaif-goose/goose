@@ -26,6 +26,7 @@ import {
 } from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
+import { updateSessionProject } from "../stores/chatSessionOperations";
 import {
   useResolvedAgentModelPicker,
   type PreferredModelSelection,
@@ -184,7 +185,7 @@ export function useChatSessionController({
       }
 
       await acpSetModel(sessionId, modelSelection.id);
-      sessionStore.updateSession(sessionId, {
+      sessionStore.patchSession(sessionId, {
         modelId: modelSelection.id,
         modelName: modelSelection.name,
       });
@@ -315,16 +316,18 @@ export function useChatSessionController({
               .projects.find((candidate) => candidate.id === projectId) ??
             null);
 
-      useChatSessionStore.getState().updateSession(sessionId, { projectId });
-      if (!selectedProvider) {
-        return;
-      }
-      void prepareCurrentSession(
-        selectedProvider,
-        nextProject,
-        activeWorkspace?.path,
-        effectiveModelSelection,
-      ).catch((error) => {
+      void (async () => {
+        await updateSessionProject(sessionId, projectId);
+        if (!selectedProvider) {
+          return;
+        }
+        await prepareCurrentSession(
+          selectedProvider,
+          nextProject,
+          activeWorkspace?.path,
+          effectiveModelSelection,
+        );
+      })().catch((error) => {
         console.error("Failed to update ACP session working directory:", error);
       });
     },
@@ -374,7 +377,7 @@ export function useChatSessionController({
       }
       useChatSessionStore
         .getState()
-        .updateSession(sessionId, { personaId: personaId ?? undefined });
+        .patchSession(sessionId, { personaId: personaId ?? undefined });
     },
     [
       handleProviderChange,
@@ -395,7 +398,7 @@ export function useChatSessionController({
       if (sessionId) {
         useChatSessionStore
           .getState()
-          .updateSession(sessionId, { personaId: undefined });
+          .patchSession(sessionId, { personaId: undefined });
       } else {
         setPendingPersonaId(undefined);
       }
@@ -692,7 +695,6 @@ export function useChatSessionController({
         const patch: {
           providerId?: string;
           personaId?: string | undefined;
-          projectId?: string | null;
           modelId?: string | undefined;
           modelName?: string | undefined;
         } = {};
@@ -705,13 +707,14 @@ export function useChatSessionController({
         if (hasPendingPersona) {
           patch.personaId = nextPersonaId;
         }
-        if (hasPendingProject) {
-          patch.projectId = nextProjectId ?? null;
+        if (Object.keys(patch).length > 0) {
+          useChatSessionStore.getState().patchSession(sessionId, patch);
         }
 
-        useChatSessionStore.getState().updateSession(sessionId, patch);
-
         try {
+          if (hasPendingProject) {
+            await updateSessionProject(sessionId, nextProjectId ?? null);
+          }
           await prepareCurrentSession(
             nextProviderId,
             nextProject,

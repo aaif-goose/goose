@@ -225,54 +225,32 @@ describe("chatSessionStore", () => {
     });
   });
 
-  describe("updateSession", () => {
-    it("updates session properties", () => {
+  describe("patchSession", () => {
+    it("patches session properties while preserving updatedAt when omitted", () => {
       const session = seedSession();
+      const originalUpdatedAt = session.updatedAt;
 
-      useChatSessionStore.getState().updateSession(session.id, {
+      useChatSessionStore.getState().patchSession(session.id, {
         title: "Updated Title",
         projectId: "new-project",
       });
 
       const updated = useChatSessionStore.getState().getSession(session.id);
-      expect(updated?.title).toBe("Updated Title");
-      expect(updated?.projectId).toBe("new-project");
-    });
-
-    it("preserves updatedAt when not explicitly provided in patch", () => {
-      const session = seedSession();
-      const originalUpdatedAt = session.updatedAt;
-
-      vi.useFakeTimers();
-      vi.advanceTimersByTime(1000);
-
-      useChatSessionStore.getState().updateSession(session.id, {
-        title: "New Title",
+      expect(updated).toMatchObject({
+        title: "Updated Title",
+        projectId: "new-project",
+        updatedAt: originalUpdatedAt,
       });
-
-      vi.useRealTimers();
-
-      const updated = useChatSessionStore.getState().getSession(session.id);
-      expect(updated?.updatedAt).toBe(originalUpdatedAt);
     });
 
     it("updates updatedAt when explicitly provided in patch", () => {
       const session = seedSession();
-      const originalUpdatedAt = session.updatedAt;
-
-      vi.useFakeTimers();
-      vi.advanceTimersByTime(1000);
-
-      const newTimestamp = new Date().toISOString();
-      useChatSessionStore.getState().updateSession(session.id, {
-        title: "New Title",
+      const newTimestamp = "2026-04-01T00:01:00.000Z";
+      useChatSessionStore.getState().patchSession(session.id, {
         updatedAt: newTimestamp,
       });
 
-      vi.useRealTimers();
-
       const updated = useChatSessionStore.getState().getSession(session.id);
-      expect(updated?.updatedAt).not.toBe(originalUpdatedAt);
       expect(updated?.updatedAt).toBe(newTimestamp);
     });
   });

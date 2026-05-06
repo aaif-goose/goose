@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
@@ -32,6 +33,10 @@ import { resolveSupportedSessionModelPreference } from "./lib/resolveSupportedSe
 import { useCreatePersonaNavigation } from "./hooks/useCreatePersonaNavigation";
 import { AppShellContent } from "./ui/AppShellContent";
 import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
+import {
+  updateSessionProject,
+  updateSessionTitle,
+} from "@/features/chat/stores/chatSessionOperations";
 import {
   clearReplayBuffer,
   getAndDeleteReplayBuffer,
@@ -94,7 +99,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const hasHydratedSessions = useChatSessionStore(selectHasHydratedSessions);
   const sessionsLoading = useChatSessionStore(selectSessionsLoading);
   const createSession = useChatSessionStore((s) => s.createSession);
-  const updateSession = useChatSessionStore((s) => s.updateSession);
+  const patchSession = useChatSessionStore((s) => s.patchSession);
   const setActiveSession = useChatSessionStore((s) => s.setActiveSession);
   const archiveSession = useChatSessionStore((s) => s.archiveSession);
   const selectedProvider = useAgentStore(selectSelectedProvider);
@@ -218,14 +223,14 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         const shouldClearHomeModel =
           sessionModelPreference.providerId !== homeSession.providerId ||
           !sessionModelPreference.modelId;
-        updateSession(homeSession.id, {
+        patchSession(homeSession.id, {
           providerId: sessionModelPreference.providerId,
           modelId: shouldClearHomeModel ? undefined : homeSession.modelId,
           modelName: shouldClearHomeModel ? undefined : homeSession.modelName,
         });
         if (sessionModelPreference.modelId) {
           await acpSetModel(homeSession.id, sessionModelPreference.modelId);
-          updateSession(homeSession.id, {
+          patchSession(homeSession.id, {
             modelId: sessionModelPreference.modelId,
             modelName: sessionModelPreference.modelName,
           });
@@ -266,7 +271,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     providerInventoryEntries,
     projects,
     sessionsLoading,
-    updateSession,
+    patchSession,
   ]);
 
   useEffect(() => {
@@ -462,14 +467,14 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   const handleMoveToProject = useCallback(
     (sessionId: string, projectId: string | null) => {
-      updateSession(sessionId, { projectId });
-
       const session = useChatSessionStore.getState().getSession(sessionId);
       if (!session) {
         return;
       }
 
       void (async () => {
+        await updateSessionProject(sessionId, projectId);
+
         const nextProject =
           projectId == null
             ? null
@@ -486,23 +491,21 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           workingDir,
         );
       })().catch((error) => {
-        console.error(
-          "Failed to update ACP session project working directory:",
-          error,
-        );
+        console.error("Failed to move chat to project:", error);
+        toast.error("Failed to move chat");
       });
     },
-    [selectedProvider, updateSession],
+    [selectedProvider],
   );
 
   const handleRenameChat = useCallback(
     (sessionId: string, nextTitle: string) => {
-      updateSession(sessionId, {
-        title: nextTitle,
-        userSetName: true,
+      void updateSessionTitle(sessionId, nextTitle).catch((error) => {
+        console.error("Failed to rename session:", error);
+        toast.error("Failed to rename chat");
       });
     },
-    [updateSession],
+    [],
   );
 
   const openCreateProjectDialog = useCallback(

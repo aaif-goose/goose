@@ -11,6 +11,7 @@
   - `phase-1-selector-cleanup.md`
   - `phase-2-selector-read-layer.md`
   - `phase-3-session-side-effects.md`
+  - `phase-3b-session-workflow-failure-policy.md`
   - `phase-4-store-boundaries.md`
   - `phase-5-project-store.md`
   - `phase-6-persistence.md`
@@ -24,6 +25,7 @@
 - Keep the dedicated test reset and coverage pass as Phase 7.
 - Create per-phase execution files so each phase has scope, guardrails, validation, and success criteria.
 - In Phase 1, keep existing hook/component public contracts unchanged. For example, `usePersonas()` should keep returning `personas` and `isLoading` even though its current production consumer only uses command functions.
+- For Phase 3, use explicit `chatSessionOperations.ts` functions for backend-aware chat-session workflows. Use `patchSession` for local-only store updates. For title and project updates, call backend first and patch local state only after success.
 
 **Phase Status**
 
@@ -32,6 +34,7 @@
 | 1 | Remove whole-store subscriptions | Complete | Replaced broad subscriptions in `usePersonas.ts`, `useChat.ts`, `Sidebar.tsx`, and `AppShell.tsx`. |
 | 2 | Introduce selector-first read layer | Complete | Added initial `chatSessionStore`, `chatStore`, `agentStore`, and `projectStore` selector helpers. Deferred derived values, store-boundary issues, and component-boundary issues to later phases. |
 | 3 | Separate session side effects | Pending | Keep compatibility while migrating call sites. |
+| 3B | Decide session workflow failure policy | Pending | Separate behavior-change follow-up after Phase 3 creates explicit workflow actions. |
 | 4 | Split clearest store boundaries | Pending | Split `agentStore` UI state, then `chatSessionStore` UI state. |
 | 5 | Refactor project store | Pending | Make mutation policy explicit. |
 | 6 | Standardize persistence | Pending | Do after boundaries are clearer. |
@@ -70,6 +73,7 @@
 - Keep selector fallbacks stable. Phase 1 found that returning a fresh `[]` from a selector fallback in `useChat` can trigger React snapshot churn; use module-level constants or derive fallback values outside the selector.
 - In Phase 7, keep component-test store mocks selector-aware. Phase 1 production code now calls bound hooks with selectors, so mocks need to support `useStore((state) => ...)` as well as any remaining direct mock patterns.
 - Phase 1 removed dead code exposed by the selector cleanup: `retryLastMessage`, `buildSkillRetryOptions`, and the unused `findLastIndex` helper.
+- After Phase 3 creates explicit chat-session workflow actions, revisit backend failure policy for rename, project assignment, archive, and unarchive. Options include backend-first, optimistic with rollback, refresh-on-failure, or optimistic with user-visible error.
 
 **Phase 2 Audit Notes**
 - Completed Step 1:
@@ -137,6 +141,8 @@
 - Component-boundary signals to carry into later phases:
   - `AppShell` is orchestration-heavy: projects, sessions, Home setup, provider/model choice, keyboard shortcuts, dialogs, sidebar wiring, and chat activation. Track as a later component decomposition concern.
   - `Sidebar` performs visible-session filtering, project grouping, runtime badge derivation, search resolver creation, and expanded-project persistence. Track derived helpers during Phase 2 and possible component decomposition later.
+  - Rename behavior is owned high in `AppShell` and prop-drilled through `Sidebar`/sidebar sections to `SidebarChatRow`, and through `SessionHistoryView` to `SessionCard`. Track for later component/action-controller cleanup.
+  - Rename row components close edit mode immediately and expose void callbacks, so backend-first rename failures cannot currently show inline pending/error state. Track UX policy in Phase 3B.
 - Phase 2 implementation plan:
   - Start with small chat-session selector helpers because they are simple field selectors.
   - Refactor only `AppShell.tsx` and `Sidebar.tsx` first.

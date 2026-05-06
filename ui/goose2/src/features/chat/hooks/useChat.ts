@@ -225,12 +225,12 @@ export function useChat(
       // A better backend-generated title will overwrite this if it arrives
       // via the acp:session_info event.
       if (session && isDefaultChatTitle(session.title)) {
-        sessionStore.updateSession(sessionId, {
+        sessionStore.patchSession(sessionId, {
           title: getSessionTitleFromDraft(text, attachments),
           updatedAt: new Date().toISOString(),
         });
       } else {
-        sessionStore.updateSession(sessionId, {
+        sessionStore.patchSession(sessionId, {
           updatedAt: new Date().toISOString(),
         });
       }
