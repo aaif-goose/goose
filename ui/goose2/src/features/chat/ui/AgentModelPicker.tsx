@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import type { AcpProvider } from "@/shared/api/acp";
@@ -52,6 +52,7 @@ export function AgentModelPicker({
 }: AgentModelPickerProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [modelView, setModelView] = useState<ModelView>("recommended");
   const selectedAgentLabel =
     agents.find((agent) => agent.id === selectedAgentId)?.label ??
@@ -112,8 +113,17 @@ export function AgentModelPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         align="start"
         className="h-[min(24rem,50vh)] w-96 overflow-hidden p-1"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          contentRef.current
+            ?.querySelector<HTMLElement>(
+              '[data-col="agent"] button[data-selected]',
+            )
+            ?.focus();
+        }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
@@ -192,6 +202,7 @@ export function AgentModelPicker({
                           key={agent.id}
                           onClick={() => handleAgentSelect(agent.id)}
                           selected={isSelected}
+                          data-selected={isSelected || undefined}
                         >
                           {agentIcon ? (
                             <span className="shrink-0">{agentIcon}</span>
