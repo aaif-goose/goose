@@ -63,10 +63,15 @@ export function useAgentModelPickerState({
     });
 
     for (const provider of providers) {
-      const agentId = resolveAgentProviderCatalogIdStrictFromEntries(
-        catalogEntries,
-        provider.id,
-      );
+      const agentId =
+        resolveAgentProviderCatalogIdStrictFromEntries(
+          catalogEntries,
+          provider.id,
+        ) ??
+        (!catalogLoaded &&
+        providerInventoryEntries.get(provider.id)?.category === "agent"
+          ? provider.id
+          : null);
       if (!agentId || agentId === "goose") {
         continue;
       }
@@ -94,7 +99,13 @@ export function useAgentModelPickerState({
     }
 
     return [...visible.values()];
-  }, [catalogEntries, providerInventoryEntries, providers, selectedAgentId]);
+  }, [
+    catalogEntries,
+    catalogLoaded,
+    providerInventoryEntries,
+    providers,
+    selectedAgentId,
+  ]);
 
   const availableModels = useMemo(
     () => getModelsForAgent(selectedAgentId) ?? EMPTY_MODELS,

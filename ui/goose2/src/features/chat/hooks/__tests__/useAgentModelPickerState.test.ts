@@ -296,4 +296,66 @@ describe("useAgentModelPickerState", () => {
     expect(result.current.selectedAgentId).toBe("codex-acp");
     expect(getModelsForAgent).toHaveBeenCalledWith("codex-acp");
   });
+
+  it("shows configured inventory agent providers before the catalog loads", () => {
+    mockUseProviderInventory.mockReturnValue({
+      entries: new Map([
+        [
+          "codex-acp",
+          {
+            providerId: "codex-acp",
+            providerName: "Codex",
+            category: "agent",
+            configured: true,
+            refreshing: false,
+            models: [],
+          },
+        ],
+        [
+          "cursor-agent",
+          {
+            providerId: "cursor-agent",
+            providerName: "Cursor",
+            category: "agent",
+            configured: true,
+            refreshing: false,
+            models: [],
+          },
+        ],
+        [
+          "unconfigured-agent",
+          {
+            providerId: "unconfigured-agent",
+            providerName: "Unconfigured",
+            category: "agent",
+            configured: false,
+            refreshing: false,
+            models: [],
+          },
+        ],
+      ]),
+      getEntry: () => undefined,
+      configuredModelProviderEntries: [],
+      getModelsForAgent: () => [],
+      loading: false,
+    });
+
+    const { result } = renderHook(() =>
+      useAgentModelPickerState({
+        providers: [
+          { id: "codex-acp", label: "Codex" },
+          { id: "cursor-agent", label: "Cursor" },
+          { id: "unconfigured-agent", label: "Unconfigured" },
+        ],
+        selectedProvider: "goose",
+        onProviderSelected: vi.fn(),
+      }),
+    );
+
+    expect(result.current.pickerAgents).toEqual([
+      { id: "goose", label: "Goose" },
+      { id: "codex-acp", label: "Codex" },
+      { id: "cursor-agent", label: "Cursor" },
+    ]);
+  });
 });
