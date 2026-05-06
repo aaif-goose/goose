@@ -3,13 +3,13 @@ import type { SkillCommandMatch } from "@/features/skills/lib/skillChatPrompt";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { skillDraftSnapshotsMatch } from "../lib/chatInputSnapshots";
 import { submitComposerMessage } from "../lib/submitComposerMessage";
-import type { ChatInputProps, ChatSkillDraft } from "../types";
+import type { ChatInputSendHandler, ChatSkillDraft } from "../types";
 
 interface UseChatInputSubmitOptions {
   attachmentsRef: RefObject<ChatAttachmentDraft[]>;
   selectedSkillsRef: RefObject<ChatSkillDraft[]>;
   selectedPersonaId?: string | null;
-  onSend: ChatInputProps["onSend"];
+  onSend: ChatInputSendHandler;
   setSelectedSkills: (skills: ChatSkillDraft[]) => void;
   resolveSkillSlashCommand: (
     message: string,
