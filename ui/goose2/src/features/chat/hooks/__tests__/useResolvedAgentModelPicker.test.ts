@@ -434,6 +434,73 @@ describe("useResolvedAgentModelPicker", () => {
     expect(result.current.effectiveModelSelection).toBeNull();
   });
 
+  it("enforces concrete provider compatibility from inventory before catalog loads", () => {
+    useProviderCatalogStore.getState().reset();
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        goose: {
+          modelId: "claude-sonnet-4",
+          modelName: "Claude Sonnet 4",
+          providerId: "anthropic",
+        },
+      }),
+    );
+
+    mockUseProviderInventory.mockReturnValue({
+      getEntry: (providerId: string) =>
+        providerId === "openai"
+          ? {
+              providerId: "openai",
+              category: "model",
+              defaultModel: "gpt-5.4",
+              models: [
+                {
+                  id: "gpt-5.4",
+                  name: "GPT-5.4",
+                  recommended: true,
+                },
+              ],
+            }
+          : undefined,
+    });
+
+    mockUseAgentModelPickerState.mockImplementation(() => ({
+      pickerAgents: [{ id: "goose", label: "Goose" }],
+      availableModels: [],
+      modelsLoading: true,
+      modelStatusMessage: null,
+      handleProviderChange: vi.fn(),
+      handleModelChange: vi.fn(),
+    }));
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "openai", label: "OpenAI" },
+        ],
+        selectedProvider: "openai",
+        sessionId: "session-1",
+        session: {
+          id: "session-1",
+          title: "Chat",
+          providerId: "openai",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    expect(result.current.effectiveModelSelection).toBeNull();
+  });
+
   it("preserves unresolved agent provider identity before catalog loads", async () => {
     useProviderCatalogStore.getState().reset();
 

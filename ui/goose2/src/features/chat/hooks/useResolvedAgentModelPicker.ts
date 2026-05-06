@@ -84,12 +84,22 @@ export function useResolvedAgentModelPicker({
       catalogEntries,
       selectedProvider,
     );
-    if (resolvedAgentId || !catalogLoaded) {
+    if (resolvedAgentId) {
       return null;
     }
 
+    if (!catalogLoaded) {
+      const inventoryEntry = getProviderInventoryEntry(selectedProvider);
+      return inventoryEntry?.category === "model" ? selectedProvider : null;
+    }
+
     return selectedProvider;
-  }, [catalogEntries, catalogLoaded, selectedProvider]);
+  }, [
+    catalogEntries,
+    catalogLoaded,
+    getProviderInventoryEntry,
+    selectedProvider,
+  ]);
   const storedModelPreference = useMemo(
     () => getStoredModelPreference(selectedAgentId),
     [selectedAgentId],
