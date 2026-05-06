@@ -8,6 +8,7 @@ import { ProjectsSettings } from "./ProjectsSettings";
 import { ChatsSettings } from "./ChatsSettings";
 import { AboutSettings } from "./AboutSettings";
 import type { SectionId } from "./settingsSections";
+import { PageShell } from "@/shared/ui/page-shell";
 
 interface SettingsViewProps {
   activeSection: SectionId;
@@ -15,18 +16,16 @@ interface SettingsViewProps {
 
 export function SettingsView({ activeSection }: SettingsViewProps) {
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="min-h-full px-6 pb-4">
-        {activeSection === "appearance" && <AppearanceSettings />}
-        {activeSection === "providers" && <ProvidersSettings />}
-        {activeSection === "compaction" && <CompactionSettings />}
-        {activeSection === "voice" && <VoiceInputSettings />}
-        {activeSection === "doctor" && <DoctorSettings />}
-        {activeSection === "general" && <GeneralSettings />}
-        {activeSection === "projects" && <ProjectsSettings />}
-        {activeSection === "chats" && <ChatsSettings />}
-        {activeSection === "about" && <AboutSettings />}
-      </div>
-    </div>
+    <PageShell contentClassName="gap-0">
+      {activeSection === "appearance" && <AppearanceSettings />}
+      {activeSection === "providers" && <ProvidersSettings />}
+      {activeSection === "compaction" && <CompactionSettings />}
+      {activeSection === "voice" && <VoiceInputSettings />}
+      {activeSection === "doctor" && <DoctorSettings />}
+      {activeSection === "general" && <GeneralSettings />}
+      {activeSection === "projects" && <ProjectsSettings />}
+      {activeSection === "chats" && <ChatsSettings />}
+      {activeSection === "about" && <AboutSettings />}
+    </PageShell>
   );
 }
