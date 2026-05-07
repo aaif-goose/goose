@@ -2275,14 +2275,25 @@ impl GooseAcpAgent {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        // Create the session directly — the ACP session ID IS the session ID.
+        // Clients can request a User session via _meta.sessionType = "user".
+        // Default is Acp for non-interactive / programmatic ACP clients.
+        let session_type = match args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("sessionType"))
+            .and_then(|v| v.as_str())
+        {
+            Some("user") => SessionType::User,
+            _ => SessionType::Acp,
+        };
+
         let t0 = std::time::Instant::now();
         let goose_session = self
             .session_manager
             .create_session(
                 args.cwd.clone(),
                 "New Chat".to_string(),
-                SessionType::Acp,
+                session_type,
                 self.goose_mode,
             )
             .await

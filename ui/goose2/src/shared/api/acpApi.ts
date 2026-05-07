@@ -212,10 +212,10 @@ export async function newSession(
     mcpServers: [],
   };
 
-  const meta: Record<string, string> = {};
+  const meta: Record<string, string> = { sessionType: "user" };
   if (providerId) meta.provider = providerId;
   if (projectId) meta.projectId = projectId;
-  if (Object.keys(meta).length > 0) request._meta = meta;
+  request._meta = meta;
 
   const tCall = performance.now();
   const response = await client.newSession(request);
