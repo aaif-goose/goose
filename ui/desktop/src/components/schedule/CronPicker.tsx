@@ -11,8 +11,10 @@ const i18n = defineMessages({
   day: { id: 'cronPicker.day', defaultMessage: 'Day' },
   week: { id: 'cronPicker.week', defaultMessage: 'Week' },
   month: { id: 'cronPicker.month', defaultMessage: 'Month' },
+  quarter: { id: 'cronPicker.quarter', defaultMessage: 'Quarter' },
   year: { id: 'cronPicker.year', defaultMessage: 'Year' },
   inMonth: { id: 'cronPicker.inMonth', defaultMessage: 'in' },
+  startingMonth: { id: 'cronPicker.startingMonth', defaultMessage: 'starting month' },
   january: { id: 'cronPicker.january', defaultMessage: 'January' },
   february: { id: 'cronPicker.february', defaultMessage: 'February' },
   march: { id: 'cronPicker.march', defaultMessage: 'March' },
@@ -39,7 +41,26 @@ const i18n = defineMessages({
   atSecond: { id: 'cronPicker.atSecond', defaultMessage: 'at second' },
 });
 
-type Period = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
+type Period = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
+
+const quarterMonthsByStartMonth: Record<string, string> = {
+  '1': '1,4,7,10',
+  '2': '2,5,8,11',
+  '3': '3,6,9,12',
+};
+
+const quarterDayLimitByStartMonth: Record<string, number> = {
+  '1': 30,
+  '2': 28,
+  '3': 30,
+};
+
+const getQuarterStartMonth = (month: string): string | null => {
+  const entry = Object.entries(quarterMonthsByStartMonth).find(
+    ([, quarterMonths]) => quarterMonths === month
+  );
+  return entry?.[0] ?? null;
+};
 
 type ParsedCron = {
   period: Period;
@@ -76,6 +97,12 @@ const parseCron = (cron: string): ParsedCron => {
 
   const [second, minute, hour, dayOfMonth, month, dayOfWeek] = parts;
 
+  if (dayOfMonth !== '*') {
+    const quarterStartMonth = getQuarterStartMonth(month);
+    if (quarterStartMonth) {
+      return { period: 'quarter', second, minute, hour, dayOfMonth, month, dayOfWeek };
+    }
+  }
   if (month !== '*' && dayOfMonth !== '*') {
     return { period: 'year', second, minute, hour, dayOfMonth, month, dayOfWeek };
   }
@@ -124,6 +151,7 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
   const [dayOfWeek, setDayOfWeek] = useState('1');
   const [dayOfMonth, setDayOfMonth] = useState('1');
   const [month, setMonth] = useState('1');
+  const [quarterStartMonth, setQuarterStartMonth] = useState('1');
   const [readableCron, setReadableCron] = useState('');
 
   useEffect(() => {
@@ -138,10 +166,24 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
     setDayOfWeek(parsed.dayOfWeek === '*' ? '1' : parsed.dayOfWeek);
     setDayOfMonth(parsed.dayOfMonth === '*' ? '1' : parsed.dayOfMonth);
     setMonth(parsed.month === '*' ? '1' : parsed.month);
+    setQuarterStartMonth(getQuarterStartMonth(parsed.month) ?? '1');
   }, [schedule]);
+
+  const maxDayOfMonth = period === 'quarter' ? quarterDayLimitByStartMonth[quarterStartMonth] : 31;
+
+  useEffect(() => {
+    const parsedDay = parseInt(dayOfMonth, 10);
+    if (!Number.isNaN(parsedDay) && parsedDay > maxDayOfMonth) {
+      setDayOfMonth(maxDayOfMonth.toString());
+    }
+  }, [dayOfMonth, maxDayOfMonth]);
 
   useEffect(() => {
     const hour24 = to24Hour(hour12, isPM);
+    const clampedDayOfMonth = Math.min(
+      Math.max(parseInt(dayOfMonth, 10) || 1, 1),
+      maxDayOfMonth
+    ).toString();
     let cron: string;
 
     switch (period) {
@@ -159,6 +201,9 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
         break;
       case 'month':
         cron = `${second} ${minute} ${hour24} ${dayOfMonth} * *`;
+        break;
+      case 'quarter':
+        cron = `${second} ${minute} ${hour24} ${clampedDayOfMonth} ${quarterMonthsByStartMonth[quarterStartMonth]} *`;
         break;
       case 'year':
         cron = `${second} ${minute} ${hour24} ${dayOfMonth} ${month} *`;
@@ -178,7 +223,18 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, second, minute, hour12, isPM, dayOfWeek, dayOfMonth, month]);
+  }, [
+    period,
+    second,
+    minute,
+    hour12,
+    isPM,
+    dayOfWeek,
+    dayOfMonth,
+    month,
+    quarterStartMonth,
+    maxDayOfMonth,
+  ]);
 
   const selectClassName = 'px-2 py-1 border rounded bg-white dark:bg-gray-800 dark:border-gray-600';
 
@@ -196,11 +252,40 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
           <option value="day">{intl.formatMessage(i18n.day)}</option>
           <option value="week">{intl.formatMessage(i18n.week)}</option>
           <option value="month">{intl.formatMessage(i18n.month)}</option>
+          <option value="quarter">{intl.formatMessage(i18n.quarter)}</option>
           <option value="year">{intl.formatMessage(i18n.year)}</option>
         </select>
       </div>
 
       <div className="space-y-3">
+        {period === 'quarter' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">{intl.formatMessage(i18n.startingMonth)}</span>
+              <select
+                value={quarterStartMonth}
+                onChange={(e) => setQuarterStartMonth(e.target.value)}
+                className={selectClassName}
+              >
+                <option value="1">{intl.formatMessage(i18n.january)}</option>
+                <option value="2">{intl.formatMessage(i18n.february)}</option>
+                <option value="3">{intl.formatMessage(i18n.march)}</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">{intl.formatMessage(i18n.onDay)}</span>
+              <input
+                type="number"
+                min="1"
+                max={maxDayOfMonth}
+                value={dayOfMonth}
+                onChange={(e) => setDayOfMonth(e.target.value)}
+                className="w-16 px-2 py-1 border rounded"
+              />
+            </div>
+          </div>
+        )}
+
         {period === 'year' && (
           <div className="flex items-center gap-2">
             <span className="text-sm">{intl.formatMessage(i18n.inMonth)}</span>
@@ -231,7 +316,7 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
             <input
               type="number"
               min="1"
-              max="31"
+              max={maxDayOfMonth}
               value={dayOfMonth}
               onChange={(e) => setDayOfMonth(e.target.value)}
               className="w-16 px-2 py-1 border rounded"
@@ -258,7 +343,11 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
           </div>
         )}
 
-        {(period === 'day' || period === 'week' || period === 'month' || period === 'year') && (
+        {(period === 'day' ||
+          period === 'week' ||
+          period === 'month' ||
+          period === 'quarter' ||
+          period === 'year') && (
           <div className="flex items-center gap-2">
             <span className="text-sm">{intl.formatMessage(i18n.at)}</span>
             <input
