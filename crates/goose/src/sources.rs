@@ -731,7 +731,7 @@ pub fn import_sources(
                 &content,
                 global,
                 project_dir,
-                HashMap::new(),
+                properties,
             )
             .map(|entry| vec![entry])
         }
