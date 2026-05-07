@@ -117,8 +117,10 @@ pub async fn drain(wallet: &Wallet, quiet: bool) -> DrainSummary {
     }
 
     let mut survivors: Vec<PendingRefund> = Vec::new();
-    let mut summary = DrainSummary::default();
-    summary.attempted = items.len();
+    let mut summary = DrainSummary {
+        attempted: items.len(),
+        ..Default::default()
+    };
 
     println!(
         "{}",

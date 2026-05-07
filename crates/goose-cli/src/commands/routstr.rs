@@ -368,8 +368,9 @@ async fn topup_active_from_local(amount_sats: u64) -> Result<()> {
 #[allow(dead_code)]
 fn short_err(e: &ProviderApiError) -> String {
     let s = e.to_string();
-    if s.len() > 80 {
-        format!("{}...", &s[..77])
+    if s.chars().count() > 80 {
+        let truncated: String = s.chars().take(77).collect();
+        format!("{truncated}...")
     } else {
         s
     }
