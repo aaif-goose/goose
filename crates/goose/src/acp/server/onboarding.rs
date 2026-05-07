@@ -29,7 +29,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_onboarding_import_scan(
         &self,
         req: OnboardingImportScanRequest,
-    ) -> Result<OnboardingImportScanResponse, sacp::Error> {
+    ) -> Result<OnboardingImportScanResponse, agent_client_protocol::Error> {
         let source_filter = source_filter(&req.sources);
         let mut candidates = Vec::new();
 
@@ -56,7 +56,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_onboarding_import_apply(
         &self,
         req: OnboardingImportApplyRequest,
-    ) -> Result<OnboardingImportApplyResponse, sacp::Error> {
+    ) -> Result<OnboardingImportApplyResponse, agent_client_protocol::Error> {
         let config = self.config()?;
         Ok(apply_onboarding_import_candidates(
             &config,

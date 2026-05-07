@@ -50,6 +50,14 @@
       "../distro": "distro"
     },
     "externalBin": ["../../../target/release/goose"],
+    "linux": {
+      "deb": {
+        "depends": ["libvulkan1"]
+      },
+      "rpm": {
+        "depends": ["vulkan-loader"]
+      }
+    },
     "macOS": {
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true

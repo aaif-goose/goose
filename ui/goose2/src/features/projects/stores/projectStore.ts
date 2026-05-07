@@ -34,7 +34,7 @@ function persistProjects(projects: ProjectInfo[]): void {
   }
 }
 
-interface ProjectState {
+export interface ProjectStore {
   projects: ProjectInfo[];
   loading: boolean;
   activeProjectId: string | null;
@@ -70,7 +70,7 @@ interface ProjectState {
   getActiveProject: () => ProjectInfo | null;
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
+export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: loadCachedProjects(),
   loading: false,
   activeProjectId: null,

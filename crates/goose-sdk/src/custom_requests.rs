@@ -1,4 +1,4 @@
-use sacp::{JsonRpcRequest, JsonRpcResponse};
+use agent_client_protocol::{JsonRpcRequest, JsonRpcResponse};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

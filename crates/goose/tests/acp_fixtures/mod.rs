@@ -1,6 +1,13 @@
 #![recursion_limit = "256"]
 #![allow(unused_attributes)]
 
+use agent_client_protocol::schema::{
+    CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
+    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalResponse, SessionModeState,
+    SessionModelState, SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputResponse,
+    ToolCallContent, ToolCallStatus, ToolKind, WaitForTerminalExitResponse, WriteTextFileRequest,
+    WriteTextFileResponse,
+};
 use async_trait::async_trait;
 use fs_err as fs;
 use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
@@ -14,13 +21,6 @@ use goose::providers::base::Provider;
 use goose::providers::openai::OpenAiProvider;
 use goose::session_context::SESSION_ID_HEADER;
 use goose_test_support::{ExpectedSessionId, TEST_MODEL};
-use sacp::schema::{
-    CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
-    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalResponse, SessionModeState,
-    SessionModelState, SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputResponse,
-    ToolCallContent, ToolCallStatus, ToolKind, WaitForTerminalExitResponse, WriteTextFileRequest,
-    WriteTextFileResponse,
-};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::path::PathBuf;
@@ -125,13 +125,13 @@ impl OpenAiFixture {
     }
 }
 
-pub type DuplexTransport = sacp::ByteStreams<
+pub type DuplexTransport = agent_client_protocol::ByteStreams<
     tokio_util::compat::Compat<tokio::io::DuplexStream>,
     tokio_util::compat::Compat<tokio::io::DuplexStream>,
 >;
 
 /// Wires up duplex streams, spawns `serve` for the given agent, and returns
-/// a ready-to-use sacp transport plus the server handle.
+/// a ready-to-use agent_client_protocol transport plus the server handle.
 #[allow(dead_code)]
 pub async fn serve_agent_in_process(
     agent: Arc<GooseAcpAgent>,
@@ -145,7 +145,8 @@ pub async fn serve_agent_in_process(
         }
     });
 
-    let transport = sacp::ByteStreams::new(client_write.compat_write(), client_read.compat());
+    let transport =
+        agent_client_protocol::ByteStreams::new(client_write.compat_write(), client_read.compat());
     (transport, handle)
 }
 
@@ -554,7 +555,7 @@ pub trait Connection: Sized {
 
 #[async_trait]
 pub trait Session: std::fmt::Debug {
-    fn session_id(&self) -> &sacp::schema::SessionId;
+    fn session_id(&self) -> &agent_client_protocol::schema::SessionId;
     fn work_dir(&self) -> std::path::PathBuf;
     fn notifications(&self) -> Vec<Notification>;
     async fn prompt(
@@ -598,11 +599,11 @@ where
 }
 
 pub async fn send_custom(
-    cx: &sacp::ConnectionTo<sacp::Agent>,
+    cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Agent>,
     method: &str,
     params: serde_json::Value,
-) -> Result<serde_json::Value, sacp::Error> {
-    let msg = sacp::UntypedMessage::new(method, params).unwrap();
+) -> Result<serde_json::Value, agent_client_protocol::Error> {
+    let msg = agent_client_protocol::UntypedMessage::new(method, params).unwrap();
     cx.send_request(msg).block_task().await
 }
 

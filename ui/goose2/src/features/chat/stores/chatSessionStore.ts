@@ -12,8 +12,6 @@ import {
 import {
   archiveSession as acpArchiveSession,
   unarchiveSession as acpUnarchiveSession,
-  renameSession as acpRenameSession,
-  updateSessionProject,
 } from "@/shared/api/acpApi";
 
 export interface ChatSession {
@@ -77,7 +75,7 @@ interface CreateSessionOpts {
 interface ChatSessionStoreActions {
   createSession: (opts?: CreateSessionOpts) => Promise<ChatSession>;
   loadSessions: () => Promise<void>;
-  updateSession: (id: string, patch: Partial<ChatSession>) => void;
+  patchSession: (id: string, patch: Partial<ChatSession>) => void;
   addSession: (session: ChatSession) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
@@ -195,7 +193,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }
   },
 
-  updateSession: (id, patch) => {
+  patchSession: (id, patch) => {
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id
@@ -207,29 +205,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
           : session,
       ),
     }));
-
-    const updatedSession = get().sessions.find((session) => session.id === id);
-
-    // Persist title rename to backend
-    if (
-      "title" in patch &&
-      "userSetName" in patch &&
-      patch.userSetName &&
-      updatedSession &&
-      patch.title
-    ) {
-      acpRenameSession(updatedSession.id, patch.title).catch((err: unknown) =>
-        console.error("Failed to rename session in backend:", err),
-      );
-    }
-
-    // Persist projectId change to backend
-    if ("projectId" in patch && updatedSession) {
-      updateSessionProject(updatedSession.id, patch.projectId ?? null).catch(
-        (err: unknown) =>
-          console.error("Failed to update session project in backend:", err),
-      );
-    }
   },
 
   addSession: (session) => {

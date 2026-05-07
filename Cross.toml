@@ -15,6 +15,8 @@ pre-build = [
      libssl-dev:arm64 \
      libdbus-1-dev:arm64 \
      libxcb1-dev:arm64 \
+     libvulkan-dev:arm64 \
+     glslc \
      gcc-10
     """
 ]
@@ -30,6 +32,8 @@ pre-build = [
      libssl-dev \
      libdbus-1-dev \
      libxcb1-dev \
+     libvulkan-dev \
+     glslc \
      gcc-10
     """
 ]

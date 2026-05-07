@@ -7,14 +7,14 @@ use syn::{
 
 /// Marks an impl block as containing `#[custom_method(RequestType)]`-annotated handlers.
 ///
-/// The request type must derive `sacp::JsonRpcRequest` with a `#[request(method = "...")]`
+/// The request type must derive `agent_client_protocol::JsonRpcRequest` with a `#[request(method = "...")]`
 /// attribute — the method name is extracted from that type at compile time, eliminating
 /// duplication between the request struct and the handler.
 ///
 /// Generates two methods on the impl:
 ///
 /// 1. `handle_custom_request` — a dispatcher that:
-///    - Uses `<RequestType as sacp::JsonRpcMessage>::matches_method` to match incoming methods
+///    - Uses `<RequestType as agent_client_protocol::JsonRpcMessage>::matches_method` to match incoming methods
 ///    - Parses JSON params into the handler's typed parameter (if any)
 ///    - Serializes the handler's return value to JSON
 ///
@@ -30,14 +30,14 @@ use syn::{
 /// ```ignore
 /// // No params — called for requests with no/empty params
 /// #[custom_method(GetExtensionsRequest)]
-/// async fn on_get_extensions(&self) -> Result<GetExtensionsResponse, sacp::Error> { .. }
+/// async fn on_get_extensions(&self) -> Result<GetExtensionsResponse, agent_client_protocol::Error> { .. }
 ///
 /// // Typed params — JSON params auto-deserialized
 /// #[custom_method(GetSessionRequest)]
-/// async fn on_get_session(&self, req: GetSessionRequest) -> Result<GetSessionResponse, sacp::Error> { .. }
+/// async fn on_get_session(&self, req: GetSessionRequest) -> Result<GetSessionResponse, agent_client_protocol::Error> { .. }
 /// ```
 ///
-/// The return type must be `Result<T, sacp::Error>` where `T: Serialize`.
+/// The return type must be `Result<T, agent_client_protocol::Error>` where `T: Serialize`.
 #[proc_macro_attribute]
 pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut impl_block = parse_macro_input!(item as ItemImpl);
@@ -89,21 +89,21 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
             match &route.param_type {
                 Some(_) => {
                     quote! {
-                        if <#req_type as sacp::JsonRpcMessage>::matches_method(method) {
+                        if <#req_type as agent_client_protocol::JsonRpcMessage>::matches_method(method) {
                             let req = serde_json::from_value(params)
-                                .map_err(|e| sacp::Error::invalid_params().data(e.to_string()))?;
+                                .map_err(|e| agent_client_protocol::Error::invalid_params().data(e.to_string()))?;
                             let result = self.#fn_ident(req).await?;
                             return serde_json::to_value(&result)
-                                .map_err(|e| sacp::Error::internal_error().data(e.to_string()));
+                                .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()));
                         }
                     }
                 }
                 None => {
                     quote! {
-                        if <#req_type as sacp::JsonRpcMessage>::matches_method(method) {
+                        if <#req_type as agent_client_protocol::JsonRpcMessage>::matches_method(method) {
                             let result = self.#fn_ident().await?;
                             return serde_json::to_value(&result)
-                                .map_err(|e| sacp::Error::internal_error().data(e.to_string()));
+                                .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()));
                         }
                     }
                 }
@@ -169,7 +169,7 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 {
                     let dummy = <#req_type as Default>::default();
                     crate::custom_requests::CustomMethodSchema {
-                        method: sacp::JsonRpcMessage::method(&dummy).to_string(),
+                        method: agent_client_protocol::JsonRpcMessage::method(&dummy).to_string(),
                         params_schema: #params_expr,
                         params_type_name: #params_name_expr,
                         response_schema: #response_expr,
@@ -186,9 +186,9 @@ pub fn custom_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
             &self,
             method: &str,
             params: serde_json::Value,
-        ) -> Result<serde_json::Value, sacp::Error> {
+        ) -> Result<serde_json::Value, agent_client_protocol::Error> {
             #(#arms)*
-            Err(sacp::Error::method_not_found())
+            Err(agent_client_protocol::Error::method_not_found())
         }
     };
 

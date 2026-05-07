@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { Button } from "@/shared/ui/button";
 import { PageHeader, PageShell } from "@/shared/ui/page-shell";
 import { revealInFileManager } from "@/shared/lib/fileManager";
@@ -32,7 +33,7 @@ interface SkillsViewProps {
 
 export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const { t } = useTranslation(["skills", "common"]);
-  const projects = useProjectStore((state) => state.projects);
+  const projects = useProjectStore(selectProjects);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<SkillsFilter>("all");
   const [dialogOpen, setDialogOpen] = useState(false);

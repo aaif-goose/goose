@@ -246,7 +246,7 @@ describe("useChatSessionController compaction behavior", () => {
     useChatStore
       .getState()
       .replaceTokenState("session-1", mockTokenState, true);
-    useChatSessionStore.getState().updateSession("session-1", {
+    useChatSessionStore.getState().patchSession("session-1", {
       providerId: "goose",
     });
 
@@ -300,7 +300,7 @@ describe("useChatSessionController compaction behavior", () => {
     useChatStore
       .getState()
       .replaceTokenState("session-1", mockTokenState, true);
-    useChatSessionStore.getState().updateSession("session-1", {
+    useChatSessionStore.getState().patchSession("session-1", {
       providerId: "goose",
       personaId: "persona-b",
     });

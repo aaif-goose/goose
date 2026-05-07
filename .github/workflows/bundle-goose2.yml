@@ -444,7 +444,10 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            protobuf-compiler
+            protobuf-compiler \
+            libvulkan-dev \
+            libvulkan1 \
+            glslc
 
       - name: Update versions
         if: inputs.version != ''
@@ -489,7 +492,7 @@ jobs:
         if: inputs.cli-run-id == ''
         run: |
           source ./bin/activate-hermit
-          cargo build --release -p goose-cli --bin goose
+          cargo build --release -p goose-cli --bin goose --features vulkan
 
       - name: Prepare goose binary with target triple
         if: inputs.cli-run-id == ''
