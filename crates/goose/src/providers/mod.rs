@@ -46,6 +46,8 @@ pub mod pi_acp;
 pub mod provider_registry;
 pub mod provider_test;
 mod retry;
+pub mod routstr;
+pub mod routstr_api;
 #[cfg(feature = "aws-providers")]
 pub mod sagemaker_tgi;
 pub mod snowflake;

@@ -65,6 +65,12 @@ sha2 = { workspace = true }
 sigstore-verify = { version = "=0.6.5", default-features = false }
 axum.workspace = true
 
+
+cdk = { version = "0.16", default-features = false, features = ["wallet"] }
+cdk-redb = { version = "0.16", default-features = false, features = ["wallet"] }
+home = "0.5"
+bip39 = { version = "2.1", features = ["rand"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }
 

@@ -709,6 +709,16 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         }
     }
 
+    // Routstr's profile system replaces the standard config-key prompt
+    // for this provider. Asking the user for a URL here, *before* the
+    // model fetch, lets goose configure stay coherent: the picker always
+    // runs against whichever URL the user just chose. Selecting an URL
+    // that matches an existing profile auto-switches (with refund);
+    // entering a new URL creates a `default` profile.
+    if provider_name == "routstr" {
+        crate::commands::routstr::prompt_and_set_routstr_url().await?;
+    }
+
     let non_primary_keys: Vec<_> = provider_meta
         .config_keys
         .iter()

@@ -33,6 +33,7 @@ use super::{
     openrouter::OpenRouterProvider,
     pi_acp::PiAcpProvider,
     provider_registry::ProviderRegistry,
+    routstr::RoutstrProvider,
     snowflake::SnowflakeProvider,
     tetrate::TetrateProvider,
     venice::VeniceProvider,
@@ -80,6 +81,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<OpenAiProvider>(true);
         registry.register::<OpenRouterProvider>(true);
         registry.register::<PiAcpProvider>(false);
+        registry.register::<RoutstrProvider>(false);
         #[cfg(feature = "aws-providers")]
         registry.register::<SageMakerTgiProvider>(false);
         registry.register::<SnowflakeProvider>(false);

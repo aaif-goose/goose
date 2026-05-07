@@ -42,6 +42,9 @@ pub enum ProviderError {
         details: String,
         top_up_url: Option<String>,
     },
+
+    #[error("Insufficient balance: {0} sats required. Please top up your balance to continue.")]
+    InsufficientBalance(f64),
 }
 
 impl ProviderError {
@@ -58,6 +61,7 @@ impl ProviderError {
             ProviderError::NotImplemented(_) => "not_implemented",
             ProviderError::EndpointNotFound(_) => "endpoint_not_found",
             ProviderError::CreditsExhausted { .. } => "credits_exhausted",
+            ProviderError::InsufficientBalance(_) => "insufficient_balance",
         }
     }
 
@@ -157,5 +161,124 @@ impl GoogleErrorCode {
             503 => Some(Self::ServiceUnavailable),
             _ => Some(Self::InternalServerError),
         }
+    }
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct OpenAIError {
+    #[serde(deserialize_with = "code_as_string")]
+    pub code: Option<String>,
+    pub message: Option<String>,
+    #[serde(rename = "type")]
+    pub error_type: Option<String>,
+}
+
+fn code_as_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct CodeVisitor;
+
+    impl<'de> Visitor<'de> for CodeVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string, a number, null, or none for the code field")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(CodeVisitor)
+        }
+    }
+
+    deserializer.deserialize_option(CodeVisitor)
+}
+
+impl OpenAIError {
+    pub fn is_context_length_exceeded(&self) -> bool {
+        if let Some(code) = &self.code {
+            code == "context_length_exceeded" || code == "string_above_max_length"
+        } else {
+            false
+        }
+    }
+
+    pub fn get_insufficient_balance(&self) -> Option<f64> {
+        if let Some(code) = &self.code {
+            if code == "insufficient_balance" {
+                if let Some(message) = &self.message {
+                    if let Some(sats_str) = message
+                        .split_whitespace()
+                        .find(|word| word.parse::<f64>().is_ok())
+                    {
+                        return sats_str.parse::<f64>().ok();
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+impl std::fmt::Display for OpenAIError {
+    /// Format the error for display.
+    /// E.g. {"message": "Invalid API key", "code": "invalid_api_key", "type": "client_error"}
+    /// would be formatted as "Invalid API key (code: invalid_api_key, type: client_error)"
+    /// and {"message": "Foo"} as just "Foo", etc.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(message) = &self.message {
+            write!(f, "{}", message)?;
+        }
+        let mut in_parenthesis = false;
+        if let Some(code) = &self.code {
+            write!(f, " (code: {}", code)?;
+            in_parenthesis = true;
+        }
+        if let Some(typ) = &self.error_type {
+            if in_parenthesis {
+                write!(f, ", type: {}", typ)?;
+            } else {
+                write!(f, " (type: {}", typ)?;
+                in_parenthesis = true;
+            }
+        }
+        if in_parenthesis {
+            write!(f, ")")?;
+        }
+        Ok(())
     }
 }

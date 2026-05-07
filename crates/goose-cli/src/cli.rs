@@ -27,6 +27,9 @@ use crate::commands::schedule::{
     handle_schedule_sessions,
 };
 use crate::commands::session::{handle_session_list, handle_session_remove};
+use crate::commands::wallet::{
+    handle_wallet_balance, handle_wallet_topup, handle_wallet_withdraw,
+};
 use crate::recipes::extract_from_cli::extract_recipe_info_from_cli;
 use crate::recipes::recipe::{explain_recipe, render_recipe_as_yaml};
 use crate::session::{build_session, SessionBuilderConfig};
@@ -273,6 +276,14 @@ pub struct InputOptions {
     )]
     pub render_recipe: bool,
 }
+
+#[derive(Subcommand)]
+enum WalletCommand {
+    Balance {},
+    Topup { token: String },
+    Withdraw { amount: Option<u64> },
+}
+
 
 /// Output configuration options for the run command
 #[derive(Args, Debug, Clone)]
@@ -726,6 +737,13 @@ enum Command {
     #[command(about = "Configure goose settings")]
     Configure {},
 
+    /// Manage the local Cashu wallet (balance, topup, withdraw)
+    #[command(about = "Manage the local Cashu wallet (balance, topup, withdraw)")]
+    Wallet {
+        #[command(subcommand)]
+        command: WalletCommand,
+    },
+
     /// Display goose configuration information
     #[command(about = "Display goose information")]
     Info {
@@ -1063,6 +1081,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Configure {}) => "configure",
         Some(Command::Doctor {}) => "doctor",
         Some(Command::Info { .. }) => "info",
+        Some(Command::Wallet { .. }) => "wallet",
         Some(Command::Mcp { .. }) => "mcp",
         Some(Command::Acp { .. }) => "acp",
         Some(Command::Serve { .. }) => "serve",
@@ -1815,6 +1834,11 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Configure {}) => handle_configure().await,
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
         Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
+        Some(Command::Wallet { command }) => match command {
+            WalletCommand::Balance {} => handle_wallet_balance().await,
+            WalletCommand::Topup { token } => handle_wallet_topup(token).await,
+            WalletCommand::Withdraw { amount } => handle_wallet_withdraw(amount).await,
+        },
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
         Some(Command::Acp { builtins }) => goose::acp::server::run(builtins).await,
         Some(Command::Serve {
