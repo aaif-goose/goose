@@ -7717,6 +7717,11 @@
             "format": "int32",
             "nullable": true
           },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "conversation": {
             "allOf": [
               {
@@ -7761,6 +7766,10 @@
           "output_tokens": {
             "type": "integer",
             "format": "int32",
+            "nullable": true
+          },
+          "project_id": {
+            "type": "string",
             "nullable": true
           },
           "provider_name": {
