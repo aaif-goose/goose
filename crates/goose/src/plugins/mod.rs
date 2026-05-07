@@ -1,3 +1,4 @@
+pub mod discovery;
 pub mod formats;
 
 use crate::config::paths::Paths;
@@ -16,14 +17,21 @@ const AUTO_UPDATE_INTERVAL_HOURS: i64 = 24;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginFormat {
     Gemini,
+    OpenPlugins,
 }
 
 impl std::fmt::Display for PluginFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PluginFormat::Gemini => write!(f, "gemini"),
+            PluginFormat::OpenPlugins => write!(f, "open-plugins"),
         }
     }
+}
+
+/// Directory where plugins installed via `install_plugin` live.
+pub fn plugin_install_dir() -> PathBuf {
+    Paths::plugins_dir()
 }
 
 #[derive(Debug, Clone)]
@@ -241,6 +249,18 @@ fn install_from_checkout_at_root(
     options: &PluginInstallOptions,
     last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
+    match formats::open_plugins::try_install_from_manifest_at_root(
+        source,
+        checkout_dir,
+        install_root,
+        options,
+        last_update_check,
+    ) {
+        Ok(install) => return Ok(install),
+        Err(err) if err.is::<FormatNotSupported>() => {}
+        Err(err) => return Err(err),
+    }
+
     match formats::gemini::try_install_from_manifest_at_root(
         source,
         checkout_dir,
