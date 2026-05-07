@@ -88,6 +88,7 @@ export function useMentionHandlers({
     SkillMentionItem[]
   >([]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rootsKey is the value-stable derivative of normalizedProjectRoots; depending on the array reference would re-fetch on every parent re-render.
   useEffect(() => {
     let cancelled = false;
 
@@ -112,8 +113,9 @@ export function useMentionHandlers({
     return () => {
       cancelled = true;
     };
-  }, [normalizedProjectRoots]);
+  }, [rootsKey]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rootsKey is the value-stable derivative of normalizedProjectRoots; depending on the array reference would re-fetch on every parent re-render.
   useEffect(() => {
     // Clear stale results immediately so users never see files from the
     // previous project while the new scan is in flight.
@@ -124,7 +126,6 @@ export function useMentionHandlers({
     }
 
     let cancelled = false;
-
     void listFilesForMentions(normalizedProjectRoots)
       .then((paths) => {
         if (cancelled) return;
@@ -141,7 +142,7 @@ export function useMentionHandlers({
     return () => {
       cancelled = true;
     };
-  }, [rootsKey, normalizedProjectRoots]);
+  }, [rootsKey]);
 
   const fileMentionItems: FileMentionItem[] = useMemo(() => {
     const dedup = new Map<string, FileMentionItem>();
