@@ -15,7 +15,7 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 - [ ] Trace Inspector v0 (Tauri view).
 - [ ] Annotation Queue v0 (Tauri view).
 - [ ] Failure-Mode Taxonomy view v0 (Tauri view).
-- [ ] Slice Explorer v0 (Tauri view).
+- [ ] Slice Explorer v0 (Tauri view) — *Tauri version pending; CLI version (`eval-bench/slices.py runs / show / compare`) shipped.*
 - [ ] Langfuse Bridge MCP extension.
 - [ ] `recipe-scanner/` made a required gate for non-local recipes.
 

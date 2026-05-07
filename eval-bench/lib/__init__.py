@@ -36,7 +36,7 @@ from .grading import grade_one
 from .judge import AnthropicJudge, Judge, JudgeVerdict, StubJudge, parse_verdict
 from .kpass import compute_passk, passk_by_slice, slice_results
 from .runner import GooseSubprocessRunner, RecipeRunner, RunResult, StubRunner
-from .store import ResultsStore
+from .store import ResultsStore, RunRow, TrialRow
 from .tasks import Task, load_tasks
 
 __all__ = [
@@ -60,9 +60,11 @@ __all__ = [
     "RecipeRunner",
     "ResultsStore",
     "RunResult",
+    "RunRow",
     "StubJudge",
     "StubRunner",
     "Task",
+    "TrialRow",
     "append_calibration_record",
     "compose_trial_pass",
     "compute_passk",
