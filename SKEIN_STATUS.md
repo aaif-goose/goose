@@ -32,7 +32,7 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 
 ## Phase 1 follow-ups (open)
 
-- `oracles-fewhiccupps/` recipe.
+- [x] `oracles-fewhiccupps/` recipe — FEW HICCUPPS oracle composer for function / endpoint / screen targets, with full eval artifacts (10 seed tasks across all three target kinds, 7 active failure modes including the high-severity `fm-statutes-hallucination`, L1+L2+L3 grader composition, dedicated SME and judge rubrics with a Statutes-specific hard rule, calibration plan, runbook). 22 recipe-artifact tests; full suite 258 green. Pytest switched to `--import-mode=importlib` so each recipe can ship its own `test_recipe_artifacts.py` without basename collisions.
 - `triage-failure/` recipe.
 - `bug-advocacy/` recipe.
 - Multi-driver Playwright codegen (Java first, Python next).

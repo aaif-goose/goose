@@ -1,0 +1,48 @@
+version: 1
+min_passk_target: 0.80   # pass^k threshold for the regression suite
+
+graders:
+  # L1 floor — output is a non-empty string under a sane upper bound.
+  - id: g-output-shape
+    level: L1
+    type: code
+    runner: "python eval-bench/grader_runners/output_shape.py --max-len 25000"
+    weight: 0.2
+    dimension: "output is a non-empty string"
+    timeout_s: 10
+
+  # L1 — required FEW HICCUPPS H2 sections present.
+  # Inverted on negative-polarity tasks: a refusal must NOT contain oracle
+  # sections, so the runner's raw 'fail' verdict on a refusal becomes an
+  # effective 'pass' at composition time. Positive tasks are unaffected.
+  - id: g-oracle-sections
+    level: L1
+    type: code
+    runner: >-
+      python eval-bench/grader_runners/markdown_sections.py
+      --required Familiar problems,Explainability,World,History,Image,Comparable products,Claims,User expectations,Product,Purpose,Statutes
+    weight: 0.4
+    dimension: "all eleven FEW HICCUPPS H2 sections present (inverted for refusal tasks)"
+    timeout_s: 10
+    negate_on_polarity_negative: true
+
+  # L2 — sampled human review against rubrics/sme_quality.md.
+  - id: g-oracle-sme-review
+    level: L2
+    type: human
+    sample_rate: 0.10
+    queue: "annotations/"
+    rubric: "rubrics/sme_quality.md"
+    weight: 0.2
+    dimension: "oracle suite is genuinely useful for a 30-minute exploratory session against the target"
+
+  # L3 — LLM judge per the rubric. Auto-skipped until calibrated.
+  - id: g-oracle-judge
+    level: L3
+    type: llm_judge
+    judge_model: "anthropic:claude-opus-4-7"
+    rubric: "rubrics/judge_oracle_quality.md"
+    requires_calibration_within_days: 30
+    max_divergence_from_l2: 0.15
+    weight: 0.2
+    dimension: "no fabrication; oracles correctly labelled; checks actionable; honest N/A where appropriate"
