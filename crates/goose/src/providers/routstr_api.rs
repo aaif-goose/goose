@@ -96,7 +96,7 @@ pub fn set_active_profile(config: &crate::config::Config, name: &str) -> Result<
     config
         .set_param(
             ROUTSTR_ACTIVE_KEY,
-            &serde_json::Value::String(name.to_string()),
+            serde_json::Value::String(name.to_string()),
         )
         .context("failed to write ROUTSTR_ACTIVE into config")?;
     Ok(())
