@@ -19,7 +19,9 @@ from .graders import (
     L3Grader,
     load_graders,
 )
+from .grading import grade_one
 from .kpass import compute_passk, passk_by_slice, slice_results
+from .runner import GooseSubprocessRunner, RecipeRunner, RunResult, StubRunner
 from .store import ResultsStore
 from .tasks import Task, load_tasks
 
@@ -27,17 +29,22 @@ __all__ = [
     "CalibrationRecord",
     "FailureMode",
     "FailureModes",
+    "GooseSubprocessRunner",
     "Grader",
     "GraderOutcome",
     "Graders",
     "L1Grader",
     "L2Grader",
     "L3Grader",
+    "RecipeRunner",
     "ResultsStore",
+    "RunResult",
+    "StubRunner",
     "Task",
     "compose_trial_pass",
     "compute_passk",
     "effective_passed",
+    "grade_one",
     "load_calibration_log",
     "load_failure_modes",
     "load_graders",
