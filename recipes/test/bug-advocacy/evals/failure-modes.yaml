@@ -1,0 +1,96 @@
+version: 1
+modes:
+  - id: fm-fabricates-repro-steps
+    name: "Invents reproduction steps not in the observation"
+    description: |
+      The Steps to reproduce section contains an action the tester
+      did not describe — e.g., adds a "log in" or "open the
+      preferences panel" step when the observation didn't mention
+      it. The most damaging failure for this recipe; engineers
+      following fabricated steps end up in "can't reproduce"
+      rabbit holes that erode trust in every future report.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-overstates-severity
+    name: "Claims high severity without named evidence"
+    description: |
+      The Severity rationale section says high or critical without
+      pointing at the specific impact described in the inputs. A
+      typo claimed as critical, or an intermittent UI glitch
+      claimed as high, gets the report mis-prioritised — and
+      teaches engineers to discount the recipe's severity calls
+      across the board.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-prescriptive
+    name: "Proposes a fix instead of describing the bug"
+    description: |
+      The output contains a "fix this by …" line, a patch / diff,
+      or a suggested code change. The recipe's contract is to
+      describe the bug well enough that the engineer who picks it
+      up has every fact they need. Authoring fixes is the
+      engineer's job, not the bug-advocate's.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-overhelpful-on-vague-input
+    name: "Drafts a report from inadequate observation"
+    description: |
+      Given an empty / vague / off-scope observation, the recipe
+      produces a fabricated bug report rather than asking for the
+      specific clarifying details required (which page, what was
+      expected, when it happened, can it be reproduced). High
+      severity because confident-looking reports from thin
+      inputs are exactly what burns triage hours downstream.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-no-disconfirming-falsifier
+    name: "Variations section missing the 'What would prove this is NOT a bug?' line"
+    description: |
+      The Variations and open questions section lists generalisations
+      and clarifying questions but does not include the explicit
+      falsifier line. A bug report that can't be disconfirmed is
+      unfalsifiable; it can't be closed honestly without one.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-fabricated-environment
+    name: "Invents environment details not in the inputs"
+    description: |
+      The Environment section names a browser version, OS, build
+      number, or feature flag state that was not in the inputs.
+      An engineer triaging the report will try to reproduce on
+      the named environment and will not find the bug there — or
+      will, but for the wrong reason.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-conflates-symptom-with-bug
+    name: "Describes the symptom but not the bug"
+    description: |
+      The Summary headline names what the tester saw on screen
+      ("red banner appeared") rather than what's actually broken
+      ("payment intent created twice when card is declined,
+      causing user-visible 'declined' even on success"). Symptoms
+      change between users; the bug is the underlying defect.
+      Reports headlined by symptoms get duplicated and closed as
+      "not reproducible" when the symptom shifts.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"

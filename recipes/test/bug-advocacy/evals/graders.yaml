@@ -1,0 +1,51 @@
+version: 1
+min_passk_target: 0.80   # pass^k threshold for the regression suite
+
+graders:
+  # L1 floor — output is a non-empty string under a sane upper bound.
+  - id: g-output-shape
+    level: L1
+    type: code
+    runner: "python eval-bench/grader_runners/output_shape.py --max-len 25000"
+    weight: 0.2
+    dimension: "output is a non-empty string"
+    timeout_s: 10
+
+  # L1 — required bug-report H2 sections present.
+  # Inverted on negative-polarity tasks: a refusal must NOT contain bug-report
+  # sections, so the runner's raw 'fail' verdict on a refusal becomes an
+  # effective 'pass' at composition time.
+  - id: g-bug-sections
+    level: L1
+    type: code
+    runner: >-
+      python eval-bench/grader_runners/markdown_sections.py
+      --required Summary,Steps to reproduce,Actual result,Expected result,Environment,Severity rationale,Variations and open questions
+    weight: 0.4
+    dimension: "all seven bug-report H2 sections present (inverted for refusal tasks)"
+    timeout_s: 10
+    negate_on_polarity_negative: true
+
+  # L2 — sampled human review against rubrics/sme_quality.md.
+  # Sample rate matches triage-failure (0.15): bug reports drive
+  # engineer triage prioritisation, so the stakes per call are larger
+  # than for charter / oracles.
+  - id: g-bug-sme-review
+    level: L2
+    type: human
+    sample_rate: 0.15
+    queue: "annotations/"
+    rubric: "rubrics/sme_quality.md"
+    weight: 0.2
+    dimension: "report is reproducible, severity-justified, and free of fabrications and fix proposals"
+
+  # L3 — LLM judge per the rubric. Auto-skipped until calibrated.
+  - id: g-bug-judge
+    level: L3
+    type: llm_judge
+    judge_model: "anthropic:claude-opus-4-7"
+    rubric: "rubrics/judge_bug_quality.md"
+    requires_calibration_within_days: 30
+    max_divergence_from_l2: 0.15
+    weight: 0.2
+    dimension: "no fabricated repro steps; no fix proposals; severity backed by named evidence"
