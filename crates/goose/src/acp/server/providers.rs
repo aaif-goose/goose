@@ -246,10 +246,10 @@ fn custom_provider_engine_to_dto(engine: &declarative_providers::ProviderEngine)
     }
 }
 
-fn normalize_custom_provider_engine(engine: &str) -> Result<String, sacp::Error> {
+fn normalize_custom_provider_engine(engine: &str) -> Result<String, agent_client_protocol::Error> {
     let engine = engine.trim().to_lowercase();
     if declarative_providers::ProviderEngine::from_str(&engine).is_err() {
-        return Err(sacp::Error::invalid_params()
+        return Err(agent_client_protocol::Error::invalid_params()
             .data(format!("Unsupported custom provider engine: {engine}")));
     }
 
@@ -261,10 +261,12 @@ fn normalize_custom_provider_engine(engine: &str) -> Result<String, sacp::Error>
     }
 }
 
-fn non_empty_trimmed(value: String, field: &str) -> Result<String, sacp::Error> {
+fn non_empty_trimmed(value: String, field: &str) -> Result<String, agent_client_protocol::Error> {
     let value = value.trim().to_string();
     if value.is_empty() {
-        return Err(sacp::Error::invalid_params().data(format!("{field} cannot be empty")));
+        return Err(
+            agent_client_protocol::Error::invalid_params().data(format!("{field} cannot be empty"))
+        );
     }
     Ok(value)
 }
@@ -279,14 +281,17 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
 fn normalize_custom_provider_upsert(
     mut provider: CustomProviderUpsertDto,
     require_api_key: bool,
-) -> Result<CustomProviderUpsertDto, sacp::Error> {
+) -> Result<CustomProviderUpsertDto, agent_client_protocol::Error> {
     provider.engine = normalize_custom_provider_engine(&provider.engine)?;
     provider.display_name = non_empty_trimmed(provider.display_name, "displayName")?;
     provider.api_url = non_empty_trimmed(provider.api_url, "apiUrl")?;
-    let url = url::Url::parse(&provider.api_url)
-        .map_err(|_| sacp::Error::invalid_params().data("apiUrl must be a valid URL"))?;
+    let url = url::Url::parse(&provider.api_url).map_err(|_| {
+        agent_client_protocol::Error::invalid_params().data("apiUrl must be a valid URL")
+    })?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(sacp::Error::invalid_params().data("apiUrl must use HTTP or HTTPS"));
+        return Err(
+            agent_client_protocol::Error::invalid_params().data("apiUrl must use HTTP or HTTPS")
+        );
     }
 
     provider.api_key = provider.api_key.and_then(|api_key| {
@@ -294,7 +299,7 @@ fn normalize_custom_provider_upsert(
         (!api_key.is_empty()).then_some(api_key)
     });
     if require_api_key && provider.requires_auth && provider.api_key.is_none() {
-        return Err(sacp::Error::invalid_params().data("apiKey cannot be empty"));
+        return Err(agent_client_protocol::Error::invalid_params().data("apiKey cannot be empty"));
     }
     provider.models = provider
         .models
@@ -305,7 +310,7 @@ fn normalize_custom_provider_upsert(
         })
         .collect();
     if provider.models.is_empty() {
-        return Err(sacp::Error::invalid_params().data("models cannot be empty"));
+        return Err(agent_client_protocol::Error::invalid_params().data("models cannot be empty"));
     }
 
     provider.headers = provider
@@ -318,14 +323,16 @@ fn normalize_custom_provider_upsert(
                 return Ok(None);
             }
             reqwest::header::HeaderName::from_bytes(key.as_bytes()).map_err(|_| {
-                sacp::Error::invalid_params().data(format!("Invalid header name: {key}"))
+                agent_client_protocol::Error::invalid_params()
+                    .data(format!("Invalid header name: {key}"))
             })?;
             reqwest::header::HeaderValue::from_str(&value).map_err(|_| {
-                sacp::Error::invalid_params().data(format!("Invalid header value for: {key}"))
+                agent_client_protocol::Error::invalid_params()
+                    .data(format!("Invalid header value for: {key}"))
             })?;
             Ok(Some((key, value)))
         })
-        .collect::<Result<Vec<_>, sacp::Error>>()?
+        .collect::<Result<Vec<_>, agent_client_protocol::Error>>()?
         .into_iter()
         .flatten()
         .collect();
@@ -340,14 +347,15 @@ fn custom_provider_headers(headers: HashMap<String, String>) -> Option<HashMap<S
 
 fn load_declarative_provider_for_client(
     provider_id: &str,
-) -> Result<declarative_providers::LoadedProvider, sacp::Error> {
+) -> Result<declarative_providers::LoadedProvider, agent_client_protocol::Error> {
     declarative_providers::load_provider(provider_id).map_err(|error| {
         if error.to_string().contains("Provider not found") {
-            sacp::Error::invalid_params().data(format!("Unknown provider: {provider_id}"))
+            agent_client_protocol::Error::invalid_params()
+                .data(format!("Unknown provider: {provider_id}"))
         } else if error.to_string().contains("Invalid provider id") {
-            sacp::Error::invalid_params().data(error.to_string())
+            agent_client_protocol::Error::invalid_params().data(error.to_string())
         } else {
-            sacp::Error::internal_error().data(error.to_string())
+            agent_client_protocol::Error::internal_error().data(error.to_string())
         }
     })
 }
@@ -418,7 +426,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_list_providers(
         &self,
         req: ListProvidersRequest,
-    ) -> Result<ListProvidersResponse, sacp::Error> {
+    ) -> Result<ListProvidersResponse, agent_client_protocol::Error> {
         let entries = self
             .provider_inventory
             .entries(&req.provider_ids)
@@ -432,11 +440,11 @@ impl GooseAcpAgent {
     pub(super) async fn on_list_provider_catalog(
         &self,
         req: ProviderCatalogListRequest,
-    ) -> Result<ProviderCatalogListResponse, sacp::Error> {
+    ) -> Result<ProviderCatalogListResponse, agent_client_protocol::Error> {
         let formats = match req.format {
             Some(format) => vec![format
                 .parse::<crate::providers::catalog::ProviderFormat>()
-                .map_err(|error| sacp::Error::invalid_params().data(error))?],
+                .map_err(|error| agent_client_protocol::Error::invalid_params().data(error))?],
             None => vec![
                 crate::providers::catalog::ProviderFormat::OpenAI,
                 crate::providers::catalog::ProviderFormat::Anthropic,
@@ -465,7 +473,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_list_provider_setup_catalog(
         &self,
         _req: ProviderSetupCatalogListRequest,
-    ) -> Result<ProviderSetupCatalogListResponse, sacp::Error> {
+    ) -> Result<ProviderSetupCatalogListResponse, agent_client_protocol::Error> {
         let providers = crate::providers::catalog::get_setup_catalog_entries()
             .await
             .into_iter()
@@ -477,10 +485,10 @@ impl GooseAcpAgent {
     pub(super) async fn on_get_provider_catalog_template(
         &self,
         req: ProviderCatalogTemplateRequest,
-    ) -> Result<ProviderCatalogTemplateResponse, sacp::Error> {
+    ) -> Result<ProviderCatalogTemplateResponse, agent_client_protocol::Error> {
         let template = crate::providers::catalog::get_provider_template(&req.provider_id)
             .ok_or_else(|| {
-                sacp::Error::invalid_params()
+                agent_client_protocol::Error::invalid_params()
                     .data(format!("Unknown catalog provider: {}", req.provider_id))
             })?;
         Ok(ProviderCatalogTemplateResponse {
@@ -491,7 +499,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_create_custom_provider(
         &self,
         req: CustomProviderCreateRequest,
-    ) -> Result<CustomProviderCreateResponse, sacp::Error> {
+    ) -> Result<CustomProviderCreateResponse, agent_client_protocol::Error> {
         let provider = normalize_custom_provider_upsert(req.provider, true)?;
         let config = declarative_providers::create_custom_provider(
             declarative_providers::CreateCustomProviderParams {
@@ -528,7 +536,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_read_custom_provider(
         &self,
         req: CustomProviderReadRequest,
-    ) -> Result<CustomProviderReadResponse, sacp::Error> {
+    ) -> Result<CustomProviderReadResponse, agent_client_protocol::Error> {
         let loaded = load_declarative_provider_for_client(&req.provider_id)?;
         let status = Self::provider_config_status(req.provider_id).await;
         Ok(CustomProviderReadResponse {
@@ -541,10 +549,10 @@ impl GooseAcpAgent {
     pub(super) async fn on_update_custom_provider(
         &self,
         req: CustomProviderUpdateRequest,
-    ) -> Result<CustomProviderUpdateResponse, sacp::Error> {
+    ) -> Result<CustomProviderUpdateResponse, agent_client_protocol::Error> {
         let loaded = load_declarative_provider_for_client(&req.provider_id)?;
         if !loaded.is_editable {
-            return Err(sacp::Error::invalid_params()
+            return Err(agent_client_protocol::Error::invalid_params()
                 .data(format!("Provider is not editable: {}", req.provider_id)));
         }
 
@@ -556,7 +564,7 @@ impl GooseAcpAgent {
                 loaded.config.api_key_env.clone()
             };
             if Config::global().get_secret::<String>(&api_key_env).is_err() {
-                return Err(sacp::Error::invalid_params()
+                return Err(agent_client_protocol::Error::invalid_params()
                     .data("apiKey is required when auth is enabled and no secret is stored"));
             }
         }
@@ -595,10 +603,10 @@ impl GooseAcpAgent {
     pub(super) async fn on_delete_custom_provider(
         &self,
         req: CustomProviderDeleteRequest,
-    ) -> Result<CustomProviderDeleteResponse, sacp::Error> {
+    ) -> Result<CustomProviderDeleteResponse, agent_client_protocol::Error> {
         let loaded = load_declarative_provider_for_client(&req.provider_id)?;
         if !loaded.is_editable {
-            return Err(sacp::Error::invalid_params()
+            return Err(agent_client_protocol::Error::invalid_params()
                 .data(format!("Provider is not editable: {}", req.provider_id)));
         }
 
@@ -608,7 +616,7 @@ impl GooseAcpAgent {
             .as_deref()
             == Some(req.provider_id.as_str())
         {
-            return Err(sacp::Error::invalid_params().data(format!(
+            return Err(agent_client_protocol::Error::invalid_params().data(format!(
                 "Cannot delete active provider: {}",
                 req.provider_id
             )));
@@ -753,7 +761,7 @@ impl GooseAcpAgent {
     pub(super) async fn start_provider_inventory_refresh(
         &self,
         provider_ids: &[String],
-    ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
+    ) -> Result<RefreshProviderInventoryResponse, agent_client_protocol::Error> {
         let refresh_job_plan = self
             .provider_inventory
             .plan_refresh_jobs(provider_ids)
@@ -768,7 +776,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_refresh_provider_inventory(
         &self,
         req: RefreshProviderInventoryRequest,
-    ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
+    ) -> Result<RefreshProviderInventoryResponse, agent_client_protocol::Error> {
         Config::global().invalidate_secrets_cache();
         self.start_provider_inventory_refresh(&req.provider_ids)
             .await
@@ -777,7 +785,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_read_provider_config(
         &self,
         req: ProviderConfigReadRequest,
-    ) -> Result<ProviderConfigReadResponse, sacp::Error> {
+    ) -> Result<ProviderConfigReadResponse, agent_client_protocol::Error> {
         let entry = crate::providers::get_from_registry(&req.provider_id)
             .await
             .invalid_params_err_ctx("Unknown provider")?;
@@ -800,7 +808,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_provider_config_status(
         &self,
         req: ProviderConfigStatusRequest,
-    ) -> Result<ProviderConfigStatusResponse, sacp::Error> {
+    ) -> Result<ProviderConfigStatusResponse, agent_client_protocol::Error> {
         Ok(ProviderConfigStatusResponse {
             statuses: Self::provider_config_statuses(&req.provider_ids).await,
         })
@@ -809,7 +817,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_save_provider_config(
         &self,
         req: ProviderConfigSaveRequest,
-    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
+    ) -> Result<ProviderConfigChangeResponse, agent_client_protocol::Error> {
         let entry = crate::providers::get_from_registry(&req.provider_id)
             .await
             .invalid_params_err_ctx("Unknown provider")?;
@@ -824,13 +832,13 @@ impl GooseAcpAgent {
                 .iter()
                 .find(|config_key| config_key.name == field.key)
             else {
-                return Err(sacp::Error::invalid_params()
+                return Err(agent_client_protocol::Error::invalid_params()
                     .data(format!("Unsupported provider config field: {}", field.key)));
             };
 
             let value = field.value.trim();
             if value.is_empty() {
-                return Err(sacp::Error::invalid_params().data(format!(
+                return Err(agent_client_protocol::Error::invalid_params().data(format!(
                     "Provider config field cannot be empty: {}",
                     field.key
                 )));
@@ -864,7 +872,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_delete_provider_config(
         &self,
         req: ProviderConfigDeleteRequest,
-    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
+    ) -> Result<ProviderConfigChangeResponse, agent_client_protocol::Error> {
         let entry = crate::providers::get_from_registry(&req.provider_id)
             .await
             .invalid_params_err_ctx("Unknown provider")?;
@@ -898,13 +906,13 @@ impl GooseAcpAgent {
     pub(super) async fn on_authenticate_provider_config(
         &self,
         req: ProviderConfigAuthenticateRequest,
-    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
+    ) -> Result<ProviderConfigChangeResponse, agent_client_protocol::Error> {
         let entry = crate::providers::get_from_registry(&req.provider_id)
             .await
             .invalid_params_err_ctx("Unknown provider")?;
         let metadata = entry.metadata().clone();
         if !metadata.config_keys.iter().any(|key| key.oauth_flow) {
-            return Err(sacp::Error::invalid_params().data(format!(
+            return Err(agent_client_protocol::Error::invalid_params().data(format!(
                 "Provider does not support native authentication: {}",
                 req.provider_id
             )));

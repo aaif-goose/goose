@@ -224,4 +224,40 @@ describe("useChat compaction", () => {
     expect(runtime.error).toBe("prepare failed");
     expect(runtime.chatState).toBe("idle");
   });
+
+  it("does not compact when preparation is superseded", async () => {
+    const ensurePrepared = vi.fn().mockResolvedValue(false);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        ensurePrepared,
+      }),
+    );
+
+    let compactResult: unknown;
+    await act(async () => {
+      compactResult = await result.current.compactConversation();
+    });
+
+    expect(compactResult).toBe("failed");
+    expect(ensurePrepared).toHaveBeenCalledWith(undefined);
+    expect(mockAcpSendMessage).not.toHaveBeenCalled();
+    expect(mockAcpLoadSession).not.toHaveBeenCalled();
+
+    const messages = useChatStore.getState().messagesBySession["session-1"];
+    const runtime = useChatStore.getState().getSessionRuntime("session-1");
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toEqual([
+      {
+        type: "systemNotification",
+        notificationType: "error",
+        text: "Session configuration changed while preparing. Try sending again.",
+      },
+    ]);
+    expect(runtime.error).toBe(
+      "Session configuration changed while preparing. Try sending again.",
+    );
+    expect(runtime.chatState).toBe("idle");
+  });
 });

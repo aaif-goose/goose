@@ -12,8 +12,11 @@ import {
   getVisibleSessions,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
+import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
 import { useChatStore } from "@/features/chat/stores/chatStore";
+import { selectMessagesBySession } from "@/features/chat/stores/chatSelectors";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import {
   acpDuplicateSession,
   acpExportSession,
@@ -41,8 +44,8 @@ export function SessionHistoryView({
   onArchiveChat,
 }: SessionHistoryViewProps) {
   const { t, i18n } = useTranslation(["sessions", "common"]);
-  const sessions = useChatSessionStore((s) => s.sessions);
-  const messagesBySession = useChatStore((s) => s.messagesBySession);
+  const sessions = useChatSessionStore(selectSessions);
+  const messagesBySession = useChatStore(selectMessagesBySession);
   const loadSessions = useChatSessionStore((s) => s.loadSessions);
   const activeSessions = useMemo(
     () =>
@@ -59,7 +62,7 @@ export function SessionHistoryView({
     [],
   );
 
-  const projects = useProjectStore((s) => s.projects);
+  const projects = useProjectStore(selectProjects);
   const getProjectName = useCallback(
     (projectId: string) => projects.find((p) => p.id === projectId)?.name,
     [projects],

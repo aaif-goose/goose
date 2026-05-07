@@ -13,6 +13,9 @@
     "openPanel": "Abrir panel de contexto",
     "ringAria": "Contexto: {{percent}}% usado"
   },
+  "errors": {
+    "sessionPreparationSuperseded": "La configuración de la sesión cambió durante la preparación. Intenta enviar de nuevo."
+  },
   "contextPanel": {
     "actions": {
       "chooseCreateAction": "Elegir acción de creación",
@@ -119,7 +122,9 @@
     "filesTitle": "Archivos"
   },
   "notifications": {
-    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio."
+    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio.",
+    "moveError": "No se pudo mover el chat",
+    "renameError": "No se pudo cambiar el nombre del chat"
   },
   "message": {
     "copied": "Copiado",

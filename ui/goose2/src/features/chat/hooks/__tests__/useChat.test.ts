@@ -331,6 +331,41 @@ describe("useChat", () => {
     );
   });
 
+  it("does not prompt when preparation is superseded", async () => {
+    const ensurePrepared = vi.fn().mockResolvedValue(false);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        ensurePrepared,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("Hello");
+    });
+
+    expect(ensurePrepared).toHaveBeenCalledTimes(1);
+    expect(mockAcpSendMessage).not.toHaveBeenCalled();
+
+    const messages = useChatStore.getState().messagesBySession["session-1"];
+    const runtime = useChatStore.getState().getSessionRuntime("session-1");
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0].role).toBe("user");
+    expect(messages[1].content).toEqual([
+      {
+        type: "systemNotification",
+        notificationType: "error",
+        text: "Session configuration changed while preparing. Try sending again.",
+      },
+    ]);
+    expect(runtime.error).toBe(
+      "Session configuration changed while preparing. Try sending again.",
+    );
+    expect(runtime.chatState).toBe("idle");
+    expect(runtime.streamingMessageId).toBeNull();
+  });
+
   it("appends an error message and removes the empty assistant placeholder when send fails", async () => {
     mockAcpSendMessage.mockRejectedValue(
       new Error("Working directory missing"),

@@ -13,6 +13,9 @@
     "openPanel": "Open context panel",
     "ringAria": "Context: {{percent}}% used"
   },
+  "errors": {
+    "sessionPreparationSuperseded": "Session configuration changed while preparing. Try sending again."
+  },
   "contextPanel": {
     "actions": {
       "chooseCreateAction": "Choose create action",
@@ -119,7 +122,9 @@
     "filesTitle": "Files"
   },
   "notifications": {
-    "compactionComplete": "Conversation compacted. Older context was summarized."
+    "compactionComplete": "Conversation compacted. Older context was summarized.",
+    "moveError": "Failed to move chat",
+    "renameError": "Failed to rename chat"
   },
   "message": {
     "copied": "Copied",

@@ -1938,7 +1938,7 @@
         },
         "directory": {
           "type": "string",
-          "description": "Absolute path to the source on disk. A directory for skills, a file for\nrecipes and agents."
+          "description": "Absolute path to the source on disk. A directory for skills, a file for\nrecipes and agents. Built-in skills use read-only synthetic\n`builtin://skills/<name>` paths."
         },
         "global": {
           "type": "boolean",
@@ -1960,7 +1960,7 @@
         "directory",
         "global"
       ],
-      "description": "A source discovered by Goose and backed by an on-disk path. Sources may be\neither `global` (shared across all projects) or project-specific."
+      "description": "A source discovered by Goose. Filesystem sources use an on-disk path;\nbuilt-in sources use a stable synthetic path. Sources may be either\n`global` (shared across all projects) or project-specific."
     },
     "ListSourcesRequest": {
       "type": "object",
@@ -1982,7 +1982,7 @@
           ]
         }
       },
-      "description": "List discovered sources.\n\nToday this endpoint only returns skills. If `type` is omitted, it defaults\nto listing skill sources. Both global and project-scoped skills are included\nwhen `project_dir` is set.",
+      "description": "List discovered sources.\n\nIf `type` is omitted or `skill`, this lists filesystem/plugin skills only.\nBoth global and project-scoped skills are included when `project_dir` is\nset. If `type` is `builtinSkill`, this lists shipped read-only built-in\nskills.",
       "x-side": "agent",
       "x-method": "_goose/sources/list"
     },

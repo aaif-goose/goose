@@ -117,7 +117,11 @@ jobs:
           cross --version
 
           export CC="${{ matrix.cc || ''}}"
-          cross build --release --target ${TARGET} -p goose-cli
+          FEATURE_ARGS=()
+          if [[ "${TARGET}" == *-unknown-linux-gnu ]]; then
+            FEATURE_ARGS=(--features vulkan)
+          fi
+          cross build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
 
       - name: Setup Rust (Windows)
         if: matrix.os == 'windows'

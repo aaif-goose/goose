@@ -13,33 +13,34 @@ const mockSessions: Array<{
 }> = [];
 
 vi.mock("@/features/chat/stores/chatStore", () => ({
-  useChatStore: () => ({
-    messagesBySession: {},
-    getSessionRuntime: () => ({
-      chatState: "idle",
-      hasUnread: false,
+  useChatStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      messagesBySession: {},
+      sessionStateById: {},
     }),
-  }),
 }));
 
 vi.mock("@/features/chat/stores/chatSessionStore", () => ({
   getVisibleSessions: (sessions: typeof mockSessions) =>
     sessions.filter((session) => session.messageCount > 0),
-  useChatSessionStore: () => ({
-    sessions: mockSessions,
-  }),
+  useChatSessionStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      sessions: mockSessions,
+    }),
 }));
 
 vi.mock("@/features/agents/stores/agentStore", () => ({
-  useAgentStore: () => ({
-    getPersonaById: () => undefined,
-  }),
+  useAgentStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      getPersonaById: () => undefined,
+    }),
 }));
 
 vi.mock("@/features/projects/stores/projectStore", () => ({
-  useProjectStore: () => ({
-    projects: [],
-  }),
+  useProjectStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      projects: [],
+    }),
 }));
 
 describe("Sidebar", () => {

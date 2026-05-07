@@ -1,4 +1,4 @@
-use sacp::{JsonRpcRequest, JsonRpcResponse};
+use agent_client_protocol::{JsonRpcRequest, JsonRpcResponse};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -831,8 +831,9 @@ impl std::fmt::Display for SourceType {
     }
 }
 
-/// A source discovered by Goose and backed by an on-disk path. Sources may be
-/// either `global` (shared across all projects) or project-specific.
+/// A source discovered by Goose. Filesystem sources use an on-disk path;
+/// built-in sources use a stable synthetic path. Sources may be either
+/// `global` (shared across all projects) or project-specific.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceEntry {
@@ -842,7 +843,8 @@ pub struct SourceEntry {
     pub description: String,
     pub content: String,
     /// Absolute path to the source on disk. A directory for skills, a file for
-    /// recipes and agents.
+    /// recipes and agents. Built-in skills use read-only synthetic
+    /// `builtin://skills/<name>` paths.
     pub directory: String,
     /// True when the source lives in the user's global sources directory; false
     /// when it lives inside a specific project.
@@ -889,9 +891,10 @@ pub struct CreateSourceResponse {
 
 /// List discovered sources.
 ///
-/// Today this endpoint only returns skills. If `type` is omitted, it defaults
-/// to listing skill sources. Both global and project-scoped skills are included
-/// when `project_dir` is set.
+/// If `type` is omitted or `skill`, this lists filesystem/plugin skills only.
+/// Both global and project-scoped skills are included when `project_dir` is
+/// set. If `type` is `builtinSkill`, this lists shipped read-only built-in
+/// skills.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/sources/list", response = ListSourcesResponse)]
 #[serde(rename_all = "camelCase")]

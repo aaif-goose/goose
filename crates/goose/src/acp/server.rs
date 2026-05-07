@@ -24,15 +24,7 @@ use crate::providers::inventory::{
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
 use crate::utils::sanitize_unicode_tags;
-use anyhow::Result;
-use fs_err as fs;
-use futures::future::{BoxFuture, Either};
-use futures::stream::{self, StreamExt};
-use futures::FutureExt;
-use rmcp::model::{
-    AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
-};
-use sacp::schema::{
+use agent_client_protocol::schema::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
     AuthenticateResponse, BlobResourceContents, CancelNotification, CloseSessionRequest,
     CloseSessionResponse, ConfigOptionUpdate, Content, ContentBlock, ContentChunk,
@@ -51,10 +43,18 @@ use sacp::schema::{
     ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage,
     UsageUpdate,
 };
-use sacp::util::MatchDispatchFrom;
-use sacp::{
+use agent_client_protocol::util::MatchDispatchFrom;
+use agent_client_protocol::{
     Agent as SacpAgent, ByteStreams, Client, ConnectionTo, Dispatch, HandleDispatchFrom, Handled,
     Responder,
+};
+use anyhow::Result;
+use fs_err as fs;
+use futures::future::{BoxFuture, Either};
+use futures::stream::{self, StreamExt};
+use futures::FutureExt;
+use rmcp::model::{
+    AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
 };
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -89,31 +89,35 @@ pub type AcpProviderFactory = Arc<
         + Sync,
 >;
 
-/// Convenience conversions from any `Display` error into an `sacp::Error`.
+/// Convenience conversions from any `Display` error into an `agent_client_protocol::Error`.
 ///
 /// Replaces the repetitive `.internal_err()`
 /// pattern. Use `.internal_err()?` for server-side failures and `.invalid_params_err()?`
 /// for bad client input. For custom messages use `.internal_err_ctx("context")?`.
 #[allow(dead_code)]
 trait ResultExt<T> {
-    fn internal_err(self) -> Result<T, sacp::Error>;
-    fn invalid_params_err(self) -> Result<T, sacp::Error>;
-    fn internal_err_ctx(self, context: &str) -> Result<T, sacp::Error>;
-    fn invalid_params_err_ctx(self, context: &str) -> Result<T, sacp::Error>;
+    fn internal_err(self) -> Result<T, agent_client_protocol::Error>;
+    fn invalid_params_err(self) -> Result<T, agent_client_protocol::Error>;
+    fn internal_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error>;
+    fn invalid_params_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error>;
 }
 
 impl<T, E: std::fmt::Display> ResultExt<T> for Result<T, E> {
-    fn internal_err(self) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::internal_error().data(e.to_string()))
+    fn internal_err(self) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))
     }
-    fn invalid_params_err(self) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::invalid_params().data(e.to_string()))
+    fn invalid_params_err(self) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| agent_client_protocol::Error::invalid_params().data(e.to_string()))
     }
-    fn internal_err_ctx(self, context: &str) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::internal_error().data(format!("{context}: {e}")))
+    fn internal_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| {
+            agent_client_protocol::Error::internal_error().data(format!("{context}: {e}"))
+        })
     }
-    fn invalid_params_err_ctx(self, context: &str) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::invalid_params().data(format!("{context}: {e}")))
+    fn invalid_params_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| {
+            agent_client_protocol::Error::invalid_params().data(format!("{context}: {e}"))
+        })
     }
 }
 
@@ -910,11 +914,13 @@ async fn resolve_provider_and_model(
     resolve_provider_and_model_from_config(&config, goose_session).await
 }
 
-fn build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::Error> {
+fn build_mode_state(
+    current_mode: GooseMode,
+) -> Result<SessionModeState, agent_client_protocol::Error> {
     let mut available = Vec::with_capacity(GooseMode::VARIANTS.len());
     for &name in GooseMode::VARIANTS {
         let goose_mode: GooseMode = name.parse().map_err(|_| {
-            sacp::Error::internal_error() // impossible but satisfy linters
+            agent_client_protocol::Error::internal_error() // impossible but satisfy linters
                 .data(format!("Failed to parse GooseMode variant: {}", name))
         })?;
         let mut mode = SessionMode::new(SessionModeId::new(name), name);
@@ -1054,7 +1060,7 @@ impl GooseAcpAgent {
         Config::new(self.config_dir.join(CONFIG_YAML_NAME), "goose").map_err(Into::into)
     }
 
-    fn config(&self) -> Result<Config, sacp::Error> {
+    fn config(&self) -> Result<Config, agent_client_protocol::Error> {
         self.load_config().internal_err_ctx("Failed to read config")
     }
 
@@ -1494,8 +1500,12 @@ impl GooseAcpAgent {
                                 roles
                                     .iter()
                                     .filter_map(|r| match r {
-                                        sacp::schema::Role::Assistant => Some(Role::Assistant),
-                                        sacp::schema::Role::User => Some(Role::User),
+                                        agent_client_protocol::schema::Role::Assistant => {
+                                            Some(Role::Assistant)
+                                        }
+                                        agent_client_protocol::schema::Role::User => {
+                                            Some(Role::User)
+                                        }
                                         _ => None,
                                     })
                                     .collect()
@@ -1554,7 +1564,7 @@ impl GooseAcpAgent {
         agent: &Arc<Agent>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         match content_item {
             MessageContent::Text(text) => {
                 cx.send_notification(SessionNotification::new(
@@ -1626,7 +1636,7 @@ impl GooseAcpAgent {
         _message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         session
             .tool_requests
             .insert(tool_request.id.clone(), tool_request.clone());
@@ -1769,7 +1779,7 @@ impl GooseAcpAgent {
         message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let status = match &tool_response.tool_result {
             Ok(result) if result.is_error == Some(true) => ToolCallStatus::Failed,
             Ok(_) => ToolCallStatus::Completed,
@@ -2014,7 +2024,7 @@ impl GooseAcpAgent {
         tool_name: String,
         arguments: serde_json::Map<String, serde_json::Value>,
         prompt: Option<String>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let cx = cx.clone();
         let agent = agent.clone();
         let session_id = session_id.clone();
@@ -2196,7 +2206,7 @@ impl GooseAcpAgent {
     async fn on_initialize(
         &self,
         args: InitializeRequest,
-    ) -> Result<InitializeResponse, sacp::Error> {
+    ) -> Result<InitializeResponse, agent_client_protocol::Error> {
         debug!(?args, "initialize request");
 
         let _ = self
@@ -2233,7 +2243,7 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: NewSessionRequest,
-    ) -> Result<NewSessionResponse, sacp::Error> {
+    ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "new session request");
         let t_start = std::time::Instant::now();
 
@@ -2356,11 +2366,13 @@ impl GooseAcpAgent {
         &self,
         thread_id: &str,
         cancel_token: Option<CancellationToken>,
-    ) -> Result<Either<Arc<Agent>, tokio::sync::watch::Receiver<AgentSetupSignal>>, sacp::Error>
-    {
+    ) -> Result<
+        Either<Arc<Agent>, tokio::sync::watch::Receiver<AgentSetupSignal>>,
+        agent_client_protocol::Error,
+    > {
         let mut sessions = self.sessions.lock().await;
         let session = sessions.get_mut(thread_id).ok_or_else(|| {
-            sacp::Error::resource_not_found(Some(thread_id.to_string()))
+            agent_client_protocol::Error::resource_not_found(Some(thread_id.to_string()))
                 .data(format!("Session not found: {}", thread_id))
         })?;
         if let Some(token) = cancel_token {
@@ -2378,7 +2390,7 @@ impl GooseAcpAgent {
         &self,
         thread_id: &str,
         cancel_token: Option<CancellationToken>,
-    ) -> Result<Arc<Agent>, sacp::Error> {
+    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
         let mut rx = match self.get_agent_or_receiver(thread_id, cancel_token).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
@@ -2393,11 +2405,12 @@ impl GooseAcpAgent {
             })
             .await
             .map_err(|_| {
-                sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
+                agent_client_protocol::Error::internal_error()
+                    .data("Agent setup task was dropped".to_string())
             })?;
         match guard.as_ref().unwrap() {
             Ok(AgentSetupProgress::FullyReady(agent)) => Ok(agent.clone()),
-            Err(e) => Err(sacp::Error::internal_error().data(e.clone())),
+            Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.clone())),
             // wait_for predicate excludes ProviderReady
             _ => unreachable!(),
         }
@@ -2409,21 +2422,22 @@ impl GooseAcpAgent {
     async fn get_session_agent_provider_ready(
         &self,
         thread_id: &str,
-    ) -> Result<Arc<Agent>, sacp::Error> {
+    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
         let mut rx = match self.get_agent_or_receiver(thread_id, None).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
         };
         // Any signal (ProviderReady, FullyReady, or Err) unblocks us.
         let guard = rx.wait_for(|v| v.is_some()).await.map_err(|_| {
-            sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
+            agent_client_protocol::Error::internal_error()
+                .data("Agent setup task was dropped".to_string())
         })?;
         match guard.as_ref().unwrap() {
             Ok(progress) => match progress {
                 AgentSetupProgress::ProviderReady(agent)
                 | AgentSetupProgress::FullyReady(agent) => Ok(agent.clone()),
             },
-            Err(e) => Err(sacp::Error::internal_error().data(e.clone())),
+            Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.clone())),
         }
     }
 
@@ -2431,13 +2445,13 @@ impl GooseAcpAgent {
         agent: &Arc<Agent>,
         mcp_servers: Vec<McpServer>,
         internal_session_id: &str,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let mut configs = Vec::with_capacity(mcp_servers.len());
         for mcp_server in mcp_servers {
             let config = match mcp_server_to_extension_config(mcp_server) {
                 Ok(c) => c,
                 Err(msg) => {
-                    return Err(sacp::Error::invalid_params().data(msg));
+                    return Err(agent_client_protocol::Error::invalid_params().data(msg));
                 }
             };
             configs.push(config);
@@ -2454,7 +2468,7 @@ impl GooseAcpAgent {
         for result in &results {
             if !result.success {
                 let error_msg = result.error.as_deref().unwrap_or("unknown error");
-                return Err(sacp::Error::internal_error().data(format!(
+                return Err(agent_client_protocol::Error::internal_error().data(format!(
                     "Failed to add MCP server '{}': {}",
                     result.name, error_msg
                 )));
@@ -2467,7 +2481,7 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: LoadSessionRequest,
-    ) -> Result<LoadSessionResponse, sacp::Error> {
+    ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "load session request");
 
         let session_id = args.session_id.0.to_string();
@@ -2480,7 +2494,7 @@ impl GooseAcpAgent {
             .get_session(&session_id, true)
             .await
             .map_err(|_| {
-                sacp::Error::resource_not_found(Some(session_id.clone()))
+                agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
                     .data(format!("Session not found: {}", session_id))
             })?;
         debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: load_session get_session");
@@ -2519,8 +2533,10 @@ impl GooseAcpAgent {
                                     audience
                                         .iter()
                                         .map(|r| match r {
-                                            Role::Assistant => sacp::schema::Role::Assistant,
-                                            Role::User => sacp::schema::Role::User,
+                                            Role::Assistant => {
+                                                agent_client_protocol::schema::Role::Assistant
+                                            }
+                                            Role::User => agent_client_protocol::schema::Role::User,
                                         })
                                         .collect::<Vec<_>>(),
                                 ),
@@ -2712,7 +2728,7 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: PromptRequest,
-    ) -> Result<PromptResponse, sacp::Error> {
+    ) -> Result<PromptResponse, agent_client_protocol::Error> {
         // The ACP session_id IS the thread ID.
         let thread_id = args.session_id.0.to_string();
         let sid = sid_short(&thread_id);
@@ -2777,7 +2793,7 @@ impl GooseAcpAgent {
 
                     let mut sessions = self.sessions.lock().await;
                     let session = sessions.get_mut(&thread_id).ok_or_else(|| {
-                        sacp::Error::invalid_params()
+                        agent_client_protocol::Error::invalid_params()
                             .data(format!("Session not found: {}", thread_id))
                     })?;
 
@@ -2823,7 +2839,7 @@ impl GooseAcpAgent {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    return Err(sacp::Error::internal_error()
+                    return Err(agent_client_protocol::Error::internal_error()
                         .data(format!("Error in agent response stream: {}", e)));
                 }
             }
@@ -2878,7 +2894,10 @@ impl GooseAcpAgent {
         Ok(response)
     }
 
-    async fn on_cancel(&self, args: CancelNotification) -> Result<(), sacp::Error> {
+    async fn on_cancel(
+        &self,
+        args: CancelNotification,
+    ) -> Result<(), agent_client_protocol::Error> {
         debug!(?args, "cancel request");
 
         let thread_id = args.session_id.0.to_string();
@@ -2900,7 +2919,7 @@ impl GooseAcpAgent {
         &self,
         thread_id: &str,
         model_id: &str,
-    ) -> Result<SetSessionModelResponse, sacp::Error> {
+    ) -> Result<SetSessionModelResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(thread_id).await?;
         let config = self.config()?;
         let agent = self.get_session_agent_provider_ready(thread_id).await?;
@@ -2931,14 +2950,17 @@ impl GooseAcpAgent {
         Ok(SetSessionModelResponse::new())
     }
 
-    async fn internal_session_id(&self, thread_id: &str) -> Result<String, sacp::Error> {
+    async fn internal_session_id(
+        &self,
+        thread_id: &str,
+    ) -> Result<String, agent_client_protocol::Error> {
         self.sessions
             .lock()
             .await
             .get(thread_id)
             .map(|s| s.internal_session_id.clone())
             .ok_or_else(|| {
-                sacp::Error::resource_not_found(Some(thread_id.to_string()))
+                agent_client_protocol::Error::resource_not_found(Some(thread_id.to_string()))
                     .data(format!("Session not found: {}", thread_id))
             })
     }
@@ -2946,7 +2968,7 @@ impl GooseAcpAgent {
     async fn build_config_update(
         &self,
         thread_id: &SessionId,
-    ) -> Result<(SessionNotification, Vec<SessionConfigOption>), sacp::Error> {
+    ) -> Result<(SessionNotification, Vec<SessionConfigOption>), agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(&thread_id.0).await?;
         let session = self
             .session_manager
@@ -2967,7 +2989,7 @@ impl GooseAcpAgent {
             .await
             .internal_err()?;
         let Some(inventory) = inventory else {
-            return Err(sacp::Error::internal_error()
+            return Err(agent_client_protocol::Error::internal_error()
                 .data(format!("Unknown provider inventory: {}", provider_name)));
         };
         let model_state = build_model_state(current_model.as_str(), &inventory);
@@ -2990,10 +3012,11 @@ impl GooseAcpAgent {
         &self,
         thread_id: &str,
         mode_id: &str,
-    ) -> Result<SetSessionModeResponse, sacp::Error> {
+    ) -> Result<SetSessionModeResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(thread_id).await?;
         let mode = mode_id.parse::<GooseMode>().map_err(|_| {
-            sacp::Error::invalid_params().data(format!("Invalid mode: {}", mode_id))
+            agent_client_protocol::Error::invalid_params()
+                .data(format!("Invalid mode: {}", mode_id))
         })?;
 
         let agent = self.get_session_agent_provider_ready(thread_id).await?;
@@ -3014,7 +3037,7 @@ impl GooseAcpAgent {
         model_name: Option<&str>,
         context_limit: Option<usize>,
         request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(thread_id).await?;
         let config = self.config()?;
         let agent = self.get_session_agent_provider_ready(thread_id).await?;
@@ -3097,7 +3120,7 @@ impl GooseAcpAgent {
         Ok(())
     }
 
-    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, sacp::Error> {
+    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
         let sessions = self.session_manager.list_sessions().await.internal_err()?;
         let session_infos: Vec<SessionInfo> = sessions
             .into_iter()
@@ -3117,7 +3140,7 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: ForkSessionRequest,
-    ) -> Result<ForkSessionResponse, sacp::Error> {
+    ) -> Result<ForkSessionResponse, agent_client_protocol::Error> {
         let source_session_id = &*args.session_id.0;
 
         let new_session = self
@@ -3193,7 +3216,7 @@ impl GooseAcpAgent {
     async fn on_close_session(
         &self,
         session_id: &str,
-    ) -> Result<CloseSessionResponse, sacp::Error> {
+    ) -> Result<CloseSessionResponse, agent_client_protocol::Error> {
         let mut sessions = self.sessions.lock().await;
         if let Some(session) = sessions.get(session_id) {
             if let Some(ref token) = session.cancel_token {
@@ -3255,12 +3278,12 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::conversation::message::{ToolRequest, ToolResponse};
-    use rmcp::model::{CallToolRequestParams, Content as RmcpContent};
-    use sacp::schema::{
+    use agent_client_protocol::schema::{
         EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
         PermissionOptionId, ResourceLink, SelectedPermissionOutcome, SessionConfigSelectOption,
         SessionMode, SessionModeId, SessionModeState,
     };
+    use rmcp::model::{CallToolRequestParams, Content as RmcpContent};
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
@@ -4159,7 +4182,9 @@ print(\"hello, world\")
         ))
         ; "approve mode"
     )]
-    fn test_build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::Error> {
+    fn test_build_mode_state(
+        current_mode: GooseMode,
+    ) -> Result<SessionModeState, agent_client_protocol::Error> {
         build_mode_state(current_mode)
     }
 
