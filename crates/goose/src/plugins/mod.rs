@@ -69,12 +69,8 @@ struct InstallMetadata {
     last_update_check: Option<DateTime<Utc>>,
 }
 
-pub fn plugin_install_dir() -> PathBuf {
-    Paths::data_dir().join("plugins")
-}
-
 pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
-    let plugins_dir = plugin_install_dir();
+    let plugins_dir = Paths::plugins_dir();
     for update in auto_update_plugins_at_root(Utc::now(), &plugins_dir) {
         if let Err(err) = update.result {
             warn!(
@@ -104,7 +100,7 @@ pub fn install_plugin_with_options(
     source: &str,
     options: PluginInstallOptions,
 ) -> Result<PluginInstall> {
-    install_plugin_with_options_at_root(source, options, &plugin_install_dir())
+    install_plugin_with_options_at_root(source, options, &Paths::plugins_dir())
 }
 
 fn install_plugin_with_options_at_root(
@@ -130,11 +126,11 @@ fn install_plugin_with_options_at_root(
 }
 
 pub fn update_plugin(name: &str) -> Result<PluginInstall> {
-    update_plugin_at_root(Utc::now(), &plugin_install_dir(), name)
+    update_plugin_at_root(Utc::now(), &Paths::plugins_dir(), name)
 }
 
 pub fn auto_update_plugins() -> Vec<PluginAutoUpdateResult> {
-    auto_update_plugins_at_root(Utc::now(), &plugin_install_dir())
+    auto_update_plugins_at_root(Utc::now(), &Paths::plugins_dir())
 }
 
 fn auto_update_plugins_at_root(
