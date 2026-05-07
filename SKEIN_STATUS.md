@@ -19,9 +19,23 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 - [ ] Langfuse Bridge MCP extension.
 - [ ] `recipe-scanner/` made a required gate for non-local recipes.
 
-## Phase 1+ — to be tracked once Phase 0 lands
+## Phase 1 — Tester's Co-Pilot v1
 
-(Phase 1 deliverables are listed in [SKEIN.md](SKEIN.md). This status file will be extended as Phase 0 closes.)
+- [x] Grader-runner framework (`eval-bench/grader_runners/`): `output_shape.py`, `markdown_sections.py`, contract documented in the README. 24 tests.
+- [x] First recipe `recipes/test/charter-sfdipot/` — SFDIPOT charter composer with full eval artifacts (10 seed tasks, 7 active failure modes, L1+L2+L3 grader composition, SME and judge rubrics, calibration plan, runbook). 15 tests covering artifact validity, two-sided coverage, failure-mode/task linkage, and L1 grader behaviour against full charters and refusals.
+- [ ] Polarity-aware grader inversion in the harness — `g-charter-sections` should pass on negative tasks when the recipe correctly refuses. Tracked in the recipe's runbook; a known follow-up.
+- [ ] Recipe execution path in `run_kpass.py` — currently a stub; needs real wiring into Goose's recipe runner.
+- [ ] L3 judge calibration for `charter-sfdipot` (judge auto-skips until calibrated).
+
+## Phase 1 follow-ups (open)
+
+- `oracles-fewhiccupps/` recipe.
+- `triage-failure/` recipe.
+- `bug-advocacy/` recipe.
+- Multi-driver Playwright codegen (Java first, Python next).
+- Tester's Notebook view in `ui/goose2`.
+- Promptfoo Bridge MCP extension.
+- AIO Tests Bridge v1 (read-only).
 
 ## How to contribute a Phase 0 chunk
 

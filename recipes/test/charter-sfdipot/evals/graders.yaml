@@ -1,0 +1,54 @@
+version: 1
+min_passk_target: 0.80   # pass^k threshold for the regression suite
+
+graders:
+  # L1 floor — output is a non-empty string under a sane upper bound.
+  - id: g-output-shape
+    level: L1
+    type: code
+    runner: "python eval-bench/grader_runners/output_shape.py --max-len 20000"
+    weight: 0.2
+    dimension: "output is a non-empty string"
+    timeout_s: 10
+
+  # L1 — required SFDIPOT H2 sections present.
+  # Note: this grader is correct only for *positive* tasks. For *negative*
+  # tasks (vague / empty / off-scope briefs) the recipe must refuse and
+  # produce no SFDIPOT sections, so a green here on a negative task means
+  # the recipe failed the refusal contract. The eval-bench harness will
+  # invert this grader for tasks with polarity=negative when the task's
+  # `expected.contract` is `refusal-with-clarifying-questions`. Until
+  # that orchestration lands (next chunk on the harness), capability
+  # numbers should be read from the positive subset only.
+  - id: g-charter-sections
+    level: L1
+    type: code
+    runner: >-
+      python eval-bench/grader_runners/markdown_sections.py
+      --required Structure,Function,Data,Interfaces,Platform,Operations,Time
+    weight: 0.4
+    dimension: "all seven SFDIPOT H2 sections present, in case-insensitive form"
+    timeout_s: 10
+
+  # L2 — sampled human review against rubrics/sme_quality.md.
+  # This is the calibration source for the L3 judge.
+  - id: g-charter-sme-review
+    level: L2
+    type: human
+    sample_rate: 0.10
+    queue: "annotations/"
+    rubric: "rubrics/sme_quality.md"
+    weight: 0.2
+    dimension: "charter is genuinely useful for a 30-minute exploratory session"
+
+  # L3 — LLM judge per the rubric. Gated on calibration; auto-skipped
+  # until a green calibration record is appended to calibration.jsonl.
+  - id: g-charter-judge
+    level: L3
+    type: llm_judge
+    judge_model: "anthropic:claude-opus-4-7"
+    rubric: "rubrics/judge_charter_quality.md"
+    requires_calibration_within_days: 30
+    max_divergence_from_l2: 0.15
+    weight: 0.2
+    dimension: "no fabrication; oracles named; tactics actionable; honest N/A where appropriate"
