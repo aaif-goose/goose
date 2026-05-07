@@ -2324,16 +2324,17 @@ impl GooseAcpAgent {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        // Clients can request a User session via _meta.sessionType = "user".
-        // Default is Acp for non-interactive / programmatic ACP clients.
+        // When _meta.client is set, the session is created by a known client
+        // (e.g. "goose" for the desktop app) and treated as a User session.
+        // Without it, sessions default to Acp for programmatic ACP clients.
         let session_type = match args
             .meta
             .as_ref()
-            .and_then(|m| m.get("sessionType"))
+            .and_then(|m| m.get("client"))
             .and_then(|v| v.as_str())
         {
-            Some("user") => SessionType::User,
-            _ => SessionType::Acp,
+            Some(_) => SessionType::User,
+            None => SessionType::Acp,
         };
 
         let t0 = std::time::Instant::now();

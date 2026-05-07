@@ -212,7 +212,7 @@ export async function newSession(
     mcpServers: [],
   };
 
-  const meta: Record<string, string> = { sessionType: "user" };
+  const meta: Record<string, string> = { client: "goose" };
   if (providerId) meta.provider = providerId;
   if (projectId) meta.projectId = projectId;
   request._meta = meta;
