@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skein.local/eval-bench/schemas/failure-modes.schema.json",
+  "title": "failure-modes.yaml",
+  "description": "Living taxonomy of observed failure modes for a recipe. The spine of the recipe's evals (Hamel Husain). Open list: agents propose new modes; humans approve.",
+  "type": "object",
+  "required": ["version", "modes"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "modes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "description", "first_observed", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^fm-[a-z0-9_-]+$",
+            "description": "Stable identifier. Referenced from tasks.jsonl `failure_modes_targeted` and from annotations."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Short noun phrase. Should fit in a one-key-per-mode annotator UI label."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One paragraph explaining what the failure looks like, how a human recognizes it, and why it matters."
+          },
+          "first_observed": {
+            "type": "string",
+            "format": "date"
+          },
+          "last_seen": {
+            "type": "string",
+            "format": "date"
+          },
+          "example_trace_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to a handful of representative trace IDs (Langfuse). Updated as the mode is re-observed."
+          },
+          "severity": {
+            "enum": ["high", "medium", "low"]
+          },
+          "status": {
+            "enum": ["proposed", "active", "retired"],
+            "description": "proposed = agent-proposed, awaiting human approval; active = approved and in use; retired = no longer observed in N weeks (kept for archaeology)."
+          },
+          "approved_by": {
+            "type": "string",
+            "description": "Human reviewer who promoted from `proposed` to `active`."
+          },
+          "related_aio_defects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "AIO Tests / Jira defect keys linked to this failure mode."
+          }
+        }
+      }
+    }
+  }
+}

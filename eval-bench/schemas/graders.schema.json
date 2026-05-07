@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skein.local/eval-bench/schemas/graders.schema.json",
+  "title": "graders.yaml",
+  "description": "Composition of L1 (code), L2 (human), and L3 (LLM-as-judge) graders for a recipe. The L1/L2/L3 ladder is from Hamel Husain. The grader-composition pattern is from the Anthropic agent-eval methodology.",
+  "type": "object",
+  "required": ["version", "graders"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "min_passk_target": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Recipe-level minimum acceptable pass^k for the regression suite. Tasks without their own min_passk_target inherit this."
+    },
+    "graders": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/L1Grader" },
+          { "$ref": "#/$defs/L2Grader" },
+          { "$ref": "#/$defs/L3Grader" }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "GraderCommon": {
+      "type": "object",
+      "required": ["id", "level", "type", "weight"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^g-[a-z0-9_-]+$"
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Weight in the composed score. The recipe's pass/fail is determined by a weighted sum of grader scores against a threshold."
+        },
+        "dimension": {
+          "type": "string",
+          "description": "What this grader is measuring. One dimension per grader (Anthropic discipline) — do not bundle multiple judgements into one grader."
+        }
+      }
+    },
+    "L1Grader": {
+      "allOf": [
+        { "$ref": "#/$defs/GraderCommon" },
+        {
+          "type": "object",
+          "required": ["runner"],
+          "additionalProperties": false,
+          "properties": {
+            "id": true, "weight": true, "dimension": true,
+            "level": { "const": "L1" },
+            "type": { "enum": ["code", "schema", "regex", "exit_code", "outcome"] },
+            "runner": {
+              "type": "string",
+              "description": "Command to invoke. Receives the recipe output on stdin; non-zero exit = fail."
+            },
+            "timeout_s": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 30
+            }
+          }
+        }
+      ]
+    },
+    "L2Grader": {
+      "allOf": [
+        { "$ref": "#/$defs/GraderCommon" },
+        {
+          "type": "object",
+          "required": ["sample_rate", "queue"],
+          "additionalProperties": false,
+          "properties": {
+            "id": true, "weight": true, "dimension": true,
+            "level": { "const": "L2" },
+            "type": { "const": "human" },
+            "sample_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Fraction of recipe runs to draw for human review."
+            },
+            "queue": {
+              "type": "string",
+              "description": "Path (relative to the recipe's evals/) where annotations land. Typically `annotations/`."
+            },
+            "rubric": {
+              "type": "string",
+              "description": "Markdown file describing the rubric the SME applies."
+            }
+          }
+        }
+      ]
+    },
+    "L3Grader": {
+      "allOf": [
+        { "$ref": "#/$defs/GraderCommon" },
+        {
+          "type": "object",
+          "required": ["judge_model", "rubric", "requires_calibration_within_days"],
+          "additionalProperties": false,
+          "properties": {
+            "id": true, "weight": true, "dimension": true,
+            "level": { "const": "L3" },
+            "type": { "const": "llm_judge" },
+            "judge_model": {
+              "type": "string",
+              "description": "Provider:model identifier, e.g. `anthropic:claude-opus-4-7`."
+            },
+            "rubric": {
+              "type": "string",
+              "description": "Path (relative to the recipe's evals/) to the markdown rubric. The rubric must instruct the judge to grade ONE dimension and to return `Unknown` when evidence is insufficient (Anthropic guidance)."
+            },
+            "requires_calibration_within_days": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum age of the most recent calibration record in calibration.md before this grader is auto-skipped."
+            },
+            "max_divergence_from_l2": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0.15,
+              "description": "Maximum acceptable disagreement rate between this judge and human L2 ratings. If exceeded at calibration time, this grader is auto-skipped until recalibration brings it back in range."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

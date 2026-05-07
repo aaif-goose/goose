@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skein.local/eval-bench/schemas/tasks.schema.json",
+  "title": "eval-bench task",
+  "description": "One JSON object per line in tasks.jsonl. Defines a single eval task for a recipe.",
+  "type": "object",
+  "required": ["id", "description", "input", "polarity", "tags"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Stable task identifier; used as a key for fingerprinting and slicing."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable description. Must be unambiguous: two domain experts should independently agree on pass/fail without further discussion."
+    },
+    "input": {
+      "type": "object",
+      "description": "Inputs passed to the recipe under test. Shape is recipe-specific."
+    },
+    "expected": {
+      "description": "Reference solution or expected properties. Optional for capability tasks; recommended for regression tasks.",
+      "type": ["object", "string", "array", "null"]
+    },
+    "axes": {
+      "type": "object",
+      "description": "Slice axes for the Slice Explorer. Add any axis the recipe author cares about; common: model, complexity, language, framework, time_of_day.",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    },
+    "polarity": {
+      "enum": ["positive", "negative"],
+      "description": "positive = behaviour should fire; negative = behaviour should NOT fire. The harness rejects task sets that are 100% positive (one-sided eval anti-pattern)."
+    },
+    "failure_modes_targeted": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^fm-[a-z0-9_-]+$"
+      },
+      "description": "IDs of failure-modes this task is designed to detect. Empty for synthetic tasks; populated for tasks derived from real failures."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "enum": ["regression", "capability"]
+      },
+      "minItems": 1,
+      "description": "Suite membership. Must include at least one of `regression` or `capability`."
+    },
+    "min_passk_target": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Minimum acceptable pass^k for this task in the regression suite. Defaults to the recipe-level target."
+    },
+    "source": {
+      "type": "object",
+      "description": "Provenance: where this task came from. Useful for the closed-loop production-to-eval feedback.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["synthetic", "production_trace", "aio_defect", "user_report"]
+        },
+        "ref": {
+          "type": "string",
+          "description": "Stable reference: trace id, defect key, etc."
+        },
+        "first_observed": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    }
+  }
+}

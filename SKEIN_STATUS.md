@@ -8,7 +8,7 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 - [x] Branch `skein-phase-0-foundation` created.
 - [x] Distro identity documented (`SKEIN.md`).
 - [x] Branded top-level Tauri identity in `ui/goose2/` (productName, window title, HTML title, bundle identifier `com.skein.app`, Cargo description). Deeper React-component string sweep deferred to a follow-up chunk so the diff stays reviewable.
-- [ ] `eval-bench/` library scaffolding: tasks schema, failure-modes schema, graders schema, `run_kpass.py`, calibration log format, slice axes registry.
+- [x] `eval-bench/` library scaffolding: JSON schemas (tasks, failure-modes, graders, calibration), Python lib (kpass, tasks, failure_modes, graders, calibration, SQLite store), and the `run_kpass.py` CLI with `--dry-run`. Recipe-execution path is intentionally a stub; lands with the first Phase 1 recipe.
 - [ ] Recipe template directory `recipes/_template/` showing the required eval artifacts.
 - [ ] Skein config profile via `CUSTOM_DISTROS.md` patterns.
 - [ ] Trace Inspector v0 (Tauri view).
