@@ -6,6 +6,8 @@
 
 Skein is an internal-tooling distribution of [goose](https://github.com/block/goose) tailored for **professional test engineers**. It is built as a custom distro on top of upstream goose (see [CUSTOM_DISTROS.md](CUSTOM_DISTROS.md)), so we keep merging from upstream cheaply and adopt new goose features as they land.
 
+> **New here?** Start with **[GETTING_STARTED.md](GETTING_STARTED.md)** — a 10-minute walkthrough from a fresh checkout to your first AI-assisted exploratory test charter on a real feature brief.
+
 ## What Skein is
 
 - A **research assistant for skilled testers** — proposes charters, suggests oracles, runs investigations the tester directs. Not a verdict-issuing bot.
