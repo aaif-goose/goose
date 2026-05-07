@@ -25,9 +25,7 @@
 
 ## Negative-polarity handling
 
-This recipe has both positive (full charter expected) and negative (refusal expected) tasks in the same `tasks.jsonl`. Until the harness wires polarity-aware grader inversion, the L1 `g-charter-sections` grader will incorrectly fail on negative tasks. Read capability/regression numbers from the positive subset (`--tag` filter does not help here — use the Slice Explorer and slice by `polarity`).
-
-This is a known-and-tracked Phase 1 follow-up; SKEIN_STATUS.md tracks it.
+This recipe has both positive (full charter expected) and negative (refusal expected) tasks in the same `tasks.jsonl`. The L1 `g-charter-sections` grader is marked `negate_on_polarity_negative: true`, so the composition layer correctly treats "no SFDIPOT sections present" as a *pass* on refusal tasks and a *fail* on charter tasks. No special handling required when reading metrics; slice by `polarity` in the Slice Explorer if you want to see refusal vs. charter outcomes separately.
 
 ## Banned shortcuts
 

@@ -46,6 +46,11 @@
         "dimension": {
           "type": "string",
           "description": "What this grader is measuring. One dimension per grader (Anthropic discipline) — do not bundle multiple judgements into one grader."
+        },
+        "negate_on_polarity_negative": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, the grader's raw verdict is inverted when applied to a task with polarity=negative. Use for shape-checking graders (e.g., 'required sections present') that should pass on positive tasks but fail on refusal/negative tasks."
         }
       }
     },
@@ -57,7 +62,7 @@
           "required": ["runner"],
           "additionalProperties": false,
           "properties": {
-            "id": true, "weight": true, "dimension": true,
+            "id": true, "weight": true, "dimension": true, "negate_on_polarity_negative": true,
             "level": { "const": "L1" },
             "type": { "enum": ["code", "schema", "regex", "exit_code", "outcome"] },
             "runner": {
@@ -81,7 +86,7 @@
           "required": ["sample_rate", "queue"],
           "additionalProperties": false,
           "properties": {
-            "id": true, "weight": true, "dimension": true,
+            "id": true, "weight": true, "dimension": true, "negate_on_polarity_negative": true,
             "level": { "const": "L2" },
             "type": { "const": "human" },
             "sample_rate": {
@@ -110,7 +115,7 @@
           "required": ["judge_model", "rubric", "requires_calibration_within_days"],
           "additionalProperties": false,
           "properties": {
-            "id": true, "weight": true, "dimension": true,
+            "id": true, "weight": true, "dimension": true, "negate_on_polarity_negative": true,
             "level": { "const": "L3" },
             "type": { "const": "llm_judge" },
             "judge_model": {

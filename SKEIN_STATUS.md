@@ -23,7 +23,7 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 
 - [x] Grader-runner framework (`eval-bench/grader_runners/`): `output_shape.py`, `markdown_sections.py`, contract documented in the README. 24 tests.
 - [x] First recipe `recipes/test/charter-sfdipot/` — SFDIPOT charter composer with full eval artifacts (10 seed tasks, 7 active failure modes, L1+L2+L3 grader composition, SME and judge rubrics, calibration plan, runbook). 15 tests covering artifact validity, two-sided coverage, failure-mode/task linkage, and L1 grader behaviour against full charters and refusals.
-- [ ] Polarity-aware grader inversion in the harness — `g-charter-sections` should pass on negative tasks when the recipe correctly refuses. Tracked in the recipe's runbook; a known follow-up.
+- [x] Polarity-aware grader inversion via `negate_on_polarity_negative` field on graders + `lib/composition.py` to compose per-grader outcomes into per-trial pass/fail. Refusals on negative-polarity tasks now compose to pass; fabricated charters on vague briefs compose to fail. 14 new composition tests + 2 loader tests + 4 recipe-artifact tests verify the contract end-to-end.
 - [ ] Recipe execution path in `run_kpass.py` — currently a stub; needs real wiring into Goose's recipe runner.
 - [ ] L3 judge calibration for `charter-sfdipot` (judge auto-skips until calibrated).
 

@@ -40,5 +40,5 @@ This loads tasks, failure-modes, and graders; reports the L3 judge as auto-skipp
 
 ## Known follow-ups
 
-- L1 `g-charter-sections` grader fires on negative tasks (refusals, which legitimately have no SFDIPOT sections). The harness needs polarity-aware grader inversion; tracked in `SKEIN_STATUS.md`.
 - L3 judge needs its first calibration run before it contributes to grading.
+- Recipe-execution path in `run_kpass.py` is still a stub; the harness loads and validates artifacts but does not yet invoke goose to produce real outputs.
