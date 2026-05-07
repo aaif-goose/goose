@@ -13,6 +13,9 @@
     "agent",
     "binary"
   ],
+  "scripts": {
+    "postinstall": "node -e \"require('fs').chmodSync(require('path').join(__dirname,'bin','goose'), 0o755)\""
+  },
   "os": [
     "darwin"
   ],
