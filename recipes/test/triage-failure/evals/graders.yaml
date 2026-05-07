@@ -1,0 +1,48 @@
+version: 1
+min_passk_target: 0.80   # pass^k threshold for the regression suite
+
+graders:
+  # L1 floor — output is a non-empty string under a sane upper bound.
+  - id: g-output-shape
+    level: L1
+    type: code
+    runner: "python eval-bench/grader_runners/output_shape.py --max-len 25000"
+    weight: 0.2
+    dimension: "output is a non-empty string"
+    timeout_s: 10
+
+  # L1 — required triage H2 sections present.
+  # Inverted on negative-polarity tasks: a refusal must NOT contain triage
+  # sections, so the runner's raw 'fail' verdict on a refusal becomes an
+  # effective 'pass' at composition time.
+  - id: g-triage-sections
+    level: L1
+    type: code
+    runner: >-
+      python eval-bench/grader_runners/markdown_sections.py
+      --required Failure summary,Hypotheses,Suggested next steps,Out of scope
+    weight: 0.4
+    dimension: "all four triage H2 sections present (inverted for refusal tasks)"
+    timeout_s: 10
+    negate_on_polarity_negative: true
+
+  # L2 — sampled human review against rubrics/sme_quality.md.
+  - id: g-triage-sme-review
+    level: L2
+    type: human
+    sample_rate: 0.15   # higher than charter/oracles: triage stakes are larger.
+    queue: "annotations/"
+    rubric: "rubrics/sme_quality.md"
+    weight: 0.2
+    dimension: "triage is genuinely useful for the engineer to start debugging"
+
+  # L3 — LLM judge per the rubric. Auto-skipped until calibrated.
+  - id: g-triage-judge
+    level: L3
+    type: llm_judge
+    judge_model: "anthropic:claude-opus-4-7"
+    rubric: "rubrics/judge_triage_quality.md"
+    requires_calibration_within_days: 30
+    max_divergence_from_l2: 0.15
+    weight: 0.2
+    dimension: "no fabricated frames; no fix proposals; confidence calibrated to evidence"
