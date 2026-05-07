@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.provider=istanbul"
   },
   "devDependencies": {
-    "wrangler": "^4.0.0",
+    "@cloudflare/vitest-pool-workers": "^0.8.0",
+    "@vitest/coverage-istanbul": "^3.2.4",
     "vitest": "^3.0.0",
-    "@cloudflare/vitest-pool-workers": "^0.8.0"
+    "wrangler": "^4.0.0"
   }
 }
