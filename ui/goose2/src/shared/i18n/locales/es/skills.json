@@ -30,6 +30,7 @@
     "exportedTo": "Exportado a {{filename}}",
     "filePath": "Ruta del archivo",
     "filtersAllSources": "Todas",
+    "filtersBuiltin": "Integradas",
     "filtersGlobal": "Personal",
     "importError": "Error al importar la skill",
     "importSuccess": "Skill importada",

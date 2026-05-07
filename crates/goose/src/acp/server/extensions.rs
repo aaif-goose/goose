@@ -4,10 +4,11 @@ impl GooseAcpAgent {
     pub(super) async fn on_add_extension(
         &self,
         req: AddExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(&req.session_id).await?;
-        let config: ExtensionConfig = serde_json::from_value(req.config)
-            .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
+        let config: ExtensionConfig = serde_json::from_value(req.config).map_err(|e| {
+            agent_client_protocol::Error::invalid_params().data(format!("bad config: {e}"))
+        })?;
         let agent = self.get_session_agent(&req.session_id, None).await?;
         agent
             .add_extension(config, &internal_id)
@@ -19,7 +20,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_remove_extension(
         &self,
         req: RemoveExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(&req.session_id).await?;
         let agent = self.get_session_agent(&req.session_id, None).await?;
         agent
@@ -29,7 +30,9 @@ impl GooseAcpAgent {
         Ok(EmptyResponse {})
     }
 
-    pub(super) async fn on_get_extensions(&self) -> Result<GetExtensionsResponse, sacp::Error> {
+    pub(super) async fn on_get_extensions(
+        &self,
+    ) -> Result<GetExtensionsResponse, agent_client_protocol::Error> {
         let extensions = crate::config::extensions::get_all_extensions();
         let warnings = crate::config::extensions::get_warnings();
         let extensions_json = extensions
@@ -56,13 +59,12 @@ impl GooseAcpAgent {
     pub(super) async fn on_add_config_extension(
         &self,
         req: AddConfigExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let mut obj = match req.extension_config {
             serde_json::Value::Object(obj) => obj,
             _ => {
-                return Err(
-                    sacp::Error::invalid_params().data("extensionConfig must be a JSON object")
-                );
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("extensionConfig must be a JSON object"));
             }
         };
         obj.insert(
@@ -71,8 +73,9 @@ impl GooseAcpAgent {
         );
 
         let config: crate::agents::ExtensionConfig =
-            serde_json::from_value(serde_json::Value::Object(obj))
-                .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
+            serde_json::from_value(serde_json::Value::Object(obj)).map_err(|e| {
+                agent_client_protocol::Error::invalid_params().data(format!("bad config: {e}"))
+            })?;
 
         crate::config::extensions::set_extension(crate::config::extensions::ExtensionEntry {
             enabled: req.enabled,
@@ -84,10 +87,10 @@ impl GooseAcpAgent {
     pub(super) async fn on_remove_config_extension(
         &self,
         req: RemoveConfigExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let keys = crate::config::extensions::get_all_extension_names();
         if !keys.iter().any(|k| k == &req.config_key) {
-            return Err(sacp::Error::invalid_params()
+            return Err(agent_client_protocol::Error::invalid_params()
                 .data(format!("Extension '{}' not found", req.config_key)));
         }
         crate::config::extensions::remove_extension(&req.config_key);
@@ -97,10 +100,10 @@ impl GooseAcpAgent {
     pub(super) async fn on_toggle_config_extension(
         &self,
         req: ToggleConfigExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let keys = crate::config::extensions::get_all_extension_names();
         if !keys.iter().any(|k| k == &req.config_key) {
-            return Err(sacp::Error::invalid_params()
+            return Err(agent_client_protocol::Error::invalid_params()
                 .data(format!("Extension '{}' not found", req.config_key)));
         }
         crate::config::extensions::set_extension_enabled(&req.config_key, req.enabled);
@@ -110,7 +113,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_get_session_extensions(
         &self,
         req: GetSessionExtensionsRequest,
-    ) -> Result<GetSessionExtensionsResponse, sacp::Error> {
+    ) -> Result<GetSessionExtensionsResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(&req.session_id).await?;
         let session = self
             .session_manager

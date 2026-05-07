@@ -1,6 +1,6 @@
 import type { SkillInfo } from "../api/skills";
 
-export type SkillsFilter = "all" | "global" | `project:${string}`;
+export type SkillsFilter = "all" | "global" | "builtin" | `project:${string}`;
 
 export interface SkillsSection {
   id: string;
@@ -77,9 +77,11 @@ export function filterSkills(
         ? true
         : filters.activeFilter === "global"
           ? skill.sourceKind === "global"
-          : skill.projectLinks.some(
-              (project) => `project:${project.id}` === filters.activeFilter,
-            );
+          : filters.activeFilter === "builtin"
+            ? skill.sourceKind === "builtin"
+            : skill.projectLinks.some(
+                (project) => `project:${project.id}` === filters.activeFilter,
+              );
 
     return matchesSearch && matchesFilter;
   });
@@ -89,13 +91,27 @@ export function groupSkills(
   filteredSkills: SkillInfo[],
   activeFilter: SkillsFilter,
   projectFilters: { id: string; name: string }[],
-  labels: { personalTitle: string; projectsFallback: string },
+  labels: {
+    personalTitle: string;
+    builtinTitle: string;
+    projectsFallback: string;
+  },
 ): SkillsSection[] {
   if (activeFilter === "global") {
     return [
       {
         id: "personal",
         title: labels.personalTitle,
+        skills: [...filteredSkills].sort(compareSkillsByName),
+      },
+    ];
+  }
+
+  if (activeFilter === "builtin") {
+    return [
+      {
+        id: "builtin",
+        title: labels.builtinTitle,
         skills: [...filteredSkills].sort(compareSkillsByName),
       },
     ];
@@ -120,6 +136,10 @@ export function groupSkills(
     .filter((skill) => skill.sourceKind === "global")
     .sort(compareSkillsByName);
 
+  const builtinSkills = filteredSkills
+    .filter((skill) => skill.sourceKind === "builtin")
+    .sort(compareSkillsByName);
+
   const projectSections = projectFilters
     .map((project) => ({
       id: `project:${project.id}`,
@@ -139,6 +159,15 @@ export function groupSkills(
             id: "personal",
             title: labels.personalTitle,
             skills: personalSkills,
+          },
+        ]
+      : []),
+    ...(builtinSkills.length > 0
+      ? [
+          {
+            id: "builtin",
+            title: labels.builtinTitle,
+            skills: builtinSkills,
           },
         ]
       : []),

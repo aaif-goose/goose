@@ -6,7 +6,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_get_tools(
         &self,
         req: GetToolsRequest,
-    ) -> Result<GetToolsResponse, sacp::Error> {
+    ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(&req.session_id).await?;
         let agent = self.get_session_agent(&req.session_id, None).await?;
         let tools = agent.list_tools(&internal_id, None).await;
@@ -21,24 +21,26 @@ impl GooseAcpAgent {
     pub(super) async fn on_call_tool(
         &self,
         req: GooseToolCallRequest,
-    ) -> Result<GooseToolCallResponse, sacp::Error> {
+    ) -> Result<GooseToolCallResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(&req.session_id).await?;
         let agent = self.get_session_agent(&req.session_id, None).await?;
         let tools = agent.list_tools(&internal_id, None).await;
 
         let Some(tool) = tools.iter().find(|t| *t.name == req.name) else {
-            return Err(sacp::Error::invalid_params().data("tool not found"));
+            return Err(agent_client_protocol::Error::invalid_params().data("tool not found"));
         };
 
         if !is_tool_visible_to_app(tool) {
-            return Err(sacp::Error::invalid_params().data("tool is not visible to app clients"));
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("tool is not visible to app clients"));
         }
 
         let arguments = match req.arguments {
             serde_json::Value::Object(map) => Some(map),
             serde_json::Value::Null => None,
             _ => {
-                return Err(sacp::Error::invalid_params().data("tool arguments must be an object"));
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("tool arguments must be an object"));
             }
         };
 
@@ -55,19 +57,19 @@ impl GooseAcpAgent {
             .extension_manager
             .dispatch_tool_call(&ctx, tool_call, CancellationToken::new())
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
         let result = tool_result
             .result
             .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
         let content = result
             .content
             .into_iter()
             .map(serde_json::to_value)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
         Ok(GooseToolCallResponse {
             content,

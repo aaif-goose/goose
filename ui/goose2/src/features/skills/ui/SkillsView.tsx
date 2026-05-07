@@ -79,6 +79,10 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   }, [loadSkills]);
 
   const projectFilters = useMemo(() => uniqueProjectFilters(skills), [skills]);
+  const hasBuiltinSkills = useMemo(
+    () => skills.some((skill) => skill.sourceKind === "builtin"),
+    [skills],
+  );
 
   useEffect(() => {
     if (!activeFilter.startsWith("project:")) {
@@ -91,6 +95,12 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     }
   }, [activeFilter, projectFilters]);
 
+  useEffect(() => {
+    if (activeFilter === "builtin" && !hasBuiltinSkills) {
+      setActiveFilter("all");
+    }
+  }, [activeFilter, hasBuiltinSkills]);
+
   const filteredSkills = useMemo(
     () => filterSkills(skills, { search, activeFilter }),
     [skills, search, activeFilter],
@@ -100,6 +110,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     () =>
       groupSkills(filteredSkills, activeFilter, projectFilters, {
         personalTitle: t("view.filtersGlobal"),
+        builtinTitle: t("view.filtersBuiltin"),
         projectsFallback: t("view.projects"),
       }),
     [filteredSkills, activeFilter, projectFilters, t],
@@ -118,11 +129,18 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     skills.find((skill) => skill.id === activeSkillId) ?? null;
 
   const handleDelete = (skill: SkillInfo) => {
+    if (skill.sourceKind === "builtin") {
+      return;
+    }
     setDeletingSkill(skill);
   };
 
   const handleConfirmDeleteSkill = async () => {
     if (!deletingSkill) return;
+    if (deletingSkill.sourceKind === "builtin") {
+      setDeletingSkill(null);
+      return;
+    }
     try {
       await deleteSkill(deletingSkill.path);
       await loadSkills();
@@ -137,6 +155,9 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   };
 
   const handleEdit = (skill: SkillInfo) => {
+    if (skill.sourceKind === "builtin") {
+      return;
+    }
     setEditingSkill({
       name: skill.name,
       description: skill.description,
@@ -148,6 +169,9 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   };
 
   const handleReveal = useCallback((skill: SkillInfo) => {
+    if (skill.sourceKind === "builtin") {
+      return;
+    }
     void revealInFileManager(skill.path);
   }, []);
 
@@ -194,6 +218,16 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     handleExport,
   } = useSkillImportExport(refreshSkills);
 
+  const handleShare = useCallback(
+    (skill: SkillInfo) => {
+      if (skill.sourceKind === "builtin") {
+        return;
+      }
+      void handleExport(skill);
+    },
+    [handleExport],
+  );
+
   const handleSelectSkill = (skill: SkillInfo) => {
     setActiveSkillId(skill.id);
   };
@@ -218,7 +252,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
           onBack={() => setActiveSkillId(null)}
           onEdit={handleEdit}
           onReveal={handleReveal}
-          onShare={handleExport}
+          onShare={handleShare}
           onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
           onDelete={handleDelete}
         />
@@ -262,6 +296,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
         onSearchChange={setSearch}
         activeFilter={activeFilter}
         onActiveFilterChange={setActiveFilter}
+        hasBuiltinSkills={hasBuiltinSkills}
         projectFilters={projectFilters}
         dropHandlers={dropHandlers}
         isDragOver={isDragOver}

@@ -78,7 +78,7 @@ export function AppearanceSettings() {
             <ToggleGroupItem
               key={option.value}
               value={option.value}
-              className="gap-1.5 rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+              className="gap-1.5 rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-none"
             >
               <option.icon className="h-3.5 w-3.5" />
               {t(`appearance.theme.options.${option.value}`)}
@@ -107,7 +107,7 @@ export function AppearanceSettings() {
           >
             <span className="absolute inset-0 bg-[linear-gradient(135deg,#1a1a1a_0_50%,#ffffff_50%_100%)]" />
             {accentColorPreference === "default" && (
-              <Check className="relative h-4 w-4 rounded-full bg-background p-0.5 text-foreground shadow-sm" />
+              <Check className="relative h-4 w-4 rounded-full bg-background p-0.5 text-foreground shadow-none" />
             )}
           </button>
           {ACCENT_COLORS.map((color) => (
@@ -148,7 +148,7 @@ export function AppearanceSettings() {
             <ToggleGroupItem
               key={option.value}
               value={option.value}
-              className="rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+              className="rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-none"
             >
               {t(`appearance.density.options.${option.value}`)}
             </ToggleGroupItem>
