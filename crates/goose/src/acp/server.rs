@@ -2282,7 +2282,7 @@ impl GooseAcpAgent {
             .create_session(
                 args.cwd.clone(),
                 "New Chat".to_string(),
-                SessionType::User,
+                SessionType::Acp,
                 self.goose_mode,
             )
             .await
@@ -3134,7 +3134,16 @@ impl GooseAcpAgent {
     }
 
     async fn on_list_sessions(&self) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
-        let sessions = self.session_manager.list_sessions().await.internal_err()?;
+        // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
+        let sessions = self
+            .session_manager
+            .list_sessions_by_types(&[
+                SessionType::User,
+                SessionType::Scheduled,
+                SessionType::Acp,
+            ])
+            .await
+            .internal_err()?;
         let session_infos: Vec<SessionInfo> = sessions
             .into_iter()
             .filter(|s| s.message_count > 0 || s.archived_at.is_some())
@@ -4098,7 +4107,7 @@ print(\"hello, world\")
             working_dir: PathBuf::from("/tmp"),
             name: "ACP Session".to_string(),
             user_set_name: false,
-            session_type: SessionType::User,
+            session_type: SessionType::Acp,
             created_at: Default::default(),
             updated_at: Default::default(),
             extension_data: crate::session::ExtensionData::default(),
