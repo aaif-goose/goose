@@ -14,10 +14,7 @@ export async function getProviderConfig(
 ): Promise<ProviderFieldValue[]> {
   const client = await getClient();
   const response = await client.goose.GooseProvidersConfigRead({ providerId });
-  return response.fields.map((field) => ({
-    ...field,
-    value: field.value ?? null,
-  }));
+  return response.fields;
 }
 
 export async function saveProviderConfig(

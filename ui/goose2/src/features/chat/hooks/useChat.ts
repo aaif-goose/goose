@@ -94,7 +94,7 @@ function markMessageStopped(sessionId: string, messageId: string) {
         completionStatus: "stopped",
       },
       content: message.content.map((block) =>
-        block.type === "toolRequest" && block.status === "executing"
+        block.type === "toolRequest" && block.status === "in_progress"
           ? { ...block, status: "stopped" }
           : block,
       ),
@@ -215,11 +215,8 @@ export function useChat(
         for (const img of images) {
           userMessage.content.push({
             type: "image",
-            source: {
-              type: "base64",
-              mediaType: img.mimeType,
-              data: img.base64,
-            },
+            data: img.base64,
+            mimeType: img.mimeType,
           });
         }
       }
