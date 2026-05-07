@@ -15,7 +15,13 @@ from .annotations import (
     make_annotation_id,
     should_sample,
 )
-from .calibration import CalibrationRecord, load_calibration_log
+from .calibration import (
+    CalibrationOutcome,
+    CalibrationRecord,
+    append_calibration_record,
+    load_calibration_log,
+    run_calibration,
+)
 from .composition import GraderOutcome, compose_trial_pass, effective_passed
 from .failure_modes import FailureMode, FailureModes, load_failure_modes
 from .graders import (
@@ -38,6 +44,7 @@ __all__ = [
     "AnnotationReview",
     "AnnotationStore",
     "AnthropicJudge",
+    "CalibrationOutcome",
     "CalibrationRecord",
     "FailureMode",
     "FailureModes",
@@ -56,6 +63,7 @@ __all__ = [
     "StubJudge",
     "StubRunner",
     "Task",
+    "append_calibration_record",
     "compose_trial_pass",
     "compute_passk",
     "effective_passed",
@@ -67,6 +75,7 @@ __all__ = [
     "make_annotation_id",
     "parse_verdict",
     "passk_by_slice",
+    "run_calibration",
     "should_sample",
     "slice_results",
 ]
