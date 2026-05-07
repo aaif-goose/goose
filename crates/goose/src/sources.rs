@@ -489,6 +489,9 @@ pub fn list_sources(
     project_dir: Option<&str>,
     include_project_sources: bool,
 ) -> Result<Vec<SourceEntry>, Error> {
+    if let Some(t) = source_type {
+        require_listable_type(Some(t))?;
+    }
     let kinds: Vec<SourceType> = match source_type {
         Some(t) => vec![t],
         None => vec![SourceType::Skill, SourceType::Project],
