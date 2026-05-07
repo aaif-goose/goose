@@ -16,6 +16,10 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import {
+  selectPersonas,
+  selectPersonasLoading,
+} from "@/features/agents/stores/agentSelectors";
 import { PersonaGallery } from "@/features/agents/ui/PersonaGallery";
 import { PersonaEditor } from "@/features/agents/ui/PersonaEditor";
 import {
@@ -41,8 +45,8 @@ export function AgentsView() {
   const [search, setSearch] = useState("");
   const [deletingPersona, setDeletingPersona] = useState<Persona | null>(null);
 
-  const personas = useAgentStore((s) => s.personas);
-  const personasLoading = useAgentStore((s) => s.personasLoading);
+  const personas = useAgentStore(selectPersonas);
+  const personasLoading = useAgentStore(selectPersonasLoading);
   const personaEditorOpen = useAgentStore((s) => s.personaEditorOpen);
   const editingPersona = useAgentStore((s) => s.editingPersona);
   const personaEditorMode = useAgentStore((s) => s.personaEditorMode);

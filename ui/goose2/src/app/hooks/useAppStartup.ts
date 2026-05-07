@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
@@ -38,7 +38,11 @@ export function filterStartupProvidersForDistro(
 }
 
 export function useAppStartup() {
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       const tStartup = performance.now();
       perfLog("[perf:startup] useAppStartup begin");
@@ -51,6 +55,7 @@ export function useAppStartup() {
         );
       } catch (err) {
         console.error("Failed to initialize ACP connection:", err);
+        setError(err);
       }
 
       const store = useAgentStore.getState();
@@ -60,6 +65,7 @@ export function useAppStartup() {
 
       const applyProvidersFromInventory = (
         entries: Parameters<typeof discoverAcpProvidersFromEntries>[0],
+        validated = false,
       ) => {
         const providers = discoverAcpProvidersFromEntries(entries);
         const providerAllowlist = parseProviderAllowlist(
@@ -71,6 +77,7 @@ export function useAppStartup() {
             providerAllowlist,
             getModelProviders(),
           ),
+          validated,
         );
         return providers;
       };
@@ -111,7 +118,7 @@ export function useAppStartup() {
             ...useProviderInventoryStore.getState().entries.values(),
           ];
           if (inventoryEntries.length > 0) {
-            applyProvidersFromInventory(inventoryEntries);
+            applyProvidersFromInventory(inventoryEntries, true);
           }
           perfLog(
             `[perf:startup] loadProviderCatalog done in ${(performance.now() - t0).toFixed(1)}ms (n=${entries.length})`,
@@ -135,7 +142,7 @@ export function useAppStartup() {
           inventoryStore.setEntries(entries);
 
           // Derive ACP providers from the same response
-          const providers = applyProvidersFromInventory(entries);
+          const providers = applyProvidersFromInventory(entries, true);
 
           perfLog(
             `[perf:startup] loadProvidersAndInventory done in ${(performance.now() - t0).toFixed(1)}ms (entries=${entries.length}, providers=${providers.length})`,
@@ -196,6 +203,21 @@ export function useAppStartup() {
       perfLog(
         `[perf:startup] useAppStartup complete in ${(performance.now() - tStartup).toFixed(1)}ms`,
       );
-    })();
+    })()
+      .catch((err) => {
+        console.error("Failed to complete app startup:", err);
+        setError(err);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  return { ready, error };
 }

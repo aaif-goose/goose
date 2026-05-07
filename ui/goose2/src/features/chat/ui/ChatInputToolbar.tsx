@@ -15,7 +15,6 @@ import type { AcpProvider } from "@/shared/api/acp";
 import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
-import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -27,49 +26,23 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Progress } from "@/shared/ui/progress";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/tooltip";
 import { AgentModelPicker } from "./AgentModelPicker";
-import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { getCatalogEntryFromEntries } from "@/features/providers/providerCatalog";
 import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
 import { ProjectSelectorIcon } from "./ProjectSelectorIcon";
+import type {
+  ChatInputAgentModelPicker,
+  ChatInputContextUsage,
+  ChatInputPersonaPicker,
+  ChatInputProjectPicker,
+} from "../types";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
 
-interface ChatInputToolbarProps {
-  selectedPersonaId: string | null;
-  // Provider
-  providers: AcpProvider[];
-  providersLoading?: boolean;
-  selectedProvider: string;
-  onProviderChange: (providerId: string) => void;
-  // Model
-  currentModelId?: string | null;
-  currentModelProviderId?: string | null;
-  currentModel?: string;
-  availableModels: ModelOption[];
-  modelsLoading?: boolean;
-  modelStatusMessage?: string | null;
-  onModelChange?: (modelId: string, model?: ModelOption) => void;
-  onPickerOpen?: () => void;
-  // Project
-  selectedProjectId: string | null;
-  availableProjects: ProjectOption[];
-  onProjectChange?: (projectId: string | null) => void;
-  onCreateProject?: (options?: {
-    onCreated?: (projectId: string) => void;
-  }) => void;
-  // Context
-  contextTokens: number;
-  contextLimit: number;
-  isContextUsageReady?: boolean;
-  supportsCompactionControls?: boolean;
-  // Actions
-  canCompactContext?: boolean;
-  isCompactingContext?: boolean;
-  onCompactContext?: () => Promise<unknown> | undefined;
+interface ChatInputToolbarComposerActions {
   canSend: boolean;
   isStreaming: boolean;
   hasQueuedMessage: boolean;
@@ -78,58 +51,77 @@ interface ChatInputToolbarProps {
   onAttachFiles?: () => void;
   onAttachFolders?: () => void;
   disabled?: boolean;
-  // Voice
   voiceEnabled?: boolean;
   voiceRecording?: boolean;
   voiceTranscribing?: boolean;
   onVoiceToggle?: () => void;
-  // Layout
+}
+
+interface ChatInputToolbarProps {
+  personaPicker: Pick<ChatInputPersonaPicker, "selectedPersonaId">;
+  agentModelPicker: ChatInputAgentModelPicker;
+  projectPicker: ChatInputProjectPicker;
+  contextUsage: ChatInputContextUsage;
+  composerActions: ChatInputToolbarComposerActions;
   isCompact: boolean;
 }
 
 export function ChatInputToolbar({
-  selectedPersonaId,
-  providers,
-  providersLoading,
-  selectedProvider,
-  onProviderChange,
-  currentModelId,
-  currentModelProviderId,
-  currentModel,
-  availableModels,
-  modelsLoading = false,
-  modelStatusMessage = null,
-  onModelChange,
-  onPickerOpen,
-  selectedProjectId,
-  availableProjects,
-  onProjectChange,
-  onCreateProject,
-  contextTokens,
-  contextLimit,
-  isContextUsageReady,
-  supportsCompactionControls,
-  canCompactContext = false,
-  isCompactingContext = false,
-  onCompactContext,
-  canSend,
-  isStreaming,
-  hasQueuedMessage,
-  onSend,
-  onStop,
-  onAttachFiles,
-  onAttachFolders,
-  disabled = false,
-  voiceEnabled = false,
-  voiceRecording = false,
-  voiceTranscribing = false,
-  onVoiceToggle,
+  personaPicker,
+  agentModelPicker,
+  projectPicker,
+  contextUsage,
+  composerActions,
   isCompact,
 }: ChatInputToolbarProps) {
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
   const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
+  const { selectedPersonaId = null } = personaPicker;
+  const {
+    providers = [],
+    providersLoading,
+    selectedProvider = "goose",
+    onProviderChange,
+    currentModelId,
+    currentModelProviderId,
+    currentModel,
+    availableModels = [],
+    modelsLoading = false,
+    modelStatusMessage = null,
+    onModelChange,
+    onPickerOpen,
+  } = agentModelPicker;
+  const {
+    selectedProjectId = null,
+    availableProjects = [],
+    onProjectChange,
+    onCreateProject,
+  } = projectPicker;
+  const {
+    contextTokens = 0,
+    contextLimit = 0,
+    isContextUsageReady,
+    supportsCompactionControls,
+    canCompactContext = false,
+    isCompactingContext = false,
+    onCompactContext,
+  } = contextUsage;
+  const {
+    canSend,
+    isStreaming,
+    hasQueuedMessage,
+    onSend,
+    onStop,
+    onAttachFiles,
+    onAttachFolders,
+    disabled = false,
+    voiceEnabled = false,
+    voiceRecording = false,
+    voiceTranscribing = false,
+    onVoiceToggle,
+  } = composerActions;
   const compactionControlsSupported =
     supportsCompactionControls ??
     supportsContextCompactionControls(selectedProvider);
@@ -230,7 +222,7 @@ export function ChatInputToolbar({
           <AgentModelPicker
             agents={agentProviders}
             selectedAgentId={selectedProvider}
-            onAgentChange={onProviderChange}
+            onAgentChange={(providerId) => onProviderChange?.(providerId)}
             currentModelId={currentModelId}
             currentModelProviderId={currentModelProviderId}
             currentModelName={currentModel ?? null}

@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/tauri-mock";
+import { expect, test } from "./fixtures/tauri-mock";
 
 test.describe("Smoke tests", () => {
   test("app loads and shows home screen", async ({ tauriMocked: page }) => {

@@ -24,7 +24,7 @@ export function handleSessionInfoUpdate(
   }
 
   const meta = isRecord(info._meta) ? info._meta : {};
-  const patch: Parameters<typeof sessionStore.updateSession>[1] = {};
+  const patch: Parameters<typeof sessionStore.patchSession>[1] = {};
 
   if (typeof info.title === "string" && info.title && !session.userSetName) {
     patch.title = info.title;
@@ -40,6 +40,6 @@ export function handleSessionInfoUpdate(
   }
 
   if (Object.keys(patch).length > 0) {
-    sessionStore.updateSession(sessionId, patch);
+    sessionStore.patchSession(sessionId, patch);
   }
 }

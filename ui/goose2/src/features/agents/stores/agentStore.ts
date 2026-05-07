@@ -75,7 +75,7 @@ interface AgentStoreActions {
   setAgentsLoading: (loading: boolean) => void;
 
   // Provider management
-  setProviders: (providers: AcpProvider[]) => void;
+  setProviders: (providers: AcpProvider[], validated?: boolean) => void;
   setProvidersLoading: (loading: boolean) => void;
   setSelectedProvider: (providerId: string, persist?: boolean) => void;
 
@@ -163,10 +163,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setAgentsLoading: (agentsLoading) => set({ agentsLoading }),
 
   // Provider management
-  setProviders: (providers) => {
+  setProviders: (providers, validated = true) => {
     const { selectedProvider } = get();
     const isValid = providers.some((p) => p.id === selectedProvider);
-    if (!isValid && providers.length > 0) {
+    if (!isValid && providers.length > 0 && validated) {
       const fallback = providers[0].id;
       persistProvider(fallback);
       set({ providers, selectedProvider: fallback });

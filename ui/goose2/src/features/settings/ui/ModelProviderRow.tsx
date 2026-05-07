@@ -19,6 +19,7 @@ import {
   authenticateModelProvider,
   onModelSetupOutput,
 } from "@/features/providers/api/modelSetup";
+import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
 import type {
   ProviderDisplayInfo,
   ProviderField,
@@ -51,7 +52,10 @@ interface ModelProviderRowProps {
   onGetConfig: (providerId: string) => Promise<ProviderFieldValue[]>;
   onSaveFields: (fields: ProviderFieldSaveInput[]) => Promise<void>;
   onRemoveConfig?: () => Promise<void>;
-  onCompleteNativeSetup: (providerId: string) => Promise<void>;
+  onCompleteNativeSetup: (
+    providerId: string,
+    result?: ProviderConfigChangeResponse,
+  ) => Promise<void>;
   saving?: boolean;
   inventorySyncing?: boolean;
   inventoryWarning?: string | null;
@@ -165,7 +169,6 @@ export function ModelProviderRow({
     setAuthenticating(true);
     setSetupError("");
     setSetupOutput([]);
-    setupLineCounter.current = 0;
     setEditingKey(null);
     setError("");
     setShowSavedState(false);
@@ -173,10 +176,11 @@ export function ModelProviderRow({
     const unlisten = await onModelSetupOutput(provider.id, appendSetupOutput);
 
     try {
-      // The native connector exits after writing credentials; only then do we
-      // ask the credentials hook to refresh ACP inventory for this provider.
-      await authenticateModelProvider(provider.id, provider.nativeConnectQuery);
-      await onCompleteNativeSetup(provider.id);
+      const result = await authenticateModelProvider(
+        provider.id,
+        provider.nativeConnectQuery,
+      );
+      await onCompleteNativeSetup(provider.id, result);
     } catch (nextError) {
       setSetupError(
         nextError instanceof Error

@@ -568,6 +568,13 @@ export type ProviderConfigDeleteRequest = {
 };
 
 /**
+ * Run a provider-owned native authentication flow and start an inventory refresh when supported.
+ */
+export type ProviderConfigAuthenticateRequest = {
+    providerId: string;
+};
+
+/**
  * Read allowlisted user preferences. Empty `keys` means all supported preferences.
  */
 export type PreferencesReadRequest = {
@@ -609,6 +616,66 @@ export type DefaultsReadRequest = {
 export type DefaultsReadResponse = {
     providerId?: string | null;
     modelId?: string | null;
+};
+
+/**
+ * Save Goose default provider and model configuration.
+ */
+export type DefaultsSaveRequest = {
+    providerId: string;
+    modelId?: string | null;
+};
+
+/**
+ * Scan for existing Goose and compatible app data that onboarding can import.
+ */
+export type OnboardingImportScanRequest = {
+    /**
+     * Empty means all supported import sources.
+     */
+    sources?: Array<OnboardingImportSourceKind>;
+};
+
+/**
+ * Sources that onboarding knows how to discover and import.
+ */
+export type OnboardingImportSourceKind = 'goose_config' | 'claude_desktop';
+
+export type OnboardingImportScanResponse = {
+    candidates: Array<OnboardingImportCandidate>;
+};
+
+export type OnboardingImportCandidate = {
+    id: string;
+    sourceKind: OnboardingImportSourceKind;
+    displayName: string;
+    path: string;
+    counts: OnboardingImportCounts;
+    warnings?: Array<string>;
+};
+
+export type OnboardingImportCounts = {
+    providers: number;
+    extensions: number;
+    sessions: number;
+    skills: number;
+    projects: number;
+    preferences: number;
+};
+
+/**
+ * Import selected onboarding candidates.
+ */
+export type OnboardingImportApplyRequest = {
+    candidateIds?: Array<string>;
+    enableImportedExtensions?: boolean;
+};
+
+export type OnboardingImportApplyResponse = {
+    imported: OnboardingImportCounts;
+    skipped: OnboardingImportCounts;
+    warnings?: Array<string>;
+    providerDefaults?: DefaultsReadResponse | null;
 };
 
 /**
@@ -697,8 +764,9 @@ export type CreateSourceResponse = {
 };
 
 /**
- * A source discovered by Goose and backed by an on-disk path. Sources may be
- * either `global` (shared across all projects) or project-specific.
+ * A source discovered by Goose. Filesystem sources use an on-disk path;
+ * built-in sources use a stable synthetic path. Sources may be either
+ * `global` (shared across all projects) or project-specific.
  */
 export type SourceEntry = {
     type: SourceType;
@@ -707,7 +775,8 @@ export type SourceEntry = {
     content: string;
     /**
      * Absolute path to the source on disk. A directory for skills, a file for
-     * recipes and agents.
+     * recipes and agents. Built-in skills use read-only synthetic
+     * `builtin://skills/<name>` paths.
      */
     directory: string;
     /**
@@ -725,9 +794,10 @@ export type SourceEntry = {
 /**
  * List discovered sources.
  *
- * Today this endpoint only returns skills. If `type` is omitted, it defaults
- * to listing skill sources. Both global and project-scoped skills are included
- * when `project_dir` is set.
+ * If `type` is omitted or `skill`, this lists filesystem/plugin skills only.
+ * Both global and project-scoped skills are included when `project_dir` is
+ * set. If `type` is `builtinSkill`, this lists shipped read-only built-in
+ * skills.
  */
 export type ListSourcesRequest = {
     type?: SourceType | null;
@@ -944,14 +1014,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | GooseToolCallRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderSetupCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | PreferencesReadRequest | PreferencesSaveRequest | PreferencesRemoveRequest | DefaultsReadRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationSecretSaveRequest | DictationSecretDeleteRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | GooseToolCallRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderSetupCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ProviderConfigAuthenticateRequest | PreferencesReadRequest | PreferencesSaveRequest | PreferencesRemoveRequest | DefaultsReadRequest | DefaultsSaveRequest | OnboardingImportScanRequest | OnboardingImportApplyRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationSecretSaveRequest | DictationSecretDeleteRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | GooseToolCallResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderSetupCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | PreferencesReadResponse | DefaultsReadResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | GooseToolCallResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderSetupCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | PreferencesReadResponse | DefaultsReadResponse | OnboardingImportScanResponse | OnboardingImportApplyResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

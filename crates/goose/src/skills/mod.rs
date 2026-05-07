@@ -10,8 +10,8 @@ pub use client::{SkillsClient, EXTENSION_NAME};
 use crate::config::paths::Paths;
 use crate::plugins::installed_plugin_skill_dirs;
 use crate::sources::parse_frontmatter;
+use agent_client_protocol::Error;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
-use sacp::Error;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -369,8 +369,10 @@ pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
         if let Some(source) = parse_skill_content(content, &PathBuf::new(), true) {
             if !seen.contains(&source.name) {
                 seen.insert(source.name.clone());
+                let directory = format!("builtin://skills/{}", source.name);
                 sources.push(SourceEntry {
                     source_type: SourceType::BuiltinSkill,
+                    directory,
                     ..source
                 });
             }

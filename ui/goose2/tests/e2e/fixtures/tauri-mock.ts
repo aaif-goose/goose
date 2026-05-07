@@ -47,6 +47,7 @@ export function buildInitScript(options?: {
           defaultModel: "claude-sonnet-4-20250514",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -72,6 +73,7 @@ export function buildInitScript(options?: {
           defaultModel: "gpt-4.1",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -91,6 +93,26 @@ export function buildInitScript(options?: {
           ],
         },
       ];
+
+      localStorage.setItem(
+        "goose:onboarding:v1",
+        JSON.stringify({
+          completedAt: new Date().toISOString(),
+          providerId: "openai",
+          modelId: "gpt-4.1",
+        }),
+      );
+      localStorage.setItem("goose:defaultProvider", "goose");
+      localStorage.setItem(
+        "goose:preferredModelsByAgent",
+        JSON.stringify({
+          goose: {
+            providerId: "openai",
+            modelId: "gpt-4.1",
+            modelName: "GPT-4.1",
+          },
+        }),
+      );
 
       const skillToSourceEntry = (s) => ({
         type: "skill",
@@ -183,8 +205,38 @@ export function buildInitScript(options?: {
           }
           case "_goose/providers/list":
             return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
+          case "_goose/providers/setup/catalog/list":
+            return jsonRpcResult(message.id, { providers: [] });
           case "_goose/providers/inventory/refresh":
             return jsonRpcResult(message.id, { started: [], skipped: [] });
+          case "_goose/defaults/read":
+          case "_goose/defaults/save":
+            return jsonRpcResult(message.id, {
+              providerId: message.params?.providerId ?? "openai",
+              modelId: message.params?.modelId ?? "gpt-4.1",
+            });
+          case "_goose/onboarding/import/scan":
+            return jsonRpcResult(message.id, { candidates: [] });
+          case "_goose/onboarding/import/apply":
+            return jsonRpcResult(message.id, {
+              imported: {
+                providers: 0,
+                extensions: 0,
+                sessions: 0,
+                skills: 0,
+                projects: 0,
+                preferences: 0,
+              },
+              skipped: {
+                providers: 0,
+                extensions: 0,
+                sessions: 0,
+                skills: 0,
+                projects: 0,
+                preferences: 0,
+              },
+              warnings: [],
+            });
           case "_goose/working_dir/update":
           case "goose/working_dir/update":
             return jsonRpcResult(message.id, {});
