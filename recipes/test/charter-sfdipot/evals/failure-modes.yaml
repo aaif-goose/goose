@@ -1,0 +1,82 @@
+version: 1
+modes:
+  - id: fm-fabrication
+    name: "Fabricates requirements"
+    description: |
+      Charter invents specifics not implied by the brief — e.g., names a
+      framework, library, threshold, or endpoint that the brief did not
+      mention. The Bach test: would a tester reading the original brief
+      next to the charter spot a "where did THAT come from?" item?
+    first_observed: "2026-05-07"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-skips-dimensions-silently
+    name: "Skips a dimension without saying N/A"
+    description: |
+      The charter omits one or more SFDIPOT H2 sections rather than
+      writing `N/A — <reason>`. Silent skipping hides which dimensions
+      the model decided don't apply, defeating the heuristic's audit
+      property.
+    first_observed: "2026-05-07"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-script-output
+    name: "Produces test cases instead of a charter"
+    description: |
+      Output reads like a list of step-by-step test cases ("1. open
+      page; 2. enter X; 3. expect Y"). A charter frames investigation;
+      tests are what the human writes after the chartered session.
+    first_observed: "2026-05-07"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-no-oracles-named
+    name: "Section omits the Oracles to apply line"
+    description: |
+      A SFDIPOT section without named FEW HICCUPPS oracles. Without an
+      oracle the tester has no specified standard to compare against,
+      so the section is decorative rather than operational.
+    first_observed: "2026-05-07"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-fakes-tactics
+    name: "Tactics so vague they're not actionable"
+    description: |
+      Tactics like "consider edge cases" or "test the data flow"
+      without specifying which edges or which flow. A tester should be
+      able to start a 30-minute session with the listed tactics
+      without further interpretation.
+    first_observed: "2026-05-07"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-overhelpful-on-vague-brief
+    name: "Charters a vague brief instead of refusing"
+    description: |
+      Given an empty, single-word, or out-of-scope brief, the recipe
+      produces a fabricated charter rather than asking for the
+      clarifying details required to charter responsibly.
+    first_observed: "2026-05-07"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-overstuffs-N/A-sections
+    name: "Refuses to say N/A; pads thin sections"
+    description: |
+      The opposite of fm-skips-dimensions: the recipe writes a charter
+      for a dimension the brief does not support, padding with generic
+      tactics. The tell is a section whose tactics could equally
+      describe any feature.
+    first_observed: "2026-05-07"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"

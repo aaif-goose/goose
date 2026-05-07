@@ -6,7 +6,7 @@ graders:
   - id: g-output-shape
     level: L1
     type: code
-    runner: "python -m eval_bench.graders.output_shape"
+    runner: "python eval-bench/grader_runners/output_shape.py"
     weight: 1.0
     dimension: "output is a non-empty string"
     timeout_s: 10
