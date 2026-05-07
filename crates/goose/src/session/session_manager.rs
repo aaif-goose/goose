@@ -451,6 +451,22 @@ impl SessionManager {
             .update_message_metadata(id, message_id, f)
             .await
     }
+
+    /// Patch `tool_meta` on a specific `ToolRequest` within a stored message.
+    /// Used to persist LLM-generated tool titles and chain summaries so they
+    /// survive session reload. Merge-based: existing keys not in `patch` are
+    /// preserved. No-op if the message or tool_call_id is not found.
+    pub async fn update_tool_request_meta(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        tool_call_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<()> {
+        self.storage
+            .update_tool_request_meta(session_id, message_id, tool_call_id, patch)
+            .await
+    }
 }
 
 pub struct SessionStorage {
@@ -1707,6 +1723,81 @@ impl SessionStorage {
 
         Ok(())
     }
+
+    /// Patch `tool_meta` on a specific `ToolRequest` within a stored message's
+    /// `content_json`. Finds the row(s) with matching `message_id`, scans each
+    /// row's content for a `ToolRequest` with the given `tool_call_id`, and
+    /// merges `patch` into its `tool_meta`. Uses `BEGIN IMMEDIATE` so
+    /// concurrent writers serialize correctly.
+    async fn update_tool_request_meta(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        tool_call_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<()> {
+        use crate::conversation::message::MessageContent;
+
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let rows = sqlx::query_as::<_, (i64, String)>(
+            "SELECT id, content_json FROM messages \
+             WHERE session_id = ? AND message_id = ? \
+             ORDER BY id ASC",
+        )
+        .bind(session_id)
+        .bind(message_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        for (row_id, content_json) in rows {
+            let mut content: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+            let mut found = false;
+            for block in &mut content {
+                if let MessageContent::ToolRequest(tr) = block {
+                    if tr.id == tool_call_id {
+                        tr.tool_meta = Some(merge_tool_meta(tr.tool_meta.take(), &patch));
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                continue;
+            }
+
+            let updated_json = serde_json::to_string(&content)?;
+            sqlx::query("UPDATE messages SET content_json = ? WHERE id = ?")
+                .bind(updated_json)
+                .bind(row_id)
+                .execute(&mut *tx)
+                .await?;
+            tx.commit().await?;
+            return Ok(());
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+}
+
+/// Merge a JSON object `patch` into an existing optional object value,
+/// preserving keys not present in the patch.
+fn merge_tool_meta(
+    existing: Option<serde_json::Value>,
+    patch: &serde_json::Value,
+) -> serde_json::Value {
+    let mut base = match existing {
+        Some(serde_json::Value::Object(map)) => map,
+        _ => serde_json::Map::new(),
+    };
+    if let serde_json::Value::Object(patch_map) = patch {
+        for (k, v) in patch_map {
+            base.insert(k.clone(), v.clone());
+        }
+    }
+    serde_json::Value::Object(base)
 }
 
 #[cfg(test)]

@@ -186,6 +186,9 @@ struct GooseAcpSession {
 struct ToolChain {
     /// Tool call ids in document order. Always `len() >= 2`.
     ids: Vec<String>,
+    /// The message_id of the assistant message containing these tool calls.
+    /// Used to persist chain summaries back to the messages table.
+    message_id: String,
 }
 
 /// Progress stages signalled by the background agent setup task via the watch
@@ -742,7 +745,11 @@ fn extend_chain_membership(
 ) {
     if buffer.len() >= 2 {
         let ids: Vec<String> = buffer.iter().map(|(id, _)| id.clone()).collect();
-        let chain = Arc::new(ToolChain { ids: ids.clone() });
+        let message_id = buffer[0].1.clone();
+        let chain = Arc::new(ToolChain {
+            ids: ids.clone(),
+            message_id,
+        });
         for id in ids {
             chain_membership.insert(id, chain.clone());
         }
@@ -1646,8 +1653,8 @@ impl GooseAcpAgent {
         &self,
         tool_request: &crate::conversation::message::ToolRequest,
         session_id: &SessionId,
-        _thread_id: &str,
-        _message_id: Option<&str>,
+        session_id_for_persist: &str,
+        message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
@@ -1675,6 +1682,9 @@ impl GooseAcpAgent {
             let name = tool_call.name.to_string();
             let identity_meta = pending_tool_call.identity_meta.clone();
             let fallback_title = pending_tool_call.fallback_title.clone();
+            let session_id_for_persist = session_id_for_persist.to_string();
+            let message_id_for_persist = message_id.map(|s| s.to_string());
+            let session_manager = self.session_manager.clone();
             let args_json = tool_call
                 .arguments
                 .as_ref()
@@ -1773,12 +1783,31 @@ impl GooseAcpAgent {
 
                 // Best-effort persistence: only persist the LLM-generated title
                 // (not the deterministic fallback) so reload uses fallback_title
-                // for older or failed cases just like today. Surface persist
-                // errors at warn level so the "occasional bad replay" symptom is
-                // diagnosable from logs alone.
-                // Tool call title generated; displayed in UI via notification.
-                // Persistence to messages table for reload is not yet implemented.
-                let _ = from_llm;
+                // for older or failed cases just like today.
+                if from_llm {
+                    if let Some(msg_id) = message_id_for_persist {
+                        let patch = serde_json::json!({
+                            crate::conversation::message::TOOL_META_TITLE_KEY: title,
+                        });
+                        if let Err(e) = session_manager
+                            .update_tool_request_meta(
+                                &session_id_for_persist,
+                                &msg_id,
+                                &request_id,
+                                patch,
+                            )
+                            .await
+                        {
+                            warn!(
+                                "tool call summary: persist failed for {request_id} in {msg_id}: {e}",
+                            );
+                        }
+                    } else {
+                        warn!(
+                            "tool call summary: missing message_id for {request_id} — title will not survive reload",
+                        );
+                    }
+                }
             });
         }
 
@@ -1934,6 +1963,7 @@ impl GooseAcpAgent {
         let sid = session_id.clone();
         let chain_for_task = chain.clone();
         let cx = cx.clone();
+        let session_manager = self.session_manager.clone();
 
         let first_id = first_id.clone();
         tokio::spawn(async move {
@@ -2015,7 +2045,26 @@ impl GooseAcpAgent {
             };
 
             let count = chain_for_task.ids.len();
-            let _ = &chain_for_task;
+            let patch = serde_json::json!({
+                crate::conversation::message::TOOL_META_CHAIN_SUMMARY_KEY: {
+                    "summary": &summary,
+                    "count": count,
+                },
+            });
+            if let Err(e) = session_manager
+                .update_tool_request_meta(
+                    &sid.0,
+                    &chain_for_task.message_id,
+                    &first_id,
+                    patch,
+                )
+                .await
+            {
+                warn!(
+                    "tool chain summary: persist failed for chain anchored at {first_id} in {}: {e}",
+                    chain_for_task.message_id,
+                );
+            }
 
             let meta = with_tool_chain_summary_meta(identity_meta, &summary, count);
             let fields = ToolCallUpdateFields::new();
