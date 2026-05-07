@@ -27,9 +27,7 @@ use crate::commands::schedule::{
     handle_schedule_sessions,
 };
 use crate::commands::session::{handle_session_list, handle_session_remove};
-use crate::commands::wallet::{
-    handle_wallet_balance, handle_wallet_topup, handle_wallet_withdraw,
-};
+use crate::commands::wallet::{handle_wallet_balance, handle_wallet_topup, handle_wallet_withdraw};
 use crate::recipes::extract_from_cli::extract_recipe_info_from_cli;
 use crate::recipes::recipe::{explain_recipe, render_recipe_as_yaml};
 use crate::session::{build_session, SessionBuilderConfig};
@@ -283,7 +281,6 @@ enum WalletCommand {
     Topup { token: String },
     Withdraw { amount: Option<u64> },
 }
-
 
 /// Output configuration options for the run command
 #[derive(Args, Debug, Clone)]

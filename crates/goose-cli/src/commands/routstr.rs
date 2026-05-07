@@ -13,9 +13,9 @@ use cdk::Amount;
 use console::style;
 use goose::config::Config;
 use goose::providers::routstr_api::{
-    active_profile_name, balance_info, create_balance, load_profile, load_profiles,
-    refund_balance, set_active_profile, topup_balance, upsert_profile, BalanceInfoResponse,
-    ProviderApiError, RoutstrProfile, ROUTSTR_DEFAULT_HOST,
+    active_profile_name, balance_info, create_balance, load_profile, load_profiles, refund_balance,
+    set_active_profile, topup_balance, upsert_profile, BalanceInfoResponse, ProviderApiError,
+    RoutstrProfile, ROUTSTR_DEFAULT_HOST,
 };
 
 use crate::commands::routstr_pending;
@@ -76,9 +76,11 @@ pub async fn handle_profile_use(name: String) -> Result<()> {
                         ))
                         .yellow()
                     );
-                    if let Err(qe) =
-                        routstr_pending::enqueue(&active_profile.url, &active_profile.api_key, e.to_string())
-                    {
+                    if let Err(qe) = routstr_pending::enqueue(
+                        &active_profile.url,
+                        &active_profile.api_key,
+                        e.to_string(),
+                    ) {
                         eprintln!(
                             "{}",
                             style(format!(
@@ -148,10 +150,7 @@ pub async fn prompt_and_set_routstr_url() -> Result<()> {
         return Ok(());
     }
 
-    if entered == current_url
-        && profiles.contains_key(&active)
-        && !profiles.is_empty()
-    {
+    if entered == current_url && profiles.contains_key(&active) && !profiles.is_empty() {
         // Same URL — this is the user's escape hatch for "fund this
         // profile". If there's no api_key yet, *try* to drain the local
         // wallet via `topup_active_from_local`; if the local wallet is
@@ -185,8 +184,9 @@ pub async fn prompt_and_set_routstr_url() -> Result<()> {
     let _ = config.delete("ROUTSTR_HOST");
 
     // 1. Existing profile with a matching URL → switch to it.
-    if let Some((existing_name, _)) =
-        profiles.iter().find(|(n, p)| **n != active && p.url == entered)
+    if let Some((existing_name, _)) = profiles
+        .iter()
+        .find(|(n, p)| **n != active && p.url == entered)
     {
         let existing_name = existing_name.clone();
         let _ = cliclack::log::info(format!(
@@ -321,9 +321,7 @@ async fn topup_active_from_local(amount_sats: u64) -> Result<()> {
     let wallet = open_wallet().await?;
     let local_balance: Amount = wallet.total_balance().await?;
     if local_balance == Amount::ZERO {
-        bail!(
-            "local wallet empty — top up with `goose wallet topup <cashu-token>` first"
-        );
+        bail!("local wallet empty — top up with `goose wallet topup <cashu-token>` first");
     }
 
     let to_send: Amount = Amount::from(amount_sats).min(local_balance);

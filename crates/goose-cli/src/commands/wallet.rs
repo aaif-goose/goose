@@ -83,10 +83,7 @@ async fn print_active_profile_balance() {
             let bal_sats = info.balance / 1000;
             let bal_msats = info.balance;
             let spent_sats = info.total_spent / 1000;
-            print!(
-                "proxy balance:  {} sats ({} mSats)",
-                bal_sats, bal_msats
-            );
+            print!("proxy balance:  {} sats ({} mSats)", bal_sats, bal_msats);
             if info.reserved > 0 {
                 print!(" — {} mSats reserved", info.reserved);
             }
@@ -145,10 +142,7 @@ pub async fn handle_wallet_withdraw(amount: Option<u64>) -> Result<()> {
         return Ok(());
     }
 
-    let amount = amount
-        .map(Amount::from)
-        .unwrap_or(balance)
-        .min(balance);
+    let amount = amount.map(Amount::from).unwrap_or(balance).min(balance);
 
     let prep_send = wallet.prepare_send(amount, SendOptions::default()).await?;
     let token = prep_send.confirm(None).await?;
@@ -220,9 +214,7 @@ pub async fn withdraw_to_token(wallet: &Wallet, amount: Amount) -> Result<String
             u64::from(amount)
         );
     }
-    let prep_send = wallet
-        .prepare_send(amount, SendOptions::default())
-        .await?;
+    let prep_send = wallet.prepare_send(amount, SendOptions::default()).await?;
     let token = prep_send.confirm(None).await?;
     Ok(token.to_string())
 }

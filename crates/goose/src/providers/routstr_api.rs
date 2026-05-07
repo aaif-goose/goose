@@ -94,7 +94,10 @@ pub fn active_profile_name(config: &crate::config::Config) -> String {
 /// usually saves both in one go.
 pub fn set_active_profile(config: &crate::config::Config, name: &str) -> Result<()> {
     config
-        .set_param(ROUTSTR_ACTIVE_KEY, &serde_json::Value::String(name.to_string()))
+        .set_param(
+            ROUTSTR_ACTIVE_KEY,
+            &serde_json::Value::String(name.to_string()),
+        )
         .context("failed to write ROUTSTR_ACTIVE into config")?;
     Ok(())
 }
@@ -281,7 +284,8 @@ pub async fn topup_balance(
     cashu_token: &str,
 ) -> Result<serde_json::Value, ProviderApiError> {
     let mut url = balance_url(host, "v1/balance/topup").map_err(ProviderApiError::Request)?;
-    url.query_pairs_mut().append_pair("cashu_token", cashu_token);
+    url.query_pairs_mut()
+        .append_pair("cashu_token", cashu_token);
     let client = http_client().map_err(ProviderApiError::Request)?;
     let response: reqwest::Response = client
         .post(url)
@@ -378,8 +382,7 @@ async fn parse_response<T: for<'de> Deserialize<'de>>(
 }
 
 fn extract_message(v: &serde_json::Value) -> Option<String> {
-    v.get("message")
-        .and_then(|m| m.as_str().map(String::from))
+    v.get("message").and_then(|m| m.as_str().map(String::from))
 }
 
 #[cfg(test)]

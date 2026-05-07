@@ -11,9 +11,9 @@ use super::errors::{OpenAIError, ProviderError};
 use super::http_status::map_http_error_to_provider_error;
 use super::openai_compatible::stream_openai_compat;
 use super::retry::ProviderRetry;
-use super::routstr_api::{active_profile_name, load_profile, ROUTSTR_DEFAULT_HOST};
 #[cfg(test)]
 use super::routstr_api::ROUTSTR_DEFAULT_PROFILE;
+use super::routstr_api::{active_profile_name, load_profile, ROUTSTR_DEFAULT_HOST};
 use super::utils::{ImageFormat, RequestLog};
 use crate::conversation::message::Message;
 use crate::model::ModelConfig;
