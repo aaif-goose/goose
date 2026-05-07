@@ -38,12 +38,15 @@ if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
 from lib import (  # noqa: E402  (import after sys.path tweak)
+    Annotation,
+    AnnotationStore,
     AnthropicJudge,
     GooseSubprocessRunner,
     GraderOutcome,
     Judge,
     JudgeVerdict,
     L1Grader,
+    L2Grader,
     L3Grader,
     RecipeRunner,
     ResultsStore,
@@ -57,8 +60,11 @@ from lib import (  # noqa: E402  (import after sys.path tweak)
     load_failure_modes,
     load_graders,
     load_tasks,
+    make_annotation_id,
     passk_by_slice,
+    should_sample,
 )
+from lib.annotations import now_iso  # noqa: E402
 from lib.graders import is_l3_calibrated  # noqa: E402
 from lib.kpass import TrialResult  # noqa: E402
 
@@ -157,6 +163,7 @@ def main() -> int:
     runner = _build_runner(args.runner)
     judge = _build_judge(args.judge)
     store = ResultsStore(path=args.store)
+    annotation_store = AnnotationStore(evals_dir / "annotations")
     run_id = store.start_run(
         recipe=str(recipe_dir),
         k=args.k,
@@ -178,6 +185,9 @@ def main() -> int:
                 repo_root=args.repo_root,
                 judge=judge,
                 evals_dir=evals_dir,
+                run_id=run_id,
+                trial_index=trial_index,
+                annotation_store=annotation_store,
             )
             passed, evidence = compose_trial_pass(outcomes, graders_by_id, task)
 
@@ -252,6 +262,9 @@ def _outcomes_for_trial(
     repo_root: Path,
     judge: Judge | None,
     evals_dir: Path,
+    run_id: int,
+    trial_index: int,
+    annotation_store: AnnotationStore,
 ) -> list[GraderOutcome]:
     """Build the GraderOutcome list for one trial.
 
@@ -280,14 +293,15 @@ def _outcomes_for_trial(
         outcomes.append(grade_one(g, run_result.output, task, repo_root=repo_root))
 
     for g in graders.by_level("L2"):
-        # L2 sampling is not yet wired up by the harness; surface the gap
-        # cleanly rather than silently treating L2 as always-pass.
+        assert isinstance(g, L2Grader)
         outcomes.append(
-            GraderOutcome(
-                grader_id=g.id,
-                passed=False,
-                skipped=True,
-                skip_reason="L2 sampling not yet automated by the harness",
+            _l2_outcome(
+                grader=g,
+                task=task,
+                run_id=run_id,
+                trial_index=trial_index,
+                run_result=run_result,
+                annotation_store=annotation_store,
             )
         )
 
@@ -312,6 +326,68 @@ def _outcomes_for_trial(
         outcomes.append(_invoke_l3_judge(g, judge, run_result, task, evals_dir))
 
     return outcomes
+
+
+def _l2_outcome(
+    *,
+    grader: L2Grader,
+    task: Task,
+    run_id: int,
+    trial_index: int,
+    run_result: RunResult,
+    annotation_store: AnnotationStore,
+) -> GraderOutcome:
+    """Decide whether to sample this trial for L2 review and emit a
+    GraderOutcome accordingly.
+
+    L2 is always reported skipped at run time — the SME's verdict comes
+    in asynchronously and informs L3 calibration, not the per-trial
+    pass/fail. The skip reason distinguishes:
+
+      "queued for review at <path>"  — sampling fired; an annotation
+                                       file was written for the SME.
+      "not sampled (sample_rate ...)" — sampling did not fire.
+    """
+    sampled = should_sample(
+        run_id=run_id,
+        task_id=task.id,
+        trial_index=trial_index,
+        grader_id=grader.id,
+        sample_rate=grader.sample_rate,
+    )
+    if not sampled:
+        return GraderOutcome(
+            grader_id=grader.id,
+            passed=False,
+            skipped=True,
+            skip_reason=f"not sampled (sample_rate={grader.sample_rate})",
+        )
+
+    annotation_id = make_annotation_id(
+        run_id=run_id, task_id=task.id, trial_index=trial_index, grader_id=grader.id,
+    )
+    annotation = Annotation(
+        annotation_id=annotation_id,
+        run_id=run_id,
+        task_id=task.id,
+        trial_index=trial_index,
+        grader_id=grader.id,
+        polarity=task.polarity,
+        tags=task.tags,
+        axes=task.axes,
+        task_input=task.input,
+        task_expected=task.expected,
+        recipe_output=run_result.output,
+        rubric_path=grader.rubric or "",
+        created_at=now_iso(),
+    )
+    written_path = annotation_store.write(annotation)
+    return GraderOutcome(
+        grader_id=grader.id,
+        passed=False,
+        skipped=True,
+        skip_reason=f"queued for review at {written_path}",
+    )
 
 
 def _invoke_l3_judge(

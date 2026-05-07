@@ -77,3 +77,10 @@ result
 # Goose self-test artifacts
 gooseselftest/
 .tasks/
+
+# Skein: annotation files are ephemeral artifacts of `run_kpass.py`. Real
+# completed annotations that should ship as calibration data move to
+# `evals/calibration_samples/` (committed); pending and one-off review
+# artifacts in `evals/annotations/` are not committed.
+recipes/**/evals/annotations/*
+!recipes/**/evals/annotations/.gitkeep

@@ -274,3 +274,145 @@ def test_l3_judge_help_lists_choices() -> None:
     assert "anthropic" in result.stdout
     assert "stub" in result.stdout
     assert "off" in result.stdout
+
+
+# ---------- L2 sampling through the harness ----------
+
+
+def _copy_recipe_with_l2_sample_rate(src: Path, dst: Path, *, sample_rate: float) -> Path:
+    """Copy a recipe and override the L2 grader's sample_rate to the given
+    value (typically 1.0 to force sampling on every trial in tests)."""
+    import shutil
+
+    import yaml
+
+    shutil.copytree(src, dst)
+    graders_path = dst / "evals" / "graders.yaml"
+    data = yaml.safe_load(graders_path.read_text(encoding="utf-8"))
+    for g in data["graders"]:
+        if g.get("level") == "L2":
+            g["sample_rate"] = sample_rate
+    graders_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return dst
+
+
+def test_l2_sampling_writes_annotation_files(tmp_path: Path) -> None:
+    """With sample_rate=1.0, every trial must produce an annotation file in
+    the recipe's evals/annotations/ directory."""
+    if not CHARTER.exists():
+        pytest.skip("charter-sfdipot recipe not present in this checkout")
+    recipe_copy = _copy_recipe_with_l2_sample_rate(
+        CHARTER, tmp_path / "charter-copy", sample_rate=1.0,
+    )
+    annotations_dir = recipe_copy / "evals" / "annotations"
+    # The .gitkeep file ships with the directory; remove it so we can count
+    # only actual annotation files.
+    for stale in annotations_dir.glob("*"):
+        if stale.is_file():
+            stale.unlink()
+
+    store = tmp_path / "results.sqlite"
+    _run(
+        "--recipe", str(recipe_copy),
+        "--k", "1",
+        "--runner", "stub",
+        "--judge", "off",
+        "--store", str(store),
+    )
+    annotation_files = list(annotations_dir.glob("*.json"))
+    # 10 tasks × 1 trial × 1 L2 grader at sample_rate=1.0 = 10 annotations.
+    assert len(annotation_files) == 10
+
+
+def test_l2_sampling_zero_rate_writes_no_annotations(tmp_path: Path) -> None:
+    if not CHARTER.exists():
+        pytest.skip("charter-sfdipot recipe not present in this checkout")
+    recipe_copy = _copy_recipe_with_l2_sample_rate(
+        CHARTER, tmp_path / "charter-copy", sample_rate=0.0,
+    )
+    annotations_dir = recipe_copy / "evals" / "annotations"
+    for stale in annotations_dir.glob("*"):
+        if stale.is_file():
+            stale.unlink()
+
+    store = tmp_path / "results.sqlite"
+    _run(
+        "--recipe", str(recipe_copy),
+        "--k", "1",
+        "--runner", "stub",
+        "--judge", "off",
+        "--store", str(store),
+    )
+    annotation_files = list(annotations_dir.glob("*.json"))
+    assert annotation_files == []
+
+
+def test_l2_annotation_carries_task_and_output(tmp_path: Path) -> None:
+    """The persisted annotation file must carry everything the SME needs:
+    task input, expected, recipe output, rubric path."""
+    if not CHARTER.exists():
+        pytest.skip("charter-sfdipot recipe not present in this checkout")
+    recipe_copy = _copy_recipe_with_l2_sample_rate(
+        CHARTER, tmp_path / "charter-copy", sample_rate=1.0,
+    )
+    annotations_dir = recipe_copy / "evals" / "annotations"
+    for stale in annotations_dir.glob("*"):
+        if stale.is_file():
+            stale.unlink()
+
+    store = tmp_path / "results.sqlite"
+    _run(
+        "--recipe", str(recipe_copy),
+        "--k", "1",
+        "--runner", "stub",
+        "--judge", "off",
+        "--store", str(store),
+    )
+    import json
+    files = sorted(annotations_dir.glob("*.json"))
+    assert files
+    one = json.loads(files[0].read_text(encoding="utf-8"))
+    assert one["status"] == "pending"
+    assert one["review"] is None
+    assert one["rubric_path"] == "rubrics/sme_quality.md"
+    assert "feature_brief" in one["task_input"]
+    assert one["recipe_output"]
+
+
+def test_l2_sampling_skip_reason_reflects_queued_or_not_sampled(tmp_path: Path) -> None:
+    """The L2 grader's outcome in SQLite must record either 'queued for
+    review at <path>' (sampled) or 'not sampled (sample_rate=...)' so the
+    Trace Inspector and Slice Explorer can show the L2 status."""
+    if not CHARTER.exists():
+        pytest.skip("charter-sfdipot recipe not present in this checkout")
+    recipe_copy = _copy_recipe_with_l2_sample_rate(
+        CHARTER, tmp_path / "charter-copy", sample_rate=1.0,
+    )
+    annotations_dir = recipe_copy / "evals" / "annotations"
+    for stale in annotations_dir.glob("*"):
+        if stale.is_file():
+            stale.unlink()
+
+    store = tmp_path / "results.sqlite"
+    _run(
+        "--recipe", str(recipe_copy),
+        "--k", "1",
+        "--runner", "stub",
+        "--judge", "off",
+        "--store", str(store),
+    )
+    import json
+    import sqlite3
+    with sqlite3.connect(store) as conn:
+        rows = conn.execute("SELECT grader_scores_json FROM trial").fetchall()
+    found_queued = False
+    for (scores_json,) in rows:
+        scores = json.loads(scores_json)
+        for o in scores["outcomes"]:
+            if o["id"] == "g-charter-sme-review":
+                assert o["skipped"] is True
+                # The reason is in the evidence dict written by composition.
+        evidence = scores["evidence"]
+        if "queued for review at" in evidence.get("g-charter-sme-review", ""):
+            found_queued = True
+    assert found_queued, "expected at least one trial to show 'queued for review' for the L2 grader"

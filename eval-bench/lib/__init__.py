@@ -8,6 +8,13 @@ Public API:
     slice_results(results, axis)   -> dict[str, list[Result]]
 """
 
+from .annotations import (
+    Annotation,
+    AnnotationReview,
+    AnnotationStore,
+    make_annotation_id,
+    should_sample,
+)
 from .calibration import CalibrationRecord, load_calibration_log
 from .composition import GraderOutcome, compose_trial_pass, effective_passed
 from .failure_modes import FailureMode, FailureModes, load_failure_modes
@@ -27,6 +34,9 @@ from .store import ResultsStore
 from .tasks import Task, load_tasks
 
 __all__ = [
+    "Annotation",
+    "AnnotationReview",
+    "AnnotationStore",
     "AnthropicJudge",
     "CalibrationRecord",
     "FailureMode",
@@ -54,7 +64,9 @@ __all__ = [
     "load_failure_modes",
     "load_graders",
     "load_tasks",
+    "make_annotation_id",
     "parse_verdict",
     "passk_by_slice",
+    "should_sample",
     "slice_results",
 ]
