@@ -1320,6 +1320,7 @@ impl Agent {
             });
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
+            let mut tool_pair_summarization_done = false;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1366,13 +1367,17 @@ impl Agent {
                     .count()
                     .saturating_sub(pre_turn_tool_count);
 
-                let tool_pair_summarization_task = crate::context_mgmt::maybe_summarize_tool_pairs(
-                    self.provider().await?,
-                    session_config.id.clone(),
-                    conversation.clone(),
-                    tool_call_cut_off,
-                    current_turn_tool_count,
-                );
+                let tool_pair_summarization_task = if tool_pair_summarization_done {
+                    None
+                } else {
+                    crate::context_mgmt::maybe_summarize_tool_pairs(
+                        self.provider().await?,
+                        session_config.id.clone(),
+                        conversation.clone(),
+                        tool_call_cut_off,
+                        current_turn_tool_count,
+                    )
+                };
 
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
@@ -1842,39 +1847,40 @@ impl Agent {
                 }
 
                 if is_token_cancelled(&cancel_token) {
-                    tool_pair_summarization_task.abort();
+                    if let Some(ref task) = tool_pair_summarization_task {
+                        task.abort();
+                    }
                 }
 
-                if let Ok(summaries) = tool_pair_summarization_task.await {
-                    let mut updated_messages = conversation.messages().clone();
-
-                    for (summary_msg, tool_id) in summaries {
-                        let matching: Vec<&mut Message> = updated_messages
-                            .iter_mut()
-                            .filter(|msg| {
-                                msg.id.is_some() && msg.content.iter().any(|c| match c {
-                                    MessageContent::ToolRequest(req) => req.id == tool_id,
-                                    MessageContent::ToolResponse(resp) => resp.id == tool_id,
-                                    _ => false,
+                if let Some(task) = tool_pair_summarization_task {
+                    tool_pair_summarization_done = true;
+                    if let Ok(summaries) = task.await {
+                        for (summary_msg, tool_id) in summaries {
+                            let matching_ids: Vec<String> = conversation.messages()
+                                .iter()
+                                .filter(|msg| {
+                                    msg.id.is_some() && msg.content.iter().any(|c| match c {
+                                        MessageContent::ToolRequest(req) => req.id == tool_id,
+                                        MessageContent::ToolResponse(resp) => resp.id == tool_id,
+                                        _ => false,
+                                    })
                                 })
-                            })
-                            .collect();
+                                .filter_map(|msg| msg.id.clone())
+                                .collect();
 
-                        if matching.len() == 2 {
-                            for msg in matching {
-                                let id = msg.id.as_ref().unwrap();
-                                msg.metadata = msg.metadata.with_agent_invisible();
-                                SessionManager::update_message_metadata(&session_config.id, id, |metadata| {
-                                    metadata.with_agent_invisible()
-                                }).await?;
+                            if matching_ids.len() == 2 {
+                                for id in &matching_ids {
+                                    SessionManager::update_message_metadata(&session_config.id, id, |metadata| {
+                                        metadata.with_agent_invisible()
+                                    }).await?;
+                                }
+                                session_manager.add_message(&session_config.id, &summary_msg).await?;
+                            } else {
+                                warn!("Expected a tool request/reply pair, but found {} matching messages",
+                                    matching_ids.len());
                             }
-                            messages_to_add.push(summary_msg);
-                        } else {
-                            warn!("Expected a tool request/reply pair, but found {} matching messages",
-                                matching.len());
                         }
                     }
-                    conversation = Conversation::new_unvalidated(updated_messages);
                 }
 
                 for msg in &messages_to_add {
