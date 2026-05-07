@@ -82,8 +82,6 @@ pub struct Session {
     #[serde(default)]
     pub goose_mode: GooseMode,
     #[serde(default)]
-    pub thread_id: Option<String>,
-    #[serde(default)]
     pub archived_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub project_id: Option<String>,
@@ -109,7 +107,6 @@ pub struct SessionUpdateBuilder<'a> {
     provider_name: Option<Option<String>>,
     model_config: Option<Option<ModelConfig>>,
     goose_mode: Option<GooseMode>,
-    thread_id: Option<Option<String>>,
     archived_at: Option<Option<DateTime<Utc>>>,
 
     project_id: Option<Option<String>>,
@@ -144,7 +141,6 @@ impl<'a> SessionUpdateBuilder<'a> {
             provider_name: None,
             model_config: None,
             goose_mode: None,
-            thread_id: None,
             archived_at: None,
             project_id: None,
         }
@@ -252,11 +248,6 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn goose_mode(mut self, mode: GooseMode) -> Self {
         self.goose_mode = Some(mode);
-        self
-    }
-
-    pub fn thread_id(mut self, thread_id: Option<String>) -> Self {
-        self.thread_id = Some(thread_id);
         self
     }
 
@@ -507,7 +498,6 @@ impl Default for Session {
             provider_name: None,
             model_config: None,
             goose_mode: GooseMode::default(),
-            thread_id: None,
             archived_at: None,
             project_id: None,
         }
@@ -579,7 +569,6 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
-            thread_id: row.try_get("thread_id").ok().flatten(),
             archived_at: row.try_get("archived_at").ok(),
             project_id: row.try_get("project_id").ok().flatten(),
         })
@@ -682,7 +671,6 @@ impl SessionStorage {
                 provider_name TEXT,
                 model_config_json TEXT,
                 goose_mode TEXT NOT NULL DEFAULT 'auto',
-                thread_id TEXT,
                 archived_at TIMESTAMP,
                 project_id TEXT
             )
@@ -1098,11 +1086,17 @@ impl SessionStorage {
                         .await?;
                 }
 
-                // Drop thread tables (no longer used).
+                // Drop thread tables and thread_id column (no longer used).
                 sqlx::query("DROP TABLE IF EXISTS thread_messages")
                     .execute(&mut **tx)
                     .await?;
                 sqlx::query("DROP TABLE IF EXISTS threads")
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query("DROP INDEX IF EXISTS idx_sessions_thread")
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query("ALTER TABLE sessions DROP COLUMN thread_id")
                     .execute(&mut **tx)
                     .await?;
             }
@@ -1167,7 +1161,7 @@ impl SessionStorage {
                total_tokens, input_tokens, output_tokens,
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
                schedule_id, recipe_json, user_recipe_values_json,
-               provider_name, model_config_json, goose_mode, thread_id,
+               provider_name, model_config_json, goose_mode,
                archived_at, project_id
         FROM sessions
         WHERE id = ?
@@ -1232,7 +1226,6 @@ impl SessionStorage {
         add_update!(builder.provider_name, "provider_name");
         add_update!(builder.model_config, "model_config_json");
         add_update!(builder.goose_mode, "goose_mode");
-        add_update!(builder.thread_id, "thread_id");
         add_update!(builder.archived_at, "archived_at");
 
         add_update!(builder.project_id, "project_id");
@@ -1303,9 +1296,6 @@ impl SessionStorage {
         }
         if let Some(goose_mode) = builder.goose_mode {
             q = q.bind(goose_mode.to_string());
-        }
-        if let Some(thread_id) = builder.thread_id {
-            q = q.bind(thread_id);
         }
         if let Some(ref archived_at) = builder.archived_at {
             q = q.bind(archived_at.as_ref());
@@ -1469,7 +1459,7 @@ impl SessionStorage {
                    s.total_tokens, s.input_tokens, s.output_tokens,
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
-                   s.provider_name, s.model_config_json, s.goose_mode, s.thread_id,
+                   s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id,
                    COUNT(m.id) as message_count
             FROM sessions s

@@ -4150,7 +4150,6 @@ print(\"hello, world\")
             provider_name: None,
             model_config: None,
             goose_mode: GooseMode::default(),
-            thread_id: None,
             archived_at: None,
             project_id: None,
         }

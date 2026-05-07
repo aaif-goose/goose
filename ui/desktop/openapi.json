@@ -7791,10 +7791,6 @@
           "session_type": {
             "$ref": "#/components/schemas/SessionType"
           },
-          "thread_id": {
-            "type": "string",
-            "nullable": true
-          },
           "total_tokens": {
             "type": "integer",
             "format": "int32",
