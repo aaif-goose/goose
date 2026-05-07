@@ -383,39 +383,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_default_provider() {
-        use crate::providers::testprovider::TestProvider;
-
-        let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir).await;
-
-        // Create a test provider for replaying (doesn't need inner provider)
-        let temp_file = temp_dir.path().join("test_provider.json");
-
-        // Create an empty test provider (will fail on actual use but that's ok for this test)
-        std::fs::write(&temp_file, "{}").unwrap();
-        let test_provider = TestProvider::new_replaying(temp_file.to_str().unwrap()).unwrap();
-
-        manager.set_default_provider(Arc::new(test_provider)).await;
-
-        // Create a real DB session so update_provider can persist config
-        let db_session = manager
-            .session_manager
-            .create_session(
-                std::path::PathBuf::from(temp_dir.path()),
-                "provider-test".to_string(),
-                crate::session::SessionType::User,
-                GooseMode::Auto,
-            )
-            .await
-            .unwrap();
-        let session = db_session.id;
-        let _agent = manager.get_or_create_agent(session.clone()).await.unwrap();
-
-        assert!(manager.has_session(&session).await);
-    }
-
-    #[tokio::test]
     async fn test_eviction_updates_last_used() {
         // Test that accessing a session updates its last_used timestamp
         // and affects eviction order

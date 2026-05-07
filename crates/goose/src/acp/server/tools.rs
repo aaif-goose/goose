@@ -7,9 +7,9 @@ impl GooseAcpAgent {
         &self,
         req: GetToolsRequest,
     ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id, None).await?;
-        let tools = agent.list_tools(&internal_id, None).await;
+        let tools = agent.list_tools(session_id, None).await;
         let tools_json = tools
             .into_iter()
             .map(|t| serde_json::to_value(&t))
@@ -22,9 +22,9 @@ impl GooseAcpAgent {
         &self,
         req: GooseToolCallRequest,
     ) -> Result<GooseToolCallResponse, agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id, None).await?;
-        let tools = agent.list_tools(&internal_id, None).await;
+        let tools = agent.list_tools(session_id, None).await;
 
         let Some(tool) = tools.iter().find(|t| *t.name == req.name) else {
             return Err(agent_client_protocol::Error::invalid_params().data("tool not found"));
@@ -52,7 +52,7 @@ impl GooseAcpAgent {
             params
         };
 
-        let ctx = crate::agents::ToolCallContext::new(internal_id, None, None);
+        let ctx = crate::agents::ToolCallContext::new(session_id.clone(), None, None);
         let tool_result = agent
             .extension_manager
             .dispatch_tool_call(&ctx, tool_call, CancellationToken::new())
