@@ -568,7 +568,6 @@ pub fn list_sources(
         }
     }
 
-
     sources.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(sources)
 }
@@ -1041,9 +1040,11 @@ mod tests {
     #[test]
     fn list_skill_excludes_builtin_skills() {
         let listed = list_sources(Some(SourceType::Skill), None, false).unwrap();
-        assert!(!listed
-            .iter()
-            .any(|source| source.source_type == SourceType::BuiltinSkill));
+        assert!(
+            !listed
+                .iter()
+                .any(|source| source.source_type == SourceType::BuiltinSkill)
+        );
     }
 
     #[test]
@@ -1057,7 +1058,12 @@ mod tests {
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(
             skill_dir.join("SKILL.md"),
-            build_skill_md("goose-doc-guide", "project override", "Use project docs", &HashMap::new()),
+            build_skill_md(
+                "goose-doc-guide",
+                "project override",
+                "Use project docs",
+                &HashMap::new(),
+            ),
         )
         .unwrap();
 
@@ -1067,9 +1073,11 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(!builtins
-            .iter()
-            .any(|source| source.name == "goose-doc-guide"));
+        assert!(
+            !builtins
+                .iter()
+                .any(|source| source.name == "goose-doc-guide")
+        );
 
         let skills = list_sources(
             Some(SourceType::Skill),
@@ -1124,16 +1132,17 @@ mod tests {
         assert!(format!("{:?}", err).contains("not supported"));
 
         let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project), false).unwrap();
-        assert!(listed
-            .iter()
-            .any(|source| source.source_type == SourceType::BuiltinSkill));
+        assert!(
+            listed
+                .iter()
+                .any(|source| source.source_type == SourceType::BuiltinSkill)
+        );
 
         let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = export_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
-
 
         let err = export_source(SourceType::Recipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));

@@ -832,7 +832,10 @@ export const zUpdateSourceRequest = z.object({
     name: z.string(),
     description: z.string(),
     content: z.string(),
-    properties: z.record(z.unknown()).optional()
+    properties: z.union([
+        z.record(z.unknown()),
+        z.null()
+    ]).optional()
 });
 
 export const zUpdateSourceResponse = z.object({
