@@ -1,4 +1,4 @@
-> **This repository is Skein** — a context-driven, eval-first agentic quality engineering distro of goose, tailored for professional test engineers. See [SKEIN.md](SKEIN.md) for the distro's identity, doctrine, and roadmap.
+> **This repository is Skein** — a context-driven, eval-first agentic quality engineering distro of goose, tailored for professional test engineers. See **[GETTING_STARTED.md](GETTING_STARTED.md)** to run it, or [SKEIN.md](SKEIN.md) for the distro's identity, doctrine, and roadmap.
 >
 > The rest of this README is the upstream goose README, kept verbatim for merge ergonomics.
 
