@@ -398,7 +398,18 @@ mod tests {
 
         manager.set_default_provider(Arc::new(test_provider)).await;
 
-        let session = String::from("provider-test");
+        // Create a real DB session so update_provider can persist config
+        let db_session = manager
+            .session_manager
+            .create_session(
+                std::path::PathBuf::from(temp_dir.path()),
+                "provider-test".to_string(),
+                crate::session::SessionType::User,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let session = db_session.id;
         let _agent = manager.get_or_create_agent(session.clone()).await.unwrap();
 
         assert!(manager.has_session(&session).await);
