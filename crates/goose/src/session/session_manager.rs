@@ -1321,7 +1321,11 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         q = q.bind(&builder.session_id);
-        q.execute(&mut *tx).await?;
+        let result = q.execute(&mut *tx).await?;
+
+        if result.rows_affected() == 0 {
+            return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
+        }
 
         tx.commit().await?;
         Ok(())
