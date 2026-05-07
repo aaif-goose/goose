@@ -148,15 +148,9 @@ async fn ensure_refresh_identity_current(
 /// called "Session" (the `sessions` DB table) which represents the agent's working
 /// state: the message list the LLM sees, compaction state, provider binding, etc.
 ///
-/// To bridge these two worlds without rewriting the existing Session model:
-/// - **Thread** (`threads` table) = the ACP session. The `sessionId` that ACP clients
-///   see is actually a thread ID. Threads own the human-visible message log.
-/// - **Session** (`sessions` table) = an internal execution context. A thread may have
-///   many sessions over its lifetime (e.g. when the provider changes).
-///   Clients never see or manage these directly.
-///
-/// The `sessions` HashMap below is keyed by **thread ID** (= ACP session ID).
-/// The `internal_session_id` field tracks which goose Session is currently active.
+/// The ACP session ID maps directly to a `sessions` row. The `sessions` HashMap
+/// below is keyed by session ID. `internal_session_id` is always the same as the
+/// map key (kept for code that still references it during the transition).
 struct GooseAcpSession {
     agent: AgentHandle,
     internal_session_id: String,
@@ -275,12 +269,16 @@ fn session_meta(session: &Session) -> serde_json::Map<String, serde_json::Value>
         );
     }
     if let Some(ref provider) = session.provider_name {
-        meta.entry("providerId".to_string())
-            .or_insert_with(|| serde_json::Value::String(provider.clone()));
+        meta.insert(
+            "providerId".to_string(),
+            serde_json::Value::String(provider.clone()),
+        );
     }
     if let Some(ref mc) = session.model_config {
-        meta.entry("modelId".to_string())
-            .or_insert_with(|| serde_json::Value::String(mc.model_name.clone()));
+        meta.insert(
+            "modelId".to_string(),
+            serde_json::Value::String(mc.model_name.clone()),
+        );
     }
     meta
 }
@@ -2052,12 +2050,7 @@ impl GooseAcpAgent {
                 },
             });
             if let Err(e) = session_manager
-                .update_tool_request_meta(
-                    &sid.0,
-                    &chain_for_task.message_id,
-                    &first_id,
-                    patch,
-                )
+                .update_tool_request_meta(&sid.0, &chain_for_task.message_id, &first_id, patch)
                 .await
             {
                 warn!(
@@ -3198,16 +3191,12 @@ impl GooseAcpAgent {
         // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
         let sessions = self
             .session_manager
-            .list_sessions_by_types(&[
-                SessionType::User,
-                SessionType::Scheduled,
-                SessionType::Acp,
-            ])
+            .list_sessions_by_types(&[SessionType::User, SessionType::Scheduled, SessionType::Acp])
             .await
             .internal_err()?;
         let session_infos: Vec<SessionInfo> = sessions
             .into_iter()
-            .filter(|s| s.message_count > 0 || s.archived_at.is_some())
+            .filter(|s| s.message_count > 0)
             .map(|s| {
                 let meta = session_meta(&s);
                 SessionInfo::new(SessionId::new(s.id), s.working_dir)

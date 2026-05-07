@@ -402,6 +402,9 @@ impl SessionManager {
 
         if user_message_count <= MSG_COUNT_FOR_SESSION_NAME_GENERATION {
             let name = provider.generate_session_name(id, &conversation).await?;
+            if name == session.name {
+                return Ok(None);
+            }
             self.update(id)
                 .system_generated_name(name.clone())
                 .apply()
@@ -1625,15 +1628,15 @@ impl SessionStorage {
             .recipe(original_session.recipe)
             .user_recipe_values(original_session.user_recipe_values);
 
-        // Preserve provider, model config, and goose_mode from original session
+        if let Some(project_id) = original_session.project_id {
+            builder = builder.project_id(Some(project_id));
+        }
         if let Some(provider_name) = original_session.provider_name {
             builder = builder.provider_name(provider_name);
         }
-
         if let Some(model_config) = original_session.model_config {
             builder = builder.model_config(model_config);
         }
-
         builder = builder.goose_mode(original_session.goose_mode);
 
         builder.apply().await?;
