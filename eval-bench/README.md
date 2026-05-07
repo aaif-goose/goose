@@ -125,6 +125,17 @@ These are not displayed in any Skein dashboard, regardless of how easy they are 
 
 These are *activity*, not *value*. A metric earns its place by changing a decision (Mahdi).
 
+## Running the tests
+
+eval-bench ships its own pytest suite. From the repo root:
+
+```bash
+pip install --user pytest    # one-time
+pytest eval-bench/tests
+```
+
+Coverage spans the kpass math, every loader's invariants (one-sided suite rejection, L1-floor enforcement, active-mode-needs-approval, judge-model binding for calibration), the full L3 calibration deployment-gate decision matrix, the SQLite results store, and an end-to-end smoke that runs `run_kpass.py --dry-run` against `recipes/_template/`.
+
 ## Status
 
-This is the Phase 0 scaffold. The schemas and the CLI surface are real; the per-grader runners are stubs that will land alongside the first Phase 1 recipe (`charter-sfdipot`).
+This is the Phase 0 scaffold. The schemas, CLI surface, and library are real; the per-grader runners are stubs that will land alongside the first Phase 1 recipe (`charter-sfdipot`).
