@@ -2981,15 +2981,14 @@ impl GooseAcpAgent {
 
     async fn build_config_update(
         &self,
-        thread_id: &SessionId,
+        session_id: &SessionId,
     ) -> Result<(SessionNotification, Vec<SessionConfigOption>), agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(&thread_id.0).await?;
         let session = self
             .session_manager
-            .get_session(&internal_id, false)
+            .get_session(&session_id.0, false)
             .await
             .internal_err()?;
-        let agent = self.get_session_agent_provider_ready(&thread_id.0).await?;
+        let agent = self.get_session_agent_provider_ready(&session_id.0).await?;
         let provider = agent
             .provider()
             .await
@@ -3016,7 +3015,7 @@ impl GooseAcpAgent {
             provider_options,
         );
         let notification = SessionNotification::new(
-            thread_id.clone(),
+            session_id.clone(),
             SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options.clone())),
         );
         Ok((notification, config_options))

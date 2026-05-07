@@ -15,7 +15,6 @@ import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
 import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import {
-  buildProjectSystemPrompt,
   composeSystemPrompt,
   resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
@@ -31,6 +30,7 @@ import {
   useResolvedAgentModelPicker,
   type PreferredModelSelection,
 } from "./useResolvedAgentModelPicker";
+import { updateSessionProject } from "@/shared/api/acpApi";
 
 interface UseChatSessionControllerOptions {
   sessionId: string | null;
@@ -147,22 +147,14 @@ export function useChatSessionController({
         })),
     [projects],
   );
-  const projectSystemPrompt = useMemo(
-    () => buildProjectSystemPrompt(project),
-    [project],
-  );
   const workingContextPrompt = useMemo(() => {
     if (!activeWorkspace?.branch) return undefined;
     return `<active-working-context>\nActive branch: ${activeWorkspace.branch}\nWorking directory: ${activeWorkspace.path}\n</active-working-context>`;
   }, [activeWorkspace?.branch, activeWorkspace?.path]);
   const effectiveSystemPrompt = useMemo(
     () =>
-      composeSystemPrompt(
-        selectedPersona?.systemPrompt,
-        projectSystemPrompt,
-        workingContextPrompt,
-      ),
-    [projectSystemPrompt, selectedPersona?.systemPrompt, workingContextPrompt],
+      composeSystemPrompt(selectedPersona?.systemPrompt, workingContextPrompt),
+    [selectedPersona?.systemPrompt, workingContextPrompt],
   );
 
   const prepareCurrentSession = useCallback(
@@ -332,6 +324,9 @@ export function useChatSessionController({
             null);
 
       useChatSessionStore.getState().patchSession(sessionId, { projectId });
+
+      void updateSessionProject(sessionId, projectId).catch(console.error);
+
       if (!selectedProvider) {
         return;
       }
@@ -735,6 +730,9 @@ export function useChatSessionController({
         }
         if (hasPendingProject) {
           patch.projectId = nextProjectId ?? null;
+          void updateSessionProject(sessionId, nextProjectId ?? null).catch(
+            console.error,
+          );
         }
 
         useChatSessionStore.getState().patchSession(sessionId, patch);

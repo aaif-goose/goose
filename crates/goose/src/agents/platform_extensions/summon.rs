@@ -125,9 +125,10 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
         name: metadata.name,
         description,
         content: body,
-        directory: path.to_string_lossy().into_owned(),
+        path: path.to_string_lossy().into_owned(),
         global: false,
         supporting_files: Vec::new(),
+        properties: std::collections::HashMap::new(),
     })
 }
 
@@ -171,9 +172,10 @@ fn scan_recipes_from_dir(
                     name,
                     description: recipe.description.clone(),
                     content: recipe.instructions.clone().unwrap_or_default(),
-                    directory: path.to_string_lossy().into_owned(),
+                    path: path.to_string_lossy().into_owned(),
                     global: false,
                     supporting_files: Vec::new(),
+                    properties: std::collections::HashMap::new(),
                 });
             }
             Err(e) => {
@@ -598,9 +600,10 @@ impl SummonClient {
                 name: sr.name.clone(),
                 description,
                 content: String::new(),
-                directory: sr.path.clone(),
+                path: sr.path.clone(),
                 global: false,
                 supporting_files: Vec::new(),
+                properties: std::collections::HashMap::new(),
             });
         }
     }
@@ -1160,7 +1163,7 @@ impl SummonClient {
             }
         }
 
-        let recipe_file = load_local_recipe_file(&source.directory)
+        let recipe_file = load_local_recipe_file(&source.path)
             .map_err(|e| format!("Failed to load recipe '{}': {}", source.name, e))?;
 
         let param_values: Vec<(String, String)> = params
@@ -1193,10 +1196,10 @@ impl SummonClient {
         source: &SourceEntry,
         params: &DelegateParams,
     ) -> Result<Recipe, String> {
-        let agent_content = if source.directory.is_empty() {
+        let agent_content = if source.path.is_empty() {
             return Err("Agent source has no path".to_string());
         } else {
-            std::fs::read_to_string(&source.directory)
+            std::fs::read_to_string(&source.path)
                 .map_err(|e| format!("Failed to read agent file: {}", e))?
         };
 

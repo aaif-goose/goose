@@ -140,7 +140,7 @@ fn test_custom_list_builtin_skill_sources() {
         );
         assert_eq!(builtin.get("global"), Some(&serde_json::json!(true)));
         assert_eq!(
-            builtin.get("directory"),
+            builtin.get("path"),
             Some(&serde_json::json!("builtin://skills/goose-doc-guide"))
         );
     });

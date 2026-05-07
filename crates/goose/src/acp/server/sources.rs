@@ -5,13 +5,26 @@ impl GooseAcpAgent {
         &self,
         req: CreateSourceRequest,
     ) -> Result<CreateSourceResponse, agent_client_protocol::Error> {
+        let project_dir = match (&req.project_id, &req.project_dir) {
+            (Some(pid), _) if !req.global => {
+                let dirs = crate::sources::project_working_dirs(pid);
+                Some(dirs.into_iter().next().ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params().data(format!(
+                        "Project \"{pid}\" has no working directories configured"
+                    ))
+                })?)
+            }
+            (_, Some(pd)) => Some(pd.clone()),
+            _ => None,
+        };
         let source = crate::sources::create_source(
             req.source_type,
             &req.name,
             &req.description,
             &req.content,
             req.global,
-            req.project_dir.as_deref(),
+            project_dir.as_deref(),
+            req.properties,
         )?;
         Ok(CreateSourceResponse { source })
     }
@@ -20,7 +33,11 @@ impl GooseAcpAgent {
         &self,
         req: ListSourcesRequest,
     ) -> Result<ListSourcesResponse, agent_client_protocol::Error> {
-        let sources = crate::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
+        let sources = crate::sources::list_sources(
+            req.source_type,
+            req.project_dir.as_deref(),
+            req.include_project_sources,
+        )?;
         Ok(ListSourcesResponse { sources })
     }
 
@@ -34,6 +51,7 @@ impl GooseAcpAgent {
             &req.name,
             &req.description,
             &req.content,
+            req.properties,
         )?;
         Ok(UpdateSourceResponse { source })
     }

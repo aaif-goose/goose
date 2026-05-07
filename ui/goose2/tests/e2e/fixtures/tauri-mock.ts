@@ -119,7 +119,7 @@ export function buildInitScript(options?: {
         name: s.name,
         description: s.description,
         content: s.instructions ?? s.content ?? "",
-        directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
+        path: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
         global: s.global ?? true,
         supportingFiles: [],
       });
@@ -249,7 +249,7 @@ export function buildInitScript(options?: {
                 type: "skill",
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
+                path: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
                 global: message.params?.global ?? true,
               },
             });
@@ -265,14 +265,14 @@ export function buildInitScript(options?: {
             if (segments.length > 0) {
               segments[segments.length - 1] = name;
             }
-            const directory = \`/\${segments.join("/")}\`;
+            const updatedPath = \`/\${segments.join("/")}\`;
             return jsonRpcResult(message.id, {
               source: {
                 name,
                 type: "skill",
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory,
+                path: updatedPath,
                 global: message.params?.global ?? true,
                 supportingFiles: [],
               },

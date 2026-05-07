@@ -755,7 +755,8 @@ export const zSourceType = z.enum([
     'builtinSkill',
     'recipe',
     'subrecipe',
-    'agent'
+    'agent',
+    'project'
 ]);
 
 /**
@@ -770,7 +771,12 @@ export const zCreateSourceRequest = z.object({
     projectDir: z.union([
         z.string(),
         z.null()
-    ]).optional()
+    ]).optional(),
+    projectId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    properties: z.record(z.unknown()).optional()
 });
 
 /**
@@ -783,9 +789,10 @@ export const zSourceEntry = z.object({
     name: z.string(),
     description: z.string(),
     content: z.string(),
-    directory: z.string(),
+    path: z.string(),
     global: z.boolean(),
-    supportingFiles: z.array(z.string()).optional()
+    supportingFiles: z.array(z.string()).optional(),
+    properties: z.record(z.unknown()).optional()
 });
 
 export const zCreateSourceResponse = z.object({
@@ -808,7 +815,8 @@ export const zListSourcesRequest = z.object({
     projectDir: z.union([
         z.string(),
         z.null()
-    ]).optional()
+    ]).optional(),
+    includeProjectSources: z.boolean().optional().default(false)
 });
 
 export const zListSourcesResponse = z.object({
@@ -823,7 +831,11 @@ export const zUpdateSourceRequest = z.object({
     path: z.string(),
     name: z.string(),
     description: z.string(),
-    content: z.string()
+    content: z.string(),
+    properties: z.union([
+        z.record(z.unknown()),
+        z.null()
+    ]).optional()
 });
 
 export const zUpdateSourceResponse = z.object({

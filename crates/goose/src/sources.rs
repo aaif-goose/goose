@@ -1,5 +1,8 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
+//! methods. Skills live in `~/.agents/skills/` (or per-project under
+//! `<project>/.agents/skills/`). Projects live in `<dataDir>/projects/<slug>.md`.
 
+use crate::config::paths::Paths;
 use crate::skills::{
     build_skill_md, discover_skills, infer_skill_name, is_global_skill_dir,
     parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
@@ -9,7 +12,8 @@ use agent_client_protocol::Error;
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
     content: &str,
@@ -26,53 +30,267 @@ pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
     Ok(Some((metadata, body)))
 }
 
-fn require_skill_type(source_type: SourceType) -> Result<(), Error> {
-    if source_type != SourceType::Skill {
-        return Err(Error::invalid_params().data(format!(
-            "Source type '{}' is not supported. Only 'skill' is currently supported.",
-            source_type
-        )));
+fn require_mutable_type(source_type: SourceType) -> Result<(), Error> {
+    match source_type {
+        SourceType::Skill | SourceType::Project => Ok(()),
+        other => Err(Error::invalid_params().data(format!(
+            "Source type '{other}' is not supported for mutation."
+        ))),
     }
-    Ok(())
 }
 
 fn require_listable_type(source_type: Option<SourceType>) -> Result<SourceType, Error> {
     match source_type.unwrap_or(SourceType::Skill) {
         SourceType::Skill => Ok(SourceType::Skill),
         SourceType::BuiltinSkill => Ok(SourceType::BuiltinSkill),
+        SourceType::Project => Ok(SourceType::Project),
         other => Err(Error::invalid_params().data(format!(
-            "Source type '{}' is not supported. Only 'skill' and 'builtinSkill' are currently supported for listing.",
+            "Source type '{}' is not supported for listing.",
             other
         ))),
     }
 }
 
-fn source_entry(
-    source_type: SourceType,
+// --- Project helpers ---
+
+#[derive(Deserialize)]
+struct ProjectFront {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default, flatten)]
+    properties: HashMap<String, serde_json::Value>,
+}
+
+fn projects_dir() -> PathBuf {
+    Paths::data_dir().join("projects")
+}
+
+fn project_file_path(slug: &str) -> PathBuf {
+    projects_dir().join(format!("{slug}.md"))
+}
+
+fn build_project_md(
     name: &str,
     description: &str,
     content: &str,
-    dir: &std::path::Path,
+    properties: &HashMap<String, serde_json::Value>,
+) -> String {
+    let mut fm = serde_yaml::Mapping::new();
+    fm.insert(
+        serde_yaml::Value::String("name".into()),
+        serde_yaml::Value::String(name.into()),
+    );
+    fm.insert(
+        serde_yaml::Value::String("description".into()),
+        serde_yaml::Value::String(description.into()),
+    );
+    for (k, v) in properties {
+        if k == "name" || k == "description" {
+            continue;
+        }
+        if let Ok(yv) = serde_yaml::to_value(v) {
+            fm.insert(serde_yaml::Value::String(k.clone()), yv);
+        }
+    }
+    let yaml = serde_yaml::to_string(&fm).unwrap_or_default();
+    let mut md = format!("---\n{yaml}---\n");
+    if !content.is_empty() {
+        md.push('\n');
+        md.push_str(content);
+        md.push('\n');
+    }
+    md
+}
+
+/// Returns (display_name, description, body, properties).
+fn parse_project_frontmatter(
+    raw: &str,
+) -> (String, String, String, HashMap<String, serde_json::Value>) {
+    if !raw.trim_start().starts_with("---") {
+        return (
+            String::new(),
+            String::new(),
+            raw.to_string(),
+            HashMap::new(),
+        );
+    }
+    match parse_frontmatter::<ProjectFront>(raw) {
+        Ok(Some((meta, body))) => (meta.name, meta.description, body, meta.properties),
+        _ => (
+            String::new(),
+            String::new(),
+            raw.to_string(),
+            HashMap::new(),
+        ),
+    }
+}
+
+/// Validate a project slug. Same shape as a skill name (kebab-case, ASCII).
+fn validate_project_slug(slug: &str) -> Result<(), Error> {
+    validate_skill_name(slug)
+}
+
+/// Read the `metadata:` field out of an existing SKILL.md, returning an
+/// empty map if the file is missing, malformed, or carries no metadata.
+fn read_existing_skill_properties(skill_dir: &Path) -> HashMap<String, serde_json::Value> {
+    let raw = match fs::read_to_string(skill_dir.join("SKILL.md")) {
+        Ok(s) => s,
+        Err(_) => return HashMap::new(),
+    };
+    match parse_frontmatter::<crate::skills::SkillFrontmatter>(&raw) {
+        Ok(Some((meta, _))) => meta.metadata,
+        _ => HashMap::new(),
+    }
+}
+
+/// Read the properties bag out of an existing project file.
+fn read_existing_project_properties(file: &Path) -> HashMap<String, serde_json::Value> {
+    let raw = match fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(_) => return HashMap::new(),
+    };
+    let (_, _, _, properties) = parse_project_frontmatter(&raw);
+    properties
+}
+
+fn project_entry_from_file(file: &Path) -> Option<SourceEntry> {
+    let slug = file.file_stem().and_then(|s| s.to_str())?.to_string();
+    if slug.is_empty() {
+        return None;
+    }
+    let raw = fs::read_to_string(file).ok()?;
+    let (title, description, content, mut properties) = parse_project_frontmatter(&raw);
+    let display_name = if title.is_empty() {
+        slug.clone()
+    } else {
+        title
+    };
+    if display_name != slug {
+        // Preserve the user-facing display name so the frontend doesn't have
+        // to special-case slug vs title.
+        properties.insert(
+            "title".into(),
+            serde_json::Value::String(display_name.clone()),
+        );
+    }
+    Some(SourceEntry {
+        source_type: SourceType::Project,
+        name: slug,
+        description,
+        content,
+        path: file.to_string_lossy().into_owned(),
+        global: true,
+        supporting_files: Vec::new(),
+        properties,
+    })
+}
+
+/// Read all projects from `<dataDir>/projects/`.
+fn read_project_dir() -> Result<Vec<SourceEntry>, Error> {
+    let dir = projects_dir();
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = fs::read_dir(&dir)
+        .map_err(|e| Error::internal_error().data(format!("Failed to read projects dir: {e}")))?;
+
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        if let Some(entry) = project_entry_from_file(&path) {
+            out.push(entry);
+        }
+    }
+    Ok(out)
+}
+
+/// Read a single project source by slug.
+pub fn read_project(slug: &str) -> Result<SourceEntry, Error> {
+    validate_project_slug(slug)?;
+    let file = project_file_path(slug);
+    if !file.exists() {
+        return Err(Error::invalid_params().data(format!("Project \"{}\" not found", slug)));
+    }
+    project_entry_from_file(&file)
+        .ok_or_else(|| Error::internal_error().data("Failed to read project file"))
+}
+
+/// Get the working directories configured for a project, if any.
+/// Returns an empty Vec when the project doesn't exist or has none configured.
+pub fn project_working_dirs(slug: &str) -> Vec<String> {
+    let entry = match read_project(slug) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    entry
+        .properties
+        .get("workingDirs")
+        .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// Validate that the given path is a project file we manage and the file
+/// exists. Returns the canonical path on success.
+fn resolve_project_path(path: &str) -> Result<PathBuf, Error> {
+    let canonical_path = Path::new(path).canonicalize().map_err(|_| {
+        Error::invalid_params().data(format!("Project source \"{}\" not found", path))
+    })?;
+    let canonical_root = projects_dir()
+        .canonicalize()
+        .unwrap_or_else(|_| projects_dir());
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(Error::invalid_params().data(format!(
+            "Path \"{}\" is not a project source",
+            canonical_path.display()
+        )));
+    }
+    if canonical_path.extension().and_then(|e| e.to_str()) != Some("md") {
+        return Err(
+            Error::invalid_params().data(format!("Path \"{}\" is not a markdown file", path))
+        );
+    }
+    if !canonical_path.is_file() {
+        return Err(Error::invalid_params().data(format!("Project source \"{}\" not found", path)));
+    }
+    Ok(canonical_path)
+}
+
+// --- SourceEntry construction ---
+
+fn skill_source_entry(
+    name: &str,
+    description: &str,
+    content: &str,
+    dir: &Path,
     global: bool,
+    properties: HashMap<String, serde_json::Value>,
 ) -> SourceEntry {
     SourceEntry {
-        source_type,
+        source_type: SourceType::Skill,
         name: name.to_string(),
         description: description.to_string(),
         content: content.to_string(),
-        directory: dir.to_string_lossy().to_string(),
+        path: dir.to_string_lossy().to_string(),
         global,
         supporting_files: Vec::new(),
+        properties,
     }
 }
 
 fn builtin_skill_entry(mut source: SourceEntry) -> SourceEntry {
     source.source_type = SourceType::BuiltinSkill;
-    source.directory = format!("builtin://skills/{}", source.name);
+    source.path = format!("builtin://skills/{}", source.name);
     source.global = true;
     source.supporting_files.clear();
     source
 }
+
+// --- Public CRUD ---
 
 pub fn create_source(
     source_type: SourceType,
@@ -81,33 +299,64 @@ pub fn create_source(
     content: &str,
     global: bool,
     project_dir: Option<&str>,
+    properties: HashMap<String, serde_json::Value>,
 ) -> Result<SourceEntry, Error> {
-    require_skill_type(source_type)?;
-    validate_skill_name(name)?;
-    let dir = skill_base_dir(global, project_dir)?.join(name);
+    require_mutable_type(source_type)?;
 
-    if dir.exists() {
-        return Err(
-            Error::invalid_params().data(format!("A source named \"{}\" already exists", name))
-        );
+    match source_type {
+        SourceType::Skill => {
+            validate_skill_name(name)?;
+            let dir = skill_base_dir(global, project_dir)?.join(name);
+
+            if dir.exists() {
+                return Err(Error::invalid_params()
+                    .data(format!("A source named \"{}\" already exists", name)));
+            }
+
+            fs::create_dir_all(&dir).map_err(|e| {
+                Error::internal_error().data(format!("Failed to create source directory: {e}"))
+            })?;
+            let file_path = dir.join("SKILL.md");
+            let md = build_skill_md(name, description, content, &properties);
+            fs::write(&file_path, md).map_err(|e| {
+                Error::internal_error().data(format!("Failed to write SKILL.md: {e}"))
+            })?;
+
+            Ok(skill_source_entry(
+                name,
+                description,
+                content,
+                &dir,
+                global,
+                properties,
+            ))
+        }
+        SourceType::Project => {
+            validate_project_slug(name)?;
+            let base = projects_dir();
+            fs::create_dir_all(&base).map_err(|e| {
+                Error::internal_error().data(format!("Failed to create projects dir: {e}"))
+            })?;
+            let file = project_file_path(name);
+            if file.exists() {
+                return Err(Error::invalid_params()
+                    .data(format!("A source named \"{}\" already exists", name)));
+            }
+            // The display name comes from `properties.title`; if absent, the
+            // file's frontmatter `name:` is the slug itself.
+            let display_name = properties
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or(name);
+            let md = build_project_md(display_name, description, content, &properties);
+            fs::write(&file, md).map_err(|e| {
+                Error::internal_error().data(format!("Failed to write project file: {e}"))
+            })?;
+            project_entry_from_file(&file)
+                .ok_or_else(|| Error::internal_error().data("Failed to read newly created project"))
+        }
+        _ => unreachable!("guarded by require_mutable_type"),
     }
-
-    fs::create_dir_all(&dir).map_err(|e| {
-        Error::internal_error().data(format!("Failed to create source directory: {e}"))
-    })?;
-    let file_path = dir.join("SKILL.md");
-    let md = build_skill_md(name, description, content);
-    fs::write(&file_path, md)
-        .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
-
-    Ok(source_entry(
-        source_type,
-        name,
-        description,
-        content,
-        &dir,
-        global,
-    ))
 }
 
 pub fn update_source(
@@ -116,109 +365,281 @@ pub fn update_source(
     name: &str,
     description: &str,
     content: &str,
+    properties: Option<HashMap<String, serde_json::Value>>,
 ) -> Result<SourceEntry, Error> {
-    require_skill_type(source_type)?;
-    validate_skill_name(name)?;
+    require_mutable_type(source_type)?;
 
-    let dir = resolve_discoverable_skill_dir(path)?;
-    let current_dir_name = dir
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| Error::internal_error().data("Failed to resolve source directory name"))?;
+    match source_type {
+        SourceType::Skill => {
+            validate_skill_name(name)?;
 
-    let target_dir = if name == current_dir_name {
-        dir.clone()
-    } else {
-        let base_dir = dir.parent().ok_or_else(|| {
-            Error::internal_error().data("Failed to resolve source base directory")
-        })?;
-        let target_dir = base_dir.join(name);
+            let dir = resolve_discoverable_skill_dir(path)?;
+            let current_dir_name = dir
+                .file_name()
+                .and_then(|value| value.to_str())
+                .ok_or_else(|| {
+                    Error::internal_error().data("Failed to resolve source directory name")
+                })?;
 
-        if target_dir.exists() {
-            return Err(
-                Error::invalid_params().data(format!("A source named \"{}\" already exists", name))
-            );
+            // When the caller doesn't supply properties, preserve whatever
+            // is already on disk so per-skill frontmatter metadata isn't
+            // silently erased on edit.
+            let resolved_properties = match properties {
+                Some(p) => p,
+                None => read_existing_skill_properties(&dir),
+            };
+
+            let target_dir = if name == current_dir_name {
+                dir.clone()
+            } else {
+                let base_dir = dir.parent().ok_or_else(|| {
+                    Error::internal_error().data("Failed to resolve source base directory")
+                })?;
+                let target_dir = base_dir.join(name);
+
+                if target_dir.exists() {
+                    return Err(Error::invalid_params()
+                        .data(format!("A source named \"{}\" already exists", name)));
+                }
+
+                fs::rename(&dir, &target_dir).map_err(|e| {
+                    Error::internal_error().data(format!("Failed to rename source directory: {e}"))
+                })?;
+
+                target_dir
+            };
+
+            let file_path = target_dir.join("SKILL.md");
+            let md = build_skill_md(name, description, content, &resolved_properties);
+            fs::write(&file_path, md).map_err(|e| {
+                Error::internal_error().data(format!("Failed to write SKILL.md: {e}"))
+            })?;
+
+            Ok(skill_source_entry(
+                name,
+                description,
+                content,
+                &target_dir,
+                is_global_skill_dir(&target_dir),
+                resolved_properties,
+            ))
         }
+        SourceType::Project => {
+            validate_project_slug(name)?;
+            let file = resolve_project_path(path)?;
 
-        fs::rename(&dir, &target_dir).map_err(|e| {
-            Error::internal_error().data(format!("Failed to rename source directory: {e}"))
-        })?;
+            // We don't currently support renaming a project (it would change
+            // the slug used as the stable thread.project_id). Reject mismatches
+            // to surface this clearly.
+            let current_slug = file
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| Error::internal_error().data("Bad project filename"))?;
+            if current_slug != name {
+                return Err(Error::invalid_params().data(format!(
+                    "Project slug cannot be changed (current: \"{}\", requested: \"{}\")",
+                    current_slug, name
+                )));
+            }
 
-        target_dir
-    };
+            // Same preserve-on-None semantics as skills.
+            let resolved_properties = match properties {
+                Some(p) => p,
+                None => read_existing_project_properties(&file),
+            };
 
-    let file_path = target_dir.join("SKILL.md");
-    let md = build_skill_md(name, description, content);
-    fs::write(&file_path, md)
-        .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
-
-    Ok(source_entry(
-        source_type,
-        name,
-        description,
-        content,
-        &target_dir,
-        is_global_skill_dir(&target_dir),
-    ))
+            let display_name = resolved_properties
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or(name);
+            let md = build_project_md(display_name, description, content, &resolved_properties);
+            fs::write(&file, md).map_err(|e| {
+                Error::internal_error().data(format!("Failed to write project file: {e}"))
+            })?;
+            project_entry_from_file(&file)
+                .ok_or_else(|| Error::internal_error().data("Failed to read updated project"))
+        }
+        _ => unreachable!("guarded by require_mutable_type"),
+    }
 }
 
 pub fn delete_source(source_type: SourceType, path: &str) -> Result<(), Error> {
-    require_skill_type(source_type)?;
-    let dir = resolve_skill_dir(path)?;
-    fs::remove_dir_all(&dir)
-        .map_err(|e| Error::internal_error().data(format!("Failed to delete source: {e}")))?;
+    require_mutable_type(source_type)?;
+
+    match source_type {
+        SourceType::Skill => {
+            let dir = resolve_skill_dir(path)?;
+            fs::remove_dir_all(&dir).map_err(|e| {
+                Error::internal_error().data(format!("Failed to delete source: {e}"))
+            })?;
+        }
+        SourceType::Project => {
+            let file = resolve_project_path(path)?;
+            fs::remove_file(&file).map_err(|e| {
+                Error::internal_error().data(format!("Failed to delete project: {e}"))
+            })?;
+        }
+        _ => unreachable!("guarded by require_mutable_type"),
+    }
     Ok(())
 }
 
 pub fn list_sources(
     source_type: Option<SourceType>,
     project_dir: Option<&str>,
+    include_project_sources: bool,
 ) -> Result<Vec<SourceEntry>, Error> {
-    let listed_type = require_listable_type(source_type)?;
+    if let Some(t) = source_type {
+        require_listable_type(Some(t))?;
+    }
+    let kinds: Vec<SourceType> = match source_type {
+        Some(t) => vec![t],
+        None => vec![SourceType::Skill, SourceType::Project],
+    };
 
-    let working_dir = project_dir
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .map(PathBuf::from);
+    let mut sources = Vec::new();
+    for kind in kinds {
+        match kind {
+            SourceType::Skill => {
+                let working_dir = project_dir
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .map(PathBuf::from);
+                sources.extend(
+                    discover_skills(working_dir.as_deref())
+                        .into_iter()
+                        .filter(|s| s.source_type == SourceType::Skill),
+                );
 
-    let mut sources: Vec<SourceEntry> = discover_skills(working_dir.as_deref())
-        .into_iter()
-        .filter(|s| s.source_type == listed_type)
-        .map(|s| {
-            if listed_type == SourceType::BuiltinSkill {
-                builtin_skill_entry(s)
-            } else {
-                s
+                if include_project_sources {
+                    let projects = read_project_dir()?;
+                    let already_scanned = working_dir.as_deref();
+                    for proj in &projects {
+                        let dirs = proj
+                            .properties
+                            .get("workingDirs")
+                            .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
+                            .unwrap_or_default();
+                        let project_name = proj
+                            .properties
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&proj.name);
+                        for wd in &dirs {
+                            let wd_path = PathBuf::from(wd);
+                            if Some(wd_path.as_path()) == already_scanned {
+                                continue;
+                            }
+                            for skill in discover_skills(Some(&wd_path)) {
+                                if skill.source_type != SourceType::Skill || skill.global {
+                                    continue;
+                                }
+                                let mut tagged = skill;
+                                tagged.properties.insert(
+                                    "projectName".into(),
+                                    serde_json::Value::String(project_name.to_string()),
+                                );
+                                tagged.properties.insert(
+                                    "projectDir".into(),
+                                    serde_json::Value::String(wd.clone()),
+                                );
+                                sources.push(tagged);
+                            }
+                        }
+                    }
+                }
             }
-        })
-        .collect();
+            SourceType::BuiltinSkill => {
+                let working_dir = project_dir
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .map(PathBuf::from);
+                sources.extend(
+                    discover_skills(working_dir.as_deref())
+                        .into_iter()
+                        .filter(|s| s.source_type == SourceType::BuiltinSkill)
+                        .map(builtin_skill_entry),
+                );
+            }
+            SourceType::Project => {
+                sources.extend(read_project_dir()?);
+            }
+            SourceType::Recipe | SourceType::Subrecipe | SourceType::Agent => {
+                return Err(Error::invalid_params()
+                    .data(format!("Source type '{}' listing is not supported.", kind)));
+            }
+        }
+    }
 
     sources.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(sources)
 }
 
 pub fn export_source(source_type: SourceType, path: &str) -> Result<(String, String), Error> {
-    require_skill_type(source_type)?;
-    let dir = resolve_discoverable_skill_dir(path)?;
+    match source_type {
+        SourceType::Skill => {
+            let dir = resolve_discoverable_skill_dir(path)?;
 
-    let md = dir.join("SKILL.md");
-    let raw = fs::read_to_string(&md)
-        .map_err(|e| Error::internal_error().data(format!("Failed to read SKILL.md: {e}")))?;
-    let (description, content) = parse_skill_frontmatter(&raw);
+            let md = dir.join("SKILL.md");
+            let raw = fs::read_to_string(&md).map_err(|e| {
+                Error::internal_error().data(format!("Failed to read SKILL.md: {e}"))
+            })?;
+            let (description, content) = parse_skill_frontmatter(&raw);
 
-    let name = infer_skill_name(&dir);
+            let name = infer_skill_name(&dir);
 
-    let export = serde_json::json!({
-        "version": 1,
-        "type": "skill",
-        "name": name,
-        "description": description,
-        "content": content,
-    });
-    let json = serde_json::to_string_pretty(&export)
-        .map_err(|e| Error::internal_error().data(format!("Failed to serialize source: {e}")))?;
-    let filename = format!("{}.skill.json", name);
-    Ok((json, filename))
+            let export = serde_json::json!({
+                "version": 1,
+                "type": "skill",
+                "name": name,
+                "description": description,
+                "content": content,
+            });
+            let json = serde_json::to_string_pretty(&export).map_err(|e| {
+                Error::internal_error().data(format!("Failed to serialize source: {e}"))
+            })?;
+            let filename = format!("{}.skill.json", name);
+            Ok((json, filename))
+        }
+        SourceType::Project => {
+            let file = resolve_project_path(path)?;
+            let raw = fs::read_to_string(&file).map_err(|e| {
+                Error::internal_error().data(format!("Failed to read project file: {e}"))
+            })?;
+            let (title, description, content, properties) = parse_project_frontmatter(&raw);
+            let slug = file
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            let display_name = if title.is_empty() {
+                slug.clone()
+            } else {
+                title
+            };
+
+            let mut export = serde_json::json!({
+                "version": 1,
+                "type": "project",
+                "name": slug,
+                "title": display_name,
+                "description": description,
+                "content": content,
+            });
+            if !properties.is_empty() {
+                export["properties"] = serde_json::to_value(&properties).unwrap_or_default();
+            }
+            let json = serde_json::to_string_pretty(&export).map_err(|e| {
+                Error::internal_error().data(format!("Failed to serialize project: {e}"))
+            })?;
+            let filename = format!("{}.project.json", slug);
+            Ok((json, filename))
+        }
+        _ => Err(Error::invalid_params().data(format!(
+            "Source type '{}' export is not supported.",
+            source_type
+        ))),
+    }
 }
 
 pub fn import_sources(
@@ -239,17 +660,16 @@ pub fn import_sources(
         );
     }
 
-    match value
+    let type_str = value
         .get("type")
         .and_then(|v| v.as_str())
-        .unwrap_or("skill")
-    {
-        "skill" => {}
+        .unwrap_or("skill");
+    let source_type = match type_str {
+        "skill" => SourceType::Skill,
+        "project" => SourceType::Project,
         other => {
-            return Err(Error::invalid_params().data(format!(
-                "Source type '{}' is not supported. Only 'skill' is currently supported.",
-                other
-            )));
+            return Err(Error::invalid_params()
+                .data(format!("Source type '{}' import is not supported.", other)));
         }
     };
 
@@ -262,12 +682,13 @@ pub fn import_sources(
         return Err(Error::invalid_params().data("Source name must not be empty"));
     }
 
+    // Skills require a description; projects can omit it.
     let description = value
         .get("description")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::invalid_params().data("Missing or invalid \"description\" field"))?
+        .unwrap_or("")
         .to_string();
-    if description.is_empty() {
+    if source_type == SourceType::Skill && description.is_empty() {
         return Err(Error::invalid_params().data("Source description must not be empty"));
     }
 
@@ -278,36 +699,68 @@ pub fn import_sources(
         .unwrap_or("")
         .to_string();
 
-    validate_skill_name(&name)?;
-
-    let base = skill_base_dir(global, project_dir)?;
-    let mut final_name = name.clone();
-    if base.join(&final_name).exists() {
-        final_name = format!("{}-imported", name);
-        let mut counter = 2u32;
-        while base.join(&final_name).exists() {
-            final_name = format!("{}-imported-{}", name, counter);
-            counter += 1;
+    let mut properties: HashMap<String, serde_json::Value> = value
+        .get("properties")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    // The export's top-level "title" wins over a properties.title if both
+    // exist.
+    if source_type == SourceType::Project {
+        if let Some(title) = value.get("title").and_then(|v| v.as_str()) {
+            if !title.is_empty() {
+                properties.insert("title".into(), serde_json::Value::String(title.into()));
+            }
         }
     }
 
-    let dir = base.join(&final_name);
-    fs::create_dir_all(&dir).map_err(|e| {
-        Error::internal_error().data(format!("Failed to create source directory: {e}"))
-    })?;
-    let file_path = dir.join("SKILL.md");
-    let md = build_skill_md(&final_name, &description, &content);
-    fs::write(&file_path, md)
-        .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
-
-    Ok(vec![source_entry(
-        SourceType::Skill,
-        &final_name,
-        &description,
-        &content,
-        &dir,
-        global,
-    )])
+    match source_type {
+        SourceType::Skill => {
+            validate_skill_name(&name)?;
+            let base = skill_base_dir(global, project_dir)?;
+            let mut final_name = name.clone();
+            if base.join(&final_name).exists() {
+                final_name = format!("{}-imported", name);
+                let mut counter = 2u32;
+                while base.join(&final_name).exists() {
+                    final_name = format!("{}-imported-{}", name, counter);
+                    counter += 1;
+                }
+            }
+            create_source(
+                SourceType::Skill,
+                &final_name,
+                &description,
+                &content,
+                global,
+                project_dir,
+                properties,
+            )
+            .map(|entry| vec![entry])
+        }
+        SourceType::Project => {
+            validate_project_slug(&name)?;
+            let mut final_name = name.clone();
+            if project_file_path(&final_name).exists() {
+                final_name = format!("{}-imported", name);
+                let mut counter = 2u32;
+                while project_file_path(&final_name).exists() {
+                    final_name = format!("{}-imported-{}", name, counter);
+                    counter += 1;
+                }
+            }
+            create_source(
+                SourceType::Project,
+                &final_name,
+                &description,
+                &content,
+                true, // projects are always global
+                None,
+                properties,
+            )
+            .map(|entry| vec![entry])
+        }
+        _ => unreachable!(),
+    }
 }
 
 #[cfg(test)]
@@ -341,28 +794,30 @@ mod tests {
             "step one\nstep two",
             false,
             Some(project),
+            HashMap::new(),
         )
         .unwrap();
         assert_eq!(created.name, "my-skill");
         assert!(!created.global);
-        let dir = PathBuf::from(&created.directory);
+        let dir = PathBuf::from(&created.path);
         assert!(dir.join("SKILL.md").exists());
 
-        let listed = list_sources(Some(SourceType::Skill), Some(project)).unwrap();
+        let listed = list_sources(Some(SourceType::Skill), Some(project), false).unwrap();
         assert!(listed.iter().any(|s| s.name == "my-skill" && !s.global));
 
         let updated = update_source(
             SourceType::Skill,
-            created.directory.as_str(),
+            created.path.as_str(),
             "my-skill",
             "now does a different thing",
             "step three",
+            Some(HashMap::new()),
         )
         .unwrap();
         assert_eq!(updated.description, "now does a different thing");
         assert_eq!(updated.name, "my-skill");
 
-        delete_source(SourceType::Skill, created.directory.as_str()).unwrap();
+        delete_source(SourceType::Skill, created.path.as_str()).unwrap();
         assert!(!dir.exists());
     }
 
@@ -371,15 +826,41 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
 
-        create_source(SourceType::Skill, "dup", "d", "c", false, Some(project)).unwrap();
-        let err =
-            create_source(SourceType::Skill, "dup", "d", "c", false, Some(project)).unwrap_err();
+        create_source(
+            SourceType::Skill,
+            "dup",
+            "d",
+            "c",
+            false,
+            Some(project),
+            HashMap::new(),
+        )
+        .unwrap();
+        let err = create_source(
+            SourceType::Skill,
+            "dup",
+            "d",
+            "c",
+            false,
+            Some(project),
+            HashMap::new(),
+        )
+        .unwrap_err();
         assert!(format!("{:?}", err).contains("already exists"));
     }
 
     #[test]
     fn project_scope_requires_project_dir() {
-        let err = create_source(SourceType::Skill, "x", "d", "c", false, None).unwrap_err();
+        let err = create_source(
+            SourceType::Skill,
+            "x",
+            "d",
+            "c",
+            false,
+            None,
+            HashMap::new(),
+        )
+        .unwrap_err();
         assert!(format!("{:?}", err).contains("projectDir"));
     }
 
@@ -398,6 +879,7 @@ mod tests {
             "body goes here",
             false,
             Some(project_a.to_str().unwrap()),
+            HashMap::new(),
         )
         .unwrap();
 
@@ -421,19 +903,28 @@ mod tests {
         std::fs::create_dir_all(&claude_skill_dir).unwrap();
         std::fs::write(
             claude_skill_dir.join("SKILL.md"),
-            build_skill_md("portable", "describes itself", "body goes here"),
+            build_skill_md(
+                "portable",
+                "describes itself",
+                "body goes here",
+                &HashMap::new(),
+            ),
         )
         .unwrap();
 
-        let listed =
-            list_sources(Some(SourceType::Skill), Some(project.to_str().unwrap())).unwrap();
+        let listed = list_sources(
+            Some(SourceType::Skill),
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
         let exported_skill = listed
             .iter()
             .find(|skill| skill.name == "portable")
             .expect("expected listed skill");
 
         let (json, filename) =
-            export_source(SourceType::Skill, exported_skill.directory.as_str()).unwrap();
+            export_source(SourceType::Skill, exported_skill.path.as_str()).unwrap();
         assert_eq!(filename, "portable.skill.json");
         assert!(json.contains("\"name\": \"portable\""));
     }
@@ -446,7 +937,12 @@ mod tests {
         std::fs::create_dir_all(&claude_skill_dir).unwrap();
         std::fs::write(
             claude_skill_dir.join("SKILL.md"),
-            build_skill_md("portable", "describes itself", "body goes here"),
+            build_skill_md(
+                "portable",
+                "describes itself",
+                "body goes here",
+                &HashMap::new(),
+            ),
         )
         .unwrap();
 
@@ -456,6 +952,7 @@ mod tests {
             "portable",
             "updated description",
             "updated body",
+            Some(HashMap::new()),
         )
         .unwrap();
 
@@ -473,7 +970,16 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
 
-        create_source(SourceType::Skill, "busy", "d", "c", false, Some(project)).unwrap();
+        create_source(
+            SourceType::Skill,
+            "busy",
+            "d",
+            "c",
+            false,
+            Some(project),
+            HashMap::new(),
+        )
+        .unwrap();
 
         let payload = serde_json::json!({
             "version": 1,
@@ -501,6 +1007,7 @@ mod tests {
             "no-such-skill",
             "d",
             "c",
+            Some(HashMap::new()),
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
@@ -520,7 +1027,7 @@ mod tests {
 
     #[test]
     fn list_sources_lists_builtin_skills() {
-        let listed = list_sources(Some(SourceType::BuiltinSkill), None).unwrap();
+        let listed = list_sources(Some(SourceType::BuiltinSkill), None, false).unwrap();
         let builtin = listed
             .iter()
             .find(|source| source.name == "goose-doc-guide")
@@ -528,14 +1035,14 @@ mod tests {
 
         assert_eq!(builtin.source_type, SourceType::BuiltinSkill);
         assert!(builtin.global);
-        assert_eq!(builtin.directory, "builtin://skills/goose-doc-guide");
+        assert_eq!(builtin.path, "builtin://skills/goose-doc-guide");
         assert!(builtin.supporting_files.is_empty());
         assert!(!builtin.content.is_empty());
     }
 
     #[test]
     fn list_skill_excludes_builtin_skills() {
-        let listed = list_sources(Some(SourceType::Skill), None).unwrap();
+        let listed = list_sources(Some(SourceType::Skill), None, false).unwrap();
         assert!(!listed
             .iter()
             .any(|source| source.source_type == SourceType::BuiltinSkill));
@@ -552,21 +1059,31 @@ mod tests {
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(
             skill_dir.join("SKILL.md"),
-            build_skill_md("goose-doc-guide", "project override", "Use project docs"),
+            build_skill_md(
+                "goose-doc-guide",
+                "project override",
+                "Use project docs",
+                &HashMap::new(),
+            ),
         )
         .unwrap();
 
         let builtins = list_sources(
             Some(SourceType::BuiltinSkill),
             Some(project.to_str().unwrap()),
+            false,
         )
         .unwrap();
         assert!(!builtins
             .iter()
             .any(|source| source.name == "goose-doc-guide"));
 
-        let skills =
-            list_sources(Some(SourceType::Skill), Some(project.to_str().unwrap())).unwrap();
+        let skills = list_sources(
+            Some(SourceType::Skill),
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
         let project_skill = skills
             .iter()
             .find(|source| source.name == "goose-doc-guide")
@@ -576,7 +1093,7 @@ mod tests {
     }
 
     #[test]
-    fn mutations_reject_non_writable_source_types() {
+    fn rejects_unsupported_source_type_for_mutation() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
 
@@ -587,6 +1104,7 @@ mod tests {
             "c",
             false,
             Some(project),
+            HashMap::new(),
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
@@ -597,11 +1115,13 @@ mod tests {
             "x",
             "d",
             "c",
+            Some(HashMap::new()),
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = update_source(SourceType::Recipe, "x", "x", "d", "c").unwrap_err();
+        let err = update_source(SourceType::Recipe, "x", "x", "d", "c", Some(HashMap::new()))
+            .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = delete_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
@@ -610,12 +1130,12 @@ mod tests {
         let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project)).unwrap();
+        let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project), false).unwrap();
         assert!(listed
             .iter()
             .any(|source| source.source_type == SourceType::BuiltinSkill));
 
-        let err = list_sources(Some(SourceType::Recipe), Some(project)).unwrap_err();
+        let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = export_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
@@ -648,6 +1168,7 @@ mod tests {
             "body",
             false,
             Some(project),
+            HashMap::new(),
         )
         .unwrap();
 
@@ -658,6 +1179,7 @@ mod tests {
             "my-dir",
             "new description",
             "new body",
+            Some(HashMap::new()),
         )
         .unwrap();
         // Name is derived from the frontmatter written by create_source
@@ -671,17 +1193,21 @@ mod tests {
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(
             skill_dir.join("SKILL.md"),
-            build_skill_md("test-skill", "from agents", "Body"),
+            build_skill_md("test-skill", "from agents", "Body", &HashMap::new()),
         )
         .unwrap();
 
-        let listed =
-            list_sources(Some(SourceType::Skill), Some(tmp.path().to_str().unwrap())).unwrap();
+        let listed = list_sources(
+            Some(SourceType::Skill),
+            Some(tmp.path().to_str().unwrap()),
+            false,
+        )
+        .unwrap();
         let skill = listed
             .iter()
             .find(|source| source.name == "test-skill" && !source.global)
             .unwrap();
-        assert!(skill.directory.contains(".agents/skills"));
+        assert!(skill.path.contains(".agents/skills"));
         assert_eq!(skill.description, "from agents");
     }
 
@@ -702,26 +1228,30 @@ mod tests {
         std::fs::create_dir_all(&legacy_skill_dir).unwrap();
         std::fs::write(
             agents_skill_dir.join("SKILL.md"),
-            build_skill_md("shared-skill", "preferred", "Agents"),
+            build_skill_md("shared-skill", "preferred", "Agents", &HashMap::new()),
         )
         .unwrap();
         std::fs::write(
             legacy_skill_dir.join("SKILL.md"),
-            build_skill_md("shared-skill", "legacy", "Goose"),
+            build_skill_md("shared-skill", "legacy", "Goose", &HashMap::new()),
         )
         .unwrap();
 
-        let listed =
-            list_sources(Some(SourceType::Skill), Some(tmp.path().to_str().unwrap())).unwrap();
+        let listed = list_sources(
+            Some(SourceType::Skill),
+            Some(tmp.path().to_str().unwrap()),
+            false,
+        )
+        .unwrap();
         let matching: Vec<_> = listed
             .iter()
             .filter(|source| source.name == "shared-skill" && !source.global)
             .collect();
         assert_eq!(matching.len(), 1);
-        assert!(matching[0].directory.contains(".agents/skills"));
+        assert!(matching[0].path.contains(".agents/skills"));
         assert_eq!(matching[0].description, "preferred");
 
-        let exported = export_source(SourceType::Skill, matching[0].directory.as_str()).unwrap();
+        let exported = export_source(SourceType::Skill, matching[0].path.as_str()).unwrap();
         assert!(exported.0.contains("preferred"));
     }
 
@@ -744,6 +1274,7 @@ mod tests {
             "escaped",
             "new description",
             "new content",
+            Some(HashMap::new()),
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
