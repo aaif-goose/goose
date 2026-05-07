@@ -16,7 +16,7 @@
   ],
   "type": "module",
   "bin": {
-    "goose": "dist/tui.js"
+    "goose-tui": "dist/tui.js"
   },
   "files": [
     "dist"
