@@ -1,0 +1,91 @@
+version: 1
+modes:
+  - id: fm-fabricates-stack-frame
+    name: "Cites a stack frame or line number not in the inputs"
+    description: |
+      Triage's Evidence quotes a frame, file, or line number that does
+      not appear verbatim in the supplied stack_trace / test_source /
+      recent_diff. The most damaging failure mode for this recipe —
+      acting on a fabricated frame wastes engineer time and erodes
+      trust in the triage output.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-jumps-to-fix
+    name: "Proposes code changes instead of investigation steps"
+    description: |
+      The output contains a "fix this by …" line, a patch / diff, or
+      a "the bug is here, change it to …" instruction. The recipe's
+      contract is to direct investigation; proposing fixes crosses
+      the line into authoring code without review.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-confident-without-evidence
+    name: "High confidence on a hypothesis with no named evidence"
+    description: |
+      A hypothesis is labelled `Confidence: high` but its Evidence
+      field doesn't quote the input or names a generic pattern
+      ("typical race condition") rather than a specific frame /
+      diff hunk / log entry from the supplied inputs. Engineers
+      will defer to high-confidence labels; uncalibrated confidence
+      is a trust hazard.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-ignores-recent-changes
+    name: "Doesn't consider recent_diff when it's relevant"
+    description: |
+      `recent_diff` is supplied and clearly contains a hunk that
+      would explain the failure (e.g., a removed entry from a
+      WHITELIST), but no hypothesis names the diff. Triage that
+      ignores the most-recent-change signal is missing the cheapest
+      win.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-overhelpful-on-vague-input
+    name: "Triages an inadequate input instead of refusing"
+    description: |
+      Given an empty / vague / off-scope input, the recipe produces
+      a fabricated triage rather than asking for the specific
+      clarifying details required (which test, what error, which
+      run). High severity because confident-looking output from
+      thin inputs is exactly what burns engineer hours.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-no-disconfirming-check
+    name: "Hypothesis missing the Disconfirming check field"
+    description: |
+      A hypothesis is listed without a "Disconfirming check" — the
+      thing the engineer can do to disprove it. Without this, the
+      hypothesis is unfalsifiable and the engineer can't act on it
+      cheaply. Triage that doesn't help the engineer eliminate
+      hypotheses isn't doing its job.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-not-actionable-next-steps
+    name: "Suggested next steps are abstract"
+    description: |
+      Next steps say "look at concurrency" or "check the logs"
+      rather than "set a breakpoint at app/search.py:117 and inspect
+      the value of `filters` on the failing input." Abstract advice
+      is decorative; concrete actions reference named elements.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
