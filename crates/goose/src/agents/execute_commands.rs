@@ -41,6 +41,10 @@ static COMMANDS: &[CommandDef] = &[
         name: "doctor",
         description: "Check that your Goose setup is working",
     },
+    CommandDef {
+        name: "goal",
+        description: "Set a goal the agent must satisfy before finishing, or clear with /goal off",
+    },
 ];
 
 pub fn list_commands() -> &'static [CommandDef] {
@@ -82,6 +86,7 @@ impl Agent {
             "clear" => self.handle_clear_command(session_id).await,
             "skills" => self.handle_skills_command(session_id).await,
             "doctor" => Ok(Some(crate::doctor::run(self, session_id).await?)),
+            "goal" => self.handle_goal_command(params_str).await,
             _ => {
                 self.handle_recipe_command(command, params_str, session_id)
                     .await
@@ -439,5 +444,29 @@ impl Agent {
             .join("\n\n");
 
         Ok(Some(Message::user().with_text(prompt)))
+    }
+
+    async fn handle_goal_command(&self, params_str: &str) -> Result<Option<Message>> {
+        if params_str.is_empty() {
+            let current = self.get_goal().await;
+            let text = match current {
+                Some(goal) => format!("Current goal: {goal}"),
+                None => "No goal set. Use `/goal <description>` to set one.".to_string(),
+            };
+            return Ok(Some(Message::assistant().with_text(text)));
+        }
+
+        if params_str == "off" || params_str == "clear" || params_str == "none" {
+            self.set_goal(None).await;
+            return Ok(Some(
+                Message::assistant().with_text("Goal cleared. The agent will finish normally."),
+            ));
+        }
+
+        let goal = params_str.to_string();
+        self.set_goal(Some(goal.clone())).await;
+        Ok(Some(Message::assistant().with_text(format!(
+            "Goal set. The agent will verify this goal is met before finishing:\n\n> {goal}"
+        ))))
     }
 }

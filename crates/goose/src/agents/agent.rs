@@ -172,6 +172,7 @@ pub struct Agent {
     pub(super) retry_manager: RetryManager,
     pub(super) tool_inspection_manager: ToolInspectionManager,
     container: Mutex<Option<Container>>,
+    goal: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -283,6 +284,7 @@ impl Agent {
                 provider.clone(),
             ),
             container: Mutex::new(None),
+            goal: Mutex::new(None),
         }
     }
 
@@ -1297,6 +1299,7 @@ impl Agent {
             });
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
+            let mut goal_checks_remaining: u32 = 3;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1792,6 +1795,19 @@ impl Agent {
                         None if did_recovery_compact_this_iteration => {
                             // continue from last user message after recovery compact
                         }
+                        None if self.goal.lock().await.is_some() && goal_checks_remaining > 0 => {
+                            let goal = self.goal.lock().await.clone().unwrap();
+                            goal_checks_remaining -= 1;
+                            let nudge = format!(
+                                "Before finishing, verify that the following goal has been fully met:\n\n\
+                                 **Goal:** {goal}\n\n\
+                                 If the goal IS met, respond with a brief confirmation summary.\n\
+                                 If the goal is NOT met, continue working toward it."
+                            );
+                            let message = Message::user().with_text(&nudge);
+                            messages_to_add.push(message.clone());
+                            yield AgentEvent::Message(message);
+                        }
                         None => {
                             match self.handle_retry_logic(&mut conversation, &session_config, &initial_messages).await {
                                 Ok(should_retry) => {
@@ -1875,6 +1891,14 @@ impl Agent {
     pub async fn extend_system_prompt(&self, key: String, instruction: String) {
         let mut prompt_manager = self.prompt_manager.lock().await;
         prompt_manager.add_system_prompt_extra(key, instruction);
+    }
+
+    pub async fn set_goal(&self, goal: Option<String>) {
+        *self.goal.lock().await = goal;
+    }
+
+    pub async fn get_goal(&self) -> Option<String> {
+        self.goal.lock().await.clone()
     }
 
     pub async fn update_provider(
