@@ -180,3 +180,97 @@ def test_goose_runner_default_errors_when_binary_missing(tmp_path: Path) -> None
     # All trials fail because the runner errored — pass^1 = 0 < 0.80 → exit 1.
     assert result.returncode == 1
     assert "pass@1 = 0.000" in result.stdout
+
+
+# ---------- L3 judge invocation through the harness ----------
+
+
+def _copy_recipe_with_fresh_calibration(src: Path, dst: Path) -> Path:
+    """Copy a recipe directory and inject a fresh green calibration log.
+
+    Used to test the harness's L3 judge invocation path. Returns the new
+    recipe directory path.
+    """
+    import shutil
+    from datetime import datetime, timezone
+
+    shutil.copytree(src, dst)
+    cal = dst / "evals" / "calibration.jsonl"
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "judge_id": "g-charter-judge",
+        "judge_model": "anthropic:claude-opus-4-7",
+        "sample_size": 50,
+        "agreement": 0.95,
+        "deployed": True,
+    }
+    import json
+    cal.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    return dst
+
+
+def test_l3_judge_stub_fires_when_calibration_is_fresh(tmp_path: Path) -> None:
+    if not CHARTER.exists():
+        pytest.skip("charter-sfdipot recipe not present in this checkout")
+    recipe_copy = _copy_recipe_with_fresh_calibration(CHARTER, tmp_path / "charter-copy")
+    store = tmp_path / "results.sqlite"
+
+    result = _run(
+        "--recipe", str(recipe_copy),
+        "--k", "1",
+        "--runner", "stub",
+        "--judge", "stub",
+        "--store", str(store),
+    )
+    # Header must report the L3 grader as `ok` (calibration green).
+    assert "L3 g-charter-judge: ok" in result.stdout
+
+    # Inspect persisted outcomes: g-charter-judge must NOT be skipped on at
+    # least some trials (the judge was actually invoked).
+    import json
+    import sqlite3
+    with sqlite3.connect(store) as conn:
+        rows = conn.execute("SELECT grader_scores_json FROM trial").fetchall()
+    judge_outcomes = []
+    for (scores_json,) in rows:
+        scores = json.loads(scores_json)
+        for o in scores["outcomes"]:
+            if o["id"] == "g-charter-judge":
+                judge_outcomes.append(o)
+    assert judge_outcomes, "expected at least one trial with a g-charter-judge outcome"
+    assert any(not o["skipped"] for o in judge_outcomes), (
+        "stub judge should have fired on some trials and produced a non-skipped outcome"
+    )
+
+
+def test_l3_judge_off_disables_invocation_with_clear_skip_reason(tmp_path: Path) -> None:
+    if not CHARTER.exists():
+        pytest.skip("charter-sfdipot recipe not present in this checkout")
+    recipe_copy = _copy_recipe_with_fresh_calibration(CHARTER, tmp_path / "charter-copy")
+    store = tmp_path / "results.sqlite"
+
+    _run(
+        "--recipe", str(recipe_copy),
+        "--k", "1",
+        "--runner", "stub",
+        "--judge", "off",
+        "--store", str(store),
+    )
+
+    import json
+    import sqlite3
+    with sqlite3.connect(store) as conn:
+        (scores_json,) = conn.execute(
+            "SELECT grader_scores_json FROM trial LIMIT 1"
+        ).fetchone()
+    scores = json.loads(scores_json)
+    judge_outcome = next(o for o in scores["outcomes"] if o["id"] == "g-charter-judge")
+    assert judge_outcome["skipped"] is True
+
+
+def test_l3_judge_help_lists_choices() -> None:
+    result = _run("--help")
+    assert "--judge" in result.stdout
+    assert "anthropic" in result.stdout
+    assert "stub" in result.stdout
+    assert "off" in result.stdout
