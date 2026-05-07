@@ -722,6 +722,7 @@ export function useChatSessionController({
           personaId?: string | undefined;
           modelId?: string | undefined;
           modelName?: string | undefined;
+          projectId?: string | null;
         } = {};
 
         if (hasPendingProvider) {

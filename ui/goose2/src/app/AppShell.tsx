@@ -307,7 +307,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
                 ? undefined
                 : homeSession.modelName,
         });
-        return useChatSessionStore.getState().getSession(homeSession.id) ?? homeSession;
+        return (
+          useChatSessionStore.getState().getSession(homeSession.id) ??
+          homeSession
+        );
       }
 
       const providerAtStart = currentProvider();
@@ -569,8 +572,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         }
         await applyLatestSessionConfig({
           sessionId,
-          providerId:
-            session.providerId ?? selectedProvider ?? "goose",
+          providerId: session.providerId ?? selectedProvider ?? "goose",
           workingDir,
           modelId: session.modelId,
         });
@@ -581,7 +583,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         );
       });
     },
-    [selectedProvider, t],
+    [selectedProvider],
   );
 
   const handleRenameChat = useCallback(
