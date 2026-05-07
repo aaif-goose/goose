@@ -9,6 +9,7 @@ Public API:
 """
 
 from .calibration import CalibrationRecord, load_calibration_log
+from .composition import GraderOutcome, compose_trial_pass, effective_passed
 from .failure_modes import FailureMode, FailureModes, load_failure_modes
 from .graders import (
     Grader,
@@ -27,13 +28,16 @@ __all__ = [
     "FailureMode",
     "FailureModes",
     "Grader",
+    "GraderOutcome",
     "Graders",
     "L1Grader",
     "L2Grader",
     "L3Grader",
     "ResultsStore",
     "Task",
+    "compose_trial_pass",
     "compute_passk",
+    "effective_passed",
     "load_calibration_log",
     "load_failure_modes",
     "load_graders",

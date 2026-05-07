@@ -24,6 +24,10 @@ class Grader:
     type: str
     weight: float
     dimension: str | None
+    negate_on_polarity_negative: bool = False
+    """If True, the grader's raw verdict is inverted when applied to a task
+    with polarity=negative. Set on shape-checking graders that should pass on
+    positive tasks but fail on refusal/negative tasks (and vice versa)."""
 
 
 @dataclass
@@ -128,6 +132,7 @@ def _grader_from_dict(d: dict[str, Any], path: Path) -> Grader:
         type=d["type"],
         weight=float(d["weight"]),
         dimension=d.get("dimension"),
+        negate_on_polarity_negative=bool(d.get("negate_on_polarity_negative", False)),
     )
     if level == "L1":
         if not d.get("runner"):

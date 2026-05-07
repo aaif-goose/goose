@@ -12,14 +12,9 @@ graders:
     timeout_s: 10
 
   # L1 — required SFDIPOT H2 sections present.
-  # Note: this grader is correct only for *positive* tasks. For *negative*
-  # tasks (vague / empty / off-scope briefs) the recipe must refuse and
-  # produce no SFDIPOT sections, so a green here on a negative task means
-  # the recipe failed the refusal contract. The eval-bench harness will
-  # invert this grader for tasks with polarity=negative when the task's
-  # `expected.contract` is `refusal-with-clarifying-questions`. Until
-  # that orchestration lands (next chunk on the harness), capability
-  # numbers should be read from the positive subset only.
+  # Inverted on negative-polarity tasks: a refusal must NOT contain SFDIPOT
+  # sections, so the runner's raw "fail" verdict on a refusal becomes an
+  # effective "pass" at composition time. Positive tasks are unaffected.
   - id: g-charter-sections
     level: L1
     type: code
@@ -27,8 +22,9 @@ graders:
       python eval-bench/grader_runners/markdown_sections.py
       --required Structure,Function,Data,Interfaces,Platform,Operations,Time
     weight: 0.4
-    dimension: "all seven SFDIPOT H2 sections present, in case-insensitive form"
+    dimension: "all seven SFDIPOT H2 sections present (inverted for refusal tasks)"
     timeout_s: 10
+    negate_on_polarity_negative: true
 
   # L2 — sampled human review against rubrics/sme_quality.md.
   # This is the calibration source for the L3 judge.

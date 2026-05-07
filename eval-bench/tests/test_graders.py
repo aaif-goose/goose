@@ -129,6 +129,41 @@ def test_unsupported_version_rejected(tmp_path: Path) -> None:
         load_graders(p)
 
 
+def test_negate_on_polarity_negative_default_false(tmp_path: Path) -> None:
+    p = _write(
+        tmp_path / "graders.yaml",
+        """
+version: 1
+graders:
+  - id: g-l1
+    level: L1
+    type: code
+    weight: 1.0
+    runner: "echo ok"
+""",
+    )
+    g = load_graders(p)
+    assert g.graders[0].negate_on_polarity_negative is False
+
+
+def test_negate_on_polarity_negative_loaded_when_set(tmp_path: Path) -> None:
+    p = _write(
+        tmp_path / "graders.yaml",
+        """
+version: 1
+graders:
+  - id: g-shape
+    level: L1
+    type: code
+    weight: 1.0
+    runner: "echo ok"
+    negate_on_polarity_negative: true
+""",
+    )
+    g = load_graders(p)
+    assert g.graders[0].negate_on_polarity_negative is True
+
+
 # ---------- is_l3_calibrated: the deployment gate ----------
 
 

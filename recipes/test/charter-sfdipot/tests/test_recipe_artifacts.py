@@ -201,12 +201,98 @@ def test_charter_missing_time_section_fails_l1_sections_grader() -> None:
     assert res.returncode == 1
 
 
-def test_refusal_output_correctly_fails_l1_sections_grader() -> None:
-    """A refusal contains no SFDIPOT sections, so the grader fails it.
-    On a negative-polarity task this is the wrong outcome — captured in
-    the recipe's runbook as a known follow-up: harness needs to invert
-    L1 graders for negative tasks. This test pins the current behaviour
-    so the inversion change is a deliberate, visible diff."""
+def test_refusal_output_raw_fails_l1_sections_grader() -> None:
+    """A refusal contains no SFDIPOT sections, so the runner's raw verdict is
+    fail (exit 1). The composition layer (lib.composition) inverts this to
+    `effective passed` for negative-polarity tasks via the
+    `negate_on_polarity_negative: true` flag on g-charter-sections."""
     refusal = "I can't charter this brief without more detail. Could you tell me the target endpoint, the expected user-facing behaviour, and the SLO?"
     res = _run_markdown_sections(refusal)
     assert res.returncode == 1
+
+
+def test_g_charter_sections_marked_negate_on_polarity_negative() -> None:
+    """The shape grader must opt into polarity inversion so refusals on
+    negative tasks compose to a pass. Without this flag the recipe's
+    negative tasks would always fail; the runbook would be wrong."""
+    g = load_graders(EVALS / "graders.yaml")
+    sections_grader = next(grader for grader in g.graders if grader.id == "g-charter-sections")
+    assert sections_grader.negate_on_polarity_negative is True
+
+
+def test_g_output_shape_does_not_negate_on_polarity() -> None:
+    """The non-empty-output grader must NOT invert: a refusal still has to
+    have non-empty text, just no SFDIPOT sections."""
+    g = load_graders(EVALS / "graders.yaml")
+    shape_grader = next(grader for grader in g.graders if grader.id == "g-output-shape")
+    assert shape_grader.negate_on_polarity_negative is False
+
+
+def test_refusal_composes_to_pass_on_negative_task() -> None:
+    """End-to-end: a refusal output, run through the L1 graders and the
+    composition layer with charter-sfdipot's actual graders.yaml against a
+    real negative task from tasks.jsonl, must compose to passed=True."""
+    from lib.composition import GraderOutcome, compose_trial_pass
+
+    g = load_graders(EVALS / "graders.yaml")
+    tasks = load_tasks(EVALS / "tasks.jsonl")
+    negative = next(t for t in tasks if t.polarity == "negative")
+
+    # Simulate the L1 outcomes for a correct refusal: shape passes
+    # (non-empty), sections fails (no SFDIPOT). L2 / L3 are skipped.
+    outcomes = [
+        GraderOutcome(grader_id="g-output-shape", passed=True),
+        GraderOutcome(grader_id="g-charter-sections", passed=False),
+        GraderOutcome(
+            grader_id="g-charter-sme-review",
+            passed=False,
+            skipped=True,
+            skip_reason="not sampled",
+        ),
+        GraderOutcome(
+            grader_id="g-charter-judge",
+            passed=False,
+            skipped=True,
+            skip_reason="no calibration",
+        ),
+    ]
+    graders_by_id = {grader.id: grader for grader in g.graders}
+    # Threshold lowered to (g-shape weight + g-sections weight) /
+    # (g-shape weight + g-sections weight) since L2/L3 are skipped, both
+    # remaining graders must effectively pass — default threshold of 1.0.
+    passed, evidence = compose_trial_pass(outcomes, graders_by_id, negative)
+    assert passed is True, f"refusal should compose to pass; evidence={evidence}"
+    assert "polarity-inverted" in evidence["g-charter-sections"]
+
+
+def test_charter_output_for_negative_task_composes_to_fail() -> None:
+    """The mirror case: if the recipe charterised a vague brief instead of
+    refusing, both L1 graders' raw verdicts pass — but with the inversion
+    g-charter-sections becomes effective fail, and the trial fails."""
+    from lib.composition import GraderOutcome, compose_trial_pass
+
+    g = load_graders(EVALS / "graders.yaml")
+    tasks = load_tasks(EVALS / "tasks.jsonl")
+    negative = next(t for t in tasks if t.polarity == "negative")
+
+    outcomes = [
+        GraderOutcome(grader_id="g-output-shape", passed=True),
+        GraderOutcome(grader_id="g-charter-sections", passed=True),
+        GraderOutcome(
+            grader_id="g-charter-sme-review",
+            passed=False,
+            skipped=True,
+            skip_reason="not sampled",
+        ),
+        GraderOutcome(
+            grader_id="g-charter-judge",
+            passed=False,
+            skipped=True,
+            skip_reason="no calibration",
+        ),
+    ]
+    graders_by_id = {grader.id: grader for grader in g.graders}
+    passed, evidence = compose_trial_pass(outcomes, graders_by_id, negative)
+    assert passed is False, f"fabricated charter on vague brief must fail; evidence={evidence}"
+    assert "polarity-inverted" in evidence["g-charter-sections"]
+    assert "raw=pass" in evidence["g-charter-sections"]
