@@ -288,9 +288,23 @@ fn spawn_session_name_update_notifier(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::session::SessionNameUpdate>();
     tokio::spawn(async move {
         while let Some(update) = rx.recv().await {
+            let mut meta = serde_json::Map::new();
+            meta.insert(
+                "messageCount".to_string(),
+                serde_json::Value::Number(update.message_count.into()),
+            );
+            meta.insert(
+                "userSetName".to_string(),
+                serde_json::Value::Bool(update.user_set_name),
+            );
             let notification = SessionNotification::new(
                 SessionId::new(update.session_id.clone()),
-                SessionUpdate::SessionInfoUpdate(SessionInfoUpdate::new().title(update.name)),
+                SessionUpdate::SessionInfoUpdate(
+                    SessionInfoUpdate::new()
+                        .title(update.name)
+                        .updated_at(update.updated_at.to_rfc3339())
+                        .meta(meta),
+                ),
             );
             if let Err(error) = cx.send_notification(notification) {
                 warn!(

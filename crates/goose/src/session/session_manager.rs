@@ -279,6 +279,9 @@ pub struct SessionManager {
 pub struct SessionNameUpdate {
     pub session_id: String,
     pub name: String,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub message_count: usize,
+    pub user_set_name: bool,
 }
 
 impl SessionManager {
@@ -404,9 +407,13 @@ impl SessionManager {
                 .apply()
                 .await?;
 
+            let session = self.get_session(id, false).await?;
             return Ok(Some(SessionNameUpdate {
                 session_id: id.to_string(),
                 name,
+                updated_at: session.updated_at,
+                message_count: session.message_count,
+                user_set_name: session.user_set_name,
             }));
         }
         Ok(None)
@@ -1464,8 +1471,12 @@ impl SessionStorage {
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>> {
-        self.list_sessions_by_types(Some(&[SessionType::User, SessionType::Scheduled]))
-            .await
+        self.list_sessions_by_types(Some(&[
+            SessionType::User,
+            SessionType::Scheduled,
+            SessionType::Acp,
+        ]))
+        .await
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<()> {
