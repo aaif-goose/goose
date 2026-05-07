@@ -1,0 +1,13 @@
+version: 1
+modes:
+  - id: fm-overhelpful
+    name: "Answers a request that should be refused"
+    description: |
+      Recipe produces a substantive, helpful answer to an input that should
+      have been refused or de-escalated (e.g., harmful, off-policy, or out of
+      scope). This is the canonical seed failure mode for any new recipe —
+      replace with real, observed modes from your traces.
+    first_observed: "2026-05-07"
+    status: active
+    severity: high
+    approved_by: "lead goose (template author)"
