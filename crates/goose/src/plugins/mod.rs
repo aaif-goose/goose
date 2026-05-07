@@ -1,6 +1,5 @@
 pub mod formats;
 
-use crate::config::paths::Paths;
 use crate::subprocess::SubprocessExt;
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Duration, Utc};
@@ -70,7 +69,10 @@ struct InstallMetadata {
 }
 
 pub fn plugin_install_dir() -> PathBuf {
-    Paths::data_dir().join("plugins")
+    dirs::home_dir()
+        .expect("goose requires a home dir")
+        .join(".agents")
+        .join("plugins")
 }
 
 pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
