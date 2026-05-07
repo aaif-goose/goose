@@ -21,7 +21,7 @@ name: "Bundle Desktop (Linux)"
 jobs:
   build-desktop-linux:
     name: Build Desktop (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -94,9 +94,6 @@ jobs:
           echo "CARGO_HOME=$CARGO_HOME" >> $GITHUB_ENV
           echo "RUSTUP_HOME=$RUSTUP_HOME" >> $GITHUB_ENV
 
-      - name: Install cross
-        run: source ./bin/activate-hermit && cargo install cross --git https://github.com/cross-rs/cross
-
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
         with:
@@ -104,16 +101,13 @@ jobs:
 
       - name: Build goosed binary
         env:
-          CROSS_NO_WARNINGS: 0
           RUST_LOG: debug
           RUST_BACKTRACE: 1
-          CROSS_VERBOSE: 1
-          CC: gcc-10
         run: |
           source ./bin/activate-hermit
           export TARGET="x86_64-unknown-linux-gnu"
           rustup target add "${TARGET}"
-          cross build --release --target ${TARGET} -p goose-server --features vulkan
+          cargo build --release --target ${TARGET} -p goose-server --features vulkan
 
       - name: Copy binaries into Electron folder
         run: |
