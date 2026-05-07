@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import cronstrue from 'cronstrue';
 import { ScheduledJob } from '../../schedule';
 import { errorMessage } from '../../utils/conversionUtils';
 import { defineMessages, useIntl } from '../../i18n';
+import {
+  buildCronForPeriod,
+  describeCron,
+  getQuarterStartMonth,
+  getValidDayOfMonth,
+  parseCron,
+  quarterDayLimitByStartMonth,
+  type Period,
+} from '../../utils/cronSchedule';
 
 const i18n = defineMessages({
   every: { id: 'cronPicker.every', defaultMessage: 'Every' },
@@ -52,149 +60,11 @@ const i18n = defineMessages({
   atSecond: { id: 'cronPicker.atSecond', defaultMessage: 'at second' },
 });
 
-type Period = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
-
-const quarterMonthsByStartMonth: Record<string, string> = {
-  '1': '1,4,7,10',
-  '2': '2,5,8,11',
-  '3': '3,6,9,12',
-};
-
-const quarterDayLimitByStartMonth: Record<string, number> = {
-  '1': 30,
-  '2': 28,
-  '3': 30,
-};
-
-const getQuarterStartMonth = (month: string): string | null => {
-  const entry = Object.entries(quarterMonthsByStartMonth).find(
-    ([, quarterMonths]) => quarterMonths === month
-  );
-  return entry?.[0] ?? null;
-};
-
-type ParsedCron = {
-  period: Period;
-  second: string;
-  minute: string;
-  hour: string;
-  dayOfMonth: string;
-  month: string;
-  dayOfWeek: string;
-};
-
-const defaultParsedCron: ParsedCron = {
-  period: 'day',
-  second: '0',
-  minute: '0',
-  hour: '14',
-  dayOfMonth: '*',
-  month: '*',
-  dayOfWeek: '*',
-};
-
-const normalizeCronParts = (cron: string): string[] | null => {
-  const parts = cron.trim().split(/\s+/);
-  if (parts.length === 5) {
-    return ['0', ...parts];
-  }
-  if (parts.length === 6) {
-    return parts;
-  }
-  return null;
-};
-
-const isSingleNumericValue = (value: string): boolean => /^\d+$/.test(value);
-
-const getValidDayOfMonth = (value: string, max: number): string | null => {
-  if (!isSingleNumericValue(value)) {
-    return null;
-  }
-  const parsedDay = parseInt(value, 10);
-  if (parsedDay < 1 || parsedDay > max) {
-    return null;
-  }
-  return parsedDay.toString();
-};
-
-const asCustomCron = (parts: string[]): ParsedCron => {
-  const [second, minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  return { period: 'custom', second, minute, hour, dayOfMonth, month, dayOfWeek };
-};
-
-const describeCron = (cron: string): string => {
-  const parts = cron.trim().split(/\s+/);
-  if (parts.length === 5 || parts.length === 6) {
-    return cronstrue.toString(parts.join(' '));
-  }
-  throw new Error('Expected 5 or 6 fields');
-};
-
 interface CronPickerProps {
   schedule: ScheduledJob | null;
   onChange: (cron: string) => void;
   isValid: (valid: boolean) => void;
 }
-
-const parseCron = (cron: string): ParsedCron => {
-  if (!cron.trim()) {
-    return defaultParsedCron;
-  }
-
-  const parts = normalizeCronParts(cron);
-  if (!parts) {
-    return { ...defaultParsedCron, period: 'custom' };
-  }
-
-  const [second, minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-
-  if (!isSingleNumericValue(second)) {
-    return asCustomCron(parts);
-  }
-
-  if (dayOfMonth !== '*') {
-    const quarterStartMonth = getQuarterStartMonth(month);
-    const dayOfMonthNumber = parseInt(dayOfMonth, 10);
-    if (
-      quarterStartMonth &&
-      isSingleNumericValue(dayOfMonth) &&
-      dayOfMonthNumber <= quarterDayLimitByStartMonth[quarterStartMonth]
-    ) {
-      return { period: 'quarter', second, minute, hour, dayOfMonth, month, dayOfWeek };
-    }
-  }
-  if (month !== '*' && dayOfMonth !== '*') {
-    if (!isSingleNumericValue(month) || !isSingleNumericValue(dayOfMonth)) {
-      return asCustomCron(parts);
-    }
-    return { period: 'year', second, minute, hour, dayOfMonth, month, dayOfWeek };
-  }
-  if (dayOfMonth !== '*') {
-    if (!isSingleNumericValue(dayOfMonth)) {
-      return asCustomCron(parts);
-    }
-    return { period: 'month', second, minute, hour, dayOfMonth, month, dayOfWeek };
-  }
-  if (dayOfWeek !== '*') {
-    if (!isSingleNumericValue(dayOfWeek)) {
-      return asCustomCron(parts);
-    }
-    return { period: 'week', second, minute, hour, dayOfMonth, month, dayOfWeek };
-  }
-  if (hour !== '*') {
-    if (!isSingleNumericValue(hour)) {
-      return asCustomCron(parts);
-    }
-    return { period: 'day', second, minute, hour, dayOfMonth, month, dayOfWeek };
-  }
-  if (minute !== '*') {
-    if (!isSingleNumericValue(minute)) {
-      return asCustomCron(parts);
-    }
-    return { period: 'hour', second, minute, hour, dayOfMonth, month, dayOfWeek };
-  }
-  return { period: 'minute', second, minute, hour, dayOfMonth, month, dayOfWeek };
-};
 
 const to24Hour = (hour12: number, isPM: boolean): number => {
   if (hour12 === 12) {
@@ -231,6 +101,19 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
   const [readableCron, setReadableCron] = useState('');
   const [hasCronError, setHasCronError] = useState(false);
 
+  const getCurrentCron = (selectedPeriod: Period, validDayOfMonth: string | null): string =>
+    buildCronForPeriod({
+      period: selectedPeriod,
+      second,
+      minute,
+      hour24: to24Hour(hour12, isPM),
+      dayOfWeek,
+      dayOfMonth: validDayOfMonth,
+      month,
+      quarterStartMonth,
+      customCron,
+    });
+
   useEffect(() => {
     const sourceCron = schedule?.cron || '';
     const parsed = parseCron(sourceCron);
@@ -258,53 +141,20 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
   }, [dayOfMonth, maxDayOfMonth]);
 
   useEffect(() => {
-    const hour24 = to24Hour(hour12, isPM);
     const validDayOfMonth = getValidDayOfMonth(dayOfMonth, maxDayOfMonth);
-    let cron: string;
 
     if (
       (period === 'month' || period === 'quarter' || period === 'year') &&
       validDayOfMonth === null
     ) {
-      const invalidDayCron =
-        period === 'quarter'
-          ? `${second} ${minute} ${hour24} 0 ${quarterMonthsByStartMonth[quarterStartMonth]} *`
-          : `${second} ${minute} ${hour24} 0 ${period === 'year' ? month : '*'} *`;
-      onChange(invalidDayCron);
+      onChange(getCurrentCron(period, null));
       isValid(false);
       setHasCronError(true);
       setReadableCron(intl.formatMessage(i18n.invalidDayOfMonth, { max: maxDayOfMonth }));
       return;
     }
 
-    switch (period) {
-      case 'custom':
-        cron = customCron;
-        break;
-      case 'minute':
-        cron = `${second} * * * * *`;
-        break;
-      case 'hour':
-        cron = `${second} ${minute} * * * *`;
-        break;
-      case 'day':
-        cron = `${second} ${minute} ${hour24} * * *`;
-        break;
-      case 'week':
-        cron = `${second} ${minute} ${hour24} * * ${dayOfWeek}`;
-        break;
-      case 'month':
-        cron = `${second} ${minute} ${hour24} ${validDayOfMonth} * *`;
-        break;
-      case 'quarter':
-        cron = `${second} ${minute} ${hour24} ${validDayOfMonth} ${quarterMonthsByStartMonth[quarterStartMonth]} *`;
-        break;
-      case 'year':
-        cron = `${second} ${minute} ${hour24} ${validDayOfMonth} ${month} *`;
-        break;
-      default:
-        cron = '0 0 0 * * *';
-    }
+    const cron = getCurrentCron(period, validDayOfMonth);
     onChange(cron);
     if (!cron.trim()) {
       isValid(false);
@@ -346,7 +196,13 @@ export const CronPicker: React.FC<CronPickerProps> = ({ schedule, onChange, isVa
         </span>
         <select
           value={period}
-          onChange={(e) => setPeriod(e.target.value as Period)}
+          onChange={(e) => {
+            const nextPeriod = e.target.value as Period;
+            if (nextPeriod === 'custom' && period !== 'custom') {
+              setCustomCron(getCurrentCron(period, getValidDayOfMonth(dayOfMonth, maxDayOfMonth)));
+            }
+            setPeriod(nextPeriod);
+          }}
           className={selectClassName}
         >
           <option value="minute">{intl.formatMessage(i18n.minute)}</option>

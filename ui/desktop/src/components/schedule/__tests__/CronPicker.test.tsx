@@ -114,6 +114,27 @@ describe('CronPicker', () => {
     });
   });
 
+  it('uses the current preset cron when switching to custom cron', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    renderWithIntl(<CronPicker schedule={null} onChange={onChange} isValid={vi.fn()} />);
+
+    const [periodSelect] = screen.getAllByRole('combobox');
+    await user.selectOptions(periodSelect, 'quarter');
+    await user.selectOptions(screen.getAllByRole('combobox')[1], '2');
+
+    const dayInput = screen.getAllByRole('spinbutton')[0];
+    await user.clear(dayInput);
+    await user.type(dayInput, '15');
+    await user.selectOptions(periodSelect, 'custom');
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Cron expression')).toHaveValue('0 0 14 15 2,5,8,11 *');
+      expect(getLastCron(onChange)).toBe('0 0 14 15 2,5,8,11 *');
+    });
+  });
+
   it('marks invalid custom cron input as invalid', async () => {
     const user = userEvent.setup();
     const isValid = vi.fn();
