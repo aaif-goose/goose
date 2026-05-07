@@ -24,7 +24,9 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 - [x] Grader-runner framework (`eval-bench/grader_runners/`): `output_shape.py`, `markdown_sections.py`, contract documented in the README. 24 tests.
 - [x] First recipe `recipes/test/charter-sfdipot/` — SFDIPOT charter composer with full eval artifacts (10 seed tasks, 7 active failure modes, L1+L2+L3 grader composition, SME and judge rubrics, calibration plan, runbook). 15 tests covering artifact validity, two-sided coverage, failure-mode/task linkage, and L1 grader behaviour against full charters and refusals.
 - [x] Polarity-aware grader inversion via `negate_on_polarity_negative` field on graders + `lib/composition.py` to compose per-grader outcomes into per-trial pass/fail. Refusals on negative-polarity tasks now compose to pass; fabricated charters on vague briefs compose to fail. 14 new composition tests + 2 loader tests + 4 recipe-artifact tests verify the contract end-to-end.
-- [ ] Recipe execution path in `run_kpass.py` — currently a stub; needs real wiring into Goose's recipe runner.
+- [x] Recipe execution path wired in `run_kpass.py`: pluggable `RecipeRunner` (`StubRunner` for smoke, `GooseSubprocessRunner` for real runs), `lib/grading.py` for L1 grader subprocess dispatch, and the per-trial pipeline using polarity-aware composition. Per-grader outcomes (including skipped status) persist to SQLite. End-to-end smoke verified: `--runner stub` against `recipes/test/charter-sfdipot` produces meaningful pass/fail per task and per slice.
+- [ ] L3 judge invocation in `run_kpass.py` — currently L3 is always reported as skipped; real judge calls (and trace-id capture from Langfuse) are the next chunk.
+- [ ] L2 sampled human review automation — sampling and queue handoff are not yet wired by the harness; L2 graders are reported skipped.
 - [ ] L3 judge calibration for `charter-sfdipot` (judge auto-skips until calibrated).
 
 ## Phase 1 follow-ups (open)
