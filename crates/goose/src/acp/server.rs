@@ -1576,7 +1576,7 @@ impl GooseAcpAgent {
         &self,
         content_item: &MessageContent,
         session_id: &SessionId,
-        thread_id: &str,
+        session_id_str: &str,
         message_id: Option<&str>,
         agent: &Arc<Agent>,
         session: &mut GooseAcpSession,
@@ -1595,7 +1595,7 @@ impl GooseAcpAgent {
                 self.handle_tool_request(
                     tool_request,
                     session_id,
-                    thread_id,
+                    session_id_str,
                     message_id,
                     session,
                     cx,
@@ -1606,7 +1606,7 @@ impl GooseAcpAgent {
                 self.handle_tool_response(
                     tool_response,
                     session_id,
-                    thread_id,
+                    session_id_str,
                     message_id,
                     session,
                     cx,
@@ -1814,7 +1814,7 @@ impl GooseAcpAgent {
         &self,
         tool_response: &crate::conversation::message::ToolResponse,
         session_id: &SessionId,
-        thread_id: &str,
+        session_id_str: &str,
         message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
@@ -1859,7 +1859,7 @@ impl GooseAcpAgent {
         // Chain summarization: when this response completes a multi-tool
         // chain, fire one LLM summary covering the run.
         session.responded_tool_ids.insert(tool_response.id.clone());
-        self.maybe_summarize_chain(&tool_response.id, session_id, thread_id, session, cx);
+        self.maybe_summarize_chain(&tool_response.id, session_id, session_id_str, session, cx);
         let _ = message_id;
 
         Ok(())
@@ -1874,7 +1874,7 @@ impl GooseAcpAgent {
         &self,
         tool_call_id: &str,
         session_id: &SessionId,
-        _thread_id: &str,
+        _session_id_str: &str,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
     ) {
@@ -2429,16 +2429,16 @@ impl GooseAcpAgent {
     /// session (needed by `on_prompt`).
     async fn get_agent_or_receiver(
         &self,
-        thread_id: &str,
+        session_id: &str,
         cancel_token: Option<CancellationToken>,
     ) -> Result<
         Either<Arc<Agent>, tokio::sync::watch::Receiver<AgentSetupSignal>>,
         agent_client_protocol::Error,
     > {
         let mut sessions = self.sessions.lock().await;
-        let session = sessions.get_mut(thread_id).ok_or_else(|| {
-            agent_client_protocol::Error::resource_not_found(Some(thread_id.to_string()))
-                .data(format!("Session not found: {}", thread_id))
+        let session = sessions.get_mut(session_id).ok_or_else(|| {
+            agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                .data(format!("Session not found: {}", session_id))
         })?;
         if let Some(token) = cancel_token {
             session.cancel_token = Some(token);
@@ -2453,10 +2453,10 @@ impl GooseAcpAgent {
     /// Most callers (e.g. `on_prompt`, `on_get_tools`) should use this.
     async fn get_session_agent(
         &self,
-        thread_id: &str,
+        session_id: &str,
         cancel_token: Option<CancellationToken>,
     ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
-        let mut rx = match self.get_agent_or_receiver(thread_id, cancel_token).await? {
+        let mut rx = match self.get_agent_or_receiver(session_id, cancel_token).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
         };
@@ -2486,9 +2486,9 @@ impl GooseAcpAgent {
     /// the provider (e.g. `update_provider`, `set_model`, `build_config_update`).
     async fn get_session_agent_provider_ready(
         &self,
-        thread_id: &str,
+        session_id: &str,
     ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
-        let mut rx = match self.get_agent_or_receiver(thread_id, None).await? {
+        let mut rx = match self.get_agent_or_receiver(session_id, None).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
         };
@@ -2794,19 +2794,19 @@ impl GooseAcpAgent {
         args: PromptRequest,
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
         // The ACP session_id IS the thread ID.
-        let thread_id = args.session_id.0.to_string();
-        let sid = sid_short(&thread_id);
+        let session_id = args.session_id.0.to_string();
+        let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
 
         let cancel_token = CancellationToken::new();
         let agent = self
-            .get_session_agent(&thread_id, Some(cancel_token.clone()))
+            .get_session_agent(&session_id, Some(cancel_token.clone()))
             .await?;
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
 
         let session_config = SessionConfig {
-            id: thread_id.clone(),
+            id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
             retry_config: None,
@@ -2854,9 +2854,9 @@ impl GooseAcpAgent {
                     let stored_message_id = message.id.clone();
 
                     let mut sessions = self.sessions.lock().await;
-                    let session = sessions.get_mut(&thread_id).ok_or_else(|| {
+                    let session = sessions.get_mut(&session_id).ok_or_else(|| {
                         agent_client_protocol::Error::invalid_params()
-                            .data(format!("Session not found: {}", thread_id))
+                            .data(format!("Session not found: {}", session_id))
                     })?;
 
                     for content_item in &message.content {
@@ -2890,7 +2890,7 @@ impl GooseAcpAgent {
                         self.handle_message_content(
                             content_item,
                             &args.session_id,
-                            &thread_id,
+                            &session_id,
                             stored_message_id.as_deref(),
                             &agent,
                             session,
@@ -2909,7 +2909,7 @@ impl GooseAcpAgent {
 
         {
             let mut sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&thread_id) {
+            if let Some(session) = sessions.get_mut(&session_id) {
                 // Final safety net: in case the stream ended without any
                 // chain-breaking content, make sure a multi-tool buffer is
                 // registered. (Eager registration during the loop usually
@@ -2921,7 +2921,7 @@ impl GooseAcpAgent {
 
         let session = self
             .session_manager
-            .get_session(&thread_id, false)
+            .get_session(&session_id, false)
             .await
             .internal_err_ctx("Failed to load session")?;
         let provider = agent
@@ -2962,16 +2962,16 @@ impl GooseAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         debug!(?args, "cancel request");
 
-        let thread_id = args.session_id.0.to_string();
+        let session_id = args.session_id.0.to_string();
         let mut sessions = self.sessions.lock().await;
 
-        if let Some(session) = sessions.get_mut(&thread_id) {
+        if let Some(session) = sessions.get_mut(&session_id) {
             if let Some(ref token) = session.cancel_token {
-                info!(thread_id = %thread_id, "prompt cancelled");
+                info!(session_id = %session_id, "prompt cancelled");
                 token.cancel();
             }
         } else {
-            warn!(thread_id = %thread_id, "cancel request for unknown session");
+            warn!(session_id = %session_id, "cancel request for unknown session");
         }
 
         Ok(())
@@ -2979,18 +2979,18 @@ impl GooseAcpAgent {
 
     async fn on_set_model(
         &self,
-        thread_id: &str,
+        session_id: &str,
         model_id: &str,
     ) -> Result<SetSessionModelResponse, agent_client_protocol::Error> {
         let config = self.config()?;
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         let current_provider = agent
             .provider()
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = current_provider.get_name().to_string();
         let extensions =
-            EnabledExtensionsState::for_session(&self.session_manager, thread_id, &config).await;
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let model_config = crate::model::ModelConfig::new(model_id)
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&provider_name);
@@ -2999,12 +2999,12 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
-            .update_provider(provider, thread_id)
+            .update_provider(provider, session_id)
             .await
             .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
-            .update_goose_mode(mode, thread_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to propagate mode")?;
         // model_config is already updated on the session by the agent's update_provider call.
@@ -3055,7 +3055,7 @@ impl GooseAcpAgent {
 
     async fn on_set_mode(
         &self,
-        thread_id: &str,
+        session_id: &str,
         mode_id: &str,
     ) -> Result<SetSessionModeResponse, agent_client_protocol::Error> {
         let mode = mode_id.parse::<GooseMode>().map_err(|_| {
@@ -3063,9 +3063,9 @@ impl GooseAcpAgent {
                 .data(format!("Invalid mode: {}", mode_id))
         })?;
 
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         agent
-            .update_goose_mode(mode, thread_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to update mode")?;
 
@@ -3076,14 +3076,14 @@ impl GooseAcpAgent {
 
     async fn update_provider(
         &self,
-        thread_id: &str,
+        session_id: &str,
         provider_name: &str,
         model_name: Option<&str>,
         context_limit: Option<usize>,
         request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> Result<(), agent_client_protocol::Error> {
         let config = self.config()?;
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         let current_provider = agent
             .provider()
             .await
@@ -3120,18 +3120,18 @@ impl GooseAcpAgent {
             .with_request_params(request_params);
 
         let extensions =
-            EnabledExtensionsState::for_session(&self.session_manager, thread_id, &config).await;
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let new_provider = self
             .create_provider(&resolved_provider_name, model_config, extensions)
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
-            .update_provider(new_provider, thread_id)
+            .update_provider(new_provider, session_id)
             .await
             .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
-            .update_goose_mode(mode, thread_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to propagate mode")?;
         let provider = agent
@@ -3144,7 +3144,7 @@ impl GooseAcpAgent {
         if use_default_provider {
             let update = self
                 .session_manager
-                .update(thread_id)
+                .update(session_id)
                 .provider_name(DEFAULT_PROVIDER_ID);
             if has_default_overrides {
                 update
