@@ -173,6 +173,7 @@ pub struct Agent {
     pub(super) tool_inspection_manager: ToolInspectionManager,
     container: Mutex<Option<Container>>,
     goal: Mutex<Option<String>>,
+    grind: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -285,6 +286,7 @@ impl Agent {
             ),
             container: Mutex::new(None),
             goal: Mutex::new(None),
+            grind: Mutex::new(None),
         }
     }
 
@@ -1816,8 +1818,27 @@ impl Agent {
                             );
                         }
 
+                        None if self.grind.lock().await.is_some() => {
+                            let grind = self.grind.lock().await.clone().unwrap();
+                            let nudge = format!(
+                                "Keep working. The grind goal is not yet complete:\n\n\
+                                 **Goal:** {grind}\n\n\
+                                 Continue until it is fully done."
+                            );
+                            let message = Message::user().with_text(&nudge)
+                                .with_visibility(false, true);
+                            messages_to_add.push(message);
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    format!("Grind: {grind}"),
+                                )
+                            );
+                        }
+
                         None => {
                             self.set_goal(None).await;
+                            self.set_grind(None).await;
                             match self.handle_retry_logic(&mut conversation, &session_config, &initial_messages).await {
                                 Ok(should_retry) => {
                                     if should_retry {
@@ -1908,6 +1929,14 @@ impl Agent {
 
     pub async fn get_goal(&self) -> Option<String> {
         self.goal.lock().await.clone()
+    }
+
+    pub async fn set_grind(&self, goal: Option<String>) {
+        *self.grind.lock().await = goal;
+    }
+
+    pub async fn get_grind(&self) -> Option<String> {
+        self.grind.lock().await.clone()
     }
 
     pub async fn update_provider(

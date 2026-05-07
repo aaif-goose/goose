@@ -45,6 +45,11 @@ static COMMANDS: &[CommandDef] = &[
         name: "goal",
         description: "Set a goal the agent must satisfy before finishing, or clear with /goal off",
     },
+    CommandDef {
+        name: "grind",
+        description:
+            "Set a goal the agent pursues relentlessly until max_turns, or clear with /grind off",
+    },
 ];
 
 pub fn list_commands() -> &'static [CommandDef] {
@@ -87,6 +92,7 @@ impl Agent {
             "skills" => self.handle_skills_command(session_id).await,
             "doctor" => Ok(Some(crate::doctor::run(self, session_id).await?)),
             "goal" => self.handle_goal_command(params_str).await,
+            "grind" => self.handle_grind_command(params_str).await,
             _ => {
                 self.handle_recipe_command(command, params_str, session_id)
                     .await
@@ -467,6 +473,30 @@ impl Agent {
         self.set_goal(Some(goal.clone())).await;
         Ok(Some(Message::assistant().with_text(format!(
             "Goal set. The agent will verify this goal is met before finishing:\n\n> {goal}"
+        ))))
+    }
+
+    async fn handle_grind_command(&self, params_str: &str) -> Result<Option<Message>> {
+        if params_str.is_empty() {
+            let current = self.get_grind().await;
+            let text = match current {
+                Some(goal) => format!("Current grind goal: {goal}"),
+                None => "No grind goal set. Use `/grind <description>` to set one.".to_string(),
+            };
+            return Ok(Some(Message::assistant().with_text(text)));
+        }
+
+        if params_str == "off" || params_str == "clear" {
+            self.set_grind(None).await;
+            return Ok(Some(
+                Message::assistant().with_text("Grind cleared. The agent will finish normally."),
+            ));
+        }
+
+        let goal = params_str.to_string();
+        self.set_grind(Some(goal.clone())).await;
+        Ok(Some(Message::assistant().with_text(format!(
+            "Grind goal set. The agent will keep working until max_turns is reached:\n\n> {goal}"
         ))))
     }
 }
