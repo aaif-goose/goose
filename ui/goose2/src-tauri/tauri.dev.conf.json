@@ -1,6 +1,6 @@
 {
-  "identifier": "com.goose.app.dev",
-  "productName": "Goose Dev",
+  "identifier": "com.skein.app.dev",
+  "productName": "Skein Dev",
   "bundle": {
     "externalBin": []
   }

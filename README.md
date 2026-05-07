@@ -1,3 +1,7 @@
+> **This repository is Skein** — a context-driven, eval-first agentic quality engineering distro of goose, tailored for professional test engineers. See [SKEIN.md](SKEIN.md) for the distro's identity, doctrine, and roadmap.
+>
+> The rest of this README is the upstream goose README, kept verbatim for merge ergonomics.
+
 > **🦆 goose has moved!** This project has moved from `block/goose` to the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation. Some links and references are still being updated — please bear with us during the transition.
 
 <div align="center">

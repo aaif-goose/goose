@@ -1,0 +1,29 @@
+[project]
+name = "eval-bench"
+version = "0.1.0"
+description = "Skein's recipe evaluation library — context-driven, eval-first."
+requires-python = ">=3.9"
+dependencies = [
+    "PyYAML>=6.0",
+    # Optional: jsonschema for full schema validation. The library degrades
+    # gracefully when not installed; install for strict CI use.
+    # "jsonschema>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+skein-eval = "run_kpass:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

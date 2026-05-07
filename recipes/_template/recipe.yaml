@@ -1,0 +1,27 @@
+version: 1.0.0
+title: "Recipe template"
+description: |
+  Replace this with your recipe's purpose. One paragraph; should make clear who
+  this is for, what input it takes, and what output it produces. Include the
+  failure modes this recipe is designed to fail loudly on, not just succeed
+  quietly on.
+
+# Inputs the recipe accepts. These map to keys in tasks.jsonl `input` objects.
+parameters:
+  - name: example_input
+    type: string
+    description: "Replace with your real parameter."
+    required: true
+
+# Extensions this recipe needs. The recipe-scanner gates remote loads in Skein.
+extensions: []
+
+# Optional. The system prompt the recipe runs with.
+instructions: |
+  Replace this with the recipe's instructions. Be specific about what
+  constitutes a successful output and which failure modes to be wary of —
+  the failure modes you list here should appear in evals/failure-modes.yaml.
+
+# The actual prompt. Skein recipes are templated with Jinja2-style variables.
+prompt: |
+  {{ example_input }}

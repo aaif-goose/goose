@@ -1,0 +1,33 @@
+version: 1
+min_passk_target: 0.80   # pass^k threshold for the regression suite (e.g., pass^5 >= 0.80)
+
+graders:
+  # L1 — code assertion. Floor of correctness; required by the harness.
+  - id: g-output-shape
+    level: L1
+    type: code
+    runner: "python -m eval_bench.graders.output_shape"
+    weight: 1.0
+    dimension: "output is a non-empty string"
+    timeout_s: 10
+
+  # L2 — sampled human review. Calibrates the L3 judge.
+  - id: g-sme-quality
+    level: L2
+    type: human
+    sample_rate: 0.05
+    queue: "annotations/"
+    rubric: "rubrics/sme_quality.md"
+    weight: 1.0
+    dimension: "answer is genuinely useful for the stated input"
+
+  # L3 — LLM-as-judge. Auto-skipped if calibration is stale or divergent.
+  - id: g-judge-policy
+    level: L3
+    type: llm_judge
+    judge_model: "anthropic:claude-opus-4-7"
+    rubric: "rubrics/judge_policy.md"
+    requires_calibration_within_days: 30
+    max_divergence_from_l2: 0.15
+    weight: 1.0
+    dimension: "answer respects the stated policy / scope"

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skein.local/eval-bench/schemas/calibration.schema.json",
+  "title": "calibration record",
+  "description": "One record per calibration of an L3 (LLM-as-judge) grader against L2 (human) ratings. Recipes append to a calibration log alongside calibration.md; the log is what the harness machine-reads to decide whether to deploy an L3 grader.",
+  "type": "object",
+  "required": ["timestamp", "judge_id", "sample_size", "agreement", "deployed"],
+  "additionalProperties": false,
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "judge_id": {
+      "type": "string",
+      "pattern": "^g-[a-z0-9_-]+$",
+      "description": "Refers to a grader in graders.yaml."
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "The exact judge model used for this calibration run. If the recipe later swaps judge_model, calibration must be repeated."
+    },
+    "sample_size": {
+      "type": "integer",
+      "minimum": 20,
+      "description": "How many traces were rated by both human and judge for this calibration. Hamel guidance: a few dozen is enough for first-pass calibration; high-stakes recipes go higher."
+    },
+    "agreement": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of items where the judge and human agreed."
+    },
+    "cohen_kappa": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Cohen's kappa for chance-corrected agreement. Recommended; not strictly required."
+    },
+    "divergence_breakdown": {
+      "type": "object",
+      "description": "Per-dimension or per-failure-mode breakdown of where the judge disagreed with the human.",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "deployed": {
+      "type": "boolean",
+      "description": "Whether this calibration result was good enough to deploy the judge. Set by the harness based on max_divergence_from_l2."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form. Why the calibration was run, anything surprising in the disagreements, plans for the next iteration."
+    }
+  }
+}
