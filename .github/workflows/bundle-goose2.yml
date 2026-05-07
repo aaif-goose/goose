@@ -244,7 +244,7 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-macos-intel:
     name: "macOS x86_64"
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     environment: ${{ inputs.environment || '' }}
     timeout-minutes: 60
     env:
@@ -360,7 +360,7 @@ jobs:
           certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      # ── Tauri bundle (cross-compile for Intel) ──
+      # ── Tauri bundle ──
       - name: Bundle Goose 2 for Intel
         env:
           APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
@@ -423,7 +423,7 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-linux:
     name: "Linux x86_64"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
