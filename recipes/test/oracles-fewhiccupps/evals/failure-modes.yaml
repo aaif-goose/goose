@@ -1,0 +1,87 @@
+version: 1
+modes:
+  - id: fm-fabrication
+    name: "Fabricates target details"
+    description: |
+      Oracle output invents specifics not implied by the target description
+      — e.g., names a framework, claim, statute, or contract field that
+      the target did not mention. The Bach test: would a tester reading
+      the original target next to the oracle suite spot a "where did THAT
+      come from?" item?
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-skips-oracles-silently
+    name: "Skips an oracle without saying N/A"
+    description: |
+      The output omits one or more of the 11 FEW HICCUPPS H2 sections
+      rather than writing `Oracle: N/A — <reason>`. Silent skipping
+      hides which oracles the model decided don't apply, defeating the
+      heuristic's audit property.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-mislabels-oracle
+    name: "Applies the wrong oracle to a section"
+    description: |
+      The text under a section header doesn't match that oracle's meaning
+      — e.g., "Statutes" content that actually describes user expectations,
+      or "World" content that's really a Familiar problem (boundaries).
+      Tells the tester to compare against the wrong reference.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-not-actionable
+    name: "Applied here is too vague to use"
+    description: |
+      The "Applied here" section lists vague phrases ("look at edge
+      cases", "test for consistency") rather than concrete checks
+      against the named target. A tester should be able to start a
+      30-minute session from the listed checks without further
+      interpretation.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-overhelpful-on-vague-target
+    name: "Composes oracles for a vague target instead of refusing"
+    description: |
+      Given an empty, single-word, or out-of-scope target, the recipe
+      produces a fabricated oracle suite rather than asking for the
+      clarifying details required to compose oracles responsibly.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
+
+  - id: fm-overstuffs-N/A-sections
+    name: "Refuses to say N/A; pads inapplicable oracles"
+    description: |
+      The opposite of fm-skips-oracles: the recipe writes plausible-
+      sounding content for an oracle that does not apply (e.g., Statutes
+      for a pure utility function). The tell is content that could
+      equally describe any target.
+    first_observed: "2026-05-08"
+    status: active
+    severity: medium
+    approved_by: "Head of Software Quality"
+
+  - id: fm-statutes-hallucination
+    name: "Cites statutes or standards that do not apply or do not exist"
+    description: |
+      A specific, dangerous variant of fabrication: under the Statutes
+      oracle the recipe names laws, regulations, or RFCs that either do
+      not apply to the target's jurisdiction/domain or do not exist at
+      all. High severity because Statutes content has the highest
+      consequences if acted on.
+    first_observed: "2026-05-08"
+    status: active
+    severity: high
+    approved_by: "Head of Software Quality"
