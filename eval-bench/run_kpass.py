@@ -17,6 +17,13 @@ Runners:
     --runner stub   in-process stub that returns a fixed placeholder output
                     per trial. Useful for harness smoke without goose
                     installed; not for measuring recipe quality.
+
+Judges (L3 LLM-as-judge):
+    --judge anthropic  POST to the Anthropic Messages API; auth via
+                       ANTHROPIC_API_KEY (default).
+    --judge stub       always returns 'pass' (development smoke).
+    --judge off        disable L3 judging entirely; L3 graders skip with
+                       reason 'L3 judging disabled'.
 """
 
 from __future__ import annotations
@@ -31,13 +38,17 @@ if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
 from lib import (  # noqa: E402  (import after sys.path tweak)
+    AnthropicJudge,
     GooseSubprocessRunner,
     GraderOutcome,
+    Judge,
+    JudgeVerdict,
     L1Grader,
     L3Grader,
     RecipeRunner,
     ResultsStore,
     RunResult,
+    StubJudge,
     StubRunner,
     Task,
     compose_trial_pass,
@@ -82,6 +93,14 @@ def main() -> int:
              "'stub' returns a placeholder output per trial (development smoke only).",
     )
     parser.add_argument(
+        "--judge",
+        choices=["anthropic", "stub", "off"],
+        default="anthropic",
+        help="L3 judge backend. 'anthropic' uses the Messages API "
+             "(needs ANTHROPIC_API_KEY); 'stub' always returns pass "
+             "(development smoke); 'off' disables L3 judging entirely.",
+    )
+    parser.add_argument(
         "--store",
         type=Path,
         default=None,
@@ -119,6 +138,7 @@ def main() -> int:
 
     print(f"recipe:     {recipe_dir}")
     print(f"runner:     {args.runner}")
+    print(f"judge:      {args.judge}")
     print(f"tasks:      {len(tasks)} (after --tag {args.tag} filter)")
     print(f"k:          {args.k}")
     print(f"failure modes: {len(failure_modes.modes)} ({len(failure_modes.active())} active)")
@@ -135,11 +155,12 @@ def main() -> int:
         return 0
 
     runner = _build_runner(args.runner)
+    judge = _build_judge(args.judge)
     store = ResultsStore(path=args.store)
     run_id = store.start_run(
         recipe=str(recipe_dir),
         k=args.k,
-        notes=f"runner={args.runner}; tag={args.tag}; "
+        notes=f"runner={args.runner}; judge={args.judge}; tag={args.tag}; "
               f"l3_skipped={[gid for gid, (ok, _) in l3_status.items() if not ok]}",
     )
 
@@ -155,6 +176,8 @@ def main() -> int:
                 l3_status=l3_status,
                 run_result=run_result,
                 repo_root=args.repo_root,
+                judge=judge,
+                evals_dir=evals_dir,
             )
             passed, evidence = compose_trial_pass(outcomes, graders_by_id, task)
 
@@ -208,6 +231,18 @@ def _build_runner(name: str) -> RecipeRunner:
     raise ValueError(f"unknown runner {name!r}")
 
 
+def _build_judge(name: str) -> Judge | None:
+    if name == "off":
+        return None
+    if name == "stub":
+        # Default stub: always pass. Useful for harness smoke without
+        # touching the Anthropic API. Does NOT measure recipe quality.
+        return StubJudge.always("pass", evidence="stub judge")
+    if name == "anthropic":
+        return AnthropicJudge()
+    raise ValueError(f"unknown judge {name!r}")
+
+
 def _outcomes_for_trial(
     *,
     task: Task,
@@ -215,6 +250,8 @@ def _outcomes_for_trial(
     l3_status: dict[str, tuple[bool, str]],
     run_result: RunResult,
     repo_root: Path,
+    judge: Judge | None,
+    evals_dir: Path,
 ) -> list[GraderOutcome]:
     """Build the GraderOutcome list for one trial.
 
@@ -255,27 +292,86 @@ def _outcomes_for_trial(
         )
 
     for g in graders.by_level("L3"):
+        assert isinstance(g, L3Grader)
         ok, reason = l3_status.get(g.id, (False, "no calibration check performed"))
-        if ok:
+        if not ok:
+            outcomes.append(
+                GraderOutcome(grader_id=g.id, passed=False, skipped=True, skip_reason=reason)
+            )
+            continue
+        if judge is None:
             outcomes.append(
                 GraderOutcome(
                     grader_id=g.id,
                     passed=False,
                     skipped=True,
-                    skip_reason="L3 judge invocation not yet wired (calibration ok but runner pending)",
+                    skip_reason="L3 judging disabled (--judge off)",
                 )
             )
-        else:
-            outcomes.append(
-                GraderOutcome(
-                    grader_id=g.id,
-                    passed=False,
-                    skipped=True,
-                    skip_reason=reason,
-                )
-            )
+            continue
+        outcomes.append(_invoke_l3_judge(g, judge, run_result, task, evals_dir))
 
     return outcomes
+
+
+def _invoke_l3_judge(
+    grader: L3Grader,
+    judge: Judge,
+    run_result: RunResult,
+    task: Task,
+    evals_dir: Path,
+) -> GraderOutcome:
+    """Run a calibrated L3 judge for one trial.
+
+    Loads the judge's rubric (path is relative to evals_dir) and invokes the
+    judge with the rubric + a payload (feature inputs from the task, recipe
+    output). Translates the verdict into a GraderOutcome:
+
+      pass    -> passed=True
+      fail    -> passed=False
+      Unknown -> skipped=True (we do not guess; humans review)
+      error   -> skipped=True with the judge's error preserved
+    """
+    rubric_path = evals_dir / grader.rubric
+    try:
+        rubric_text = rubric_path.read_text(encoding="utf-8")
+    except OSError as e:
+        return GraderOutcome(
+            grader_id=grader.id,
+            passed=False,
+            skipped=True,
+            skip_reason=f"could not read rubric {rubric_path}: {e}",
+        )
+
+    payload = {
+        "feature_brief": task.input.get("feature_brief"),
+        "task_input": task.input,
+        "task_expected": task.expected,
+        "task_polarity": task.polarity,
+        "output": run_result.output,
+    }
+    verdict = judge.judge(rubric_text, payload)
+
+    if verdict.error:
+        return GraderOutcome(
+            grader_id=grader.id,
+            passed=False,
+            skipped=True,
+            skip_reason=f"judge error: {verdict.error}",
+        )
+    if verdict.verdict == "Unknown":
+        return GraderOutcome(
+            grader_id=grader.id,
+            passed=False,
+            skipped=True,
+            skip_reason=f"judge returned Unknown: {verdict.evidence or 'no evidence'}",
+        )
+    return GraderOutcome(
+        grader_id=grader.id,
+        passed=verdict.verdict == "pass",
+        score=1.0 if verdict.verdict == "pass" else 0.0,
+        details=verdict.evidence,
+    )
 
 
 def _print_summary(
