@@ -14,6 +14,7 @@ Skein currently ships:
   - `run_kpass.py` — full eval suite over a recipe's tasks (regression / capability runs).
   - `annotate.py` — work the L2 human-review queue.
   - `calibrate.py` — calibrate an L3 LLM judge against your reviewed annotations.
+  - `slices.py` — read pass-rate breakdowns out of the SQLite store (Slice Explorer as CLI).
 - **eval-bench library** for building more recipes — schemas, kpass math, judge / runner / annotation infrastructure, the L1/L2/L3 grader ladder.
 
 What's *not* in yet: a desktop UI (the Skein Tauri app boots and is branded but has no in-app views beyond goose's defaults), MCP bridges to Promptfoo / Langfuse / AIO Tests, and the deeper Phase 2+ capabilities (LLM SLA probing, investigation mode, quality intelligence, multi-agent council). See [SKEIN_STATUS.md](SKEIN_STATUS.md) for what's done, in-progress, and queued.
@@ -129,6 +130,21 @@ python3 eval-bench/run_kpass.py \
 ```
 
 If `pass^5` for the regression suite drops below the recipe's `min_passk_target`, the harness exits non-zero — drop this in CI.
+
+To read the results back out of the SQLite store:
+
+```bash
+# List recent runs (newest first, with headline pass^k):
+python3 eval-bench/slices.py runs
+
+# Break one run down by every recorded axis (complexity, domain, language…):
+python3 eval-bench/slices.py show <run_id>
+
+# Diff two runs of the same recipe — what got better, what got worse:
+python3 eval-bench/slices.py compare <run_a> <run_b>
+```
+
+By default the store lives at `~/.skein/eval-bench.sqlite`. Override with `--store` to inspect a per-run store created by `run_kpass.py --store ...`.
 
 ### Quarterly — calibrate the L3 judge
 
