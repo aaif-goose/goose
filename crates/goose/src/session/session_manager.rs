@@ -402,9 +402,6 @@ impl SessionManager {
 
         if user_message_count <= MSG_COUNT_FOR_SESSION_NAME_GENERATION {
             let name = provider.generate_session_name(id, &conversation).await?;
-            if name == session.name {
-                return Ok(None);
-            }
             self.update(id)
                 .system_generated_name(name.clone())
                 .apply()
