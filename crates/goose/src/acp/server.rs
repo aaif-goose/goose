@@ -2282,7 +2282,7 @@ impl GooseAcpAgent {
             .create_session(
                 args.cwd.clone(),
                 "New Chat".to_string(),
-                SessionType::Acp,
+                SessionType::User,
                 self.goose_mode,
             )
             .await
@@ -4098,7 +4098,7 @@ print(\"hello, world\")
             working_dir: PathBuf::from("/tmp"),
             name: "ACP Session".to_string(),
             user_set_name: false,
-            session_type: SessionType::Acp,
+            session_type: SessionType::User,
             created_at: Default::default(),
             updated_at: Default::default(),
             extension_data: crate::session::ExtensionData::default(),

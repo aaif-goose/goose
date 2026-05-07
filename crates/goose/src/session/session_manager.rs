@@ -1471,12 +1471,8 @@ impl SessionStorage {
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>> {
-        self.list_sessions_by_types(Some(&[
-            SessionType::User,
-            SessionType::Scheduled,
-            SessionType::Acp,
-        ]))
-        .await
+        self.list_sessions_by_types(Some(&[SessionType::User, SessionType::Scheduled]))
+            .await
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<()> {
@@ -2031,11 +2027,8 @@ mod tests {
         .unwrap();
 
         let default_sessions = sm.list_sessions().await.unwrap();
-        assert_eq!(default_sessions.len(), 2);
-        // list_sessions returns User, Scheduled, and Acp sessions
-        let names: Vec<&str> = default_sessions.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"User session"));
-        assert!(names.contains(&"ACP session"));
+        assert_eq!(default_sessions.len(), 1);
+        assert_eq!(default_sessions[0].name, "User session");
 
         let acp_sessions = sm
             .list_sessions_by_types(&[SessionType::Acp])
