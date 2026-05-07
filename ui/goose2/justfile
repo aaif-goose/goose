@@ -272,6 +272,41 @@ kill-all:
 
 # ── Utilities ────────────────────────────────────────────────
 
+# Delete goose2 dev session data and webview storage so the next launch shows onboarding
+wipe:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    DATA_DIR="$HOME/Library/Application Support/Block/goose"
+
+    echo "This will delete:"
+    echo "  - Sessions DB:  $DATA_DIR/sessions/sessions.db{,-wal,-shm}"
+    echo "  - Webview data: ~/Library/WebKit/goose2/"
+    echo "  - Tauri caches: ~/Library/Caches/{goose2,goose2-dev}/"
+    echo ""
+    echo "Preserved: config.yaml, secrets, keyring, legacy .jsonl sessions, scheduler, prod data, app state"
+    echo ""
+    read -p "Continue? [y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
+
+    # Sessions DB (preserve .jsonl files for re-migration)
+    rm -f "$DATA_DIR/sessions/sessions.db" \
+          "$DATA_DIR/sessions/sessions.db-wal" \
+          "$DATA_DIR/sessions/sessions.db-shm"
+    echo "✓ Removed sessions database"
+
+    # Webview storage (localStorage including onboarding flag)
+    rm -rf "$HOME/Library/WebKit/goose2"
+    echo "✓ Removed webview storage"
+
+    # Tauri caches
+    rm -rf "$HOME/Library/Caches/goose2"
+    rm -rf "$HOME/Library/Caches/goose2-dev"
+    echo "✓ Removed caches"
+
+    echo ""
+    echo "Done. Next launch will show onboarding and re-migrate legacy sessions."
+
 # Clean build artifacts
 clean:
     cd src-tauri && cargo clean
