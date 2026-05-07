@@ -1,0 +1,25 @@
+# Skein distro config.yaml
+# ------------------------
+# This file is appended to GOOSE_ADDITIONAL_CONFIG_FILES at startup, so its
+# contents become extra goose configuration for the Skein desktop app. See
+# ui/goose2/distro/README.md (the upstream distro mechanism) and ../../../SKEIN.md
+# (Skein's identity) for context.
+#
+# Phase 0 ships this file empty by design — we do not lock down provider or
+# extension choices at the distro level until we have evidence from real users
+# that a given default is right. Defaults that ship without that evidence become
+# silent constraints we have to maintain for ever.
+#
+# When something here graduates from "we are guessing" to "we have evidence,"
+# add it as an entry below with a comment pointing to the recipe(s) or
+# observation that justified it.
+#
+# Worked example shape (commented out):
+#
+# extensions:
+#   - name: developer
+#     type: builtin
+#     enabled: true
+#
+# default_provider: anthropic
+# default_model: claude-sonnet-4-6

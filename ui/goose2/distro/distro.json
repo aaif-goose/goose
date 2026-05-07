@@ -1,4 +1,5 @@
 {
+  "appVersion": "skein-0.1.0-phase-0",
   "featureToggles": {
     "costTracking": true
   }
