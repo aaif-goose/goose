@@ -1040,11 +1040,9 @@ mod tests {
     #[test]
     fn list_skill_excludes_builtin_skills() {
         let listed = list_sources(Some(SourceType::Skill), None, false).unwrap();
-        assert!(
-            !listed
-                .iter()
-                .any(|source| source.source_type == SourceType::BuiltinSkill)
-        );
+        assert!(!listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
     }
 
     #[test]
@@ -1073,11 +1071,9 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(
-            !builtins
-                .iter()
-                .any(|source| source.name == "goose-doc-guide")
-        );
+        assert!(!builtins
+            .iter()
+            .any(|source| source.name == "goose-doc-guide"));
 
         let skills = list_sources(
             Some(SourceType::Skill),
@@ -1132,11 +1128,9 @@ mod tests {
         assert!(format!("{:?}", err).contains("not supported"));
 
         let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project), false).unwrap();
-        assert!(
-            listed
-                .iter()
-                .any(|source| source.source_type == SourceType::BuiltinSkill)
-        );
+        assert!(listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
 
         let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
