@@ -35,7 +35,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::agents::read_import_persona_file,
+            commands::archive::create_zip_archive,
             commands::acp::get_goose_serve_url,
             commands::acp::get_goose_serve_host_info,
             commands::project_icons::scan_project_icons,

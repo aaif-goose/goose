@@ -18,7 +18,6 @@ interface PersonaGalleryProps {
   onExportPersona?: (persona: Persona) => void;
   onCreatePersona: () => void;
   onImportFile?: (fileBytes: number[], fileName: string) => void;
-  validateImportFile?: (file: Pick<File, "name" | "type">) => string | null;
   onImportError?: (message: string) => void;
   isLoading?: boolean;
 }
@@ -47,7 +46,6 @@ export function PersonaGallery({
   onExportPersona,
   onCreatePersona,
   onImportFile,
-  validateImportFile,
   onImportError,
   isLoading = false,
 }: PersonaGalleryProps) {
@@ -55,7 +53,6 @@ export function PersonaGallery({
   const { fileInputRef, isDragOver, dropHandlers, handleFileChange } =
     useFileImportZone({
       onImportFile: onImportFile ?? (() => {}),
-      validateFile: validateImportFile,
       onImportError,
     });
   const sorted = useMemo(() => {
@@ -126,7 +123,7 @@ export function PersonaGallery({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json,application/json"
+          accept=".md,text/markdown,text/plain"
           className="hidden"
           onChange={handleFileChange}
         />

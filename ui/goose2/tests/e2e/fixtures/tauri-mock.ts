@@ -286,8 +286,9 @@ export function buildInitScript(options?: {
             const path = message.params?.path ?? "/mock/.agents/skills/skill";
             const name = String(path).split("/").filter(Boolean).at(-1) ?? "skill";
             return jsonRpcResult(message.id, {
-              json: "{}",
-              filename: name + ".skill.json",
+              data: "",
+              filename: name + ".skill.zip",
+              mimeType: "application/zip",
             });
           }
           case "_goose/sources/import":
@@ -374,8 +375,9 @@ export function buildInitScript(options?: {
               return Promise.resolve(null);
             case "export_persona":
               return Promise.resolve({
-                json: "{}",
-                suggestedFilename: "persona.json",
+                data: "",
+                suggestedFilename: "persona.agent.md",
+                mimeType: "text/markdown",
               });
             case "import_personas":
               return Promise.resolve(PERSONAS);

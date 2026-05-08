@@ -970,7 +970,8 @@ pub struct DeleteSourceRequest {
     pub path: String,
 }
 
-/// Export a source at an absolute path as a portable JSON payload.
+/// Export a source at an absolute path as file bytes. Single-file sources are
+/// exported as their source file; source trees are exported as a `.zip` archive.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/sources/export", response = ExportSourceResponse)]
 #[serde(rename_all = "camelCase")]
@@ -983,18 +984,24 @@ pub struct ExportSourceRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportSourceResponse {
-    pub json: String,
+    /// Base64-encoded exported file bytes.
+    pub data: String,
     pub filename: String,
+    pub mime_type: String,
 }
 
-/// Import a source from a JSON export payload produced by `_goose/sources/export`.
-/// The imported source is written into the explicit target scope; on name
-/// collisions a `-imported` suffix is appended.
+/// Import a source from base64-encoded file bytes. Single-file sources are
+/// imported from their source file; source trees are imported from a `.zip`
+/// archive. The imported source is written into the explicit target scope; on
+/// name collisions a `-imported` suffix is appended.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/sources/import", response = ImportSourcesResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSourcesRequest {
     pub data: String,
+    pub filename: String,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<SourceType>,
     pub global: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,

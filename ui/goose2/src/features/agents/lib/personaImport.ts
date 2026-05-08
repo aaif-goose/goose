@@ -1,37 +1,6 @@
-const JSON_MIME_TYPES = new Set([
-  "",
-  "application/json",
-  "application/x-json",
-  "text/json",
-  "text/plain",
-]);
-
 export interface ImportMessageDescriptor {
-  key:
-    | "view.importInvalidExtension"
-    | "view.importInvalidMimeType"
-    | "view.imported_one"
-    | "view.imported_other";
+  key: "view.imported_one" | "view.imported_other";
   options?: Record<string, unknown>;
-}
-
-export function validatePersonaImportFile(
-  file: Pick<File, "name" | "type">,
-): ImportMessageDescriptor | null {
-  const lowerName = file.name.toLowerCase();
-  if (!lowerName.endsWith(".json")) {
-    return {
-      key: "view.importInvalidExtension",
-    } satisfies ImportMessageDescriptor;
-  }
-
-  if (!JSON_MIME_TYPES.has(file.type)) {
-    return {
-      key: "view.importInvalidMimeType",
-    } satisfies ImportMessageDescriptor;
-  }
-
-  return null;
 }
 
 export function formatImportSuccessMessage(
@@ -48,11 +17,16 @@ export function formatImportSuccessMessage(
 }
 
 export function formatAgentError(error: unknown, fallback: string): string {
-  if (typeof error === "string" && error.trim().length > 0) {
-    return error;
+  const message =
+    typeof error === "string" && error.trim().length > 0
+      ? error.trim()
+      : error instanceof Error && error.message.trim().length > 0
+        ? error.message.trim()
+        : fallback;
+
+  if (typeof error !== "object" || error === null || !("data" in error)) {
+    return message;
   }
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return fallback;
+
+  return `${message}\n${JSON.stringify(error.data)}`;
 }

@@ -76,8 +76,6 @@
     "emptyAgentsTitle": "Aún no hay agentes",
     "exportFailed": "No se pudo exportar el agente.",
     "exportedTo": "Exportado a {{filename}}",
-    "importInvalidExtension": "Tipo de archivo no compatible. Elige un archivo .json.",
-    "importInvalidMimeType": "Tipo de archivo no compatible. Elige un archivo JSON.",
     "importFailed": "No se pudo importar el agente.",
     "imported_one": "Se importó {{count}} agente.",
     "imported_other": "Se importaron {{count}} agentes.",

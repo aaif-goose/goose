@@ -852,7 +852,8 @@ export const zDeleteSourceRequest = z.object({
 });
 
 /**
- * Export a source at an absolute path as a portable JSON payload.
+ * Export a source at an absolute path as file bytes. Single-file sources are
+ * exported as their source file; source trees are exported as a `.zip` archive.
  */
 export const zExportSourceRequest = z.object({
     type: zSourceType,
@@ -860,17 +861,24 @@ export const zExportSourceRequest = z.object({
 });
 
 export const zExportSourceResponse = z.object({
-    json: z.string(),
-    filename: z.string()
+    data: z.string(),
+    filename: z.string(),
+    mimeType: z.string()
 });
 
 /**
- * Import a source from a JSON export payload produced by `_goose/sources/export`.
- * The imported source is written into the explicit target scope; on name
- * collisions a `-imported` suffix is appended.
+ * Import a source from base64-encoded file bytes. Single-file sources are
+ * imported from their source file; source trees are imported from a `.zip`
+ * archive. The imported source is written into the explicit target scope; on
+ * name collisions a `-imported` suffix is appended.
  */
 export const zImportSourcesRequest = z.object({
     data: z.string(),
+    filename: z.string(),
+    type: z.union([
+        zSourceType,
+        z.null()
+    ]).optional(),
     global: z.boolean(),
     projectDir: z.union([
         z.string(),

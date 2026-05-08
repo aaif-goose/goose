@@ -1,3 +1,4 @@
+import { downloadBase64File } from "@/shared/lib/encoding";
 import type { SkillInfo } from "../api/skills";
 
 export type SkillsFilter = "all" | "global" | "builtin" | `project:${string}`;
@@ -175,14 +176,10 @@ export function groupSkills(
   ];
 }
 
-export function downloadExport(json: string, filename: string) {
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+export function downloadExport(
+  data: string,
+  filename: string,
+  mimeType: string,
+) {
+  downloadBase64File(data, filename, mimeType);
 }

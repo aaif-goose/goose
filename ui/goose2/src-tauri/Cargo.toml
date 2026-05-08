@@ -34,6 +34,7 @@ ignore = "0.4.25"
 base64 = "0.22"
 mime_guess = "2"
 tauri-plugin-shell = "2"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

@@ -1,4 +1,5 @@
 use super::*;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
 impl GooseAcpAgent {
     pub(super) async fn on_create_source(
@@ -76,20 +77,33 @@ impl GooseAcpAgent {
         &self,
         req: ExportSourceRequest,
     ) -> Result<ExportSourceResponse, agent_client_protocol::Error> {
-        let (json, filename) = crate::sources::export_source_with_roots(
+        let export = crate::sources::export_source_with_roots(
             req.source_type,
             &req.path,
             &self.additional_source_roots,
         )?;
-        Ok(ExportSourceResponse { json, filename })
+        Ok(ExportSourceResponse {
+            data: BASE64.encode(export.bytes),
+            filename: export.filename,
+            mime_type: export.mime_type.to_string(),
+        })
     }
 
     pub(super) async fn on_import_sources(
         &self,
         req: ImportSourcesRequest,
     ) -> Result<ImportSourcesResponse, agent_client_protocol::Error> {
-        let sources =
-            crate::sources::import_sources(&req.data, req.global, req.project_dir.as_deref())?;
+        let bytes = BASE64.decode(&req.data).map_err(|e| {
+            agent_client_protocol::Error::invalid_params()
+                .data(format!("Invalid source file data: {e}"))
+        })?;
+        let sources = crate::sources::import_sources(
+            &bytes,
+            &req.filename,
+            req.source_type,
+            req.global,
+            req.project_dir.as_deref(),
+        )?;
         Ok(ImportSourcesResponse { sources })
     }
 }

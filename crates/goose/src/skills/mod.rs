@@ -210,16 +210,6 @@ pub(crate) fn build_skill_md(
     md
 }
 
-pub(crate) fn parse_skill_frontmatter(raw: &str) -> (String, String) {
-    if !raw.trim_start().starts_with("---") {
-        return (String::new(), raw.to_string());
-    }
-    match parse_frontmatter::<SkillFrontmatter>(raw) {
-        Ok(Some((meta, body))) => (meta.description, body),
-        _ => (String::new(), raw.to_string()),
-    }
-}
-
 /// Every directory the agent reads skills from, paired with whether each is a
 /// global (home-rooted) location. Order matches discovery precedence: project
 /// dirs first, then global dirs.

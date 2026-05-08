@@ -2113,23 +2113,28 @@
         "type",
         "path"
       ],
-      "description": "Export a source at an absolute path as a portable JSON payload.",
+      "description": "Export a source at an absolute path as file bytes. Single-file sources are\nexported as their source file; source trees are exported as a `.zip` archive.",
       "x-side": "agent",
       "x-method": "_goose/sources/export"
     },
     "ExportSourceResponse": {
       "type": "object",
       "properties": {
-        "json": {
-          "type": "string"
+        "data": {
+          "type": "string",
+          "description": "Base64-encoded exported file bytes."
         },
         "filename": {
+          "type": "string"
+        },
+        "mimeType": {
           "type": "string"
         }
       },
       "required": [
-        "json",
-        "filename"
+        "data",
+        "filename",
+        "mimeType"
       ],
       "x-side": "agent",
       "x-method": "_goose/sources/export"
@@ -2139,6 +2144,19 @@
       "properties": {
         "data": {
           "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceType"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "global": {
           "type": "boolean"
@@ -2152,9 +2170,10 @@
       },
       "required": [
         "data",
+        "filename",
         "global"
       ],
-      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
+      "description": "Import a source from base64-encoded file bytes. Single-file sources are\nimported from their source file; source trees are imported from a `.zip`\narchive. The imported source is written into the explicit target scope; on\nname collisions a `-imported` suffix is appended.",
       "x-side": "agent",
       "x-method": "_goose/sources/import"
     },

@@ -5,8 +5,7 @@
 use crate::config::paths::Paths;
 use crate::skills::{
     build_skill_md, discover_skills, infer_skill_name, is_global_skill_dir,
-    parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
-    validate_skill_name,
+    resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir, validate_skill_name,
 };
 use crate::source_roots::SourceRoot;
 use agent_client_protocol::Error;
@@ -14,8 +13,10 @@ use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use tracing::warn;
+use zip::write::SimpleFileOptions;
 
 pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
     content: &str,
@@ -629,6 +630,359 @@ fn update_agent_source(
     agent_source_entry(&file_path, global, true)
 }
 
+// --- Import/export helpers ---
+
+const MARKDOWN_MIME: &str = "text/markdown";
+const ZIP_MIME: &str = "application/zip";
+
+#[derive(Debug)]
+pub struct SourceExport {
+    pub bytes: Vec<u8>,
+    pub filename: String,
+    pub mime_type: &'static str,
+}
+
+fn archive_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn should_skip_source_export_dir(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(".git") | Some(".hg") | Some(".svn")
+    )
+}
+
+fn add_dir_to_zip(
+    zip: &mut zip::ZipWriter<Cursor<&mut Vec<u8>>>,
+    source_dir: &Path,
+    archive_root: &str,
+) -> Result<(), Error> {
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let mut stack = vec![source_dir.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = fs::read_dir(&dir).map_err(|e| {
+            Error::internal_error().data(format!("Failed to read source tree: {e}"))
+        })?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if !should_skip_source_export_dir(&path) {
+                    stack.push(path);
+                }
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+
+            let relative = path.strip_prefix(source_dir).map_err(|e| {
+                Error::internal_error().data(format!("Failed to build archive path: {e}"))
+            })?;
+            zip.start_file(
+                format!("{archive_root}/{}", archive_path(relative)),
+                options,
+            )
+            .map_err(|e| {
+                Error::internal_error().data(format!("Failed to write source archive: {e}"))
+            })?;
+            zip.write_all(&fs::read(&path).map_err(|e| {
+                Error::internal_error().data(format!("Failed to read source file: {e}"))
+            })?)
+            .map_err(|e| {
+                Error::internal_error().data(format!("Failed to write source archive: {e}"))
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn zip_source_tree(source_dir: &Path, archive_root: &str) -> Result<Vec<u8>, Error> {
+    let mut buffer = Vec::new();
+    {
+        let cursor = Cursor::new(&mut buffer);
+        let mut zip = zip::ZipWriter::new(cursor);
+        add_dir_to_zip(&mut zip, source_dir, archive_root)?;
+        zip.finish().map_err(|e| {
+            Error::internal_error().data(format!("Failed to finish source archive: {e}"))
+        })?;
+    }
+    Ok(buffer)
+}
+
+fn safe_import_filename(filename: &str) -> Result<&str, Error> {
+    Path::new(filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| Error::invalid_params().data("Import filename must not be empty"))
+}
+
+fn path_component_string(path: &Path, fallback: &str) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn infer_import_source_type(
+    filename: &str,
+    requested: Option<SourceType>,
+) -> Result<SourceType, Error> {
+    let lower = filename.to_lowercase();
+    let source_type = match requested {
+        Some(SourceType::Skill) => SourceType::Skill,
+        Some(SourceType::Project) => SourceType::Project,
+        Some(SourceType::Agent) => SourceType::Agent,
+        Some(other) => {
+            return Err(Error::invalid_params()
+                .data(format!("Source type '{}' import is not supported.", other)))
+        }
+        None if lower.ends_with(".zip") => SourceType::Skill,
+        None if lower.ends_with(".project.md") => SourceType::Project,
+        None if lower.ends_with(".agent.md") || lower.ends_with(".persona.md") => SourceType::Agent,
+        None if lower.ends_with(".md") => SourceType::Agent,
+        None => {
+            return Err(Error::invalid_params().data(
+                "Unsupported source file type. Import a .md source file or .zip source tree.",
+            ))
+        }
+    };
+
+    if lower.ends_with(".zip") && source_type != SourceType::Skill {
+        return Err(Error::invalid_params().data("Only skill imports support .zip archives"));
+    }
+
+    Ok(source_type)
+}
+
+fn next_available_name(name: &str, mut exists: impl FnMut(&str) -> bool) -> String {
+    if !exists(name) {
+        return name.to_string();
+    }
+
+    (2..)
+        .map(|counter| format!("{name}-{counter}"))
+        .find(|candidate| !exists(candidate))
+        .expect("infinite iterator")
+}
+
+fn source_entry_from_skill_dir(dir: &Path, global: bool) -> Result<SourceEntry, Error> {
+    let raw = fs::read_to_string(dir.join("SKILL.md"))
+        .map_err(|e| Error::internal_error().data(format!("Failed to read SKILL.md: {e}")))?;
+    let (metadata, content): (crate::skills::SkillFrontmatter, String) = parse_frontmatter(&raw)
+        .map_err(|e| Error::invalid_params().data(format!("Invalid skill frontmatter: {e}")))?
+        .ok_or_else(|| Error::invalid_params().data("Skill file is missing frontmatter"))?;
+    let name = metadata.name.unwrap_or_else(|| infer_skill_name(dir));
+    Ok(skill_source_entry(
+        &name,
+        &metadata.description,
+        &content,
+        dir,
+        global,
+        metadata.metadata,
+    ))
+}
+
+fn enclosed_archive_path(file: &zip::read::ZipFile<'_, Cursor<&[u8]>>) -> Result<PathBuf, Error> {
+    file.enclosed_name()
+        .ok_or_else(|| Error::invalid_params().data("Invalid path in source archive"))
+}
+
+fn find_imported_skill_root(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+) -> Result<PathBuf, Error> {
+    for index in 0..archive.len() {
+        let file = archive.by_index(index).map_err(|e| {
+            Error::invalid_params().data(format!("Invalid source archive entry: {e}"))
+        })?;
+        let path = enclosed_archive_path(&file)?;
+        if path.file_name().and_then(|name| name.to_str()) == Some("SKILL.md") {
+            return Ok(path.parent().unwrap_or_else(|| Path::new("")).to_path_buf());
+        }
+    }
+    Err(Error::invalid_params().data("Source archive must contain a SKILL.md file"))
+}
+
+fn read_archive_text(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+    path: &Path,
+) -> Result<String, Error> {
+    let mut file = archive
+        .by_name(&archive_path(path))
+        .map_err(|e| Error::invalid_params().data(format!("Invalid source archive entry: {e}")))?;
+    let mut content = String::new();
+    std::io::Read::read_to_string(&mut file, &mut content)
+        .map_err(|e| Error::invalid_params().data(format!("Source file must be UTF-8: {e}")))?;
+    Ok(content)
+}
+
+fn extract_archive_root(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+    root: &Path,
+    target: &Path,
+) -> Result<(), Error> {
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).map_err(|e| {
+            Error::invalid_params().data(format!("Invalid source archive entry: {e}"))
+        })?;
+        let path = enclosed_archive_path(&file)?;
+        let relative = if root.as_os_str().is_empty() {
+            path.as_path()
+        } else {
+            match path.strip_prefix(root) {
+                Ok(path) => path,
+                Err(_) => continue,
+            }
+        };
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+
+        let target_path = target.join(relative);
+        if file.is_dir() {
+            fs::create_dir_all(&target_path).map_err(|e| {
+                Error::internal_error().data(format!("Failed to extract source archive: {e}"))
+            })?;
+        } else {
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    Error::internal_error().data(format!("Failed to extract source archive: {e}"))
+                })?;
+            }
+            let mut out = fs::File::create(&target_path).map_err(|e| {
+                Error::internal_error().data(format!("Failed to extract source archive: {e}"))
+            })?;
+            std::io::copy(&mut file, &mut out).map_err(|e| {
+                Error::internal_error().data(format!("Failed to extract source archive: {e}"))
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn import_skill_tree(
+    bytes: &[u8],
+    global: bool,
+    project_dir: Option<&str>,
+) -> Result<Vec<SourceEntry>, Error> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|e| Error::invalid_params().data(format!("Invalid source archive: {e}")))?;
+    let root = find_imported_skill_root(&mut archive)?;
+    let raw = read_archive_text(&mut archive, &root.join("SKILL.md"))?;
+    let (metadata, content): (crate::skills::SkillFrontmatter, String) = parse_frontmatter(&raw)
+        .map_err(|e| Error::invalid_params().data(format!("Invalid skill frontmatter: {e}")))?
+        .ok_or_else(|| Error::invalid_params().data("Skill file is missing frontmatter"))?;
+    let name = metadata
+        .name
+        .ok_or_else(|| Error::invalid_params().data("Skill file is missing a name"))?;
+    validate_skill_name(&name)?;
+
+    let base = skill_base_dir(global, project_dir)?;
+    let final_name = next_available_name(&name, |candidate| base.join(candidate).exists());
+    let target = base.join(&final_name);
+    extract_archive_root(&mut archive, &root, &target)?;
+
+    if final_name != name {
+        fs::write(
+            target.join("SKILL.md"),
+            build_skill_md(
+                &final_name,
+                &metadata.description,
+                &content,
+                &metadata.metadata,
+            ),
+        )
+        .map_err(|e| Error::internal_error().data(format!("Failed to write SKILL.md: {e}")))?;
+    }
+
+    source_entry_from_skill_dir(&target, global).map(|source| vec![source])
+}
+
+fn import_skill_file(
+    bytes: &[u8],
+    global: bool,
+    project_dir: Option<&str>,
+) -> Result<Vec<SourceEntry>, Error> {
+    let raw = String::from_utf8(bytes.to_vec())
+        .map_err(|e| Error::invalid_params().data(format!("Source file must be UTF-8: {e}")))?;
+    let (metadata, content): (crate::skills::SkillFrontmatter, String) = parse_frontmatter(&raw)
+        .map_err(|e| Error::invalid_params().data(format!("Invalid skill frontmatter: {e}")))?
+        .ok_or_else(|| Error::invalid_params().data("Skill file is missing frontmatter"))?;
+    let name = metadata
+        .name
+        .ok_or_else(|| Error::invalid_params().data("Skill file is missing a name"))?;
+    validate_skill_name(&name)?;
+    let base = skill_base_dir(global, project_dir)?;
+    let final_name = next_available_name(&name, |candidate| base.join(candidate).exists());
+    create_source(
+        SourceType::Skill,
+        &final_name,
+        &metadata.description,
+        &content,
+        global,
+        project_dir,
+        metadata.metadata,
+    )
+    .map(|entry| vec![entry])
+}
+
+fn import_project_file(bytes: &[u8], filename: &str) -> Result<Vec<SourceEntry>, Error> {
+    let raw = String::from_utf8(bytes.to_vec())
+        .map_err(|e| Error::invalid_params().data(format!("Source file must be UTF-8: {e}")))?;
+    let lower = filename.to_lowercase();
+    let filename_stem = if lower.ends_with(".project.md") {
+        &filename[..filename.len() - ".project.md".len()]
+    } else if lower.ends_with(".md") {
+        &filename[..filename.len() - ".md".len()]
+    } else {
+        filename
+    };
+    let (title, description, content, mut properties) = parse_project_frontmatter(&raw);
+    let mut slug = filename_stem.to_string();
+    if validate_project_slug(&slug).is_err() && !title.is_empty() {
+        slug = slugify_agent_name(&title);
+    }
+    validate_project_slug(&slug)?;
+
+    let final_slug = next_available_name(&slug, |candidate| project_file_path(candidate).exists());
+    if !title.is_empty() {
+        properties.insert("title".into(), serde_json::Value::String(title));
+    }
+    create_source(
+        SourceType::Project,
+        &final_slug,
+        &description,
+        &content,
+        true,
+        None,
+        properties,
+    )
+    .map(|entry| vec![entry])
+}
+
+fn import_agent_file(
+    bytes: &[u8],
+    global: bool,
+    project_dir: Option<&str>,
+) -> Result<Vec<SourceEntry>, Error> {
+    let raw = String::from_utf8(bytes.to_vec())
+        .map_err(|e| Error::invalid_params().data(format!("Source file must be UTF-8: {e}")))?;
+    let (frontmatter, content) = parse_agent_frontmatter(&raw)?;
+    create_agent_source(
+        &frontmatter.name,
+        &frontmatter.description,
+        &content,
+        frontmatter.properties,
+        global,
+        project_dir,
+    )
+    .map(|entry| vec![entry])
+}
+
 // --- Public CRUD ---
 
 pub fn create_source(
@@ -974,7 +1328,7 @@ pub fn list_sources_with_roots(
     Ok(sources)
 }
 
-pub fn export_source(source_type: SourceType, path: &str) -> Result<(String, String), Error> {
+pub fn export_source(source_type: SourceType, path: &str) -> Result<SourceExport, Error> {
     export_source_with_roots(source_type, path, &[])
 }
 
@@ -982,86 +1336,46 @@ pub fn export_source_with_roots(
     source_type: SourceType,
     path: &str,
     additional_roots: &[SourceRoot],
-) -> Result<(String, String), Error> {
+) -> Result<SourceExport, Error> {
     match source_type {
         SourceType::Skill => {
             let dir = resolve_discoverable_skill_dir(path)?;
-
-            let md = dir.join("SKILL.md");
-            let raw = fs::read_to_string(&md).map_err(|e| {
-                Error::internal_error().data(format!("Failed to read SKILL.md: {e}"))
-            })?;
-            let (description, content) = parse_skill_frontmatter(&raw);
-
-            let name = infer_skill_name(&dir);
-
-            let export = serde_json::json!({
-                "version": 1,
-                "type": "skill",
-                "name": name,
-                "description": description,
-                "content": content,
-            });
-            let json = serde_json::to_string_pretty(&export).map_err(|e| {
-                Error::internal_error().data(format!("Failed to serialize source: {e}"))
-            })?;
-            let filename = format!("{}.skill.json", name);
-            Ok((json, filename))
+            let name = path_component_string(&dir, "skill");
+            let bytes = zip_source_tree(&dir, &name)?;
+            Ok(SourceExport {
+                bytes,
+                filename: format!("{name}.skill.zip"),
+                mime_type: ZIP_MIME,
+            })
         }
         SourceType::Agent => {
             let file_path = resolve_agent_file_with_roots(path, additional_roots)?;
-            let writable = !is_read_only_agent_file(&file_path, additional_roots);
+            let read_only = is_read_only_agent_file(&file_path, additional_roots);
             let source = agent_source_entry(
                 &file_path,
-                is_global_agent_file(&file_path) || !writable,
-                writable,
+                is_global_agent_file(&file_path) || read_only,
+                !read_only,
             )?;
-            let export = serde_json::json!({
-                "version": 1,
-                "type": "agent",
-                "name": source.name,
-                "description": source.description,
-                "content": source.content,
-            });
-            let json = serde_json::to_string_pretty(&export).map_err(|e| {
-                Error::internal_error().data(format!("Failed to serialize source: {e}"))
+            let bytes = fs::read(&file_path).map_err(|e| {
+                Error::internal_error().data(format!("Failed to read agent file: {e}"))
             })?;
-            let filename = format!("{}.agent.json", slugify_agent_name(&source.name));
-            Ok((json, filename))
+            Ok(SourceExport {
+                bytes,
+                filename: format!("{}.agent.md", slugify_agent_name(&source.name)),
+                mime_type: MARKDOWN_MIME,
+            })
         }
         SourceType::Project => {
             let file = resolve_project_path(path)?;
-            let raw = fs::read_to_string(&file).map_err(|e| {
+            let filename = path_component_string(&file, "project.md");
+            let bytes = fs::read(&file).map_err(|e| {
                 Error::internal_error().data(format!("Failed to read project file: {e}"))
             })?;
-            let (title, description, content, properties) = parse_project_frontmatter(&raw);
-            let slug = file
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-            let display_name = if title.is_empty() {
-                slug.clone()
-            } else {
-                title
-            };
-
-            let mut export = serde_json::json!({
-                "version": 1,
-                "type": "project",
-                "name": slug,
-                "title": display_name,
-                "description": description,
-                "content": content,
-            });
-            if !properties.is_empty() {
-                export["properties"] = serde_json::to_value(&properties).unwrap_or_default();
-            }
-            let json = serde_json::to_string_pretty(&export).map_err(|e| {
-                Error::internal_error().data(format!("Failed to serialize project: {e}"))
-            })?;
-            let filename = format!("{}.project.json", slug);
-            Ok((json, filename))
+            Ok(SourceExport {
+                bytes,
+                filename,
+                mime_type: MARKDOWN_MIME,
+            })
         }
         _ => Err(Error::invalid_params().data(format!(
             "Source type '{}' export is not supported.",
@@ -1071,143 +1385,27 @@ pub fn export_source_with_roots(
 }
 
 pub fn import_sources(
-    data: &str,
+    bytes: &[u8],
+    filename: &str,
+    source_type: Option<SourceType>,
     global: bool,
     project_dir: Option<&str>,
 ) -> Result<Vec<SourceEntry>, Error> {
-    let value: serde_json::Value = serde_json::from_str(data)
-        .map_err(|e| Error::invalid_params().data(format!("Invalid JSON: {e}")))?;
-
-    let version = value
-        .get("version")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| Error::invalid_params().data("Missing or invalid \"version\" field"))?;
-    if version != 1 {
-        return Err(
-            Error::invalid_params().data(format!("Unsupported source export version: {}", version))
-        );
-    }
-
-    let type_str = value
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("skill");
-    let source_type = match type_str {
-        "skill" => SourceType::Skill,
-        "project" => SourceType::Project,
-        "agent" => SourceType::Agent,
-        other => {
-            return Err(Error::invalid_params()
-                .data(format!("Source type '{}' import is not supported.", other)));
-        }
-    };
-
-    let name = value
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::invalid_params().data("Missing or invalid \"name\" field"))?
-        .to_string();
-    if name.is_empty() {
-        return Err(Error::invalid_params().data("Source name must not be empty"));
-    }
-
-    // Skills require a description; projects can omit it.
-    let description = value
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    if source_type == SourceType::Skill && description.is_empty() {
-        return Err(Error::invalid_params().data("Source description must not be empty"));
-    }
-
-    let content = value
-        .get("content")
-        .or_else(|| value.get("instructions"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let mut properties: HashMap<String, serde_json::Value> = value
-        .get("properties")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-    // The export's top-level "title" wins over a properties.title if both
-    // exist.
-    if source_type == SourceType::Project {
-        if let Some(title) = value.get("title").and_then(|v| v.as_str()) {
-            if !title.is_empty() {
-                properties.insert("title".into(), serde_json::Value::String(title.into()));
-            }
-        }
-    }
-
-    if source_type == SourceType::Agent {
-        if let Some(legacy_metadata) = value.get("metadata").and_then(|v| v.as_object()) {
-            for (key, value) in legacy_metadata {
-                properties
-                    .entry(key.clone())
-                    .or_insert_with(|| value.clone());
-            }
-        }
-        return create_agent_source(
-            &name,
-            &description,
-            &content,
-            properties,
-            global,
-            project_dir,
-        )
-        .map(|source| vec![source]);
-    }
+    let filename = safe_import_filename(filename)?;
+    let source_type = infer_import_source_type(filename, source_type)?;
+    let lower = filename.to_lowercase();
 
     match source_type {
-        SourceType::Skill => {
-            validate_skill_name(&name)?;
-            let base = skill_base_dir(global, project_dir)?;
-            let mut final_name = name.clone();
-            if base.join(&final_name).exists() {
-                final_name = format!("{}-imported", name);
-                let mut counter = 2u32;
-                while base.join(&final_name).exists() {
-                    final_name = format!("{}-imported-{}", name, counter);
-                    counter += 1;
-                }
-            }
-            create_source(
-                SourceType::Skill,
-                &final_name,
-                &description,
-                &content,
-                global,
-                project_dir,
-                properties,
-            )
-            .map(|entry| vec![entry])
+        SourceType::Skill if lower.ends_with(".zip") => {
+            import_skill_tree(bytes, global, project_dir)
         }
-        SourceType::Project => {
-            validate_project_slug(&name)?;
-            let mut final_name = name.clone();
-            if project_file_path(&final_name).exists() {
-                final_name = format!("{}-imported", name);
-                let mut counter = 2u32;
-                while project_file_path(&final_name).exists() {
-                    final_name = format!("{}-imported-{}", name, counter);
-                    counter += 1;
-                }
-            }
-            create_source(
-                SourceType::Project,
-                &final_name,
-                &description,
-                &content,
-                true,
-                None,
-                properties,
-            )
-            .map(|entry| vec![entry])
-        }
-        _ => unreachable!(),
+        SourceType::Skill => import_skill_file(bytes, global, project_dir),
+        SourceType::Project => import_project_file(bytes, filename),
+        SourceType::Agent => import_agent_file(bytes, global, project_dir),
+        _ => Err(Error::invalid_params().data(format!(
+            "Source type '{}' import is not supported.",
+            source_type
+        ))),
     }
 }
 
@@ -1380,15 +1578,30 @@ mod tests {
         .unwrap();
 
         let portable_dir = project_a.join(".agents").join("skills").join("portable");
-        let (json, filename) =
-            export_source(SourceType::Skill, portable_dir.to_str().unwrap()).unwrap();
-        assert_eq!(filename, "portable.skill.json");
+        std::fs::write(portable_dir.join("notes.txt"), "supporting context").unwrap();
 
-        let imported = import_sources(&json, false, Some(project_b.to_str().unwrap())).unwrap();
+        let export = export_source(SourceType::Skill, portable_dir.to_str().unwrap()).unwrap();
+        assert_eq!(export.filename, "portable.skill.zip");
+        assert_eq!(export.mime_type, "application/zip");
+
+        let imported = import_sources(
+            &export.bytes,
+            &export.filename,
+            None,
+            false,
+            Some(project_b.to_str().unwrap()),
+        )
+        .unwrap();
         assert_eq!(imported.len(), 1);
         assert_eq!(imported[0].name, "portable");
         assert_eq!(imported[0].description, "describes itself");
         assert_eq!(imported[0].content, "body goes here");
+        assert!(project_b
+            .join(".agents")
+            .join("skills")
+            .join("portable")
+            .join("notes.txt")
+            .exists());
     }
 
     #[test]
@@ -1419,10 +1632,9 @@ mod tests {
             .find(|skill| skill.name == "portable")
             .expect("expected listed skill");
 
-        let (json, filename) =
-            export_source(SourceType::Skill, exported_skill.path.as_str()).unwrap();
-        assert_eq!(filename, "portable.skill.json");
-        assert!(json.contains("\"name\": \"portable\""));
+        let export = export_source(SourceType::Skill, exported_skill.path.as_str()).unwrap();
+        assert_eq!(export.filename, "portable.skill.zip");
+        assert_eq!(export.mime_type, "application/zip");
     }
 
     #[test]
@@ -1462,7 +1674,7 @@ mod tests {
     }
 
     #[test]
-    fn import_collision_appends_suffix() {
+    fn import_collision_uses_shared_suffix_logic() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().to_str().unwrap();
 
@@ -1477,16 +1689,17 @@ mod tests {
         )
         .unwrap();
 
-        let payload = serde_json::json!({
-            "version": 1,
-            "type": "skill",
-            "name": "busy",
-            "description": "d",
-            "content": "c",
-        })
-        .to_string();
-        let imported = import_sources(&payload, false, Some(project)).unwrap();
-        assert_eq!(imported[0].name, "busy-imported");
+        let busy_dir = tmp.path().join(".agents").join("skills").join("busy");
+        let exported = export_source(SourceType::Skill, busy_dir.to_str().unwrap()).unwrap();
+        let imported = import_sources(
+            &exported.bytes,
+            &exported.filename,
+            None,
+            false,
+            Some(project),
+        )
+        .unwrap();
+        assert_eq!(imported[0].name, "busy-2");
     }
 
     #[test]
@@ -1640,15 +1853,15 @@ mod tests {
         let err = export_source(SourceType::Recipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let payload = serde_json::json!({
-            "version": 1,
-            "type": "builtinSkill",
-            "name": "x",
-            "description": "d",
-            "content": "c",
-        })
-        .to_string();
-        let err = import_sources(&payload, false, Some(project)).unwrap_err();
+        let payload = build_skill_md("x", "d", "c", &HashMap::new()).into_bytes();
+        let err = import_sources(
+            &payload,
+            "x.skill.md",
+            Some(SourceType::BuiltinSkill),
+            false,
+            Some(project),
+        )
+        .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
     }
 
@@ -1748,7 +1961,7 @@ mod tests {
         assert_eq!(matching[0].description, "preferred");
 
         let exported = export_source(SourceType::Skill, matching[0].path.as_str()).unwrap();
-        assert!(exported.0.contains("preferred"));
+        assert_eq!(exported.filename, "shared-skill.skill.zip");
     }
 
     #[test]

@@ -209,14 +209,8 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     await loadSkills();
   }, [loadSkills]);
 
-  const {
-    fileInputRef,
-    isDragOver,
-    dropHandlers,
-    handleFileChange,
-    openFilePicker,
-    handleExport,
-  } = useSkillImportExport(refreshSkills);
+  const { isDragOver, dropHandlers, handleImportDirectory, handleExport } =
+    useSkillImportExport(refreshSkills);
 
   const handleShare = useCallback(
     (skill: SkillInfo) => {
@@ -273,7 +267,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
               type="button"
               variant="outline-flat"
               size="xs"
-              onClick={openFilePicker}
+              onClick={() => void handleImportDirectory()}
             >
               <Upload className="size-3.5" />
               {t("common:actions.import")}
@@ -318,17 +312,9 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
           isDragOver={isDragOver}
           dropHandlers={dropHandlers}
           onNewSkill={handleNewSkill}
-          onImport={openFilePicker}
+          onImport={() => void handleImportDirectory()}
         />
       ) : null}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".skill.json,.json"
-        className="hidden"
-        onChange={handleFileChange}
-      />
 
       {dialogs}
     </PageShell>

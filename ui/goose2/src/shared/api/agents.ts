@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import type { SourceEntry } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
+import { bytesToBase64 } from "@/shared/lib/encoding";
 import type {
   Persona,
   CreatePersonaRequest,
@@ -153,8 +153,9 @@ export async function refreshPersonas(): Promise<Persona[]> {
 }
 
 export interface ExportResult {
-  json: string;
+  data: string;
   suggestedFilename: string;
+  mimeType: string;
 }
 
 export async function exportPersona(id: string): Promise<ExportResult> {
@@ -163,65 +164,24 @@ export async function exportPersona(id: string): Promise<ExportResult> {
     type: AGENT_SOURCE_TYPE,
     path: id,
   });
-  return { json: response.json, suggestedFilename: response.filename };
+  return {
+    data: response.data,
+    suggestedFilename: response.filename,
+    mimeType: response.mimeType,
+  };
 }
 
 export async function importPersonas(
   fileBytes: number[],
   fileName: string,
 ): Promise<Persona[]> {
-  if (
-    !fileName.endsWith(".agent.json") &&
-    !fileName.endsWith(".persona.json") &&
-    !fileName.endsWith(".json")
-  ) {
-    throw new Error(
-      "File must have a .agent.json, .persona.json, or .json extension",
-    );
-  }
-
-  const raw = new TextDecoder().decode(new Uint8Array(fileBytes));
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
-  const data =
-    parsed.type === AGENT_SOURCE_TYPE
-      ? raw
-      : JSON.stringify({
-          version: parsed.version ?? 1,
-          type: AGENT_SOURCE_TYPE,
-          name: parsed.displayName ?? parsed.name,
-          description: AGENT_DESCRIPTION,
-          content:
-            parsed.systemPrompt ?? parsed.content ?? parsed.instructions ?? "",
-          properties: {
-            provider: parsed.provider,
-            model: parsed.model,
-            avatar:
-              typeof parsed.avatar === "string"
-                ? parsed.avatar
-                : typeof parsed.avatar === "object" &&
-                    parsed.avatar !== null &&
-                    "value" in parsed.avatar
-                  ? (parsed.avatar as { value?: unknown }).value
-                  : undefined,
-          },
-        });
-
   const client = await getClient();
   const response = await client.goose.GooseSourcesImport({
-    data,
+    data: bytesToBase64(fileBytes),
+    filename: fileName,
+    type: AGENT_SOURCE_TYPE,
     global: true,
   });
 
   return response.sources.filter(isAgentSource).map(toPersona);
-}
-
-export interface ImportFileReadResult {
-  fileBytes: number[];
-  fileName: string;
-}
-
-export async function readImportPersonaFile(
-  sourcePath: string,
-): Promise<ImportFileReadResult> {
-  return invoke("read_import_persona_file", { sourcePath });
 }

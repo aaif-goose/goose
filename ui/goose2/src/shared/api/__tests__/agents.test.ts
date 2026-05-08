@@ -141,8 +141,9 @@ describe("agents API", () => {
 
   it("exportPersona exports an agent source", async () => {
     mockGooseSourcesExport.mockResolvedValue({
-      json: '{"type":"agent"}',
-      filename: "scout.agent.json",
+      data: "YWdlbnQ=",
+      filename: "scout.agent.md",
+      mimeType: "text/markdown",
     });
 
     const result = await exportPersona(source.path);
@@ -152,26 +153,24 @@ describe("agents API", () => {
       path: source.path,
     });
     expect(result).toEqual({
-      json: '{"type":"agent"}',
-      suggestedFilename: "scout.agent.json",
+      data: "YWdlbnQ=",
+      suggestedFilename: "scout.agent.md",
+      mimeType: "text/markdown",
     });
   });
 
-  it("importPersonas imports agent source JSON", async () => {
+  it("importPersonas imports agent source Markdown", async () => {
     mockGooseSourcesImport.mockResolvedValue({ sources: [source] });
-    const data = JSON.stringify({
-      version: 1,
-      type: "agent",
-      name: "Scout",
-      description: "Agent",
-      content: "Research carefully.",
-    });
+    const data =
+      "---\nname: Scout\ndescription: Agent\n---\nResearch carefully.";
     const fileBytes = Array.from(new TextEncoder().encode(data));
 
-    const result = await importPersonas(fileBytes, "scout.agent.json");
+    const result = await importPersonas(fileBytes, "scout.agent.md");
 
     expect(mockGooseSourcesImport).toHaveBeenCalledWith({
-      data,
+      data: btoa(data),
+      filename: "scout.agent.md",
+      type: "agent",
       global: true,
     });
     expect(result).toHaveLength(1);

@@ -87,9 +87,11 @@ vi.mock("../../api/skills", () => ({
     projectLinks: [],
   }),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
-  exportSkill: vi
-    .fn()
-    .mockResolvedValue({ json: "{}", filename: "test.skill.json" }),
+  exportSkill: vi.fn().mockResolvedValue({
+    data: "",
+    filename: "test.skill.zip",
+    mimeType: "application/zip",
+  }),
   importSkills: vi.fn().mockResolvedValue([]),
 }));
 

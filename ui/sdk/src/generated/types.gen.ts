@@ -872,7 +872,8 @@ export type DeleteSourceRequest = {
 };
 
 /**
- * Export a source at an absolute path as a portable JSON payload.
+ * Export a source at an absolute path as file bytes. Single-file sources are
+ * exported as their source file; source trees are exported as a `.zip` archive.
  */
 export type ExportSourceRequest = {
     type: SourceType;
@@ -880,17 +881,24 @@ export type ExportSourceRequest = {
 };
 
 export type ExportSourceResponse = {
-    json: string;
+    /**
+     * Base64-encoded exported file bytes.
+     */
+    data: string;
     filename: string;
+    mimeType: string;
 };
 
 /**
- * Import a source from a JSON export payload produced by `_goose/sources/export`.
- * The imported source is written into the explicit target scope; on name
- * collisions a `-imported` suffix is appended.
+ * Import a source from base64-encoded file bytes. Single-file sources are
+ * imported from their source file; source trees are imported from a `.zip`
+ * archive. The imported source is written into the explicit target scope; on
+ * name collisions a `-imported` suffix is appended.
  */
 export type ImportSourcesRequest = {
     data: string;
+    filename: string;
+    type?: SourceType | null;
     global: boolean;
     projectDir?: string | null;
 };

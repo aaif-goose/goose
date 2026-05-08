@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { downloadBase64File } from "@/shared/lib/encoding";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button, buttonVariants } from "@/shared/ui/button";
 import {
@@ -22,11 +22,7 @@ import {
 } from "@/features/agents/stores/agentSelectors";
 import { PersonaGallery } from "@/features/agents/ui/PersonaGallery";
 import { PersonaEditor } from "@/features/agents/ui/PersonaEditor";
-import {
-  exportPersona,
-  importPersonas,
-  readImportPersonaFile,
-} from "@/shared/api/agents";
+import { exportPersona, importPersonas } from "@/shared/api/agents";
 import { usePersonas } from "@/features/agents/hooks/usePersonas";
 import type {
   Persona,
@@ -36,9 +32,9 @@ import type {
 import {
   formatAgentError,
   formatImportSuccessMessage,
-  validatePersonaImportFile,
 } from "@/features/agents/lib/personaImport";
 import { getPersonaSource } from "@/features/agents/lib/personaPresentation";
+import { useFileImportZone } from "@/shared/hooks/useFileImportZone";
 
 export function AgentsView() {
   const { t } = useTranslation(["agents", "common"]);
@@ -142,16 +138,11 @@ export function AgentsView() {
     async (persona: Persona) => {
       try {
         const result = await exportPersona(persona.id);
-        // Trigger a browser download with the JSON content
-        const blob = new Blob([result.json], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = result.suggestedFilename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        downloadBase64File(
+          result.data,
+          result.suggestedFilename,
+          result.mimeType,
+        );
         toast.success(
           t("view.exportedTo", { filename: result.suggestedFilename }),
         );
@@ -165,14 +156,6 @@ export function AgentsView() {
   const handleImportError = useCallback((message: string) => {
     toast.error(message);
   }, []);
-
-  const validateImportFile = useCallback(
-    (file: Pick<File, "name" | "type">) => {
-      const message = validatePersonaImportFile(file);
-      return message ? t(message.key, message.options) : null;
-    },
-    [t],
-  );
 
   const handleImportFileBytes = useCallback(
     async (fileBytes: number[], fileName: string) => {
@@ -188,40 +171,10 @@ export function AgentsView() {
     [refreshFromDisk, t],
   );
 
-  const handleImportPicker = useCallback(async () => {
-    try {
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        title: t("common:actions.import"),
-        filters: [
-          {
-            name: "JSON",
-            extensions: ["json"],
-          },
-        ],
-      });
-
-      if (!selected || Array.isArray(selected)) {
-        return;
-      }
-
-      const { fileBytes, fileName } = await readImportPersonaFile(selected);
-      const validationMessage = validateImportFile({
-        name: fileName,
-        type: "",
-      });
-
-      if (validationMessage) {
-        toast.error(validationMessage);
-        return;
-      }
-
-      await handleImportFileBytes(fileBytes, fileName);
-    } catch (err) {
-      toast.error(formatAgentError(err, t("view.importFailed")));
-    }
-  }, [handleImportFileBytes, t, validateImportFile]);
+  const { fileInputRef, handleFileChange, openFilePicker } = useFileImportZone({
+    onImportFile: handleImportFileBytes,
+    onImportError: handleImportError,
+  });
 
   return (
     <div className="flex flex-1 flex-col h-full min-h-0">
@@ -242,7 +195,7 @@ export function AgentsView() {
                 type="button"
                 variant="outline-flat"
                 size="sm"
-                onClick={() => void handleImportPicker()}
+                onClick={openFilePicker}
               >
                 <Upload className="w-3.5 h-3.5" />
                 {t("common:actions.import")}
@@ -256,6 +209,13 @@ export function AgentsView() {
                 <Plus className="w-3.5 h-3.5" />
                 {t("view.newPersona")}
               </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".md,text/markdown,text/plain"
+                className="hidden"
+                onChange={handleFileChange}
+              />
             </div>
           </div>
 
@@ -277,7 +237,6 @@ export function AgentsView() {
               onExportPersona={handleExportPersona}
               onCreatePersona={() => openPersonaEditor()}
               onImportFile={handleImportFileBytes}
-              validateImportFile={validateImportFile}
               onImportError={handleImportError}
               isLoading={personasLoading}
             />

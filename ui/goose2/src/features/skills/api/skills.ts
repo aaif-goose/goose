@@ -1,5 +1,6 @@
 import type { SourceEntry } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
+import { bytesToBase64 } from "@/shared/lib/encoding";
 import {
   basename,
   deriveProjectRoot,
@@ -228,29 +229,49 @@ export async function updateSkill(
 
 export async function exportSkill(
   path: string,
-): Promise<{ json: string; filename: string }> {
+): Promise<{ data: string; filename: string; mimeType: string }> {
   const client = await getClient();
   const response = await client.goose.GooseSourcesExport({
     type: SKILL_SOURCE_TYPE,
     path,
   });
-  return { json: response.json, filename: response.filename };
+  return {
+    data: response.data,
+    filename: response.filename,
+    mimeType: response.mimeType,
+  };
+}
+
+async function importSkillsBase64(
+  data: string,
+  fileName: string,
+): Promise<SkillInfo[]> {
+  const lowerName = fileName.toLowerCase();
+  if (!lowerName.endsWith(".zip")) {
+    throw new Error("File must be a skill .zip archive");
+  }
+
+  const client = await getClient();
+  const response = await client.goose.GooseSourcesImport({
+    data,
+    filename: fileName,
+    type: SKILL_SOURCE_TYPE,
+    global: true,
+  });
+
+  return response.sources.filter(isFilesystemSkillSource).map(toSkillInfo);
 }
 
 export async function importSkills(
   fileBytes: number[],
   fileName: string,
 ): Promise<SkillInfo[]> {
-  if (!fileName.endsWith(".skill.json") && !fileName.endsWith(".json")) {
-    throw new Error("File must have a .skill.json or .json extension");
-  }
+  return importSkillsBase64(bytesToBase64(fileBytes), fileName);
+}
 
-  const data = new TextDecoder().decode(new Uint8Array(fileBytes));
-  const client = await getClient();
-  const response = await client.goose.GooseSourcesImport({
-    data,
-    global: true,
-  });
-
-  return response.sources.filter(isFilesystemSkillSource).map(toSkillInfo);
+export async function importSkillsArchive(
+  data: string,
+  fileName: string,
+): Promise<SkillInfo[]> {
+  return importSkillsBase64(data, fileName);
 }
