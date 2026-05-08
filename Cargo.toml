@@ -21,7 +21,7 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "1.5.0", features = ["schemars", "auth"] }
+rmcp = { version = "1.6.0", features = ["schemars", "auth"] }
 agent-client-protocol-schema = { version = "0.12", features = ["unstable"] }
 agent-client-protocol = "0.11"
 arboard = "3"
@@ -59,7 +59,7 @@ thiserror = "1.0"
 tokio = { version = "1.49", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = "0.7"
-tower-http = "0.6.8"
+tower-http = "0.6.10"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = "0.3"

@@ -130,12 +130,12 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 
 # For Bedrock provider (optional, behind "aws-providers" feature)
-aws-config = { version = "=1.8.12", features = ["behavior-version-latest"], optional = true }
+aws-config = { version = "=1.8.13", features = ["behavior-version-latest"], optional = true }
 aws-smithy-types = { version = "=1.4.7", optional = true }
-aws-sdk-bedrockruntime = { version = "=1.120.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
+aws-sdk-bedrockruntime = { version = "=1.124.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
 
 # For SageMaker TGI provider (optional, behind "aws-providers" feature)
-aws-sdk-sagemakerruntime = { version = "1.62.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
+aws-sdk-sagemakerruntime = { version = "1.95.0", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
 
 # For GCP Vertex AI provider auth
 jsonwebtoken = { version = "10.3.0", default-features = false, features = ["use_pem"] }
