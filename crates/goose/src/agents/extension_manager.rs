@@ -60,7 +60,7 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
 
-fn resolve_timeout(timeout: Option<u64>) -> u64 {
+pub(crate) fn resolve_timeout(timeout: Option<u64>) -> u64 {
     timeout.unwrap_or_else(|| {
         Config::global()
             .get_goose_default_extension_timeout()
@@ -555,8 +555,11 @@ async fn create_streamable_http_client(
         );
     }
 
+    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
+
     let http_client = reqwest::Client::builder()
         .default_headers(default_headers)
+        .timeout(timeout_duration)
         .build()
         .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
 
@@ -564,8 +567,6 @@ async fn create_streamable_http_client(
         http_client,
         StreamableHttpClientTransportConfig::with_uri(uri),
     );
-
-    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
 
     let client_res = McpClient::connect(
         transport,
@@ -584,6 +585,7 @@ async fn create_streamable_http_client(
                 auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
                 let auth_http_client = reqwest::Client::builder()
                     .default_headers(auth_headers)
+                    .timeout(timeout_duration)
                     .build()
                     .map_err(|_| {
                         ExtensionError::ConfigError("could not construct http client".to_string())
