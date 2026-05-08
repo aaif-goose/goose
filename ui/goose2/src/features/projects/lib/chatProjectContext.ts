@@ -1,5 +1,6 @@
 import type { ProjectInfo } from "../api/projects";
 import { resolvePath } from "@/shared/api/pathResolver";
+
 export interface ProjectFolderOption {
   id: string;
   name: string;
@@ -36,7 +37,7 @@ export function getProjectArtifactRoots(
 }
 
 export function resolveProjectDefaultArtifactRoot(
-  project: ProjectInfo | null | undefined,
+  project: Pick<ProjectInfo, "workingDirs"> | null | undefined,
 ): string | undefined {
   const workingDirs = resolveProjectRoots(project);
   return workingDirs[0];
@@ -54,61 +55,6 @@ export function getProjectFolderOption(
     name: getProjectFolderName(d),
     path: d,
   }));
-}
-
-export function buildProjectSystemPrompt(
-  project: ProjectInfo | null | undefined,
-): string | undefined {
-  if (!project) {
-    return undefined;
-  }
-
-  const workingDir = resolveProjectDefaultArtifactRoot(project);
-  const settings: string[] = [`Project name: ${project.name}`];
-  const description = trimValue(project.description);
-  const workingDirs = resolveProjectRoots(project);
-  const prompt = trimValue(project.prompt);
-
-  if (description) {
-    settings.push(`Project description: ${description}`);
-  }
-  if (workingDirs.length > 0) {
-    settings.push(`Working directories: ${workingDirs.join(", ")}`);
-  }
-  if (workingDir) {
-    settings.push(`Default working directory: ${workingDir}`);
-  }
-  if (project.preferredProvider) {
-    settings.push(`Preferred provider: ${project.preferredProvider}`);
-  }
-  if (project.preferredModel) {
-    settings.push(`Preferred model: ${project.preferredModel}`);
-  }
-  settings.push(
-    `Use git worktrees for branch isolation: ${
-      project.useWorktrees ? "yes" : "no"
-    }`,
-  );
-
-  const sections = [
-    `<project-settings>\n${settings.join("\n")}\n</project-settings>`,
-  ];
-
-  if (workingDir) {
-    sections.push(
-      `<project-file-policy>\n` +
-        `Use ${workingDir} as the default working directory for this project.\n` +
-        `Write newly generated files relative to ${workingDir} by default.\n` +
-        `Only write outside ${workingDir} when the user explicitly asks you to edit or create a file at a specific path.\n` +
-        `</project-file-policy>`,
-    );
-  }
-
-  if (prompt) {
-    sections.push(`<project-instructions>\n${prompt}\n</project-instructions>`);
-  }
-
-  return sections.join("\n\n");
 }
 
 export function composeSystemPrompt(

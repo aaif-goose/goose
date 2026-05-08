@@ -565,7 +565,7 @@ describe("useResolvedAgentModelPicker", () => {
         setPendingProviderId: vi.fn(),
         setPendingModelSelection: vi.fn(),
         setGlobalSelectedProvider: vi.fn(),
-        prepareSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn().mockResolvedValue(true),
       }),
     );
 
@@ -664,7 +664,7 @@ describe("useResolvedAgentModelPicker", () => {
         setPendingProviderId: vi.fn(),
         setPendingModelSelection: vi.fn(),
         setGlobalSelectedProvider: vi.fn(),
-        prepareSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn().mockResolvedValue(true),
       }),
     );
 
@@ -686,6 +686,200 @@ describe("useResolvedAgentModelPicker", () => {
           providerId: "openai",
         },
       });
+    });
+  });
+
+  it("does not persist a superseded explicit model selection", async () => {
+    const prepareSelectedProvider = vi.fn().mockResolvedValue(false);
+
+    mockUseAgentModelPickerState.mockImplementation(
+      ({
+        onModelSelected,
+      }: {
+        onModelSelected?: (model: {
+          id: string;
+          name: string;
+          displayName?: string;
+          providerId?: string;
+        }) => void;
+      }) => ({
+        pickerAgents: [{ id: "goose", label: "Goose" }],
+        availableModels: [
+          {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "openai",
+          },
+        ],
+        modelsLoading: false,
+        modelStatusMessage: null,
+        handleProviderChange: vi.fn(),
+        handleModelChange: (modelId: string) =>
+          onModelSelected?.({
+            id: modelId,
+            name: "GPT-5.4",
+            displayName: "GPT-5.4",
+            providerId: "openai",
+          }),
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "openai", label: "OpenAI" },
+        ],
+        selectedProvider: "openai",
+        sessionId: "session-1",
+        session: {
+          id: "session-1",
+          title: "Chat",
+          providerId: "openai",
+          modelId: "current",
+          modelName: "current",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider,
+      }),
+    );
+
+    act(() => {
+      result.current.handleModelChange("gpt-5.4");
+    });
+
+    await waitFor(() => {
+      expect(prepareSelectedProvider).toHaveBeenCalledWith("openai", {
+        id: "gpt-5.4",
+        name: "GPT-5.4",
+        providerId: "openai",
+        source: "explicit",
+      });
+    });
+    expect(localStorage.getItem("goose:preferredModelsByAgent")).toBeNull();
+  });
+
+  it("preserves persisted Claude Code / Opus during empty inventory and catalog", () => {
+    useProviderCatalogStore.getState().reset();
+
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        "claude-acp": {
+          modelId: "opus",
+          modelName: "Claude Opus",
+          providerId: "claude-acp",
+        },
+      }),
+    );
+
+    mockUseProviderInventory.mockReturnValue({
+      getEntry: () => undefined,
+    });
+
+    mockUseAgentModelPickerState.mockImplementation(() => ({
+      pickerAgents: [{ id: "goose", label: "Goose" }],
+      availableModels: [],
+      modelsLoading: true,
+      modelStatusMessage: null,
+      handleProviderChange: vi.fn(),
+      handleModelChange: vi.fn(),
+    }));
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [],
+        selectedProvider: "claude-acp",
+        sessionId: null,
+        session: undefined,
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    expect(result.current.selectedAgentId).toBe("claude-acp");
+    expect(result.current.effectiveModelSelection).toEqual({
+      id: "opus",
+      name: "Claude Opus",
+      providerId: "claude-acp",
+      source: "explicit",
+    });
+  });
+
+  it("retains selection after validated inventory confirms the agent", () => {
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        "claude-acp": {
+          modelId: "opus",
+          modelName: "Claude Opus",
+          providerId: "claude-acp",
+        },
+      }),
+    );
+
+    mockUseProviderInventory.mockReturnValue({
+      getEntry: (id: string) =>
+        id === "claude-acp"
+          ? {
+              providerId: "claude-acp",
+              category: "agent",
+              models: [
+                { id: "opus", name: "Claude Opus", recommended: false },
+                { id: "sonnet", name: "Claude Sonnet", recommended: true },
+              ],
+            }
+          : undefined,
+    });
+
+    mockUseAgentModelPickerState.mockImplementation(() => ({
+      pickerAgents: [
+        { id: "goose", label: "Goose" },
+        { id: "claude-acp", label: "Claude Code" },
+      ],
+      availableModels: [
+        { id: "opus", name: "Claude Opus", providerId: "claude-acp" },
+        { id: "sonnet", name: "Claude Sonnet", providerId: "claude-acp" },
+      ],
+      modelsLoading: false,
+      modelStatusMessage: null,
+      handleProviderChange: vi.fn(),
+      handleModelChange: vi.fn(),
+    }));
+
+    const { result } = renderHook(() =>
+      useResolvedAgentModelPicker({
+        providers: [
+          { id: "goose", label: "Goose" },
+          { id: "claude-acp", label: "Claude Code" },
+        ],
+        selectedProvider: "claude-acp",
+        sessionId: null,
+        session: undefined,
+        pendingModelSelection: undefined,
+        setPendingProviderId: vi.fn(),
+        setPendingModelSelection: vi.fn(),
+        setGlobalSelectedProvider: vi.fn(),
+        prepareSelectedProvider: vi.fn(),
+      }),
+    );
+
+    expect(result.current.selectedAgentId).toBe("claude-acp");
+    expect(result.current.effectiveModelSelection).toEqual({
+      id: "opus",
+      name: "Claude Opus",
+      providerId: "claude-acp",
+      source: "explicit",
     });
   });
 });

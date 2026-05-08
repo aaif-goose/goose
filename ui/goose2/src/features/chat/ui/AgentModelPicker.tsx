@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import type { AcpProvider } from "@/shared/api/acp";
@@ -11,6 +11,10 @@ import {
   formatProviderLabel,
   getProviderIcon,
 } from "@/shared/ui/icons/ProviderIcons";
+import {
+  resolveDisplayModelLabel,
+  resolvePickerTriggerLabel,
+} from "../lib/modelDisplayLabel";
 import type { ModelOption } from "../types";
 import { AllModelsList, RecommendedModelList } from "./AgentModelPickerLists";
 import { PickerItem } from "./AgentModelPickerItem";
@@ -52,16 +56,26 @@ export function AgentModelPicker({
 }: AgentModelPickerProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [modelView, setModelView] = useState<ModelView>("recommended");
   const selectedAgentLabel =
     agents.find((agent) => agent.id === selectedAgentId)?.label ??
     formatProviderLabel(selectedAgentId);
-  const hasSelectedModel =
-    showSelectedModelInTrigger &&
-    (currentModelName !== null || currentModelId !== null);
-  const triggerModelLabel = hasSelectedModel
-    ? (currentModelName ?? currentModelId)
-    : null;
+  const displayModelLabel = resolveDisplayModelLabel({
+    currentModelId,
+    currentModelName,
+    currentModelProviderId,
+    availableModels,
+  });
+  const triggerLabel = showSelectedModelInTrigger
+    ? resolvePickerTriggerLabel({
+        currentModelId,
+        currentModelName,
+        currentModelProviderId,
+        availableModels,
+        selectedAgentLabel,
+      })
+    : selectedAgentLabel;
 
   const handleAgentSelect = (agentId: string) => {
     if (agentId !== selectedAgentId) {
@@ -105,15 +119,22 @@ export function AgentModelPicker({
           className="min-w-0 max-w-full"
         >
           <span className={cn("truncate", isCompact ? "max-w-32" : "max-w-56")}>
-            {triggerModelLabel ??
-              selectedAgentLabel ??
-              (loading ? t("toolbar.loading") : null)}
+            {triggerLabel ?? (loading ? t("toolbar.loading") : null)}
           </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         align="start"
         className="h-[min(24rem,50vh)] w-96 overflow-hidden p-1"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          contentRef.current
+            ?.querySelector<HTMLElement>(
+              '[data-col="agent"] button[data-selected]',
+            )
+            ?.focus();
+        }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
@@ -192,6 +213,7 @@ export function AgentModelPicker({
                           key={agent.id}
                           onClick={() => handleAgentSelect(agent.id)}
                           selected={isSelected}
+                          data-selected={isSelected || undefined}
                         >
                           {agentIcon ? (
                             <span className="shrink-0">{agentIcon}</span>
@@ -221,11 +243,11 @@ export function AgentModelPicker({
                 <div className="shrink-0 px-2 py-1.5 text-sm font-semibold">
                   {t("toolbar.model")}
                 </div>
-                {currentModelName || currentModelId ? (
+                {displayModelLabel ? (
                   <div className="space-y-0.5 p-1">
                     <PickerItem selected disabled>
                       <div className="min-w-0 flex-1 truncate">
-                        {currentModelName ?? currentModelId}
+                        {displayModelLabel}
                       </div>
                       <Spinner className="size-3.5 shrink-0" />
                     </PickerItem>
@@ -267,7 +289,7 @@ export function AgentModelPicker({
                 <div className="px-2 py-2">
                   <div className="text-sm text-muted-foreground">
                     {modelStatusMessage ??
-                      currentModelName ??
+                      displayModelLabel ??
                       t("toolbar.noModelsAvailable")}
                   </div>
                 </div>

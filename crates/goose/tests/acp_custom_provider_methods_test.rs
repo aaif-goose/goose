@@ -192,6 +192,17 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
             "provider config read should not expose raw secret values"
         );
 
+        let non_oauth_auth = send_custom(
+            conn.cx(),
+            "_goose/providers/config/authenticate",
+            serde_json::json!({ "providerId": "xai" }),
+        )
+        .await;
+        assert!(
+            non_oauth_auth.is_err(),
+            "native auth should reject providers without an OAuth flow"
+        );
+
         Config::global().invalidate_secrets_cache();
         assert!(Config::global()
             .get_secret::<String>("CUSTOM_STARK_ACP_PROVIDER_API_KEY")

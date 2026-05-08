@@ -11,6 +11,7 @@ impl Paths {
                 DirType::Config => base.join("config"),
                 DirType::Data => base.join("data"),
                 DirType::State => base.join("state"),
+                DirType::Plugins => base.join(".agents").join("plugins"),
             }
         } else {
             // NOTE: "Block" is kept here for backwards compatibility with existing
@@ -27,6 +28,7 @@ impl Paths {
                 DirType::Config => strategy.config_dir(),
                 DirType::Data => strategy.data_dir(),
                 DirType::State => strategy.state_dir().unwrap_or(strategy.data_dir()),
+                DirType::Plugins => strategy.home_dir().join(".agents").join("plugins"),
             }
         }
     }
@@ -41,6 +43,10 @@ impl Paths {
 
     pub fn state_dir() -> PathBuf {
         Self::get_dir(DirType::State)
+    }
+
+    pub fn plugins_dir() -> PathBuf {
+        Self::get_dir(DirType::Plugins)
     }
 
     pub fn in_state_dir(subpath: &str) -> PathBuf {
@@ -60,4 +66,5 @@ enum DirType {
     Config,
     Data,
     State,
+    Plugins,
 }

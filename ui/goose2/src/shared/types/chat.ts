@@ -1,6 +1,3 @@
-import type { Message } from "./messages";
-import type { Agent } from "./agents";
-
 // Chat state machine
 export type ChatState =
   | "idle"
@@ -66,62 +63,4 @@ export interface Session {
   archivedAt?: string;
   messageCount: number;
   userSetName?: boolean;
-}
-
-// SSE event types (from goosed server)
-export type MessageEventType =
-  | "message"
-  | "error"
-  | "finish"
-  | "modelChange"
-  | "notification"
-  | "updateConversation"
-  | "ping";
-
-export interface MessageEvent {
-  type: "message";
-  message: Message;
-  tokenState: TokenState;
-}
-
-export interface ErrorEvent {
-  type: "error";
-  error: string;
-}
-
-export interface FinishEvent {
-  type: "finish";
-  reason: string;
-  tokenState: TokenState;
-}
-
-export interface ModelChangeEvent {
-  type: "modelChange";
-  model: string;
-  mode: string;
-}
-
-export type StreamEvent =
-  | MessageEvent
-  | ErrorEvent
-  | FinishEvent
-  | ModelChangeEvent;
-
-// Chat request
-export interface ChatRequest {
-  userMessage: Message;
-  sessionId: string;
-  recipeName?: string;
-  overrideConversation?: Message[];
-}
-
-// Active chat context
-export interface ChatContext {
-  sessionId: string;
-  agent: Agent;
-  messages: Message[];
-  chatState: SessionChatRuntime["chatState"];
-  tokenState: SessionChatRuntime["tokenState"];
-  streamingMessageId: SessionChatRuntime["streamingMessageId"];
-  error: SessionChatRuntime["error"];
 }

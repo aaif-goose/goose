@@ -1,13 +1,14 @@
 use crate::plugins::{
-    copy_dir_all, plugin_install_dir, write_install_metadata, FormatNotSupported, ImportedSkill,
-    PluginFormat, PluginInstall,
+    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
+    copy_dir_all, write_install_metadata,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
 use fs_err as fs;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-pub(super) const MANIFEST: &str = "gemini-extension.json";
+pub(in crate::plugins) const MANIFEST: &str = "gemini-extension.json";
 
 #[derive(Debug, Deserialize)]
 struct GeminiManifest {
@@ -20,14 +21,12 @@ struct SkillCandidate {
     relative_directory: PathBuf,
 }
 
-pub fn try_install_from_manifest(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
-    install_from_manifest(source, checkout_dir, &plugin_install_dir())
-}
-
-fn install_from_manifest(
+pub(in crate::plugins) fn try_install_from_manifest_at_root(
     source: &str,
     checkout_dir: &Path,
     install_root: &Path,
+    options: &PluginInstallOptions,
+    last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
     let manifest_path = checkout_dir.join(MANIFEST);
     if !manifest_path.is_file() {
@@ -58,7 +57,13 @@ fn install_from_manifest(
     }
 
     copy_dir_all(checkout_dir, &destination)?;
-    write_install_metadata(&destination, source, "gemini")?;
+    write_install_metadata(
+        &destination,
+        source,
+        "gemini",
+        options.auto_update,
+        last_update_check,
+    )?;
 
     Ok(PluginInstall {
         name: manifest.name,
@@ -170,10 +175,12 @@ mod tests {
         )
         .unwrap();
 
-        let installed = install_from_manifest(
+        let installed = try_install_from_manifest_at_root(
             "https://example.invalid/repo.git",
             repo.path(),
             install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
         )
         .unwrap();
 
@@ -182,10 +189,12 @@ mod tests {
         assert_eq!(installed.skills.len(), 1);
         assert_eq!(installed.skills[0].name, "audit");
         assert!(installed.directory.join(MANIFEST).is_file());
-        assert!(installed
-            .directory
-            .join(crate::plugins::INSTALL_METADATA)
-            .is_file());
+        assert!(
+            installed
+                .directory
+                .join(crate::plugins::INSTALL_METADATA)
+                .is_file()
+        );
         assert_eq!(installed.directory, install_root.path().join("test-plugin"));
     }
 }

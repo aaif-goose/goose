@@ -1,0 +1,67 @@
+{
+  "windowTitle": "Goose setup",
+  "eyebrow": "First run",
+  "title": "Set up Goose",
+  "steps": {
+    "import": "Import",
+    "provider": "Provider",
+    "tour": "Ready"
+  },
+  "counts": {
+    "providers": "{{count}} provider",
+    "providers_plural": "{{count}} providers",
+    "extensions": "{{count}} extension",
+    "extensions_plural": "{{count}} extensions",
+    "sessions": "{{count}} session",
+    "sessions_plural": "{{count}} sessions",
+    "skills": "{{count}} skill",
+    "skills_plural": "{{count}} skills",
+    "projects": "{{count}} project",
+    "projects_plural": "{{count}} projects",
+    "preferences": "{{count}} preference",
+    "preferences_plural": "{{count}} preferences",
+    "none": "No importable data"
+  },
+  "import": {
+    "title": "Bring your setup with you",
+    "description": "Goose can bring over existing settings and tools it finds before you start chatting.",
+    "scanning": "Looking for existing Goose settings and Claude Desktop tools...",
+    "scanFailed": "Could not scan for existing setup.",
+    "emptyTitle": "No previous setup found",
+    "emptyDescription": "You can still configure a provider and start fresh.",
+    "failed": "Import failed.",
+    "skip": "Skip import",
+    "continue": "Import selected",
+    "next": "Continue"
+  },
+  "provider": {
+    "title": "Choose a default",
+    "description": "Pick what Goose should use for new chats. Most people should choose an AI model service like ChatGPT, Anthropic, OpenAI, Google, or Ollama.",
+    "readyTitle": "Already connected",
+    "readyDescription": "Choose the default way Goose should start new chats. You can change this any time.",
+    "checking": "Checking provider status...",
+    "noneReady": "No usable provider is ready yet.",
+    "setupTitle": "Connect an AI model service",
+    "addDifferent": "Add a different provider",
+    "browseAll": "Show more",
+    "noModels": "This provider is configured, but no models are available yet.",
+    "selectFailed": "Could not select this provider.",
+    "useCurrent": "Keep current default"
+  },
+  "tour": {
+    "title": "Ready to go",
+    "description": "Goose is ready. Here is what is available now.",
+    "readyWithModel": "Goose will start with {{model}}. You can switch models from Home whenever you need.",
+    "summary": {
+      "defaultTitle": "Default",
+      "defaultFallback": "Ready on Home",
+      "defaultDescription": "This is what Goose will use when you start a new chat.",
+      "extensionsTitle": "Extensions",
+      "extensionsDescription": "Connected tools are available in Settings. Imported Claude Desktop tools stay off until you enable them.",
+      "skillsTitle": "Skills",
+      "skillsDescription": "Personal skills Goose can see now. Project skills appear when you open a project."
+    },
+    "back": "Back",
+    "finish": "Start using Goose"
+  }
+}

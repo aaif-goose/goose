@@ -161,6 +161,12 @@
       "spanish": "Spanish",
       "system": "System default ({{language}})"
     },
+    "onboarding": {
+      "description": "Show setup again the next time Goose opens.",
+      "label": "Onboarding",
+      "reset": "Reset onboarding",
+      "resetDescription": "Onboarding will appear the next time Goose opens."
+    },
     "title": "General",
     "voiceInput": {
       "label": "Voice input",

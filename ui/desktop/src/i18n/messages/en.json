@@ -1061,14 +1061,17 @@
   "extensionItem.configureExtension": {
     "defaultMessage": "Configure {name} Extension"
   },
+  "extensionItem.toggleExtension": {
+    "defaultMessage": "Toggle {name} extension On or Off"
+  },
   "extensionList.availableExtensions": {
-    "defaultMessage": "Available On Demand ({count})"
+    "defaultMessage": "Available Extensions ({count})"
   },
   "extensionList.builtInExtension": {
     "defaultMessage": "Built-in extension"
   },
   "extensionList.defaultExtensions": {
-    "defaultMessage": "Active by Default ({count})"
+    "defaultMessage": "Default Extensions ({count})"
   },
   "extensionList.noExtensions": {
     "defaultMessage": "No extensions available"
@@ -1128,7 +1131,7 @@
     "defaultMessage": "Browse extensions"
   },
   "extensionsView.defaultNote": {
-    "defaultMessage": "Extensions stay available here, and Goose can load them on demand during a chat."
+    "defaultMessage": "Extensions enabled here are used as the default for new chats. You can also toggle active extensions during chat."
   },
   "extensionsView.description": {
     "defaultMessage": "These extensions use the Model Context Protocol (MCP). They can expand Goose's capabilities using three main components: Prompts, Resources, and Tools. {searchShortcut} to search."

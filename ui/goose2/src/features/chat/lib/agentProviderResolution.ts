@@ -34,6 +34,13 @@ export function resolveSelectedAgentId({
     if (inventoryEntry?.category === "agent") {
       return selectedProvider;
     }
+    // Catalog not loaded and no inventory info — preserve the stored
+    // selection so the UI doesn't briefly flash "Goose" before validation
+    // completes.  Fall back to "goose" only when there is no selection or
+    // after the catalog has loaded and proven the provider is not an agent.
+    if (!inventoryEntry) {
+      return selectedProvider;
+    }
   }
 
   return "goose";

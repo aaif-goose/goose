@@ -19,13 +19,13 @@
 //! cargo run -p goose-sdk --example acp_client -- --goose-bin ./target/debug/goose "Explain Rust's ownership model in one sentence"
 //! ```
 
-use goose_sdk::custom_requests::GetExtensionsRequest;
-use sacp::schema::{
+use agent_client_protocol::schema::{
     ContentBlock, InitializeRequest, ProtocolVersion, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
     SessionNotification, SessionUpdate,
 };
-use sacp::{Client, ConnectionTo};
+use agent_client_protocol::{Client, ConnectionTo};
+use goose_sdk::custom_requests::GetExtensionsRequest;
 use std::path::PathBuf;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
@@ -48,7 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let child_stdin = child.stdin.take().expect("stdin should be piped");
     let child_stdout = child.stdout.take().expect("stdout should be piped");
 
-    let transport = sacp::ByteStreams::new(child_stdin.compat_write(), child_stdout.compat());
+    let transport =
+        agent_client_protocol::ByteStreams::new(child_stdin.compat_write(), child_stdout.compat());
 
     let prompt_clone = prompt.clone();
 
@@ -76,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Ok(())
             },
-            sacp::on_receive_notification!(),
+            agent_client_protocol::on_receive_notification!(),
         )
         // Auto-approve all permission requests
         .on_receive_request(
@@ -92,39 +93,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )),
                 }
             },
-            sacp::on_receive_request!(),
+            agent_client_protocol::on_receive_request!(),
         )
-        .connect_with(transport, async move |cx: ConnectionTo<sacp::Agent>| {
-            // Step 1: Initialize
-            eprintln!("🤝 Initializing...");
-            let init_response = cx
-                .send_request(InitializeRequest::new(ProtocolVersion::LATEST))
-                .block_task()
-                .await?;
-            eprintln!("✓ Agent initialized: {:?}", init_response.agent_info);
+        .connect_with(
+            transport,
+            async move |cx: ConnectionTo<agent_client_protocol::Agent>| {
+                // Step 1: Initialize
+                eprintln!("🤝 Initializing...");
+                let init_response = cx
+                    .send_request(InitializeRequest::new(ProtocolVersion::LATEST))
+                    .block_task()
+                    .await?;
+                eprintln!("✓ Agent initialized: {:?}", init_response.agent_info);
 
-            let response = cx
-                .send_request(GetExtensionsRequest {})
-                .block_task()
-                .await?;
-            eprintln!("Extensions: {:?}", response.extensions);
+                let response = cx
+                    .send_request(GetExtensionsRequest {})
+                    .block_task()
+                    .await?;
+                eprintln!("Extensions: {:?}", response.extensions);
 
-            // Step 2: Create a session and send the prompt
-            eprintln!("💬 Sending prompt: \"{}\"", prompt_clone);
-            cx.build_session_cwd()?
-                .block_task()
-                .run_until(async |mut session| {
-                    session.send_prompt(&prompt_clone)?;
-                    let response = session.read_to_string().await?;
+                // Step 2: Create a session and send the prompt
+                eprintln!("💬 Sending prompt: \"{}\"", prompt_clone);
+                cx.build_session_cwd()?
+                    .block_task()
+                    .run_until(async |mut session| {
+                        session.send_prompt(&prompt_clone)?;
+                        let response = session.read_to_string().await?;
 
-                    // read_to_string collects text; we already printed chunks above,
-                    // so just print a newline to finish.
-                    println!();
-                    eprintln!("✅ Done ({} chars)", response.len());
-                    Ok(())
-                })
-                .await
-        })
+                        // read_to_string collects text; we already printed chunks above,
+                        // so just print a newline to finish.
+                        println!();
+                        eprintln!("✅ Done ({} chars)", response.len());
+                        Ok(())
+                    })
+                    .await
+            },
+        )
         .await?;
 
     let _ = child.kill().await;

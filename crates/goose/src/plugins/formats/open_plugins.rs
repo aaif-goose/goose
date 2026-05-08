@@ -1,8 +1,9 @@
 use crate::plugins::{
-    copy_dir_all, plugin_install_dir, write_install_metadata, FormatNotSupported, ImportedSkill,
-    PluginFormat, PluginInstall,
+    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
+    copy_dir_all, write_install_metadata,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
 use fs_err as fs;
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -26,14 +27,28 @@ struct SkillCandidate {
     relative_directory: PathBuf,
 }
 
-pub fn try_install_from_manifest(source: &str, checkout_dir: &Path) -> Result<PluginInstall> {
-    install_from_manifest(source, checkout_dir, &plugin_install_dir())
+pub(in crate::plugins) fn try_install_from_manifest_at_root(
+    source: &str,
+    checkout_dir: &Path,
+    install_root: &Path,
+    options: &PluginInstallOptions,
+    last_update_check: Option<DateTime<Utc>>,
+) -> Result<PluginInstall> {
+    install_from_manifest(
+        source,
+        checkout_dir,
+        install_root,
+        options,
+        last_update_check,
+    )
 }
 
 fn install_from_manifest(
     source: &str,
     checkout_dir: &Path,
     install_root: &Path,
+    options: &PluginInstallOptions,
+    last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
     let has_manifest = manifest_path(checkout_dir).is_some();
     let manifest = read_manifest(checkout_dir)?;
@@ -74,7 +89,13 @@ fn install_from_manifest(
         });
     }
 
-    write_install_metadata(&destination, source, FORMAT)?;
+    write_install_metadata(
+        &destination,
+        source,
+        FORMAT,
+        options.auto_update,
+        last_update_check,
+    )?;
 
     imported_skills.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(PluginInstall {
@@ -435,6 +456,8 @@ mod tests {
             "https://example.invalid/repo.git",
             repo.path(),
             install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
         )
         .unwrap();
 
@@ -444,10 +467,12 @@ mod tests {
         assert_eq!(installed.skills.len(), 1);
         assert_eq!(installed.skills[0].name, "test-plugin:audit");
         assert!(installed.directory.join(".plugin/plugin.json").is_file());
-        assert!(installed
-            .directory
-            .join(crate::plugins::INSTALL_METADATA)
-            .is_file());
+        assert!(
+            installed
+                .directory
+                .join(crate::plugins::INSTALL_METADATA)
+                .is_file()
+        );
         assert_eq!(installed.directory, install_root.path().join("test-plugin"));
         assert_eq!(
             installed_skill_dirs(&installed.directory),
@@ -478,12 +503,15 @@ mod tests {
             "https://example.invalid/repo.git",
             repo.path(),
             install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
         )
         .unwrap_err();
 
-        assert!(err
-            .to_string()
-            .contains("does not contain any Open Plugins skills"));
+        assert!(
+            err.to_string()
+                .contains("does not contain any Open Plugins skills")
+        );
     }
 
     #[test]
@@ -502,6 +530,8 @@ mod tests {
             "https://example.invalid/repo.git",
             repo.path(),
             install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
         )
         .unwrap();
 
@@ -535,6 +565,8 @@ mod tests {
             "https://example.invalid/repo.git",
             repo.path(),
             install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
         )
         .unwrap();
 

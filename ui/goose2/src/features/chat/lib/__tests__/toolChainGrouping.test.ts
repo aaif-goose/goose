@@ -74,13 +74,13 @@ describe("getToolItemStatus", () => {
 
   it("treats response.isError as error", () => {
     expect(getToolItemStatus(pair("a", { name: "x" }, { isError: true }))).toBe(
-      "error",
+      "failed",
     );
   });
 
   it("uses request status when no response yet", () => {
-    expect(getToolItemStatus(pair("a", { status: "executing" }))).toBe(
-      "executing",
+    expect(getToolItemStatus(pair("a", { status: "in_progress" }))).toBe(
+      "in_progress",
     );
   });
 });
@@ -89,17 +89,17 @@ describe("getChainAggregateStatus", () => {
   it("prefers error over pending and executing", () => {
     expect(
       getChainAggregateStatus([
-        pair("a", { status: "executing" }),
+        pair("a", { status: "in_progress" }),
         pair("b", { name: "x" }, { isError: true }),
         pair("c", { status: "pending" }),
       ]),
-    ).toBe("error");
+    ).toBe("failed");
   });
 
   it("prefers stopped over executing/pending when there is no error", () => {
     expect(
       getChainAggregateStatus([
-        pair("a", { status: "executing" }),
+        pair("a", { status: "in_progress" }),
         pair("b", { status: "stopped" }),
       ]),
     ).toBe("stopped");
@@ -109,9 +109,9 @@ describe("getChainAggregateStatus", () => {
     expect(
       getChainAggregateStatus([
         pair("a", { name: "x" }, {}),
-        pair("b", { status: "executing" }),
+        pair("b", { status: "in_progress" }),
       ]),
-    ).toBe("executing");
+    ).toBe("in_progress");
   });
 
   it("returns pending when only pending is present", () => {

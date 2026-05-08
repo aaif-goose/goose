@@ -9,7 +9,8 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
         &mut self,
         message: Dispatch,
         cx: ConnectionTo<Client>,
-    ) -> impl std::future::Future<Output = Result<Handled<Dispatch>, sacp::Error>> + Send {
+    ) -> impl std::future::Future<Output = Result<Handled<Dispatch>, agent_client_protocol::Error>> + Send
+    {
         let agent = self.agent.clone();
 
         // The MatchDispatchFrom chain produces an ~85KB async state machine.
@@ -96,7 +97,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                         cx.spawn(async move {
                             let cx = cx_spawn;
                             let value_id = req.value.as_value_id()
-                                .ok_or_else(|| sacp::Error::invalid_params().data("Expected a value ID"))?
+                                .ok_or_else(|| agent_client_protocol::Error::invalid_params().data("Expected a value ID"))?
                                 .clone();
                             let session_id = req.session_id.clone();
                             let sid = sid_short(session_id.0.as_ref());
@@ -124,7 +125,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                 }
                                 other => {
                                     responder.respond_with_error(
-                                        sacp::Error::invalid_params().data(format!("Unsupported config option: {}", other))
+                                        agent_client_protocol::Error::invalid_params().data(format!("Unsupported config option: {}", other))
                                     )?;
                                     return Ok(());
                                 }

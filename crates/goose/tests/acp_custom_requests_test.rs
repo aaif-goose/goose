@@ -113,6 +113,40 @@ fn test_custom_get_extensions() {
 }
 
 #[test]
+fn test_custom_list_builtin_skill_sources() {
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/sources/list",
+            serde_json::json!({ "type": "builtinSkill" }),
+        )
+        .await
+        .expect("builtin skill sources list should succeed");
+        let sources = response
+            .get("sources")
+            .and_then(|value| value.as_array())
+            .expect("missing sources array");
+        let builtin = sources
+            .iter()
+            .find(|source| source.get("name") == Some(&serde_json::json!("goose-doc-guide")))
+            .expect("expected goose-doc-guide builtin skill");
+
+        assert_eq!(
+            builtin.get("type"),
+            Some(&serde_json::json!("builtinSkill"))
+        );
+        assert_eq!(builtin.get("global"), Some(&serde_json::json!(true)));
+        assert_eq!(
+            builtin.get("path"),
+            Some(&serde_json::json!("builtin://skills/goose-doc-guide"))
+        );
+    });
+}
+
+#[test]
 fn test_custom_provider_inventory_includes_metadata() {
     run_test(async {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
@@ -489,10 +523,9 @@ fn test_developer_fs_requests_use_acp_session_id() {
             // gpt-5-nano routes to the Responses API; use a Chat Completions
             // model so the canned SSE fixtures are parsed correctly.
             current_model: "gpt-4.1".to_string(),
-            builtins: vec!["developer".to_string()],
             read_text_file: Some(Arc::new(move |req| {
                 *seen_session_id_clone.lock().unwrap() = Some(req.session_id.0.to_string());
-                Ok(sacp::schema::ReadTextFileResponse::new(
+                Ok(agent_client_protocol::schema::ReadTextFileResponse::new(
                     "test-read-content-12345",
                 ))
             })),
