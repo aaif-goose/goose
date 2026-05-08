@@ -1,3 +1,5 @@
+//! Open Plugins format adapter (<https://open-plugins.com>).
+
 use crate::plugins::{
     copy_dir_all, write_install_metadata, FormatNotSupported, ImportedSkill, PluginFormat,
     PluginInstall, PluginInstallOptions,
@@ -10,16 +12,18 @@ use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
 const MANIFESTS: [&str; 3] = [
-    "plugin.json",
     ".goose-plugin/plugin.json",
     ".plugin/plugin.json",
+    "plugin.json",
 ];
-const HOOKS_FILE: &str = "hooks/hooks.json";
 const FORMAT: &str = "open-plugins";
+
+const COMPONENT_MARKERS: &[&str] = &["hooks/hooks.json", "commands", "agents"];
 
 #[derive(Debug, Deserialize)]
 struct OpenPluginsManifest {
-    name: String,
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     version: Option<String>,
     #[serde(default)]
@@ -39,6 +43,17 @@ pub(in crate::plugins) fn try_install_from_manifest_at_root(
     options: &PluginInstallOptions,
     last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
+    let has_manifest = manifest_path(checkout_dir).is_some();
+    let has_component = has_component_marker(checkout_dir);
+
+    if !has_manifest && !has_component {
+        return Err(FormatNotSupported.into());
+    }
+
+    if !has_manifest && checkout_dir.join(super::gemini::MANIFEST).is_file() {
+        return Err(FormatNotSupported.into());
+    }
+
     install_from_manifest(
         source,
         checkout_dir,
@@ -55,61 +70,30 @@ fn install_from_manifest(
     options: &PluginInstallOptions,
     last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
-    let has_manifest = manifest_path(checkout_dir).is_some();
-    let has_hooks = checkout_dir.join(HOOKS_FILE).is_file();
-
-    if !has_manifest && !has_hooks {
-        return Err(FormatNotSupported.into());
-    }
-
-    let manifest = read_manifest(source, checkout_dir)?;
-    validate_plugin_name(&manifest.name)?;
-
-    let skills = find_agent_skills(checkout_dir, manifest.skills.as_ref())?;
-    if skills.is_empty() && !has_hooks {
-        bail!(
-            "Plugin '{}' does not contain any Open Plugins skills",
-            manifest.name
-        );
-    }
-
-    do_install(
-        source,
-        checkout_dir,
-        install_root,
-        options,
-        last_update_check,
-        manifest,
-        skills,
-    )
-}
-
-fn do_install(
-    source: &str,
-    checkout_dir: &Path,
-    install_root: &Path,
-    options: &PluginInstallOptions,
-    last_update_check: Option<DateTime<Utc>>,
-    manifest: OpenPluginsManifest,
-    skills: Vec<SkillCandidate>,
-) -> Result<PluginInstall> {
-    validate_plugin_name(&manifest.name)?;
+    let manifest = read_manifest(checkout_dir, source)?;
+    let plugin_name = manifest
+        .name
+        .clone()
+        .expect("read_manifest always sets a name");
+    validate_plugin_name(&plugin_name)?;
 
     fs::create_dir_all(install_root)?;
-    let destination = install_root.join(&manifest.name);
+    let destination = install_root.join(&plugin_name);
     if destination.exists() {
         bail!(
             "Plugin '{}' is already installed at {}",
-            manifest.name,
+            plugin_name,
             destination.display()
         );
     }
+
+    let skills = find_agent_skills(checkout_dir, manifest.skills.as_ref())?;
 
     copy_dir_all(checkout_dir, &destination)?;
 
     let mut imported_skills = Vec::new();
     for skill in skills {
-        let namespaced_name = namespaced_component_name(&manifest.name, &skill.name);
+        let namespaced_name = namespaced_component_name(&plugin_name, &skill.name);
         let installed_skill_dir = destination.join(&skill.relative_directory);
         rewrite_skill_name(&installed_skill_dir.join("SKILL.md"), &namespaced_name)?;
         imported_skills.push(ImportedSkill {
@@ -127,8 +111,9 @@ fn do_install(
     )?;
 
     imported_skills.sort_by(|a, b| a.name.cmp(&b.name));
+
     Ok(PluginInstall {
-        name: manifest.name,
+        name: plugin_name,
         version: manifest.version.unwrap_or_else(|| "unknown".to_string()),
         format: PluginFormat::OpenPlugins,
         source: source.to_string(),
@@ -138,7 +123,7 @@ fn do_install(
 }
 
 pub(in crate::plugins) fn installed_skill_dirs(plugin_dir: &Path) -> Vec<PathBuf> {
-    let manifest = match read_manifest("", plugin_dir) {
+    let manifest = match read_manifest(plugin_dir, "") {
         Ok(manifest) => manifest,
         Err(_) => return Vec::new(),
     };
@@ -161,30 +146,24 @@ pub(in crate::plugins) fn installed_skill_dirs(plugin_dir: &Path) -> Vec<PathBuf
     dedupe_paths(dirs)
 }
 
-fn read_manifest(source: &str, plugin_dir: &Path) -> Result<OpenPluginsManifest> {
-    match manifest_path(plugin_dir) {
-        Some(manifest_path) => serde_json::from_str(&fs::read_to_string(&manifest_path)?)
-            .with_context(|| format!("Failed to parse {}", manifest_path.display())),
-        None => Ok(OpenPluginsManifest {
-            name: infer_name_from_source(source, plugin_dir),
+fn read_manifest(plugin_dir: &Path, source: &str) -> Result<OpenPluginsManifest> {
+    let mut manifest = match manifest_path(plugin_dir) {
+        Some(manifest_path) => {
+            serde_json::from_str::<OpenPluginsManifest>(&fs::read_to_string(&manifest_path)?)
+                .with_context(|| format!("Failed to parse {}", manifest_path.display()))?
+        }
+        None => OpenPluginsManifest {
+            name: None,
             version: None,
             skills: None,
-        }),
-    }
-}
+        },
+    };
 
-fn infer_name_from_source(source: &str, plugin_dir: &Path) -> String {
-    if !source.is_empty() {
-        let trimmed = source.trim_end_matches('/').trim_end_matches(".git");
-        if let Some(name) = trimmed.rsplit('/').find(|s| !s.is_empty()) {
-            return name.to_string();
-        }
+    if manifest.name.as_deref().map(str::is_empty).unwrap_or(true) {
+        manifest.name = Some(infer_name(plugin_dir, source));
     }
-    plugin_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("plugin")
-        .to_string()
+
+    Ok(manifest)
 }
 
 fn manifest_path(plugin_dir: &Path) -> Option<PathBuf> {
@@ -192,6 +171,26 @@ fn manifest_path(plugin_dir: &Path) -> Option<PathBuf> {
         .iter()
         .map(|relative| plugin_dir.join(relative))
         .find(|path| path.is_file())
+}
+
+fn has_component_marker(plugin_dir: &Path) -> bool {
+    COMPONENT_MARKERS.iter().any(|marker| {
+        let path = plugin_dir.join(marker);
+        path.is_file() || path.is_dir()
+    })
+}
+
+fn infer_name(plugin_dir: &Path, source: &str) -> String {
+    let trimmed = source.trim_end_matches('/').trim_end_matches(".git");
+    let from_source = trimmed.rsplit('/').find(|s| !s.is_empty());
+    if let Some(name) = from_source {
+        return name.to_string();
+    }
+    plugin_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("plugin")
+        .to_string()
 }
 
 fn validate_plugin_name(name: &str) -> Result<()> {
@@ -523,24 +522,23 @@ mod tests {
     }
 
     #[test]
-    fn installs_open_plugins_with_root_manifest() {
+    fn installs_open_plugins_with_only_hooks() {
         let install_root = tempfile::tempdir().unwrap();
         let repo = tempfile::tempdir().unwrap();
         fs::write(
             repo.path().join("plugin.json"),
-            r#"{"name":"root-plugin","version":"2.0.0"}"#,
+            r#"{"name":"hello-hooks","version":"0.1.0"}"#,
         )
         .unwrap();
-        let skill_dir = repo.path().join("skills").join("deploy");
-        fs::create_dir_all(&skill_dir).unwrap();
+        fs::create_dir_all(repo.path().join("hooks")).unwrap();
         fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: deploy\ndescription: Deploy code\n---\nDo a deploy.",
+            repo.path().join("hooks/hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"hooks":[]}]}}"#,
         )
         .unwrap();
 
         let installed = install_from_manifest(
-            "https://example.invalid/repo.git",
+            "https://example.invalid/hello-hooks.git",
             repo.path(),
             install_root.path(),
             &PluginInstallOptions::default(),
@@ -548,68 +546,16 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(installed.name, "root-plugin");
-        assert_eq!(installed.version, "2.0.0");
-        assert_eq!(installed.skills.len(), 1);
-        assert_eq!(installed.skills[0].name, "root-plugin:deploy");
-    }
-
-    #[test]
-    fn installs_hooks_only_plugin() {
-        let install_root = tempfile::tempdir().unwrap();
-        let repo = tempfile::tempdir().unwrap();
-        let hooks_dir = repo.path().join("hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
-        fs::write(hooks_dir.join("hooks.json"), r#"{"hooks":[]}"#).unwrap();
-        fs::write(
-            repo.path().join("plugin.json"),
-            r#"{"name":"hooks-plugin","version":"1.0.0"}"#,
-        )
-        .unwrap();
-
-        let installed = install_from_manifest(
-            "https://example.invalid/repo.git",
-            repo.path(),
-            install_root.path(),
-            &PluginInstallOptions::default(),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(installed.name, "hooks-plugin");
+        assert_eq!(installed.name, "hello-hooks");
+        assert_eq!(installed.version, "0.1.0");
+        assert_eq!(installed.format, PluginFormat::OpenPlugins);
         assert!(installed.skills.is_empty());
+        assert!(installed.directory.join("hooks/hooks.json").is_file());
+        assert!(installed.directory.join("plugin.json").is_file());
     }
 
     #[test]
-    fn rejects_open_plugins_without_skills() {
-        let install_root = tempfile::tempdir().unwrap();
-        let repo = tempfile::tempdir().unwrap();
-        fs::create_dir_all(repo.path().join(".plugin")).unwrap();
-        fs::write(
-            repo.path().join(".plugin/plugin.json"),
-            r#"{"name":"test-plugin","version":"1.0.0"}"#,
-        )
-        .unwrap();
-        let commands_dir = repo.path().join("commands");
-        fs::create_dir_all(&commands_dir).unwrap();
-        fs::write(commands_dir.join("deploy.md"), "Deploy to staging.").unwrap();
-
-        let err = install_from_manifest(
-            "https://example.invalid/repo.git",
-            repo.path(),
-            install_root.path(),
-            &PluginInstallOptions::default(),
-            None,
-        )
-        .unwrap_err();
-
-        assert!(err
-            .to_string()
-            .contains("does not contain any Open Plugins skills"));
-    }
-
-    #[test]
-    fn rejects_repo_without_manifest_or_hooks() {
+    fn bare_skills_directory_is_not_claimed_as_open_plugin() {
         let install_root = tempfile::tempdir().unwrap();
         let repo = tempfile::tempdir().unwrap();
         let skill_dir = repo.path().join("skills").join("audit");
@@ -620,8 +566,8 @@ mod tests {
         )
         .unwrap();
 
-        let err = install_from_manifest(
-            "https://example.invalid/my-plugin.git",
+        let err = try_install_from_manifest_at_root(
+            "https://example.invalid/repo.git",
             repo.path(),
             install_root.path(),
             &PluginInstallOptions::default(),
@@ -629,7 +575,50 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(err.is::<FormatNotSupported>());
+        assert!(err.is::<FormatNotSupported>(), "got: {err}");
+    }
+
+    #[test]
+    fn installs_manifestless_open_plugins_with_only_hooks() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::create_dir_all(repo.path().join("hooks")).unwrap();
+        fs::write(
+            repo.path().join("hooks/hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"hooks":[]}]}}"#,
+        )
+        .unwrap();
+
+        let installed = try_install_from_manifest_at_root(
+            "https://example.invalid/hello-hooks.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(installed.name, "hello-hooks");
+        assert!(installed.skills.is_empty());
+        assert!(installed.directory.join("hooks/hooks.json").is_file());
+    }
+
+    #[test]
+    fn rejects_repo_with_no_manifest_or_components() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::write(repo.path().join("README.md"), "Hi").unwrap();
+
+        let err = try_install_from_manifest_at_root(
+            "https://example.invalid/repo.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(err.is::<FormatNotSupported>(), "got: {err}");
     }
 
     #[test]
@@ -679,18 +668,31 @@ mod tests {
     }
 
     #[test]
-    fn infers_name_from_git_url() {
-        assert_eq!(
-            infer_name_from_source("https://github.com/org/my-plugin.git", Path::new("/tmp/x")),
-            "my-plugin"
-        );
-        assert_eq!(
-            infer_name_from_source("https://github.com/org/my-plugin/", Path::new("/tmp/x")),
-            "my-plugin"
-        );
-        assert_eq!(
-            infer_name_from_source("", Path::new("/tmp/fallback")),
-            "fallback"
+    fn defers_to_gemini_when_gemini_manifest_present_without_open_plugin_manifest() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+
+        fs::write(
+            repo.path().join(super::super::gemini::MANIFEST),
+            r#"{"name":"gemini-ext","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let commands_dir = repo.path().join("commands");
+        fs::create_dir_all(&commands_dir).unwrap();
+        fs::write(commands_dir.join("deploy.md"), "Deploy to staging.").unwrap();
+
+        let err = try_install_from_manifest_at_root(
+            "https://example.invalid/Gemini-Ext.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.is::<FormatNotSupported>(),
+            "expected FormatNotSupported so Gemini installer can take over, got: {err}"
         );
     }
 }

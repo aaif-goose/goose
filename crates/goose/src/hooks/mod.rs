@@ -58,6 +58,8 @@ pub enum HookEvent {
     BeforeShellExecution,
     AfterShellExecution,
     Stop,
+    SubagentStart,
+    SubagentStop,
 }
 
 impl HookEvent {
@@ -74,6 +76,8 @@ impl HookEvent {
             HookEvent::BeforeShellExecution => "BeforeShellExecution",
             HookEvent::AfterShellExecution => "AfterShellExecution",
             HookEvent::Stop => "Stop",
+            HookEvent::SubagentStart => "SubagentStart",
+            HookEvent::SubagentStop => "SubagentStop",
         }
     }
 
@@ -90,6 +94,8 @@ impl HookEvent {
             "BeforeShellExecution" => HookEvent::BeforeShellExecution,
             "AfterShellExecution" => HookEvent::AfterShellExecution,
             "Stop" => HookEvent::Stop,
+            "SubagentStart" => HookEvent::SubagentStart,
+            "SubagentStop" => HookEvent::SubagentStop,
             _ => return None,
         })
     }
@@ -527,7 +533,7 @@ fn expand_plugin_root(command: &str, plugin_root: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::discovery::{DiscoveredPlugin, PluginSource};
+    use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
 
     fn write_plugin(root: &Path, name: &str, hooks_json: &str) -> PathBuf {
         let plugin = root.join(name);
@@ -551,7 +557,7 @@ mod tests {
         let mgr = make_manager(vec![DiscoveredPlugin {
             name: "p".into(),
             root,
-            source: PluginSource::UserPlaced,
+            scope: PluginScope::User,
         }]);
         assert!(!mgr.has_hooks(HookEvent::PreToolUse));
     }
@@ -567,7 +573,7 @@ mod tests {
         let mgr = make_manager(vec![DiscoveredPlugin {
             name: "p".into(),
             root,
-            source: PluginSource::UserPlaced,
+            scope: PluginScope::User,
         }]);
         assert!(mgr.has_hooks(HookEvent::PostToolUse));
     }
@@ -583,7 +589,7 @@ mod tests {
         let mgr = make_manager(vec![DiscoveredPlugin {
             name: "p".into(),
             root,
-            source: PluginSource::UserPlaced,
+            scope: PluginScope::User,
         }]);
         assert!(!mgr.has_hooks(HookEvent::PostToolUse));
     }
@@ -601,7 +607,7 @@ mod tests {
         let mgr = make_manager(vec![DiscoveredPlugin {
             name: "p".into(),
             root: root.clone(),
-            source: PluginSource::UserPlaced,
+            scope: PluginScope::User,
         }]);
 
         mgr.emit(
@@ -626,7 +632,7 @@ mod tests {
         let mgr = make_manager(vec![DiscoveredPlugin {
             name: "p".into(),
             root,
-            source: PluginSource::UserPlaced,
+            scope: PluginScope::User,
         }]);
 
         // Non-matching tool: marker not created.
