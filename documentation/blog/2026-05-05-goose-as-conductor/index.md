@@ -24,71 +24,18 @@ If you've used [subagents](/docs/guides/subagents) before, you already know how 
 
 Think of it as the difference between a solo developer and a tech lead managing a team.
 
-## How it works
-
-Under the hood, orchestration uses three primitives you can trigger through natural language or recipes:
-
-**`delegate`** — spawns a subagent with specific instructions. Each delegate runs in its own isolated session with its own context. You can control which extensions it has access to, and even which provider or agent it uses.
-
-**`async: true`** — tells goose to run the delegate in the background instead of waiting for it to finish. This is what enables parallelism — you can kick off multiple delegates at once and they all run simultaneously.
-
-**`load(task_id)`** — retrieves the result of a background delegate. goose waits for the task to complete and brings the output back into the main session.
-
-The flow looks like this:
-
-```
-You: "Do X, Y, and Z"
-
-goose (orchestrating):
-  1. Kicks off delegate for X (async)
-  2. Kicks off delegate for Y (async)
-  3. Kicks off delegate for Z (async)
-  4. Loads result from X
-  5. Loads result from Y
-  6. Loads result from Z
-  7. Synthesizes everything into a final answer
-```
-
-Steps 1–3 happen almost instantly. Steps 4–6 wait for each result. The actual work (X, Y, Z) all happens in parallel. That's the speed gain.
-
 ## Try it yourself
 
 Here's something you can run right now to see orchestration in action. Ask goose:
 
 ```
-Create three files in parallel:
-- hello.html with a "Hello World" page styled with a blue theme
-- goodbye.html with a "Goodbye World" page styled with a red theme
-- index.html that links to both pages with a clean navigation bar
+I need to understand this codebase. In parallel:
+- Summarize the project structure and key dependencies
+- Identify the main entry points and how data flows through them
+- Find any TODO comments or known issues in the code
 ```
 
-goose will spin up three subagents simultaneously — one for each file. You'll see them working at the same time in your session, and all three files appear roughly together instead of one after another.
-
-Want something more involved? Try this with a recipe. Create a file called `plan-trip.yaml`:
-
-```yaml
-version: 1.0.0
-title: Plan Your Trip
-description: Get weather and activities for a destination in parallel
-instructions: You are a travel planning assistant.
-prompt: |
-  Run the following subrecipes in parallel to plan my trip:
-    - use weather subrecipe to get the weather forecast for Sydney
-    - use things-to-do subrecipe to find activities in Sydney
-  Then combine the results into a single trip plan.
-sub_recipes:
-  - name: weather
-    path: "./subrecipes/weather.yaml"
-  - name: things-to-do
-    path: "./subrecipes/things-to-do.yaml"
-extensions:
-  - type: builtin
-    name: developer
-    timeout: 300
-    bundled: true
-```
-
-Run it with `goose run --recipe plan-trip.yaml` and watch goose coordinate two subrecipes running at the same time, then merge their outputs into one trip plan. The [subrecipes in parallel tutorial](/docs/tutorials/subrecipes-in-parallel/) has the full setup including the subrecipe files.
+goose will spin up three subagents simultaneously — one for each research task. You'll see them working at the same time in your session, and all three summaries come back roughly together instead of one after another. What would've been three sequential waits becomes one.
 
 ## How it builds on what already exists
 
