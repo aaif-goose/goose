@@ -94,25 +94,12 @@ pub fn render_recipe_content_with_params(
     content: &str,
     params: &HashMap<String, String>,
 ) -> Result<String> {
-    // Pre-process content to replace empty double quotes with single quotes
-    // This prevents MiniJinja from escaping "" to "\"\"" which would break YAML parsing
-    let re = Regex::new(r#":\s*"""#).unwrap();
-    let content_with_empty_quotes_replaced = re.replace_all(content, ": ''");
-
-    // Pre-process template variables to convert invalid variable names to raw content
-    let content_with_safe_variables =
-        preprocess_template_variables(&content_with_empty_quotes_replaced)?;
-
-    let env = add_template_in_env(
-        &content_with_safe_variables,
-        params.get(BUILT_IN_RECIPE_DIR_PARAM).cloned(),
-        UndefinedBehavior::Strict,
-    )?;
-    let template = env.get_template(CURRENT_TEMPLATE_NAME).unwrap();
-    let rendered_content = template
-        .render(params)
-        .map_err(|e| anyhow::anyhow!("Failed to render the recipe {}", e))?;
-    Ok(rendered_content)
+    let recipe_dir = params.get(BUILT_IN_RECIPE_DIR_PARAM).cloned();
+    render_with_env(content, recipe_dir, |template| {
+        template
+            .render(params)
+            .map_err(|e| anyhow::anyhow!("Failed to render the recipe {}", e))
+    })
 }
 
 /// Renders recipe content with structured parameters (objects, arrays, scalars).
@@ -127,27 +114,32 @@ pub fn render_recipe_content_with_structured_params(
     content: &str,
     params: &HashMap<String, Value>,
 ) -> Result<String> {
-    let re = Regex::new(r#":\s*"""#).unwrap();
-    let content_with_empty_quotes_replaced = re.replace_all(content, ": ''");
-
-    let content_with_safe_variables =
-        preprocess_template_variables(&content_with_empty_quotes_replaced)?;
-
     let recipe_dir = params
         .get(BUILT_IN_RECIPE_DIR_PARAM)
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    render_with_env(content, recipe_dir, |template| {
+        template
+            .render(params)
+            .map_err(|e| anyhow::anyhow!("Failed to render the recipe {}", e))
+    })
+}
 
+fn render_with_env<F>(content: &str, recipe_dir: Option<String>, render_fn: F) -> Result<String>
+where
+    F: FnOnce(&minijinja::Template<'_, '_>) -> Result<String>,
+{
+    let re = Regex::new(r#":\s*"""#).unwrap();
+    let content_with_empty_quotes_replaced = re.replace_all(content, ": ''");
+    let content_with_safe_variables =
+        preprocess_template_variables(&content_with_empty_quotes_replaced)?;
     let env = add_template_in_env(
         &content_with_safe_variables,
         recipe_dir,
         UndefinedBehavior::Strict,
     )?;
     let template = env.get_template(CURRENT_TEMPLATE_NAME).unwrap();
-    let rendered_content = template
-        .render(params)
-        .map_err(|e| anyhow::anyhow!("Failed to render the recipe {}", e))?;
-    Ok(rendered_content)
+    render_fn(&template)
 }
 
 fn add_template_in_env(

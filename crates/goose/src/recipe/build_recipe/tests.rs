@@ -855,3 +855,150 @@ parameters:
         other => panic!("Expected Invalid error, got: {:?}", other),
     }
 }
+
+#[test]
+fn test_build_recipe_with_user_prompt_structured_param() {
+    let yaml = r#"instructions: "Signal: {{ signal.name }}"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: user_prompt
+    description: "Signal data (enter as JSON)""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![];
+    let user_prompt_fn =
+        |_key: &str, _desc: &str| -> Result<String, anyhow::Error> {
+            Ok(r#"{"name": "cpu-alert", "namespace": "monitoring"}"#.to_string())
+        };
+    let recipe = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        Some(user_prompt_fn),
+    )
+    .unwrap();
+
+    assert_eq!(
+        recipe.instructions.unwrap(),
+        "Signal: cpu-alert"
+    );
+}
+
+#[test]
+fn test_build_recipe_with_deeply_nested_array_of_objects() {
+    let yaml = r#"instructions: |
+  {% for finding in findings %}Finding: {{ finding.summary.title }} (severity={{ finding.summary.severity }})
+  {% for step in finding.remediation_steps %}  - {{ step.action }}: {{ step.target.kind }}/{{ step.target.name }}
+  {% endfor %}{% endfor %}
+parameters:
+  - key: findings
+    input_type: array
+    requirement: required
+    description: "Deeply nested findings""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let params = vec![(
+        "findings".to_string(),
+        serde_json::json!([
+            {
+                "summary": {"title": "OOMKilled", "severity": "critical"},
+                "remediation_steps": [
+                    {"action": "scale", "target": {"kind": "Deployment", "name": "api"}},
+                    {"action": "patch", "target": {"kind": "Pod", "name": "api-0"}}
+                ]
+            },
+            {
+                "summary": {"title": "CrashLoop", "severity": "warning"},
+                "remediation_steps": [
+                    {"action": "restart", "target": {"kind": "Pod", "name": "worker-1"}}
+                ]
+            }
+        ])
+        .to_string(),
+    )];
+    let recipe = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    )
+    .unwrap();
+
+    let instructions = recipe.instructions.unwrap();
+    assert!(instructions.contains("OOMKilled"), "Missing first finding title");
+    assert!(instructions.contains("severity=critical"), "Missing severity");
+    assert!(instructions.contains("scale: Deployment/api"), "Missing first remediation step");
+    assert!(instructions.contains("patch: Pod/api-0"), "Missing second remediation step");
+    assert!(instructions.contains("CrashLoop"), "Missing second finding title");
+    assert!(instructions.contains("restart: Pod/worker-1"), "Missing nested remediation step");
+}
+
+#[test]
+fn test_build_recipe_rejects_oversized_structured_param() {
+    let yaml = r#"instructions: "Signal: {{ signal.name }}"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Signal data""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let oversized = format!(r#"{{"name": "{}"}}"#, "x".repeat(300 * 1024));
+    let params = vec![("signal".to_string(), oversized)];
+    let result = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    );
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        RecipeError::Invalid { source } => {
+            let msg = source.to_string();
+            assert!(
+                msg.contains("exceeds maximum size"),
+                "Expected size limit error, got: {}",
+                msg
+            );
+        }
+        other => panic!("Expected Invalid error, got: {:?}", other),
+    }
+}
+
+#[test]
+fn test_build_recipe_rejects_deeply_nested_structured_param() {
+    let yaml = r#"instructions: "Data: {{ data }}"
+parameters:
+  - key: data
+    input_type: object
+    requirement: required
+    description: "Deeply nested data""#;
+
+    let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
+    let mut nested = String::from(r#""leaf""#);
+    for _ in 0..35 {
+        nested = format!(r#"{{"d": {}}}"#, nested);
+    }
+    let params = vec![("data".to_string(), nested)];
+    let result = build_recipe_from_template(
+        recipe_file.content,
+        &recipe_file.parent_dir,
+        params,
+        NO_USER_PROMPT,
+    );
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        RecipeError::Invalid { source } => {
+            let msg = source.to_string();
+            assert!(
+                msg.contains("exceeds maximum nesting depth"),
+                "Expected depth limit error, got: {}",
+                msg
+            );
+        }
+        other => panic!("Expected Invalid error, got: {:?}", other),
+    }
+}

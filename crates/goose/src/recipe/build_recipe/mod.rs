@@ -66,6 +66,9 @@ where
     Ok((rendered_content, missing_params))
 }
 
+const MAX_STRUCTURED_PARAM_BYTES: usize = 256 * 1024;
+const MAX_STRUCTURED_PARAM_DEPTH: usize = 32;
+
 fn to_structured_params(
     string_map: &HashMap<String, String>,
     recipe_parameters: Option<&[RecipeParameter]>,
@@ -86,37 +89,75 @@ fn to_structured_params(
         .iter()
         .map(|(k, v)| {
             let value = if let Some(input_type) = structured_keys.get(k.as_str()) {
-                let parsed: Value = serde_json::from_str(v).map_err(|e| {
-                    anyhow::anyhow!(
-                        "Parameter '{}' has input_type {} but value is not valid JSON: {}",
-                        k,
-                        input_type,
-                        e
-                    )
-                })?;
-                match input_type {
-                    RecipeParameterInputType::Object if !parsed.is_object() => {
-                        anyhow::bail!(
-                            "Parameter '{}' has input_type object but received {}",
-                            k,
-                            json_type_name(&parsed)
-                        )
-                    }
-                    RecipeParameterInputType::Array if !parsed.is_array() => {
-                        anyhow::bail!(
-                            "Parameter '{}' has input_type array but received {}",
-                            k,
-                            json_type_name(&parsed)
-                        )
-                    }
-                    _ => parsed,
-                }
+                validate_and_parse_structured_json(k, v, input_type)?
             } else {
                 Value::String(v.clone())
             };
             Ok((k.clone(), value))
         })
         .collect()
+}
+
+pub(crate) fn validate_and_parse_structured_json(
+    key: &str,
+    value: &str,
+    input_type: &RecipeParameterInputType,
+) -> Result<Value> {
+    if value.len() > MAX_STRUCTURED_PARAM_BYTES {
+        anyhow::bail!(
+            "Parameter '{}' exceeds maximum size ({} bytes, limit {})",
+            key,
+            value.len(),
+            MAX_STRUCTURED_PARAM_BYTES
+        );
+    }
+
+    let parsed: Value = serde_json::from_str(value).map_err(|e| {
+        anyhow::anyhow!(
+            "Parameter '{}' has input_type {} but value is not valid JSON: {}",
+            key,
+            input_type,
+            e
+        )
+    })?;
+
+    match input_type {
+        RecipeParameterInputType::Object if !parsed.is_object() => {
+            anyhow::bail!(
+                "Parameter '{}' has input_type object but received {}",
+                key,
+                json_type_name(&parsed)
+            )
+        }
+        RecipeParameterInputType::Array if !parsed.is_array() => {
+            anyhow::bail!(
+                "Parameter '{}' has input_type array but received {}",
+                key,
+                json_type_name(&parsed)
+            )
+        }
+        _ => {}
+    }
+
+    let depth = json_depth(&parsed);
+    if depth > MAX_STRUCTURED_PARAM_DEPTH {
+        anyhow::bail!(
+            "Parameter '{}' exceeds maximum nesting depth ({}, limit {})",
+            key,
+            depth,
+            MAX_STRUCTURED_PARAM_DEPTH
+        );
+    }
+
+    Ok(parsed)
+}
+
+fn json_depth(value: &Value) -> usize {
+    match value {
+        Value::Array(arr) => 1 + arr.iter().map(json_depth).max().unwrap_or(0),
+        Value::Object(obj) => 1 + obj.values().map(json_depth).max().unwrap_or(0),
+        _ => 0,
+    }
 }
 
 fn json_type_name(v: &Value) -> &'static str {

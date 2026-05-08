@@ -378,8 +378,47 @@ prompt: |
 - File parameters cannot have default values regardless of requirement type to prevent unintended importing of sensitive files
 - Select parameters MUST have an `options` field with available choices
 - Object and array parameter values must be valid JSON when provided via CLI `--params` or API
+- Object and array parameters enforce size limits (256 KB) and nesting depth limits (32 levels) to prevent resource exhaustion
 - Parameter keys must match any template variables used in instructions, prompt, or activities
 :::
+
+#### Defaults for Object and Array Parameters
+
+When specifying default values for `object` or `array` parameters, the default **must** be valid JSON matching the declared `input_type`:
+
+```yaml
+parameters:
+  - key: config
+    input_type: object
+    requirement: optional
+    default: '{"retries": 3, "timeout": 30}'
+    description: "Configuration options"
+
+  - key: tags
+    input_type: array
+    requirement: optional
+    default: '["production", "critical"]'
+    description: "Classification tags"
+```
+
+Invalid defaults — such as a JSON array for an `object` parameter, or malformed JSON — will produce a validation error when the recipe is loaded.
+
+#### Migrating Existing Parameters to Object or Array
+
+If you have an existing recipe with a `string` parameter that you want to change to `object` or `array`:
+
+1. **Update `input_type`** in the recipe YAML from `string` to `object` or `array`
+2. **Update template usage** to use dot-notation or iteration instead of raw string interpolation:
+   ```yaml
+   # Before (string):  {{ signal }}
+   # After  (object):  {{ signal.name }} in {{ signal.namespace }}
+   ```
+3. **Update callers** (CLI `--params`, API, or Desktop) to pass valid JSON instead of plain strings:
+   ```bash
+   # Before: --params signal="my-signal"
+   # After:  --params signal='{"name": "my-signal", "namespace": "default"}'
+   ```
+4. **Update default values** (if any) to valid JSON matching the new type
 
 #### Parameter Substitution in Desktop
 

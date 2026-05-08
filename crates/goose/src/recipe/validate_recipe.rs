@@ -194,16 +194,9 @@ fn validate_optional_parameters(parameters: &Option<Vec<RecipeParameter>>) -> Re
             ) && p.default.is_some()
         })
         .filter(|p| {
+            use crate::recipe::build_recipe::validate_and_parse_structured_json;
             let default = p.default.as_ref().unwrap();
-            let parsed: Result<serde_json::Value, _> = serde_json::from_str(default);
-            match parsed {
-                Ok(v) => match p.input_type {
-                    RecipeParameterInputType::Object => !v.is_object(),
-                    RecipeParameterInputType::Array => !v.is_array(),
-                    _ => false,
-                },
-                Err(_) => true,
-            }
+            validate_and_parse_structured_json(&p.key, default, &p.input_type).is_err()
         })
         .map(|p| p.key.clone())
         .collect();

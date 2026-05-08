@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import { ExtensionConfig } from '../../../api';
 
-// Zod schema for Parameter - matching API RecipeParameter type
+// TODO: The 'object' and 'array' input types currently render as plain text
+// inputs in the desktop form. A JSON-aware editor (e.g., Monaco with JSON
+// schema validation, or structured key-value builder) would improve UX by
+// providing syntax highlighting, inline validation, and preventing malformed
+// JSON submissions. See: https://github.com/aaif-goose/goose/issues/NEW
 const parameterSchema = z.object({
   key: z.string().min(1, 'Parameter key is required'),
   input_type: z.enum(['string', 'number', 'boolean', 'date', 'file', 'select', 'object', 'array']),
