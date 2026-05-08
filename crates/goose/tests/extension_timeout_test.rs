@@ -1,22 +1,5 @@
 use goose::agents::extension::ExtensionConfig;
-use goose::agents::extension_manager::resolve_timeout;
-use goose::config::DEFAULT_EXTENSION_TIMEOUT;
-use serde_json;
 use std::collections::HashMap;
-
-#[test]
-fn resolve_timeout_uses_per_extension_value() {
-    let timeout = Some(120);
-    let resolved = resolve_timeout(timeout);
-    assert_eq!(resolved, 120);
-}
-
-#[test]
-fn resolve_timeout_uses_default_when_none() {
-    let timeout = None;
-    let resolved = resolve_timeout(timeout);
-    assert_eq!(resolved, DEFAULT_EXTENSION_TIMEOUT);
-}
 
 #[test]
 fn streamable_http_config_timeout_roundtrips() {

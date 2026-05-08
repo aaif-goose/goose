@@ -60,7 +60,7 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
 
-pub(crate) fn resolve_timeout(timeout: Option<u64>) -> u64 {
+fn resolve_timeout(timeout: Option<u64>) -> u64 {
     timeout.unwrap_or_else(|| {
         Config::global()
             .get_goose_default_extension_timeout()
@@ -2617,5 +2617,16 @@ mod tests {
             ),
         );
         assert!(should_attempt_oauth_fallback(&Err(err)));
+    }
+
+    #[test]
+    fn resolve_timeout_uses_per_extension_value() {
+        assert_eq!(resolve_timeout(Some(120)), 120);
+    }
+
+    #[test]
+    fn resolve_timeout_uses_default_when_none() {
+        use crate::config::extensions::DEFAULT_EXTENSION_TIMEOUT;
+        assert_eq!(resolve_timeout(None), DEFAULT_EXTENSION_TIMEOUT);
     }
 }
