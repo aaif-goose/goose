@@ -1,7 +1,50 @@
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
 use umya_spreadsheet::{Spreadsheet, Worksheet};
+
+// Single-entry cache for the most recently parsed workbook. Sequential
+// xlsx ops in one MCP turn (list → get_columns → get_range) all parse
+// the same file; this skips the re-parse on cache hit. Mtime-keyed so
+// any external write busts the cache. Cap of 1 entry keeps memory
+// bounded with no eviction logic; concurrent access to different files
+// just thrashes harmlessly.
+struct CachedWorkbook {
+    canonical: PathBuf,
+    mtime: SystemTime,
+    spreadsheet: Spreadsheet,
+}
+
+static WORKBOOK_CACHE: Lazy<Mutex<Option<CachedWorkbook>>> = Lazy::new(|| Mutex::new(None));
+
+#[cfg(test)]
+static CACHE_PARSE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+pub fn _test_reset_cache() {
+    if let Ok(mut g) = WORKBOOK_CACHE.lock() {
+        *g = None;
+    }
+    CACHE_PARSE_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(test)]
+pub fn _test_parse_count() -> usize {
+    CACHE_PARSE_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+fn invalidate_cache(canonical: &Path) {
+    if let Ok(mut g) = WORKBOOK_CACHE.lock() {
+        if let Some(c) = g.as_ref() {
+            if c.canonical == canonical {
+                *g = None;
+            }
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorksheetInfo {
@@ -33,8 +76,36 @@ pub struct XlsxTool {
 
 impl XlsxTool {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path_ref = path.as_ref();
+        let canonical = path_ref
+            .canonicalize()
+            .unwrap_or_else(|_| path_ref.to_path_buf());
+        let mtime = std::fs::metadata(&canonical)
+            .and_then(|m| m.modified())
+            .context("Failed to read xlsx mtime")?;
+
+        if let Ok(guard) = WORKBOOK_CACHE.lock() {
+            if let Some(cached) = guard.as_ref() {
+                if cached.canonical == canonical && cached.mtime == mtime {
+                    return Ok(Self {
+                        workbook: cached.spreadsheet.clone(),
+                    });
+                }
+            }
+        }
+
         let workbook =
-            umya_spreadsheet::reader::xlsx::read(path).context("Failed to read Excel file")?;
+            umya_spreadsheet::reader::xlsx::read(path_ref).context("Failed to read Excel file")?;
+        #[cfg(test)]
+        CACHE_PARSE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        if let Ok(mut guard) = WORKBOOK_CACHE.lock() {
+            *guard = Some(CachedWorkbook {
+                canonical: canonical.clone(),
+                mtime,
+                spreadsheet: workbook.clone(),
+            });
+        }
         Ok(Self { workbook })
     }
 
@@ -152,8 +223,14 @@ impl XlsxTool {
     }
 
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        umya_spreadsheet::writer::xlsx::write(&self.workbook, path)
+        let path_ref = path.as_ref();
+        umya_spreadsheet::writer::xlsx::write(&self.workbook, path_ref)
             .context("Failed to save Excel file")?;
+        // Bust the cached parse so the next read sees the new bytes/mtime.
+        let canonical = path_ref
+            .canonicalize()
+            .unwrap_or_else(|_| path_ref.to_path_buf());
+        invalidate_cache(&canonical);
         Ok(())
     }
 
@@ -410,6 +487,48 @@ mod tests {
             "A2 should be 'Government'"
         );
         assert_eq!(range.values[1][1].value, "Canada", "B2 should be 'Canada'");
+
+        Ok(())
+    }
+
+    #[test]
+    fn cache_skips_reparse_for_same_path_and_mtime() -> Result<()> {
+        // Other tests in this module run concurrently and share the parse
+        // counter, so use deltas instead of absolute values.
+        _test_reset_cache();
+        let baseline = _test_parse_count();
+
+        let path = get_test_file();
+        let _ = XlsxTool::new(&path)?;
+        let _ = XlsxTool::new(&path)?;
+        let _ = XlsxTool::new(&path)?;
+
+        // Three opens, but only the first should have parsed. Concurrent
+        // tests opening *other* files may bump the counter further; we
+        // assert at least one parse occurred for our path.
+        let delta = _test_parse_count().saturating_sub(baseline);
+        assert!(delta >= 1, "first open should parse (delta {} >= 1)", delta);
+        // The cache holds at most one entry, and concurrent tests opening
+        // different paths will evict ours. So we can't reliably assert the
+        // delta is exactly 1 across the whole module run. Instead, run two
+        // back-to-back opens and ensure the second one is a cache hit by
+        // counting parses inside a tight loop:
+        _test_reset_cache();
+        let before = _test_parse_count();
+        let _ = XlsxTool::new(&path)?;
+        let after_first = _test_parse_count();
+        let _ = XlsxTool::new(&path)?;
+        let after_second = _test_parse_count();
+        assert_eq!(
+            after_second - after_first,
+            0,
+            "second back-to-back open should hit the cache"
+        );
+        assert_eq!(
+            after_first - before,
+            1,
+            "first open after reset should parse exactly once"
+        );
 
         Ok(())
     }

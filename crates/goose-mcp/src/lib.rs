@@ -1,7 +1,16 @@
 use etcetera::AppStrategyArgs;
 use once_cell::sync::Lazy;
+use rmcp::model::{ErrorCode, ErrorData};
 use rmcp::{ServerHandler, ServiceExt};
 use std::collections::HashMap;
+
+/// Wrap an error as an MCP `INTERNAL_ERROR` response. Threaded through
+/// `.map_err(io_error)` across the MCP servers so handlers don't repeat
+/// the `ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)`
+/// boilerplate.
+pub fn io_error(e: impl ToString) -> ErrorData {
+    ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+}
 
 // NOTE: "Block" is kept here for backwards compatibility with existing
 // user config/data directories. Changing this would orphan existing installations.
