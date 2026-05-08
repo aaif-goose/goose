@@ -32,7 +32,7 @@ const i18n = defineMessages({
   defaultNote: {
     id: 'extensionsView.defaultNote',
     defaultMessage:
-      'Extensions stay available here, and Goose can load them on demand during a chat.',
+      'Extensions enabled here are used as the default for new chats. You can also toggle active extensions during chat.',
   },
   addCustomExtension: {
     id: 'extensionsView.addCustomExtension',
