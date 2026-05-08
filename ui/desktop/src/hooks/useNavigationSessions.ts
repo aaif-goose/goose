@@ -139,6 +139,8 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
   }, []);
 
   useEffect(() => {
+    let fetchVersion = 0;
+
     const handleSessionDeleted = (event: Event) => {
       const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
 
@@ -148,9 +150,10 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
       if (lastSessionIdRef.current === sessionId) {
         lastSessionIdRef.current = null;
       }
+      const version = ++fetchVersion;
       listSessions({ throwOnError: false })
         .then((response) => {
-          if (!response.data) return;
+          if (version !== fetchVersion || !response.data) return;
           const apiSessions = [...response.data.sessions]
             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
             .slice(0, MAX_RECENT_SESSIONS);
