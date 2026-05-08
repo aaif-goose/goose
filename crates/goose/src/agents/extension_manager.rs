@@ -559,7 +559,7 @@ async fn create_streamable_http_client(
 
     let http_client = reqwest::Client::builder()
         .default_headers(default_headers)
-        .timeout(timeout_duration)
+        .connect_timeout(timeout_duration)
         .build()
         .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
 
@@ -585,7 +585,7 @@ async fn create_streamable_http_client(
                 auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
                 let auth_http_client = reqwest::Client::builder()
                     .default_headers(auth_headers)
-                    .timeout(timeout_duration)
+                    .connect_timeout(timeout_duration)
                     .build()
                     .map_err(|_| {
                         ExtensionError::ConfigError("could not construct http client".to_string())
