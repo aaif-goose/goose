@@ -47,7 +47,7 @@ pub(super) fn generate_with_native_tools(
                 },
                 chat_template_kwargs: None,
                 add_generation_prompt: true,
-                use_jinja: true,
+                use_jinja: ctx.settings.use_jinja,
                 parallel_tool_calls: false,
                 enable_thinking: ctx.settings.enable_thinking,
                 add_bos: false,
