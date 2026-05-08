@@ -124,6 +124,27 @@ export function buildInitScript(options?: {
         supportingFiles: [],
       });
 
+      const projectToSourceEntry = (p) => ({
+        type: "project",
+        name: p.id ?? p.name?.toLowerCase(),
+        description: p.description ?? "",
+        content: p.prompt ?? "",
+        path: "/mock/.agents/projects/" + (p.id ?? p.name?.toLowerCase()),
+        global: true,
+        supportingFiles: [],
+        properties: {
+          title: p.name,
+          icon: p.icon ?? "",
+          color: p.color ?? "",
+          preferredProvider: p.preferredProvider ?? null,
+          preferredModel: p.preferredModel ?? null,
+          workingDirs: p.workingDirs ?? [],
+          useWorktrees: p.useWorktrees ?? false,
+          order: p.order ?? 0,
+          archivedAt: null,
+        },
+      });
+
       function nowIso() {
         return new Date().toISOString();
       }
@@ -240,8 +261,13 @@ export function buildInitScript(options?: {
           case "_goose/working_dir/update":
           case "goose/working_dir/update":
             return jsonRpcResult(message.id, {});
-          case "_goose/sources/list":
+          case "_goose/sources/list": {
+            const sourceType = message.params?.type;
+            if (sourceType === "project") {
+              return jsonRpcResult(message.id, { sources: PROJECTS.map(projectToSourceEntry) });
+            }
             return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
+          }
           case "_goose/sources/create":
             return jsonRpcResult(message.id, {
               source: {
