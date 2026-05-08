@@ -67,16 +67,18 @@ The key insight: **reads can be parallel, writes should be sequential** (especia
 
 ## Orchestration + ACP: mixing agents
 
-Here's where things get really interesting. Orchestration works with [ACP providers](/docs/guides/acp-providers), which means you can delegate to entirely different coding agents — not just goose subagents. Claude Code, Codex, and Amp are all available as ACP providers, and each brings its own strengths:
+Here's where things get really interesting. Orchestration works with [ACP providers](/docs/guides/acp-providers), which means you can delegate to entirely different coding agents — not just goose subagents. Claude Code, Codex, and Amp are all full-featured coding agents with their own tool use, sandboxing, and execution environments. They're not just models — they're autonomous harnesses that can take a task and run with it.
+
+To use them, you just say so in your prompt:
 
 ```
-goose (orchestrating):
-  → delegate to Claude Code: "Refactor this function for clarity"
-  → delegate to local subagent: "Write tests for the refactored function"
-  → delegate to Codex: "Generate API documentation from the code"
+Refactor the auth module for clarity using Claude Code,
+then write tests for it, and use Codex to generate the API docs.
 ```
 
-You're not locked into one agent for everything. goose acts as the coordinator, dispatching work to whichever agent is best suited for the task — and they all have access to your extensions, so they can use your tools.
+goose understands that you want different agents handling different parts of the workflow. It delegates each task to the right agent, waits for the results, and brings everything together. This works the same whether you're on the CLI or the desktop app — you just ask in natural language.
+
+The only prerequisite is having the ACP adapter installed and authenticated for whichever agents you want to use (see the [ACP providers guide](/docs/guides/acp-providers) for setup). Once that's done, goose can route work to any of them as part of an orchestrated workflow — and they all get access to your extensions, so they can use your tools.
 
 ## Best practices
 
