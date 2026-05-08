@@ -811,6 +811,13 @@ impl Agent {
 
         let results = futures::future::join_all(extension_futures).await;
 
+        // Persist once after all extensions are loaded
+        if results.iter().any(|r| r.success) {
+            if let Err(e) = self.persist_extension_state(&session_id).await {
+                warn!("Failed to persist extension state after bulk load: {}", e);
+            }
+        }
+
         results
     }
 
