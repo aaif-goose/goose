@@ -988,6 +988,53 @@ enum Command {
         bin_name: String,
     },
 
+    /// Local code review.
+    ///
+    /// Discovers `**/.agents/checks/*.md` subagent reviewers and
+    /// `**/.agents/REVIEW.md` scoped prompt overrides, builds a review
+    /// request from the working tree (or an explicit diff range), and
+    /// runs the review through goose.
+    #[command(about = "Review the current diff using goose")]
+    Review {
+        /// Diff range to review (e.g. "main...HEAD"). Defaults to the working
+        /// tree vs HEAD.
+        #[arg(value_name = "RANGE")]
+        range: Option<String>,
+
+        /// Path to a Markdown file with a custom base review prompt. Replaces
+        /// the embedded default prompt.
+        #[arg(long = "prompt", value_name = "FILE")]
+        prompt: Option<PathBuf>,
+
+        /// Default model used for the main review agent and for any check
+        /// that does not declare its own `model:` in frontmatter.
+        #[arg(long = "model", value_name = "MODEL")]
+        model: Option<String>,
+
+        /// Provider for the main review agent.
+        #[arg(long = "provider", value_name = "PROVIDER")]
+        provider: Option<String>,
+
+        /// Force every discovered check to use this model, regardless of
+        /// the check's own `model:` field.
+        #[arg(long = "override-model", value_name = "MODEL")]
+        override_model: Option<String>,
+
+        /// Default `turn-limit` applied to checks that do not declare their
+        /// own.
+        #[arg(long = "turn-limit", value_name = "N")]
+        turn_limit: Option<usize>,
+
+        /// Print the assembled review prompt and discovered checks instead of
+        /// running the review.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+
+        /// Suppress non-result output from the underlying agent.
+        #[arg(long, short = 'q')]
+        quiet: bool,
+    },
+
     #[command(
         name = "validate-extensions",
         about = "Validate a bundled-extensions.json file",
@@ -1157,6 +1204,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
         Some(Command::Completion { .. }) => "completion",
+        Some(Command::Review { .. }) => "review",
         Some(Command::ValidateExtensions { .. }) => "validate-extensions",
         None => "default_session",
     }
@@ -1990,6 +2038,29 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,
+        Some(Command::Review {
+            range,
+            prompt,
+            model,
+            provider,
+            override_model,
+            turn_limit,
+            dry_run,
+            quiet,
+        }) => {
+            use crate::commands::review::{handle_review, ReviewOptions};
+            handle_review(ReviewOptions {
+                range,
+                prompt_file: prompt,
+                default_model: model,
+                provider,
+                override_model,
+                default_turn_limit: turn_limit,
+                dry_run,
+                quiet,
+            })
+            .await
+        }
         Some(Command::ValidateExtensions { file }) => {
             use goose::agents::validate_extensions::validate_bundled_extensions;
             match validate_bundled_extensions(&file) {
