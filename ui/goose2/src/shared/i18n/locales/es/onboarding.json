@@ -1,0 +1,67 @@
+{
+  "windowTitle": "Configuración de Goose",
+  "eyebrow": "Primer inicio",
+  "title": "Configura Goose",
+  "steps": {
+    "import": "Importar",
+    "provider": "Proveedor",
+    "tour": "Listo"
+  },
+  "counts": {
+    "providers": "{{count}} proveedor",
+    "providers_plural": "{{count}} proveedores",
+    "extensions": "{{count}} extensión",
+    "extensions_plural": "{{count}} extensiones",
+    "sessions": "{{count}} sesión",
+    "sessions_plural": "{{count}} sesiones",
+    "skills": "{{count}} habilidad",
+    "skills_plural": "{{count}} habilidades",
+    "projects": "{{count}} proyecto",
+    "projects_plural": "{{count}} proyectos",
+    "preferences": "{{count}} preferencia",
+    "preferences_plural": "{{count}} preferencias",
+    "none": "No hay datos para importar"
+  },
+  "import": {
+    "title": "Trae tu configuración",
+    "description": "Goose puede traer los ajustes y herramientas que encuentre antes de que empieces a chatear.",
+    "scanning": "Buscando ajustes de Goose y herramientas de Claude Desktop...",
+    "scanFailed": "No se pudo buscar configuración existente.",
+    "emptyTitle": "No se encontró configuración previa",
+    "emptyDescription": "Puedes configurar un proveedor y empezar desde cero.",
+    "failed": "La importación falló.",
+    "skip": "Omitir importación",
+    "continue": "Importar selección",
+    "next": "Continuar"
+  },
+  "provider": {
+    "title": "Elige un valor predeterminado",
+    "description": "Elige qué debe usar Goose para los chats nuevos. La mayoría debería elegir un servicio de modelos de IA como ChatGPT, Anthropic, OpenAI, Google u Ollama.",
+    "readyTitle": "Ya conectado",
+    "readyDescription": "Elige cómo debe iniciar Goose los chats nuevos. Puedes cambiarlo cuando quieras.",
+    "checking": "Comprobando proveedores...",
+    "noneReady": "Todavía no hay un proveedor utilizable.",
+    "setupTitle": "Conecta un servicio de modelos de IA",
+    "addDifferent": "Añadir otro proveedor",
+    "browseAll": "Mostrar más",
+    "noModels": "Este proveedor está configurado, pero aún no hay modelos disponibles.",
+    "selectFailed": "No se pudo seleccionar este proveedor.",
+    "useCurrent": "Mantener valor predeterminado"
+  },
+  "tour": {
+    "title": "Listo para empezar",
+    "description": "Goose está listo. Esto es lo que ya está disponible.",
+    "readyWithModel": "Goose empezará con {{model}}. Puedes cambiar de modelo desde Inicio cuando lo necesites.",
+    "summary": {
+      "defaultTitle": "Predeterminado",
+      "defaultFallback": "Listo en Inicio",
+      "defaultDescription": "Esto es lo que Goose usará cuando empieces un chat nuevo.",
+      "extensionsTitle": "Extensiones",
+      "extensionsDescription": "Las herramientas conectadas están disponibles en Configuración. Las herramientas importadas de Claude Desktop quedan desactivadas hasta que las habilites.",
+      "skillsTitle": "Habilidades",
+      "skillsDescription": "Habilidades personales que Goose puede ver ahora. Las habilidades de proyecto aparecen cuando abres un proyecto."
+    },
+    "back": "Atrás",
+    "finish": "Empezar a usar Goose"
+  }
+}

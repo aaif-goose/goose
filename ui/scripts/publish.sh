@@ -75,9 +75,10 @@ set -euo pipefail
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   build-essential cmake pkg-config libssl-dev libdbus-1-dev \
-  libclang-dev protobuf-compiler libprotobuf-dev ca-certificates >/dev/null 2>&1
+  libclang-dev protobuf-compiler libprotobuf-dev ca-certificates \
+  libvulkan-dev libvulkan1 glslc >/dev/null 2>&1
 echo "==> Compiling goose (this takes a while)..."
-cargo build --release --bin goose
+cargo build --release --bin goose --features vulkan
 cp /build/target/release/goose /output/goose
 echo "==> Done"
 '
@@ -116,12 +117,13 @@ FROM rust:1.92-bookworm
 RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
       build-essential cmake pkg-config libssl-dev libdbus-1-dev \
-      libclang-dev protobuf-compiler libprotobuf-dev ca-certificates >/dev/null 2>&1 && \
+      libclang-dev protobuf-compiler libprotobuf-dev ca-certificates \
+      libvulkan-dev libvulkan1 glslc >/dev/null 2>&1 && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY . .
 RUN mkdir -p /output && \
-    cargo build --release --bin goose && \
+    cargo build --release --bin goose --features vulkan && \
     cp target/release/goose /output/goose
 DEOF
 

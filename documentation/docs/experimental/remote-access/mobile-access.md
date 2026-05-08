@@ -30,17 +30,17 @@ Mobile access connects your iOS device to goose Desktop through a secure tunnel.
 1. Install the **goose AI** app on your iOS mobile device from the [App Store](https://apps.apple.com/app/goose-ai/id6752889295)
 
 :::tip App Store QR Code
-Follow the steps below to open the `Remote Access` section, then click "scan QR code" in the info box for quick access to the App Store.
+Follow the steps below to open the `Mobile App` section, then click "scan QR code" in the info box for quick access to the App Store.
 :::
 
 ### Start the Tunnel
 1. Open goose Desktop
 2. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar
 3. Click `Settings` in the sidebar
-4. Click `App`
-5. Scroll down to the `Remote Access` section and click `Start Tunnel`
+4. Click `Session`
+5. Scroll down to the `Mobile App` section and click `Start Tunnel`
 
-Once the tunnel starts, you'll see a `Remote Access Connection` QR code for configuring the app.
+Once the tunnel starts, you'll see a `Mobile App Connection` QR code for configuring the app.
 
 :::info 
 Click `Stop Tunnel` at any time to close the connection.
@@ -48,7 +48,7 @@ Click `Stop Tunnel` at any time to close the connection.
 
 ### Connect the App
 1. Open the **goose AI** app on your iOS mobile device
-2. Scan the `Remote Access Connection` QR code displayed in goose Desktop
+2. Scan the `Mobile App Connection` QR code displayed in goose Desktop
 3. The app will automatically configure the connection
 
 You can now access goose Desktop from your mobile device.

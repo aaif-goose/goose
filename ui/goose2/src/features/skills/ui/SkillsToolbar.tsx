@@ -10,6 +10,7 @@ interface SkillsToolbarProps {
   onSearchChange: (value: string) => void;
   activeFilter: SkillsFilter;
   onActiveFilterChange: (filter: SkillsFilter) => void;
+  hasBuiltinSkills: boolean;
   projectFilters: { id: string; name: string }[];
   dropHandlers?: React.HTMLAttributes<HTMLDivElement>;
   isDragOver?: boolean;
@@ -41,6 +42,7 @@ export function SkillsToolbar({
   onSearchChange,
   activeFilter,
   onActiveFilterChange,
+  hasBuiltinSkills,
   projectFilters,
   dropHandlers,
   isDragOver,
@@ -74,6 +76,14 @@ export function SkillsToolbar({
         >
           {t("view.filtersGlobal")}
         </FilterButton>
+        {hasBuiltinSkills ? (
+          <FilterButton
+            active={activeFilter === "builtin"}
+            onClick={() => onActiveFilterChange("builtin")}
+          >
+            {t("view.filtersBuiltin")}
+          </FilterButton>
+        ) : null}
         {projectFilters.map((project) => {
           const filterValue = `project:${project.id}` as const;
           return (

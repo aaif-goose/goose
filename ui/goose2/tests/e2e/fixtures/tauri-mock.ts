@@ -47,6 +47,7 @@ export function buildInitScript(options?: {
           defaultModel: "claude-sonnet-4-20250514",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -72,6 +73,7 @@ export function buildInitScript(options?: {
           defaultModel: "gpt-4.1",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -92,12 +94,32 @@ export function buildInitScript(options?: {
         },
       ];
 
+      localStorage.setItem(
+        "goose:onboarding:v1",
+        JSON.stringify({
+          completedAt: new Date().toISOString(),
+          providerId: "openai",
+          modelId: "gpt-4.1",
+        }),
+      );
+      localStorage.setItem("goose:defaultProvider", "goose");
+      localStorage.setItem(
+        "goose:preferredModelsByAgent",
+        JSON.stringify({
+          goose: {
+            providerId: "openai",
+            modelId: "gpt-4.1",
+            modelName: "GPT-4.1",
+          },
+        }),
+      );
+
       const skillToSourceEntry = (s) => ({
         type: "skill",
         name: s.name,
         description: s.description,
         content: s.instructions ?? s.content ?? "",
-        directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
+        path: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
         global: s.global ?? true,
         supportingFiles: [],
       });
@@ -183,8 +205,38 @@ export function buildInitScript(options?: {
           }
           case "_goose/providers/list":
             return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
+          case "_goose/providers/setup/catalog/list":
+            return jsonRpcResult(message.id, { providers: [] });
           case "_goose/providers/inventory/refresh":
             return jsonRpcResult(message.id, { started: [], skipped: [] });
+          case "_goose/defaults/read":
+          case "_goose/defaults/save":
+            return jsonRpcResult(message.id, {
+              providerId: message.params?.providerId ?? "openai",
+              modelId: message.params?.modelId ?? "gpt-4.1",
+            });
+          case "_goose/onboarding/import/scan":
+            return jsonRpcResult(message.id, { candidates: [] });
+          case "_goose/onboarding/import/apply":
+            return jsonRpcResult(message.id, {
+              imported: {
+                providers: 0,
+                extensions: 0,
+                sessions: 0,
+                skills: 0,
+                projects: 0,
+                preferences: 0,
+              },
+              skipped: {
+                providers: 0,
+                extensions: 0,
+                sessions: 0,
+                skills: 0,
+                projects: 0,
+                preferences: 0,
+              },
+              warnings: [],
+            });
           case "_goose/working_dir/update":
           case "goose/working_dir/update":
             return jsonRpcResult(message.id, {});
@@ -197,7 +249,7 @@ export function buildInitScript(options?: {
                 type: "skill",
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
+                path: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
                 global: message.params?.global ?? true,
               },
             });
@@ -213,14 +265,14 @@ export function buildInitScript(options?: {
             if (segments.length > 0) {
               segments[segments.length - 1] = name;
             }
-            const directory = \`/\${segments.join("/")}\`;
+            const updatedPath = \`/\${segments.join("/")}\`;
             return jsonRpcResult(message.id, {
               source: {
                 name,
                 type: "skill",
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory,
+                path: updatedPath,
                 global: message.params?.global ?? true,
                 supportingFiles: [],
               },

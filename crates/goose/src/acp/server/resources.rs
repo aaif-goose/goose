@@ -4,7 +4,7 @@ impl GooseAcpAgent {
     pub(super) async fn on_read_resource(
         &self,
         req: ReadResourceRequest,
-    ) -> Result<ReadResourceResponse, sacp::Error> {
+    ) -> Result<ReadResourceResponse, agent_client_protocol::Error> {
         let internal_id = self.internal_session_id(&req.session_id).await?;
         let agent = self.get_session_agent(&req.session_id, None).await?;
         let cancel_token = CancellationToken::new();

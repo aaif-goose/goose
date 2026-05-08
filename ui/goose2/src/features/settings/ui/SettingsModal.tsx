@@ -136,7 +136,7 @@ export function SettingsModal({
                   className={cn(
                     "w-full justify-start rounded-lg px-3 py-2 transition-all duration-600 ease-out max-[640px]:w-auto max-[640px]:shrink-0 max-[640px]:px-2.5",
                     activeSection === item.id
-                      ? "bg-background text-foreground shadow-sm hover:bg-background"
+                      ? "bg-background text-foreground shadow-none hover:bg-background"
                       : "text-muted-foreground hover:bg-accent/50 hover:text-foreground duration-300",
                     isLoaded
                       ? "opacity-100 translate-x-0"

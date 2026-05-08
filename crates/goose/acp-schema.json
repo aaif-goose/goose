@@ -1415,6 +1415,20 @@
       "x-side": "agent",
       "x-method": "_goose/providers/config/delete"
     },
+    "ProviderConfigAuthenticateRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Run a provider-owned native authentication flow and start an inventory refresh when supported.",
+      "x-side": "agent",
+      "x-method": "_goose/providers/config/authenticate"
+    },
     "PreferencesReadRequest": {
       "type": "object",
       "properties": {
@@ -1521,8 +1535,191 @@
           ]
         }
       },
+      "x-side": "agent"
+    },
+    "DefaultsSaveRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "description": "Save Goose default provider and model configuration.",
       "x-side": "agent",
-      "x-method": "_goose/defaults/read"
+      "x-method": "_goose/defaults/save"
+    },
+    "OnboardingImportScanRequest": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OnboardingImportSourceKind"
+          },
+          "description": "Empty means all supported import sources.",
+          "default": []
+        }
+      },
+      "description": "Scan for existing Goose and compatible app data that onboarding can import.",
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/scan"
+    },
+    "OnboardingImportSourceKind": {
+      "type": "string",
+      "enum": [
+        "goose_config",
+        "claude_desktop"
+      ],
+      "description": "Sources that onboarding knows how to discover and import."
+    },
+    "OnboardingImportScanResponse": {
+      "type": "object",
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OnboardingImportCandidate"
+          }
+        }
+      },
+      "required": [
+        "candidates"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/scan"
+    },
+    "OnboardingImportCandidate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sourceKind": {
+          "$ref": "#/$defs/OnboardingImportSourceKind"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/OnboardingImportCounts"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "id",
+        "sourceKind",
+        "displayName",
+        "path",
+        "counts"
+      ]
+    },
+    "OnboardingImportCounts": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "extensions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skills": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "projects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preferences": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "providers",
+        "extensions",
+        "sessions",
+        "skills",
+        "projects",
+        "preferences"
+      ]
+    },
+    "OnboardingImportApplyRequest": {
+      "type": "object",
+      "properties": {
+        "candidateIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "enableImportedExtensions": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "description": "Import selected onboarding candidates.",
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/apply"
+    },
+    "OnboardingImportApplyResponse": {
+      "type": "object",
+      "properties": {
+        "imported": {
+          "$ref": "#/$defs/OnboardingImportCounts"
+        },
+        "skipped": {
+          "$ref": "#/$defs/OnboardingImportCounts"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "providerDefaults": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DefaultsReadResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "imported",
+        "skipped"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/onboarding/import/apply"
     },
     "ExportSessionRequest": {
       "type": "object",
@@ -1687,6 +1884,18 @@
             "null"
           ],
           "description": "Absolute path to the project root. Required when `global` is false."
+        },
+        "projectId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Project source ID. When set with `global: false`, the backend resolves\nthe project's first working directory automatically. Takes precedence\nover `project_dir`."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary key/value metadata."
         }
       },
       "required": [
@@ -1707,7 +1916,8 @@
         "builtinSkill",
         "recipe",
         "subrecipe",
-        "agent"
+        "agent",
+        "project"
       ],
       "description": "The type of source entity."
     },
@@ -1739,9 +1949,9 @@
         "content": {
           "type": "string"
         },
-        "directory": {
+        "path": {
           "type": "string",
-          "description": "Absolute path to the source on disk. A directory for skills, a file for\nrecipes and agents."
+          "description": "Stable on-disk path identifying this source. Pass it back to\nupdate/delete/export to operate on this entry. Skills use the directory\ncontaining `SKILL.md`; projects use the project file path; built-in\nskills use `builtin://skills/<name>` synthetic paths."
         },
         "global": {
           "type": "boolean",
@@ -1753,6 +1963,11 @@
             "type": "string"
           },
           "description": "Paths (absolute) of additional files that live alongside the source.\nOnly skills currently populate this; empty for other source types."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary key/value pairs for type-specific metadata (e.g. icon, color,\npreferredProvider for projects). Stored in the frontmatter."
         }
       },
       "required": [
@@ -1760,10 +1975,10 @@
         "name",
         "description",
         "content",
-        "directory",
+        "path",
         "global"
       ],
-      "description": "A source discovered by Goose and backed by an on-disk path. Sources may be\neither `global` (shared across all projects) or project-specific."
+      "description": "A source discovered by Goose. Filesystem sources use an on-disk path;\nbuilt-in sources use a stable synthetic path. Sources may be either\n`global` (shared across all projects) or project-specific."
     },
     "ListSourcesRequest": {
       "type": "object",
@@ -1783,9 +1998,14 @@
             "string",
             "null"
           ]
+        },
+        "includeProjectSources": {
+          "type": "boolean",
+          "description": "When true, also scan the working directories of all known projects for\nproject-scoped sources (e.g. skills stored under `{workingDir}/.agents/skills/`).",
+          "default": false
         }
       },
-      "description": "List discovered sources.\n\nToday this endpoint only returns skills. If `type` is omitted, it defaults\nto listing skill sources. Both global and project-scoped skills are included\nwhen `project_dir` is set.",
+      "description": "List discovered sources.\n\nIf `type` is omitted or `skill`, this lists filesystem/plugin skills only.\nBoth global and project-scoped skills are included when `project_dir` is\nset. If `type` is `builtinSkill`, this lists shipped read-only built-in\nskills.",
       "x-side": "agent",
       "x-method": "_goose/sources/list"
     },
@@ -1822,6 +2042,14 @@
         },
         "content": {
           "type": "string"
+        },
+        "properties": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {},
+          "description": "When `Some`, replaces all stored properties on the source. When\n`None` (or omitted), the source's existing properties are\npreserved. Callers that don't model the full property bag (e.g.\nthe skills editor, which only edits name/description/content)\nshould omit this so per-skill metadata isn't silently erased."
         }
       },
       "required": [
@@ -2536,6 +2764,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ProviderConfigAuthenticateRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/providers/config/authenticate",
+                  "title": "ProviderConfigAuthenticateRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/PreferencesReadRequest"
                     }
                   ],
@@ -2568,6 +2805,33 @@
                   ],
                   "description": "Params for _goose/defaults/read",
                   "title": "DefaultsReadRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DefaultsSaveRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/defaults/save",
+                  "title": "DefaultsSaveRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/OnboardingImportScanRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/onboarding/import/scan",
+                  "title": "OnboardingImportScanRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/OnboardingImportApplyRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/onboarding/import/apply",
+                  "title": "OnboardingImportApplyRequest"
                 },
                 {
                   "allOf": [
@@ -2956,6 +3220,22 @@
                         }
                       ],
                       "title": "DefaultsReadResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/OnboardingImportScanResponse"
+                        }
+                      ],
+                      "title": "OnboardingImportScanResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/OnboardingImportApplyResponse"
+                        }
+                      ],
+                      "title": "OnboardingImportApplyResponse"
                     },
                     {
                       "allOf": [

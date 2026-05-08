@@ -3,24 +3,6 @@
 // a narrow union.
 export type ProviderType = string;
 
-export interface ProviderConfig {
-  type: ProviderType;
-  name: string;
-  description?: string;
-  models: ModelInfo[];
-  requiresApiKey: boolean;
-  apiKeyEnvVar?: string;
-}
-
-export interface ModelInfo {
-  id: string;
-  name: string;
-  contextWindow: number;
-  supportsTools: boolean;
-  supportsVision: boolean;
-  supportsThinking: boolean;
-}
-
 // Avatar type — either a remote URL or a local file in ~/.goose/avatars/
 export type Avatar =
   | { type: "url"; value: string }
@@ -86,4 +68,4 @@ export interface CreateAgentRequest {
   acpEndpoint?: string;
 }
 
-// Session, TokenState, ChatState, and MessageEventType are defined in ./chat.ts
+// Session, TokenState, and ChatState are defined in ./chat.ts
