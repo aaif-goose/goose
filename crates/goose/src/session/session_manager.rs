@@ -1,9 +1,9 @@
-use crate::config::paths::Paths;
 use crate::config::GooseMode;
-use crate::conversation::message::Message;
+use crate::config::paths::Paths;
 use crate::conversation::Conversation;
+use crate::conversation::message::Message;
 use crate::model::ModelConfig;
-use crate::providers::base::{Provider, MSG_COUNT_FOR_SESSION_NAME_GENERATION};
+use crate::providers::base::{MSG_COUNT_FOR_SESSION_NAME_GENERATION, Provider};
 use crate::recipe::Recipe;
 use crate::session::extension_data::ExtensionData;
 use anyhow::Result;
@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 12;
+pub const CURRENT_SCHEMA_VERSION: i32 = 13;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -1087,6 +1087,13 @@ impl SessionStorage {
                         .await?;
                 }
             }
+            13 => {
+                let pairs = crate::sources::project_working_dir_pairs();
+                let updated = backfill_session_project_ids(tx, &pairs).await?;
+                if updated > 0 {
+                    info!("Backfilled project_id on {updated} legacy session(s)");
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1763,6 +1770,34 @@ impl SessionStorage {
     }
 }
 
+/// Skips rows that already have a `project_id` so explicit UI unlinks aren't
+/// silently re-tagged and reruns are no-ops. Trailing slashes on either side
+/// are ignored.
+async fn backfill_session_project_ids(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    pairs: &[(String, String)],
+) -> Result<u64> {
+    let mut total = 0u64;
+    for (working_dir, slug) in pairs {
+        let normalized = working_dir.trim_end_matches('/');
+        if normalized.is_empty() {
+            continue;
+        }
+        let result = sqlx::query(
+            "UPDATE sessions
+             SET project_id = ?
+             WHERE project_id IS NULL
+               AND rtrim(working_dir, '/') = ?",
+        )
+        .bind(slug)
+        .bind(normalized)
+        .execute(&mut **tx)
+        .await?;
+        total += result.rows_affected();
+    }
+    Ok(total)
+}
+
 /// Merge a JSON object `patch` into an existing optional object value,
 /// preserving keys not present in the patch.
 fn merge_tool_meta(
@@ -2273,5 +2308,69 @@ mod tests {
 
         let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
         assert_eq!(acp_session.session_type, SessionType::Acp);
+    }
+
+    async fn make_test_session(sm: &SessionManager, dir: &str) -> Session {
+        sm.create_session(
+            PathBuf::from(dir),
+            "test".to_string(),
+            SessionType::Acp,
+            GooseMode::default(),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_backfill_session_project_ids() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let in_repo_a = make_test_session(&sm, "/Users/me/Projects/repo-a").await;
+        let in_repo_a_with_slash = make_test_session(&sm, "/Users/me/Projects/repo-a/").await;
+        let in_repo_b = make_test_session(&sm, "/Users/me/Projects/repo-b").await;
+        let unmatched = make_test_session(&sm, "/tmp/scratch").await;
+
+        // Pre-tag one session: backfill must not overwrite an explicit assignment.
+        sm.update(&in_repo_a.id)
+            .project_id(Some("manual-slug".to_string()))
+            .apply()
+            .await
+            .unwrap();
+
+        let pool = sm.storage().pool().await.unwrap().clone();
+        let pairs = vec![
+            (
+                "/Users/me/Projects/repo-a".to_string(),
+                "repo-a".to_string(),
+            ),
+            // Trailing slash on the project side too, just to exercise both.
+            (
+                "/Users/me/Projects/repo-b/".to_string(),
+                "repo-b".to_string(),
+            ),
+        ];
+
+        let mut tx = pool.begin().await.unwrap();
+        let updated = backfill_session_project_ids(&mut tx, &pairs).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(updated, 2, "two NULL rows should be backfilled");
+
+        let pre_tagged = sm.get_session(&in_repo_a.id, false).await.unwrap();
+        assert_eq!(pre_tagged.project_id.as_deref(), Some("manual-slug"));
+        let slashed = sm
+            .get_session(&in_repo_a_with_slash.id, false)
+            .await
+            .unwrap();
+        assert_eq!(slashed.project_id.as_deref(), Some("repo-a"));
+        let b = sm.get_session(&in_repo_b.id, false).await.unwrap();
+        assert_eq!(b.project_id.as_deref(), Some("repo-b"));
+        let outside = sm.get_session(&unmatched.id, false).await.unwrap();
+        assert_eq!(outside.project_id, None);
+
+        let mut tx = pool.begin().await.unwrap();
+        let updated = backfill_session_project_ids(&mut tx, &pairs).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(updated, 0);
     }
 }

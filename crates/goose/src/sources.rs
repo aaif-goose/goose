@@ -238,18 +238,37 @@ pub fn read_project(slug: &str) -> Result<SourceEntry, Error> {
         .ok_or_else(|| Error::internal_error().data("Failed to read project file"))
 }
 
-/// Get the working directories configured for a project, if any.
-/// Returns an empty Vec when the project doesn't exist or has none configured.
-pub fn project_working_dirs(slug: &str) -> Vec<String> {
-    let entry = match read_project(slug) {
-        Ok(e) => e,
-        Err(_) => return Vec::new(),
-    };
+/// Read the `workingDirs` property bag off a project entry.
+fn working_dirs_of(entry: &SourceEntry) -> Vec<String> {
     entry
         .properties
         .get("workingDirs")
         .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
         .unwrap_or_default()
+}
+
+/// Get the working directories configured for a project, if any.
+pub fn project_working_dirs(slug: &str) -> Vec<String> {
+    read_project(slug)
+        .map(|entry| working_dirs_of(&entry))
+        .unwrap_or_default()
+}
+
+/// Flat list of `(workingDir, projectSlug)` pairs across all projects, used by
+/// storage migrations that map session paths to a project.
+pub fn project_working_dir_pairs() -> Vec<(String, String)> {
+    let projects = match read_project_dir() {
+        Ok(p) => p,
+        Err(_) => return Vec::new(),
+    };
+    projects
+        .into_iter()
+        .flat_map(|proj| {
+            working_dirs_of(&proj)
+                .into_iter()
+                .map(move |dir| (dir, proj.name.clone()))
+        })
+        .collect()
 }
 
 /// Validate that the given path is a project file we manage and the file
@@ -886,11 +905,7 @@ pub fn list_sources_with_roots(
                     let projects = read_project_dir()?;
                     let already_scanned = working_dir.as_deref();
                     for proj in &projects {
-                        let dirs = proj
-                            .properties
-                            .get("workingDirs")
-                            .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
-                            .unwrap_or_default();
+                        let dirs = working_dirs_of(proj);
                         let project_name = proj
                             .properties
                             .get("title")
@@ -1523,9 +1538,11 @@ mod tests {
     #[test]
     fn list_skill_excludes_builtin_skills() {
         let listed = list_sources(Some(SourceType::Skill), None, false).unwrap();
-        assert!(!listed
-            .iter()
-            .any(|source| source.source_type == SourceType::BuiltinSkill));
+        assert!(
+            !listed
+                .iter()
+                .any(|source| source.source_type == SourceType::BuiltinSkill)
+        );
     }
 
     #[test]
@@ -1554,9 +1571,11 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(!builtins
-            .iter()
-            .any(|source| source.name == "goose-doc-guide"));
+        assert!(
+            !builtins
+                .iter()
+                .any(|source| source.name == "goose-doc-guide")
+        );
 
         let skills = list_sources(
             Some(SourceType::Skill),
@@ -1624,9 +1643,11 @@ mod tests {
         assert!(format!("{:?}", err).contains("not supported"));
 
         let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project), false).unwrap();
-        assert!(listed
-            .iter()
-            .any(|source| source.source_type == SourceType::BuiltinSkill));
+        assert!(
+            listed
+                .iter()
+                .any(|source| source.source_type == SourceType::BuiltinSkill)
+        );
 
         let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
