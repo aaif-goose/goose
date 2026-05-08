@@ -12,7 +12,7 @@ async function clickNewChatInProject(
   await projectButton
     .locator("xpath=..")
     .getByTitle("New chat in project")
-    .click();
+    .click({ force: true });
 }
 
 test.describe("Draft persistence", () => {
