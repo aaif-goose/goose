@@ -29,22 +29,37 @@ interface SourceEntry {
   properties: Record<string, unknown>;
 }
 
+function asString(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+function asBoolean(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+function asNumber(v: unknown): number | null {
+  return typeof v === "number" ? v : null;
+}
+function asStringArray(v: unknown): string[] | null {
+  return Array.isArray(v) && v.every((s) => typeof s === "string")
+    ? (v as string[])
+    : null;
+}
+
 function toProjectInfo(source: SourceEntry): ProjectInfo {
   const p = source.properties ?? {};
   return {
     id: source.name,
     path: source.path,
-    name: (p.title as string) ?? source.name,
+    name: asString(p.title) ?? source.name,
     description: source.description,
     prompt: source.content,
-    icon: (p.icon as string) ?? "",
-    color: (p.color as string) ?? "",
-    preferredProvider: (p.preferredProvider as string) ?? null,
-    preferredModel: (p.preferredModel as string) ?? null,
-    workingDirs: (p.workingDirs as string[]) ?? [],
-    useWorktrees: (p.useWorktrees as boolean) ?? false,
-    order: (p.order as number) ?? 0,
-    archivedAt: (p.archivedAt as string) ?? null,
+    icon: asString(p.icon) ?? "",
+    color: asString(p.color) ?? "",
+    preferredProvider: asString(p.preferredProvider),
+    preferredModel: asString(p.preferredModel),
+    workingDirs: asStringArray(p.workingDirs) ?? [],
+    useWorktrees: asBoolean(p.useWorktrees) ?? false,
+    order: asNumber(p.order) ?? 0,
+    archivedAt: asString(p.archivedAt),
   };
 }
 
