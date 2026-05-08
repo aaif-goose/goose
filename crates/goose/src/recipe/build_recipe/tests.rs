@@ -867,10 +867,9 @@ parameters:
 
     let (_temp_dir, recipe_file) = setup_yaml_recipe_file(yaml);
     let params = vec![];
-    let user_prompt_fn =
-        |_key: &str, _desc: &str| -> Result<String, anyhow::Error> {
-            Ok(r#"{"name": "cpu-alert", "namespace": "monitoring"}"#.to_string())
-        };
+    let user_prompt_fn = |_key: &str, _desc: &str| -> Result<String, anyhow::Error> {
+        Ok(r#"{"name": "cpu-alert", "namespace": "monitoring"}"#.to_string())
+    };
     let recipe = build_recipe_from_template(
         recipe_file.content,
         &recipe_file.parent_dir,
@@ -879,10 +878,7 @@ parameters:
     )
     .unwrap();
 
-    assert_eq!(
-        recipe.instructions.unwrap(),
-        "Signal: cpu-alert"
-    );
+    assert_eq!(recipe.instructions.unwrap(), "Signal: cpu-alert");
 }
 
 #[test]
@@ -926,12 +922,30 @@ parameters:
     .unwrap();
 
     let instructions = recipe.instructions.unwrap();
-    assert!(instructions.contains("OOMKilled"), "Missing first finding title");
-    assert!(instructions.contains("severity=critical"), "Missing severity");
-    assert!(instructions.contains("scale: Deployment/api"), "Missing first remediation step");
-    assert!(instructions.contains("patch: Pod/api-0"), "Missing second remediation step");
-    assert!(instructions.contains("CrashLoop"), "Missing second finding title");
-    assert!(instructions.contains("restart: Pod/worker-1"), "Missing nested remediation step");
+    assert!(
+        instructions.contains("OOMKilled"),
+        "Missing first finding title"
+    );
+    assert!(
+        instructions.contains("severity=critical"),
+        "Missing severity"
+    );
+    assert!(
+        instructions.contains("scale: Deployment/api"),
+        "Missing first remediation step"
+    );
+    assert!(
+        instructions.contains("patch: Pod/api-0"),
+        "Missing second remediation step"
+    );
+    assert!(
+        instructions.contains("CrashLoop"),
+        "Missing second finding title"
+    );
+    assert!(
+        instructions.contains("restart: Pod/worker-1"),
+        "Missing nested remediation step"
+    );
 }
 
 #[test]
