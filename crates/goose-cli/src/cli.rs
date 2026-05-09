@@ -1043,6 +1043,40 @@ enum Command {
         /// dispatches.
         #[arg(long = "no-orchestrate")]
         no_orchestrate: bool,
+
+        /// Additional free-form instructions to prepend to the review
+        /// (e.g. PR intent, commit-message context, "this is a refactor,
+        /// flag any behavior change"). Mirrors `amp review --instructions`
+        /// for drop-in compatibility with existing reviewer wrappers.
+        #[arg(long = "instructions", short = 'i', value_name = "TEXT")]
+        instructions: Option<String>,
+
+        /// Restrict the review to a specific set of files. Other files in
+        /// the diff are still passed to the agent for context but are
+        /// excluded from the assembled diff sent to checks. Mirrors
+        /// `amp review --files`.
+        #[arg(long = "files", short = 'f', value_name = "FILE", num_args = 1..)]
+        files: Vec<String>,
+
+        /// Only run checks whose `name` matches one of these. Other
+        /// discovered checks are skipped. Mirrors `amp review --check-filter`.
+        #[arg(long = "check-filter", short = 'c', value_name = "NAME", num_args = 1..)]
+        check_filter: Vec<String>,
+
+        /// Alternate directory to search for `.agents/checks/*.md` instead
+        /// of the repo root. Mirrors `amp review --check-scope`.
+        #[arg(long = "check-scope", short = 's', value_name = "DIR")]
+        check_scope: Option<PathBuf>,
+
+        /// Skip the main correctness pass and only run check subagents.
+        /// Mirrors `amp review --checks-only`.
+        #[arg(long = "checks-only")]
+        checks_only: bool,
+
+        /// Print only the diff summary; skip the full review.
+        /// Mirrors `amp review --summary-only`.
+        #[arg(long = "summary-only")]
+        summary_only: bool,
     },
 
     #[command(
@@ -2058,6 +2092,12 @@ pub async fn cli() -> anyhow::Result<()> {
             dry_run,
             quiet,
             no_orchestrate,
+            instructions,
+            files,
+            check_filter,
+            check_scope,
+            checks_only,
+            summary_only,
         }) => {
             use crate::commands::review::{handle_review, ReviewOptions};
             handle_review(ReviewOptions {
@@ -2070,6 +2110,12 @@ pub async fn cli() -> anyhow::Result<()> {
                 dry_run,
                 quiet,
                 no_orchestrate,
+                instructions,
+                files,
+                check_filter,
+                check_scope,
+                checks_only,
+                summary_only,
             })
             .await
         }

@@ -7,8 +7,8 @@
 //! best case, 60s+ when the model dispatches everything as a separate
 //! subagent).
 //!
-//! This module mirrors the proven `sq-agents` review pattern (see
-//! `agents/cli/pkg/checks/run.go`):
+//! This module sidesteps that variance by orchestrating checks
+//! deterministically from Rust:
 //!
 //! - One subprocess per check (`goose run -q -t <prompt>`)
 //! - Concurrency capped at [`MAX_WORKERS`] via a Tokio semaphore
@@ -41,17 +41,15 @@ use tokio::time::timeout;
 use super::check::Check;
 use super::handler::ReviewOptions;
 
-/// Maximum number of check subprocesses we run concurrently. Matches
-/// `sq-agents`' `maxWorkers = 4`, which is empirically the sweet spot
-/// before LLM-side rate limits and local resource contention start
-/// hurting wall-clock.
+/// Maximum number of check subprocesses we run concurrently. 4 is
+/// empirically the sweet spot before LLM-side rate limits and local
+/// resource contention start hurting wall-clock.
 pub const MAX_WORKERS: usize = 4;
 
-/// Hard wall-clock cap for a single check subprocess. Matches
-/// `sq-agents`' `checkTimeout = 5 * time.Minute`. A check that takes
-/// longer than this is almost always stuck in a tool-call loop or a
-/// retry storm; we'd rather surface the timeout than block the whole
-/// review.
+/// Hard wall-clock cap for a single check subprocess. A check that
+/// takes longer than this is almost always stuck in a tool-call loop
+/// or a retry storm; we'd rather surface the timeout than block the
+/// whole review.
 pub const CHECK_TIMEOUT_SECS: u64 = 5 * 60;
 
 /// One review finding emitted by a check or by the main correctness
@@ -107,14 +105,20 @@ pub async fn run_checks_in_parallel(
         let provider = opts.provider.clone();
         let model = resolve_check_model(&check, opts);
         let quiet = opts.quiet;
+        let instructions = opts.instructions.clone();
 
         set.spawn(async move {
             // Bounded concurrency: drop the permit only after the
             // subprocess completes.
             let _permit = sem.acquire().await.expect("semaphore is never closed");
-            let result =
-                run_single_check_subprocess(&check, &diff, provider.as_deref(), model.as_deref())
-                    .await;
+            let result = run_single_check_subprocess(
+                &check,
+                &diff,
+                provider.as_deref(),
+                model.as_deref(),
+                instructions.as_deref(),
+            )
+            .await;
             (idx, check, result, quiet)
         });
     }
@@ -186,8 +190,9 @@ async fn run_single_check_subprocess(
     diff: &str,
     provider: Option<&str>,
     model: Option<&str>,
+    instructions: Option<&str>,
 ) -> Result<Vec<Finding>> {
-    let prompt = build_check_prompt(check, diff);
+    let prompt = build_check_prompt(check, diff, instructions);
 
     let goose_bin = std::env::current_exe().context("locate current goose binary")?;
 
@@ -262,10 +267,10 @@ async fn run_single_check_subprocess(
 
 /// Build the strict, tool-free prompt sent to one check subprocess.
 ///
-/// Mirrors `agents/cli/pkg/checks/run.go::buildCheckPrompt` — keep
-/// these in sync so an Amp-authored check works the same under both
-/// `amp review` and `goose review`.
-fn build_check_prompt(check: &Check, diff: &str) -> String {
+/// Shape matches the prompt format Amp-authored checks already expect,
+/// so a check written for `amp review` runs the same way under
+/// `goose review`.
+fn build_check_prompt(check: &Check, diff: &str, instructions: Option<&str>) -> String {
     let mut s = String::new();
     s.push_str("You are running an automated code review check.\n\n");
     s.push_str(&format!("Check name: {}\n", check.name));
@@ -277,6 +282,14 @@ fn build_check_prompt(check: &Check, diff: &str) -> String {
     if let Some(sev) = check.severity_default.as_deref() {
         if !sev.is_empty() {
             s.push_str(&format!("Default severity: {}\n", sev));
+        }
+    }
+    if let Some(text) = instructions {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            s.push_str("\nReviewer instructions:\n");
+            s.push_str(trimmed);
+            s.push('\n');
         }
     }
     s.push_str("\nReview ONLY the git diff provided below.\n");
@@ -408,12 +421,30 @@ mod tests {
 
     #[test]
     fn check_prompt_is_strict_and_diff_aware() {
-        let p = build_check_prompt(&ck("perf"), "diff content");
+        let p = build_check_prompt(&ck("perf"), "diff content", None);
         assert!(p.contains("automated code review check"));
         assert!(p.contains("Check name: perf"));
         assert!(p.contains("```diff\ndiff content\n```"));
         assert!(p.contains("Return ONLY valid JSON"));
         assert!(p.contains("look for bugs"));
+        assert!(!p.contains("Reviewer instructions"));
+    }
+
+    #[test]
+    fn check_prompt_includes_reviewer_instructions_when_provided() {
+        let p = build_check_prompt(
+            &ck("perf"),
+            "diff content",
+            Some("This is a refactor; flag any behavior change."),
+        );
+        assert!(p.contains("Reviewer instructions:"));
+        assert!(p.contains("flag any behavior change"));
+    }
+
+    #[test]
+    fn check_prompt_skips_blank_reviewer_instructions() {
+        let p = build_check_prompt(&ck("perf"), "diff content", Some("   \n  "));
+        assert!(!p.contains("Reviewer instructions"));
     }
 
     #[test]
