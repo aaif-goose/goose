@@ -9,6 +9,7 @@
 pub mod check;
 pub mod discover;
 pub mod handler;
+pub mod orchestrator;
 pub mod prompt;
 
 pub use handler::{handle_review, ReviewOptions};

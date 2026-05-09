@@ -6,6 +6,7 @@ use std::process::Command;
 use crate::session::{build_session, SessionBuilderConfig};
 
 use super::discover::{discover, DiscoveredReview};
+use super::orchestrator::{emit_findings, run_checks_in_parallel};
 use super::prompt::{build_review_prompt, DEFAULT_REVIEW_PROMPT};
 
 /// Options for `goose review`.
@@ -32,6 +33,12 @@ pub struct ReviewOptions {
     pub dry_run: bool,
     /// Suppress non-result output from the underlying agent.
     pub quiet: bool,
+    /// Disable the Rust-driven parallel orchestrator and fall back to the
+    /// single-prompt path that asks the main agent to delegate checks via
+    /// `delegate(... async: true ...)`. Useful when comparing against the
+    /// in-process behavior or running on a model that handles dispatch
+    /// reliably on its own.
+    pub no_orchestrate: bool,
 }
 
 /// Entry point for the `goose review` subcommand.
@@ -54,9 +61,19 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
         None => DEFAULT_REVIEW_PROMPT.to_string(),
     };
 
+    let use_orchestrator = !opts.no_orchestrate && !discovered.checks.is_empty();
+
+    // In orchestrator mode, the main agent does only the correctness pass —
+    // checks run as parallel subprocesses, so we strip the checks table
+    // from the prompt to keep the main pass focused and fast.
+    let main_prompt_discovered = if use_orchestrator {
+        DiscoveredReview::default()
+    } else {
+        discovered.clone()
+    };
     let prompt = build_review_prompt(
         &base_prompt,
-        &discovered,
+        &main_prompt_discovered,
         &diff,
         opts.default_model.as_deref(),
         opts.override_model.as_deref(),
@@ -65,6 +82,12 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
 
     if opts.dry_run {
         println!("{}", prompt);
+        if use_orchestrator {
+            println!(
+                "\n# orchestrator: {} check(s) would run as parallel subprocesses",
+                discovered.checks.len()
+            );
+        }
         return Ok(());
     }
 
@@ -77,15 +100,42 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
         no_session: true,
         no_profile: true,
         builtins: vec!["developer".to_string(), "summon".to_string()],
-        provider: opts.provider,
-        model: opts.default_model,
+        provider: opts.provider.clone(),
+        model: opts.default_model.clone(),
         quiet: opts.quiet,
         output_format: "text".to_string(),
         ..SessionBuilderConfig::default()
     })
     .await;
 
-    session.headless(prompt).await
+    if !use_orchestrator {
+        return session.headless(prompt).await;
+    }
+
+    // Orchestrated mode: run main correctness pass + N parallel check
+    // subprocesses concurrently. Wall clock is bounded by `max(main_pass,
+    // slowest_check)` instead of relying on the main agent to dispatch
+    // delegates correctly.
+    let main_pass = async move { session.headless(prompt).await };
+    let checks_pass = run_checks_in_parallel(&discovered.checks, &diff, &opts);
+
+    let (main_result, check_results) = tokio::join!(main_pass, checks_pass);
+
+    // Main pass streams its findings to stdout as it runs; emit check
+    // findings after, in source order, so attribution is preserved end-to-end.
+    let mut total = 0usize;
+    for findings in &check_results {
+        emit_findings(findings);
+        total += findings.len();
+    }
+    if !opts.quiet {
+        eprintln!(
+            "goose review: orchestrator emitted {total} finding(s) from {} check(s)",
+            discovered.checks.len()
+        );
+    }
+
+    main_result
 }
 
 fn print_discovered_summary(d: &DiscoveredReview) {

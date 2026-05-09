@@ -1033,6 +1033,16 @@ enum Command {
         /// Suppress non-result output from the underlying agent.
         #[arg(long, short = 'q')]
         quiet: bool,
+
+        /// Disable the Rust-driven parallel orchestrator and fall back to
+        /// the single-prompt path that asks the main agent to delegate
+        /// each check via `delegate(... async: true ...)`. The default
+        /// orchestrator dispatches one `goose run` subprocess per check
+        /// (capped at 4 concurrent), bounding wall-clock to the slowest
+        /// single check rather than waiting on the model to issue
+        /// dispatches.
+        #[arg(long = "no-orchestrate")]
+        no_orchestrate: bool,
     },
 
     #[command(
@@ -2047,6 +2057,7 @@ pub async fn cli() -> anyhow::Result<()> {
             turn_limit,
             dry_run,
             quiet,
+            no_orchestrate,
         }) => {
             use crate::commands::review::{handle_review, ReviewOptions};
             handle_review(ReviewOptions {
@@ -2058,6 +2069,7 @@ pub async fn cli() -> anyhow::Result<()> {
                 default_turn_limit: turn_limit,
                 dry_run,
                 quiet,
+                no_orchestrate,
             })
             .await
         }
