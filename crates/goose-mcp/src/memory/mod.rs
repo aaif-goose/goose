@@ -361,7 +361,7 @@ impl MemoryServer {
             params.is_global,
             working_dir.as_ref(),
         )
-        .map_err(crate::io_error)?;
+        .map_err(crate::internal_error)?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Stored memory in category: {}",
@@ -387,7 +387,7 @@ impl MemoryServer {
         } else {
             self.retrieve(&params.category, params.is_global, working_dir.as_ref())
         }
-        .map_err(crate::io_error)?;
+        .map_err(crate::internal_error)?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Retrieved memories: {:?}",
@@ -410,14 +410,14 @@ impl MemoryServer {
 
         let message = if params.category == "*" {
             self.clear_all_global_or_local_memories(params.is_global, working_dir.as_ref())
-                .map_err(crate::io_error)?;
+                .map_err(crate::internal_error)?;
             format!(
                 "Cleared all memory {} categories",
                 if params.is_global { "global" } else { "local" }
             )
         } else {
             self.clear_memory(&params.category, params.is_global, working_dir.as_ref())
-                .map_err(crate::io_error)?;
+                .map_err(crate::internal_error)?;
             format!("Cleared memories in category: {}", params.category)
         };
 
@@ -443,7 +443,7 @@ impl MemoryServer {
             params.is_global,
             working_dir.as_ref(),
         )
-        .map_err(crate::io_error)?;
+        .map_err(crate::internal_error)?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Removed specific memory from category: {}",

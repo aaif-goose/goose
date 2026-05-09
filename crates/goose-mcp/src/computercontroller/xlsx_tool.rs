@@ -2,38 +2,27 @@ use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use umya_spreadsheet::{Spreadsheet, Worksheet};
 
 // Single-entry cache for the most recently parsed workbook. Sequential
 // xlsx ops in one MCP turn (list → get_columns → get_range) all parse
 // the same file; this skips the re-parse on cache hit. Mtime-keyed so
-// any external write busts the cache. Cap of 1 entry keeps memory
-// bounded with no eviction logic; concurrent access to different files
-// just thrashes harmlessly.
+// any external write busts the cache. The Arc keeps cache hits to a
+// refcount bump instead of a deep Spreadsheet clone.
 struct CachedWorkbook {
     canonical: PathBuf,
     mtime: SystemTime,
-    spreadsheet: Spreadsheet,
+    spreadsheet: Arc<Spreadsheet>,
 }
 
 static WORKBOOK_CACHE: Lazy<Mutex<Option<CachedWorkbook>>> = Lazy::new(|| Mutex::new(None));
 
-#[cfg(test)]
-static CACHE_PARSE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-#[cfg(test)]
-pub fn _test_reset_cache() {
+fn _test_reset_cache() {
     if let Ok(mut g) = WORKBOOK_CACHE.lock() {
         *g = None;
     }
-    CACHE_PARSE_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
-}
-
-#[cfg(test)]
-pub fn _test_parse_count() -> usize {
-    CACHE_PARSE_COUNT.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 fn invalidate_cache(canonical: &Path) {
@@ -71,7 +60,8 @@ pub struct RangeData {
 }
 
 pub struct XlsxTool {
-    workbook: Spreadsheet,
+    workbook: Arc<Spreadsheet>,
+    canonical: PathBuf,
 }
 
 impl XlsxTool {
@@ -88,25 +78,28 @@ impl XlsxTool {
             if let Some(cached) = guard.as_ref() {
                 if cached.canonical == canonical && cached.mtime == mtime {
                     return Ok(Self {
-                        workbook: cached.spreadsheet.clone(),
+                        workbook: Arc::clone(&cached.spreadsheet),
+                        canonical,
                     });
                 }
             }
         }
 
-        let workbook =
-            umya_spreadsheet::reader::xlsx::read(path_ref).context("Failed to read Excel file")?;
-        #[cfg(test)]
-        CACHE_PARSE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let workbook = Arc::new(
+            umya_spreadsheet::reader::xlsx::read(path_ref).context("Failed to read Excel file")?,
+        );
 
         if let Ok(mut guard) = WORKBOOK_CACHE.lock() {
             *guard = Some(CachedWorkbook {
                 canonical: canonical.clone(),
                 mtime,
-                spreadsheet: workbook.clone(),
+                spreadsheet: Arc::clone(&workbook),
             });
         }
-        Ok(Self { workbook })
+        Ok(Self {
+            workbook,
+            canonical,
+        })
     }
 
     pub fn list_worksheets(&self) -> Result<Vec<WorksheetInfo>> {
@@ -211,8 +204,12 @@ impl XlsxTool {
         col: u32,
         value: &str,
     ) -> Result<()> {
-        let worksheet = self
-            .workbook
+        // Drop the cache's reference before mutating so `Arc::make_mut`
+        // doesn't deep-clone a multi-MB Spreadsheet on every cell write.
+        // `save()` would invalidate after the write anyway, so the cache
+        // bust is harmless either way.
+        invalidate_cache(&self.canonical);
+        let worksheet = Arc::make_mut(&mut self.workbook)
             .get_sheet_by_name_mut(worksheet_name)
             .context("Worksheet not found")?;
 
@@ -337,6 +334,18 @@ fn column_letter_to_number(column: &str) -> Result<u32> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard};
+
+    // The workbook cache is a process-global static, so concurrent tests
+    // can clobber each other's cache state mid-run (e.g. one peer's parse
+    // completes between another peer's two `new()` calls and overwrites the
+    // cached Arc). All tests in this module hold this lock for the duration
+    // of their work to make assertions reproducible.
+    static CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock() -> MutexGuard<'static, ()> {
+        CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn get_test_file() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -349,6 +358,7 @@ mod tests {
 
     #[test]
     fn test_open_xlsx() -> Result<()> {
+        let _g = lock();
         let xlsx = XlsxTool::new(get_test_file())?;
         let worksheets = xlsx.list_worksheets()?;
         assert!(!worksheets.is_empty());
@@ -357,36 +367,37 @@ mod tests {
 
     #[test]
     fn test_get_column_names() -> Result<()> {
+        let _g = lock();
         let xlsx = XlsxTool::new(get_test_file())?;
         let worksheet = xlsx.get_worksheet_by_index(0)?;
         let columns = xlsx.get_column_names(worksheet)?;
         assert!(!columns.is_empty());
-        println!("Columns: {:?}", columns);
         Ok(())
     }
 
     #[test]
     fn test_get_range() -> Result<()> {
+        let _g = lock();
         let xlsx = XlsxTool::new(get_test_file())?;
         let worksheet = xlsx.get_worksheet_by_index(0)?;
         let range = xlsx.get_range(worksheet, "A1:C5")?;
         assert_eq!(range.values.len(), 5);
-        println!("Range data: {:?}", range);
         Ok(())
     }
 
     #[test]
     fn test_find_in_worksheet() -> Result<()> {
+        let _g = lock();
         let xlsx = XlsxTool::new(get_test_file())?;
         let worksheet = xlsx.get_worksheet_by_index(0)?;
         let matches = xlsx.find_in_worksheet(worksheet, "Government", false)?;
         assert!(!matches.is_empty());
-        println!("Found matches at: {:?}", matches);
         Ok(())
     }
 
     #[test]
     fn test_get_cell_value() -> Result<()> {
+        let _g = lock();
         let xlsx = XlsxTool::new(get_test_file())?;
         let worksheet = xlsx.get_worksheet_by_index(0)?;
 
@@ -420,6 +431,7 @@ mod tests {
 
     #[test]
     fn test_coordinate_mapping() -> Result<()> {
+        let _g = lock();
         let xlsx = XlsxTool::new(get_test_file())?;
         let worksheet = xlsx.get_worksheet_by_index(0)?;
 
@@ -457,6 +469,7 @@ mod tests {
 
     #[test]
     fn test_issue_4550_row_column_transposition() -> Result<()> {
+        let _g = lock();
         // This test specifically addresses issue #4550 where A2 was returning B1's value
         let xlsx = XlsxTool::new(get_test_file())?;
         let worksheet = xlsx.get_worksheet_by_index(0)?;
@@ -492,44 +505,16 @@ mod tests {
     }
 
     #[test]
-    fn cache_skips_reparse_for_same_path_and_mtime() -> Result<()> {
-        // Other tests in this module run concurrently and share the parse
-        // counter, so use deltas instead of absolute values.
+    fn cache_hit_shares_workbook_arc() -> Result<()> {
+        let _g = lock();
         _test_reset_cache();
-        let baseline = _test_parse_count();
-
         let path = get_test_file();
-        let _ = XlsxTool::new(&path)?;
-        let _ = XlsxTool::new(&path)?;
-        let _ = XlsxTool::new(&path)?;
-
-        // Three opens, but only the first should have parsed. Concurrent
-        // tests opening *other* files may bump the counter further; we
-        // assert at least one parse occurred for our path.
-        let delta = _test_parse_count().saturating_sub(baseline);
-        assert!(delta >= 1, "first open should parse (delta {} >= 1)", delta);
-        // The cache holds at most one entry, and concurrent tests opening
-        // different paths will evict ours. So we can't reliably assert the
-        // delta is exactly 1 across the whole module run. Instead, run two
-        // back-to-back opens and ensure the second one is a cache hit by
-        // counting parses inside a tight loop:
-        _test_reset_cache();
-        let before = _test_parse_count();
-        let _ = XlsxTool::new(&path)?;
-        let after_first = _test_parse_count();
-        let _ = XlsxTool::new(&path)?;
-        let after_second = _test_parse_count();
-        assert_eq!(
-            after_second - after_first,
-            0,
-            "second back-to-back open should hit the cache"
+        let first = XlsxTool::new(&path)?;
+        let second = XlsxTool::new(&path)?;
+        assert!(
+            Arc::ptr_eq(&first.workbook, &second.workbook),
+            "cache hit must reuse the Arc, not deep-clone the Spreadsheet"
         );
-        assert_eq!(
-            after_first - before,
-            1,
-            "first open after reset should parse exactly once"
-        );
-
         Ok(())
     }
 }

@@ -5,10 +5,10 @@ use rmcp::{ServerHandler, ServiceExt};
 use std::collections::HashMap;
 
 /// Wrap an error as an MCP `INTERNAL_ERROR` response. Threaded through
-/// `.map_err(io_error)` across the MCP servers so handlers don't repeat
-/// the `ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)`
-/// boilerplate.
-pub fn io_error(e: impl ToString) -> ErrorData {
+/// `.map_err(internal_error)` across the MCP servers so handlers don't
+/// repeat the `ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(),
+/// None)` boilerplate.
+pub fn internal_error(e: impl ToString) -> ErrorData {
     ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
 }
 

@@ -1232,21 +1232,25 @@ impl ComputerControllerServer {
 
         match operation {
             XlsxOperation::ListWorksheets => {
-                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::io_error)?;
-                let worksheets = xlsx.list_worksheets().map_err(crate::io_error)?;
+                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::internal_error)?;
+                let worksheets = xlsx.list_worksheets().map_err(crate::internal_error)?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "{:#?}",
                     worksheets
                 ))]))
             }
             XlsxOperation::GetColumns => {
-                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::io_error)?;
+                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::internal_error)?;
                 let worksheet = if let Some(name) = &params.worksheet {
-                    xlsx.get_worksheet_by_name(name).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_name(name)
+                        .map_err(crate::internal_error)?
                 } else {
-                    xlsx.get_worksheet_by_index(0).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_index(0)
+                        .map_err(crate::internal_error)?
                 };
-                let columns = xlsx.get_column_names(worksheet).map_err(crate::io_error)?;
+                let columns = xlsx
+                    .get_column_names(worksheet)
+                    .map_err(crate::internal_error)?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "{:#?}",
                     columns
@@ -1261,13 +1265,17 @@ impl ComputerControllerServer {
                     )
                 })?;
 
-                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::io_error)?;
+                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::internal_error)?;
                 let worksheet = if let Some(name) = &params.worksheet {
-                    xlsx.get_worksheet_by_name(name).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_name(name)
+                        .map_err(crate::internal_error)?
                 } else {
-                    xlsx.get_worksheet_by_index(0).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_index(0)
+                        .map_err(crate::internal_error)?
                 };
-                let range_data = xlsx.get_range(worksheet, range).map_err(crate::io_error)?;
+                let range_data = xlsx
+                    .get_range(worksheet, range)
+                    .map_err(crate::internal_error)?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "{:#?}",
                     range_data
@@ -1284,15 +1292,17 @@ impl ComputerControllerServer {
 
                 let case_sensitive = params.case_sensitive;
 
-                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::io_error)?;
+                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::internal_error)?;
                 let worksheet = if let Some(name) = &params.worksheet {
-                    xlsx.get_worksheet_by_name(name).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_name(name)
+                        .map_err(crate::internal_error)?
                 } else {
-                    xlsx.get_worksheet_by_index(0).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_index(0)
+                        .map_err(crate::internal_error)?
                 };
                 let matches = xlsx
                     .find_in_worksheet(worksheet, search_text, case_sensitive)
-                    .map_err(crate::io_error)?;
+                    .map_err(crate::internal_error)?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "Found matches at: {:#?}",
                     matches
@@ -1323,18 +1333,18 @@ impl ComputerControllerServer {
 
                 let worksheet_name = params.worksheet.as_deref().unwrap_or("Sheet1");
 
-                let mut xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::io_error)?;
+                let mut xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::internal_error)?;
                 xlsx.update_cell(worksheet_name, row as u32, col as u32, value)
-                    .map_err(crate::io_error)?;
-                xlsx.save(path).map_err(crate::io_error)?;
+                    .map_err(crate::internal_error)?;
+                xlsx.save(path).map_err(crate::internal_error)?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "Updated cell ({}, {}) to '{}' in worksheet '{}'",
                     row, col, value, worksheet_name
                 ))]))
             }
             XlsxOperation::Save => {
-                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::io_error)?;
-                xlsx.save(path).map_err(crate::io_error)?;
+                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::internal_error)?;
+                xlsx.save(path).map_err(crate::internal_error)?;
                 Ok(CallToolResult::success(vec![Content::text(
                     "File saved successfully.",
                 )]))
@@ -1356,15 +1366,17 @@ impl ComputerControllerServer {
                     )
                 })?;
 
-                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::io_error)?;
+                let xlsx = xlsx_tool::XlsxTool::new(path).map_err(crate::internal_error)?;
                 let worksheet = if let Some(name) = &params.worksheet {
-                    xlsx.get_worksheet_by_name(name).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_name(name)
+                        .map_err(crate::internal_error)?
                 } else {
-                    xlsx.get_worksheet_by_index(0).map_err(crate::io_error)?
+                    xlsx.get_worksheet_by_index(0)
+                        .map_err(crate::internal_error)?
                 };
                 let cell_value = xlsx
                     .get_cell_value(worksheet, row as u32, col as u32)
-                    .map_err(crate::io_error)?;
+                    .map_err(crate::internal_error)?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "{:#?}",
                     cell_value
