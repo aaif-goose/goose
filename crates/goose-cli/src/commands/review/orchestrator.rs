@@ -330,7 +330,10 @@ fn parse_findings(output: &str) -> Result<Vec<RawFinding>> {
 fn strip_code_fences(s: &str) -> String {
     let s = s.trim();
     if let Some(after_open) = s.strip_prefix("```") {
-        let after_first_line = after_open.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
+        let after_first_line = after_open
+            .split_once('\n')
+            .map(|(_, rest)| rest)
+            .unwrap_or("");
         let trimmed_close = after_first_line
             .rsplit_once("```")
             .map(|(before, _)| before)

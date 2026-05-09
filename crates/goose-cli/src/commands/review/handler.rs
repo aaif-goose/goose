@@ -331,11 +331,7 @@ fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Resu
     String::from_utf8(out.stdout).map_err(|e| anyhow!("git diff returned non-UTF8 output: {e}"))
 }
 
-fn collect_diff_stat(
-    repo_root: &Path,
-    range: Option<&str>,
-    files: &[String],
-) -> Result<String> {
+fn collect_diff_stat(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
     let mut cmd = Command::new("git");
     cmd.current_dir(repo_root).arg("diff").arg("--stat");
     match range {
