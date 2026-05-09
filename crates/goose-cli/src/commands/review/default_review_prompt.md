@@ -44,6 +44,25 @@ diff yourself. Walk every changed function and look hard for:
 
 Emit findings from this pass with `"check": "main"`.
 
+## Code-quality pass
+
+Alongside the correctness pass, walk every changed hunk and call out:
+
+- **Bugs and hackiness.** Suspicious workarounds, copy-pasted blocks
+  that drifted, anything that looks like a fix-as-you-go.
+- **Unnecessary code.** Dead branches, unreachable paths, redundant
+  null checks, work that could be deleted without changing behavior.
+- **Too much shared mutable state.** Module-level singletons, globals,
+  parameters mutated across helpers, structures whose ownership is
+  unclear.
+- **Abstraction fit, in both directions.** Flag *unnecessary
+  indirection* (factories, wrappers, traits, adapters that have one
+  caller and add no leverage) and *missing abstractions* (the same
+  five-line block repeated across the diff, or hard-coded values that
+  belong behind a name). For each finding, cite concrete locations
+  and recommend exactly one action — only when it improves the
+  current code, not because it is a "best practice".
+
 ## Guidelines
 
 - Only comment on the diff. Do not flag pre-existing code unless the diff

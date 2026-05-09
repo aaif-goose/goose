@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::session::{build_session, SessionBuilderConfig};
 
 use super::discover::{discover, DiscoveredReview};
-use super::orchestrator::{emit_findings, run_checks_in_parallel};
+use super::orchestrator::{emit_findings, run_checks_in_parallel, Severity};
 use super::prompt::{build_review_prompt, DEFAULT_REVIEW_PROMPT};
 
 /// Options for `goose review`.
@@ -57,6 +57,10 @@ pub struct ReviewOptions {
     pub checks_only: bool,
     /// Print only the diff summary; skip the full review.
     pub summary_only: bool,
+    /// Minimum severity to display from check findings. Defaults to
+    /// `medium`, matching Amp's CLI behavior of hiding `low` from
+    /// the review output.
+    pub severity: String,
 }
 
 /// Entry point for the `goose review` subcommand.
@@ -169,17 +173,41 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
 
     // Main pass (if it ran) streamed its findings to stdout as it ran;
     // emit check findings after, in source order, so attribution is
-    // preserved end-to-end.
-    let mut total = 0usize;
+    // preserved end-to-end. Severity floor is applied at emit time so
+    // that suppressed findings still show up in counts on stderr —
+    // useful when triaging "the model produced N findings but I only
+    // see M".
+    // Empty (e.g. from `..ReviewOptions::default()` in tests) means
+    // "use the documented default", which matches the CLI's
+    // `default_value = "medium"`.
+    let sev_str = if opts.severity.is_empty() {
+        "medium"
+    } else {
+        opts.severity.as_str()
+    };
+    let min_sev: Severity = sev_str
+        .parse()
+        .map_err(|e: String| anyhow!("--severity: {e}"))?;
+    let mut total_emitted = 0usize;
+    let mut total_seen = 0usize;
     for findings in &check_results {
-        emit_findings(findings);
-        total += findings.len();
+        total_seen += findings.len();
+        total_emitted += emit_findings(findings, min_sev);
     }
     if !opts.quiet {
-        eprintln!(
-            "goose review: orchestrator emitted {total} finding(s) from {} check(s)",
-            discovered.checks.len()
-        );
+        let suppressed = total_seen.saturating_sub(total_emitted);
+        if suppressed == 0 {
+            eprintln!(
+                "goose review: orchestrator emitted {total_emitted} finding(s) from {} check(s)",
+                discovered.checks.len()
+            );
+        } else {
+            eprintln!(
+                "goose review: orchestrator emitted {total_emitted} finding(s) from {} check(s) ({suppressed} hidden below severity={:?})",
+                discovered.checks.len(),
+                min_sev
+            );
+        }
     }
 
     Ok(())

@@ -296,7 +296,15 @@ fn build_check_prompt(check: &Check, diff: &str, instructions: Option<&str>) -> 
     s.push_str("Do not ask for missing context.\n");
     s.push_str("Use repo-relative file paths.\n");
     s.push_str("Use post-change line numbers from the diff.\n");
-    s.push_str("If you cannot map an issue to a specific line range in the diff, use line_start: 0 and line_end: 0.\n\n");
+    s.push_str("If you cannot map an issue to a specific line range in the diff, use line_start: 0 and line_end: 0.\n");
+    // Amp's check prompt emphasizes this twice; without it, models
+    // routinely flag pre-existing code that just happens to appear in
+    // the diff context (lines starting with a space, not `+`).
+    s.push_str(
+        "Search for patterns described above ONLY in the changed lines (lines beginning with `+` in the diff).\n",
+    );
+    s.push_str("Report issues ONLY for code that was added or modified in this diff.\n");
+    s.push_str("Do NOT report issues for unchanged/pre-existing code shown for context.\n\n");
     s.push_str(
         "Return ONLY valid JSON with this exact schema:\n\
 {\n  \"findings\": [\n    {\n      \"severity\": \"low|medium|high|critical\",\n      \"path\": \"relative/path/to/file\",\n      \"line_start\": 10,\n      \"line_end\": 12,\n      \"summary\": \"One-sentence actionable issue\"\n    }\n  ]\n}\n\nIf there are no issues, return:\n{\"findings\":[]}\n\nDo NOT include any text before or after the JSON. Do NOT wrap the JSON in code fences.\n\n",
@@ -390,12 +398,59 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 /// Emit findings as JSONL (one object per line) to stdout, matching
-/// the format the in-process path produces.
-pub fn emit_findings(findings: &[Finding]) {
+/// the format the in-process path produces. Findings whose severity
+/// ranks below `min_severity` are suppressed; this mirrors Amp's
+/// behavior of hiding `low` from the review output by default.
+pub fn emit_findings(findings: &[Finding], min_severity: Severity) -> usize {
+    let mut emitted = 0usize;
     for f in findings {
+        if Severity::parse(&f.severity) < min_severity {
+            continue;
+        }
         // serde_json::to_string never fails for these owned strings.
         if let Ok(line) = serde_json::to_string(f) {
             println!("{line}");
+            emitted += 1;
+        }
+    }
+    emitted
+}
+
+/// Severity floor for finding display. Mirrors Amp's CLI behavior of
+/// hiding `low` by default; pass `--severity low` to surface them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Severity {
+    Low = 0,
+    Medium = 1,
+    High = 2,
+    Critical = 3,
+}
+
+impl Severity {
+    /// Parse a severity string from a finding (`low`/`medium`/`high`/
+    /// `critical`). Unrecognized strings are treated as `Medium` so
+    /// odd-but-non-trivial findings still surface.
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "low" | "info" | "note" => Severity::Low,
+            "high" => Severity::High,
+            "critical" | "crit" | "blocker" => Severity::Critical,
+            _ => Severity::Medium,
+        }
+    }
+}
+
+impl std::str::FromStr for Severity {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "low" => Ok(Severity::Low),
+            "medium" | "med" => Ok(Severity::Medium),
+            "high" => Ok(Severity::High),
+            "critical" => Ok(Severity::Critical),
+            other => Err(format!(
+                "unknown severity '{other}' (expected one of: low, medium, high, critical)"
+            )),
         }
     }
 }
@@ -428,6 +483,17 @@ mod tests {
         assert!(p.contains("Return ONLY valid JSON"));
         assert!(p.contains("look for bugs"));
         assert!(!p.contains("Reviewer instructions"));
+    }
+
+    #[test]
+    fn check_prompt_restricts_findings_to_added_or_modified_lines() {
+        // Mirrors Amp's prompt language; without these the model
+        // happily flags pre-existing code shown for context.
+        let p = build_check_prompt(&ck("perf"), "diff content", None);
+        assert!(p.contains("ONLY in the changed lines"));
+        assert!(p.contains("lines beginning with `+`"));
+        assert!(p.contains("ONLY for code that was added or modified"));
+        assert!(p.contains("Do NOT report issues for unchanged"));
     }
 
     #[test]
@@ -506,6 +572,40 @@ mod tests {
             ..ReviewOptions::default()
         };
         assert_eq!(resolve_check_model(&c, &opts).as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn severity_orders_correctly() {
+        assert!(Severity::Low < Severity::Medium);
+        assert!(Severity::Medium < Severity::High);
+        assert!(Severity::High < Severity::Critical);
+    }
+
+    #[test]
+    fn severity_parse_from_finding_string_is_lenient() {
+        assert_eq!(Severity::parse("low"), Severity::Low);
+        assert_eq!(Severity::parse("LOW"), Severity::Low);
+        assert_eq!(Severity::parse("info"), Severity::Low);
+        assert_eq!(Severity::parse("note"), Severity::Low);
+        assert_eq!(Severity::parse("medium"), Severity::Medium);
+        assert_eq!(Severity::parse("high"), Severity::High);
+        assert_eq!(Severity::parse("critical"), Severity::Critical);
+        assert_eq!(Severity::parse("blocker"), Severity::Critical);
+        // Unknown strings default to Medium so they still surface.
+        assert_eq!(Severity::parse("weird"), Severity::Medium);
+        assert_eq!(Severity::parse(""), Severity::Medium);
+    }
+
+    #[test]
+    fn severity_from_str_strict_for_cli() {
+        use std::str::FromStr;
+        assert_eq!(Severity::from_str("low").unwrap(), Severity::Low);
+        assert_eq!(Severity::from_str("MEDIUM").unwrap(), Severity::Medium);
+        assert_eq!(Severity::from_str("med").unwrap(), Severity::Medium);
+        assert_eq!(Severity::from_str("high").unwrap(), Severity::High);
+        assert_eq!(Severity::from_str("critical").unwrap(), Severity::Critical);
+        assert!(Severity::from_str("info").is_err());
+        assert!(Severity::from_str("").is_err());
     }
 
     #[test]

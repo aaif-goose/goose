@@ -1077,6 +1077,13 @@ enum Command {
         /// Mirrors `amp review --summary-only`.
         #[arg(long = "summary-only")]
         summary_only: bool,
+
+        /// Minimum severity to display. Findings below this rank are
+        /// dropped from the output. Default is `medium`, matching
+        /// Amp's CLI which hides `low` from review output. Pass
+        /// `--severity low` to surface every finding.
+        #[arg(long = "severity", value_name = "LEVEL", default_value = "medium")]
+        severity: String,
     },
 
     #[command(
@@ -2098,6 +2105,7 @@ pub async fn cli() -> anyhow::Result<()> {
             check_scope,
             checks_only,
             summary_only,
+            severity,
         }) => {
             use crate::commands::review::{handle_review, ReviewOptions};
             handle_review(ReviewOptions {
@@ -2116,6 +2124,7 @@ pub async fn cli() -> anyhow::Result<()> {
                 check_scope,
                 checks_only,
                 summary_only,
+                severity,
             })
             .await
         }
