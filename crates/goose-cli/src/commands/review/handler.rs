@@ -68,9 +68,15 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
         return Ok(());
     }
 
+    // Review only needs file inspection (developer) + parallel subagent
+    // dispatch (summon, which exposes `delegate`/`load`). Skip the user's
+    // configured extension profile so we don't pay the latency / token cost
+    // of loading github, blockcell, MCPs, etc. that play no role in review.
     let mut session = build_session(SessionBuilderConfig {
         session_id: None,
         no_session: true,
+        no_profile: true,
+        builtins: vec!["developer".to_string(), "summon".to_string()],
         provider: opts.provider,
         model: opts.default_model,
         quiet: opts.quiet,
