@@ -415,7 +415,7 @@ pub struct SlashCommandsQuery {
 pub async fn get_slash_commands(
     axum::extract::Query(query): axum::extract::Query<SlashCommandsQuery>,
 ) -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
-    let mut commands: Vec<_> = slash_commands::list_commands()
+    let mut commands: Vec<_> = slash_commands::list_slash_commands()
         .iter()
         .map(|command| SlashCommand {
             command: command.command.clone(),

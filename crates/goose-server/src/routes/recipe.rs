@@ -321,7 +321,7 @@ async fn list_recipes(
         .map(|j| (PathBuf::from(j.source), j.cron))
         .collect();
 
-    let all_commands = slash_commands::list_commands();
+    let all_commands = slash_commands::list_slash_commands();
     let slash_map: HashMap<_, _> = all_commands
         .into_iter()
         .map(|sc| (PathBuf::from(sc.recipe_path), sc.command))

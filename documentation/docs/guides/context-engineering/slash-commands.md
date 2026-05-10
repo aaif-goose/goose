@@ -46,6 +46,37 @@ slash_commands:
    </TabItem>
 </Tabs>
 
+## Automatically Load Commands from `GOOSE_RECIPE_PATH`
+
+You can automatically expose recipes in `GOOSE_RECIPE_PATH` as slash commands:
+
+```yaml
+auto_slash_commands:
+  from_goose_recipe_path: true
+```
+
+Each recipe file in `GOOSE_RECIPE_PATH` becomes a slash command using the recipe filename (without the extension):
+
+```text
+recipes/
+├── run-tests.yaml
+├── daily-report.yaml
+└── translate.json
+```
+
+Becomes:
+
+```text
+/run-tests
+/daily-report
+/translate
+```
+
+This is especially useful for editor integrations and project-local recipe collections that dynamically set `GOOSE_RECIPE_PATH`.
+
+Explicit `slash_commands` entries take precedence over automatically discovered commands.
+
+
 ## Use Slash Commands
 
 In any chat session, type your custom command with a leading slash at the start of your message:

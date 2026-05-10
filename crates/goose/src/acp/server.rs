@@ -2163,7 +2163,7 @@ impl GooseAcpAgent {
     async fn build_available_commands_from_slash_commands() -> Vec<AvailableCommand> {
         let mut commands = Vec::new();
 
-        for mapping in crate::slash_commands::list_commands() {
+        for mapping in crate::slash_commands::list_slash_commands() {
             if Self::is_builtin_agent_command(&mapping.command) {
                 continue;
             }
