@@ -1023,12 +1023,17 @@ mod tests {
 
     struct FakeMcp {
         info: InitializeResult,
-        resources: HashMap<String, String>,
+        /// Mutable to support hot-swap in `test_list_changed_refreshes_cache`.
+        resources: std::sync::Mutex<HashMap<String, String>>,
         /// Completion fixture: maps argument name → accepted values.
         /// When `complete_resource_argument` is called for an argument
         /// not present in this map, the impl returns `TransportClosed`
         /// so the host sees "completion unsupported".
         completion: HashMap<String, Vec<String>>,
+        /// Subscribers from `subscribe()` calls; mirrors `GooseClient`'s
+        /// notification fan-out so tests can drive notifications via
+        /// `notify_resources_list_changed()`.
+        subscribers: tokio::sync::Mutex<Vec<mpsc::Sender<ServerNotification>>>,
     }
 
     impl FakeMcp {
@@ -1046,8 +1051,9 @@ mod tests {
             );
             Self {
                 info,
-                resources,
+                resources: std::sync::Mutex::new(resources),
                 completion: HashMap::new(),
+                subscribers: tokio::sync::Mutex::new(Vec::new()),
             }
         }
 
@@ -1057,6 +1063,45 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
             );
             self
+        }
+
+        /// Replace this server's resources, e.g. to simulate a server-side
+        /// index update that a subsequent `resources/list_changed` will
+        /// pick up.
+        fn swap_resources(&self, new_resources: HashMap<String, String>) {
+            *self.resources.lock().unwrap() = new_resources;
+        }
+
+        /// Fan out a `notifications/resources/list_changed` to every
+        /// subscriber currently registered via `subscribe()`.
+        async fn notify_resources_list_changed(&self) {
+            use rmcp::model::ResourceListChangedNotification;
+            let subs = self.subscribers.lock().await;
+            for tx in subs.iter() {
+                let _ = tx
+                    .send(ServerNotification::ResourceListChangedNotification(
+                        ResourceListChangedNotification::default(),
+                    ))
+                    .await;
+            }
+        }
+
+        /// Returns once at least one subscriber has registered via
+        /// `subscribe()`, polling at 10ms intervals up to `deadline`.
+        /// Used in tests to wait for the spawned `list_changed` watcher
+        /// to land before driving notifications — otherwise the
+        /// notification races the spawn and may be lost.
+        async fn wait_for_subscriber(&self, timeout: Duration) -> bool {
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                if !self.subscribers.lock().await.is_empty() {
+                    return true;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return false;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
         }
     }
 
@@ -1101,6 +1146,8 @@ mod tests {
             // find entries under each skill's root URI.
             let resources = self
                 .resources
+                .lock()
+                .unwrap()
                 .keys()
                 .filter(|uri| uri.as_str() != super::super::mcp_client::INDEX_URI)
                 .map(|uri| {
@@ -1123,12 +1170,12 @@ mod tests {
             uri: &str,
             _cancel_token: CancellationToken,
         ) -> Result<ReadResourceResult, Error> {
-            match self.resources.get(uri) {
+            match self.resources.lock().unwrap().get(uri).cloned() {
                 Some(text) => Ok(ReadResourceResult::new(vec![
                     ResourceContents::TextResourceContents {
                         uri: uri.to_string(),
                         mime_type: None,
-                        text: text.clone(),
+                        text,
                         meta: None,
                     },
                 ])),
@@ -1137,7 +1184,9 @@ mod tests {
         }
 
         async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-            mpsc::channel(1).1
+            let (tx, rx) = mpsc::channel(16);
+            self.subscribers.lock().await.push(tx);
+            rx
         }
 
         async fn complete_resource_argument(
@@ -1604,6 +1653,95 @@ mod tests {
         })
         .unwrap();
         (client, mgr, tmp)
+    }
+
+    #[tokio::test]
+    async fn test_list_changed_refreshes_cache() {
+        // Server initially advertises only `alpha`; after we hot-swap the
+        // index and fire `notifications/resources/list_changed`, the
+        // background subscriber task re-fetches and the manager's
+        // `aggregated_mcp_skills` reflects the new entry — without any
+        // explicit reconnect.
+        let tmp = TempDir::new().unwrap();
+
+        let mut initial = HashMap::new();
+        initial.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"alpha","type":"skill-md","description":"a","url":"skill://alpha/SKILL.md"}"#,
+            ),
+        );
+        let fake = Arc::new(FakeMcp::new(initial));
+
+        let mgr = Arc::new(ExtensionManager::new_without_provider(
+            tmp.path().to_path_buf(),
+        ));
+        // Register through the trait object — same as production — but
+        // keep our concrete-type Arc handle so we can drive
+        // resources/list_changed below.
+        let trait_handle: Arc<dyn McpClientTrait> = fake.clone();
+        mgr.add_client(
+            "srv".to_string(),
+            ExtensionConfig::Builtin {
+                name: "srv".to_string(),
+                display_name: Some("srv".to_string()),
+                description: "fake".to_string(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            },
+            trait_handle,
+            None,
+            None,
+            Some("s"),
+        )
+        .await;
+
+        // Initial state: only `alpha` is visible.
+        let before = mgr.aggregated_mcp_skills().await;
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].name, "alpha");
+
+        // The watcher task is spawned but not necessarily subscribed
+        // yet — wait for it to land before driving notifications,
+        // otherwise the notify call may fan out to zero subscribers.
+        assert!(
+            fake.wait_for_subscriber(Duration::from_secs(2)).await,
+            "watcher task should have subscribed by now"
+        );
+
+        // Hot-swap the index — add `beta` alongside `alpha`.
+        let mut updated = HashMap::new();
+        updated.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"alpha","type":"skill-md","description":"a","url":"skill://alpha/SKILL.md"},
+                   {"name":"beta","type":"skill-md","description":"b","url":"skill://beta/SKILL.md"}"#,
+            ),
+        );
+        fake.swap_resources(updated);
+
+        // Fire the notification. The watcher is subscribed by this point.
+        fake.notify_resources_list_changed().await;
+
+        // Wait up to 1s for the watcher to observe + refetch + write.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let mut after = mgr.aggregated_mcp_skills().await;
+        while after.len() < 2 && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            after = mgr.aggregated_mcp_skills().await;
+        }
+
+        assert_eq!(
+            after.len(),
+            2,
+            "cache should reflect the new entry; got: {:?}",
+            after
+        );
+        let names: std::collections::HashSet<&str> =
+            after.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains("alpha"));
+        assert!(names.contains("beta"));
     }
 
     #[tokio::test]
