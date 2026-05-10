@@ -193,7 +193,34 @@ async fn run_single_check_subprocess(
     instructions: Option<&str>,
 ) -> Result<Vec<Finding>> {
     let prompt = build_check_prompt(check, diff, instructions);
+    let raw =
+        run_subprocess_for_findings(&prompt, &format!("check '{}'", check.name), provider, model)
+            .await?;
+    let default_sev = check.severity_default.as_deref().unwrap_or("medium");
+    Ok(raw
+        .into_iter()
+        .map(|r| Finding {
+            severity: r.severity.unwrap_or_else(|| default_sev.to_string()),
+            path: r.path.unwrap_or_default(),
+            line_start: r.line_start.unwrap_or(0),
+            line_end: r.line_end.unwrap_or(0),
+            summary: r.summary.unwrap_or_default(),
+            check: check.name.clone(),
+        })
+        .collect())
+}
 
+/// Generic `goose run` subprocess that hands a prompt to the model
+/// and parses `{"findings": [...]}` JSON out of the response. Shared
+/// by the per-check and per-file main-pass orchestrators so both get
+/// the same robust JSON extraction, timeout handling, and error
+/// reporting.
+async fn run_subprocess_for_findings(
+    prompt: &str,
+    label: &str,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> Result<Vec<RawFinding>> {
     let goose_bin = std::env::current_exe().context("locate current goose binary")?;
 
     let mut cmd = Command::new(&goose_bin);
@@ -216,53 +243,225 @@ async fn run_single_check_subprocess(
 
     let mut child = cmd
         .spawn()
-        .with_context(|| format!("spawn check subprocess for '{}'", check.name))?;
+        .with_context(|| format!("spawn subprocess for {label}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(prompt.as_bytes())
             .await
-            .with_context(|| format!("write prompt to check '{}' stdin", check.name))?;
+            .with_context(|| format!("write prompt to {label} stdin"))?;
         // Closing stdin signals EOF to `goose run -i -`.
         drop(stdin);
     }
 
     let wait = child.wait_with_output();
     let output = match timeout(Duration::from_secs(CHECK_TIMEOUT_SECS), wait).await {
-        Ok(o) => o.with_context(|| format!("wait on check '{}'", check.name))?,
+        Ok(o) => o.with_context(|| format!("wait on {label}"))?,
         Err(_) => {
-            anyhow::bail!(
-                "check '{}' timed out after {}s",
-                check.name,
-                CHECK_TIMEOUT_SECS
-            );
+            anyhow::bail!("{label} timed out after {}s", CHECK_TIMEOUT_SECS);
         }
     };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
-            "check '{}' subprocess exited with status {}: {}",
-            check.name,
+            "{label} subprocess exited with status {}: {}",
             output.status,
             truncate(&stderr, 500)
         );
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let raw = parse_findings(&stdout)?;
-    let default_sev = check.severity_default.as_deref().unwrap_or("medium");
-    Ok(raw
-        .into_iter()
-        .map(|r| Finding {
-            severity: r.severity.unwrap_or_else(|| default_sev.to_string()),
-            path: r.path.unwrap_or_default(),
-            line_start: r.line_start.unwrap_or(0),
-            line_end: r.line_end.unwrap_or(0),
-            summary: r.summary.unwrap_or_default(),
-            check: check.name.clone(),
-        })
-        .collect())
+    parse_findings(&stdout)
+}
+
+/// Run the main correctness pass as N parallel subprocesses, one per
+/// touched file. This replaces the older in-process `session.headless()`
+/// path which:
+///
+/// 1. Streamed text-mode chatter to stdout (not JSONL) so findings were
+///    sometimes lost in interleaved output.
+/// 2. Sent the entire diff in a single prompt — large diffs (1000+
+///    lines) reliably caused Gemini 3.x to short-circuit with `[]`
+///    after ~30s instead of doing the work.
+///
+/// File-by-file fan-out keeps each subprocess context small enough that
+/// the model actually walks every change, and runs them concurrently
+/// so total wall clock stays close to the slowest single file rather
+/// than scaling with diff size. Failures on one file never block the
+/// others.
+pub async fn run_main_pass_in_parallel(
+    diff: &str,
+    base_prompt: &str,
+    opts: &ReviewOptions,
+) -> Vec<Finding> {
+    let per_file = split_diff_by_file(diff);
+    if per_file.is_empty() {
+        return Vec::new();
+    }
+
+    let semaphore = Arc::new(Semaphore::new(MAX_WORKERS));
+    let mut set: JoinSet<(usize, String, Result<Vec<RawFinding>>, bool)> = JoinSet::new();
+
+    for (idx, (path, file_diff)) in per_file.iter().enumerate() {
+        let sem = semaphore.clone();
+        let path = path.clone();
+        let file_diff = file_diff.clone();
+        let provider = opts.provider.clone();
+        let model = opts.default_model.clone();
+        let quiet = opts.quiet;
+        let instructions = opts.instructions.clone();
+        let base_prompt = base_prompt.to_string();
+
+        set.spawn(async move {
+            let _permit = sem.acquire().await.expect("semaphore is never closed");
+            let prompt =
+                build_main_pass_prompt(&path, &file_diff, &base_prompt, instructions.as_deref());
+            let label = format!("main:{path}");
+            let result =
+                run_subprocess_for_findings(&prompt, &label, provider.as_deref(), model.as_deref())
+                    .await;
+            (idx, path, result, quiet)
+        });
+    }
+
+    let mut per_file_results: Vec<Vec<Finding>> = vec![Vec::new(); per_file.len()];
+    while let Some(joined) = set.join_next().await {
+        let (idx, path, result, quiet) = match joined {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("goose review: main-pass task panicked: {e}");
+                continue;
+            }
+        };
+        match result {
+            Ok(raw) => {
+                let findings: Vec<Finding> = raw
+                    .into_iter()
+                    .map(|r| Finding {
+                        severity: r.severity.unwrap_or_else(|| "medium".to_string()),
+                        path: r.path.unwrap_or_else(|| path.clone()),
+                        line_start: r.line_start.unwrap_or(0),
+                        line_end: r.line_end.unwrap_or(0),
+                        summary: r.summary.unwrap_or_default(),
+                        check: "main".to_string(),
+                    })
+                    .collect();
+                if !quiet {
+                    eprintln!(
+                        "goose review: main pass on '{}' completed: {} finding(s)",
+                        path,
+                        findings.len()
+                    );
+                }
+                per_file_results[idx] = findings;
+            }
+            Err(e) => {
+                // A single broken file must not abort the entire main
+                // pass; surface a warning and continue.
+                eprintln!("goose review: main pass on '{}' failed: {e}", path);
+                per_file_results[idx] = Vec::new();
+            }
+        }
+    }
+
+    per_file_results.into_iter().flatten().collect()
+}
+
+/// Split a unified `git diff` into one chunk per file. Each chunk
+/// starts at its `diff --git a/... b/...` header and runs to the
+/// next file boundary. Returns `(repo_relative_path, file_diff)`
+/// pairs in source order.
+pub fn split_diff_by_file(diff: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut current_path: Option<String> = None;
+    let mut current_chunk = String::new();
+
+    for line in diff.split_inclusive('\n') {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            // Flush previous file.
+            if let Some(p) = current_path.take() {
+                if !current_chunk.is_empty() {
+                    out.push((p, std::mem::take(&mut current_chunk)));
+                } else {
+                    current_chunk.clear();
+                }
+            }
+            current_chunk.clear();
+            current_chunk.push_str(line);
+            // Header is `a/<path> b/<path>`. Pull `b/` (post-image)
+            // because that's the path the model should reference for
+            // line numbers.
+            current_path = parse_diff_header_path(rest);
+        } else {
+            current_chunk.push_str(line);
+        }
+    }
+    if let Some(p) = current_path {
+        if !current_chunk.is_empty() {
+            out.push((p, current_chunk));
+        }
+    }
+    out
+}
+
+/// Parse the `a/<path> b/<path>` portion of a `diff --git` header line.
+/// Returns the post-image path (`b/...`) when present; falls back to
+/// the pre-image path (`a/...`) for deletions.
+#[allow(clippy::string_slice)]
+fn parse_diff_header_path(rest: &str) -> Option<String> {
+    let trimmed = rest.trim_end_matches('\n').trim();
+    // Standard form: `a/<path> b/<path>` (no spaces in either path
+    // for the common case). We split on " b/" first; if not present,
+    // fall back to "a/" only. ` b/` is ASCII-only, so slicing past
+    // its byte index always lands on a UTF-8 char boundary.
+    if let Some(idx) = trimmed.find(" b/") {
+        let post = &trimmed[idx + 3..];
+        return Some(post.to_string());
+    }
+    if let Some(stripped) = trimmed.strip_prefix("a/") {
+        return Some(stripped.to_string());
+    }
+    None
+}
+
+/// Build the strict, JSON-only prompt sent to one main-pass
+/// subprocess. The base prompt (custom or
+/// [`DEFAULT_REVIEW_PROMPT`]) supplies the reviewer voice; we then
+/// pin the file under review and force a `{"findings": [...]}`
+/// response so the orchestrator's parser can pick it up reliably.
+fn build_main_pass_prompt(
+    path: &str,
+    file_diff: &str,
+    base_prompt: &str,
+    instructions: Option<&str>,
+) -> String {
+    let mut s = String::new();
+    s.push_str(base_prompt.trim_end());
+    s.push_str("\n\n");
+    if let Some(text) = instructions {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            s.push_str("## Reviewer instructions\n\n");
+            s.push_str(trimmed);
+            s.push_str("\n\n");
+        }
+    }
+    s.push_str("## File under review\n\n");
+    s.push_str(&format!("Path: `{path}`\n\n"));
+    s.push_str(
+        "Review ONLY the changes in this file. Walk every added/modified line. \
+         Do not flag pre-existing code shown for context (lines beginning with a space). \
+         Use post-change line numbers from the diff.\n\n",
+    );
+    s.push_str(
+        "## Output\n\nReturn ONLY valid JSON with this exact schema:\n\n\
+{\n  \"findings\": [\n    {\n      \"severity\": \"low|medium|high|critical\",\n      \"path\": \"relative/path/to/file\",\n      \"line_start\": 10,\n      \"line_end\": 12,\n      \"summary\": \"One-paragraph actionable explanation of the issue and the fix\"\n    }\n  ]\n}\n\nIf there are no real issues, return:\n{\"findings\":[]}\n\nDo NOT include any text before or after the JSON. Do NOT wrap the JSON in code fences.\n\n",
+    );
+    s.push_str("## Diff\n\n```diff\n");
+    s.push_str(file_diff.trim_end_matches('\n'));
+    s.push_str("\n```\n");
+    s
 }
 
 /// Build the strict, tool-free prompt sent to one check subprocess.
@@ -624,5 +823,108 @@ mod tests {
             resolve_check_model(&c, &opts).as_deref(),
             Some("gemini-3.1-pro-preview")
         );
+    }
+
+    #[test]
+    fn split_diff_by_file_separates_files_in_source_order() {
+        let diff = "\
+diff --git a/foo.rs b/foo.rs
+index 1111..2222 100644
+--- a/foo.rs
++++ b/foo.rs
+@@ -1 +1 @@
+-old foo
++new foo
+diff --git a/bar/baz.go b/bar/baz.go
+index 3333..4444 100644
+--- a/bar/baz.go
++++ b/bar/baz.go
+@@ -10 +10 @@
+-old baz
++new baz
+";
+        let chunks = split_diff_by_file(diff);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].0, "foo.rs");
+        assert!(chunks[0].1.starts_with("diff --git a/foo.rs b/foo.rs"));
+        assert!(chunks[0].1.contains("+new foo"));
+        // Each chunk must end at the next `diff --git` boundary, never
+        // leak into the following file's body.
+        assert!(!chunks[0].1.contains("baz.go"));
+        assert_eq!(chunks[1].0, "bar/baz.go");
+        assert!(chunks[1].1.contains("+new baz"));
+    }
+
+    #[test]
+    fn split_diff_by_file_handles_single_file() {
+        let diff = "\
+diff --git a/only.py b/only.py
+index aaa..bbb 100644
+--- a/only.py
++++ b/only.py
+@@ -1 +1 @@
+-x = 1
++x = 2
+";
+        let chunks = split_diff_by_file(diff);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].0, "only.py");
+    }
+
+    #[test]
+    fn split_diff_by_file_returns_empty_for_empty_input() {
+        assert!(split_diff_by_file("").is_empty());
+        assert!(split_diff_by_file("\n").is_empty());
+    }
+
+    #[test]
+    fn split_diff_by_file_picks_post_image_path_for_renames() {
+        let diff = "\
+diff --git a/old/name.rs b/new/name.rs
+similarity index 100%
+rename from old/name.rs
+rename to new/name.rs
+";
+        let chunks = split_diff_by_file(diff);
+        assert_eq!(chunks.len(), 1);
+        // We use the post-image path (b/) so the model references the
+        // file under its new name when emitting line numbers.
+        assert_eq!(chunks[0].0, "new/name.rs");
+    }
+
+    #[test]
+    fn main_pass_prompt_pins_file_and_demands_strict_json() {
+        let p = build_main_pass_prompt(
+            "src/foo.rs",
+            "diff --git a/src/foo.rs b/src/foo.rs\n@@ -1 +1 @@\n-old\n+new\n",
+            "BASE PROMPT",
+            None,
+        );
+        assert!(p.starts_with("BASE PROMPT"));
+        assert!(p.contains("Path: `src/foo.rs`"));
+        assert!(p.contains("Walk every added/modified line"));
+        assert!(p.contains("\"findings\""));
+        assert!(p.contains("Return ONLY valid JSON"));
+        assert!(p.contains("Do NOT include any text before or after the JSON"));
+        assert!(p.contains("```diff\ndiff --git a/src/foo.rs"));
+        assert!(!p.contains("Reviewer instructions"));
+    }
+
+    #[test]
+    fn main_pass_prompt_includes_reviewer_instructions_when_provided() {
+        let p = build_main_pass_prompt(
+            "src/foo.rs",
+            "diff body",
+            "BASE",
+            Some("PR is a refactor; flag behavior changes."),
+        );
+        assert!(p.contains("## Reviewer instructions"));
+        assert!(p.contains("flag behavior changes"));
+    }
+
+    #[test]
+    fn main_pass_prompt_skips_blank_reviewer_instructions() {
+        let p = build_main_pass_prompt("src/foo.rs", "diff body", "BASE", Some("   \n  \t\n"));
+        assert!(!p.contains("Reviewer instructions"));
     }
 }

@@ -6,7 +6,9 @@ use std::process::Command;
 use crate::session::{build_session, SessionBuilderConfig};
 
 use super::discover::{discover, DiscoveredReview};
-use super::orchestrator::{emit_findings, run_checks_in_parallel, Severity};
+use super::orchestrator::{
+    emit_findings, run_checks_in_parallel, run_main_pass_in_parallel, Severity,
+};
 use super::prompt::{build_review_prompt, DEFAULT_REVIEW_PROMPT};
 
 /// Options for `goose review`.
@@ -98,11 +100,11 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
     };
     let base_prompt = prepend_instructions(&base_prompt, opts.instructions.as_deref());
 
-    let use_orchestrator = !opts.no_orchestrate && !discovered.checks.is_empty();
+    let use_orchestrator = !opts.no_orchestrate;
 
-    // In orchestrator mode, the main agent does only the correctness pass —
-    // checks run as parallel subprocesses, so we strip the checks table
-    // from the prompt to keep the main pass focused and fast.
+    // In orchestrator mode, the main pass runs as N parallel subprocesses
+    // (one per touched file) — checks run as parallel subprocesses too —
+    // so the assembled prompt only matters for the legacy in-process path.
     let main_prompt_discovered = if use_orchestrator {
         DiscoveredReview::default()
     } else {
@@ -124,62 +126,51 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
                 "\n# orchestrator: {} check(s) would run as parallel subprocesses",
                 discovered.checks.len()
             );
+            println!("# orchestrator: main pass would fan out one subprocess per touched file");
         }
         return Ok(());
     }
 
-    // Review only needs file inspection (developer) + parallel subagent
-    // dispatch (summon, which exposes `delegate`/`load`). Skip the user's
-    // configured extension profile so we don't pay the latency / token cost
-    // of loading github, blockcell, MCPs, etc. that play no role in review.
-    let mut session = build_session(SessionBuilderConfig {
-        session_id: None,
-        no_session: true,
-        no_profile: true,
-        builtins: vec!["developer".to_string(), "summon".to_string()],
-        provider: opts.provider.clone(),
-        model: opts.default_model.clone(),
-        quiet: opts.quiet,
-        output_format: "text".to_string(),
-        ..SessionBuilderConfig::default()
-    })
-    .await;
-
     if !use_orchestrator {
+        // Legacy in-process path (--no-orchestrate). Useful for comparing
+        // against orchestrated wall clock and for models that handle
+        // delegation reliably on their own.
         if opts.checks_only {
-            // No checks discovered (or `--no-orchestrate` set with checks
-            // empty after filter). With `--checks-only` there is nothing
-            // left to run, so return cleanly instead of dispatching the
-            // main agent.
             return Ok(());
         }
+        let mut session = build_session(SessionBuilderConfig {
+            session_id: None,
+            no_session: true,
+            no_profile: true,
+            builtins: vec!["developer".to_string(), "summon".to_string()],
+            provider: opts.provider.clone(),
+            model: opts.default_model.clone(),
+            quiet: opts.quiet,
+            output_format: "text".to_string(),
+            ..SessionBuilderConfig::default()
+        })
+        .await;
         return session.headless(prompt).await;
     }
 
-    // Orchestrated mode: run main correctness pass + N parallel check
-    // subprocesses concurrently. Wall clock is bounded by `max(main_pass,
-    // slowest_check)` instead of relying on the main agent to dispatch
-    // delegates correctly. With `--checks-only` we skip the main pass and
-    // wait only on the orchestrator.
-    let check_results = if opts.checks_only {
-        run_checks_in_parallel(&discovered.checks, &diff, &opts).await
-    } else {
-        let main_pass = async move { session.headless(prompt).await };
-        let checks_pass = run_checks_in_parallel(&discovered.checks, &diff, &opts);
-        let (main_result, check_results) = tokio::join!(main_pass, checks_pass);
-        main_result?;
-        check_results
+    // Orchestrated mode: run the main correctness pass (per-file
+    // parallel subprocesses) and the discovered checks (one subprocess
+    // each, capped at MAX_WORKERS) concurrently. Wall clock is bounded
+    // by `max(slowest_main_file, slowest_check)` instead of scaling
+    // with diff size or check count.
+    let main_findings_fut = async {
+        if opts.checks_only {
+            Vec::new()
+        } else {
+            run_main_pass_in_parallel(&diff, &base_prompt, &opts).await
+        }
     };
+    let checks_fut = run_checks_in_parallel(&discovered.checks, &diff, &opts);
+    let (main_findings, check_results) = tokio::join!(main_findings_fut, checks_fut);
 
-    // Main pass (if it ran) streamed its findings to stdout as it ran;
-    // emit check findings after, in source order, so attribution is
-    // preserved end-to-end. Severity floor is applied at emit time so
-    // that suppressed findings still show up in counts on stderr —
-    // useful when triaging "the model produced N findings but I only
-    // see M".
-    // Empty (e.g. from `..ReviewOptions::default()` in tests) means
-    // "use the documented default", which matches the CLI's
-    // `default_value = "medium"`.
+    // Severity floor applied to both main-pass and check findings so
+    // suppressed counts remain visible on stderr — useful when
+    // triaging "the model produced N findings but I only see M".
     let sev_str = if opts.severity.is_empty() {
         "medium"
     } else {
@@ -188,23 +179,28 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
     let min_sev: Severity = sev_str
         .parse()
         .map_err(|e: String| anyhow!("--severity: {e}"))?;
+
     let mut total_emitted = 0usize;
-    let mut total_seen = 0usize;
+    let mut total_seen = main_findings.len();
+    total_emitted += emit_findings(&main_findings, min_sev);
     for findings in &check_results {
         total_seen += findings.len();
         total_emitted += emit_findings(findings, min_sev);
     }
     if !opts.quiet {
         let suppressed = total_seen.saturating_sub(total_emitted);
+        let main_pass_label = if opts.checks_only { "skipped" } else { "ran" };
         if suppressed == 0 {
             eprintln!(
-                "goose review: orchestrator emitted {total_emitted} finding(s) from {} check(s)",
-                discovered.checks.len()
+                "goose review: orchestrator emitted {total_emitted} finding(s) from {} check(s) (main: {main_pass_label}, {} finding(s))",
+                discovered.checks.len(),
+                main_findings.len()
             );
         } else {
             eprintln!(
-                "goose review: orchestrator emitted {total_emitted} finding(s) from {} check(s) ({suppressed} hidden below severity={:?})",
+                "goose review: orchestrator emitted {total_emitted} finding(s) from {} check(s) (main: {main_pass_label}, {} finding(s); {suppressed} hidden below severity={:?})",
                 discovered.checks.len(),
+                main_findings.len(),
                 min_sev
             );
         }
