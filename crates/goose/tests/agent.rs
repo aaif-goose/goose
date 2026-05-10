@@ -375,6 +375,8 @@ mod tests {
                     config_keys: vec![],
                     setup_steps: vec![],
                     model_selection_hint: None,
+                    provider_context_limit: None,
+                    provider_max_output_tokens: None,
                 }
             }
 
@@ -544,6 +546,8 @@ mod tests {
                     config_keys: vec![],
                     setup_steps: vec![],
                     model_selection_hint: None,
+                    provider_context_limit: None,
+                    provider_max_output_tokens: None,
                 }
             }
 
@@ -897,6 +901,8 @@ mod tests {
                     config_keys: vec![],
                     setup_steps: vec![],
                     model_selection_hint: None,
+                    provider_context_limit: None,
+                    provider_max_output_tokens: None,
                 }
             }
 

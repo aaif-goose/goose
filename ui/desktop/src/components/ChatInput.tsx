@@ -585,6 +585,13 @@ export default function ChatInput({
         }
       }
 
+      // Priority 3.5: Fall back to provider-level default context limit
+      if (currentProvider?.metadata?.provider_context_limit) {
+        setTokenLimit(currentProvider.metadata.provider_context_limit);
+        setIsTokenLimitLoaded(true);
+        return;
+      }
+
       // Priority 4: Use default if nothing else found
       setTokenLimit(TOKEN_LIMIT_DEFAULT);
       setIsTokenLimitLoaded(true);

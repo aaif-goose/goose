@@ -96,6 +96,12 @@ pub struct DeclarativeProviderConfig {
     pub setup_steps: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_non_empty_string")]
     pub fast_model: Option<String>,
+    /// Default context limit for dynamic models when not explicitly set per-model.
+    #[serde(default)]
+    pub context_limit: Option<usize>,
+    /// Default max output tokens for dynamic models when not explicitly set per-model.
+    #[serde(default)]
+    pub max_output_tokens: Option<i32>,
 }
 
 fn default_requires_auth() -> bool {
@@ -301,6 +307,8 @@ pub fn create_custom_provider(
         model_doc_link: None,
         setup_steps: vec![],
         fast_model: None,
+        context_limit: None,
+        max_output_tokens: None,
     };
 
     let custom_providers_dir = custom_providers_dir();
@@ -371,6 +379,8 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             model_doc_link: existing_config.model_doc_link,
             setup_steps: existing_config.setup_steps,
             fast_model: existing_config.fast_model.clone(),
+            context_limit: existing_config.context_limit,
+            max_output_tokens: existing_config.max_output_tokens,
         };
 
         let file_path = custom_provider_file_path(&updated_config.name)?;

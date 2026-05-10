@@ -381,4 +381,45 @@ mod tests {
 
         std::env::remove_var("GOOSE_PATH_ROOT");
     }
+
+    #[tokio::test]
+    async fn test_provider_context_limit_applied_to_dynamic_models() {
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", None::<&str>)]);
+        let temp_dir = tempfile::tempdir().expect("tempdir should be created");
+        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
+
+        let custom_dir = Paths::config_dir().join("custom_providers");
+        fs::create_dir_all(&custom_dir).expect("custom providers dir should be created");
+
+        let custom_dynamic = r#"{
+  "name": "custom_dynamic",
+  "engine": "openai",
+  "display_name": "Custom Dynamic",
+  "description": "test provider with dynamic models",
+  "api_key_env": "",
+  "base_url": "https://example.invalid/v1/chat/completions",
+  "models": [],
+  "dynamic_models": true,
+  "context_limit": 1048576,
+  "requires_auth": false
+}"#;
+        fs::write(custom_dir.join("custom_dynamic.json"), custom_dynamic)
+            .expect("custom_dynamic.json should be written");
+
+        refresh_custom_providers()
+            .await
+            .expect("custom providers should refresh");
+
+        // When a dynamic model is selected, the provider's context_limit should be applied
+        let provider = create_with_named_model("custom_dynamic", "some-dynamic-model", Vec::new())
+            .await
+            .expect("custom_dynamic provider should be creatable");
+        assert_eq!(
+            provider.get_model_config().context_limit,
+            Some(1_048_576),
+            "provider context_limit should be applied to dynamic models"
+        );
+
+        std::env::remove_var("GOOSE_PATH_ROOT");
+    }
 }

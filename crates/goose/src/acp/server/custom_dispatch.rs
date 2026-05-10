@@ -449,4 +449,28 @@ impl GooseAcpAgent {
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         self.on_dictation_model_select(req).await
     }
+
+    #[custom_method(ModelContextLimitSetRequest)]
+    async fn dispatch_model_context_limit_set(
+        &self,
+        req: ModelContextLimitSetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_model_context_limit_set(req).await
+    }
+
+    #[custom_method(ModelContextLimitGetRequest)]
+    async fn dispatch_model_context_limit_get(
+        &self,
+        req: ModelContextLimitGetRequest,
+    ) -> Result<ModelContextLimitGetResponse, agent_client_protocol::Error> {
+        self.on_model_context_limit_get(req).await
+    }
+
+    #[custom_method(ModelContextLimitResetRequest)]
+    async fn dispatch_model_context_limit_reset(
+        &self,
+        req: ModelContextLimitResetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_model_context_limit_reset(req).await
+    }
 }

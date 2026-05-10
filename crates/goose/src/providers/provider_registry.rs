@@ -219,6 +219,8 @@ impl ProviderRegistry {
             config_keys,
             setup_steps: config.setup_steps.clone(),
             model_selection_hint: None,
+            provider_context_limit: config.context_limit,
+            provider_max_output_tokens: config.max_output_tokens,
         };
         let inventory_config_keys = custom_metadata.config_keys.clone();
 

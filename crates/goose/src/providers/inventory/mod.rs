@@ -69,12 +69,14 @@ pub struct InventoryIdentity {
     pub provider_id: String,
     pub provider_family: String,
     pub inventory_key: String,
+    pub context_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct InventoryIdentityInput {
     pub provider_id: String,
     pub provider_family: String,
+    pub context_limit: Option<usize>,
     pub public_inputs: BTreeMap<String, String>,
     pub secret_inputs: BTreeMap<String, String>,
 }
@@ -87,6 +89,7 @@ impl InventoryIdentityInput {
         InventoryIdentityInput {
             provider_id: provider_id.into(),
             provider_family: provider_family.into(),
+            context_limit: None,
             public_inputs: BTreeMap::new(),
             secret_inputs: BTreeMap::new(),
         }
@@ -114,6 +117,7 @@ impl InventoryIdentityInput {
         let InventoryIdentityInput {
             provider_id,
             provider_family,
+            context_limit,
             public_inputs,
             secret_inputs,
         } = self;
@@ -126,6 +130,7 @@ impl InventoryIdentityInput {
         Ok(InventoryIdentity {
             provider_id,
             provider_family,
+            context_limit,
             inventory_key: format!("{digest:x}"),
         })
     }
@@ -421,7 +426,7 @@ impl ProviderInventoryService {
         identity: &InventoryIdentity,
         model_ids: &[String],
     ) -> Result<()> {
-        let models = enrich_model_ids_with_canonical(&identity.provider_family, model_ids);
+        let models = enrich_model_ids_with_canonical(&identity.provider_family, model_ids, identity.context_limit);
         let now = Utc::now();
         let pool = self.storage.pool().await?;
         let mut tx = pool.begin().await?;
@@ -757,9 +762,9 @@ pub fn declarative_inventory_identity(
     config: &DeclarativeProviderConfig,
 ) -> Result<InventoryIdentityInput> {
     let global = Config::global();
-    let mut identity = InventoryIdentityInput::new(
-        config.name.clone(),
-        config
+    let mut identity = InventoryIdentityInput {
+        provider_id: config.name.clone(),
+        provider_family: config
             .catalog_provider_id
             .clone()
             .unwrap_or_else(|| match config.engine {
@@ -767,7 +772,10 @@ pub fn declarative_inventory_identity(
                 ProviderEngine::Anthropic => "anthropic".to_string(),
                 ProviderEngine::Ollama => "ollama".to_string(),
             }),
-    );
+        context_limit: config.context_limit,
+        public_inputs: BTreeMap::new(),
+        secret_inputs: BTreeMap::new(),
+    };
 
     identity
         .public_inputs
@@ -869,12 +877,13 @@ fn fallback_inventory_identity(provider_id: &str) -> InventoryIdentityInput {
 fn enrich_model_ids_with_canonical(
     provider_family: &str,
     model_ids: &[String],
+    context_limit: Option<usize>,
 ) -> Vec<InventoryModel> {
     let mut models: Vec<InventoryModel> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
 
     for id in model_ids {
-        let model = enriched_model(provider_family, id, None);
+        let model = enriched_model(provider_family, id, context_limit);
         if !seen_names.insert(model.name.clone()) {
             continue;
         }
@@ -1083,6 +1092,7 @@ mod tests {
         InventoryIdentity {
             provider_id: provider_id.to_string(),
             provider_family: provider_id.to_string(),
+            context_limit: None,
             inventory_key: inventory_key.to_string(),
         }
     }

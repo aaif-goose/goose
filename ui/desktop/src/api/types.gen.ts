@@ -211,6 +211,10 @@ export type DeclarativeProviderConfig = {
     base_path?: string | null;
     base_url: string;
     catalog_provider_id?: string | null;
+    /**
+     * Default context limit for dynamic models when not explicitly set per-model.
+     */
+    context_limit?: number | null;
     description?: string | null;
     display_name: string;
     dynamic_models?: boolean | null;
@@ -220,6 +224,10 @@ export type DeclarativeProviderConfig = {
     headers?: {
         [key: string]: string;
     } | null;
+    /**
+     * Default max output tokens for dynamic models when not explicitly set per-model.
+     */
+    max_output_tokens?: number | null;
     model_doc_link?: string | null;
     models: Array<ModelInfo>;
     name: string;
@@ -980,6 +988,14 @@ export type ProviderMetadata = {
      * The unique identifier for this provider
      */
     name: string;
+    /**
+     * Default context limit for dynamic models when not explicitly set per-model.
+     */
+    provider_context_limit?: number | null;
+    /**
+     * Default max output tokens for dynamic models when not explicitly set per-model.
+     */
+    provider_max_output_tokens?: number | null;
     /**
      * step-by-step instructions for set up providers eg: api key
      */

@@ -1280,3 +1280,40 @@ pub struct DictationModelSelectRequest {
     pub provider: String,
     pub model_id: String,
 }
+
+/// Set a per-model context limit override.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/model/context_limit/set", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelContextLimitSetRequest {
+    pub provider: String,
+    pub model: String,
+    /// The context limit in tokens. Pass 0 to reset to provider default.
+    pub context_limit: u64,
+}
+
+/// Read the stored per-model context limit override.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/model/context_limit/get", response = ModelContextLimitGetResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelContextLimitGetRequest {
+    pub provider: String,
+    pub model: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelContextLimitGetResponse {
+    /// The stored context limit in tokens, or null if no override is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_limit: Option<usize>,
+}
+
+/// Remove a per-model context limit override.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/model/context_limit/reset", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelContextLimitResetRequest {
+    pub provider: String,
+    pub model: String,
+}

@@ -130,6 +130,16 @@ impl AnthropicProvider {
             None
         };
 
+        let model = if config.context_limit.is_some() && model.context_limit.is_none() {
+            model.with_context_limit(config.context_limit)
+        } else {
+            model
+        };
+        let model = if config.max_output_tokens.is_some() && model.max_tokens.is_none() {
+            model.with_max_tokens(config.max_output_tokens)
+        } else {
+            model
+        };
         let model = if let Some(ref fast_model_name) = config.fast_model {
             model.with_fast(fast_model_name, &config.name)?
         } else {

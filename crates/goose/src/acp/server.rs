@@ -1043,6 +1043,41 @@ fn build_usage_update(session: &Session, context_limit: usize) -> UsageUpdate {
     UsageUpdate::new(used, context_limit as u64)
 }
 
+/// Resolve the effective context limit for a provider+model, checking:
+/// 1. The ModelConfig's context_limit
+/// 2. Known models in the provider registry
+/// 3. Declarative provider's provider-level context_limit (from registry metadata)
+/// 4. Fall back to DEFAULT_CONTEXT_LIMIT
+async fn resolve_effective_context_limit(
+    provider_name: &str,
+    model_name: &str,
+    model_config_context_limit: Option<usize>,
+) -> usize {
+    // Use the model config's context_limit if set
+    if let Some(limit) = model_config_context_limit {
+        return limit;
+    }
+
+    // Check known models in the provider registry
+    if let Ok(entry) = crate::providers::get_from_registry(provider_name).await {
+        if let Some(known_model) = entry
+            .metadata()
+            .known_models
+            .iter()
+            .find(|m| m.name == model_name && m.context_limit > 0)
+        {
+            return known_model.context_limit;
+        }
+        // Check provider-level context_limit from registry metadata
+        if let Some(limit) = entry.metadata().provider_context_limit {
+            return limit;
+        }
+    }
+
+    // Fall back to default
+    crate::model::DEFAULT_CONTEXT_LIMIT
+}
+
 impl GooseAcpAgent {
     pub fn permission_manager(&self) -> Arc<PermissionManager> {
         Arc::clone(&self.permission_manager)
@@ -2387,10 +2422,17 @@ impl GooseAcpAgent {
         let mode_state = build_mode_state(self.goose_mode)?;
 
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
-        let initial_usage_update = resolved
-            .as_ref()
-            .ok()
-            .map(|(_, mc)| build_usage_update(&goose_session, mc.context_limit()));
+        let initial_usage_update = if let Ok((provider_name, mc)) = resolved.as_ref() {
+            let context_limit = resolve_effective_context_limit(
+                provider_name,
+                &mc.model_name,
+                mc.context_limit,
+            )
+            .await;
+            Some(build_usage_update(&goose_session, context_limit))
+        } else {
+            None
+        };
         let acp_session_id = SessionId::new(session_id_str);
         let (model_state, config_options, prebuilt_provider) = self
             .prepare_session_init_config(&resolved, &mode_state, &goose_session)
@@ -2746,16 +2788,17 @@ impl GooseAcpAgent {
         let mode_state = build_mode_state(loaded_mode)?;
 
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
-        let initial_usage_update = resolved
-            .as_ref()
-            .ok()
-            .map(|(_, mc)| build_usage_update(&goose_session, mc.context_limit()))
-            .or_else(|| {
-                goose_session
-                    .model_config
-                    .as_ref()
-                    .map(|mc| build_usage_update(&goose_session, mc.context_limit()))
-            });
+        let initial_usage_update = if let Ok((provider_name, mc)) = resolved.as_ref() {
+            let context_limit = resolve_effective_context_limit(
+                provider_name,
+                &mc.model_name,
+                mc.context_limit,
+            )
+            .await;
+            Some(build_usage_update(&goose_session, context_limit))
+        } else {
+            None
+        };
         let (model_state, config_options, prebuilt_provider) = self
             .prepare_session_init_config(&resolved, &mode_state, &goose_session)
             .await;

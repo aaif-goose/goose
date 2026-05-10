@@ -256,3 +256,106 @@ fn optional_config_string(
         Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.to_string())),
     }
 }
+
+impl GooseAcpAgent {
+    pub(super) async fn on_model_context_limit_set(
+        &self,
+        req: ModelContextLimitSetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        if req.provider.is_empty() || req.model.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params()
+                    .data("provider and model must be non-empty"),
+            );
+        }
+        if req.context_limit == 0 {
+            return self
+                .on_model_context_limit_reset(ModelContextLimitResetRequest {
+                    provider: req.provider,
+                    model: req.model,
+                })
+                .await;
+        }
+        let config = self.config()?;
+        let key = format!("model_context_limit:{}", req.provider);
+        // Store as a JSON object: { "model": context_limit }
+        let existing = config
+            .get_param::<serde_json::Value>(&key)
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+        let mut map = match existing.as_object().cloned() {
+            Some(m) => m,
+            None => serde_json::Map::new(),
+        };
+        map.insert(
+            req.model,
+            serde_json::Value::Number(serde_json::Number::from(req.context_limit)),
+        );
+        config
+            .set_param(&key, &serde_json::Value::Object(map))
+            .internal_err_ctx("Failed to save context limit")?;
+        Ok(EmptyResponse {})
+    }
+
+    pub(super) async fn on_model_context_limit_get(
+        &self,
+        req: ModelContextLimitGetRequest,
+    ) -> Result<ModelContextLimitGetResponse, agent_client_protocol::Error> {
+        if req.provider.is_empty() || req.model.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params()
+                    .data("provider and model must be non-empty"),
+            );
+        }
+        let config = self.config()?;
+        let key = format!("model_context_limit:{}", req.provider);
+        match config.get_param::<serde_json::Value>(&key) {
+            Ok(serde_json::Value::Object(map)) => Ok(ModelContextLimitGetResponse {
+                context_limit: map
+                    .get(&req.model)
+                    .and_then(|v| v.as_u64())
+                    .and_then(|v| usize::try_from(v).ok()),
+            }),
+            Ok(_) => Ok(ModelContextLimitGetResponse {
+                context_limit: None,
+            }),
+            Err(crate::config::ConfigError::NotFound(_)) => Ok(ModelContextLimitGetResponse {
+                context_limit: None,
+            }),
+            Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.to_string())),
+        }
+    }
+
+    pub(super) async fn on_model_context_limit_reset(
+        &self,
+        req: ModelContextLimitResetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        if req.provider.is_empty() || req.model.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params()
+                    .data("provider and model must be non-empty"),
+            );
+        }
+        let config = self.config()?;
+        let key = format!("model_context_limit:{}", req.provider);
+        match config.get_param::<serde_json::Value>(&key) {
+            Ok(serde_json::Value::Object(mut map)) => {
+                map.remove(&req.model);
+                if map.is_empty() {
+                    config
+                        .delete(&key)
+                        .internal_err_ctx("Failed to clear context limit storage")?;
+                } else {
+                    config
+                        .set_param(&key, &serde_json::Value::Object(map))
+                        .internal_err_ctx("Failed to update context limit storage")?;
+                }
+            }
+            Ok(_) => {}
+            Err(crate::config::ConfigError::NotFound(_)) => {}
+            Err(e) => {
+                return Err(agent_client_protocol::Error::internal_error().data(e.to_string()))
+            }
+        }
+        Ok(EmptyResponse {})
+    }
+}
