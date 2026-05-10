@@ -146,21 +146,21 @@ fn format_mcp_skills_section(fs_names: &HashSet<String>, mcp: &[McpSkillEntry]) 
 
     // Bucket by bare name to detect MCP-vs-MCP collisions separately from
     // FS collisions.
-    let mut counts: std::collections::HashMap<&str, usize> =
-        std::collections::HashMap::new();
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for entry in mcp {
         *counts.entry(entry.name.as_str()).or_insert(0) += 1;
     }
 
     let mut sorted: Vec<&McpSkillEntry> = mcp.iter().collect();
-    sorted.sort_by(|a, b| (a.name.as_str(), a.server.as_str()).cmp(&(b.name.as_str(), b.server.as_str())));
+    sorted.sort_by(|a, b| {
+        (a.name.as_str(), a.server.as_str()).cmp(&(b.name.as_str(), b.server.as_str()))
+    });
 
     let mut out = String::from(
         "\n\nYou also have these skills from connected MCP servers. Load them via load_skill by name; if a collision is shown in <server>__<name> form, use that exact form:",
     );
     for entry in sorted {
-        let needs_prefix =
-            fs_names.contains(&entry.name) || counts[entry.name.as_str()] > 1;
+        let needs_prefix = fs_names.contains(&entry.name) || counts[entry.name.as_str()] > 1;
         let display_name = if needs_prefix {
             format!("{}__{}", entry.server, entry.name)
         } else {
@@ -209,8 +209,8 @@ fn first_text_content(
     first
 }
 
-/// Normalizes a supporting-file relative reference before composing it with
-/// a server's `base_uri`. Rejects inputs that could escape the skill
+/// Normalizes a supporting-file relative reference before composing it
+/// with a skill's root URI. Rejects inputs that could escape the skill
 /// directory — `..` segments or a leading `/`. Backslashes are folded to
 /// forward slashes so Windows-style paths from the model don't slip past
 /// the `..` check. Returns `None` if the input is unsafe to compose.
@@ -243,13 +243,13 @@ fn find_mcp_by_name<'a>(mcp: &'a [McpSkillEntry], query: &str) -> Option<&'a Mcp
 }
 
 /// Enumerates supporting resources for an MCP skill by filtering the
-/// server's `resources/list` response down to URIs under `entry.base_uri`
-/// (excluding the SKILL.md itself). Returns `(relative_ref, uri)` pairs
-/// suitable for the "Supporting Files" hint block. Best-effort: a server
-/// that doesn't support `resources/list`, errors out, or returns nothing
-/// relevant yields an empty vec and no section is rendered. Mirrors the FS
-/// load_skill behaviour — it only surfaces *pointers*, never resource
-/// content.
+/// server's `resources/list` response down to URIs under
+/// `entry.skill_root_uri()` (excluding the SKILL.md itself). Returns
+/// `(relative_ref, uri)` pairs suitable for the "Supporting Files" hint
+/// block. Best-effort: a server that doesn't support `resources/list`,
+/// errors out, or returns nothing relevant yields an empty vec and no
+/// section is rendered. Mirrors the FS load_skill behaviour — it only
+/// surfaces *pointers*, never resource content.
 async fn enumerate_mcp_supporting_resources(
     mgr: &ExtensionManager,
     session_id: &str,
@@ -272,13 +272,14 @@ async fn enumerate_mcp_supporting_resources(
         }
     };
 
+    let root = entry.skill_root_uri();
     let mut out = Vec::new();
     for r in list.resources {
         let uri = r.uri.clone();
-        if uri == entry.uri {
+        if uri == entry.url {
             continue;
         }
-        let Some(rel) = uri.strip_prefix(&entry.base_uri) else {
+        let Some(rel) = uri.strip_prefix(root) else {
             continue;
         };
         if rel.is_empty() {
@@ -292,9 +293,9 @@ async fn enumerate_mcp_supporting_resources(
 /// Reads a resource from the owning MCP server and wraps it in the same
 /// "Loaded Skill" framing used for filesystem skills, so the model sees a
 /// consistent shape regardless of source. When the resource is the skill's
-/// own SKILL.md (i.e. `uri == entry.uri`), also appends a Supporting Files
-/// hint section built from the server's `resources/list` response — same
-/// shape as the FS path, surfacing pointers only, never content.
+/// own entry URI (i.e. `uri == entry.url`), also appends a Supporting
+/// Files hint section built from the server's `resources/list` response —
+/// same shape as the FS path, surfacing pointers only, never content.
 async fn read_mcp_and_frame(
     mgr: &ExtensionManager,
     session_id: &str,
@@ -302,8 +303,11 @@ async fn read_mcp_and_frame(
     uri: &str,
     cancel: CancellationToken,
 ) -> CallToolResult {
-    let is_skill_md = uri == entry.uri;
-    match mgr.read_resource(session_id, uri, &entry.server, cancel.clone()).await {
+    let is_skill_md = uri == entry.url;
+    match mgr
+        .read_resource(session_id, uri, &entry.server, cancel.clone())
+        .await
+    {
         Ok(result) => match first_text_content(result, &entry.server, uri) {
             Some(body) => {
                 let mut output = format!(
@@ -317,7 +321,7 @@ async fn read_mcp_and_frame(
                     if !supporting.is_empty() {
                         output.push_str(&format!(
                             "\n## Supporting Files\n\nSkill base: {}\n\n",
-                            entry.base_uri
+                            entry.skill_root_uri()
                         ));
                         for (rel, _uri) in &supporting {
                             output.push_str(&format!(
@@ -531,11 +535,12 @@ impl McpClientTrait for SkillsClient {
 
         if let Some(entry) = find_mcp_by_name(&mcp_skills, skill_name) {
             if let Some(ref mgr) = mgr {
+                let entry_url = entry.url.clone();
                 return Ok(read_mcp_and_frame(
                     mgr.as_ref(),
                     &ctx.session_id,
                     entry,
-                    &entry.uri,
+                    &entry_url,
                     cancellation_token.clone(),
                 )
                 .await);
@@ -551,7 +556,7 @@ impl McpClientTrait for SkillsClient {
                             skill_name
                         ))]));
                     };
-                    let composed = format!("{}{}", entry.base_uri, rel);
+                    let composed = format!("{}{}", entry.skill_root_uri(), rel);
                     return Ok(read_mcp_and_frame(
                         mgr.as_ref(),
                         &ctx.session_id,
@@ -764,7 +769,7 @@ mod tests {
             // Return every resource the test registered, excluding the index
             // itself — mirrors what a real server would expose via
             // `resources/list`, and lets MCP supporting-files enumeration
-            // find entries under each skill's base_uri.
+            // find entries under each skill's root URI.
             let resources = self
                 .resources
                 .keys()
@@ -999,18 +1004,13 @@ mod tests {
         // load_skill is name-only; passing a URI returns an instructive
         // error pointing the model at read_resource.
         let tmp = TempDir::new().unwrap();
-        let (client, _mgr, _tmp_guard) = setup_client_with_fake(
-            "srv",
-            HashMap::new(),
-            tmp.path().to_path_buf(),
-        )
-        .await;
+        let (client, _mgr, _tmp_guard) =
+            setup_client_with_fake("srv", HashMap::new(), tmp.path().to_path_buf()).await;
 
         let ctx = ToolCallContext::new("s".to_string(), None, None);
-        let args: JsonObject = serde_json::from_value(
-            serde_json::json!({"name": "skill://unknown/SKILL.md"}),
-        )
-        .unwrap();
+        let args: JsonObject =
+            serde_json::from_value(serde_json::json!({"name": "skill://unknown/SKILL.md"}))
+                .unwrap();
         let result = client
             .call_tool(&ctx, "load_skill", Some(args), CancellationToken::new())
             .await
@@ -1169,8 +1169,7 @@ mod tests {
                 r#"{"name":"shared","type":"skill-md","description":"from one","url":"skill://shared/SKILL.md"}"#,
             ),
         );
-        let (client, mgr, _tmp) =
-            setup_client_with_fake("one", r1, tmp.path().to_path_buf()).await;
+        let (client, mgr, _tmp) = setup_client_with_fake("one", r1, tmp.path().to_path_buf()).await;
 
         let mut r2 = HashMap::new();
         r2.insert(
@@ -1185,8 +1184,16 @@ mod tests {
             .get_dynamic_instructions("s")
             .await
             .expect("dynamic output");
-        assert!(out.contains("one__shared"), "missing one__shared; got:\n{}", out);
-        assert!(out.contains("two__shared"), "missing two__shared; got:\n{}", out);
+        assert!(
+            out.contains("one__shared"),
+            "missing one__shared; got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("two__shared"),
+            "missing two__shared; got:\n{}",
+            out
+        );
         // Bare "shared" alone (followed by a space or paren) must NOT appear
         // as a display name — only the prefixed forms.
         assert!(
@@ -1217,8 +1224,7 @@ mod tests {
                 r#"{"name":"shared","type":"skill-md","description":"from mcp","url":"skill://shared/SKILL.md"}"#,
             ),
         );
-        let (client, _mgr, _tmp) =
-            setup_client_with_fake("srv", r, tmp.path().to_path_buf()).await;
+        let (client, _mgr, _tmp) = setup_client_with_fake("srv", r, tmp.path().to_path_buf()).await;
 
         let out = client
             .get_dynamic_instructions("s")
@@ -1248,8 +1254,7 @@ mod tests {
             "skill://shared/SKILL.md".to_string(),
             "body from server one".to_string(),
         );
-        let (client, mgr, _tmp) =
-            setup_client_with_fake("one", r1, tmp.path().to_path_buf()).await;
+        let (client, mgr, _tmp) = setup_client_with_fake("one", r1, tmp.path().to_path_buf()).await;
 
         let mut r2 = HashMap::new();
         r2.insert(
@@ -1302,8 +1307,7 @@ mod tests {
             "skill://foo__bar/SKILL.md".to_string(),
             "literal foo__bar body".to_string(),
         );
-        let (client, mgr, _tmp) =
-            setup_client_with_fake("srv", r1, tmp.path().to_path_buf()).await;
+        let (client, mgr, _tmp) = setup_client_with_fake("srv", r1, tmp.path().to_path_buf()).await;
 
         // Server "foo" hosts skill "bar" — creates the ambiguity.
         let mut r2 = HashMap::new();
@@ -1341,7 +1345,7 @@ mod tests {
     async fn test_load_mcp_skill_lists_supporting_files_like_fs() {
         // MCP `load_skill` must surface a "Supporting Files" hint section
         // that mirrors the FS behavior: relative paths under the skill's
-        // base_uri, rendered as `load_skill(name: "<skill>/<rel>")`
+        // root URI, rendered as `load_skill(name: "<skill>/<rel>")`
         // pointers. Content of the supporting resources must NOT be
         // included — only their names/paths.
         let tmp = TempDir::new().unwrap();
@@ -1364,7 +1368,7 @@ mod tests {
             "skill://docs/templates/EXAMPLE.txt".to_string(),
             "ALSO SHOULD NOT APPEAR".to_string(),
         );
-        // A sibling resource outside this skill's base_uri — must be
+        // A sibling resource outside this skill's root URI — must be
         // filtered out of the Supporting Files section.
         resources.insert(
             "skill://other/SKILL.md".to_string(),
@@ -1375,8 +1379,7 @@ mod tests {
             setup_client_with_fake("srv", resources, tmp.path().to_path_buf()).await;
 
         let ctx = ToolCallContext::new("s".to_string(), None, None);
-        let args: JsonObject =
-            serde_json::from_value(serde_json::json!({"name": "docs"})).unwrap();
+        let args: JsonObject = serde_json::from_value(serde_json::json!({"name": "docs"})).unwrap();
         let result = client
             .call_tool(&ctx, "load_skill", Some(args), CancellationToken::new())
             .await
@@ -1385,15 +1388,25 @@ mod tests {
         assert!(!result.is_error.unwrap_or(false));
         let body = text_of(&result);
 
-        assert!(body.contains("main skill body"), "missing SKILL.md body; got:\n{}", body);
-        assert!(body.contains("Supporting Files"), "missing section header; got:\n{}", body);
+        assert!(
+            body.contains("main skill body"),
+            "missing SKILL.md body; got:\n{}",
+            body
+        );
+        assert!(
+            body.contains("Supporting Files"),
+            "missing section header; got:\n{}",
+            body
+        );
         assert!(
             body.contains("references/GUIDE.md → load_skill(name: \"docs/references/GUIDE.md\")"),
             "missing GUIDE.md pointer; got:\n{}",
             body
         );
         assert!(
-            body.contains("templates/EXAMPLE.txt → load_skill(name: \"docs/templates/EXAMPLE.txt\")"),
+            body.contains(
+                "templates/EXAMPLE.txt → load_skill(name: \"docs/templates/EXAMPLE.txt\")"
+            ),
             "missing EXAMPLE.txt pointer; got:\n{}",
             body
         );

@@ -37,16 +37,35 @@ pub(crate) const INDEX_URI: &str = "skill://index.json";
 pub(crate) const INDEX_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A single indexed skill served over MCP, as surfaced to the skills
-/// platform extension. `uri` is stored as-is from the index (any scheme);
-/// `base_uri` is `uri` with trailing `SKILL.md` stripped for relative-ref
-/// composition.
+/// platform extension. `url` is stored as-is from the index (any scheme).
+/// The skill root (used for composing relative refs) is derived from `url`
+/// at use time via [`McpSkillEntry::skill_root_uri`] rather than cached as
+/// a separate field — per the SEP, hosts resolve relative refs against
+/// the skill's directory URI, which is the entry URI minus its final
+/// path segment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpSkillEntry {
     pub server: String,
     pub name: String,
     pub description: String,
-    pub base_uri: String,
-    pub uri: String,
+    pub url: String,
+}
+
+impl McpSkillEntry {
+    /// Skill root URI: `url` truncated at (and including) the final `/`.
+    /// If `url` already ends with `/`, returns it unchanged. This matches
+    /// the SEP's relative-resolution rule — the entry URI's directory is
+    /// the base for relative refs, regardless of whether the trailing
+    /// segment is the literal `SKILL.md` or something else.
+    ///
+    /// Returns a borrowed slice — called on the per-turn prompt-render
+    /// path, so avoid the allocation.
+    pub fn skill_root_uri(&self) -> &str {
+        match self.url.rfind('/') {
+            Some(idx) => &self.url[..=idx],
+            None => &self.url,
+        }
+    }
 }
 
 /// Returns true if the server's initialize response declares the skills
@@ -147,7 +166,11 @@ fn parse_index_entry(server: &str, raw: IndexEntry) -> Option<McpSkillEntry> {
             return None;
         }
         Some(other) => {
-            debug!(server, entry_type = other, "skipping unknown index entry type");
+            debug!(
+                server,
+                entry_type = other,
+                "skipping unknown index entry type"
+            );
             return None;
         }
         None => {
@@ -166,20 +189,18 @@ fn parse_index_entry(server: &str, raw: IndexEntry) -> Option<McpSkillEntry> {
         None
     })?;
 
-    let Some(base_uri) = url.strip_suffix("SKILL.md") else {
-        warn!(
+    if !url.ends_with("SKILL.md") {
+        debug!(
             server,
-            name, url, "skill-md index entry `url` does not end in SKILL.md — skipping"
+            name, url, "skill-md index entry `url` does not end in `SKILL.md`"
         );
-        return None;
-    };
+    }
 
     Some(McpSkillEntry {
         server: server.to_string(),
         name,
         description,
-        base_uri: base_uri.to_string(),
-        uri: url,
+        url,
     })
 }
 
@@ -322,17 +343,21 @@ mod tests {
             delay: None,
         };
 
-        let entries =
-            fetch_server_skills("gh", &server as &dyn McpClientTrait, "s", CancellationToken::new())
-                .await;
+        let entries = fetch_server_skills(
+            "gh",
+            &server as &dyn McpClientTrait,
+            "s",
+            CancellationToken::new(),
+        )
+        .await;
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].name, "git-workflow");
-        assert_eq!(entries[0].uri, "skill://git-workflow/SKILL.md");
-        assert_eq!(entries[0].base_uri, "skill://git-workflow/");
+        assert_eq!(entries[0].url, "skill://git-workflow/SKILL.md");
+        assert_eq!(entries[0].skill_root_uri(), "skill://git-workflow/");
         assert_eq!(entries[0].server, "gh");
         assert_eq!(entries[1].name, "refunds");
-        assert_eq!(entries[1].base_uri, "skill://acme/billing/refunds/");
+        assert_eq!(entries[1].skill_root_uri(), "skill://acme/billing/refunds/");
     }
 
     #[tokio::test]
@@ -343,9 +368,13 @@ mod tests {
             delay: None,
         };
 
-        let entries =
-            fetch_server_skills("gh", &server as &dyn McpClientTrait, "s", CancellationToken::new())
-                .await;
+        let entries = fetch_server_skills(
+            "gh",
+            &server as &dyn McpClientTrait,
+            "s",
+            CancellationToken::new(),
+        )
+        .await;
         assert!(entries.is_empty());
     }
 
@@ -365,9 +394,13 @@ mod tests {
             delay: None,
         };
 
-        let entries =
-            fetch_server_skills("gh", &server as &dyn McpClientTrait, "s", CancellationToken::new())
-                .await;
+        let entries = fetch_server_skills(
+            "gh",
+            &server as &dyn McpClientTrait,
+            "s",
+            CancellationToken::new(),
+        )
+        .await;
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "real");
     }
@@ -396,13 +429,44 @@ mod tests {
         .await;
         assert_eq!(entries.len(), 1);
         assert_eq!(
-            entries[0].uri,
+            entries[0].url,
             "github://github/repo/skills/pull-requests/SKILL.md"
         );
         assert_eq!(
-            entries[0].base_uri,
+            entries[0].skill_root_uri(),
             "github://github/repo/skills/pull-requests/"
         );
+    }
+
+    #[tokio::test]
+    async fn test_discover_directory_form_url() {
+        // Per the SEP, hosts MUST tolerate `url` entries that do not end in
+        // the literal `SKILL.md` — e.g. servers that publish a skill's
+        // directory URI. The skill_root_uri derivation should yield the
+        // same directory.
+        let mut resources = HashMap::new();
+        resources.insert(
+            INDEX_URI.to_string(),
+            index_with(
+                r#"{"name":"refunds","type":"skill-md","description":"","url":"skill://acme/billing/refunds/"}"#,
+            ),
+        );
+        let server = FakeSkillsServer {
+            info: FakeSkillsServer::with_capability(),
+            resources,
+            delay: None,
+        };
+
+        let entries = fetch_server_skills(
+            "acme",
+            &server as &dyn McpClientTrait,
+            "s",
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].url, "skill://acme/billing/refunds/");
+        assert_eq!(entries[0].skill_root_uri(), "skill://acme/billing/refunds/");
     }
 
     #[tokio::test]
@@ -432,5 +496,4 @@ mod tests {
             elapsed
         );
     }
-
 }

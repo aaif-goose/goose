@@ -30,9 +30,9 @@ use tokio_util::sync::CancellationToken;
 use goose::agents::extension::{Envs, ExtensionConfig, PlatformExtensionContext};
 use goose::agents::extension_manager::ExtensionManager;
 use goose::agents::mcp_client::McpClientTrait;
+use goose::agents::ToolCallContext;
 use goose::skills::mcp_client::McpSkillEntry;
 use goose::skills::SkillsClient;
-use goose::agents::ToolCallContext;
 
 /// Pick an unused local TCP port by asking the OS for one.
 fn free_port() -> u16 {
@@ -110,7 +110,10 @@ fn spawn_server(port: u16) -> Result<ServerHandle, String> {
 
     match wait_for_port(port, Duration::from_secs(10)) {
         Ok(()) => Ok(handle),
-        Err(elapsed) => Err(format!("server did not bind :{} within {:?}", port, elapsed)),
+        Err(elapsed) => Err(format!(
+            "server did not bind :{} within {:?}",
+            port, elapsed
+        )),
     }
 }
 
@@ -188,12 +191,13 @@ async fn mcp_skills_discovery_and_load_against_real_server() {
         .find(|e| e.name == "pull-requests")
         .expect("pull-requests skill should have been discovered from skill://index.json");
     assert_eq!(
-        pr.uri, "skill://pull-requests/SKILL.md",
+        pr.url, "skill://pull-requests/SKILL.md",
         "server should advertise the canonical SKILL.md URI"
     );
     assert_eq!(
-        pr.base_uri, "skill://pull-requests/",
-        "base_uri should strip SKILL.md"
+        pr.skill_root_uri(),
+        "skill://pull-requests/",
+        "skill_root_uri should yield the directory of the entry URL"
     );
 
     // Phase 2: mechanical check — load_skill dispatches through resources/read?
@@ -214,7 +218,12 @@ async fn mcp_skills_discovery_and_load_against_real_server() {
     let args: rmcp::model::JsonObject =
         serde_json::from_value(serde_json::json!({"name": "pull-requests"})).unwrap();
     let result = skills_client
-        .call_tool(&tool_ctx, "load_skill", Some(args), CancellationToken::new())
+        .call_tool(
+            &tool_ctx,
+            "load_skill",
+            Some(args),
+            CancellationToken::new(),
+        )
         .await
         .expect("call_tool should not propagate transport error");
 
