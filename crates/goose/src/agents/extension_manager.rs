@@ -79,12 +79,13 @@ struct Extension {
     client: McpClientBox,
     server_info: Option<ServerInfo>,
     _temp_dir: Option<tempfile::TempDir>,
-    /// Cache of MCP-served skills discovered from this extension's
-    /// `skill://index.json` at connect time. Populated synchronously
-    /// during extension registration (see `populate_mcp_skills_cache`).
-    /// Empty for extensions that don't serve a parseable index.
+    /// Cache of MCP-served skills (both concrete and templated)
+    /// discovered from this extension's `skill://index.json` at connect
+    /// time. Populated synchronously during extension registration (see
+    /// `populate_mcp_skills_cache`). Empty for extensions that don't
+    /// serve a parseable index.
     /// TODO: invalidate on `notifications/resources/list_changed`.
-    mcp_skills: Vec<crate::skills::mcp_client::McpSkillEntry>,
+    mcp_skills: crate::skills::mcp_client::ServerSkills,
 }
 
 impl Extension {
@@ -94,7 +95,7 @@ impl Extension {
         client: McpClientBox,
         server_info: Option<ServerInfo>,
         temp_dir: Option<tempfile::TempDir>,
-        mcp_skills: Vec<crate::skills::mcp_client::McpSkillEntry>,
+        mcp_skills: crate::skills::mcp_client::ServerSkills,
     ) -> Self {
         Self {
             client,
@@ -695,7 +696,7 @@ async fn populate_mcp_skills_cache(
     server_name: &str,
     client: &dyn McpClientTrait,
     session_id: Option<&str>,
-) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
+) -> crate::skills::mcp_client::ServerSkills {
     match session_id {
         Some(sid) => {
             crate::skills::mcp_client::fetch_server_skills(
@@ -711,7 +712,7 @@ async fn populate_mcp_skills_cache(
                 server = %server_name,
                 "skipping skill index fetch: no session id at registration time"
             );
-            Vec::new()
+            crate::skills::mcp_client::ServerSkills::default()
         }
     }
 }
@@ -1181,13 +1182,27 @@ impl ExtensionManager {
         Ok(self.extensions.lock().await.keys().cloned().collect())
     }
 
-    /// Snapshot every connected extension's cached MCP skill entries. Read
-    /// path for the skills platform extension's per-turn system-prompt
-    /// assembly — no network I/O.
+    /// Snapshot every connected extension's cached **concrete** MCP skill
+    /// entries. Read path for the skills platform extension's per-turn
+    /// system-prompt assembly — no network I/O. Templates are surfaced
+    /// separately via [`aggregated_mcp_skill_templates`].
     pub async fn aggregated_mcp_skills(&self) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
         let mut out = Vec::new();
         for ext in self.extensions.lock().await.values() {
-            out.extend(ext.mcp_skills.iter().cloned());
+            out.extend(ext.mcp_skills.concrete.iter().cloned());
+        }
+        out
+    }
+
+    /// Snapshot every connected extension's cached MCP skill **template**
+    /// entries. Drives the templated-catalog section of the system prompt
+    /// and the `load_skill_template` resolution path.
+    pub async fn aggregated_mcp_skill_templates(
+        &self,
+    ) -> Vec<crate::skills::mcp_client::McpSkillTemplate> {
+        let mut out = Vec::new();
+        for ext in self.extensions.lock().await.values() {
+            out.extend(ext.mcp_skills.templates.iter().cloned());
         }
         out
     }
@@ -2110,7 +2125,7 @@ mod tests {
                 client,
                 None,
                 None,
-                Vec::new(),
+                crate::skills::mcp_client::ServerSkills::default(),
             );
             self.extensions
                 .lock()

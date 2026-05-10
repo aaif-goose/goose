@@ -68,6 +68,72 @@ impl McpSkillEntry {
     }
 }
 
+/// A templated skill catalog entry — `type: "mcp-resource-template"` in
+/// the SEP. `url_template` is an RFC 6570 level-1 template (e.g.
+/// `github://{owner}/{repo}/.../SKILL.md`); placeholders are resolved at
+/// `load_skill_template` time via the MCP `completion/complete` endpoint.
+///
+/// Stored separately from [`McpSkillEntry`] because templates need
+/// completion plumbing concrete entries don't, and the rendering path
+/// for the system prompt is distinct (a sibling bullet list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpSkillTemplate {
+    pub server: String,
+    pub name: String,
+    pub description: String,
+    pub url_template: String,
+}
+
+impl McpSkillTemplate {
+    /// Returns the placeholder names (`{name}`) appearing in
+    /// `url_template`, in left-to-right order, de-duplicated. Used to
+    /// build the `[placeholders: ...]` hint in the system prompt and to
+    /// drive completion validation. Hand-rolled scanner; no regex
+    /// dependency added.
+    pub fn placeholders(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let bytes = self.url_template.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'{' {
+                let start = i + 1;
+                let mut j = start;
+                while j < bytes.len() && bytes[j] != b'}' && bytes[j] != b'/' {
+                    j += 1;
+                }
+                if j < bytes.len() && bytes[j] == b'}' && j > start {
+                    if let Ok(name) = std::str::from_utf8(&bytes[start..j]) {
+                        if !out.iter().any(|n| n == name) {
+                            out.push(name.to_string());
+                        }
+                    }
+                    i = j + 1;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        out
+    }
+}
+
+/// All MCP-served skills discovered from a single server's index. The
+/// split mirrors the two SEP entry types — concrete `skill-md` entries
+/// addressable by name, and `mcp-resource-template` catalogs that the
+/// model addresses via `load_skill_template` after the host validates
+/// placeholder values against the server's completion endpoint.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ServerSkills {
+    pub concrete: Vec<McpSkillEntry>,
+    pub templates: Vec<McpSkillTemplate>,
+}
+
+impl ServerSkills {
+    pub fn is_empty(&self) -> bool {
+        self.concrete.is_empty() && self.templates.is_empty()
+    }
+}
+
 /// Returns true if the server's initialize response declares the skills
 /// extension capability. Informational only — per the SEP, hosts MUST
 /// attempt `skill://index.json` regardless.
@@ -99,10 +165,11 @@ struct IndexEntry {
     url: Option<String>,
 }
 
-/// Fetches and parses `skill://index.json` from a single MCP server via its
-/// client handle. Returns an empty vec (with a log) on any failure — this
-/// function MUST NOT propagate errors because it runs during extension
-/// registration and must not block the agent from starting.
+/// Fetches and parses `skill://index.json` from a single MCP server via
+/// its client handle. Returns an empty [`ServerSkills`] (with a log) on
+/// any failure — this function MUST NOT propagate errors because it runs
+/// during extension registration and must not block the agent from
+/// starting.
 ///
 /// Caller supplies the server name (extension key) because it's stamped
 /// into each returned entry's `server` field for later routing.
@@ -111,7 +178,7 @@ pub async fn fetch_server_skills(
     client: &dyn McpClientTrait,
     session_id: &str,
     cancel: CancellationToken,
-) -> Vec<McpSkillEntry> {
+) -> ServerSkills {
     let fetch = async {
         let read = client
             .read_resource(session_id, INDEX_URI, cancel.clone())
@@ -136,7 +203,7 @@ pub async fn fetch_server_skills(
         Ok(Ok(doc)) => doc,
         Ok(Err(e)) => {
             debug!(server, error = %e, "skill index fetch: no usable index");
-            return Vec::new();
+            return ServerSkills::default();
         }
         Err(_) => {
             warn!(
@@ -144,50 +211,57 @@ pub async fn fetch_server_skills(
                 timeout_secs = INDEX_FETCH_TIMEOUT.as_secs(),
                 "skill index fetch timed out"
             );
-            return Vec::new();
+            return ServerSkills::default();
         }
     };
 
-    let mut entries = Vec::new();
+    let mut out = ServerSkills::default();
+    let mut template_counter = 0usize;
     for raw in doc.skills {
-        if let Some(entry) = parse_index_entry(server, raw) {
-            entries.push(entry);
+        match parse_index_entry(server, raw, &mut template_counter) {
+            Parsed::Concrete(entry) => out.concrete.push(entry),
+            Parsed::Template(tpl) => out.templates.push(tpl),
+            Parsed::Skip => {}
         }
     }
-    entries
+    out
 }
 
-fn parse_index_entry(server: &str, raw: IndexEntry) -> Option<McpSkillEntry> {
+enum Parsed {
+    Concrete(McpSkillEntry),
+    Template(McpSkillTemplate),
+    Skip,
+}
+
+fn parse_index_entry(server: &str, raw: IndexEntry, template_counter: &mut usize) -> Parsed {
     match raw.entry_type.as_deref() {
-        Some("skill-md") => {}
-        Some("mcp-resource-template") => {
-            // Templates are deferred — the SEP wires them to the MCP
-            // completion API, which this implementation does not yet surface.
-            return None;
-        }
+        Some("skill-md") => parse_concrete(server, raw),
+        Some("mcp-resource-template") => parse_template(server, raw, template_counter),
         Some(other) => {
             debug!(
                 server,
                 entry_type = other,
                 "skipping unknown index entry type"
             );
-            return None;
+            Parsed::Skip
         }
         None => {
             debug!(server, "skipping index entry with no type");
-            return None;
+            Parsed::Skip
         }
     }
+}
 
-    let name = raw.name.filter(|s| !s.is_empty()).or_else(|| {
+fn parse_concrete(server: &str, raw: IndexEntry) -> Parsed {
+    let Some(name) = raw.name.filter(|s| !s.is_empty()) else {
         warn!(server, "skill-md index entry missing required `name`");
-        None
-    })?;
+        return Parsed::Skip;
+    };
     let description = raw.description.unwrap_or_default();
-    let url = raw.url.filter(|s| !s.is_empty()).or_else(|| {
+    let Some(url) = raw.url.filter(|s| !s.is_empty()) else {
         warn!(server, name, "skill-md index entry missing required `url`");
-        None
-    })?;
+        return Parsed::Skip;
+    };
 
     if !url.ends_with("SKILL.md") {
         debug!(
@@ -196,11 +270,33 @@ fn parse_index_entry(server: &str, raw: IndexEntry) -> Option<McpSkillEntry> {
         );
     }
 
-    Some(McpSkillEntry {
+    Parsed::Concrete(McpSkillEntry {
         server: server.to_string(),
         name,
         description,
         url,
+    })
+}
+
+fn parse_template(server: &str, raw: IndexEntry, counter: &mut usize) -> Parsed {
+    let Some(url_template) = raw.url.filter(|s| !s.is_empty()) else {
+        warn!(server, "mcp-resource-template entry missing required `url`");
+        return Parsed::Skip;
+    };
+    // Per the SEP, the SHOULD-level template entry name is optional —
+    // synthesize a stable ordinal when absent so the model has a handle
+    // to address it.
+    let name = raw.name.filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        *counter += 1;
+        format!("template-{}", counter)
+    });
+    let description = raw.description.unwrap_or_default();
+
+    Parsed::Template(McpSkillTemplate {
+        server: server.to_string(),
+        name,
+        description,
+        url_template,
     })
 }
 
@@ -343,7 +439,7 @@ mod tests {
             delay: None,
         };
 
-        let entries = fetch_server_skills(
+        let skills = fetch_server_skills(
             "gh",
             &server as &dyn McpClientTrait,
             "s",
@@ -351,6 +447,7 @@ mod tests {
         )
         .await;
 
+        let entries = &skills.concrete;
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].name, "git-workflow");
         assert_eq!(entries[0].url, "skill://git-workflow/SKILL.md");
@@ -358,6 +455,7 @@ mod tests {
         assert_eq!(entries[0].server, "gh");
         assert_eq!(entries[1].name, "refunds");
         assert_eq!(entries[1].skill_root_uri(), "skill://acme/billing/refunds/");
+        assert!(skills.templates.is_empty());
     }
 
     #[tokio::test]
@@ -368,24 +466,25 @@ mod tests {
             delay: None,
         };
 
-        let entries = fetch_server_skills(
+        let skills = fetch_server_skills(
             "gh",
             &server as &dyn McpClientTrait,
             "s",
             CancellationToken::new(),
         )
         .await;
-        assert!(entries.is_empty());
+        assert!(skills.is_empty());
     }
 
     #[tokio::test]
-    async fn test_discover_skips_templates() {
+    async fn test_discover_returns_templates() {
         let mut resources = HashMap::new();
         resources.insert(
             INDEX_URI.to_string(),
             index_with(
                 r#"{"name":"real","type":"skill-md","description":"","url":"skill://real/SKILL.md"},
-                   {"type":"mcp-resource-template","description":"Per-product docs","url":"skill://docs/{product}/SKILL.md"}"#,
+                   {"name":"product-docs","type":"mcp-resource-template","description":"Per-product docs","url":"skill://docs/{product}/SKILL.md"},
+                   {"type":"mcp-resource-template","description":"Workflow runs","url":"github://{owner}/{repo}/.../SKILL.md"}"#,
             ),
         );
         let server = FakeSkillsServer {
@@ -394,15 +493,25 @@ mod tests {
             delay: None,
         };
 
-        let entries = fetch_server_skills(
+        let skills = fetch_server_skills(
             "gh",
             &server as &dyn McpClientTrait,
             "s",
             CancellationToken::new(),
         )
         .await;
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].name, "real");
+
+        // Concrete bin: one entry.
+        assert_eq!(skills.concrete.len(), 1);
+        assert_eq!(skills.concrete[0].name, "real");
+
+        // Template bin: two entries. First keeps its declared name; second
+        // is unnamed, gets a synthesized `template-N` handle.
+        assert_eq!(skills.templates.len(), 2);
+        assert_eq!(skills.templates[0].name, "product-docs");
+        assert_eq!(skills.templates[0].placeholders(), vec!["product"]);
+        assert_eq!(skills.templates[1].name, "template-1");
+        assert_eq!(skills.templates[1].placeholders(), vec!["owner", "repo"]);
     }
 
     #[tokio::test]
@@ -420,13 +529,14 @@ mod tests {
             delay: None,
         };
 
-        let entries = fetch_server_skills(
+        let skills = fetch_server_skills(
             "github",
             &server as &dyn McpClientTrait,
             "s",
             CancellationToken::new(),
         )
         .await;
+        let entries = &skills.concrete;
         assert_eq!(entries.len(), 1);
         assert_eq!(
             entries[0].url,
@@ -457,13 +567,14 @@ mod tests {
             delay: None,
         };
 
-        let entries = fetch_server_skills(
+        let skills = fetch_server_skills(
             "acme",
             &server as &dyn McpClientTrait,
             "s",
             CancellationToken::new(),
         )
         .await;
+        let entries = &skills.concrete;
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].url, "skill://acme/billing/refunds/");
         assert_eq!(entries[0].skill_root_uri(), "skill://acme/billing/refunds/");
@@ -479,7 +590,7 @@ mod tests {
         };
 
         let start = std::time::Instant::now();
-        let entries = fetch_server_skills(
+        let skills = fetch_server_skills(
             "slow",
             &server as &dyn McpClientTrait,
             "s",
@@ -488,7 +599,7 @@ mod tests {
         .await;
         let elapsed = start.elapsed();
 
-        assert!(entries.is_empty());
+        assert!(skills.is_empty());
         // Should have bailed after the timeout, not waited for the server.
         assert!(
             elapsed < INDEX_FETCH_TIMEOUT + Duration::from_millis(500),

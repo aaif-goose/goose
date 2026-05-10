@@ -1,5 +1,5 @@
 use super::discover_skills;
-use super::mcp_client::McpSkillEntry;
+use super::mcp_client::{McpSkillEntry, McpSkillTemplate};
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::mcp_client::{Error, McpClientTrait};
@@ -89,11 +89,21 @@ impl SkillsClient {
         })
     }
 
-    /// Returns the current set of MCP skills visible via the extension
-    /// manager's cache, or empty if no manager is attached.
+    /// Returns the current set of concrete MCP skills visible via the
+    /// extension manager's cache, or empty if no manager is attached.
     async fn mcp_skills(&self) -> Vec<McpSkillEntry> {
         match self.extension_manager.as_ref().and_then(|w| w.upgrade()) {
             Some(mgr) => mgr.aggregated_mcp_skills().await,
+            None => Vec::new(),
+        }
+    }
+
+    /// Returns the current set of templated MCP skill catalogs visible
+    /// via the extension manager's cache, or empty if no manager is
+    /// attached.
+    async fn mcp_skill_templates(&self) -> Vec<McpSkillTemplate> {
+        match self.extension_manager.as_ref().and_then(|w| w.upgrade()) {
+            Some(mgr) => mgr.aggregated_mcp_skill_templates().await,
             None => Vec::new(),
         }
     }
@@ -135,20 +145,40 @@ fn fs_skill_names(working_dir: &Path) -> HashSet<String> {
         .collect()
 }
 
-/// Renders the MCP skills section of the system prompt. Collisions with
-/// FS skill names use the `<server>__<name>` form so the model can still
-/// address the MCP entry unambiguously via `load_skill`. Empty output
-/// when no MCP skills are available — caller drops the section entirely.
-fn format_mcp_skills_section(fs_names: &HashSet<String>, mcp: &[McpSkillEntry]) -> String {
+/// Computes the set of skill names that collide across FS skills, MCP
+/// concrete entries, and MCP templates. Any name appearing more than
+/// once in this union needs to be rendered in its disambiguated form
+/// (`<server>__<name>` for concrete entries, `<server>::<name>` for
+/// templates) so the model can address the right entity unambiguously.
+fn collision_names(
+    fs_names: &HashSet<String>,
+    concrete: &[McpSkillEntry],
+    templates: &[McpSkillTemplate],
+) -> HashSet<String> {
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for n in fs_names {
+        *counts.entry(n.clone()).or_insert(0) += 1;
+    }
+    for entry in concrete {
+        *counts.entry(entry.name.clone()).or_insert(0) += 1;
+    }
+    for tpl in templates {
+        *counts.entry(tpl.name.clone()).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .filter_map(|(n, c)| if c > 1 { Some(n) } else { None })
+        .collect()
+}
+
+/// Renders the concrete-MCP-skills section of the system prompt. Names
+/// that collide with any other visible skill (FS, another concrete MCP
+/// entry, or a template) are rendered in `<server>__<name>` form so the
+/// model can address the entry unambiguously via `load_skill`. Empty
+/// output when no concrete MCP skills are available.
+fn format_mcp_skills_section(collisions: &HashSet<String>, mcp: &[McpSkillEntry]) -> String {
     if mcp.is_empty() {
         return String::new();
-    }
-
-    // Bucket by bare name to detect MCP-vs-MCP collisions separately from
-    // FS collisions.
-    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for entry in mcp {
-        *counts.entry(entry.name.as_str()).or_insert(0) += 1;
     }
 
     let mut sorted: Vec<&McpSkillEntry> = mcp.iter().collect();
@@ -160,18 +190,61 @@ fn format_mcp_skills_section(fs_names: &HashSet<String>, mcp: &[McpSkillEntry]) 
         "\n\nYou also have these skills from connected MCP servers. Load them via load_skill by name; if a collision is shown in <server>__<name> form, use that exact form:",
     );
     for entry in sorted {
-        let needs_prefix = fs_names.contains(&entry.name) || counts[entry.name.as_str()] > 1;
+        let needs_prefix = collisions.contains(&entry.name);
         let display_name = if needs_prefix {
             format!("{}__{}", entry.server, entry.name)
         } else {
             entry.name.clone()
         };
-        // URI intentionally omitted: the model addresses MCP skills by
-        // name via `load_skill`, and including full URIs for every entry
+        // URL intentionally omitted: the model addresses MCP skills by
+        // name via `load_skill`, and including full URLs for every entry
         // bloats every turn's system prompt on servers with many skills.
         out.push_str(&format!(
             "\n• {} ({}) - {}",
             display_name, entry.server, entry.description
+        ));
+    }
+    out
+}
+
+/// Renders the MCP-skill-template catalog section of the system prompt.
+/// Templates are addressed via `load_skill_template` after the host
+/// validates placeholder values against the server's completion endpoint.
+/// Collision form is `<server>::<name>` (note `::` — distinct from
+/// concrete's `__` so the two namespaces stay legible). Empty output
+/// when no templates are available.
+fn format_mcp_skill_templates_section(
+    collisions: &HashSet<String>,
+    templates: &[McpSkillTemplate],
+) -> String {
+    if templates.is_empty() {
+        return String::new();
+    }
+
+    let mut sorted: Vec<&McpSkillTemplate> = templates.iter().collect();
+    sorted.sort_by(|a, b| {
+        (a.name.as_str(), a.server.as_str()).cmp(&(b.name.as_str(), b.server.as_str()))
+    });
+
+    let mut out = String::from(
+        "\n\nTemplated skill catalogs from connected MCP servers (use load_skill_template to instantiate after confirming placeholder values; if a collision is shown in <server>::<name> form, use that exact form):",
+    );
+    for tpl in sorted {
+        let needs_prefix = collisions.contains(&tpl.name);
+        let display_name = if needs_prefix {
+            format!("{}::{}", tpl.server, tpl.name)
+        } else {
+            tpl.name.clone()
+        };
+        let placeholders = tpl.placeholders();
+        let placeholder_hint = if placeholders.is_empty() {
+            String::new()
+        } else {
+            format!("  [placeholders: {}]", placeholders.join(", "))
+        };
+        out.push_str(&format!(
+            "\n• {} ({}) - {}{}",
+            display_name, tpl.server, tpl.description, placeholder_hint
         ));
     }
     out
@@ -615,15 +688,21 @@ impl McpClientTrait for SkillsClient {
 
     async fn get_dynamic_instructions(&self, _session_id: &str) -> Option<String> {
         let mcp = self.mcp_skills().await;
-        if mcp.is_empty() {
+        let templates = self.mcp_skill_templates().await;
+        if mcp.is_empty() && templates.is_empty() {
             return None;
         }
         let fs_names = self.fs_skill_names_cached();
-        let section = format_mcp_skills_section(&fs_names, &mcp);
-        if section.is_empty() {
+        let collisions = collision_names(&fs_names, &mcp, &templates);
+
+        let mut out = String::new();
+        out.push_str(&format_mcp_skills_section(&collisions, &mcp));
+        out.push_str(&format_mcp_skill_templates_section(&collisions, &templates));
+
+        if out.is_empty() {
             None
         } else {
-            Some(section)
+            Some(out)
         }
     }
 }
@@ -1199,6 +1278,88 @@ mod tests {
         assert!(
             !out.contains("• shared "),
             "bare 'shared' should not be rendered when collision exists; got:\n{}",
+            out
+        );
+    }
+
+    #[tokio::test]
+    async fn test_template_section_renders_with_placeholders() {
+        // A server that publishes only a templated catalog should yield
+        // dynamic instructions with the templated-catalog section, listing
+        // each placeholder name in the bullet's `[placeholders: ...]` hint.
+        let tmp = TempDir::new().unwrap();
+        let mut r = HashMap::new();
+        r.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"workflow-runs","type":"mcp-resource-template","description":"Investigating CI workflow runs","url":"github://{owner}/{repo}/.github/skills/workflow-runs/SKILL.md"}"#,
+            ),
+        );
+        let (client, _mgr, _tmp) = setup_client_with_fake("gh", r, tmp.path().to_path_buf()).await;
+
+        let out = client
+            .get_dynamic_instructions("s")
+            .await
+            .expect("dynamic output");
+        assert!(
+            out.contains("Templated skill catalogs"),
+            "should contain the template section header; got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("workflow-runs"),
+            "should contain the template name; got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("[placeholders: owner, repo]"),
+            "should list placeholders; got:\n{}",
+            out
+        );
+        // Bare name expected — no collision exists, so the `::` form must
+        // NOT appear yet.
+        assert!(
+            !out.contains("gh::workflow-runs"),
+            "no collision -> bare name; got:\n{}",
+            out
+        );
+    }
+
+    #[tokio::test]
+    async fn test_template_vs_concrete_name_collision() {
+        // A concrete skill and a template share a bare name. Per the
+        // collision rule, BOTH must be rendered in their disambiguated
+        // forms: `<server>__<name>` for the concrete, `<server>::<name>`
+        // for the template.
+        let tmp = TempDir::new().unwrap();
+        let mut r = HashMap::new();
+        r.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"docs","type":"skill-md","description":"static docs","url":"skill://docs/SKILL.md"},
+                   {"name":"docs","type":"mcp-resource-template","description":"per-product","url":"skill://docs/{product}/SKILL.md"}"#,
+            ),
+        );
+        let (client, _mgr, _tmp) = setup_client_with_fake("srv", r, tmp.path().to_path_buf()).await;
+
+        let out = client
+            .get_dynamic_instructions("s")
+            .await
+            .expect("dynamic output");
+        assert!(
+            out.contains("srv__docs"),
+            "concrete collision form missing; got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("srv::docs"),
+            "template collision form missing; got:\n{}",
+            out
+        );
+        // Neither should render as bare `docs` followed by a paren.
+        assert!(
+            !out.contains("• docs ("),
+            "bare 'docs' should not render under collision; got:\n{}",
             out
         );
     }
