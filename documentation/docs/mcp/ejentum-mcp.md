@@ -1,6 +1,6 @@
 ---
 title: Ejentum Reasoning Harness Extension
-description: Add Ejentum MCP Server as a goose Extension to inject cognitive scaffolds (reasoning, code, anti-deception, memory) into goose's context before generation.
+description: Add Ejentum MCP Server as a goose Extension exposing four cognitive scaffold tools (reasoning, code, anti-deception, memory) the agent can call when the task matches.
 ---
 
 import Tabs from '@theme/Tabs';
@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
 import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructions';
 
-This tutorial covers how to add the [Ejentum MCP Server](https://github.com/ejentum/ejentum-mcp) as a goose extension to inject engineered cognitive scaffolds (failure pattern, executable procedure, suppression vectors, falsification test) into goose's context before each generation, addressing attention decay, sycophantic collapse, hallucination drift, and reasoning decay.
+This tutorial covers how to add the [Ejentum MCP Server](https://github.com/ejentum/ejentum-mcp) as a goose extension. Once installed, the agent can call any of four cognitive harness tools when the task matches their trigger conditions; each call returns an engineered scaffold (failure pattern, executable procedure, suppression vectors, falsification test) the agent ingests before responding, addressing attention decay, sycophantic collapse, hallucination drift, and reasoning decay. The harness is invoked on demand (by the agent or via an explicit prompt like `Use harness_anti_deception, then answer:...`); it does not auto-run on every turn.
 
 :::tip Quick Install
 
