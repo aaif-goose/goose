@@ -132,6 +132,199 @@ impl SkillsClient {
         cache.names = fresh.clone();
         fresh
     }
+
+    /// Resolve a template by name. Accepts the bare name and, on
+    /// collision, the `<server>::<name>` form. Literal match wins so a
+    /// server can legitimately publish a template whose name contains
+    /// `::` without being hijacked by a coincidental server/template pair.
+    fn find_template_by_name<'a>(
+        templates: &'a [McpSkillTemplate],
+        query: &str,
+    ) -> Option<&'a McpSkillTemplate> {
+        if let Some(hit) = templates.iter().find(|t| t.name == query) {
+            return Some(hit);
+        }
+        if let Some((server_prefix, bare_name)) = query.split_once("::") {
+            return templates
+                .iter()
+                .find(|t| t.server == server_prefix && t.name == bare_name);
+        }
+        None
+    }
+
+    /// Implements `load_skill_template`: resolve a template by name,
+    /// validate placeholder values against the server's completion
+    /// endpoint, substitute placeholders into the URL template, and
+    /// dispatch through the same `read_mcp_and_frame` path concrete
+    /// skills use — so the model sees an identical "Loaded Skill" shape.
+    async fn call_load_skill_template(
+        &self,
+        ctx: &ToolCallContext,
+        arguments: Option<JsonObject>,
+        cancellation_token: CancellationToken,
+    ) -> CallToolResult {
+        let template_name = arguments
+            .as_ref()
+            .and_then(|args| args.get("template"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if template_name.is_empty() {
+            return CallToolResult::error(vec![Content::text(
+                "Missing required parameter: template",
+            )]);
+        }
+
+        let template_args: std::collections::BTreeMap<String, String> = arguments
+            .as_ref()
+            .and_then(|args| args.get("arguments"))
+            .and_then(|v| v.as_object())
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let Some(mgr) = self.extension_manager.as_ref().and_then(|w| w.upgrade()) else {
+            return CallToolResult::error(vec![Content::text(
+                "extension manager unavailable; cannot resolve templated skills",
+            )]);
+        };
+
+        let templates = mgr.aggregated_mcp_skill_templates().await;
+        let Some(template) = Self::find_template_by_name(&templates, template_name) else {
+            let names: Vec<String> = templates.iter().map(|t| t.name.clone()).collect();
+            return CallToolResult::error(vec![Content::text(format!(
+                "Unknown template: '{}'. Available templates: {}",
+                template_name,
+                if names.is_empty() {
+                    "<none>".to_string()
+                } else {
+                    names.join(", ")
+                }
+            ))]);
+        };
+
+        // Require an argument value for every placeholder in the
+        // template's URL. Surface missing names so the model can retry
+        // with a complete map.
+        let placeholders = template.placeholders();
+        let missing: Vec<&str> = placeholders
+            .iter()
+            .filter(|p| !template_args.contains_key(p.as_str()))
+            .map(String::as_str)
+            .collect();
+        if !missing.is_empty() {
+            return CallToolResult::error(vec![Content::text(format!(
+                "load_skill_template('{}'): missing placeholder value(s): {}. Required: [{}]",
+                template_name,
+                missing.join(", "),
+                placeholders.join(", ")
+            ))]);
+        }
+
+        // Validate each (name, value) against the server's completion
+        // endpoint where available. Per SEP, completion is SHOULD not
+        // MUST — a server that returns method-not-found or transport
+        // closed is treated as "completion unsupported"; the host
+        // proceeds without validation.
+        for placeholder in &placeholders {
+            let value = template_args
+                .get(placeholder.as_str())
+                .map(String::as_str)
+                .unwrap_or("");
+            match mgr
+                .complete_resource_for_server(
+                    &ctx.session_id,
+                    &template.server,
+                    &template.url_template,
+                    placeholder,
+                    value,
+                    cancellation_token.clone(),
+                )
+                .await
+            {
+                Ok(info) => {
+                    if !info.values.is_empty() && !info.values.iter().any(|v| v == value) {
+                        let preview: Vec<String> = info.values.iter().take(8).cloned().collect();
+                        let suffix = if info.values.len() > preview.len() {
+                            format!(
+                                " (showing first {} of {})",
+                                preview.len(),
+                                info.values.len()
+                            )
+                        } else {
+                            String::new()
+                        };
+                        return CallToolResult::error(vec![Content::text(format!(
+                            "load_skill_template('{}'): value '{}' for placeholder '{}' was not accepted by the server. Suggested values: [{}]{}",
+                            template_name,
+                            value,
+                            placeholder,
+                            preview.join(", "),
+                            suffix
+                        ))]);
+                    }
+                }
+                Err(e) => {
+                    debug!(
+                        server = %template.server,
+                        template = %template.name,
+                        placeholder = %placeholder,
+                        error = %e.message,
+                        "completion/complete unsupported or errored; proceeding without validation"
+                    );
+                }
+            }
+        }
+
+        // Substitute placeholders into the URL template. Percent-encode
+        // each value so URL-significant characters in user input don't
+        // alter the URL structure.
+        let mut resolved = template.url_template.clone();
+        for (name, value) in &template_args {
+            let needle = format!("{{{}}}", name);
+            let encoded = percent_encode_value(value);
+            resolved = resolved.replace(&needle, &encoded);
+        }
+
+        // Synthesize a concrete entry pointing at the resolved URL and
+        // reuse the existing framing (incl. supporting-files enumeration
+        // when the resolved URI is the SKILL.md itself).
+        let synth = McpSkillEntry {
+            server: template.server.clone(),
+            name: template.name.clone(),
+            description: template.description.clone(),
+            url: resolved.clone(),
+        };
+        read_mcp_and_frame(
+            mgr.as_ref(),
+            &ctx.session_id,
+            &synth,
+            &resolved,
+            cancellation_token,
+        )
+        .await
+    }
+}
+
+/// Percent-encode a placeholder value for safe substitution into a URI
+/// template. Encodes every byte except RFC 3986 unreserved characters
+/// (`ALPHA / DIGIT / "-" / "." / "_" / "~"`), so URI-significant
+/// characters in user input (`/`, `?`, `#`, `&`, `:`, etc.) can't alter
+/// the resolved URL's structure. Over-encoding is the right default
+/// here — templates intentionally don't promise to URL-decode any part
+/// of the resolved URI.
+fn percent_encode_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for &b in value.as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
 }
 
 /// Rebuilds the list of FS skill names currently installed. Used to detect
@@ -452,8 +645,42 @@ impl McpClientTrait for SkillsClient {
             load_skill_schema.as_object().unwrap().clone(),
         );
 
+        let mut tools = vec![load_skill];
+
+        // Only surface `load_skill_template` when at least one MCP server
+        // advertises a template catalog. Keeps the tool space tight on
+        // sessions that don't have any templates to instantiate.
+        if !self.mcp_skill_templates().await.is_empty() {
+            let load_skill_template_schema = serde_json::json!({
+                "type": "object",
+                "required": ["template", "arguments"],
+                "properties": {
+                    "template": {
+                        "type": "string",
+                        "description": "Template name from your system instructions, e.g. \"workflow-runs\" or \"<server>::workflow-runs\" on collision."
+                    },
+                    "arguments": {
+                        "type": "object",
+                        "additionalProperties": { "type": "string" },
+                        "description": "Map of placeholder name to value. Each value will be validated against the server's completion endpoint before the URI is resolved."
+                    }
+                }
+            });
+
+            let load_skill_template = Tool::new(
+                "load_skill_template",
+                "Instantiate a templated MCP skill catalog by binding its placeholders.\n\n\
+                 Templated skill catalogs are listed in your system instructions under \"Templated skill catalogs\". Each entry shows its required placeholders (e.g. `[placeholders: owner, repo]`). Call this tool with the template name and a value for each placeholder. The host validates each value against the server's completion endpoint where available, then resolves the URI and loads the resulting SKILL.md.\n\n\
+                 Example:\n\
+                 - load_skill_template(template: \"workflow-runs\", arguments: { \"owner\": \"octocat\", \"repo\": \"hello-world\" })"
+                    .to_string(),
+                load_skill_template_schema.as_object().unwrap().clone(),
+            );
+            tools.push(load_skill_template);
+        }
+
         Ok(ListToolsResult {
-            tools: vec![load_skill],
+            tools,
             next_cursor: None,
             meta: None,
         })
@@ -466,6 +693,12 @@ impl McpClientTrait for SkillsClient {
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
+        if name == "load_skill_template" {
+            return Ok(self
+                .call_load_skill_template(ctx, arguments, cancellation_token)
+                .await);
+        }
+
         if name != "load_skill" {
             return Ok(CallToolResult::error(vec![Content::text(format!(
                 "Unknown tool: {}",
@@ -791,6 +1024,11 @@ mod tests {
     struct FakeMcp {
         info: InitializeResult,
         resources: HashMap<String, String>,
+        /// Completion fixture: maps argument name → accepted values.
+        /// When `complete_resource_argument` is called for an argument
+        /// not present in this map, the impl returns `TransportClosed`
+        /// so the host sees "completion unsupported".
+        completion: HashMap<String, Vec<String>>,
     }
 
     impl FakeMcp {
@@ -806,7 +1044,19 @@ mod tests {
                     .enable_extensions_with(caps)
                     .build(),
             );
-            Self { info, resources }
+            Self {
+                info,
+                resources,
+                completion: HashMap::new(),
+            }
+        }
+
+        fn with_completion(mut self, argument: &str, values: &[&str]) -> Self {
+            self.completion.insert(
+                argument.to_string(),
+                values.iter().map(|s| s.to_string()).collect(),
+            );
+            self
         }
     }
 
@@ -888,6 +1138,24 @@ mod tests {
 
         async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
             mpsc::channel(1).1
+        }
+
+        async fn complete_resource_argument(
+            &self,
+            _session_id: &str,
+            _uri_template: &str,
+            argument_name: &str,
+            _current_value: &str,
+            _cancel_token: CancellationToken,
+        ) -> Result<rmcp::model::CompletionInfo, Error> {
+            match self.completion.get(argument_name) {
+                Some(values) => Ok(rmcp::model::CompletionInfo {
+                    values: values.clone(),
+                    total: Some(values.len() as u32),
+                    has_more: Some(false),
+                }),
+                None => Err(Error::TransportClosed),
+            }
         }
     }
 
@@ -1280,6 +1548,319 @@ mod tests {
             "bare 'shared' should not be rendered when collision exists; got:\n{}",
             out
         );
+    }
+
+    /// Variant of `setup_client_with_fake` that wires a `FakeMcp` with a
+    /// completion fixture into the extension manager. Used by the
+    /// `load_skill_template` tests below.
+    async fn setup_client_with_completion_fake(
+        server_name: &str,
+        resources: HashMap<String, String>,
+        completion: &[(&str, &[&str])],
+        working_dir: PathBuf,
+        skill_md_body: &str,
+        skill_md_uri: &str,
+    ) -> (SkillsClient, Arc<ExtensionManager>, TempDir) {
+        let tmp = TempDir::new().unwrap();
+        let mgr = Arc::new(ExtensionManager::new_without_provider(
+            tmp.path().to_path_buf(),
+        ));
+
+        // Augment resources with the SKILL.md body the test expects to
+        // be read after URL substitution.
+        let mut resources = resources;
+        resources.insert(skill_md_uri.to_string(), skill_md_body.to_string());
+
+        let mut fake = FakeMcp::new(resources);
+        for (arg, values) in completion {
+            fake = fake.with_completion(arg, values);
+        }
+        let fake: std::sync::Arc<dyn McpClientTrait> = std::sync::Arc::new(fake);
+        mgr.add_client(
+            server_name.to_string(),
+            ExtensionConfig::Builtin {
+                name: server_name.to_string(),
+                display_name: Some(server_name.to_string()),
+                description: "fake mcp".to_string(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            },
+            fake,
+            None,
+            None,
+            Some("s"),
+        )
+        .await;
+
+        let session = Arc::new(crate::session::Session {
+            working_dir: working_dir.clone(),
+            ..crate::session::Session::default()
+        });
+        let client = SkillsClient::new(PlatformExtensionContext {
+            extension_manager: Some(Arc::downgrade(&mgr)),
+            session_manager: Arc::new(crate::session::SessionManager::instance()),
+            session: Some(session),
+        })
+        .unwrap();
+        (client, mgr, tmp)
+    }
+
+    #[tokio::test]
+    async fn test_load_skill_template_validates_and_reads() {
+        // Server publishes a template with `{owner}` and `{repo}`
+        // placeholders and supports completion for both. With validated
+        // values, the host substitutes placeholders, dispatches via
+        // read_mcp_and_frame, and returns the SKILL.md body wrapped in
+        // the standard "Loaded Skill" framing.
+        let tmp = TempDir::new().unwrap();
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"workflow-runs","type":"mcp-resource-template","description":"CI runs","url":"github://{owner}/{repo}/SKILL.md"}"#,
+            ),
+        );
+        let (client, _mgr, _tmp) = setup_client_with_completion_fake(
+            "gh",
+            resources,
+            &[
+                ("owner", &["octocat", "anthropic"]),
+                ("repo", &["hello-world"]),
+            ],
+            tmp.path().to_path_buf(),
+            "workflow runs body",
+            "github://octocat/hello-world/SKILL.md",
+        )
+        .await;
+
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+        let args: JsonObject = serde_json::from_value(serde_json::json!({
+            "template": "workflow-runs",
+            "arguments": { "owner": "octocat", "repo": "hello-world" }
+        }))
+        .unwrap();
+        let result = client
+            .call_tool(
+                &ctx,
+                "load_skill_template",
+                Some(args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "expected success; got: {:?}",
+            result
+        );
+        let body = text_of(&result);
+        assert!(
+            body.contains("# Loaded Skill: workflow-runs"),
+            "missing header; got:\n{}",
+            body
+        );
+        assert!(
+            body.contains("mcp skill from gh"),
+            "missing origin tag; got:\n{}",
+            body
+        );
+        assert!(
+            body.contains("workflow runs body"),
+            "missing resolved body; got:\n{}",
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_skill_template_rejects_invalid_value() {
+        // Completion endpoint declares `owner` accepts only ["octocat"].
+        // A user/model attempt to instantiate with `owner="malicious"`
+        // is rejected without dispatching `read_resource`.
+        let tmp = TempDir::new().unwrap();
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"workflow-runs","type":"mcp-resource-template","description":"CI runs","url":"github://{owner}/SKILL.md"}"#,
+            ),
+        );
+        let (client, _mgr, _tmp) = setup_client_with_completion_fake(
+            "gh",
+            resources,
+            &[("owner", &["octocat"])],
+            tmp.path().to_path_buf(),
+            "should-not-be-read",
+            "github://malicious/SKILL.md",
+        )
+        .await;
+
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+        let args: JsonObject = serde_json::from_value(serde_json::json!({
+            "template": "workflow-runs",
+            "arguments": { "owner": "malicious" }
+        }))
+        .unwrap();
+        let result = client
+            .call_tool(
+                &ctx,
+                "load_skill_template",
+                Some(args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error.unwrap_or(false), "expected error");
+        let body = text_of(&result);
+        assert!(
+            body.contains("not accepted by the server"),
+            "should explain rejection; got:\n{}",
+            body
+        );
+        assert!(
+            body.contains("octocat"),
+            "should surface accepted value; got:\n{}",
+            body
+        );
+        // The "would-have-been-read" body must NOT appear — confirms
+        // we short-circuited before resources/read.
+        assert!(
+            !body.contains("should-not-be-read"),
+            "resolved URI must not be read on rejected validation; got:\n{}",
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_skill_template_proceeds_when_completion_unsupported() {
+        // Server returns no completion data for any argument (default
+        // FakeMcp behavior: `complete_resource_argument` -> TransportClosed).
+        // Per SEP, the host MUST treat this as "completion unsupported"
+        // and proceed without validation.
+        let tmp = TempDir::new().unwrap();
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"product-docs","type":"mcp-resource-template","description":"per-product","url":"skill://docs/{product}/SKILL.md"}"#,
+            ),
+        );
+        // No completion fixture here — empty slice means every
+        // argument returns TransportClosed.
+        let (client, _mgr, _tmp) = setup_client_with_completion_fake(
+            "srv",
+            resources,
+            &[],
+            tmp.path().to_path_buf(),
+            "anything-goes",
+            "skill://docs/anything-goes/SKILL.md",
+        )
+        .await;
+
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+        let args: JsonObject = serde_json::from_value(serde_json::json!({
+            "template": "product-docs",
+            "arguments": { "product": "anything-goes" }
+        }))
+        .unwrap();
+        let result = client
+            .call_tool(
+                &ctx,
+                "load_skill_template",
+                Some(args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "should proceed despite missing completion; got: {:?}",
+            result
+        );
+        let body = text_of(&result);
+        assert!(
+            body.contains("anything-goes"),
+            "body should be returned; got:\n{}",
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_skill_template_missing_placeholder() {
+        // Caller forgets to supply a placeholder value. The host should
+        // refuse with a clear message listing missing names — no
+        // resources/read attempt is made.
+        let tmp = TempDir::new().unwrap();
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"docs","type":"mcp-resource-template","description":"d","url":"skill://docs/{owner}/{repo}/SKILL.md"}"#,
+            ),
+        );
+        let (client, _mgr, _tmp) =
+            setup_client_with_fake("srv", resources, tmp.path().to_path_buf()).await;
+
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+        let args: JsonObject = serde_json::from_value(serde_json::json!({
+            "template": "docs",
+            "arguments": { "owner": "octocat" }
+        }))
+        .unwrap();
+        let result = client
+            .call_tool(
+                &ctx,
+                "load_skill_template",
+                Some(args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error.unwrap_or(false));
+        let body = text_of(&result);
+        assert!(
+            body.contains("missing placeholder"),
+            "should list missing placeholders; got:\n{}",
+            body
+        );
+        assert!(body.contains("repo"));
+    }
+
+    #[tokio::test]
+    async fn test_load_skill_template_unknown_template() {
+        let tmp = TempDir::new().unwrap();
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"docs","type":"mcp-resource-template","description":"d","url":"skill://docs/{x}/SKILL.md"}"#,
+            ),
+        );
+        let (client, _mgr, _tmp) =
+            setup_client_with_fake("srv", resources, tmp.path().to_path_buf()).await;
+
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+        let args: JsonObject = serde_json::from_value(serde_json::json!({
+            "template": "nope",
+            "arguments": { "x": "y" }
+        }))
+        .unwrap();
+        let result = client
+            .call_tool(
+                &ctx,
+                "load_skill_template",
+                Some(args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(result.is_error.unwrap_or(false));
+        let body = text_of(&result);
+        assert!(body.contains("Unknown template"));
     }
 
     #[tokio::test]

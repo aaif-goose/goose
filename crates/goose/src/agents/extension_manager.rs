@@ -1502,6 +1502,51 @@ impl ExtensionManager {
             })
     }
 
+    /// Forward a `completion/complete` request for a resource-template
+    /// argument to a specific extension. Used by the skills platform
+    /// extension to validate placeholder values before instantiating an
+    /// `mcp-resource-template` skill catalog. Returns `TransportClosed`
+    /// (and similar) when the server doesn't implement completion —
+    /// callers MUST treat that as "completion unsupported" rather than a
+    /// hard failure (per the SEP, completion is SHOULD, not MUST).
+    pub async fn complete_resource_for_server(
+        &self,
+        session_id: &str,
+        extension_name: &str,
+        uri_template: &str,
+        argument_name: &str,
+        current_value: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::CompletionInfo, ErrorData> {
+        let client = self
+            .get_server_client(extension_name)
+            .await
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("Extension '{}' not found", extension_name),
+                    None,
+                )
+            })?;
+
+        client
+            .complete_resource_argument(
+                session_id,
+                uri_template,
+                argument_name,
+                current_value,
+                cancellation_token,
+            )
+            .await
+            .map_err(|e| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("completion/complete failed for {}: {:?}", extension_name, e),
+                    None,
+                )
+            })
+    }
+
     pub async fn read_resource(
         &self,
         session_id: &str,

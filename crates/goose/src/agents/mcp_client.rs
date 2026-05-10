@@ -102,6 +102,28 @@ pub trait McpClientTrait: Send + Sync {
         Err(Error::TransportClosed)
     }
 
+    /// Validate or complete a resource-template argument against the
+    /// server's `completion/complete` endpoint (SEP MCP-1319). Used by
+    /// the skills platform extension when instantiating
+    /// `mcp-resource-template` skill catalogs — if the server supports
+    /// completion, the host can check that user-supplied placeholder
+    /// values are in the server's known set before resolving the URI.
+    ///
+    /// Default impl returns `TransportClosed` so test stubs and clients
+    /// that don't implement completion don't need to override; callers
+    /// MUST treat this as "completion unsupported" rather than a hard
+    /// failure (per the SEP, completion is SHOULD, not MUST).
+    async fn complete_resource_argument(
+        &self,
+        _session_id: &str,
+        _uri_template: &str,
+        _argument_name: &str,
+        _current_value: &str,
+        _cancel_token: CancellationToken,
+    ) -> Result<rmcp::model::CompletionInfo, Error> {
+        Err(Error::TransportClosed)
+    }
+
     async fn list_prompts(
         &self,
         _session_id: &str,
@@ -628,6 +650,39 @@ impl McpClientTrait for McpClient {
 
         match res {
             ServerResult::ReadResourceResult(result) => Ok(result),
+            _ => Err(ServiceError::UnexpectedResponse),
+        }
+    }
+
+    async fn complete_resource_argument(
+        &self,
+        session_id: &str,
+        uri_template: &str,
+        argument_name: &str,
+        current_value: &str,
+        cancel_token: CancellationToken,
+    ) -> Result<rmcp::model::CompletionInfo, Error> {
+        use rmcp::model::{ArgumentInfo, CompleteRequestParams, Reference};
+
+        let params = CompleteRequestParams::new(
+            Reference::for_resource(uri_template),
+            ArgumentInfo {
+                name: argument_name.to_string(),
+                value: current_value.to_string(),
+            },
+        );
+
+        let res = self
+            .send_request_with_context(
+                session_id,
+                None,
+                ClientRequest::CompleteRequest(Request::new(params)),
+                cancel_token,
+            )
+            .await?;
+
+        match res {
+            ServerResult::CompleteResult(result) => Ok(result.completion),
             _ => Err(ServiceError::UnexpectedResponse),
         }
     }
