@@ -1,6 +1,6 @@
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
-use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_appender_tracing::layer::{OpenTelemetryTracingBridge, TracingSpanAttributes};
 use opentelemetry_sdk::logs::{SdkLogger, SdkLoggerProvider};
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -242,7 +242,7 @@ fn create_otlp_logs_layer() -> OtlpResult<OtlpLogsLayer> {
     };
 
     let bridge = OpenTelemetryTracingBridge::builder(&logger_provider)
-        .with_span_attribute_allowlist(["session.id"])
+        .with_tracing_span_attributes(TracingSpanAttributes::allowlist(["session.id"]))
         .build();
     *LOGGER_PROVIDER.lock().unwrap_or_else(|e| e.into_inner()) = Some(logger_provider);
 
