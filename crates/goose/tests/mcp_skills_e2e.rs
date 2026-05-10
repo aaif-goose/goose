@@ -2,18 +2,37 @@
 //!
 //! Spawns the test fork of `github-mcp-server` (the `add-agent-skills`
 //! branch of `skills-over-mcp-ig/servers/github-mcp-server`) on an
-//! ephemeral port, wires it into an `ExtensionManager`, and verifies:
+//! ephemeral port, wires it into an `ExtensionManager`, and verifies the
+//! discovery + load round-trip end-to-end:
 //!
 //! 1. `skill://index.json` is fetched at connect time and the cache is
-//!    populated with the `pull-requests` entry.
-//! 2. `load_skill("pull-requests")` on the `SkillsClient` dispatches via
-//!    `ExtensionManager::read_resource` and returns the SKILL.md body
-//!    (which, in the test fork, contains the token `submit_pending`).
+//!    populated with the `pull-requests` entry (concrete `skill-md`).
+//! 2. The entry exposes `url` directly and derives the skill root via
+//!    `skill_root_uri()` (no separate `base_uri` field — that was a
+//!    pre-SEP host-internal optimization that has been removed).
+//! 3. `load_skill("pull-requests")` on the `SkillsClient` dispatches via
+//!    `ExtensionManager::read_resource` (now requires `extension_name`)
+//!    and returns the SKILL.md body, in the same `# Loaded Skill: …` /
+//!    `## Supporting Files` / `Skill base:` framing used by FS skills
+//!    (see `test_load_skill_framing_parity_fs_vs_mcp` for the lock).
+//!
+//! Behaviour not covered here, exercised by unit tests in
+//! `crates/goose/src/skills/`:
+//!
+//! - `mcp-resource-template` entries (parsed by `parse_template`,
+//!   resolved via `load_skill_template` with MCP `completion/complete`
+//!   validation) — see `skills::client::tests::test_load_skill_template_*`.
+//! - `notifications/resources/list_changed` cache invalidation — see
+//!   `skills::client::tests::test_list_changed_refreshes_cache`.
 //!
 //! No LLM involved; catches regressions in the resource-read plumbing in
-//! sub-second wallclock. Gated on `GITHUB_TOKEN` and the server binary.
-//! Marked `#[ignore]` so `cargo test` stays quiet. Run with
-//! `cargo test --test mcp_skills_e2e -- --ignored --nocapture`.
+//! sub-second wallclock. Gated on `GITHUB_TOKEN` and the server binary
+//! existing at `servers/github-mcp-server/github-mcp-server[.exe]` (or
+//! the explicit `GOOSE_E2E_SERVER_BIN` override). Marked `#[ignore]` so
+//! `cargo test` stays quiet. Run with:
+//!
+//!     GITHUB_TOKEN=$(gh auth token) \
+//!         cargo test -p goose --test mcp_skills_e2e -- --ignored --nocapture
 //!
 //! LLM-in-the-loop scenario runs live out-of-tree at
 //! `skills-over-mcp-ig/clients/goose-harness/`.
