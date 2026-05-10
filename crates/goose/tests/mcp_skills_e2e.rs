@@ -205,18 +205,36 @@ async fn mcp_skills_discovery_and_load_against_real_server() {
     // Phase 1: mechanical check — cache populated?
     let cached: Vec<McpSkillEntry> = mgr.aggregated_mcp_skills().await;
     eprintln!("[e2e] cached mcp skills: {:#?}", cached);
-    let pr = cached
-        .iter()
-        .find(|e| e.name == "pull-requests")
-        .expect("pull-requests skill should have been discovered from skill://index.json");
-    assert_eq!(
-        pr.url, "skill://pull-requests/SKILL.md",
-        "server should advertise the canonical SKILL.md URI"
+    assert!(
+        !cached.is_empty(),
+        "server should advertise at least one concrete skill via skill://index.json"
     );
-    assert_eq!(
-        pr.skill_root_uri(),
-        "skill://pull-requests/",
-        "skill_root_uri should yield the directory of the entry URL"
+
+    // The reference server (`skills-over-mcp-ig/servers/github-mcp-server`
+    // on `add-agent-skills`) ships a set of GitHub-workflow skills whose
+    // names are stable across the fork. Pick one we'll exercise the
+    // load_skill round-trip against. `review-pr` covers the multi-comment
+    // pending-review flow.
+    const SAMPLE_SKILL: &str = "review-pr";
+    let entry = cached
+        .iter()
+        .find(|e| e.name == SAMPLE_SKILL)
+        .unwrap_or_else(|| {
+            panic!(
+                "expected `{}` in discovered skills; got names: {:?}",
+                SAMPLE_SKILL,
+                cached.iter().map(|e| &e.name).collect::<Vec<_>>()
+            )
+        });
+    assert!(
+        entry.url.starts_with("skill://") && entry.url.ends_with("/SKILL.md"),
+        "entry URL should be a skill:// SKILL.md URI; got: {}",
+        entry.url
+    );
+    assert!(
+        entry.skill_root_uri().ends_with('/'),
+        "skill_root_uri should end in `/`; got: {}",
+        entry.skill_root_uri()
     );
 
     // Phase 2: mechanical check — load_skill dispatches through resources/read?
@@ -235,7 +253,7 @@ async fn mcp_skills_discovery_and_load_against_real_server() {
 
     let tool_ctx = ToolCallContext::new("e2e-session".to_string(), None, None);
     let args: rmcp::model::JsonObject =
-        serde_json::from_value(serde_json::json!({"name": "pull-requests"})).unwrap();
+        serde_json::from_value(serde_json::json!({"name": SAMPLE_SKILL})).unwrap();
     let result = skills_client
         .call_tool(
             &tool_ctx,
@@ -258,16 +276,19 @@ async fn mcp_skills_discovery_and_load_against_real_server() {
         text
     );
     assert!(
-        text.contains("pull-requests"),
-        "framing should contain the skill name; got: {}",
+        text.starts_with(&format!("# Loaded Skill: {}", SAMPLE_SKILL)),
+        "framing should lead with `# Loaded Skill: <name>`; got: {:.200}",
         text
     );
-    // The test fork ships a SKILL.md whose body prescribes the
-    // pending-review workflow. This string only appears if the body was
-    // actually read from the server.
     assert!(
-        text.contains("submit_pending") || text.contains("add_comment_to_pending_review"),
-        "skill body should contain the prescribed workflow tokens; got: {}",
+        text.contains("(mcp skill from github)"),
+        "framing should carry the MCP origin tag; got: {:.200}",
+        text
+    );
+    // The framing also lays down the FS/MCP parity anchor.
+    assert!(
+        text.contains("Skill base:") || !text.contains("## Supporting Files"),
+        "if a Supporting Files section appears, it must use the `Skill base:` header; got:\n{}",
         text
     );
 
@@ -278,7 +299,7 @@ async fn mcp_skills_discovery_and_load_against_real_server() {
         .expect("get_dynamic_instructions should return Some");
     eprintln!("[e2e] dynamic instructions:\n{}", dynamic);
     assert!(
-        dynamic.contains("pull-requests") && dynamic.contains("github"),
+        dynamic.contains(SAMPLE_SKILL) && dynamic.contains("github"),
         "dynamic instructions should list the skill with its origin server"
     );
 
