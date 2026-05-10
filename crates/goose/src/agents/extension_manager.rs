@@ -697,13 +697,15 @@ async fn populate_mcp_skills_cache(
     session_id: Option<&str>,
 ) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
     match session_id {
-        Some(sid) => crate::skills::mcp_client::fetch_server_skills(
-            server_name,
-            client,
-            sid,
-            CancellationToken::new(),
-        )
-        .await,
+        Some(sid) => {
+            crate::skills::mcp_client::fetch_server_skills(
+                server_name,
+                client,
+                sid,
+                CancellationToken::new(),
+            )
+            .await
+        }
         None => {
             tracing::debug!(
                 server = %server_name,
@@ -802,8 +804,7 @@ impl ExtensionManager {
             let extensions = self.extensions.lock().await;
             match extensions.get(&sanitized_name) {
                 Some(existing)
-                    if existing.config == config
-                        && existing.resolved_config == resolved_config =>
+                    if existing.config == config && existing.resolved_config == resolved_config =>
                 {
                     if existing.mcp_skills.is_empty() && session_id.is_some() {
                         Some(existing.client.clone())
@@ -1183,9 +1184,7 @@ impl ExtensionManager {
     /// Snapshot every connected extension's cached MCP skill entries. Read
     /// path for the skills platform extension's per-turn system-prompt
     /// assembly — no network I/O.
-    pub async fn aggregated_mcp_skills(
-        &self,
-    ) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
+    pub async fn aggregated_mcp_skills(&self) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
         let mut out = Vec::new();
         for ext in self.extensions.lock().await.values() {
             out.extend(ext.mcp_skills.iter().cloned());
@@ -1465,13 +1464,16 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<rmcp::model::ListResourcesResult, ErrorData> {
-        let client = self.get_server_client(extension_name).await.ok_or_else(|| {
-            ErrorData::new(
-                ErrorCode::INVALID_PARAMS,
-                format!("Extension '{}' not found", extension_name),
-                None,
-            )
-        })?;
+        let client = self
+            .get_server_client(extension_name)
+            .await
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("Extension '{}' not found", extension_name),
+                    None,
+                )
+            })?;
 
         client
             .list_resources(session_id, None, cancellation_token)
@@ -2102,8 +2104,14 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            let extension =
-                Extension::new(config.clone(), config.clone(), client, None, None, Vec::new());
+            let extension = Extension::new(
+                config.clone(),
+                config.clone(),
+                client,
+                None,
+                None,
+                Vec::new(),
+            );
             self.extensions
                 .lock()
                 .await

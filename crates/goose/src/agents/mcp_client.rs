@@ -1170,9 +1170,7 @@ mod tests {
                 .as_ref()
                 .expect("client capabilities should include an extensions map");
             assert!(
-                extensions.contains_key(
-                    crate::skills::mcp_client::SKILLS_EXTENSION_ID
-                ),
+                extensions.contains_key(crate::skills::mcp_client::SKILLS_EXTENSION_ID),
                 "client ({:?}) should advertise io.modelcontextprotocol/skills",
                 platform
             );
