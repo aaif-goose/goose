@@ -742,7 +742,7 @@ impl McpClientTrait for SkillsClient {
             if !skill.supporting_files.is_empty() {
                 let skill_dir = Path::new(&skill.path);
                 output.push_str(&format!(
-                    "\n## Supporting Files\n\nSkill directory: {}\n\n",
+                    "\n## Supporting Files\n\nSkill base: {}\n\n",
                     skill.path
                 ));
                 for file in &skill.supporting_files {
@@ -1653,6 +1653,133 @@ mod tests {
         })
         .unwrap();
         (client, mgr, tmp)
+    }
+
+    #[tokio::test]
+    async fn test_load_skill_framing_parity_fs_vs_mcp() {
+        // Both the FS and MCP load_skill paths must produce a shape the
+        // model can pattern-match identically. We lock the contract here:
+        //   1. `# Loaded Skill: <name>` header (MCP appends an origin
+        //      tag — that divergence is intentional and useful).
+        //   2. `## Supporting Files` section with a `Skill base:` header
+        //      (NOT the legacy `Skill directory:` form).
+        //   3. Bullet pointers: `- <rel> → load_skill(name: "<skill>/<rel>")`.
+        //   4. Trailing footer `This knowledge is now available in your context.`.
+        let tmp = TempDir::new().unwrap();
+
+        // --- FS skill: name=fs-demo, one supporting file. ---
+        let fs_skill_dir = tmp.path().join(".goose/skills/fs-demo");
+        fs::create_dir_all(&fs_skill_dir).unwrap();
+        fs::write(
+            fs_skill_dir.join("SKILL.md"),
+            "---\nname: fs-demo\ndescription: FS demo\n---\nfs body",
+        )
+        .unwrap();
+        fs::write(fs_skill_dir.join("guide.md"), "supporting body").unwrap();
+
+        // --- MCP skill on a fake server: name=mcp-demo, same shape. ---
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"mcp-demo","type":"skill-md","description":"MCP demo","url":"skill://mcp-demo/SKILL.md"}"#,
+            ),
+        );
+        resources.insert(
+            "skill://mcp-demo/SKILL.md".to_string(),
+            "mcp body".to_string(),
+        );
+        resources.insert(
+            "skill://mcp-demo/guide.md".to_string(),
+            "supporting body".to_string(),
+        );
+        let (client, _mgr, _tmp) =
+            setup_client_with_fake("srv", resources, tmp.path().to_path_buf()).await;
+
+        // FS load.
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+        let fs_result = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(
+                    serde_json::from_value::<JsonObject>(serde_json::json!({"name": "fs-demo"}))
+                        .unwrap(),
+                ),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let fs_text = text_of(&fs_result);
+
+        // MCP load.
+        let mcp_result = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(
+                    serde_json::from_value::<JsonObject>(serde_json::json!({"name": "mcp-demo"}))
+                        .unwrap(),
+                ),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let mcp_text = text_of(&mcp_result);
+
+        // Both share the same structural anchors. Headers differ on
+        // origin tag (kept on purpose); body text and supporting-file
+        // header MUST agree.
+        for (label, text) in [("fs", &fs_text), ("mcp", &mcp_text)] {
+            assert!(
+                text.starts_with("# Loaded Skill: "),
+                "{}: missing Loaded Skill header; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                text.contains("## Supporting Files"),
+                "{}: missing Supporting Files section; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                text.contains("Skill base: "),
+                "{}: must use 'Skill base:' header; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                !text.contains("Skill directory:"),
+                "{}: legacy 'Skill directory:' header must be gone; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                text.contains("This knowledge is now available in your context."),
+                "{}: missing footer; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                text.contains("→ load_skill(name: \""),
+                "{}: missing pointer arrow; got:\n{}",
+                label,
+                text
+            );
+        }
+
+        // MCP gets the origin tag; FS does not.
+        assert!(
+            mcp_text.contains("mcp skill from srv"),
+            "mcp text should carry origin tag; got:\n{}",
+            mcp_text
+        );
+        assert!(
+            !fs_text.contains("mcp skill from"),
+            "fs text must not carry mcp origin tag; got:\n{}",
+            fs_text
+        );
     }
 
     #[tokio::test]
