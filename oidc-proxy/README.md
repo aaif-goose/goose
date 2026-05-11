@@ -28,7 +28,7 @@ Edit `wrangler.toml` for your upstream:
 |---|---|
 | `OIDC_ISSUER` | `https://token.actions.githubusercontent.com` |
 | `OIDC_AUDIENCE` | The audience your workflow requests (e.g. `goose-oidc-proxy`) |
-| `MAX_TOKEN_AGE_SECONDS` | Max age of OIDC token in seconds (default: `1200` = 20 min) |
+| `MAX_TOKEN_AGE_SECONDS` | Operator-configured upper bound on `iat` age in seconds (default: `1200` = 20 min). Applied **in addition to** the IdP's `exp` claim, never as a replacement. |
 | `MAX_REQUESTS_PER_TOKEN` | Max requests per OIDC token (default: `200`) |
 | `RATE_LIMIT_PER_SECOND` | Max requests per second per token (default: `2`) |
 | `ALLOWED_REPOS` | *(optional)* Comma-separated `owner/repo` list |
@@ -108,4 +108,9 @@ Both limits are enforced atomically — the Durable Object processes one request
 
 ## Token age vs expiry
 
-GitHub OIDC tokens expire after ~5 minutes. For longer-running jobs, set `MAX_TOKEN_AGE_SECONDS` to allow recently-expired tokens. When set, the proxy checks the token's `iat` (issued-at) claim instead of `exp`.
+The proxy enforces **both** gates and a token must pass each:
+
+1. The IdP's `exp` claim (always enforced).
+2. The operator's `MAX_TOKEN_AGE_SECONDS` cap on `iat`, when configured (default `1200`s = 20 min).
+
+`MAX_TOKEN_AGE_SECONDS` is a stricter upper bound *on top of* `exp` — it cannot extend a token past its `exp`. For workflows longer than the IdP's token lifetime (GitHub OIDC issues `exp = iat + 300` ≈ 5 min), refresh the OIDC token rather than relying on `MAX_TOKEN_AGE_SECONDS` to accept expired tokens.
