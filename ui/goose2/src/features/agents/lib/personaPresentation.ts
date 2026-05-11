@@ -6,6 +6,9 @@ export function getPersonaSource(persona: Persona): PersonaSource {
   if (persona.isBuiltin) {
     return "builtin";
   }
+  if (persona.writable === true) {
+    return "custom";
+  }
   if (persona.isFromDisk) {
     return "file";
   }
