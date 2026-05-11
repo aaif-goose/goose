@@ -1,8 +1,8 @@
 use crate::plugins::{
-    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
-    copy_dir_all, write_install_metadata,
+    copy_dir_all, write_install_metadata, FormatNotSupported, ImportedSkill, PluginFormat,
+    PluginInstall, PluginInstallOptions,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use fs_err as fs;
 use serde::Deserialize;
@@ -189,12 +189,10 @@ mod tests {
         assert_eq!(installed.skills.len(), 1);
         assert_eq!(installed.skills[0].name, "audit");
         assert!(installed.directory.join(MANIFEST).is_file());
-        assert!(
-            installed
-                .directory
-                .join(crate::plugins::INSTALL_METADATA)
-                .is_file()
-        );
+        assert!(installed
+            .directory
+            .join(crate::plugins::INSTALL_METADATA)
+            .is_file());
         assert_eq!(installed.directory, install_root.path().join("test-plugin"));
     }
 }

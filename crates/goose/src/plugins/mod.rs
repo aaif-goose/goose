@@ -2,7 +2,7 @@ pub mod formats;
 
 use crate::config::paths::Paths;
 use crate::subprocess::SubprocessExt;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Duration, Utc};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
@@ -523,10 +523,9 @@ mod tests {
         let err =
             update_plugin_at_root(Utc::now(), install_root.path(), "test-plugin").unwrap_err();
 
-        assert!(
-            err.to_string()
-                .contains("cannot be updated with this command")
-        );
+        assert!(err
+            .to_string()
+            .contains("cannot be updated with this command"));
     }
 
     fn write_gemini_plugin(repo: &Path, version: &str, description: &str) {

@@ -1,8 +1,8 @@
 use crate::plugins::{
-    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
-    copy_dir_all, write_install_metadata,
+    copy_dir_all, write_install_metadata, FormatNotSupported, ImportedSkill, PluginFormat,
+    PluginInstall, PluginInstallOptions,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use fs_err as fs;
 use serde::Deserialize;
@@ -52,6 +52,7 @@ fn install_from_manifest(
 ) -> Result<PluginInstall> {
     let has_manifest = manifest_path(checkout_dir).is_some();
     let manifest = read_manifest(checkout_dir)?;
+    dbg!(&manifest);
 
     validate_plugin_name(&manifest.name)?;
 
@@ -467,12 +468,10 @@ mod tests {
         assert_eq!(installed.skills.len(), 1);
         assert_eq!(installed.skills[0].name, "test-plugin:audit");
         assert!(installed.directory.join(".plugin/plugin.json").is_file());
-        assert!(
-            installed
-                .directory
-                .join(crate::plugins::INSTALL_METADATA)
-                .is_file()
-        );
+        assert!(installed
+            .directory
+            .join(crate::plugins::INSTALL_METADATA)
+            .is_file());
         assert_eq!(installed.directory, install_root.path().join("test-plugin"));
         assert_eq!(
             installed_skill_dirs(&installed.directory),
@@ -508,10 +507,9 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(
-            err.to_string()
-                .contains("does not contain any Open Plugins skills")
-        );
+        assert!(err
+            .to_string()
+            .contains("does not contain any Open Plugins skills"));
     }
 
     #[test]
