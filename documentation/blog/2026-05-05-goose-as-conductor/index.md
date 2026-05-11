@@ -1,5 +1,5 @@
 ---
-title: "Orchestrate Complex Workflows Across Multiple Agents with goose"
+title: "Orchestrate complex workflows across multiple agents with goose"
 description: "Use goose to coordinate multi-agent workflows — decompose complex tasks, delegate to specialized agents in parallel, and synthesize the results."
 authors:
   - adewale
@@ -67,9 +67,9 @@ The key insight: **reads can be parallel, writes should be sequential** (especia
 
 ## Orchestration + ACP: mixing agents
 
-Here's where things get really interesting. Orchestration works with [ACP providers](/docs/guides/acp-providers), which means you can delegate to entirely different coding agents — not just goose subagents. Claude Code, Codex, and Amp are all full-featured coding agents with their own tool use, sandboxing, and execution environments. They're not just models — they're autonomous harnesses that can take a task and run with it.
+Here's where things get really interesting. Orchestration works with [ACP providers](/docs/guides/acp-providers), which means you can delegate to entirely different coding agents — not just goose subagents. 
 
-To use them, you just say so in your prompt:
+To use them, you just say so in your prompt, e.g:
 
 ```
 Refactor the auth module for clarity using Claude Code,
@@ -78,15 +78,11 @@ then write tests for it, and use Codex to generate the API docs.
 
 goose understands that you want different agents handling different parts of the workflow. It delegates each task to the right agent, waits for the results, and brings everything together. This works the same whether you're on the CLI or the desktop app — you just ask in natural language.
 
-The only prerequisite is having the ACP adapter installed and authenticated for whichever agents you want to use (see the [ACP providers guide](/docs/guides/acp-providers) for setup). Once that's done, goose can route work to any of them as part of an orchestrated workflow — and they all get access to your extensions, so they can use your tools.
+The only prerequisite is having the [provider configured](/docs/guides/acp-providers) for whichever agents you want to use.
 
 ## Best practices
 
-A few things to keep in mind when you start orchestrating:
-
-### Partition your writes
-
-Never let two delegates modify the same file. They run independently and will conflict. If two agents need to touch the same file, make them sequential — one finishes before the other starts.
+When you start orchestrating, it's important to do this with tasks that are conceptually separate and will be less likely to result in edit conflicts on shared files. Here are some tips:
 
 ### Parallelize your reads
 
@@ -115,12 +111,12 @@ For reusable workflows, check out the [subrecipes in parallel tutorial](/docs/tu
 <head>
   <meta property="og:title" content="Orchestrate Complex Workflows Across Multiple Agents with goose" />
   <meta property="og:type" content="article" />
-  <meta property="og:url" content="https://block.github.io/goose/blog/2026/05/05/goose-as-conductor" />
+  <meta property="og:url" content="https://goose-docs.ai/blog/2026/05/05/goose-as-conductor" />
   <meta property="og:description" content="Use goose to coordinate multi-agent workflows — decompose complex tasks, delegate to specialized agents in parallel, and synthesize the results." />
-  <meta property="og:image" content="https://block.github.io/goose/img/blog/goose-conductor.png" />
+  <meta property="og:image" content="http://goose-docs.ai/assets/images/goose-conductor-c380f287a96196276ac7cb0a652e390c.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta property="twitter:domain" content="block.github.io/goose" />
+  <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="Orchestrate Complex Workflows Across Multiple Agents with goose" />
   <meta name="twitter:description" content="Use goose to coordinate multi-agent workflows — decompose complex tasks, delegate to specialized agents in parallel, and synthesize the results." />
-  <meta name="twitter:image" content="https://block.github.io/goose/img/blog/goose-conductor.png" />
+  <meta name="twitter:image" content="http://goose-docs.ai/assets/images/goose-conductor-c380f287a96196276ac7cb0a652e390c.png" />
 </head>
