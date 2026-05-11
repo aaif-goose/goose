@@ -1,4 +1,3 @@
 pub mod acp;
-pub mod goose_config;
+pub mod distro_bundle;
 pub mod personas;
-pub(crate) mod provider_defs;

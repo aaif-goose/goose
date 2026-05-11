@@ -10,12 +10,7 @@
  * When the session finishes loading (loadingSessionIds removes the id), the
  * buffer is flushed as a single store.setMessages() call — O(1) re-render.
  */
-import type {
-  Message,
-  MessageContent,
-  ToolRequestContent,
-  ToolResponseContent,
-} from "@/shared/types/messages";
+import type { Message } from "@/shared/types/messages";
 
 const replayBuffers = new Map<string, Message[]>();
 
@@ -35,6 +30,10 @@ export function getBufferedMessage(
   return replayBuffers.get(sessionId)?.find((m) => m.id === messageId);
 }
 
+export function getReplayBuffer(sessionId: string): Message[] | undefined {
+  return replayBuffers.get(sessionId);
+}
+
 export function getAndDeleteReplayBuffer(
   sessionId: string,
 ): Message[] | undefined {
@@ -46,26 +45,4 @@ export function getAndDeleteReplayBuffer(
 /** Discard the replay buffer for a session without returning it. */
 export function clearReplayBuffer(sessionId: string): void {
   replayBuffers.delete(sessionId);
-}
-
-export function findLatestUnpairedToolRequest(
-  content: MessageContent[],
-): ToolRequestContent | null {
-  for (let index = content.length - 1; index >= 0; index -= 1) {
-    const block = content[index];
-    if (block?.type !== "toolRequest") {
-      continue;
-    }
-
-    const alreadyHasResponse = content.some(
-      (candidate): candidate is ToolResponseContent =>
-        candidate.type === "toolResponse" && candidate.id === block.id,
-    );
-
-    if (!alreadyHasResponse) {
-      return block;
-    }
-  }
-
-  return null;
 }

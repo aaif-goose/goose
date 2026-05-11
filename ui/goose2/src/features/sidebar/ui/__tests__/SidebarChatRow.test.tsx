@@ -155,7 +155,7 @@ describe("SidebarChatRow", () => {
     await user.dblClick(screen.getByTitle("Double-click to rename"));
 
     const input = screen.getByRole("textbox");
-    expect(input).toHaveValue("New Chat");
+    expect(input).toHaveValue("New chat");
 
     await user.tab();
 

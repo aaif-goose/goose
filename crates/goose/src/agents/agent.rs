@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::container::Container;
 use super::final_output_tool::FinalOutputTool;
+use super::mcp_client::GooseMcpHostInfo;
 use super::platform_tools;
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
@@ -49,7 +50,7 @@ use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager};
+use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -114,6 +115,8 @@ pub struct AgentConfig {
     pub goose_mode: GooseMode,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
+    pub mcp_host_info: Option<GooseMcpHostInfo>,
+    pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
 }
 
 impl AgentConfig {
@@ -132,7 +135,22 @@ impl AgentConfig {
             goose_mode,
             disable_session_naming,
             goose_platform,
+            mcp_host_info: None,
+            session_name_update_tx: None,
         }
+    }
+
+    pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
+        self.mcp_host_info = mcp_host_info;
+        self
+    }
+
+    pub fn with_session_name_update_tx(
+        mut self,
+        tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
+    ) -> Self {
+        self.session_name_update_tx = tx;
+        self
     }
 }
 
@@ -223,10 +241,23 @@ impl Agent {
 
         let goose_platform = config.goose_platform.clone();
         let initial_mode = config.goose_mode;
-        let capabilities = match config.goose_platform {
-            GoosePlatform::GooseDesktop => ExtensionManagerCapabilities { mcpui: true },
-            GoosePlatform::GooseCli => ExtensionManagerCapabilities { mcpui: false },
+        let explicit_mcp_host_info = config.mcp_host_info.clone();
+        let mcpui = explicit_mcp_host_info
+            .as_ref()
+            .filter(|host_info| host_info.explicit_extensions)
+            .map(GooseMcpHostInfo::mcpui_enabled)
+            .unwrap_or_else(|| match config.goose_platform {
+                GoosePlatform::GooseDesktop => true,
+                GoosePlatform::GooseCli => false,
+            });
+        let capabilities = ExtensionManagerCapabilities {
+            mcpui,
+            host_info: explicit_mcp_host_info.clone(),
         };
+        let client_name = explicit_mcp_host_info
+            .as_ref()
+            .and_then(|host_info| host_info.client_name.clone())
+            .unwrap_or_else(|| goose_platform.to_string());
         let session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
         Self {
@@ -236,7 +267,7 @@ impl Agent {
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
-                goose_platform.to_string(),
+                client_name,
                 capabilities,
             )),
             final_output_tool: Arc::new(Mutex::new(None)),
@@ -333,6 +364,20 @@ impl Agent {
             messages.push(elicitation_message);
         }
         messages
+    }
+
+    async fn load_project_instructions(&self, session: &Session) -> Option<String> {
+        let project_id = session.project_id.as_deref()?;
+        let entry = crate::sources::read_project(project_id).ok()?;
+        let mut parts = Vec::new();
+        parts.push(format!("# Project: {}", entry.name));
+        if !entry.description.is_empty() {
+            parts.push(entry.description.clone());
+        }
+        if !entry.content.is_empty() {
+            parts.push(entry.content.clone());
+        }
+        Some(parts.join("\n\n"))
     }
 
     async fn prepare_reply_context(
@@ -1018,18 +1063,19 @@ impl Agent {
                 if let ActionRequiredData::ElicitationResponse { id, user_data } =
                     &action_required.data
                 {
-                    if let Err(e) = ActionRequiredManager::global()
+                    // Surface stale/cancelled/timed-out elicitations as a hard
+                    // error so callers (e.g. the HTTP handler) can propagate
+                    // failure to the client instead of silently reporting
+                    // success while the blocked tool call stays unblocked.
+                    // The success path returns an empty stream; an Err here
+                    // makes the contract: Ok(empty) on accept, Err on reject.
+                    ActionRequiredManager::global()
                         .submit_response(id.clone(), user_data.clone())
                         .await
-                    {
-                        let error_text = format!("Failed to submit elicitation response: {}", e);
-                        error!(error_text);
-                        return Ok(Box::pin(stream::once(async {
-                            Ok(AgentEvent::Message(
-                                Message::assistant().with_text(error_text),
-                            ))
-                        })));
-                    }
+                        .map_err(|e| {
+                            error!("Failed to submit elicitation response: {}", e);
+                            anyhow!("Failed to submit elicitation response: {}", e)
+                        })?;
                     session_manager
                         .add_message(&session_config.id, &user_message)
                         .await?;
@@ -1226,6 +1272,11 @@ impl Agent {
             goose_mode,
             initial_messages,
         } = context;
+
+        if let Some(project_addendum) = self.load_project_instructions(&session).await {
+            system_prompt = format!("{system_prompt}\n\n{project_addendum}");
+        }
+
         self.reset_retry_attempts().await;
 
         let provider = self.provider().await?;
@@ -1233,12 +1284,21 @@ impl Agent {
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
             let manager_for_spawn = session_manager.clone();
+            let session_name_update_tx = self.config.session_name_update_tx.clone();
             tokio::spawn(async move {
-                if let Err(e) = manager_for_spawn
+                match manager_for_spawn
                     .maybe_update_name(&session_id, provider)
                     .await
                 {
-                    warn!("Failed to generate session description: {}", e);
+                    Ok(Some(update)) => {
+                        if let Some(tx) = session_name_update_tx {
+                            if tx.send(update).is_err() {
+                                warn!("Failed to publish generated session name");
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => warn!("Failed to generate session description: {}", e),
                 }
             });
         }

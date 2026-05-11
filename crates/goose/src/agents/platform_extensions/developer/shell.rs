@@ -166,27 +166,34 @@ pub struct ShellOutput {
 /// source the user's profile and recover the full PATH.
 #[cfg(not(windows))]
 fn resolve_login_shell_path() -> Option<String> {
+    use process_wrap::std::{CommandWrap, ProcessSession};
+
     let shell = unix_shell();
 
-    let mut child = if is_flatpak() {
-        flatpak_spawn_process()
-            .args([&shell, "-l", "-i", "-c", "echo $PATH"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?
+    // Build the command, varying only the flatpak vs direct invocation.
+    let mut cmd = if is_flatpak() {
+        let mut c = flatpak_spawn_process();
+        c.args([&shell, "-l", "-i", "-c", "echo $PATH"]);
+        CommandWrap::from(c)
     } else {
-        std::process::Command::new(&shell)
-            .args(["-l", "-i", "-c", "echo $PATH"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?
+        let mut c = std::process::Command::new(&shell);
+        c.args(["-l", "-i", "-c", "echo $PATH"]);
+        CommandWrap::from(c)
     };
 
-    let mut stdout = child.stdout.take()?;
+    cmd.command_mut()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    // Spawn in a new session so that bash's interactive job-control setup
+    // (TIOCSPGRP) cannot steal the terminal foreground from goose, which
+    // would cause goose to receive SIGTTIN and be suspended on startup.
+    cmd.wrap(ProcessSession);
+
+    let mut child = cmd.spawn().ok()?;
+
+    let mut stdout = child.stdout().take()?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
@@ -197,7 +204,11 @@ fn resolve_login_shell_path() -> Option<String> {
     });
 
     match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(buf) if child.wait().is_ok_and(|s| s.success()) => {
+        Ok(buf)
+            if child
+                .wait()
+                .is_ok_and(|s: std::process::ExitStatus| s.success()) =>
+        {
             // Take the last non-empty line — interactive shells may emit
             // extra output from profile scripts before our echo.
             String::from_utf8_lossy(&buf)
@@ -209,7 +220,6 @@ fn resolve_login_shell_path() -> Option<String> {
         }
         _ => {
             let _ = child.kill();
-            let _ = child.wait();
             None
         }
     }

@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import type {
   DictationDownloadProgress,
   DictationProvider,
@@ -41,29 +40,18 @@ export async function saveDictationModelSelection(
 }
 
 export async function saveDictationProviderSecret(
-  _provider: DictationProvider,
+  provider: DictationProvider,
   value: string,
-  configKey?: string,
 ): Promise<void> {
-  if (!configKey) {
-    throw new Error("No config key for this provider");
-  }
-  return invoke("save_provider_field", { key: configKey, value });
+  const client = await getClient();
+  await client.goose.GooseDictationSecretSave({ provider, value });
 }
 
 export async function deleteDictationProviderSecret(
   provider: DictationProvider,
-  _configKey?: string,
 ): Promise<void> {
-  const providerIdMap: Record<string, string> = {
-    groq: "dictation_groq",
-    elevenlabs: "dictation_elevenlabs",
-  };
-  const providerId = providerIdMap[provider];
-  if (!providerId) {
-    throw new Error("Cannot delete secrets for this provider");
-  }
-  return invoke("delete_provider_config", { providerId });
+  const client = await getClient();
+  await client.goose.GooseDictationSecretDelete({ provider });
 }
 
 export async function listDictationLocalModels(): Promise<
@@ -71,7 +59,7 @@ export async function listDictationLocalModels(): Promise<
 > {
   const client = await getClient();
   const response = await client.goose.GooseDictationModelsList({});
-  return response.models as unknown as WhisperModelStatus[];
+  return response.models;
 }
 
 export async function downloadDictationLocalModel(
@@ -88,7 +76,7 @@ export async function getDictationLocalModelDownloadProgress(
   const response = await client.goose.GooseDictationModelsDownloadProgress({
     modelId,
   });
-  return (response.progress ?? null) as DictationDownloadProgress | null;
+  return response.progress ?? null;
 }
 
 export async function cancelDictationLocalModelDownload(

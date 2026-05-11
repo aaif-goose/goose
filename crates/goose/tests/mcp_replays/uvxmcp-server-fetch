@@ -1,5 +1,7 @@
 STDIN: {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{"elicitation":{},"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/html;profile=mcp-app"]}},"roots": {},"sampling":{}},"clientInfo":{"name":"goose-desktop","version":"0.0.0"}}}
 STDOUT: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{},"prompts":{"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"mcp-fetch","version":"1.25.0"}}}
 STDIN: {"jsonrpc":"2.0","method":"notifications/initialized"}
-STDIN: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":0},"name":"fetch","arguments":{"url":"https://example.com"}}}
-STDOUT: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"Contents of https://example.com/:\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/example)"}],"isError":false}}
+STDIN: {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":0}}}
+STDOUT: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"fetch","description":"Fetch a URL","inputSchema":{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}}]}}
+STDIN: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":1},"name":"fetch","arguments":{"url":"https://example.com"}}}
+STDOUT: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"Contents of https://example.com/:\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/example)"}],"isError":false}}

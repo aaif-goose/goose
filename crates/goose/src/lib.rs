@@ -27,6 +27,7 @@ pub mod oauth;
 #[cfg(feature = "otel")]
 pub mod otel;
 pub mod permission;
+pub mod plugins;
 #[cfg(feature = "telemetry")]
 pub mod posthog;
 pub mod prompt_template;
@@ -38,6 +39,7 @@ pub mod scheduler_trait;
 pub mod security;
 pub mod session;
 pub mod session_context;
+pub mod skills;
 pub mod slash_commands;
 pub mod sources;
 pub mod subprocess;

@@ -25,6 +25,7 @@ describe("chatStore", () => {
       sessionStateById: {},
       queuedMessageBySession: {},
       draftsBySession: {},
+      skillDraftsBySession: {},
       activeSessionId: null,
       isConnected: false,
     });
@@ -144,6 +145,18 @@ describe("chatStore", () => {
     expect(useChatStore.getState().draftsBySession.s1).toBeUndefined();
   });
 
+  it("stores and clears skill draft chips per session", () => {
+    const store = useChatStore.getState();
+
+    store.setSkillDrafts("s1", [{ id: "skill-1", name: "code-review" }]);
+    expect(useChatStore.getState().skillDraftsBySession.s1).toEqual([
+      { id: "skill-1", name: "code-review" },
+    ]);
+
+    store.clearSkillDrafts("s1");
+    expect(useChatStore.getState().skillDraftsBySession.s1).toBeUndefined();
+  });
+
   it("removes session data during cleanup including queued messages and drafts", () => {
     const store = useChatStore.getState();
 
@@ -151,6 +164,7 @@ describe("chatStore", () => {
     store.setChatState("s1", "streaming");
     store.enqueueMessage("s1", { text: "queued" });
     store.setDraft("s1", "draft text");
+    store.setSkillDrafts("s1", [{ id: "skill-1", name: "code-review" }]);
     store.setActiveSession("s1");
     store.cleanupSession("s1");
 
@@ -158,6 +172,7 @@ describe("chatStore", () => {
     expect(store.sessionStateById.s1).toBeUndefined();
     expect(store.queuedMessageBySession.s1).toBeUndefined();
     expect(store.draftsBySession.s1).toBeUndefined();
+    expect(useChatStore.getState().skillDraftsBySession.s1).toBeUndefined();
     expect(store.activeSessionId).toBeNull();
   });
 
@@ -187,6 +202,7 @@ describe("chatStore draft localStorage persistence", () => {
       sessionStateById: {},
       queuedMessageBySession: {},
       draftsBySession: {},
+      skillDraftsBySession: {},
       activeSessionId: null,
       isConnected: false,
     });
@@ -245,6 +261,7 @@ describe("chatStore session loading state", () => {
       sessionStateById: {},
       queuedMessageBySession: {},
       draftsBySession: {},
+      skillDraftsBySession: {},
       activeSessionId: null,
       isConnected: false,
       loadingSessionIds: new Set<string>(),

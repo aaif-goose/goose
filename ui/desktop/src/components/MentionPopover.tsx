@@ -595,7 +595,9 @@ const MentionPopover = forwardRef<
           {isLoading ? (
             <div className="flex items-center justify-center py-4">
               <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2"></div>
-              <span className="ml-2 text-sm text-text-secondary">{intl.formatMessage(isSlashCommand ? i18n.loadingCommands : i18n.scanningFiles)}</span>
+              <span className="ml-2 text-sm text-text-secondary">
+                {intl.formatMessage(isSlashCommand ? i18n.loadingCommands : i18n.scanningFiles)}
+              </span>
             </div>
           ) : (
             <>
@@ -630,7 +632,9 @@ const MentionPopover = forwardRef<
 
                 {!isLoading && displayItems.length === 0 && query && (
                   <div className="p-4 text-center text-text-secondary text-sm">
-                    {intl.formatMessage(isSlashCommand ? i18n.noCommandsFound : i18n.noItemsFound, { query })}
+                    {intl.formatMessage(isSlashCommand ? i18n.noCommandsFound : i18n.noItemsFound, {
+                      query,
+                    })}
                   </div>
                 )}
               </div>

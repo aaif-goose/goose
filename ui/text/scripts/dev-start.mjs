@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Development entrypoint: ensures a goose binary is available, then launches
-// the TUI via tsx. Skips the cargo build if GOOSE_BINARY is already set.
+// Development entrypoint: ensures a goose binary is available, then launches the TUI
+// Skips the cargo build if GOOSE_BINARY is already set or if --server is provided
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -10,8 +10,16 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..", "..", "..");
+const args = process.argv.slice(2);
+const hasServerFlag = args.some(
+  (arg) =>
+    arg === "--server" ||
+    arg === "-s" ||
+    arg.startsWith("--server=") ||
+    arg.startsWith("-s="),
+);
 
-if (!process.env.GOOSE_BINARY) {
+if (!hasServerFlag && !process.env.GOOSE_BINARY) {
   const binName = process.platform === "win32" ? "goose.exe" : "goose";
   const binaryPath = join(repoRoot, "target", "debug", binName);
 

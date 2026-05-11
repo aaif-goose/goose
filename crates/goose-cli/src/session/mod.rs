@@ -907,7 +907,7 @@ impl CliSession {
 
     async fn handle_list_skills(&mut self) -> Result<()> {
         use comfy_table::{presets, Cell, ContentArrangement, Table};
-        use goose::agents::platform_extensions::skills::list_installed_skills;
+        use goose::skills::list_installed_skills;
         let cwd = std::env::current_dir().unwrap_or_default();
         let skills = list_installed_skills(Some(&cwd));
 

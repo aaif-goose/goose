@@ -16,8 +16,13 @@ if git diff --cached --no-renames --name-only | grep -q '^ui/goose2/'; then
     REPO_ROOT="$(pwd)"
     echo "Running goose2 pre-commit checks..."
 
-    # Auto-format only staged files and re-stage them
-    STAGED_FILES=$(git diff --cached --no-renames --diff-filter=ACMR --name-only | grep '^ui/goose2/' | sed 's|^ui/goose2/||' || true)
+    # Auto-format only staged files that biome can process, then re-stage them.
+    # Exclude justfile and .swift files — biome doesn't understand these formats
+    # and would fail with "no files were processed" when only such files are staged.
+    STAGED_FILES=$(git diff --cached --no-renames --diff-filter=ACMR --name-only \
+      | grep '^ui/goose2/' \
+      | grep -v -E '(^ui/goose2/justfile$|\.swift$)' \
+      | sed 's|^ui/goose2/||' || true)
     if [ -n "$STAGED_FILES" ]; then
       cd ui/goose2
       echo "$STAGED_FILES" | xargs npx biome format --write
