@@ -1,6 +1,7 @@
 import type { ExtensionConfig } from '../../../api/types.gen';
 import { FixedExtensionEntry } from '../../ConfigContext';
 import bundledExtensionsData from './bundled-extensions.json';
+import deprecatedBundledExtensionsData from './deprecated-bundled-extensions.json';
 import { nameToKey } from './utils';
 
 // Type definition for built-in extensions from JSON
@@ -20,28 +21,40 @@ type BundledExtension = {
   allow_configure?: boolean;
 };
 
-const DEPRECATED_GOOGLE_DRIVE_IDS = ['googledrive', 'google_drive'];
-const DEPRECATED_GOOGLE_DRIVE_ENV_KEYS = [
-  'GOOGLE_DRIVE_CREDENTIALS_PATH',
-  'GOOGLE_DRIVE_OAUTH_PATH',
-];
+type DeprecatedBundledExtension = {
+  id: string;
+};
 
-export function isDeprecatedGoogleDriveExtension(ext: FixedExtensionEntry): boolean {
-  if (!DEPRECATED_GOOGLE_DRIVE_IDS.includes(nameToKey(ext.name))) {
-    return false;
+export function getDeprecatedBundledExtensions(): DeprecatedBundledExtension[] {
+  return deprecatedBundledExtensionsData as DeprecatedBundledExtension[];
+}
+
+function isBundledExtension(extension: FixedExtensionEntry): boolean {
+  return 'bundled' in extension && extension.bundled === true;
+}
+
+export async function pruneDeprecatedBundledExtensions(
+  existingExtensions: FixedExtensionEntry[],
+  removeExtensionFn: (id: string) => Promise<void>
+): Promise<FixedExtensionEntry[]> {
+  const deprecatedExtensionIds = new Set(getDeprecatedBundledExtensions().map((ext) => ext.id));
+  const remainingExtensions: FixedExtensionEntry[] = [];
+
+  for (const existingExt of existingExtensions) {
+    if (!isBundledExtension(existingExt)) {
+      remainingExtensions.push(existingExt);
+      continue;
+    }
+
+    if (!deprecatedExtensionIds.has(nameToKey(existingExt.name))) {
+      remainingExtensions.push(existingExt);
+      continue;
+    }
+
+    await removeExtensionFn(nameToKey(existingExt.name));
   }
-  if (ext.type === 'builtin') {
-    return true;
-  }
-  if (
-    ext.type === 'stdio' &&
-    'env_keys' in ext &&
-    Array.isArray(ext.env_keys) &&
-    ext.env_keys.some((key: string) => DEPRECATED_GOOGLE_DRIVE_ENV_KEYS.includes(key))
-  ) {
-    return true;
-  }
-  return false;
+
+  return remainingExtensions;
 }
 
 /**
@@ -66,14 +79,7 @@ export async function syncBundledExtensions(
       // Find if this extension already exists
       const existingExt = existingExtensions.find((ext) => nameToKey(ext.name) === bundledExt.id);
 
-      // Skip if extension exists and is already marked as bundled, except when
-      // we must migrate deprecated extensions.
-      if (
-        existingExt &&
-        'bundled' in existingExt &&
-        existingExt.bundled &&
-        !isDeprecatedGoogleDriveExtension(existingExt)
-      ) {
+      if (existingExt && isBundledExtension(existingExt)) {
         continue;
       }
 
@@ -122,15 +128,4 @@ export async function syncBundledExtensions(
     console.error('Failed to sync built-in extensions:', error);
     throw error;
   }
-}
-
-/**
- * Function to initialize all built-in extensions for a first-time user.
- * This can be called when the application is first installed.
- */
-export async function initializeBundledExtensions(
-  addExtensionFn: (name: string, config: ExtensionConfig, enabled: boolean) => Promise<void>
-): Promise<void> {
-  // Call with an empty list to ensure all built-ins are added
-  await syncBundledExtensions([], addExtensionFn);
 }

@@ -16,7 +16,16 @@ const tmpFile = path.join(os.tmpdir(), 'en.i18n-check.json');
 
 execFileSync(
   process.execPath,
-  [formatjs, 'extract', 'src/**/*.{ts,tsx}', '--out-file', tmpFile, '--flatten'],
+  [
+    formatjs,
+    'extract',
+    'src/**/*.{ts,tsx}',
+    '--ignore',
+    '**/*.d.ts',
+    '--out-file',
+    tmpFile,
+    '--flatten',
+  ],
   { stdio: 'inherit', cwd: projectDir }
 );
 

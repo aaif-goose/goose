@@ -1,19 +1,48 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
+import {
+  discoverAcpProvidersFromEntries,
+  type AcpProvider,
+} from "@/shared/api/acp";
 import { setNotificationHandler, getClient } from "@/shared/api/acpConnection";
 import notificationHandler from "@/shared/api/acpNotificationHandler";
 import { perfLog } from "@/shared/lib/perfLog";
+import {
+  hasAllowedModelProvider,
+  parseProviderAllowlist,
+} from "@/features/providers/distroProviderConstraints";
+import { getModelProviders } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
+import { useDistroStore } from "@/features/settings/stores/distroStore";
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
 
-const INVENTORY_POLL_DELAYS_MS = [250, 500, 750, 1000, 1500, 2000];
+export function filterStartupProvidersForDistro(
+  providers: AcpProvider[],
+  providerAllowlist: Set<string> | null,
+  modelProviders: Pick<ProviderCatalogEntry, "id">[],
+): AcpProvider[] {
+  if (!providerAllowlist) {
+    return providers;
+  }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  const shouldKeepGoose = hasAllowedModelProvider(
+    modelProviders,
+    providerAllowlist,
+  );
+
+  return providers.filter(
+    (provider) => provider.id !== "goose" || shouldKeepGoose,
+  );
 }
 
 export function useAppStartup() {
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       const tStartup = performance.now();
       perfLog("[perf:startup] useAppStartup begin");
@@ -26,10 +55,44 @@ export function useAppStartup() {
         );
       } catch (err) {
         console.error("Failed to initialize ACP connection:", err);
+        setError(err);
       }
 
       const store = useAgentStore.getState();
       const inventoryStore = useProviderInventoryStore.getState();
+      const catalogStore = useProviderCatalogStore.getState();
+      const distroStore = useDistroStore.getState();
+
+      const applyProvidersFromInventory = (
+        entries: Parameters<typeof discoverAcpProvidersFromEntries>[0],
+        validated = false,
+      ) => {
+        const providers = discoverAcpProvidersFromEntries(entries);
+        const providerAllowlist = parseProviderAllowlist(
+          useDistroStore.getState().manifest,
+        );
+        store.setProviders(
+          filterStartupProvidersForDistro(
+            providers,
+            providerAllowlist,
+            getModelProviders(),
+          ),
+          validated,
+        );
+        return providers;
+      };
+
+      const loadDistroBundle = async () => {
+        try {
+          const { getDistroBundle } = await import("@/shared/api/distro");
+          const manifest = await getDistroBundle();
+          distroStore.setManifest(manifest);
+        } catch (err) {
+          console.error("Failed to load distro bundle on startup:", err);
+          distroStore.setManifest({ present: false });
+        }
+      };
+
       const loadPersonas = async () => {
         const t0 = performance.now();
         store.setPersonasLoading(true);
@@ -47,90 +110,53 @@ export function useAppStartup() {
         }
       };
 
-      const loadProviders = async () => {
+      const loadProviderCatalog = async () => {
         const t0 = performance.now();
-        store.setProvidersLoading(true);
         try {
-          const { discoverAcpProviders } = await import("@/shared/api/acp");
-          const providers = await discoverAcpProviders();
-          store.setProviders(providers);
+          const entries = await catalogStore.load();
+          const inventoryEntries = [
+            ...useProviderInventoryStore.getState().entries.values(),
+          ];
+          if (inventoryEntries.length > 0) {
+            applyProvidersFromInventory(inventoryEntries, true);
+          }
           perfLog(
-            `[perf:startup] loadProviders done in ${(performance.now() - t0).toFixed(1)}ms (n=${providers.length})`,
+            `[perf:startup] loadProviderCatalog done in ${(performance.now() - t0).toFixed(1)}ms (n=${entries.length})`,
           );
         } catch (err) {
-          console.error("Failed to load ACP providers on startup:", err);
-        } finally {
-          store.setProvidersLoading(false);
+          console.error("Failed to load provider catalog on startup:", err);
         }
       };
 
-      const loadProviderInventory = async () => {
+      const loadProvidersAndInventory = async () => {
         const t0 = performance.now();
+        store.setProvidersLoading(true);
         inventoryStore.setLoading(true);
         try {
           const { getProviderInventory } = await import(
             "@/features/providers/api/inventory"
           );
           const entries = await getProviderInventory();
+
+          // Populate inventory store
           inventoryStore.setEntries(entries);
+
+          // Derive ACP providers from the same response
+          const providers = applyProvidersFromInventory(entries, true);
+
           perfLog(
-            `[perf:startup] loadProviderInventory done in ${(performance.now() - t0).toFixed(1)}ms (n=${entries.length})`,
+            `[perf:startup] loadProvidersAndInventory done in ${(performance.now() - t0).toFixed(1)}ms (entries=${entries.length}, providers=${providers.length})`,
           );
           return entries;
         } catch (err) {
-          console.error("Failed to load provider inventory on startup:", err);
-          return [];
-        } finally {
-          inventoryStore.setLoading(false);
-        }
-      };
-
-      const refreshConfiguredProviderInventory = async (
-        initialEntries?: Awaited<ReturnType<typeof loadProviderInventory>>,
-      ) => {
-        try {
-          const entries =
-            initialEntries && initialEntries.length > 0
-              ? initialEntries
-              : await (async () => {
-                  const { getProviderInventory } = await import(
-                    "@/features/providers/api/inventory"
-                  );
-                  return getProviderInventory();
-                })();
-          const configuredProviderIds = entries
-            .filter((entry) => entry.configured)
-            .map((entry) => entry.providerId);
-          if (configuredProviderIds.length === 0) {
-            return;
-          }
-
-          const { getProviderInventory, refreshProviderInventory } =
-            await import("@/features/providers/api/inventory");
-          const refresh = await refreshProviderInventory(configuredProviderIds);
-          if (refresh.started.length === 0) {
-            return;
-          }
-
-          inventoryStore.mergeEntries(
-            await getProviderInventory(refresh.started),
-          );
-
-          for (const delayMs of INVENTORY_POLL_DELAYS_MS) {
-            await sleep(delayMs);
-            const refreshedEntries = await getProviderInventory(
-              refresh.started,
-            );
-            inventoryStore.mergeEntries(refreshedEntries);
-            if (refreshedEntries.every((entry) => !entry.refreshing)) {
-              return;
-            }
-          }
-        } catch (err) {
           console.error(
-            "Failed to refresh provider inventory on startup:",
+            "Failed to load providers and inventory on startup:",
             err,
           );
+          return [];
+        } finally {
+          store.setProvidersLoading(false);
+          inventoryStore.setLoading(false);
         }
       };
 
@@ -146,20 +172,52 @@ export function useAppStartup() {
         setActiveSession(null);
       };
 
-      const inventoryLoad = loadProviderInventory();
+      // Catalog loading has its own fallback/error state and should not block
+      // sessions, personas, or configured provider inventory during startup.
+      void loadProviderCatalog();
+
+      await loadDistroBundle();
+
+      const providersAndInventoryLoad = loadProvidersAndInventory();
 
       await Promise.allSettled([
         loadPersonas(),
-        loadProviders(),
-        inventoryLoad,
+        providersAndInventoryLoad,
         loadSessionState(),
       ]);
-      void inventoryLoad.then((entries) =>
-        refreshConfiguredProviderInventory(entries),
-      );
+      // Background refresh updates stale inventory after the first usable
+      // provider list is available.
+      void providersAndInventoryLoad.then(async (entries) => {
+        try {
+          const { backgroundRefreshInventory } = await import(
+            "@/features/providers/api/inventory"
+          );
+          await backgroundRefreshInventory(inventoryStore, entries);
+        } catch (err) {
+          console.error(
+            "Failed to refresh provider inventory on startup:",
+            err,
+          );
+        }
+      });
       perfLog(
         `[perf:startup] useAppStartup complete in ${(performance.now() - tStartup).toFixed(1)}ms`,
       );
-    })();
+    })()
+      .catch((err) => {
+        console.error("Failed to complete app startup:", err);
+        setError(err);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  return { ready, error };
 }

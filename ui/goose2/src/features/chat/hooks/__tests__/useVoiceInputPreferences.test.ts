@@ -27,17 +27,20 @@ describe("useVoiceInputPreferences", () => {
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GooseConfigRead: vi.fn().mockImplementation(({ key }) => {
-          if (key === "VOICE_DICTATION_PROVIDER") {
-            if (shouldFailProviderRead) {
-              return Promise.reject(new Error("temporary acp failure"));
-            }
-            return Promise.resolve({ value: "groq" });
+        GoosePreferencesRead: vi.fn().mockImplementation(() => {
+          if (shouldFailProviderRead) {
+            return Promise.reject(new Error("temporary acp failure"));
           }
-          return Promise.resolve({ value: null });
+          return Promise.resolve({
+            values: [
+              { key: "voiceAutoSubmitPhrases", value: null },
+              { key: "voiceDictationProvider", value: "groq" },
+              { key: "voiceDictationPreferredMic", value: null },
+            ],
+          });
         }),
-        GooseConfigUpsert: vi.fn().mockResolvedValue({}),
-        GooseConfigRemove: vi.fn().mockResolvedValue({}),
+        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
+        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -61,21 +64,27 @@ describe("useVoiceInputPreferences", () => {
 
   it("broadcasts preference changes only after config persistence settles", async () => {
     const upsert = vi.fn();
-    const providerRead = deferred<{ value?: unknown }>();
+    const providerRead = deferred<{
+      values: Array<{ key: string; value: unknown }>;
+    }>();
     const pendingWrite = deferred<void>();
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GooseConfigRead: vi
+        GoosePreferencesRead: vi
           .fn()
-          .mockResolvedValueOnce({ value: null })
-          .mockResolvedValueOnce({ value: null })
-          .mockResolvedValueOnce({ value: null })
+          .mockResolvedValueOnce({
+            values: [
+              { key: "voiceAutoSubmitPhrases", value: null },
+              { key: "voiceDictationProvider", value: null },
+              { key: "voiceDictationPreferredMic", value: null },
+            ],
+          })
           .mockImplementation(() => providerRead.promise),
-        GooseConfigUpsert: upsert.mockImplementation(
+        GoosePreferencesSave: upsert.mockImplementation(
           () => pendingWrite.promise,
         ),
-        GooseConfigRemove: vi.fn().mockResolvedValue({}),
+        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -100,7 +109,114 @@ describe("useVoiceInputPreferences", () => {
 
     await waitFor(() => expect(eventListener).toHaveBeenCalledTimes(1));
 
-    providerRead.resolve({ value: "openai" });
+    providerRead.resolve({
+      values: [
+        { key: "voiceAutoSubmitPhrases", value: null },
+        { key: "voiceDictationProvider", value: "openai" },
+        { key: "voiceDictationPreferredMic", value: null },
+      ],
+    });
     window.removeEventListener("goose:voice-input-preferences", eventListener);
+  });
+
+  it("does not broadcast failed preference writes and re-syncs stored state", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const save = vi.fn().mockRejectedValue(new Error("write failed"));
+    const read = vi.fn().mockResolvedValue({
+      values: [
+        { key: "voiceAutoSubmitPhrases", value: null },
+        { key: "voiceDictationProvider", value: "groq" },
+        { key: "voiceDictationPreferredMic", value: null },
+      ],
+    });
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GoosePreferencesRead: read,
+        GoosePreferencesSave: save,
+        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
+      },
+    });
+
+    const eventListener = vi.fn();
+    window.addEventListener("goose:voice-input-preferences", eventListener);
+
+    const { result } = renderHook(() => useVoiceInputPreferences());
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+
+    act(() => {
+      result.current.setSelectedProvider("openai");
+    });
+
+    expect(result.current.selectedProvider).toBe("openai");
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+
+    expect(eventListener).not.toHaveBeenCalled();
+    expect(result.current.selectedProvider).toBe("groq");
+
+    window.removeEventListener("goose:voice-input-preferences", eventListener);
+    warn.mockRestore();
+  });
+
+  it("stores the disabled sentinel when provider is set to null", async () => {
+    const save = vi.fn().mockResolvedValue({});
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GoosePreferencesRead: vi.fn().mockResolvedValue({
+          values: [
+            { key: "voiceAutoSubmitPhrases", value: null },
+            { key: "voiceDictationProvider", value: "groq" },
+            { key: "voiceDictationPreferredMic", value: null },
+          ],
+        }),
+        GoosePreferencesSave: save,
+        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
+      },
+    });
+
+    const { result } = renderHook(() => useVoiceInputPreferences());
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+
+    act(() => {
+      result.current.setSelectedProvider(null);
+    });
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({
+        values: [{ key: "voiceDictationProvider", value: "__disabled__" }],
+      });
+    });
+  });
+
+  it("clearing selected provider removes only the provider preference", async () => {
+    const remove = vi.fn().mockResolvedValue({});
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GoosePreferencesRead: vi.fn().mockResolvedValue({
+          values: [
+            { key: "voiceAutoSubmitPhrases", value: "submit" },
+            { key: "voiceDictationProvider", value: "groq" },
+            { key: "voiceDictationPreferredMic", value: "mic-1" },
+          ],
+        }),
+        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
+        GoosePreferencesRemove: remove,
+      },
+    });
+
+    const { result } = renderHook(() => useVoiceInputPreferences());
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+
+    act(() => {
+      result.current.clearSelectedProvider();
+    });
+
+    await waitFor(() => {
+      expect(remove).toHaveBeenCalledWith({
+        keys: ["voiceDictationProvider"],
+      });
+    });
   });
 });

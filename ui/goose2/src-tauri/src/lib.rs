@@ -2,8 +2,8 @@ mod commands;
 mod services;
 mod types;
 
-use services::goose_config::GooseConfig;
-use services::personas::PersonaStore;
+use services::distro_bundle::DistroBundleState;
+use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,36 +24,22 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
-        )
-        .manage(PersonaStore::new())
-        .manage(GooseConfig::new());
+        );
 
     #[cfg(feature = "app-test-driver")]
     let builder = builder.plugin(tauri_plugin_app_test_driver::init());
 
     builder
+        .setup(|app| {
+            app.manage(DistroBundleState::new(app.handle()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            commands::agents::list_personas,
-            commands::agents::create_persona,
-            commands::agents::update_persona,
-            commands::agents::delete_persona,
-            commands::agents::refresh_personas,
-            commands::agents::export_persona,
-            commands::agents::import_personas,
             commands::agents::read_import_persona_file,
-            commands::agents::save_persona_avatar,
-            commands::agents::save_persona_avatar_bytes,
-            commands::agents::get_avatars_dir,
             commands::acp::get_goose_serve_url,
-            commands::projects::list_projects,
-            commands::projects::create_project,
-            commands::projects::update_project,
-            commands::projects::delete_project,
-            commands::projects::get_project,
-            commands::projects::reorder_projects,
-            commands::projects::list_archived_projects,
-            commands::projects::archive_project,
-            commands::projects::restore_project,
+            commands::acp::get_goose_serve_host_info,
+            commands::project_icons::scan_project_icons,
+            commands::project_icons::read_project_icon,
             commands::doctor::run_doctor,
             commands::doctor::run_doctor_fix,
             commands::git::get_git_state,
@@ -65,17 +51,13 @@ pub fn run() {
             commands::git::git_pull,
             commands::git::git_create_branch,
             commands::git::git_create_worktree,
-            commands::credentials::get_provider_config,
-            commands::credentials::save_provider_field,
-            commands::credentials::delete_provider_config,
-            commands::credentials::check_all_provider_status,
-            commands::credentials::restart_app,
             commands::model_setup::authenticate_model_provider,
             commands::agent_setup::check_agent_installed,
             commands::agent_setup::check_agent_auth,
             commands::agent_setup::install_agent,
             commands::agent_setup::authenticate_agent,
             commands::path_resolver::resolve_path,
+            commands::distro::get_distro_bundle,
             commands::system::get_home_dir,
             commands::system::save_exported_session_file,
             commands::system::path_exists,
@@ -84,7 +66,6 @@ pub fn run() {
             commands::system::list_files_for_mentions,
             commands::system::read_image_attachment,
         ])
-        .setup(|_app| Ok(()))
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, _event| {});

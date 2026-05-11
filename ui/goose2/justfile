@@ -90,6 +90,10 @@ dev: setup
     export RUST_LOG="${RUST_LOG:-perf=debug,info}"
     PROJECT_DIR=$(pwd)
     REPO_ROOT=$(cd ../.. && pwd)
+    DISTRO_DIR="${PROJECT_DIR}/distro"
+    if [[ -z "${GOOSE_DISTRO_DIR:-}" && -d "${DISTRO_DIR}" ]]; then
+        export GOOSE_DISTRO_DIR="${DISTRO_DIR}"
+    fi
     LOCAL_GOOSE_DEBUG="${REPO_ROOT}/target/debug/goose"
     LOCAL_GOOSE_RELEASE="${REPO_ROOT}/target/release/goose"
     if [[ -x "${LOCAL_GOOSE_DEBUG}" ]]; then
@@ -105,6 +109,10 @@ dev: setup
         echo "Using local goose binary: ${GOOSE_BIN}"
     else
         echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
+    fi
+
+    if [[ -n "${GOOSE_DISTRO_DIR:-}" ]]; then
+        echo "Using distro dir: ${GOOSE_DISTRO_DIR}"
     fi
 
     # In worktrees, generate a labeled icon so you can tell instances apart
@@ -138,6 +146,10 @@ dev-debug: setup
     # Override with e.g. RUST_LOG=info just dev-debug to disable.
     export RUST_LOG="${RUST_LOG:-perf=debug,info}"
     REPO_ROOT=$(cd ../.. && pwd)
+    DISTRO_DIR="$(pwd)/distro"
+    if [[ -z "${GOOSE_DISTRO_DIR:-}" && -d "${DISTRO_DIR}" ]]; then
+        export GOOSE_DISTRO_DIR="${DISTRO_DIR}"
+    fi
     LOCAL_GOOSE_DEBUG="${REPO_ROOT}/target/debug/goose"
     LOCAL_GOOSE_RELEASE="${REPO_ROOT}/target/release/goose"
     if [[ -x "${LOCAL_GOOSE_DEBUG}" ]]; then
@@ -153,6 +165,10 @@ dev-debug: setup
         echo "Using local goose binary: ${GOOSE_BIN}"
     else
         echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
+    fi
+
+    if [[ -n "${GOOSE_DISTRO_DIR:-}" ]]; then
+        echo "Using distro dir: ${GOOSE_DISTRO_DIR}"
     fi
 
     # In worktrees, generate a labeled icon so you can tell instances apart

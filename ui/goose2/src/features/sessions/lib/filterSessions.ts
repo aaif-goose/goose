@@ -23,8 +23,8 @@ function buildSearchableString(
     parts.push(session.title);
   }
 
-  if (session.personaId) {
-    const name = resolvers.getPersonaName(session.personaId);
+  if (session.agentId) {
+    const name = resolvers.getPersonaName(session.agentId);
     if (name) parts.push(name);
   }
 

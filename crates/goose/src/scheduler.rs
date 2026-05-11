@@ -1149,6 +1149,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_remove_scheduled_job_respects_recipe_removal_flag() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("schedule.json");
+        let recipe_path = create_test_recipe(temp_dir.path(), "recipe_removal_flag_job");
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let scheduler = Scheduler::new(storage_path, session_manager).await.unwrap();
+
+        let job = ScheduledJob {
+            id: "recipe_removal_flag_job".to_string(),
+            source: recipe_path.to_string_lossy().to_string(),
+            cron: "0 0 0 1 1 *".to_string(),
+            last_run: None,
+            currently_running: false,
+            paused: false,
+            current_session_id: None,
+            process_start_time: None,
+        };
+
+        scheduler
+            .add_scheduled_job(job.clone(), false)
+            .await
+            .unwrap();
+        scheduler
+            .remove_scheduled_job("recipe_removal_flag_job", false)
+            .await
+            .unwrap();
+        assert!(
+            recipe_path.exists(),
+            "Recipe should be kept when remove_recipe is false"
+        );
+
+        scheduler.add_scheduled_job(job, false).await.unwrap();
+        scheduler
+            .remove_scheduled_job("recipe_removal_flag_job", true)
+            .await
+            .unwrap();
+        assert!(
+            !recipe_path.exists(),
+            "Recipe should be deleted when remove_recipe is true"
+        );
+    }
+
+    #[tokio::test]
     async fn test_job_with_no_prompt_does_not_panic() {
         let _guard = env_lock::lock_env([
             ("GOOSE_PROVIDER", Some("openai")),

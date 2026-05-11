@@ -283,7 +283,12 @@ export default function ProgressiveMessageList({
       {/* Loading indicator when progressively rendering */}
       {isLoading && (
         <div className="flex flex-col items-center justify-center py-8">
-          <LoadingGoose message={intl.formatMessage(i18n.loadingMessages, { renderedCount, totalCount: messages.length })} />
+          <LoadingGoose
+            message={intl.formatMessage(i18n.loadingMessages, {
+              renderedCount,
+              totalCount: messages.length,
+            })}
+          />
           <div className="text-xs text-text-secondary mt-2">
             {intl.formatMessage(i18n.searchHint)}
           </div>

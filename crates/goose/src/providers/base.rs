@@ -731,14 +731,42 @@ pub trait Provider: Send + Sync {
         ))
     }
 
-    /// Returns the first 3 user messages as strings for session naming
+    /// Returns the first 3 user messages as strings for session naming,
+    /// filtering out assistant-only content (e.g. preprompt blocks).
     fn get_initial_user_messages(&self, messages: &Conversation) -> Vec<String> {
         messages
             .iter()
             .filter(|m| m.role == rmcp::model::Role::User)
             .take(MSG_COUNT_FOR_SESSION_NAME_GENERATION)
-            .map(|m| m.as_concat_text())
+            .map(|m| {
+                m.content
+                    .iter()
+                    .filter_map(|c| c.filter_for_audience(rmcp::model::Role::User))
+                    .filter_map(|c| c.as_text().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
             .collect()
+    }
+
+    /// Extracts preprompt context (assistant-audience blocks) from the first user message.
+    /// These are content blocks visible to the assistant but not the user.
+    fn get_preprompt_context(&self, messages: &Conversation) -> String {
+        messages
+            .iter()
+            .filter(|m| m.role == rmcp::model::Role::User)
+            .take(1)
+            .flat_map(|m| m.content.iter())
+            .filter_map(|c| {
+                // If this block is NOT visible to the user, it's preprompt/assistant-only content
+                if c.filter_for_audience(rmcp::model::Role::User).is_none() {
+                    c.as_text().map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Generate a session name/description based on the conversation history
@@ -749,6 +777,7 @@ pub trait Provider: Send + Sync {
         messages: &Conversation,
     ) -> Result<String, ProviderError> {
         let context = self.get_initial_user_messages(messages);
+        let preprompt_context = self.get_preprompt_context(messages);
         let system = crate::prompt_template::render_template(
             "session_name.md",
             &std::collections::HashMap::<String, String>::new(),
@@ -758,8 +787,19 @@ pub trait Provider: Send + Sync {
         use super::cli_common::{
             SESSION_NAME_BEGIN_MARKER, SESSION_NAME_END_MARKER, SESSION_NAME_SUFFIX,
         };
+
+        let preprompt_section = if preprompt_context.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "---BEGIN BACKGROUND CONTEXT (for understanding only, do NOT base the title on this)---\n{}\n---END BACKGROUND CONTEXT---\n\n",
+                preprompt_context
+            )
+        };
+
         let user_text = format!(
-            "{}\n{}\n{}\n\n{}",
+            "{}{}\n{}\n{}\n\n{}",
+            preprompt_section,
             SESSION_NAME_BEGIN_MARKER,
             context.join("\n"),
             SESSION_NAME_END_MARKER,
