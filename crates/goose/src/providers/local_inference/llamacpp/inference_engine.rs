@@ -1,4 +1,5 @@
 use crate::providers::errors::ProviderError;
+use crate::providers::local_inference::backend::LocalInferenceBackend;
 use crate::providers::local_inference::local_model_registry::ModelSettings;
 use crate::providers::local_inference::multimodal::ExtractedImage;
 use crate::providers::utils::RequestLog;
@@ -9,11 +10,12 @@ use llama_cpp_2::mtmd::{MtmdBitmap, MtmdContext, MtmdInputText};
 use llama_cpp_2::sampling::LlamaSampler;
 use std::num::NonZeroU32;
 
-use super::{InferenceRuntime, StreamSender};
+use super::super::StreamSender;
+use super::LlamaCppBackend;
 
 pub(super) struct GenerationContext<'a> {
     pub loaded: &'a LoadedModel,
-    pub runtime: &'a InferenceRuntime,
+    pub backend: &'a LlamaCppBackend,
     pub chat_messages: &'a [LlamaChatMessage],
     pub settings: &'a ModelSettings,
     pub context_limit: usize,
@@ -37,10 +39,10 @@ pub(super) struct LoadedModel {
 /// Returns `None` if the model architecture values are unavailable.
 pub(super) fn estimate_max_context_for_memory(
     model: &LlamaModel,
-    runtime: &InferenceRuntime,
+    backend: &LlamaCppBackend,
     mmproj_overhead_bytes: u64,
 ) -> Option<usize> {
-    let raw_available = super::available_inference_memory_bytes(runtime);
+    let raw_available = backend.available_memory_bytes();
     if raw_available == 0 {
         return None;
     }
@@ -210,7 +212,7 @@ pub(super) fn build_sampler(
 /// context size. Returns `(prompt_token_count, effective_ctx)`.
 pub(super) fn validate_and_compute_context(
     loaded: &LoadedModel,
-    runtime: &InferenceRuntime,
+    backend: &LlamaCppBackend,
     prompt_token_count: usize,
     context_limit: usize,
     settings: &crate::providers::local_inference::local_model_registry::ModelSettings,
@@ -221,7 +223,7 @@ pub(super) fn validate_and_compute_context(
     } else {
         0
     };
-    let memory_max_ctx = estimate_max_context_for_memory(&loaded.model, runtime, mmproj_overhead);
+    let memory_max_ctx = estimate_max_context_for_memory(&loaded.model, backend, mmproj_overhead);
     let effective_ctx = effective_context_size(
         prompt_token_count,
         settings,
@@ -251,7 +253,7 @@ pub(super) fn validate_and_compute_context(
 /// Create a llama context and prefill (decode) all prompt tokens.
 pub(super) fn create_and_prefill_context<'model>(
     loaded: &'model LoadedModel,
-    runtime: &InferenceRuntime,
+    backend: &LlamaCppBackend,
     tokens: &[llama_cpp_2::token::LlamaToken],
     effective_ctx: usize,
     settings: &crate::providers::local_inference::local_model_registry::ModelSettings,
@@ -259,7 +261,7 @@ pub(super) fn create_and_prefill_context<'model>(
     let ctx_params = build_context_params(effective_ctx as u32, settings);
     let mut ctx = loaded
         .model
-        .new_context(runtime.backend(), ctx_params)
+        .new_context(backend.llama_backend(), ctx_params)
         .map_err(|e| ProviderError::ExecutionError(format!("Failed to create context: {}", e)))?;
 
     let n_batch = ctx.n_batch() as usize;
@@ -279,7 +281,7 @@ pub(super) fn create_and_prefill_context<'model>(
 /// and the effective context size.
 pub(super) fn create_and_prefill_multimodal<'model>(
     loaded: &'model LoadedModel,
-    runtime: &InferenceRuntime,
+    backend: &LlamaCppBackend,
     prompt_text: &str,
     images: &[ExtractedImage],
     context_limit: usize,
@@ -316,7 +318,7 @@ pub(super) fn create_and_prefill_multimodal<'model>(
 
     let n_ctx_train = loaded.model.n_ctx_train() as usize;
     let mmproj_overhead = settings.mmproj_size_bytes;
-    let memory_max_ctx = estimate_max_context_for_memory(&loaded.model, runtime, mmproj_overhead);
+    let memory_max_ctx = estimate_max_context_for_memory(&loaded.model, backend, mmproj_overhead);
     let effective_ctx = effective_context_size(
         prompt_token_count,
         settings,
@@ -336,7 +338,7 @@ pub(super) fn create_and_prefill_multimodal<'model>(
     let ctx_params = build_context_params(effective_ctx as u32, settings);
     let llama_ctx = loaded
         .model
-        .new_context(runtime.backend(), ctx_params)
+        .new_context(backend.llama_backend(), ctx_params)
         .map_err(|e| ProviderError::ExecutionError(format!("Failed to create context: {e}")))?;
 
     let n_batch = llama_ctx.n_batch() as i32;
