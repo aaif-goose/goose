@@ -12,6 +12,7 @@ import {
   type RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import packageJson from "../../../package.json";
+import { acpFsCallbacks } from "./acpFsCallbacks";
 import { createWebSocketStream } from "./createWebSocketStream";
 import { perfLog } from "@/shared/lib/perfLog";
 
@@ -47,6 +48,8 @@ function createClientCallbacks(): () => Client {
         await notificationHandler.handleSessionNotification(notification);
       }
     },
+
+    ...acpFsCallbacks,
   });
 }
 
@@ -87,6 +90,10 @@ async function initializeConnection(): Promise<GooseClient> {
   await client.initialize({
     protocolVersion: PROTOCOL_VERSION,
     clientCapabilities: {
+      fs: {
+        readTextFile: true,
+        writeTextFile: true,
+      },
       _meta: {
         goose: {
           mcpHostCapabilities: DEFAULT_GOOSE_MCP_HOST_CAPABILITIES,

@@ -38,6 +38,8 @@ pub fn run() {
             commands::agents::read_import_persona_file,
             commands::acp::get_goose_serve_url,
             commands::acp::get_goose_serve_host_info,
+            commands::acp_fs::acp_read_text_file,
+            commands::acp_fs::acp_write_text_file,
             commands::project_icons::scan_project_icons,
             commands::project_icons::read_project_icon,
             commands::doctor::run_doctor,

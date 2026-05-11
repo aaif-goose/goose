@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod acp_fs;
 pub mod agent_setup;
 pub mod agents;
 pub mod distro;
