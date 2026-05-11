@@ -82,6 +82,7 @@ export default function JsonSchemaForm({
   const [formData, setFormData] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = {};
     if (schema.properties) {
+      const isRequired = (key: string) => schema.required?.includes(key) ?? false;
       for (const [key, prop] of Object.entries(schema.properties)) {
         if (prop.default !== undefined) {
           initial[key] = prop.default;
@@ -89,6 +90,8 @@ export default function JsonSchemaForm({
           initial[key] = false;
         } else if (prop.type === 'number' || prop.type === 'integer') {
           initial[key] = prop.minimum ?? 0;
+        } else if (prop.enum && prop.enum.length > 0 && isRequired(key)) {
+          initial[key] = prop.enum[0];
         } else {
           initial[key] = '';
         }

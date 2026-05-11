@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AcpProvider } from "@/shared/api/acp";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
-import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
+import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { getClient } from "@/shared/api/acpConnection";
-import { acpSetModel } from "@/shared/api/acp";
 import {
   useChatSessionStore,
   type ChatSession,
@@ -14,9 +14,8 @@ import {
   getStoredModelPreference,
   setStoredModelPreference,
 } from "../lib/modelPreferences";
+import { resolveSelectedAgentId } from "../lib/agentProviderResolution";
 
-const GOOSE_PROVIDER_CONFIG_KEY = "GOOSE_PROVIDER";
-const GOOSE_MODEL_CONFIG_KEY = "GOOSE_MODEL";
 const MODEL_ALIAS_IDS = new Set(["current", "default"]);
 
 export type PreferredModelSelection = {
@@ -40,7 +39,7 @@ interface UseResolvedAgentModelPickerOptions {
   prepareSelectedProvider: (
     providerId: string,
     modelSelection?: PreferredModelSelection | null,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 }
 
 function isModelAlias(modelId?: string | null): boolean {
@@ -58,16 +57,54 @@ export function useResolvedAgentModelPicker({
   setGlobalSelectedProvider,
   prepareSelectedProvider,
 }: UseResolvedAgentModelPickerOptions) {
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
+  const catalogLoaded = useProviderCatalogStore((state) => state.loaded);
   const { getEntry: getProviderInventoryEntry } = useProviderInventory();
+  // Monotonic version counter shared across onProviderSelected and
+  // onModelSelected. Any user interaction (provider OR model change) bumps
+  // this, which invalidates in-flight async work from either callback —
+  // intentionally cross-callback so a rapid provider switch also cancels a
+  // stale model mutation and vice versa.
+  const selectionVersionRef = useRef(0);
   const [gooseDefaultSelection, setGooseDefaultSelection] =
     useState<PreferredModelSelection | null>(null);
 
-  const selectedAgentId =
-    resolveAgentProviderCatalogIdStrict(selectedProvider) ?? "goose";
-  const concreteSelectedProviderId =
-    resolveAgentProviderCatalogIdStrict(selectedProvider) == null
-      ? selectedProvider
-      : null;
+  const selectedAgentId = useMemo(
+    () =>
+      resolveSelectedAgentId({
+        catalogEntries,
+        catalogLoaded,
+        selectedProvider,
+        getProviderInventoryEntry,
+      }),
+    [
+      catalogEntries,
+      catalogLoaded,
+      getProviderInventoryEntry,
+      selectedProvider,
+    ],
+  );
+  const concreteSelectedProviderId = useMemo(() => {
+    const resolvedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+      catalogEntries,
+      selectedProvider,
+    );
+    if (resolvedAgentId) {
+      return null;
+    }
+
+    if (!catalogLoaded) {
+      const inventoryEntry = getProviderInventoryEntry(selectedProvider);
+      return inventoryEntry?.category === "model" ? selectedProvider : null;
+    }
+
+    return selectedProvider;
+  }, [
+    catalogEntries,
+    catalogLoaded,
+    getProviderInventoryEntry,
+    selectedProvider,
+  ]);
   const storedModelPreference = useMemo(
     () => getStoredModelPreference(selectedAgentId),
     [selectedAgentId],
@@ -134,23 +171,14 @@ export function useResolvedAgentModelPicker({
     const loadGooseDefaultSelection = async () => {
       try {
         const client = await getClient();
-        const [providerResponse, modelResponse] = await Promise.all([
-          client.goose.GooseConfigRead({ key: GOOSE_PROVIDER_CONFIG_KEY }),
-          client.goose.GooseConfigRead({ key: GOOSE_MODEL_CONFIG_KEY }),
-        ]);
+        const defaults = await client.goose.GooseDefaultsRead({});
 
         if (cancelled) {
           return;
         }
 
-        const providerId =
-          typeof providerResponse.value === "string"
-            ? providerResponse.value
-            : undefined;
-        const modelId =
-          typeof modelResponse.value === "string"
-            ? modelResponse.value
-            : undefined;
+        const providerId = defaults.providerId ?? undefined;
+        const modelId = defaults.modelId ?? undefined;
 
         if (!modelId) {
           setGooseDefaultSelection(null);
@@ -184,13 +212,27 @@ export function useResolvedAgentModelPicker({
     modelStatusMessage,
     handleProviderChange,
     handleModelChange,
+    handlePickerOpen,
   } = useAgentModelPickerState({
     providers,
     selectedProvider,
     onProviderSelected: (providerId) => {
-      const requestedAgentId = resolveAgentProviderCatalogIdStrict(providerId);
+      selectionVersionRef.current += 1;
+      const versionAtSelection = selectionVersionRef.current;
+      const requestedAgentId = resolveAgentProviderCatalogIdStrictFromEntries(
+        catalogEntries,
+        providerId,
+      );
+      const resolvedRequestedAgentId =
+        requestedAgentId ??
+        resolveSelectedAgentId({
+          catalogEntries,
+          catalogLoaded,
+          selectedProvider: providerId,
+          getProviderInventoryEntry,
+        });
       const preferredModelSelection = getPreferredSelectionForAgent(
-        requestedAgentId ?? "goose",
+        resolvedRequestedAgentId,
         providerId,
       );
       const nextProviderId = requestedAgentId
@@ -224,6 +266,9 @@ export function useResolvedAgentModelPicker({
       setGlobalSelectedProvider(nextProviderId);
       void prepareSelectedProvider(nextProviderId, nextModelSelection).catch(
         (error) => {
+          if (selectionVersionRef.current !== versionAtSelection) {
+            return;
+          }
           console.error("Failed to update ACP session provider:", error);
         },
       );
@@ -232,6 +277,12 @@ export function useResolvedAgentModelPicker({
       const modelId = model.id;
       const modelName = model.displayName ?? model.name ?? model.id;
       const nextProviderId = model.providerId ?? selectedProvider;
+      const nextModelSelection: PreferredModelSelection = {
+        id: modelId,
+        name: modelName,
+        providerId: nextProviderId,
+        source: "explicit",
+      };
       const nextStoredModelPreference = {
         modelId,
         modelName,
@@ -243,15 +294,14 @@ export function useResolvedAgentModelPicker({
           setPendingProviderId(nextProviderId);
           setGlobalSelectedProvider(nextProviderId);
         }
-        setPendingModelSelection({
-          id: modelId,
-          name: modelName,
-          providerId: nextProviderId,
-          source: "explicit",
-        });
+        setPendingModelSelection(nextModelSelection);
         return;
       }
 
+      // No-op guard: if the selected model/provider already matches the
+      // session, bail out without bumping the version counter. Bumping
+      // before this check would invalidate in-flight async work from the
+      // original selection that is still correctly configuring the backend.
       if (
         !session ||
         (modelId === session.modelId &&
@@ -259,6 +309,9 @@ export function useResolvedAgentModelPicker({
       ) {
         return;
       }
+
+      selectionVersionRef.current += 1;
+      const versionAtSelection = selectionVersionRef.current;
 
       const previousStoredModelPreference =
         getStoredModelPreference(selectedAgentId);
@@ -275,19 +328,25 @@ export function useResolvedAgentModelPicker({
         setGlobalSelectedProvider(nextProviderId);
       }
 
-      useChatSessionStore.getState().updateSession(sessionId, {
+      useChatSessionStore.getState().patchSession(sessionId, {
         modelId,
         modelName,
       });
 
       void (async () => {
         try {
-          if (providerChanged && nextProviderId) {
-            await prepareSelectedProvider(nextProviderId);
+          const applied = await prepareSelectedProvider(
+            nextProviderId,
+            nextModelSelection,
+          );
+          if (!applied || selectionVersionRef.current !== versionAtSelection) {
+            return;
           }
-          await acpSetModel(sessionId, modelId);
           setStoredModelPreference(selectedAgentId, nextStoredModelPreference);
         } catch (error) {
+          if (selectionVersionRef.current !== versionAtSelection) {
+            return;
+          }
           console.error("Failed to set model:", error);
           if (providerChanged && previousProviderId) {
             setGlobalSelectedProvider(previousProviderId);
@@ -300,18 +359,25 @@ export function useResolvedAgentModelPicker({
           } else {
             clearStoredModelPreference(selectedAgentId);
           }
-          useChatSessionStore.getState().updateSession(sessionId, {
+          useChatSessionStore.getState().patchSession(sessionId, {
             providerId: previousProviderId,
             modelId: previousModelId,
             modelName: previousModelName,
           });
           void (async () => {
             try {
-              if (providerChanged && previousProviderId) {
-                await prepareSelectedProvider(previousProviderId);
-              }
-              if (previousModelId) {
-                await acpSetModel(sessionId, previousModelId);
+              if (previousProviderId) {
+                await prepareSelectedProvider(
+                  previousProviderId,
+                  previousModelId
+                    ? {
+                        id: previousModelId,
+                        name: previousModelName ?? previousModelId,
+                        providerId: previousProviderId,
+                        source: "explicit",
+                      }
+                    : null,
+                );
               }
             } catch (rollbackError) {
               console.error(
@@ -463,6 +529,7 @@ export function useResolvedAgentModelPicker({
     modelStatusMessage,
     handleProviderChange,
     handleModelChange,
+    handlePickerOpen,
     effectiveModelSelection,
   };
 }

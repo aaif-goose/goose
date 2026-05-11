@@ -34,7 +34,7 @@ function persistProjects(projects: ProjectInfo[]): void {
   }
 }
 
-interface ProjectState {
+export interface ProjectStore {
   projects: ProjectInfo[];
   loading: boolean;
   activeProjectId: string | null;
@@ -70,7 +70,7 @@ interface ProjectState {
   getActiveProject: () => ProjectInfo | null;
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
+export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: loadCachedProjects(),
   loading: false,
   activeProjectId: null,
@@ -125,8 +125,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     workingDirs,
     useWorktrees,
   ) => {
-    const project = await updateProject(
-      id,
+    const existing = get().projects.find((p) => p.id === id);
+    if (!existing) throw new Error(`Project ${id} not found`);
+    const project = await updateProject(existing, {
       name,
       description,
       prompt,
@@ -136,7 +137,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       preferredModel,
       workingDirs,
       useWorktrees,
-    );
+    });
     set((state) => ({
       projects: state.projects.map((p) => (p.id === id ? project : p)),
     }));

@@ -2,7 +2,6 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_COMPACT_PREFERENCES_EVENT,
-  AUTO_COMPACT_THRESHOLD_CONFIG_KEY,
   DEFAULT_AUTO_COMPACT_THRESHOLD,
 } from "../../lib/autoCompact";
 
@@ -26,8 +25,10 @@ describe("useAutoCompactPreferences", () => {
   it("hydrates from the stored threshold value", async () => {
     mockGetClient.mockResolvedValue({
       goose: {
-        GooseConfigRead: vi.fn().mockResolvedValue({ value: 0.65 }),
-        GooseConfigUpsert: vi.fn().mockResolvedValue({}),
+        GoosePreferencesRead: vi.fn().mockResolvedValue({
+          values: [{ key: "autoCompactThreshold", value: 0.65 }],
+        }),
+        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -42,13 +43,17 @@ describe("useAutoCompactPreferences", () => {
     const upsert = vi.fn().mockResolvedValue({});
     const read = vi
       .fn()
-      .mockResolvedValueOnce({ value: null })
-      .mockResolvedValue({ value: 0.9 });
+      .mockResolvedValueOnce({
+        values: [{ key: "autoCompactThreshold", value: null }],
+      })
+      .mockResolvedValue({
+        values: [{ key: "autoCompactThreshold", value: 0.9 }],
+      });
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GooseConfigRead: read,
-        GooseConfigUpsert: upsert,
+        GoosePreferencesRead: read,
+        GoosePreferencesSave: upsert,
       },
     });
 
@@ -64,8 +69,7 @@ describe("useAutoCompactPreferences", () => {
     });
 
     expect(upsert).toHaveBeenCalledWith({
-      key: AUTO_COMPACT_THRESHOLD_CONFIG_KEY,
-      value: 0.9,
+      values: [{ key: "autoCompactThreshold", value: 0.9 }],
     });
     expect(eventListener).toHaveBeenCalledTimes(1);
     expect(result.current.autoCompactThreshold).toBe(0.9);
@@ -73,13 +77,17 @@ describe("useAutoCompactPreferences", () => {
     window.removeEventListener(AUTO_COMPACT_PREFERENCES_EVENT, eventListener);
   });
 
-  it("marks the preferences hydrated even when the initial read fails", async () => {
+  it("does not mark preferences hydrated when the initial read fails", async () => {
     mockGetClient.mockRejectedValue(new Error("ACP not ready"));
 
     const { result } = renderHook(() => useAutoCompactPreferences());
 
-    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
+    expect(result.current.isHydrated).toBe(false);
     expect(result.current.autoCompactThreshold).toBe(
       DEFAULT_AUTO_COMPACT_THRESHOLD,
     );
@@ -90,12 +98,14 @@ describe("useAutoCompactPreferences", () => {
     const read = vi
       .fn()
       .mockRejectedValueOnce(new Error("ACP not ready"))
-      .mockResolvedValueOnce({ value: 0.65 });
+      .mockResolvedValueOnce({
+        values: [{ key: "autoCompactThreshold", value: 0.65 }],
+      });
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GooseConfigRead: read,
-        GooseConfigUpsert: vi.fn().mockResolvedValue({}),
+        GoosePreferencesRead: read,
+        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -106,7 +116,7 @@ describe("useAutoCompactPreferences", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.isHydrated).toBe(true);
+    expect(result.current.isHydrated).toBe(false);
     expect(result.current.autoCompactThreshold).toBe(
       DEFAULT_AUTO_COMPACT_THRESHOLD,
     );
@@ -116,6 +126,47 @@ describe("useAutoCompactPreferences", () => {
     });
 
     expect(result.current.autoCompactThreshold).toBe(0.65);
+    expect(result.current.isHydrated).toBe(true);
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("backs off repeated hydration retries", async () => {
+    vi.useFakeTimers();
+    const read = vi.fn().mockRejectedValue(new Error("ACP not ready"));
+
+    mockGetClient.mockResolvedValue({
+      goose: {
+        GoosePreferencesRead: read,
+        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
+      },
+    });
+
+    renderHook(() => useAutoCompactPreferences());
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(read).toHaveBeenCalledTimes(3);
   });
 });

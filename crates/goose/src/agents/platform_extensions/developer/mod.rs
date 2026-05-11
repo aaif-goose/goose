@@ -57,6 +57,8 @@ fn developer_instructions() -> &'static str {
             and file sizes. When you need to search, prefer rg which correctly respects gitignored
             content. Then use cat or sed to gather the context you need, always reading before editing.
             Use write and edit to efficiently make changes. Test and verify as appropriate.
+
+            When running Python scripts or commands, always use `python3` instead of `python`.
         "}
     }
 }

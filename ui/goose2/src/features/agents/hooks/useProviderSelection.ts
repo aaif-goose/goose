@@ -1,10 +1,11 @@
 import { useCallback } from "react";
 import { useAgentStore } from "../stores/agentStore";
+import { selectSelectedProvider } from "../stores/agentSelectors";
 
 export function useProviderSelection() {
   const providers = useAgentStore((s) => s.providers);
   const providersLoading = useAgentStore((s) => s.providersLoading);
-  const selectedProvider = useAgentStore((s) => s.selectedProvider);
+  const selectedProvider = useAgentStore(selectSelectedProvider);
   const storeSetSelectedProvider = useAgentStore((s) => s.setSelectedProvider);
 
   const setSelectedProvider = useCallback(

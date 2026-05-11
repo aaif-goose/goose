@@ -4,20 +4,22 @@ STDOUT: {"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"list
 STDIN: {"jsonrpc":"2.0","method":"notifications/initialized"}
 STDOUT: {"method":"notifications/tools/list_changed","jsonrpc":"2.0"}
 STDOUT: {"method":"notifications/tools/list_changed","jsonrpc":"2.0"}
-STDIN: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":0},"name":"echo","arguments":{"message":"Hello, world!"}}}
-STDOUT: {"result":{"content":[{"type":"text","text":"Echo: Hello, world!"}]},"jsonrpc":"2.0","id":1}
-STDIN: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":1},"name":"get-sum","arguments":{"a":1,"b":2}}}
-STDOUT: {"result":{"content":[{"type":"text","text":"The sum of 1 and 2 is 3."}]},"jsonrpc":"2.0","id":2}
-STDIN: {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":2},"name":"trigger-long-running-operation","arguments":{"duration":1,"steps":5}}}
-STDOUT: {"method":"notifications/progress","params":{"progress":1,"total":5,"progressToken":2},"jsonrpc":"2.0"}
-STDOUT: {"method":"notifications/progress","params":{"progress":2,"total":5,"progressToken":2},"jsonrpc":"2.0"}
-STDOUT: {"method":"notifications/progress","params":{"progress":3,"total":5,"progressToken":2},"jsonrpc":"2.0"}
-STDOUT: {"method":"notifications/progress","params":{"progress":4,"total":5,"progressToken":2},"jsonrpc":"2.0"}
-STDOUT: {"method":"notifications/progress","params":{"progress":5,"total":5,"progressToken":2},"jsonrpc":"2.0"}
-STDOUT: {"result":{"content":[{"type":"text","text":"Long running operation completed. Duration: 1 seconds, Steps: 5."}]},"jsonrpc":"2.0","id":3}
-STDIN: {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":3},"name":"get-structured-content","arguments":{"location":"New York"}}}
-STDOUT: {"result":{"content":[{"type":"text","text":"{\"temperature\":33,\"conditions\":\"Cloudy\",\"humidity\":82}"}],"structuredContent":{"temperature":33,"conditions":"Cloudy","humidity":82}},"jsonrpc":"2.0","id":4}
-STDIN: {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":4},"name":"trigger-sampling-request","arguments":{"maxTokens":100,"prompt":"Please provide a quote from The Great Gatsby"}}}
+STDIN: {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":0}}}
+STDOUT: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"echo","description":"Echo a message","inputSchema":{"type":"object","properties":{"message":{"type":"string"}},"required":["message"]}},{"name":"get-sum","description":"Get the sum of two numbers","inputSchema":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}},{"name":"trigger-long-running-operation","description":"Trigger a long-running operation","inputSchema":{"type":"object","properties":{"duration":{"type":"number"},"steps":{"type":"number"}},"required":["duration","steps"]}},{"name":"get-structured-content","description":"Get structured content","inputSchema":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}},{"name":"trigger-sampling-request","description":"Trigger a sampling request","inputSchema":{"type":"object","properties":{"prompt":{"type":"string"},"maxTokens":{"type":"number"}},"required":["prompt","maxTokens"]}}]}}
+STDIN: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":1},"name":"echo","arguments":{"message":"Hello, world!"}}}
+STDOUT: {"result":{"content":[{"type":"text","text":"Echo: Hello, world!"}]},"jsonrpc":"2.0","id":2}
+STDIN: {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":2},"name":"get-sum","arguments":{"a":1,"b":2}}}
+STDOUT: {"result":{"content":[{"type":"text","text":"The sum of 1 and 2 is 3."}]},"jsonrpc":"2.0","id":3}
+STDIN: {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":3},"name":"trigger-long-running-operation","arguments":{"duration":1,"steps":5}}}
+STDOUT: {"method":"notifications/progress","params":{"progress":1,"total":5,"progressToken":3},"jsonrpc":"2.0"}
+STDOUT: {"method":"notifications/progress","params":{"progress":2,"total":5,"progressToken":3},"jsonrpc":"2.0"}
+STDOUT: {"method":"notifications/progress","params":{"progress":3,"total":5,"progressToken":3},"jsonrpc":"2.0"}
+STDOUT: {"method":"notifications/progress","params":{"progress":4,"total":5,"progressToken":3},"jsonrpc":"2.0"}
+STDOUT: {"method":"notifications/progress","params":{"progress":5,"total":5,"progressToken":3},"jsonrpc":"2.0"}
+STDOUT: {"result":{"content":[{"type":"text","text":"Long running operation completed. Duration: 1 seconds, Steps: 5."}]},"jsonrpc":"2.0","id":4}
+STDIN: {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":4},"name":"get-structured-content","arguments":{"location":"New York"}}}
+STDOUT: {"result":{"content":[{"type":"text","text":"{\"temperature\":33,\"conditions\":\"Cloudy\",\"humidity\":82}"}],"structuredContent":{"temperature":33,"conditions":"Cloudy","humidity":82}},"jsonrpc":"2.0","id":5}
+STDIN: {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":5},"name":"trigger-sampling-request","arguments":{"maxTokens":100,"prompt":"Please provide a quote from The Great Gatsby"}}}
 STDOUT: {"method":"sampling/createMessage","params":{"messages":[{"role":"user","content":{"type":"text","text":"Resource trigger-sampling-request context: Please provide a quote from The Great Gatsby"}}],"systemPrompt":"You are a helpful test server.","maxTokens":100,"temperature":0.7},"jsonrpc":"2.0","id":0}
 STDIN: {"jsonrpc":"2.0","id":0,"result":{"model":"mock","stopReason":"endTurn","role":"assistant","content":{"type":"text","text":"\"So we beat on, boats against the current, borne back ceaselessly into the past.\" — F. Scott Fitzgerald, The Great Gatsby (1925)"}}}
-STDOUT: {"result":{"content":[{"type":"text","text":"LLM sampling result: \n{\n  \"model\": \"mock\",\n  \"stopReason\": \"endTurn\",\n  \"role\": \"assistant\",\n  \"content\": {\n    \"type\": \"text\",\n    \"text\": \"\\\"So we beat on, boats against the current, borne back ceaselessly into the past.\\\" — F. Scott Fitzgerald, The Great Gatsby (1925)\"\n  }\n}"}]},"jsonrpc":"2.0","id":5}
+STDOUT: {"result":{"content":[{"type":"text","text":"LLM sampling result: \n{\n  \"model\": \"mock\",\n  \"stopReason\": \"endTurn\",\n  \"role\": \"assistant\",\n  \"content\": {\n    \"type\": \"text\",\n    \"text\": \"\\\"So we beat on, boats against the current, borne back ceaselessly into the past.\\\" — F. Scott Fitzgerald, The Great Gatsby (1925)\"\n  }\n}"}]},"jsonrpc":"2.0","id":6}
