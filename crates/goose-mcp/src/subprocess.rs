@@ -40,6 +40,7 @@ impl SubprocessExt for std::process::Command {
 /// same fix available to all MCP extensions in goose-mcp.
 #[cfg(not(windows))]
 fn resolve_login_shell_path() -> Option<String> {
+    use process_wrap::std::{CommandWrap, ProcessSession};
     use std::path::PathBuf;
     use std::process::Stdio;
 
@@ -56,26 +57,31 @@ fn resolve_login_shell_path() -> Option<String> {
             }
         });
 
-    std::process::Command::new(&shell)
+    let mut cmd = CommandWrap::from(std::process::Command::new(&shell));
+    cmd.command_mut()
         .args(["-l", "-i", "-c", "echo $PATH"])
         .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                // Take the last non-empty line — interactive shells may emit
-                // extra output from profile scripts before our echo.
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .rev()
-                    .find(|line| !line.trim().is_empty())
-                    .map(|line| line.trim().to_string())
-                    .filter(|path| !path.is_empty())
-            } else {
-                None
-            }
-        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    // Spawn in a new session so that interactive shell job-control setup
+    // cannot steal the terminal foreground from the parent goose process.
+    cmd.wrap(ProcessSession);
+
+    let child = cmd.spawn().ok()?;
+    let output = child.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    // Take the last non-empty line — interactive shells may emit
+    // extra output from profile scripts before our echo.
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+        .filter(|path| !path.is_empty())
 }
 
 /// Returns the user's full login shell PATH, resolved once and cached.

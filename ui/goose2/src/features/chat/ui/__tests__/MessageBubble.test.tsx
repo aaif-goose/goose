@@ -3,9 +3,55 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import type { Message } from "@/shared/types/messages";
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
 import { openPath } from "@tauri-apps/plugin-opener";
 const mockWriteText = vi.fn().mockResolvedValue(undefined);
+
+const providerCatalogEntries: ProviderCatalogEntry[] = [
+  {
+    id: "claude-acp",
+    displayName: "Claude Code",
+    category: "agent",
+    description: "Anthropic's agentic coding tool",
+    setupMethod: "cli_auth",
+    binaryName: "claude-agent-acp",
+    group: "default",
+    aliases: ["claude-acp", "claude_code", "claude"],
+  },
+  {
+    id: "codex-acp",
+    displayName: "Codex",
+    category: "agent",
+    description: "OpenAI's coding agent",
+    setupMethod: "cli_auth",
+    binaryName: "codex-acp",
+    group: "default",
+    aliases: ["codex-acp", "codex_cli", "codex"],
+  },
+];
+
+vi.mock("@mcp-ui/client", () => ({
+  UI_EXTENSION_CONFIG: { mimeTypes: ["text/html;profile=mcp-app"] },
+  AppRenderer: (props: { toolName?: string }) => (
+    <div data-testid="mock-app-renderer">
+      {props.toolName ?? "app-renderer"}
+    </div>
+  ),
+}));
+
+vi.mock("@/shared/api/gooseServeHost", () => ({
+  getGooseServeHostInfo: vi.fn().mockResolvedValue({
+    httpBaseUrl: "http://127.0.0.1:4242",
+    secretKey: "test-secret",
+  }),
+}));
+
+vi.mock("@/shared/theme/ThemeProvider", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+}));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openPath: vi.fn(),
 }));
@@ -36,6 +82,7 @@ function assistantMessage(
 describe("MessageBubble", () => {
   beforeEach(() => {
     useAgentStore.setState({ personas: [] });
+    useProviderCatalogStore.getState().setEntries(providerCatalogEntries);
     vi.mocked(openPath).mockClear();
     mockWriteText.mockClear();
     Object.defineProperty(navigator, "clipboard", {
@@ -48,6 +95,7 @@ describe("MessageBubble", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    useProviderCatalogStore.getState().reset();
   });
 
   it("renders user message with correct alignment", () => {
@@ -301,7 +349,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: { path: "/tmp/demo.txt" },
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -326,7 +374,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: {},
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -362,7 +410,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: {},
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -480,14 +528,19 @@ describe("MessageBubble", () => {
       },
     ]);
 
-    render(<MessageBubble message={msg} />);
+    const { container } = render(<MessageBubble message={msg} />);
+
+    // Completed-on-mount chains render collapsed; expand the parent card first.
+    const chainHeader = container.querySelector<HTMLButtonElement>(
+      '[data-role="tool-chain-card"] > button[aria-expanded]',
+    );
+    if (!chainHeader) throw new Error("expected tool-chain-card header");
+    await user.click(chainHeader);
 
     expect(screen.getByText("Create PDF about whales")).toBeInTheDocument();
     expect(screen.getByText("Write whales.pdf")).toBeInTheDocument();
-    expect(
-      screen.queryByText("python3 create_whales.py"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("ls -lh whales.pdf")).not.toBeInTheDocument();
+    expect(screen.queryByText("python3 create_whales.py")).toBeNull();
+    expect(screen.queryByText("ls -lh whales.pdf")).toBeNull();
     expect(screen.getByText("Show internal steps (2)")).toBeInTheDocument();
 
     await user.click(screen.getByText("Show internal steps (2)"));

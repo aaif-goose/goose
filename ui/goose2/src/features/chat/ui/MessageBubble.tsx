@@ -1,37 +1,29 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Copy,
-  Check,
-  RotateCcw,
-  Pencil,
-  FileText,
-  FolderClosed,
-} from "lucide-react";
+import { Check, FileText, FolderClosed } from "lucide-react";
 import { IconRobot } from "@tabler/icons-react";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { cn } from "@/shared/lib/cn";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
-import { getCatalogEntry } from "@/features/providers/providerCatalog";
+import { getCatalogEntryFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import {
   getProviderIcon,
   formatProviderLabel,
 } from "@/shared/ui/icons/ProviderIcons";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import {
-  MessageActions,
-  MessageAction,
-  MessageResponse,
-} from "@/shared/ui/ai-elements/message";
+import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import {
   Reasoning,
   ReasoningTrigger,
   ReasoningContent,
 } from "@/shared/ui/ai-elements/reasoning";
+import type { McpAppMessageHandler } from "./mcpAppTypes";
 import { ToolChainCards, type ToolChainItem } from "./ToolChainCards";
 import { ClickableImage } from "./ClickableImage";
+import { McpAppView } from "./McpAppView";
 import { useArtifactLinkHandler } from "@/features/chat/hooks/useArtifactLinkHandler";
 import type {
   Message,
@@ -39,11 +31,15 @@ import type {
   MessageContent,
   TextContent,
   ImageContent,
+  McpAppContent,
+  ToolRequestContent,
   ToolResponseContent,
   ThinkingContent,
   ReasoningContent as ReasoningContentType,
   SystemNotificationContent,
 } from "@/shared/types/messages";
+import { MessageBubbleActions } from "./MessageBubbleActions";
+import { MessageMetadataChip } from "./MessageMetadataChip";
 
 function MessageAttachmentRow({
   attachment,
@@ -89,6 +85,8 @@ interface MessageBubbleProps {
   onCopy?: () => void;
   onRetryMessage?: (messageId: string) => void;
   onEditMessage?: (messageId: string) => void;
+  onSendMcpAppMessage?: McpAppMessageHandler;
+  onMcpAppAutoScroll?: (element: HTMLElement | null) => void;
 }
 
 interface ContentSection {
@@ -97,10 +95,9 @@ interface ContentSection {
   items: MessageContent[] | ToolChainItem[];
 }
 
-/** Keep only content blocks whose audience includes "user" (or has no audience). */
 function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
   return content.filter((b) => {
-    const aud = b.annotations?.audience;
+    const aud = "annotations" in b ? b.annotations?.audience : undefined;
     return !aud || aud.length === 0 || aud.includes("user");
   });
 }
@@ -194,6 +191,9 @@ function renderContentBlock(
   options: {
     defaultImageAlt: string;
     redactedThinking: string;
+    contentBlocks: MessageContent[];
+    onSendMcpAppMessage?: McpAppMessageHandler;
+    onMcpAppAutoScroll?: (element: HTMLElement | null) => void;
   },
   isStreamingMsg?: boolean,
   isUserMessage?: boolean,
@@ -202,6 +202,9 @@ function renderContentBlock(
     case "text": {
       const tc = content as TextContent;
       if (isUserMessage) {
+        if (!tc.text.trim()) {
+          return null;
+        }
         return (
           <p key={`text-${index}`} className="whitespace-pre-wrap break-words">
             {tc.text}
@@ -216,10 +219,7 @@ function renderContentBlock(
     }
     case "image": {
       const ic = content as ImageContent;
-      const src =
-        ic.source.type === "base64"
-          ? `data:${ic.source.mediaType};base64,${ic.source.data}`
-          : ic.source.url;
+      const src = ic.uri ?? `data:${ic.mimeType};base64,${ic.data}`;
       return (
         <ClickableImage
           key={`image-${index}`}
@@ -232,6 +232,30 @@ function renderContentBlock(
     case "toolResponse":
       // Handled by groupContentSections toolChain rendering
       return null;
+    case "mcpApp": {
+      const mcpApp = content as McpAppContent;
+      const matchingToolInput = options.contentBlocks.find(
+        (block): block is ToolRequestContent =>
+          block.type === "toolRequest" &&
+          block.id === mcpApp.payload.toolCallId,
+      );
+      const matchingToolResponse = options.contentBlocks.find(
+        (block): block is ToolResponseContent =>
+          block.type === "toolResponse" &&
+          block.id === mcpApp.payload.toolCallId,
+      );
+
+      return (
+        <McpAppView
+          key={`mcp-app-${index}`}
+          payload={mcpApp.payload}
+          toolInput={matchingToolInput?.arguments}
+          toolResponse={matchingToolResponse}
+          onSendMessage={options.onSendMcpAppMessage}
+          onAutoScrollRequest={options.onMcpAppAutoScroll}
+        />
+      );
+    }
     case "thinking":
     case "reasoning": {
       const text = (content as ThinkingContent | ReasoningContentType).text;
@@ -281,36 +305,13 @@ function renderContentBlock(
   }
 }
 
-function CopyAction({
-  copied,
-  onCopy,
-}: {
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  const { t } = useTranslation(["chat", "common"]);
-
-  return (
-    <MessageAction
-      size="xs"
-      variant="ghost-light"
-      className={cn(
-        "text-muted-foreground",
-        copied && "bg-accent text-foreground hover:bg-accent active:bg-accent",
-      )}
-      tooltip={copied ? t("message.copied") : t("common:actions.copy")}
-      onClick={onCopy}
-    >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-    </MessageAction>
-  );
-}
-
 export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming,
   onRetryMessage,
   onEditMessage,
+  onSendMcpAppMessage,
+  onMcpAppAutoScroll,
 }: MessageBubbleProps) {
   const { t } = useTranslation(["chat", "common"]);
   const { formatDate } = useLocaleFormatting();
@@ -326,6 +327,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
   const { isCopied: isCopyConfirmed, copyToClipboard } = useCopyToClipboard();
   const personaAvatarUrl = useAvatarSrc(persona?.avatar);
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
 
   // Skip empty user bubbles (all blocks filtered as assistant-only).
   if (role === "user" && content.length === 0) return null;
@@ -334,6 +336,7 @@ export const MessageBubble = memo(function MessageBubble({
     .filter((c): c is TextContent => c.type === "text")
     .map((c) => c.text)
     .join("\n");
+  const hasMcpApp = content.some((block) => block.type === "mcpApp");
 
   if (role === "system") {
     return (
@@ -343,6 +346,7 @@ export const MessageBubble = memo(function MessageBubble({
             renderContentBlock(c, i, {
               defaultImageAlt: t("message.defaultImageAlt"),
               redactedThinking: t("message.redactedThinking"),
+              contentBlocks: content,
             }),
           )}
         </div>
@@ -352,8 +356,8 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = role === "user";
   const assistantProviderId = message.metadata?.providerId;
   const assistantProviderName = assistantProviderId
-    ? (getCatalogEntry(assistantProviderId)?.displayName ??
-      formatProviderLabel(assistantProviderId))
+    ? (getCatalogEntryFromEntries(catalogEntries, assistantProviderId)
+        ?.displayName ?? formatProviderLabel(assistantProviderId))
     : undefined;
   const assistantDisplayName =
     message.metadata?.personaName ??
@@ -367,6 +371,7 @@ export const MessageBubble = memo(function MessageBubble({
       (assistantDisplayName || personaAvatarUrl || assistantProviderIcon),
   );
   const messageAttachments = message.metadata?.attachments ?? [];
+  const messageChips = message.metadata?.chips ?? [];
   const timestamp = (
     <span
       data-role="message-timestamp"
@@ -391,7 +396,11 @@ export const MessageBubble = memo(function MessageBubble({
       <div
         className={cn(
           "group relative min-w-0 flex flex-col gap-1 pb-8",
-          isUser ? "max-w-[640px] items-end" : "w-full items-start",
+          isUser
+            ? "max-w-[640px] items-end"
+            : hasMcpApp
+              ? "w-full items-start"
+              : "max-w-[85%] items-start",
         )}
       >
         {showAssistantIdentity ? (
@@ -428,6 +437,16 @@ export const MessageBubble = memo(function MessageBubble({
           )}
           onClick={handleContentClick}
         >
+          {isUser && messageChips.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1.5">
+              {messageChips.map((chip) => (
+                <MessageMetadataChip
+                  key={`${chip.type}-${chip.label}`}
+                  chip={chip}
+                />
+              ))}
+            </div>
+          )}
           {messageAttachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {messageAttachments.map((attachment) => (
@@ -452,6 +471,9 @@ export const MessageBubble = memo(function MessageBubble({
                   {
                     defaultImageAlt: t("message.defaultImageAlt"),
                     redactedThinking: t("message.redactedThinking"),
+                    contentBlocks: content,
+                    onSendMcpAppMessage,
+                    onMcpAppAutoScroll,
                   },
                   isStreaming,
                   isUser,
@@ -478,38 +500,16 @@ export const MessageBubble = memo(function MessageBubble({
             isUser ? "right-0" : "left-0",
           )}
         >
-          <MessageActions className="pt-0">
-            {isUser && timestamp}
-            {textContent && (
-              <CopyAction
-                copied={isCopyConfirmed}
-                onCopy={() => copyToClipboard(textContent)}
-              />
-            )}
-            {!isUser && onRetryMessage && (
-              <MessageAction
-                size="xs"
-                variant="ghost-light"
-                className="text-muted-foreground"
-                tooltip={t("common:actions.retry")}
-                onClick={() => onRetryMessage(message.id)}
-              >
-                <RotateCcw className="size-3.5" />
-              </MessageAction>
-            )}
-            {isUser && onEditMessage && (
-              <MessageAction
-                size="xs"
-                variant="ghost-light"
-                className="text-muted-foreground"
-                tooltip={t("common:actions.edit")}
-                onClick={() => onEditMessage(message.id)}
-              >
-                <Pencil className="size-3.5" />
-              </MessageAction>
-            )}
-            {!isUser && timestamp}
-          </MessageActions>
+          <MessageBubbleActions
+            isUser={isUser}
+            messageId={message.id}
+            timestamp={timestamp}
+            textContent={textContent}
+            copied={isCopyConfirmed}
+            onCopy={() => copyToClipboard(textContent)}
+            onRetryMessage={onRetryMessage}
+            onEditMessage={onEditMessage}
+          />
         </div>
       </div>
     </div>

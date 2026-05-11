@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChatInput } from "../ChatInput";
+import { ChatInput } from "./chatInputTestUtils";
 
 const mockVoiceDictation = {
   isEnabled: true,
@@ -31,6 +31,10 @@ const mockListFilesForMentions = vi.fn<
 vi.mock("@/shared/api/system", () => ({
   listFilesForMentions: (roots: string[], maxResults?: number) =>
     mockListFilesForMentions(roots, maxResults),
+}));
+
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
 }));
 
 describe("ChatInput async send handling", () => {

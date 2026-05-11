@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { useState } from "react";
 import { type LocalePreference, useLocale } from "@/shared/i18n";
 import {
   Select,
@@ -7,7 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
-import { Separator } from "@/shared/ui/separator";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
+import { Button } from "@/shared/ui/button";
+import { resetOnboardingCompletion } from "@/features/onboarding/hooks/useOnboardingGate";
 
 function SettingRow({
   label,
@@ -34,18 +37,15 @@ function SettingRow({
 export function GeneralSettings() {
   const { t } = useTranslation("settings");
   const { preference, setLocalePreference, systemLocaleLabel } = useLocale();
+  const [onboardingReset, setOnboardingReset] = useState(false);
+
+  function resetOnboarding() {
+    resetOnboardingCompletion();
+    setOnboardingReset(true);
+  }
 
   return (
-    <div>
-      <h3 className="text-lg font-semibold font-display tracking-tight">
-        {t("general.title")}
-      </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t("general.description")}
-      </p>
-
-      <Separator className="my-4" />
-
+    <SettingsPage title={t("general.title")}>
       <SettingRow
         label={t("general.language.label")}
         description={t("general.language.description")}
@@ -70,6 +70,24 @@ export function GeneralSettings() {
           </SelectContent>
         </Select>
       </SettingRow>
-    </div>
+
+      <SettingRow
+        label={t("general.onboarding.label")}
+        description={t(
+          onboardingReset
+            ? "general.onboarding.resetDescription"
+            : "general.onboarding.description",
+        )}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={resetOnboarding}
+        >
+          {t("general.onboarding.reset")}
+        </Button>
+      </SettingRow>
+    </SettingsPage>
   );
 }

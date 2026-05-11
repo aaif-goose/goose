@@ -68,8 +68,8 @@
   "view": {
     "copyName": "{{name}} (Copia)",
     "deleteFailed": "No se pudo eliminar el agente.",
-    "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
-    "deleteTitle": "¿Eliminar agente?",
+    "deleteDescription": "Este agente y su configuración se eliminarán de forma permanente.",
+    "deleteTitle": "¿Eliminar \"{{name}}\" de forma permanente?",
     "deleted": "Se eliminó \"{{name}}\".",
     "description": "Configuraciones de agente personalizadas para flujos de trabajo específicos",
     "emptyAgentsDescription": "Crea un agente para empezar.",

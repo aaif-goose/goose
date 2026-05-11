@@ -81,8 +81,8 @@ pub fn playback(log_file_path: &String) -> io::Result<()> {
                     writeln!(
                         &errors_file,
                         "expected:\n{}\ngot:\n{}",
-                        serde_json::to_string(&input_value)?,
-                        serde_json::to_string(&entry_value)?
+                        serde_json::to_string(&entry_value)?,
+                        serde_json::to_string(&input_value)?
                     )?;
                     process::exit(1);
                 }

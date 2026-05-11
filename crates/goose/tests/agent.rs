@@ -561,11 +561,11 @@ mod tests {
                 &self,
                 _model_config: &ModelConfig,
                 _session_id: &str,
-                _system_prompt: &str,
+                system_prompt: &str,
                 _messages: &[Message],
-                tools: &[Tool],
+                _tools: &[Tool],
             ) -> Result<MessageStream, ProviderError> {
-                let message = if tools.is_empty() {
+                let message = if system_prompt.contains("summarize a tool call") {
                     // Summarization call — return a unique summary
                     let n = self.summary_count.fetch_add(1, Ordering::SeqCst);
                     Message::assistant().with_text(format!("Summary of tool call #{}", n))
@@ -619,21 +619,25 @@ mod tests {
 
             agent.update_provider(provider, &session.id).await?;
 
-            // Pre-populate: start with a user message, then 13 tool call/response pairs
-            // (need > cutoff + 10 = 12 to trigger batch summarization)
-            let initial_msg = Message::user().with_text("help me read some files");
+            // Pre-populate 13 tool pairs (need > cutoff + batch_size = 12 to trigger).
+            // Timestamps in the past so DB ordering places summaries before current turn.
+            let base_ts = chrono::Utc::now().timestamp() - 100;
+
+            let mut initial_msg = Message::user().with_text("help me read some files");
+            initial_msg.created = base_ts;
             session_manager
                 .add_message(&session.id, &initial_msg)
                 .await?;
 
             for i in 0..13 {
                 let call_id = format!("precall_{}", i);
-                let req_msg = Message::assistant()
+                let mut req_msg = Message::assistant()
                     .with_tool_request(&call_id, Ok(CallToolRequestParams::new("read_file")))
                     .with_generated_id();
+                req_msg.created = base_ts + i as i64 + 1;
                 session_manager.add_message(&session.id, &req_msg).await?;
 
-                let resp_msg = Message::user()
+                let mut resp_msg = Message::user()
                     .with_tool_response(
                         &call_id,
                         Ok(CallToolResult::success(vec![RawContent::text(format!(
@@ -643,6 +647,7 @@ mod tests {
                         .no_annotation()])),
                     )
                     .with_generated_id();
+                resp_msg.created = base_ts + i as i64 + 1;
                 session_manager.add_message(&session.id, &resp_msg).await?;
             }
 
@@ -715,6 +720,28 @@ mod tests {
                 20, // 10 pairs × 2 messages
                 "Expected 20 invisible tool messages (10 summarized pairs), got {}",
                 invisible_tool_msgs.len()
+            );
+
+            // Summaries must appear before the current turn's reply, not after it
+            let agent_visible: Vec<&Message> = messages
+                .iter()
+                .filter(|m| m.metadata.agent_visible)
+                .collect();
+
+            let last_summary_pos = agent_visible
+                .iter()
+                .rposition(|m| m.as_concat_text().starts_with("Summary of tool call #"))
+                .expect("Should have at least one summary");
+            let agent_reply_pos = agent_visible
+                .iter()
+                .position(|m| m.as_concat_text().contains("Done processing."))
+                .expect("Should have the agent reply");
+
+            assert!(
+                last_summary_pos < agent_reply_pos,
+                "Summaries appeared after the current turn's reply: last_summary={}, reply={}",
+                last_summary_pos,
+                agent_reply_pos,
             );
 
             // Clean up the config override

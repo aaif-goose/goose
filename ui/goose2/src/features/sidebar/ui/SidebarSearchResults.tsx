@@ -41,8 +41,8 @@ export function SidebarSearchResults({
           session.title,
           t("common:session.defaultTitle"),
         );
-        const personaName = session.personaId
-          ? getPersonaName(session.personaId)
+        const personaName = session.agentId
+          ? getPersonaName(session.agentId)
           : undefined;
         const projectName = session.projectId
           ? getProjectName(session.projectId)

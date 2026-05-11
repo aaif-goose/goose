@@ -444,16 +444,6 @@ goose run --recipe recipe.yaml --max-turns 10
 
 ---
 
-#### bench
-Used to evaluate system-configuration across a range of practical tasks. See the [detailed guide](/docs/tutorials/benchmarking) for more information.
-
-**Usage:**
-```bash
-goose bench ...etc.
-```
-
----
-
 #### recipe
 Used to validate recipe files, manage recipe sharing, list available recipes, and open recipes in goose desktop.
 
