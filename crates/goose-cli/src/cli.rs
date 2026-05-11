@@ -792,14 +792,6 @@ enum Command {
             action = clap::ArgAction::Append
         )]
         builtins: Vec<String>,
-
-        #[arg(
-            long = "agent-root",
-            value_name = "PATH",
-            help = "Add a read-only directory containing bundled agent markdown files",
-            action = clap::ArgAction::Append
-        )]
-        agent_roots: Vec<std::path::PathBuf>,
     },
 
     /// Start or resume interactive chat sessions
@@ -1118,12 +1110,7 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
     Ok(())
 }
 
-async fn handle_serve_command(
-    host: String,
-    port: u16,
-    builtins: Vec<String>,
-    agent_roots: Vec<std::path::PathBuf>,
-) -> Result<()> {
+async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) -> Result<()> {
     use goose::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
     use goose::acp::transport::create_router;
     use goose::config::paths::Paths;
@@ -1137,7 +1124,11 @@ async fn handle_serve_command(
         builtins
     };
 
-    let additional_source_roots = agent_roots
+    let additional_source_roots = Config::global()
+        .get_param::<String>("ADDITIONAL_AGENT_SOURCE_ROOTS")
+        .ok()
+        .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .unwrap_or_default()
         .into_iter()
         .map(|path| {
             let path = path.canonicalize().unwrap_or(path);
@@ -1858,8 +1849,7 @@ pub async fn cli() -> anyhow::Result<()> {
             host,
             port,
             builtins,
-            agent_roots,
-        }) => handle_serve_command(host, port, builtins, agent_roots).await,
+        }) => handle_serve_command(host, port, builtins).await,
         Some(Command::Session {
             command: Some(cmd), ..
         }) => handle_session_subcommand(cmd).await,

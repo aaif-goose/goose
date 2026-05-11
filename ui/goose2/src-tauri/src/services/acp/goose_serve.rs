@@ -13,6 +13,7 @@ use tokio::sync::OnceCell;
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
+const ADDITIONAL_AGENT_SOURCE_ROOTS_ENV: &str = "ADDITIONAL_AGENT_SOURCE_ROOTS";
 const BUNDLED_AGENT_ROOT_DIR: &str = "builtin-sources/agents";
 // ---------------------------------------------------------------------------
 // GooseServeProcess — singleton that owns the long-lived `goose serve` child
@@ -86,7 +87,7 @@ impl GooseServeProcess {
         }
 
         command.arg("serve");
-        add_bundled_agent_root(&app_handle, &mut command);
+        add_bundled_agent_root_env(&app_handle, &mut command);
 
         command
             .arg("--host")
@@ -124,7 +125,7 @@ impl GooseServeProcess {
     }
 }
 
-fn add_bundled_agent_root<R: Runtime>(manager: &impl Manager<R>, command: &mut Command) {
+fn add_bundled_agent_root_env<R: Runtime>(manager: &impl Manager<R>, command: &mut Command) {
     let resource_dir = match manager.path().resource_dir() {
         Ok(path) => path,
         Err(error) => {
@@ -142,7 +143,26 @@ fn add_bundled_agent_root<R: Runtime>(manager: &impl Manager<R>, command: &mut C
         return;
     }
 
-    command.arg("--agent-root").arg(&root);
+    append_additional_agent_roots_env(command, &root);
+}
+
+fn append_additional_agent_roots_env(command: &mut Command, root: &std::path::Path) {
+    let existing = std::env::var_os(ADDITIONAL_AGENT_SOURCE_ROOTS_ENV);
+    let mut roots: Vec<PathBuf> = existing
+        .as_ref()
+        .map(std::env::split_paths)
+        .map(Iterator::collect)
+        .unwrap_or_default();
+    roots.push(root.to_path_buf());
+
+    match std::env::join_paths(&roots) {
+        Ok(joined) => {
+            command.env(ADDITIONAL_AGENT_SOURCE_ROOTS_ENV, joined);
+        }
+        Err(error) => {
+            eprintln!("Failed to set {ADDITIONAL_AGENT_SOURCE_ROOTS_ENV}: {error}");
+        }
+    }
 }
 
 pub fn get_goose_command(app_handle: &tauri::AppHandle) -> Result<Command, String> {
