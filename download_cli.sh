@@ -18,6 +18,7 @@ set -eu
 #   GOOSE_VERSION  - Optional: specific version to install (e.g., "v1.0.25"). Overrides CANARY. Can be in the format vX.Y.Z, vX.Y.Z-suffix, or X.Y.Z
 #   GOOSE_PROVIDER - Optional: provider for goose
 #   GOOSE_MODEL    - Optional: model for goose
+#   GOOSE_WINDOWS_VARIANT - Optional: Windows package variant to install (`standard` or `cuda`)
 #   CANARY         - Optional: if set to "true", downloads from canary release instead of stable
 #   CONFIGURE      - Optional: if set to "false", disables running goose configure interactively
 #   ** other provider specific environment variables (eg. DATABRICKS_HOST)
@@ -73,6 +74,7 @@ fi
 GOOSE_BIN_DIR="${GOOSE_BIN_DIR:-$DEFAULT_BIN_DIR}"
 RELEASE="${CANARY:-false}"
 CONFIGURE="${CONFIGURE:-true}"
+GOOSE_WINDOWS_VARIANT="${GOOSE_WINDOWS_VARIANT:-standard}"
 if [ -n "${GOOSE_VERSION:-}" ]; then
   # Validate the version format
   if [[ ! "$GOOSE_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
@@ -179,12 +181,22 @@ if [ "$OS" = "darwin" ]; then
   FILE="goose-$ARCH-apple-darwin.tar.bz2"
   EXTRACT_CMD="tar"
 elif [ "$OS" = "windows" ]; then
+  case "$GOOSE_WINDOWS_VARIANT" in
+    standard|cuda) ;;
+    *)
+      echo "Error: Unsupported GOOSE_WINDOWS_VARIANT '$GOOSE_WINDOWS_VARIANT'. Expected 'standard' or 'cuda'."
+      exit 1
+      ;;
+  esac
   # Windows only supports x86_64 currently
   if [ "$ARCH" != "x86_64" ]; then
     echo "Error: Windows currently only supports x86_64 architecture."
     exit 1
   fi
   FILE="goose-$ARCH-pc-windows-msvc.zip"
+  if [ "$GOOSE_WINDOWS_VARIANT" = "cuda" ]; then
+    FILE="goose-$ARCH-pc-windows-msvc-cuda.zip"
+  fi
   EXTRACT_CMD="unzip"
   OUT_FILE="goose.exe"
 else

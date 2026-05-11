@@ -41,7 +41,7 @@ jobs:
       # This prevents attackers from triggering builds on their own malicious PRs
       - name: Verify commenter permissions
         id: security_check
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             // workflow_dispatch requires repo write access, so it's inherently safe
@@ -113,7 +113,7 @@ jobs:
       - name: Get PR info
         id: get_pr_info
         if: steps.security_check.outputs.authorized == 'true'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             let prNumber;
@@ -172,7 +172,7 @@ jobs:
 
     steps:
       - name: Download ARM64 artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: Goose-darwin-arm64
           path: arm64-dist

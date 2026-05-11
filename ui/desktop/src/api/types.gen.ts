@@ -1256,6 +1256,7 @@ export type Session = {
     accumulated_input_tokens?: number | null;
     accumulated_output_tokens?: number | null;
     accumulated_total_tokens?: number | null;
+    archived_at?: string | null;
     conversation?: Conversation | null;
     created_at: string;
     extension_data: ExtensionData;
@@ -1266,11 +1267,11 @@ export type Session = {
     model_config?: ModelConfig | null;
     name: string;
     output_tokens?: number | null;
+    project_id?: string | null;
     provider_name?: string | null;
     recipe?: Recipe | null;
     schedule_id?: string | null;
     session_type?: SessionType;
-    thread_id?: string | null;
     total_tokens?: number | null;
     updated_at: string;
     user_recipe_values?: {
@@ -2235,29 +2236,6 @@ export type ReadAllConfigResponses = {
 
 export type ReadAllConfigResponse = ReadAllConfigResponses[keyof ReadAllConfigResponses];
 
-export type BackupConfigData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/config/backup';
-};
-
-export type BackupConfigErrors = {
-    /**
-     * Internal server error
-     */
-    500: unknown;
-};
-
-export type BackupConfigResponses = {
-    /**
-     * Config file backed up
-     */
-    200: string;
-};
-
-export type BackupConfigResponse = BackupConfigResponses[keyof BackupConfigResponses];
-
 export type GetCanonicalModelInfoData = {
     body: ModelInfoQuery;
     path?: never;
@@ -2477,29 +2455,6 @@ export type RemoveExtensionResponses = {
 };
 
 export type RemoveExtensionResponse = RemoveExtensionResponses[keyof RemoveExtensionResponses];
-
-export type InitConfigData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/config/init';
-};
-
-export type InitConfigErrors = {
-    /**
-     * Internal server error
-     */
-    500: unknown;
-};
-
-export type InitConfigResponses = {
-    /**
-     * Config initialization check completed
-     */
-    200: string;
-};
-
-export type InitConfigResponse = InitConfigResponses[keyof InitConfigResponses];
 
 export type UpsertPermissionsData = {
     body: UpsertPermissionsQuery;
@@ -2814,29 +2769,6 @@ export type ReadConfigResponses = {
      */
     200: unknown;
 };
-
-export type RecoverConfigData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/config/recover';
-};
-
-export type RecoverConfigErrors = {
-    /**
-     * Internal server error
-     */
-    500: unknown;
-};
-
-export type RecoverConfigResponses = {
-    /**
-     * Config recovery attempted
-     */
-    200: string;
-};
-
-export type RecoverConfigResponse = RecoverConfigResponses[keyof RecoverConfigResponses];
 
 export type RemoveConfigData = {
     body: ConfigKeyQuery;
@@ -3836,7 +3768,7 @@ export type DeleteScheduleErrors = {
 
 export type DeleteScheduleResponses = {
     /**
-     * Scheduled job deleted successfully
+     * Scheduled job removed successfully
      */
     204: void;
 };

@@ -46,17 +46,16 @@ impl RiskLevel {
 
 /// Comprehensive list of dangerous command patterns
 pub const THREAT_PATTERNS: &[ThreatPattern] = &[
-    // Critical filesystem destruction patterns
     ThreatPattern {
-        name: "rm_rf_root",
-        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force).*[/\\]",
-        description: "Recursive file deletion with rm -rf",
-        risk_level: RiskLevel::High,
+        name: "rm_rf_root_bare",
+        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/(\*)?['\x22]?(\s|[;&|]|$)",
+        description: "Recursive deletion of root filesystem",
+        risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
     },
     ThreatPattern {
         name: "rm_rf_system",
-        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force).*(bin|etc|usr|var|sys|proc|dev|boot|lib|opt|srv|tmp)",
+        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force)\s+[^\s;|&]*/?(bin|etc|usr|var|sys|proc|dev|boot|lib|opt|srv)(?:/|\s|[;&|]|$)",
         description: "Recursive deletion of system directories",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
@@ -114,8 +113,8 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "password_file_access",
-        pattern: r"(cat|grep|awk|sed).*(/etc/passwd|/etc/shadow|\.password|\.env)",
-        description: "Password file access",
+        pattern: r"(cat|grep|awk|sed).*(/etc/shadow|\.password)",
+        description: "Password/shadow file access",
         risk_level: RiskLevel::High,
         category: ThreatCategory::DataExfiltration,
     },
@@ -143,7 +142,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "hosts_file_modification",
-        pattern: r"echo.*>.*(/etc/hosts|hosts\.txt)",
+        pattern: r"echo.*>(>?)\s*(/etc/hosts|hosts\.txt)|echo.*\|\s*(sudo\s+)?tee\s+(-a\s+)?/etc/hosts",
         description: "Hosts file modification",
         risk_level: RiskLevel::Medium,
         category: ThreatCategory::SystemModification,
@@ -200,21 +199,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         risk_level: RiskLevel::High,
         category: ThreatCategory::PrivilegeEscalation,
     },
-    // Command injection patterns
-    ThreatPattern {
-        name: "command_substitution",
-        pattern: r"\$\([^)]*[;&|><][^)]*\)|`[^`]*[;&|><][^`]*`",
-        description: "Command substitution with shell operators",
-        risk_level: RiskLevel::High,
-        category: ThreatCategory::CommandInjection,
-    },
-    ThreatPattern {
-        name: "shell_metacharacters",
-        pattern: r"[;&|`$(){}[\]\\]",
-        description: "Shell metacharacters in input",
-        risk_level: RiskLevel::Low,
-        category: ThreatCategory::CommandInjection,
-    },
     ThreatPattern {
         name: "encoded_commands",
         pattern: r"(base64|hex|url).*decode.*\|\s*(bash|sh)",
@@ -238,20 +222,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         category: ThreatCategory::CommandInjection,
     },
     ThreatPattern {
-        name: "string_concatenation_obfuscation",
-        pattern: r"(\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*){3,}",
-        description: "String concatenation obfuscation",
-        risk_level: RiskLevel::Medium,
-        category: ThreatCategory::CommandInjection,
-    },
-    ThreatPattern {
-        name: "character_escaping",
-        pattern: r"\\[x][0-9a-fA-F]{2}|\\[0-7]{3}|\\[nrtbfav\\]",
-        description: "Character escaping for obfuscation",
-        risk_level: RiskLevel::Low,
-        category: ThreatCategory::CommandInjection,
-    },
-    ThreatPattern {
         name: "eval_with_variables",
         pattern: r"eval\s+\$[A-Za-z_][A-Za-z0-9_]*|\beval\s+.*\$\{",
         description: "Eval with variable substitution",
@@ -264,13 +234,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         description: "Nested command substitution",
         risk_level: RiskLevel::Medium,
         category: ThreatCategory::CommandInjection,
-    },
-    ThreatPattern {
-        name: "environment_variable_abuse",
-        pattern: r"(export|env)\s+[A-Z_]+=.*[;&|]|PATH=.*[;&|]",
-        description: "Environment variable manipulation",
-        risk_level: RiskLevel::Medium,
-        category: ThreatCategory::SystemModification,
     },
     ThreatPattern {
         name: "unicode_obfuscation",
@@ -425,5 +388,50 @@ pub struct PatternMatch {
 impl Default for PatternMatcher {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn matches(pattern_name: &str, input: &str) -> bool {
+        let matcher = PatternMatcher::new();
+        matcher
+            .scan_for_patterns(input)
+            .iter()
+            .any(|m| m.threat.name == pattern_name)
+    }
+
+    #[test]
+    fn rm_rf_root_bare_matches_known_variants() {
+        let pat = "rm_rf_root_bare";
+        assert!(matches(pat, "rm -rf /"));
+        assert!(matches(pat, "rm -rf /*"));
+        assert!(matches(pat, "rm -rf /; whoami"));
+        assert!(matches(pat, "rm -rf /&&echo ok"));
+    }
+
+    #[test]
+    fn rm_rf_root_bare_no_false_positives() {
+        let pat = "rm_rf_root_bare";
+        assert!(!matches(pat, "rm -rf ./build"));
+        assert!(!matches(pat, "rm -rf /tmp/cache"));
+    }
+
+    #[test]
+    fn rm_rf_system_matches_absolute_and_relative() {
+        let pat = "rm_rf_system";
+        assert!(matches(pat, "rm -rf /etc"));
+        assert!(matches(pat, "rm -rf /usr/bin"));
+        assert!(matches(pat, "rm -rf etc"));
+        assert!(matches(pat, "rm -rf var"));
+    }
+
+    #[test]
+    fn rm_rf_system_no_false_positives() {
+        let pat = "rm_rf_system";
+        assert!(!matches(pat, "rm -rf ./etc-backup"));
+        assert!(!matches(pat, "rm -rf /home/user/project"));
     }
 }

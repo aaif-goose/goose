@@ -8,7 +8,7 @@
     "env": [
       "302AI_API_KEY"
     ],
-    "model_count": 95
+    "model_count": 97
   },
   {
     "id": "alibaba",
@@ -19,7 +19,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 42
+    "model_count": 48
   },
   {
     "id": "scaleway",
@@ -41,7 +41,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 518
+    "model_count": 525
   },
   {
     "id": "abacus",
@@ -63,7 +63,7 @@
     "env": [
       "PERPLEXITY_API_KEY"
     ],
-    "model_count": 16
+    "model_count": 18
   },
   {
     "id": "siliconflow-cn",
@@ -74,7 +74,7 @@
     "env": [
       "SILICONFLOW_CN_API_KEY"
     ],
-    "model_count": 79
+    "model_count": 81
   },
   {
     "id": "submodel",
@@ -107,7 +107,7 @@
     "env": [
       "DEEPSEEK_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 4
   },
   {
     "id": "meta-llama",
@@ -121,17 +121,6 @@
     "model_count": 7
   },
   {
-    "id": "tencent-token-plan",
-    "display_name": "Tencent Token Plan",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.lkeap.cloud.tencent.com/plan/v3",
-    "doc": "https://cloud.tencent.com/document/product/1823/130060",
-    "env": [
-      "TENCENT_TOKEN_PLAN_API_KEY"
-    ],
-    "model_count": 1
-  },
-  {
     "id": "fireworks-ai",
     "display_name": "Fireworks AI",
     "npm": "@ai-sdk/openai-compatible",
@@ -140,7 +129,7 @@
     "env": [
       "FIREWORKS_API_KEY"
     ],
-    "model_count": 17
+    "model_count": 19
   },
   {
     "id": "kimi-for-coding",
@@ -173,7 +162,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 14
   },
   {
     "id": "io-net",
@@ -195,7 +184,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 76
+    "model_count": 80
   },
   {
     "id": "minimax-cn-coding-plan",
@@ -250,7 +239,7 @@
     "env": [
       "HF_TOKEN"
     ],
-    "model_count": 23
+    "model_count": 24
   },
   {
     "id": "zenmux",
@@ -261,7 +250,7 @@
     "env": [
       "ZENMUX_API_KEY"
     ],
-    "model_count": 88
+    "model_count": 96
   },
   {
     "id": "upstage",
@@ -283,7 +272,7 @@
     "env": [
       "NOVITA_API_KEY"
     ],
-    "model_count": 90
+    "model_count": 99
   },
   {
     "id": "xiaomi-token-plan-cn",
@@ -294,7 +283,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 3
+    "model_count": 5
   },
   {
     "id": "wandb",
@@ -305,7 +294,7 @@
     "env": [
       "WANDB_API_KEY"
     ],
-    "model_count": 17
+    "model_count": 18
   },
   {
     "id": "chutes",
@@ -316,7 +305,7 @@
     "env": [
       "CHUTES_API_KEY"
     ],
-    "model_count": 69
+    "model_count": 70
   },
   {
     "id": "dinference",
@@ -327,7 +316,7 @@
     "env": [
       "DINFERENCE_API_KEY"
     ],
-    "model_count": 3
+    "model_count": 5
   },
   {
     "id": "vivgrid",
@@ -338,7 +327,7 @@
     "env": [
       "VIVGRID_API_KEY"
     ],
-    "model_count": 12
+    "model_count": 13
   },
   {
     "id": "qiniu-ai",
@@ -360,7 +349,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 334
+    "model_count": 355
   },
   {
     "id": "morph",
@@ -382,7 +371,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 26
+    "model_count": 27
   },
   {
     "id": "mixlayer",
@@ -404,7 +393,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 3
+    "model_count": 5
   },
   {
     "id": "zai",
@@ -426,7 +415,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 52
+    "model_count": 58
   },
   {
     "id": "stepfun",
@@ -459,7 +448,7 @@
     "env": [
       "POE_API_KEY"
     ],
-    "model_count": 129
+    "model_count": 132
   },
   {
     "id": "helicone",
@@ -481,7 +470,7 @@
     "env": [
       "OLLAMA_API_KEY"
     ],
-    "model_count": 36
+    "model_count": 39
   },
   {
     "id": "zai-coding-plan",
@@ -492,7 +481,7 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 5
   },
   {
     "id": "the-grid-ai",
@@ -514,7 +503,18 @@
     "env": [
       "BASETEN_API_KEY"
     ],
-    "model_count": 12
+    "model_count": 14
+  },
+  {
+    "id": "frogbot",
+    "display_name": "FrogBot",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://app.frogbot.ai/api/v1",
+    "doc": "https://docs.frogbot.ai",
+    "env": [
+      "FROGBOT_API_KEY"
+    ],
+    "model_count": 26
   },
   {
     "id": "zhipuai-coding-plan",
@@ -525,7 +525,7 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 14
+    "model_count": 5
   },
   {
     "id": "alibaba-coding-plan",
@@ -537,17 +537,6 @@
       "ALIBABA_CODING_PLAN_API_KEY"
     ],
     "model_count": 9
-  },
-  {
-    "id": "firmware",
-    "display_name": "Firmware",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://app.frogbot.ai/api/v1",
-    "doc": "https://docs.frogbot.ai",
-    "env": [
-      "FIRMWARE_API_KEY"
-    ],
-    "model_count": 24
   },
   {
     "id": "lmstudio",
@@ -580,7 +569,18 @@
     "env": [
       "MOONSHOT_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
+  },
+  {
+    "id": "abliteration-ai",
+    "display_name": "abliteration.ai",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.abliteration.ai/v1",
+    "doc": "https://docs.abliteration.ai/models",
+    "env": [
+      "ABLIT_KEY"
+    ],
+    "model_count": 1
   },
   {
     "id": "wafer.ai",
@@ -591,7 +591,7 @@
     "env": [
       "WAFER_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 3
   },
   {
     "id": "cloudferro-sherlock",
@@ -646,7 +646,7 @@
     "env": [
       "SYNTHETIC_API_KEY"
     ],
-    "model_count": 32
+    "model_count": 33
   },
   {
     "id": "nvidia",
@@ -657,7 +657,7 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 77
+    "model_count": 82
   },
   {
     "id": "inference",
@@ -701,7 +701,7 @@
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
     ],
-    "model_count": 46
+    "model_count": 63
   },
   {
     "id": "vultr",
@@ -734,7 +734,7 @@
     "env": [
       "OVHCLOUD_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 11
   },
   {
     "id": "friendli",
@@ -756,7 +756,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 33
+    "model_count": 49
   },
   {
     "id": "siliconflow",
@@ -767,7 +767,7 @@
     "env": [
       "SILICONFLOW_API_KEY"
     ],
-    "model_count": 73
+    "model_count": 74
   },
   {
     "id": "minimax",
@@ -789,7 +789,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 182
+    "model_count": 190
   },
   {
     "id": "cloudflare-workers-ai",
@@ -868,7 +868,7 @@
     "env": [
       "MOONSHOT_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
   },
   {
     "id": "berget",
@@ -879,7 +879,7 @@
     "env": [
       "BERGET_API_KEY"
     ],
-    "model_count": 5
+    "model_count": 6
   },
   {
     "id": "github-models",
@@ -891,6 +891,17 @@
       "GITHUB_TOKEN"
     ],
     "model_count": 55
+  },
+  {
+    "id": "neuralwatt",
+    "display_name": "Neuralwatt",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.neuralwatt.com/v1",
+    "doc": "https://portal.neuralwatt.com/docs",
+    "env": [
+      "NEURALWATT_API_KEY"
+    ],
+    "model_count": 14
   },
   {
     "id": "qihang-ai",
@@ -945,7 +956,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 3
+    "model_count": 5
   },
   {
     "id": "clarifai",
@@ -956,7 +967,7 @@
     "env": [
       "CLARIFAI_PAT"
     ],
-    "model_count": 11
+    "model_count": 12
   },
   {
     "id": "minimax-cn",
@@ -970,6 +981,17 @@
     "model_count": 6
   },
   {
+    "id": "regolo-ai",
+    "display_name": "Regolo AI",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.regolo.ai/v1",
+    "doc": "https://docs.regolo.ai/",
+    "env": [
+      "REGOLO_API_KEY"
+    ],
+    "model_count": 13
+  },
+  {
     "id": "xiaomi-token-plan-ams",
     "display_name": "Xiaomi Token Plan (Europe)",
     "npm": "@ai-sdk/openai-compatible",
@@ -978,7 +1000,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 3
+    "model_count": 5
   },
   {
     "id": "zhipuai",

@@ -4,12 +4,13 @@ import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { useChatStore } from "../../stores/chatStore";
 import { useChatSessionStore } from "../../stores/chatSessionStore";
+import { applyLatestSessionConfig } from "../../lib/sessionConfigRequests";
 
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
 const mockSetSelectedProvider = vi.fn();
 const mockResolveSessionCwd = vi.fn();
-const mockGooseConfigRead = vi.fn();
+const mockGooseDefaultsRead = vi.fn();
 const mockUseProviderInventory = vi.fn();
 const mockPickerState = {
   pickerAgents: [{ id: "goose", label: "Goose" }],
@@ -23,6 +24,16 @@ const mockPickerState = {
   modelStatusMessage: null as string | null,
 };
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 vi.mock("@/shared/api/acp", () => ({
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
@@ -31,7 +42,7 @@ vi.mock("@/shared/api/acp", () => ({
 vi.mock("@/shared/api/acpConnection", () => ({
   getClient: async () => ({
     goose: {
-      GooseConfigRead: (...args: unknown[]) => mockGooseConfigRead(...args),
+      GooseDefaultsRead: (...args: unknown[]) => mockGooseDefaultsRead(...args),
     },
   }),
 }));
@@ -116,7 +127,10 @@ describe("useChatSessionController", () => {
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
     mockResolveSessionCwd.mockResolvedValue("/tmp/project");
-    mockGooseConfigRead.mockResolvedValue({ value: null });
+    mockGooseDefaultsRead.mockResolvedValue({
+      providerId: null,
+      modelId: null,
+    });
     mockUseProviderInventory.mockReturnValue({
       getEntry: () => undefined,
     });
@@ -191,7 +205,6 @@ describe("useChatSessionController", () => {
         "session-1",
         "anthropic",
         "/tmp/project",
-        { personaId: undefined },
       );
     });
 
@@ -283,17 +296,10 @@ describe("useChatSessionController", () => {
 
   it("falls back to the configured goose default model when no explicit model is stored", async () => {
     useAgentStore.setState({ selectedProvider: "goose" });
-    mockGooseConfigRead.mockImplementation(
-      async ({ key }: { key: string }): Promise<{ value: string | null }> => {
-        if (key === "GOOSE_PROVIDER") {
-          return { value: "databricks" };
-        }
-        if (key === "GOOSE_MODEL") {
-          return { value: "goose-claude-4-6-opus" };
-        }
-        return { value: null };
-      },
-    );
+    mockGooseDefaultsRead.mockResolvedValue({
+      providerId: "databricks",
+      modelId: "goose-claude-4-6-opus",
+    });
     mockPickerState.availableModels = [
       {
         id: "goose-claude-4-6-opus",
@@ -346,7 +352,6 @@ describe("useChatSessionController", () => {
         "session-2",
         "anthropic",
         "/tmp/project",
-        { personaId: undefined },
       );
     });
 
@@ -364,6 +369,82 @@ describe("useChatSessionController", () => {
       modelId: "claude-sonnet-4",
       modelName: "Claude Sonnet 4",
     });
+  });
+
+  it("moves pending Home queued messages when preparation is superseded", async () => {
+    const firstPrepare = deferred();
+    mockAcpPrepareSession.mockReturnValueOnce(firstPrepare.promise);
+
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string | null }) =>
+        useChatSessionController({ sessionId }),
+      {
+        initialProps: { sessionId: null as string | null },
+      },
+    );
+
+    act(() => {
+      result.current.handleModelChange("claude-sonnet-4");
+      useChatStore
+        .getState()
+        .enqueueMessage("__home_pending__", { text: "queued from Home" });
+    });
+
+    useChatSessionStore.setState((state) => ({
+      sessions: [
+        {
+          id: "session-superseded-home",
+          title: "Chat",
+          providerId: "openai",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 0,
+        },
+        ...state.sessions,
+      ],
+    }));
+
+    rerender({ sessionId: "session-superseded-home" });
+
+    await waitFor(() => {
+      expect(mockAcpPrepareSession).toHaveBeenCalledWith(
+        "session-superseded-home",
+        "anthropic",
+        "/tmp/project",
+      );
+    });
+
+    const latestConfig = applyLatestSessionConfig({
+      sessionId: "session-superseded-home",
+      providerId: "anthropic",
+      workingDir: "/tmp/other-project",
+      modelId: "claude-sonnet-4",
+    });
+
+    firstPrepare.resolve();
+
+    await waitFor(() => {
+      expect(mockAcpPrepareSession).toHaveBeenCalledWith(
+        "session-superseded-home",
+        "anthropic",
+        "/tmp/other-project",
+      );
+    });
+    await expect(latestConfig).resolves.toEqual({ applied: true });
+
+    await waitFor(() => {
+      expect(
+        useChatStore.getState().queuedMessageBySession[
+          "session-superseded-home"
+        ],
+      ).toEqual({ text: "queued from Home" });
+    });
+    expect(
+      useChatStore.getState().queuedMessageBySession.__home_pending__,
+    ).toBeUndefined();
+    expect(
+      window.localStorage.getItem("goose:preferredModelsByAgent"),
+    ).toBeNull();
   });
 
   it("does not persist or record a pending Home model when ACP rejects it", async () => {

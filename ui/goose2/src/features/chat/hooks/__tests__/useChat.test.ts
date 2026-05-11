@@ -11,7 +11,6 @@ const mockAcpCancelSession = vi.fn();
 const mockAcpLoadSession = vi.fn();
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
-const mockGetGooseSessionId = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
@@ -19,10 +18,6 @@ vi.mock("@/shared/api/acp", () => ({
   acpLoadSession: (...args: unknown[]) => mockAcpLoadSession(...args),
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
-}));
-
-vi.mock("@/shared/api/acpSessionTracker", () => ({
-  getGooseSessionId: (...args: unknown[]) => mockGetGooseSessionId(...args),
 }));
 
 import { useChat } from "../useChat";
@@ -66,7 +61,6 @@ describe("useChat", () => {
     mockAcpLoadSession.mockReset();
     mockAcpPrepareSession.mockReset();
     mockAcpSetModel.mockReset();
-    mockGetGooseSessionId.mockReset();
     clearReplayBuffer("session-1");
     clearReplayBuffer("session-2");
     useChatStore.setState({
@@ -115,96 +109,6 @@ describe("useChat", () => {
     mockAcpLoadSession.mockResolvedValue(undefined);
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
-    mockGetGooseSessionId.mockReturnValue(null);
-  });
-
-  it("cancels the active override persona instead of the hook default persona", async () => {
-    const deferred = createDeferredPromise();
-    mockAcpSendMessage.mockReturnValue(deferred.promise);
-
-    const { result } = renderHook(() =>
-      useChat("session-1", undefined, undefined, {
-        id: "persona-a",
-        name: "Persona A",
-      }),
-    );
-
-    let sendPromise!: Promise<void>;
-    await act(async () => {
-      sendPromise = result.current.sendMessage("Hello", {
-        id: "persona-b",
-        name: "Persona B",
-      });
-      await Promise.resolve();
-    });
-
-    act(() => {
-      result.current.stopGeneration();
-    });
-
-    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "Hello", {
-      systemPrompt: undefined,
-      personaId: "persona-b",
-      personaName: "Persona B",
-      images: undefined,
-    });
-    expect(mockAcpCancelSession).toHaveBeenCalledWith("session-1", "persona-b");
-
-    deferred.resolve();
-    await act(async () => {
-      await sendPromise;
-    });
-  });
-
-  it("keeps persona-aware cancellation working after remount", async () => {
-    const deferred = createDeferredPromise();
-    mockAcpSendMessage.mockReturnValue(deferred.promise);
-
-    const firstMount = renderHook(() =>
-      useChat("session-1", undefined, undefined, {
-        id: "persona-a",
-        name: "Persona A",
-      }),
-    );
-
-    let sendPromise!: Promise<void>;
-    await act(async () => {
-      sendPromise = firstMount.result.current.sendMessage("Hello", {
-        id: "persona-b",
-        name: "Persona B",
-      });
-      await Promise.resolve();
-    });
-    act(() => {
-      addStreamingAssistantMessage(
-        "session-1",
-        "assistant-1",
-        "persona-b",
-        "Persona B",
-      );
-    });
-
-    act(() => {
-      firstMount.unmount();
-    });
-
-    const secondMount = renderHook(() =>
-      useChat("session-1", undefined, undefined, {
-        id: "persona-a",
-        name: "Persona A",
-      }),
-    );
-
-    act(() => {
-      secondMount.result.current.stopGeneration();
-    });
-
-    expect(mockAcpCancelSession).toHaveBeenCalledWith("session-1", "persona-b");
-
-    deferred.resolve();
-    await act(async () => {
-      await sendPromise;
-    });
   });
 
   it("marks the streaming message stopped only after cancellation succeeds", async () => {
@@ -425,6 +329,41 @@ describe("useChat", () => {
     expect(ensurePrepared.mock.invocationCallOrder[0]).toBeLessThan(
       mockAcpSendMessage.mock.invocationCallOrder[0],
     );
+  });
+
+  it("does not prompt when preparation is superseded", async () => {
+    const ensurePrepared = vi.fn().mockResolvedValue(false);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        ensurePrepared,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("Hello");
+    });
+
+    expect(ensurePrepared).toHaveBeenCalledTimes(1);
+    expect(mockAcpSendMessage).not.toHaveBeenCalled();
+
+    const messages = useChatStore.getState().messagesBySession["session-1"];
+    const runtime = useChatStore.getState().getSessionRuntime("session-1");
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0].role).toBe("user");
+    expect(messages[1].content).toEqual([
+      {
+        type: "systemNotification",
+        notificationType: "error",
+        text: "Session configuration changed while preparing. Try sending again.",
+      },
+    ]);
+    expect(runtime.error).toBe(
+      "Session configuration changed while preparing. Try sending again.",
+    );
+    expect(runtime.chatState).toBe("idle");
+    expect(runtime.streamingMessageId).toBeNull();
   });
 
   it("appends an error message and removes the empty assistant placeholder when send fails", async () => {

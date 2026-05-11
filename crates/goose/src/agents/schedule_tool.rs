@@ -281,14 +281,14 @@ impl Agent {
                 )
             })?;
 
-        match scheduler.remove_scheduled_job(job_id, true).await {
+        match scheduler.remove_scheduled_job(job_id, false).await {
             Ok(()) => Ok(vec![Content::text(format!(
-                "Successfully deleted job '{}'",
+                "Successfully removed schedule for job '{}'",
                 job_id
             ))]),
             Err(e) => Err(ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
-                format!("Failed to delete job: {}", e),
+                format!("Failed to remove schedule: {}", e),
                 None,
             )),
         }

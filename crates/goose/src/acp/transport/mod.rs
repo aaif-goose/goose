@@ -94,7 +94,7 @@ async fn health() -> &'static str {
     "ok"
 }
 
-pub fn create_router(server: Arc<AcpServer>) -> Router {
+pub fn create_router(server: Arc<AcpServer>, secret_key: String) -> Router {
     let registry = Arc::new(connection::ConnectionRegistry::new(server));
 
     let cors = CorsLayer::new()
@@ -121,5 +121,6 @@ pub fn create_router(server: Arc<AcpServer>) -> Router {
         .route("/acp", post(http::handle_post).with_state(registry.clone()))
         .route("/acp", get(handle_get).with_state(registry.clone()))
         .route("/acp", delete(http::handle_delete).with_state(registry))
+        .merge(super::mcp_app_proxy::routes(secret_key))
         .layer(cors)
 }
