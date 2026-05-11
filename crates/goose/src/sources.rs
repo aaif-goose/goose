@@ -74,18 +74,6 @@ fn project_file_path(slug: &str) -> PathBuf {
     projects_dir().join(format!("{slug}.md"))
 }
 
-fn build_source_md<T: Serialize>(frontmatter: &T, content: &str) -> Result<String, Error> {
-    let yaml = serde_yaml::to_string(frontmatter)
-        .map_err(|e| Error::internal_error().data(format!("Failed to serialize source: {e}")))?;
-    let mut md = format!("---\n{yaml}---\n");
-    if !content.is_empty() {
-        md.push('\n');
-        md.push_str(content);
-        md.push('\n');
-    }
-    Ok(md)
-}
-
 fn build_source_markdown(
     name: &str,
     description: &str,
@@ -110,7 +98,15 @@ fn build_source_markdown(
         })?;
         frontmatter.insert(serde_yaml::Value::String(key.clone()), value);
     }
-    build_source_md(&frontmatter, content)
+    let yaml = serde_yaml::to_string(&frontmatter)
+        .map_err(|e| Error::internal_error().data(format!("Failed to serialize source: {e}")))?;
+    let mut md = format!("---\n{yaml}---\n");
+    if !content.is_empty() {
+        md.push('\n');
+        md.push_str(content);
+        md.push('\n');
+    }
+    Ok(md)
 }
 
 /// Returns (display_name, description, body, properties).
@@ -701,27 +697,6 @@ pub fn create_source(
     }
 }
 
-pub fn update_source(
-    source_type: SourceType,
-    path: &str,
-    name: &str,
-    description: &str,
-    content: &str,
-    properties: Option<HashMap<String, serde_json::Value>>,
-) -> Result<SourceEntry, Error> {
-    update_source_with_roots(
-        source_type,
-        path,
-        name,
-        description,
-        content,
-        UpdateSourceOptions {
-            properties,
-            additional_roots: &[],
-        },
-    )
-}
-
 pub struct UpdateSourceOptions<'a> {
     pub properties: Option<HashMap<String, serde_json::Value>>,
     pub additional_roots: &'a [SourceRoot],
@@ -1301,13 +1276,16 @@ mod tests {
         let listed = list_sources(Some(SourceType::Skill), Some(project), false).unwrap();
         assert!(listed.iter().any(|s| s.name == "my-skill" && !s.global));
 
-        let updated = update_source(
+        let updated = update_source_with_roots(
             SourceType::Skill,
             created.path.as_str(),
             "my-skill",
             "now does a different thing",
             "step three",
-            Some(HashMap::new()),
+            UpdateSourceOptions {
+                properties: Some(HashMap::new()),
+                additional_roots: &[],
+            },
         )
         .unwrap();
         assert_eq!(updated.description, "now does a different thing");
@@ -1442,13 +1420,16 @@ mod tests {
         )
         .unwrap();
 
-        let updated = update_source(
+        let updated = update_source_with_roots(
             SourceType::Skill,
             claude_skill_dir.to_str().unwrap(),
             "portable",
             "updated description",
             "updated body",
-            Some(HashMap::new()),
+            UpdateSourceOptions {
+                properties: Some(HashMap::new()),
+                additional_roots: &[],
+            },
         )
         .unwrap();
 
@@ -1497,13 +1478,16 @@ mod tests {
             .join(".goose")
             .join("skills")
             .join("no-such-skill");
-        let err = update_source(
+        let err = update_source_with_roots(
             SourceType::Skill,
             missing_dir.to_str().unwrap(),
             "no-such-skill",
             "d",
             "c",
-            Some(HashMap::new()),
+            UpdateSourceOptions {
+                properties: Some(HashMap::new()),
+                additional_roots: &[],
+            },
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
@@ -1605,19 +1589,32 @@ mod tests {
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = update_source(
+        let err = update_source_with_roots(
             SourceType::BuiltinSkill,
             "builtin://skills/x",
             "x",
             "d",
             "c",
-            Some(HashMap::new()),
+            UpdateSourceOptions {
+                properties: Some(HashMap::new()),
+                additional_roots: &[],
+            },
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = update_source(SourceType::Recipe, "x", "x", "d", "c", Some(HashMap::new()))
-            .unwrap_err();
+        let err = update_source_with_roots(
+            SourceType::Recipe,
+            "x",
+            "x",
+            "d",
+            "c",
+            UpdateSourceOptions {
+                properties: Some(HashMap::new()),
+                additional_roots: &[],
+            },
+        )
+        .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = delete_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
@@ -1669,13 +1666,16 @@ mod tests {
         .unwrap();
 
         let skill_dir = tmp.path().join(".agents").join("skills").join("my-dir");
-        let updated = update_source(
+        let updated = update_source_with_roots(
             SourceType::Skill,
             skill_dir.to_str().unwrap(),
             "my-dir",
             "new description",
             "new body",
-            Some(HashMap::new()),
+            UpdateSourceOptions {
+                properties: Some(HashMap::new()),
+                additional_roots: &[],
+            },
         )
         .unwrap();
         // Name is derived from the frontmatter written by create_source
@@ -1764,13 +1764,16 @@ mod tests {
         .unwrap();
 
         let attempted_escape = project.join(".goose").join("escaped");
-        let err = update_source(
+        let err = update_source_with_roots(
             SourceType::Skill,
             attempted_escape.to_str().unwrap(),
             "escaped",
             "new description",
             "new content",
-            Some(HashMap::new()),
+            UpdateSourceOptions {
+                properties: Some(HashMap::new()),
+                additional_roots: &[],
+            },
         )
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not found"));
