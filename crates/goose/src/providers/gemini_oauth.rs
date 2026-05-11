@@ -38,11 +38,9 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::io::StreamReader;
 
-const HTTP_TIMEOUT_SECS: u64 = DEFAULT_PROVIDER_TIMEOUT_SECS;
-
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
         .build()
         .expect("failed to build HTTP client")
 });

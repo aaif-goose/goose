@@ -44,7 +44,6 @@ use serde_json::json;
 const DEFAULT_CLIENT_ID: &str = "databricks-cli";
 const DEFAULT_REDIRECT_URL: &str = "http://localhost";
 const DEFAULT_SCOPES: &[&str] = &["all-apis", "offline_access"];
-const DEFAULT_TIMEOUT_SECS: u64 = DEFAULT_PROVIDER_TIMEOUT_SECS;
 
 const DATABRICKS_PROVIDER_NAME: &str = "databricks";
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
@@ -180,8 +179,11 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client =
-            ApiClient::with_timeout(host, auth_method, Duration::from_secs(DEFAULT_TIMEOUT_SECS))?;
+        let api_client = ApiClient::with_timeout(
+            host,
+            auth_method,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )?;
 
         let mut provider = Self {
             api_client,
@@ -245,8 +247,11 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client =
-            ApiClient::with_timeout(host, auth_method, Duration::from_secs(DEFAULT_TIMEOUT_SECS))?;
+        let api_client = ApiClient::with_timeout(
+            host,
+            auth_method,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )?;
 
         Ok(Self {
             api_client,
