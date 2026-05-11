@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::mcp_utils::ToolResult;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use aws_sdk_bedrockruntime::types as bedrock;
 use aws_smithy_types::{Document, Number};
 use base64::Engine;
 use chrono::Utc;
 use rmcp::model::{
-    object, CallToolRequestParams, Content, ErrorCode, ErrorData, RawContent, ResourceContents,
-    Role, Tool,
+    CallToolRequestParams, Content, ErrorCode, ErrorData, RawContent, ResourceContents, Role, Tool,
+    object,
 };
 use serde_json::Value;
 
@@ -56,10 +56,6 @@ pub fn to_bedrock_message_content(content: &MessageContent) -> Result<bedrock::C
             bedrock::ContentBlock::Image(to_bedrock_image(&image.data, &image.mime_type)?)
         }
         MessageContent::Thinking(thinking) => {
-            // Bedrock reasoning models (e.g. Claude with reasoning, openai.gpt-oss-*)
-            // require the original reasoning text to be replayed unmodified, with
-            // its signature, in subsequent Converse calls. Re-emit the reasoning
-            // block instead of dropping it as empty text.
             let mut builder = bedrock::ReasoningTextBlock::builder().text(&thinking.thinking);
             if !thinking.signature.is_empty() {
                 builder = builder.signature(&thinking.signature);
@@ -69,29 +65,13 @@ pub fn to_bedrock_message_content(content: &MessageContent) -> Result<bedrock::C
             ))
         }
         MessageContent::RedactedThinking(redacted) => {
-            // Replay encrypted reasoning bytes verbatim. Bedrock stores them as
-            // base64 when reading them off the wire (see
-            // from_bedrock_reasoning_content_block), so decode before sending.
-            //
-            // RedactedThinking is also produced by other providers (e.g. the
-            // Anthropic API) which treat `data` as an opaque payload rather
-            // than guaranteed base64. To preserve cross-provider conversation
-            // history we fall back to dropping the block (matching the
-            // pre-existing skip behaviour) when the payload isn't decodable as
-            // base64, instead of aborting the request.
             match base64::prelude::BASE64_STANDARD.decode(&redacted.data) {
                 Ok(bytes) => bedrock::ContentBlock::ReasoningContent(
                     bedrock::ReasoningContentBlock::RedactedContent(aws_smithy_types::Blob::new(
                         bytes,
                     )),
                 ),
-                Err(err) => {
-                    tracing::warn!(
-                        "Dropping non-base64 RedactedThinking content when sending to Bedrock: {}",
-                        err
-                    );
-                    bedrock::ContentBlock::Text("".to_string())
-                }
+                Err(_) => bedrock::ContentBlock::Text("".to_string()),
             }
         }
         MessageContent::SystemNotification(_) => {
@@ -334,29 +314,21 @@ pub fn from_bedrock_message(message: &bedrock::Message) -> Result<Message> {
         .iter()
         .filter(|block| !matches!(block, bedrock::ContentBlock::CachePoint(_)))
         .map(from_bedrock_content_block)
-        .filter_map(|result| result.transpose())
         .collect::<Result<Vec<_>>>()?;
     let created = Utc::now().timestamp();
 
     Ok(Message::new(role, created, content))
 }
 
-/// Convert a Bedrock `ContentBlock` into a Goose `MessageContent`.
-///
-/// Returns `Ok(None)` only when the block belongs to a variant the SDK does
-/// not recognise (the `non_exhaustive` `Unknown` arm). Known content-bearing
-/// variants that Goose cannot represent return an error so that the caller
-/// fails fast rather than silently truncating responses (e.g. dropping
-/// guardrail or multimodal output).
-pub fn from_bedrock_content_block(block: &bedrock::ContentBlock) -> Result<Option<MessageContent>> {
+pub fn from_bedrock_content_block(block: &bedrock::ContentBlock) -> Result<MessageContent> {
     Ok(match block {
-        bedrock::ContentBlock::Text(text) => Some(MessageContent::text(text)),
-        bedrock::ContentBlock::ToolUse(tool_use) => Some(MessageContent::tool_request(
+        bedrock::ContentBlock::Text(text) => MessageContent::text(text),
+        bedrock::ContentBlock::ToolUse(tool_use) => MessageContent::tool_request(
             tool_use.tool_use_id.to_string(),
             Ok(CallToolRequestParams::new(tool_use.name.clone())
                 .with_arguments(object(from_bedrock_json(&tool_use.input.clone())?))),
-        )),
-        bedrock::ContentBlock::ToolResult(tool_res) => Some(MessageContent::tool_response(
+        ),
+        bedrock::ContentBlock::ToolResult(tool_res) => MessageContent::tool_response(
             tool_res.tool_use_id.to_string(),
             if tool_res.content.is_empty() {
                 Err(ErrorData {
@@ -372,72 +344,39 @@ pub fn from_bedrock_content_block(block: &bedrock::ContentBlock) -> Result<Optio
                     .collect::<ToolResult<Vec<_>>>()
                     .map(rmcp::model::CallToolResult::success)
             },
-        )),
+        ),
         bedrock::ContentBlock::ReasoningContent(reasoning) => {
-            from_bedrock_reasoning_content_block(reasoning)
+            from_bedrock_reasoning_content_block(reasoning)?
         }
         bedrock::ContentBlock::CachePoint(_) => {
-            // Filtered upstream in from_bedrock_message
             bail!("CachePoint blocks should have been filtered out during message processing")
         }
-        bedrock::ContentBlock::Audio(_)
-        | bedrock::ContentBlock::CitationsContent(_)
-        | bedrock::ContentBlock::Document(_)
-        | bedrock::ContentBlock::GuardContent(_)
-        | bedrock::ContentBlock::Image(_)
-        | bedrock::ContentBlock::SearchResult(_)
-        | bedrock::ContentBlock::Video(_) => bail!(
+        _ => bail!(
             "Unsupported Bedrock content block type: {}",
             bedrock_content_block_kind(block)
         ),
-        other => {
-            // Reserved for the SDK's `non_exhaustive` `Unknown` arm and
-            // future variants the SDK adds before this match is updated.
-            // Bail rather than silently dropping the block so an out-of-date
-            // SDK match arm cannot truncate assistant output without the
-            // caller noticing.
-            bail!(
-                "Unrecognised Bedrock content block variant: {}",
-                bedrock_content_block_kind(other)
-            );
-        }
     })
 }
 
-/// Convert a Bedrock `ReasoningContentBlock` into a Goose `MessageContent`.
-///
-/// Reasoning text is mapped to `MessageContent::Thinking` and redacted
-/// reasoning content (encrypted by the model provider) is mapped to
-/// `MessageContent::RedactedThinking` so it can be preserved across turns.
 fn from_bedrock_reasoning_content_block(
     reasoning: &bedrock::ReasoningContentBlock,
-) -> Option<MessageContent> {
-    match reasoning {
+) -> Result<MessageContent> {
+    Ok(match reasoning {
         bedrock::ReasoningContentBlock::ReasoningText(text_block) => {
             let signature = text_block.signature.clone().unwrap_or_default();
-            Some(MessageContent::thinking(text_block.text.clone(), signature))
+            MessageContent::thinking(text_block.text.clone(), signature)
         }
         bedrock::ReasoningContentBlock::RedactedContent(blob) => {
             let encoded = base64::prelude::BASE64_STANDARD.encode(blob.as_ref());
-            Some(MessageContent::redacted_thinking(encoded))
+            MessageContent::redacted_thinking(encoded)
         }
-        other => {
-            // Log only the stable variant identifier; never debug-print the
-            // payload, which could contain raw reasoning text or encrypted
-            // bytes from the model.
-            tracing::warn!(
-                "Skipping unknown Bedrock ReasoningContent variant: {}",
-                bedrock_reasoning_content_block_kind(other)
-            );
-            None
-        }
-    }
+        _ => bail!(
+            "Unsupported Bedrock reasoning content variant: {}",
+            bedrock_reasoning_content_block_kind(reasoning)
+        ),
+    })
 }
 
-/// Returns a short, stable identifier describing the variant of a
-/// `ReasoningContentBlock` for logging purposes. The block itself is not
-/// included to avoid leaking model reasoning output (plaintext or encrypted)
-/// into logs.
 fn bedrock_reasoning_content_block_kind(block: &bedrock::ReasoningContentBlock) -> &'static str {
     match block {
         bedrock::ReasoningContentBlock::ReasoningText(_) => "ReasoningText",
@@ -446,9 +385,6 @@ fn bedrock_reasoning_content_block_kind(block: &bedrock::ReasoningContentBlock) 
     }
 }
 
-/// Returns a short, stable identifier describing the variant of a
-/// `ContentBlock` for logging purposes. The block itself is not included to
-/// avoid leaking model output into logs.
 fn bedrock_content_block_kind(block: &bedrock::ContentBlock) -> &'static str {
     match block {
         bedrock::ContentBlock::Audio(_) => "Audio",
@@ -477,7 +413,7 @@ pub fn from_bedrock_tool_result_content_block(
                 code: ErrorCode::INTERNAL_ERROR,
                 message: Cow::from("Unsupported tool result from Bedrock".to_string()),
                 data: None,
-            })
+            });
         }
     })
 }
@@ -671,17 +607,16 @@ mod tests {
         // Verify that converting a cache point results in an error
         let result = from_bedrock_content_block(&content_block);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("CachePoint blocks should have been filtered out"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("CachePoint blocks should have been filtered out")
+        );
     }
 
     #[test]
     fn test_from_bedrock_content_block_reasoning_text() -> Result<()> {
-        // Models such as the OpenAI gpt-oss family on Bedrock may return
-        // ReasoningContent blocks alongside the assistant's text. Goose should
-        // surface these as Thinking content rather than failing the request.
         let reasoning_text = bedrock::ReasoningTextBlock::builder()
             .text("step-by-step reasoning")
             .signature("sig-token")
@@ -690,9 +625,8 @@ mod tests {
             bedrock::ReasoningContentBlock::ReasoningText(reasoning_text),
         );
 
-        let result = from_bedrock_content_block(&content_block)?;
-        match result {
-            Some(MessageContent::Thinking(thinking)) => {
+        match from_bedrock_content_block(&content_block)? {
+            MessageContent::Thinking(thinking) => {
                 assert_eq!(thinking.thinking, "step-by-step reasoning");
                 assert_eq!(thinking.signature, "sig-token");
             }
@@ -703,8 +637,6 @@ mod tests {
 
     #[test]
     fn test_from_bedrock_content_block_reasoning_text_without_signature() -> Result<()> {
-        // The signature is optional in the Bedrock API; an empty signature
-        // should still produce a Thinking block.
         let reasoning_text = bedrock::ReasoningTextBlock::builder()
             .text("reasoning without signature")
             .build()?;
@@ -712,9 +644,8 @@ mod tests {
             bedrock::ReasoningContentBlock::ReasoningText(reasoning_text),
         );
 
-        let result = from_bedrock_content_block(&content_block)?;
-        match result {
-            Some(MessageContent::Thinking(thinking)) => {
+        match from_bedrock_content_block(&content_block)? {
+            MessageContent::Thinking(thinking) => {
                 assert_eq!(thinking.thinking, "reasoning without signature");
                 assert_eq!(thinking.signature, "");
             }
@@ -725,10 +656,6 @@ mod tests {
 
     #[test]
     fn test_from_bedrock_content_block_unsupported_type_errors() {
-        // Known content-bearing variants Goose cannot yet represent (Image,
-        // Document, GuardContent, Audio, Video) must surface a clear error
-        // instead of silently dropping the block, so multimodal/guardrail
-        // output is never truncated without the caller noticing.
         let image_block = bedrock::ImageBlock::builder()
             .format(bedrock::ImageFormat::Png)
             .source(bedrock::ImageSource::Bytes(aws_smithy_types::Blob::new(
@@ -749,24 +676,6 @@ mod tests {
     }
 
     #[test]
-    fn test_from_bedrock_content_block_citations_content_errors() {
-        // CitationsContent and SearchResult are real Bedrock variants that
-        // Goose does not yet model. They must surface an error rather than
-        // silently fall through the unknown-variant arm and be dropped.
-        let citations = bedrock::CitationsContentBlock::builder().build();
-        let content_block = bedrock::ContentBlock::CitationsContent(citations);
-
-        let err =
-            from_bedrock_content_block(&content_block).expect_err("CitationsContent should error");
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Unsupported Bedrock content block type"),
-            "got: {msg}"
-        );
-        assert!(msg.contains("CitationsContent"), "got: {msg}");
-    }
-
-    #[test]
     fn test_from_bedrock_content_block_reasoning_redacted_content() -> Result<()> {
         let raw = b"encrypted-reasoning-bytes";
         let blob = aws_smithy_types::Blob::new(raw.to_vec());
@@ -774,9 +683,8 @@ mod tests {
             bedrock::ReasoningContentBlock::RedactedContent(blob),
         );
 
-        let result = from_bedrock_content_block(&content_block)?;
-        match result {
-            Some(MessageContent::RedactedThinking(redacted)) => {
+        match from_bedrock_content_block(&content_block)? {
+            MessageContent::RedactedThinking(redacted) => {
                 let expected = base64::prelude::BASE64_STANDARD.encode(raw);
                 assert_eq!(redacted.data, expected);
             }
@@ -787,10 +695,6 @@ mod tests {
 
     #[test]
     fn test_to_bedrock_message_content_thinking() -> Result<()> {
-        // Thinking content must round-trip back into a Bedrock
-        // ReasoningContent::ReasoningText block so subsequent Converse calls
-        // include the original reasoning text and signature unmodified, as
-        // required by Bedrock reasoning models.
         let message_content = MessageContent::thinking("because of X", "sig-abc");
         let block = to_bedrock_message_content(&message_content)?;
 
@@ -808,8 +712,6 @@ mod tests {
 
     #[test]
     fn test_to_bedrock_message_content_thinking_without_signature() -> Result<()> {
-        // An empty signature must not be sent to Bedrock as the empty string;
-        // the field should be omitted so the SDK treats it as absent.
         let message_content = MessageContent::thinking("silent reasoning", "");
         let block = to_bedrock_message_content(&message_content)?;
 
@@ -827,9 +729,6 @@ mod tests {
 
     #[test]
     fn test_to_bedrock_message_content_redacted_thinking() -> Result<()> {
-        // Redacted reasoning bytes are stored as base64 internally; sending
-        // them back to Bedrock must decode the base64 so the SDK transmits the
-        // original encrypted bytes verbatim.
         let raw = b"encrypted-reasoning-bytes";
         let encoded = base64::prelude::BASE64_STANDARD.encode(raw);
         let message_content = MessageContent::redacted_thinking(encoded);
@@ -851,11 +750,6 @@ mod tests {
 
     #[test]
     fn test_to_bedrock_message_content_redacted_thinking_opaque_payload() -> Result<()> {
-        // RedactedThinking.data is treated as an opaque provider payload by
-        // other providers (e.g. Anthropic). Switching such a conversation to
-        // Bedrock must not abort the request when the payload isn't valid
-        // base64; instead the block is dropped (matching the historical skip
-        // behaviour) so the rest of the turn still goes through.
         let message_content = MessageContent::redacted_thinking("opaque_not_base64!@#".to_string());
 
         let block = to_bedrock_message_content(&message_content)?;
@@ -871,10 +765,6 @@ mod tests {
 
     #[test]
     fn test_bedrock_thinking_round_trip() -> Result<()> {
-        // End-to-end: a Bedrock ReasoningContent block read in via
-        // from_bedrock_content_block must serialize back to an equivalent
-        // ReasoningContent block via to_bedrock_message_content, preserving
-        // both the reasoning text and its signature.
         let original =
             bedrock::ContentBlock::ReasoningContent(bedrock::ReasoningContentBlock::ReasoningText(
                 bedrock::ReasoningTextBlock::builder()
@@ -883,8 +773,7 @@ mod tests {
                     .build()?,
             ));
 
-        let message_content =
-            from_bedrock_content_block(&original)?.expect("reasoning content should be preserved");
+        let message_content = from_bedrock_content_block(&original)?;
         let round_tripped = to_bedrock_message_content(&message_content)?;
 
         match round_tripped {
@@ -908,8 +797,7 @@ mod tests {
             )),
         );
 
-        let message_content =
-            from_bedrock_content_block(&original)?.expect("redacted reasoning should be preserved");
+        let message_content = from_bedrock_content_block(&original)?;
         let round_tripped = to_bedrock_message_content(&message_content)?;
 
         match round_tripped {
@@ -930,10 +818,6 @@ mod tests {
     fn test_from_bedrock_message_includes_reasoning_content() -> Result<()> {
         use rmcp::model::Role;
 
-        // Regression test for issue #8751: a message that mixes text with a
-        // reasoning block should convert successfully and preserve both pieces
-        // of content rather than failing with "Unsupported content block
-        // type".
         let reasoning_text = bedrock::ReasoningTextBlock::builder()
             .text("thinking out loud")
             .signature("sig")
