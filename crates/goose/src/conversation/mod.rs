@@ -208,6 +208,7 @@ fn fix_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
         fix_empty_tool_results,
         fix_tool_calling,
         merge_consecutive_messages,
+        deduplicate_tool_responses,
         fix_lead_trail,
         populate_if_empty,
     ]
@@ -461,6 +462,55 @@ pub fn merge_consecutive_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<
     }
 
     (merged_messages, issues)
+}
+
+/// Deduplicate tool responses that share the same tool_use ID within a single message.
+///
+/// This can happen when `merge_consecutive_messages` combines two user/tool messages
+/// that both contain a ToolResponse for the same ID, or after session compaction /
+/// restore from storage. LLM APIs (Anthropic, Databricks) reject conversations that
+/// contain multiple `tool_result` blocks for the same `tool_use` ID.
+///
+/// When duplicates are found, the **last** response for each ID is kept (matching the
+/// deduplication strategy used by kgoose).
+fn deduplicate_tool_responses(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
+    let mut issues = Vec::new();
+
+    let fixed_messages = messages
+        .into_iter()
+        .map(|mut message| {
+            // Only user-role messages carry tool responses
+            if message.role != Role::User {
+                return message;
+            }
+
+            let mut seen_response_ids = HashSet::new();
+            let mut indices_to_remove = Vec::new();
+
+            // Walk in reverse so the *last* response for each ID survives
+            for (idx, content) in message.content.iter().enumerate().rev() {
+                if let MessageContent::ToolResponse(resp) = content {
+                    if !seen_response_ids.insert(resp.id.clone()) {
+                        indices_to_remove.push(idx);
+                        issues.push(format!(
+                            "Removed duplicate tool response '{}'",
+                            resp.id
+                        ));
+                    }
+                }
+            }
+
+            // Remove from highest index first to preserve lower indices
+            indices_to_remove.sort_unstable();
+            for &idx in indices_to_remove.iter().rev() {
+                message.content.remove(idx);
+            }
+
+            message
+        })
+        .collect();
+
+    (fixed_messages, issues)
 }
 
 fn has_tool_response(message: &Message) -> bool {
@@ -1253,5 +1303,198 @@ mod tests {
 
         assert_eq!(fixed_messages[5].as_concat_text(), "Non-vis C");
         assert!(!fixed_messages[5].metadata.agent_visible);
+    }
+
+    #[test]
+    fn test_duplicate_tool_responses_are_deduplicated() {
+        use rmcp::model::Content;
+
+        // Simulate what happens when merge_consecutive_messages combines two
+        // user/tool messages that both carry a ToolResponse for the same ID.
+        let messages = vec![
+            Message::user().with_text("Help me search"),
+            Message::assistant().with_tool_request(
+                "tool_1",
+                Ok(CallToolRequestParams::new("web_search")
+                    .with_arguments(object!({"query": "rust"}))),
+            ),
+            // A single user message with TWO tool responses for the same ID
+            // (as would result from merge_consecutive_messages)
+            Message::user()
+                .with_tool_response(
+                    "tool_1",
+                    Ok(rmcp::model::CallToolResult::success(vec![Content::text(
+                        "First result",
+                    )])),
+                )
+                .with_tool_response(
+                    "tool_1",
+                    Ok(rmcp::model::CallToolResult::success(vec![Content::text(
+                        "Second result",
+                    )])),
+                ),
+        ];
+
+        let (fixed, issues) = run_verify(messages);
+
+        // Should have removed the duplicate
+        assert!(
+            issues.iter().any(|i| i.contains("duplicate tool response")),
+            "Expected a 'duplicate tool response' issue, got: {:?}",
+            issues
+        );
+
+        // The user message should have exactly one ToolResponse for tool_1
+        let tool_msg = fixed.last().unwrap();
+        let response_count = tool_msg
+            .content
+            .iter()
+            .filter(|c| matches!(c, MessageContent::ToolResponse(r) if r.id == "tool_1"))
+            .count();
+        assert_eq!(
+            response_count, 1,
+            "Expected exactly 1 tool response for tool_1, found {}",
+            response_count
+        );
+
+        // The kept response should be the LAST one ("Second result")
+        let kept_response = tool_msg
+            .content
+            .iter()
+            .find_map(|c| {
+                if let MessageContent::ToolResponse(r) = c {
+                    if r.id == "tool_1" {
+                        return Some(r);
+                    }
+                }
+                None
+            })
+            .expect("Should have a tool response");
+        let text = kept_response
+            .tool_result
+            .as_ref()
+            .unwrap()
+            .content
+            .iter()
+            .filter_map(|c| c.as_text().map(|t| t.text.clone()))
+            .collect::<Vec<_>>()
+            .join("");
+        assert_eq!(text, "Second result", "Should keep the last response");
+    }
+
+    #[test]
+    fn test_duplicate_tool_responses_across_merged_messages() {
+        use rmcp::model::Content;
+
+        // Simulate two consecutive user messages with tool responses for the
+        // same ID — merge_consecutive_messages will combine them, then
+        // deduplicate_tool_responses should clean up.
+        let messages = vec![
+            Message::user().with_text("Help me search"),
+            Message::assistant().with_tool_request(
+                "tool_1",
+                Ok(CallToolRequestParams::new("web_search")
+                    .with_arguments(object!({"query": "rust"}))),
+            ),
+            Message::user().with_tool_response(
+                "tool_1",
+                Ok(rmcp::model::CallToolResult::success(vec![Content::text(
+                    "First result",
+                )])),
+            ),
+            // A second consecutive user message with the same tool response ID
+            Message::user().with_tool_response(
+                "tool_1",
+                Ok(rmcp::model::CallToolResult::success(vec![Content::text(
+                    "Duplicate result",
+                )])),
+            ),
+        ];
+
+        let (fixed, issues) = run_verify(messages);
+
+        // Should have merged the consecutive messages AND deduplicated
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("duplicate tool response")),
+            "Expected a 'duplicate tool response' issue, got: {:?}",
+            issues
+        );
+
+        // Verify only one tool response remains
+        let tool_msg = fixed.last().unwrap();
+        let response_count = tool_msg
+            .content
+            .iter()
+            .filter(|c| matches!(c, MessageContent::ToolResponse(r) if r.id == "tool_1"))
+            .count();
+        assert_eq!(
+            response_count, 1,
+            "Expected exactly 1 tool response for tool_1 after dedup, found {}",
+            response_count
+        );
+    }
+
+    #[test]
+    fn test_no_false_positive_dedup_for_different_tool_ids() {
+        use rmcp::model::Content;
+
+        // Two different tool responses with different IDs should NOT be deduplicated
+        let messages = vec![
+            Message::user().with_text("Help me search"),
+            Message::assistant()
+                .with_tool_request(
+                    "tool_1",
+                    Ok(CallToolRequestParams::new("web_search")
+                        .with_arguments(object!({"query": "rust"}))),
+                )
+                .with_tool_request(
+                    "tool_2",
+                    Ok(CallToolRequestParams::new("file_read")
+                        .with_arguments(object!({"path": "/tmp/test"}))),
+                ),
+            Message::user()
+                .with_tool_response(
+                    "tool_1",
+                    Ok(rmcp::model::CallToolResult::success(vec![Content::text(
+                        "Search result",
+                    )])),
+                )
+                .with_tool_response(
+                    "tool_2",
+                    Ok(rmcp::model::CallToolResult::success(vec![Content::text(
+                        "File content",
+                    )])),
+                ),
+        ];
+
+        let (fixed, issues) = run_verify(messages);
+
+        // Should have no dedup issues
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.contains("duplicate tool response")),
+            "Should not deduplicate different tool IDs, but got: {:?}",
+            issues
+        );
+
+        // Both responses should be present
+        let tool_msg = fixed.last().unwrap();
+        let response_ids: Vec<&str> = tool_msg
+            .content
+            .iter()
+            .filter_map(|c| {
+                if let MessageContent::ToolResponse(r) = c {
+                    Some(r.id.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(response_ids.len(), 2);
+        assert!(response_ids.contains(&"tool_1"));
+        assert!(response_ids.contains(&"tool_2"));
     }
 }

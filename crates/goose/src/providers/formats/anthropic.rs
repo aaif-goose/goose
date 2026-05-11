@@ -110,6 +110,10 @@ const EVENT_CONTENT_BLOCK_STOP: &str = "content_block_stop";
 /// Convert internal Message format to Anthropic's API message specification
 pub fn format_messages(messages: &[Message]) -> Vec<Value> {
     let mut anthropic_messages = Vec::new();
+    // Track emitted tool response IDs to prevent duplicate tool_result blocks.
+    // The Anthropic API rejects conversations with multiple tool_result blocks
+    // for the same tool_use ID.
+    let mut emitted_tool_response_ids = std::collections::HashSet::new();
 
     for message in messages {
         let role = match message.role {
@@ -144,41 +148,45 @@ pub fn format_messages(messages: &[Message]) -> Vec<Value> {
                         }
                     }
                 }
-                MessageContent::ToolResponse(tool_response) => match &tool_response.tool_result {
-                    Ok(result) => {
-                        let text = result
-                            .content
-                            .iter()
-                            .filter_map(|c| {
-                                if let Some(t) = c.as_text() {
-                                    return Some(t.text.clone());
-                                }
-                                if let Some(r) = c.as_resource() {
-                                    let text = extract_text_from_resource(&r.resource);
-                                    if !text.is_empty() {
-                                        return Some(text);
-                                    }
-                                }
-                                None
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
+                MessageContent::ToolResponse(tool_response) => {
+                    if emitted_tool_response_ids.insert(tool_response.id.clone()) {
+                        match &tool_response.tool_result {
+                            Ok(result) => {
+                                let text = result
+                                    .content
+                                    .iter()
+                                    .filter_map(|c| {
+                                        if let Some(t) = c.as_text() {
+                                            return Some(t.text.clone());
+                                        }
+                                        if let Some(r) = c.as_resource() {
+                                            let text = extract_text_from_resource(&r.resource);
+                                            if !text.is_empty() {
+                                                return Some(text);
+                                            }
+                                        }
+                                        None
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
 
-                        content.push(json!({
-                            TYPE_FIELD: TOOL_RESULT_TYPE,
-                            TOOL_USE_ID_FIELD: tool_response.id,
-                            CONTENT_FIELD: text
-                        }));
+                                content.push(json!({
+                                    TYPE_FIELD: TOOL_RESULT_TYPE,
+                                    TOOL_USE_ID_FIELD: tool_response.id,
+                                    CONTENT_FIELD: text
+                                }));
+                            }
+                            Err(tool_error) => {
+                                content.push(json!({
+                                    TYPE_FIELD: TOOL_RESULT_TYPE,
+                                    TOOL_USE_ID_FIELD: tool_response.id,
+                                    CONTENT_FIELD: format!("Error: {}", tool_error),
+                                    IS_ERROR_FIELD: true
+                                }));
+                            }
+                        }
                     }
-                    Err(tool_error) => {
-                        content.push(json!({
-                            TYPE_FIELD: TOOL_RESULT_TYPE,
-                            TOOL_USE_ID_FIELD: tool_response.id,
-                            CONTENT_FIELD: format!("Error: {}", tool_error),
-                            IS_ERROR_FIELD: true
-                        }));
-                    }
-                },
+                }
                 MessageContent::ToolConfirmationRequest(_tool_confirmation_request) => {
                     // Skip tool confirmation requests
                 }

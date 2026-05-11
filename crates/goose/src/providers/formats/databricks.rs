@@ -108,6 +108,10 @@ fn format_tool_response(
 ///   even though the message structure is otherwise following openai, the enum switches this
 fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<DatabricksMessage> {
     let mut result = Vec::new();
+    // Track emitted tool response IDs to prevent duplicate tool_result blocks.
+    // The Anthropic API (via Databricks) rejects conversations with multiple
+    // tool_result blocks for the same tool_use ID.
+    let mut emitted_tool_response_ids = std::collections::HashSet::new();
     for message in messages {
         let mut converted = DatabricksMessage {
             content: Value::Null,
@@ -188,7 +192,9 @@ fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Data
                     }
                 }
                 MessageContent::ToolResponse(response) => {
-                    result.extend(format_tool_response(response, image_format));
+                    if emitted_tool_response_ids.insert(response.id.clone()) {
+                        result.extend(format_tool_response(response, image_format));
+                    }
                 }
                 MessageContent::Image(image) => {
                     content_array.push(convert_image(image, image_format));
