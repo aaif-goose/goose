@@ -367,11 +367,7 @@ impl Agent {
     }
 
     async fn load_project_instructions(&self, session: &Session) -> Option<String> {
-        let thread_id = session.thread_id.as_deref()?;
-        let thread_mgr =
-            crate::session::ThreadManager::new(self.config.session_manager.storage().clone());
-        let thread = thread_mgr.get_thread(thread_id).await.ok()?;
-        let project_id = thread.metadata.project_id.as_deref()?;
+        let project_id = session.project_id.as_deref()?;
         let entry = crate::sources::read_project(project_id).ok()?;
         let mut parts = Vec::new();
         parts.push(format!("# Project: {}", entry.name));
@@ -810,6 +806,13 @@ impl Agent {
             .collect::<Vec<_>>();
 
         let results = futures::future::join_all(extension_futures).await;
+
+        // Persist once after all extensions are loaded
+        if results.iter().any(|r| r.success) {
+            if let Err(e) = self.persist_extension_state(&session_id).await {
+                warn!("Failed to persist extension state after bulk load: {}", e);
+            }
+        }
 
         results
     }

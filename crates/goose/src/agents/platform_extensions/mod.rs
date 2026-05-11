@@ -36,7 +36,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 display_name: "Analyze",
                 description:
                     "Analyze code structure with tree-sitter: directory overviews, file details, symbol call graphs",
-                default_enabled: false,
+                default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| Box::new(analyze::AnalyzeClient::new(ctx).unwrap()),
@@ -64,7 +64,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 display_name: "Apps",
                 description:
                     "Create and manage custom Goose apps through chat. Apps are HTML/CSS/JavaScript and run in sandboxed windows.",
-                default_enabled: false,
+                default_enabled: true,
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| Box::new(apps::AppsManagerClient::new(ctx).unwrap()),
@@ -105,7 +105,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 name: summon::EXTENSION_NAME,
                 display_name: "Summon",
                 description: "Load knowledge and delegate tasks to subagents",
-                default_enabled: false,
+                default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| Box::new(summon::SummonClient::new(ctx).unwrap()),
@@ -182,7 +182,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 display_name: "Top Of Mind",
                 description:
                     "Inject custom context into every turn via GOOSE_MOIM_MESSAGE_TEXT and GOOSE_MOIM_MESSAGE_FILE environment variables",
-                default_enabled: false,
+                default_enabled: true,
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| Box::new(tom::TomClient::new(ctx).unwrap()),

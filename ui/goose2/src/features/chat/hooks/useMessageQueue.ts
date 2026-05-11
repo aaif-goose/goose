@@ -1,37 +1,8 @@
-import { useEffect, useCallback, useMemo, useRef } from "react";
+import { useEffect, useCallback } from "react";
 import type { ChatState } from "@/shared/types/chat";
-import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useChatStore } from "../stores/chatStore";
 import type { ChatSendOptions } from "../types";
-
-const MAX_CONSECUTIVE_SEND_FAILURES = 2;
-
-function getQueuedMessageKey(
-  queuedMessage: {
-    text: string;
-    personaId?: string;
-    attachments?: ChatAttachmentDraft[];
-    sendOptions?: ChatSendOptions;
-  } | null,
-): string | null {
-  if (!queuedMessage) {
-    return null;
-  }
-
-  return JSON.stringify({
-    text: queuedMessage.text,
-    personaId: queuedMessage.personaId ?? null,
-    sendOptions: queuedMessage.sendOptions ?? null,
-    attachments:
-      queuedMessage.attachments?.map((attachment) => ({
-        id: attachment.id,
-        kind: attachment.kind,
-        name: attachment.name,
-        path: "path" in attachment ? (attachment.path ?? null) : null,
-      })) ?? [],
-  });
-}
 
 /**
  * Single-slot message queue that holds one pending message while the agent is
@@ -49,111 +20,32 @@ export function useMessageQueue(
     overridePersona?: { id: string; name?: string },
     attachments?: ChatAttachmentDraft[],
     sendOptions?: ChatSendOptions,
-  ) => boolean | Promise<boolean>,
+  ) => void,
 ) {
   const queuedMessage = useChatStore(
     (s) => s.queuedMessageBySession[sessionId] ?? null,
   );
-  const previousChatStateRef = useRef(chatState);
-  const idleCycleRef = useRef(0);
-  const lastAttemptRef = useRef<{
-    key: string;
-    idleCycle: number;
-  } | null>(null);
-  const failureStateRef = useRef<{
-    key: string;
-    count: number;
-  } | null>(null);
-  const queuedMessageKey = useMemo(
-    () => getQueuedMessageKey(queuedMessage),
-    [queuedMessage],
-  );
 
   useEffect(() => {
-    if (queuedMessageKey !== lastAttemptRef.current?.key) {
-      lastAttemptRef.current = null;
-    }
-    if (queuedMessageKey !== failureStateRef.current?.key) {
-      failureStateRef.current = null;
-    }
-  }, [queuedMessageKey]);
-
-  useEffect(() => {
-    if (chatState === "idle" && previousChatStateRef.current !== "idle") {
-      idleCycleRef.current += 1;
-    }
-    previousChatStateRef.current = chatState;
-  }, [chatState]);
-
-  useEffect(() => {
-    const hasReachedRetryLimit =
-      failureStateRef.current?.key === queuedMessageKey &&
-      failureStateRef.current.count >= MAX_CONSECUTIVE_SEND_FAILURES;
-    const alreadyAttemptedThisIdleCycle =
-      lastAttemptRef.current?.key === queuedMessageKey &&
-      lastAttemptRef.current.idleCycle === idleCycleRef.current;
-
-    if (
-      chatState !== "idle" ||
-      !queuedMessage ||
-      !queuedMessageKey ||
-      hasReachedRetryLimit ||
-      alreadyAttemptedThisIdleCycle
-    ) {
-      return;
-    }
-
-    lastAttemptRef.current = {
-      key: queuedMessageKey,
-      idleCycle: idleCycleRef.current,
-    };
-
-    const { text, personaId, attachments, sendOptions } = queuedMessage;
-    const sendResult = sendOptions
-      ? sendMessage(
+    if (chatState === "idle" && queuedMessage) {
+      const { text, personaId, attachments, sendOptions } = queuedMessage;
+      useChatStore.getState().dismissQueuedMessage(sessionId);
+      if (sendOptions) {
+        sendMessage(
           text,
           personaId ? { id: personaId } : undefined,
           attachments,
           sendOptions,
-        )
-      : sendMessage(
+        );
+      } else {
+        sendMessage(
           text,
           personaId ? { id: personaId } : undefined,
           attachments,
         );
-
-    const finalize = (accepted: boolean | undefined) => {
-      const latestQueuedMessage =
-        useChatStore.getState().queuedMessageBySession[sessionId] ?? null;
-      if (getQueuedMessageKey(latestQueuedMessage) !== queuedMessageKey) {
-        return;
       }
-
-      if (accepted === false) {
-        const previousFailureCount =
-          failureStateRef.current?.key === queuedMessageKey
-            ? failureStateRef.current.count
-            : 0;
-        failureStateRef.current = {
-          key: queuedMessageKey,
-          count: previousFailureCount + 1,
-        };
-        return;
-      }
-
-      failureStateRef.current = null;
-      lastAttemptRef.current = null;
-      useChatStore.getState().dismissQueuedMessage(sessionId);
-    };
-
-    if (isPromiseLike<boolean>(sendResult)) {
-      void sendResult
-        .then((accepted) => finalize(accepted))
-        .catch(() => finalize(false));
-    } else {
-      finalize(sendResult);
     }
-  }, [chatState, queuedMessage, queuedMessageKey, sendMessage, sessionId]);
+  }, [chatState, queuedMessage, sendMessage, sessionId]);
 
   const enqueue = useCallback(
     (

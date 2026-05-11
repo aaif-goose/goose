@@ -26,7 +26,6 @@ import {
   buildAcpImages,
   buildMessageAttachments,
 } from "../lib/attachments";
-import { sanitizeReplayMessages } from "../lib/replaySanitizer";
 import { i18n } from "@/shared/i18n";
 import type { ChatSendOptions } from "../types";
 
@@ -269,8 +268,7 @@ export function useChat(
           ...(sendOptions?.assistantPrompt
             ? { assistantPrompt: sendOptions.assistantPrompt }
             : {}),
-          personaId: effectivePersonaInfo?.id,
-          personaName: effectivePersonaInfo?.name,
+
           images: images?.map(
             (img) => [img.base64, img.mimeType] as [string, string],
           ),
@@ -416,10 +414,7 @@ export function useChat(
       clearReplayBuffer(sessionId);
 
       try {
-        const sendOptions = effectivePersonaInfo?.id
-          ? { personaId: effectivePersonaInfo.id }
-          : undefined;
-        await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER, sendOptions);
+        await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER);
 
         // Command responses are streamed via prompt notifications, but the ACP
         // layer does not currently forward history replacement events. Drop those
@@ -433,7 +428,7 @@ export function useChat(
         const buffer = getAndDeleteReplayBuffer(sessionId);
         if (buffer) {
           setMessages(sessionId, [
-            ...sanitizeReplayMessages(buffer),
+            ...buffer,
             createCompactionConfirmationMessage(),
           ]);
         } else {

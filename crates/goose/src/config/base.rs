@@ -1994,12 +1994,10 @@ extensions:
         )
         .unwrap();
 
-        // User config (higher priority / write target) has already migrated, then disables
-        // developer and adds a new extension.
+        // User config (higher priority / write target) disables developer and adds a new extension
         std::fs::write(
             local_file.path(),
             r#"
-extensions_on_demand_migration: true
 extensions:
   developer:
     enabled: false
@@ -2024,7 +2022,7 @@ extensions:
         let values = config.load()?;
         let extensions = values.get("extensions").unwrap().as_mapping().unwrap();
 
-        // developer should be disabled (user config overrides system after migration)
+        // developer should be disabled (user config overrides system)
         let dev = extensions.get("developer").unwrap().as_mapping().unwrap();
         assert!(!dev.get("enabled").unwrap().as_bool().unwrap());
         // Fields from the system config should be preserved via merge

@@ -42,7 +42,6 @@ import {
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { perfLog } from "@/shared/lib/perfLog";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
-import { sanitizeReplayMessages } from "@/features/chat/lib/replaySanitizer";
 import type { SkillInfo } from "@/features/skills/api/skills";
 import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
 import { OnboardingFlow } from "@/features/onboarding/ui/OnboardingFlow";
@@ -186,17 +185,14 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
-      const replayMessages = buffer
-        ? sanitizeReplayMessages(buffer)
-        : undefined;
       const replayStats = getReplayPerf(sessionId);
       clearReplayPerf(sessionId);
-      if (replayMessages) {
-        useChatStore.getState().setMessages(sessionId, replayMessages);
+      if (buffer && buffer.length > 0) {
+        useChatStore.getState().setMessages(sessionId, buffer);
       }
       const t2 = performance.now();
       perfLog(
-        `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${replayMessages?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,
+        `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${buffer?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,
       );
     } catch (err) {
       console.error("Failed to load session messages:", err);
