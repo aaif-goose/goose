@@ -2788,16 +2788,23 @@ impl GooseAcpAgent {
         let mode_state = build_mode_state(loaded_mode)?;
 
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
-        let initial_usage_update = if let Ok((provider_name, mc)) = resolved.as_ref() {
-            let context_limit = resolve_effective_context_limit(
-                provider_name,
-                &mc.model_name,
-                mc.context_limit,
-            )
-            .await;
+        let initial_usage_update = {
+            let context_limit = match resolved.as_ref().ok() {
+                Some((provider_name, mc)) => {
+                    resolve_effective_context_limit(
+                        provider_name,
+                        &mc.model_name,
+                        mc.context_limit,
+                    )
+                    .await
+                }
+                None => goose_session
+                    .model_config
+                    .as_ref()
+                    .map(|mc| mc.context_limit())
+                    .unwrap_or(crate::model::DEFAULT_CONTEXT_LIMIT),
+            };
             Some(build_usage_update(&goose_session, context_limit))
-        } else {
-            None
         };
         let (model_state, config_options, prebuilt_provider) = self
             .prepare_session_init_config(&resolved, &mode_state, &goose_session)
