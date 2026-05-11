@@ -17,6 +17,7 @@ use super::retry::ProviderRetry;
 use super::utils::{ImageFormat, RequestLog};
 use crate::conversation::message::Message;
 use crate::model::ModelConfig;
+use crate::providers::formats::ollama::response_to_streaming_message_ollama;
 use crate::providers::formats::openai::{create_request, response_to_streaming_message};
 use rmcp::model::Tool;
 
@@ -149,6 +150,37 @@ pub fn stream_openai_compat(
             .map_err(Error::from);
 
         let message_stream = response_to_streaming_message(framed);
+        pin!(message_stream);
+        while let Some(message) = message_stream.next().await {
+            let (message, usage) = message.map_err(|e|
+                e.downcast::<ProviderError>()
+                    .unwrap_or_else(|e| ProviderError::RequestFailed(format!("Stream decode error: {e}")))
+            )?;
+            log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
+            yield (message, usage);
+        }
+    }))
+}
+
+/// Like `stream_openai_compat`, but routes through the XML tool-call fallback
+/// parser. Use for providers (e.g. OpenRouter free tier) that route to models
+/// emitting Hermes/Qwen-style `<function=name><parameter=...>...</function>`
+/// tool calls instead of OpenAI's structured `tool_calls` array.
+///
+/// The wrapper is a no-op for responses that contain real structured tool calls
+/// or no `<function=` markers — text streams normally in those cases.
+pub fn stream_openai_compat_with_xml_fallback(
+    response: Response,
+    mut log: RequestLog,
+) -> Result<MessageStream, ProviderError> {
+    let stream = response.bytes_stream().map_err(std::io::Error::other);
+
+    Ok(Box::pin(try_stream! {
+        let stream_reader = StreamReader::new(stream);
+        let framed = FramedRead::new(stream_reader, LinesCodec::new())
+            .map_err(Error::from);
+
+        let message_stream = response_to_streaming_message_ollama(framed);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
             let (message, usage) = message.map_err(|e|

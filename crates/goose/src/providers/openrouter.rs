@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
-use super::openai_compatible::{handle_status, stream_openai_compat};
+use super::openai_compatible::{handle_status, stream_openai_compat_with_xml_fallback};
 use super::retry::ProviderRetry;
 use super::utils::{ImageFormat, RequestLog};
 use crate::conversation::message::Message;
@@ -315,6 +315,6 @@ impl Provider for OpenRouterProvider {
                 let _ = log.error(e);
             })?;
 
-        stream_openai_compat(response, log)
+        stream_openai_compat_with_xml_fallback(response, log)
     }
 }
