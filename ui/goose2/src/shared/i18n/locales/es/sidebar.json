@@ -5,7 +5,8 @@
     "newChat": "Nuevo chat",
     "newChatInProject": "Nuevo chat en el proyecto",
     "newProject": "Nuevo proyecto",
-    "renameHint": "Haz doble clic para renombrar"
+    "renameHint": "Haz doble clic para renombrar",
+    "search": "Buscar chats"
   },
   "menu": {
     "optionsFor": "Opciones para {{label}}"

@@ -94,6 +94,7 @@ export function Sidebar({
   const [expanded, setExpanded] = useState(!collapsed);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const prevCollapsed = useRef(collapsed);
+  const [focusSearchOnExpand, setFocusSearchOnExpand] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<
     Record<string, boolean>
   >(() => {
@@ -129,6 +130,15 @@ export function Sidebar({
     }
     prevCollapsed.current = collapsed;
   }, [collapsed]);
+
+  useEffect(() => {
+    if (collapsed || !focusSearchOnExpand) return;
+    const frame = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      setFocusSearchOnExpand(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [collapsed, focusSearchOnExpand]);
 
   const labelTransition = "transition-[opacity,width] duration-300 ease-out";
   const labelVisible = expanded && !collapsed;
@@ -268,6 +278,11 @@ export function Sidebar({
   const toggleProject = (projectId: string) =>
     setExpandedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
 
+  const activateCollapsedSearch = () => {
+    setFocusSearchOnExpand(true);
+    onCollapse();
+  };
+
   return (
     <div
       className={cn(
@@ -328,16 +343,21 @@ export function Sidebar({
                 </button>
               )}
 
-              <div
-                className={cn(
-                  "mb-3 flex items-center w-full rounded-md transition-all duration-300 ease-out",
-                  collapsed
-                    ? "justify-center p-3 text-foreground"
-                    : "gap-2 border border-border px-2.5 py-1.5 text-xs text-foreground hover:text-foreground hover:bg-transparent",
-                )}
-              >
-                <IconSearch className="size-3.5 flex-shrink-0 text-placeholder" />
-                {!collapsed && (
+              {collapsed ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={activateCollapsedSearch}
+                  aria-label={t("actions.search")}
+                  title={t("actions.search")}
+                  className="mb-3 h-10 w-full rounded-md bg-transparent text-placeholder hover:bg-background-alt hover:text-foreground active:bg-background-alt"
+                >
+                  <IconSearch className="size-3.5 flex-shrink-0" />
+                </Button>
+              ) : (
+                <div className="mb-3 flex items-center w-full rounded-md gap-2 border border-border px-2.5 py-1.5 text-xs text-foreground transition-all duration-300 ease-out hover:text-foreground hover:bg-transparent">
+                  <IconSearch className="size-3.5 flex-shrink-0 text-placeholder" />
                   <input
                     ref={searchInputRef}
                     type="text"
@@ -360,8 +380,8 @@ export function Sidebar({
                     )}
                     onClick={(e) => e.stopPropagation()}
                   />
-                )}
-              </div>
+                </div>
+              )}
 
               <SidebarNavItem
                 testId="nav-home"

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Sidebar } from "../Sidebar";
@@ -131,5 +131,35 @@ describe("Sidebar", () => {
     );
 
     expect(screen.getByRole("button", { name: /home/i })).toBeInTheDocument();
+  });
+
+  it("expands and focuses search from the collapsed sidebar", async () => {
+    const user = userEvent.setup();
+    const onCollapse = vi.fn();
+    const { rerender } = render(
+      <Sidebar
+        collapsed
+        onCollapse={onCollapse}
+        onNavigate={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Search chats" }));
+
+    expect(onCollapse).toHaveBeenCalledOnce();
+
+    rerender(
+      <Sidebar
+        collapsed={false}
+        onCollapse={onCollapse}
+        onNavigate={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Search chats...")).toHaveFocus();
+    });
   });
 });
