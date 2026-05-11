@@ -171,6 +171,7 @@ pub struct Agent {
 
     pub(super) retry_manager: RetryManager,
     pub(super) tool_inspection_manager: ToolInspectionManager,
+    pub(super) hook_manager: crate::hooks::HookManager,
     container: Mutex<Option<Container>>,
 }
 
@@ -282,7 +283,60 @@ impl Agent {
                 permission_manager,
                 provider.clone(),
             ),
+            hook_manager: crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref()),
             container: Mutex::new(None),
+        }
+    }
+
+    /// Emit a lifecycle hook event with no extra context. Useful for events
+    /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
+    pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
+        if !self.hook_manager.has_hooks(event) {
+            return;
+        }
+        self.hook_manager
+            .emit(event, crate::hooks::HookContext::new(event, session_id))
+            .await;
+    }
+
+    fn with_post_tool_hook(
+        &self,
+        result: ToolCallResult,
+        tool_call: &CallToolRequestParams,
+        session: &Session,
+    ) -> ToolCallResult {
+        let hook_manager = self.hook_manager.clone();
+        let session_id = session.id.clone();
+        let working_dir = session.working_dir.to_string_lossy().to_string();
+        let tool_name = tool_call.name.to_string();
+        let tool_input = tool_call
+            .arguments
+            .as_ref()
+            .map(|a| serde_json::Value::Object(a.clone()));
+
+        let fut = async move {
+            let processed_result =
+                super::large_response_handler::process_tool_response(result.result.await);
+            let event = match &processed_result {
+                Ok(call_result) if call_result.is_error != Some(true) => {
+                    crate::hooks::HookEvent::PostToolUse
+                }
+                _ => crate::hooks::HookEvent::PostToolUseFailure,
+            };
+
+            if hook_manager.has_hooks(event) {
+                let ctx = crate::hooks::HookContext::new(event, &session_id)
+                    .with_tool(tool_name, tool_input)
+                    .with_working_dir(working_dir);
+                hook_manager.emit(event, ctx).await;
+            }
+
+            processed_result
+        };
+
+        ToolCallResult {
+            notification_stream: result.notification_stream,
+            result: Box::new(fut.boxed()),
         }
     }
 
@@ -613,22 +667,52 @@ impl Agent {
             .await
             .record_tool_arguments(&tool_call.arguments, &session.working_dir);
 
+        if self
+            .hook_manager
+            .has_hooks(crate::hooks::HookEvent::PreToolUse)
+        {
+            let ctx =
+                crate::hooks::HookContext::new(crate::hooks::HookEvent::PreToolUse, &session.id)
+                    .with_tool(
+                        tool_call.name.to_string(),
+                        tool_call
+                            .arguments
+                            .as_ref()
+                            .map(|a| serde_json::Value::Object(a.clone())),
+                    )
+                    .with_working_dir(session.working_dir.to_string_lossy().to_string());
+            self.hook_manager
+                .emit(crate::hooks::HookEvent::PreToolUse, ctx)
+                .await;
+        }
+
         if tool_call.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME {
             let arguments = tool_call
                 .arguments
+                .clone()
                 .map(Value::Object)
                 .unwrap_or(Value::Object(serde_json::Map::new()));
             let result = self
                 .handle_schedule_management(arguments, request_id.clone())
                 .await;
             let wrapped_result = result.map(CallToolResult::success);
-            return (request_id, Ok(ToolCallResult::from(wrapped_result)));
+            return (
+                request_id,
+                Ok(self.with_post_tool_hook(
+                    ToolCallResult::from(wrapped_result),
+                    &tool_call,
+                    session,
+                )),
+            );
         }
 
         if tool_call.name == FINAL_OUTPUT_TOOL_NAME {
             return if let Some(final_output_tool) = self.final_output_tool.lock().await.as_mut() {
                 let result = final_output_tool.execute_tool_call(tool_call.clone()).await;
-                (request_id, Ok(result))
+                (
+                    request_id,
+                    Ok(self.with_post_tool_hook(result, &tool_call, session)),
+                )
             } else {
                 (
                     request_id,
@@ -680,14 +764,7 @@ impl Agent {
 
         (
             request_id,
-            Ok(ToolCallResult {
-                notification_stream: result.notification_stream,
-                result: Box::new(
-                    result
-                        .result
-                        .map(super::large_response_handler::process_tool_response),
-                ),
-            }),
+            Ok(self.with_post_tool_hook(result, &tool_call, session)),
         )
     }
 
@@ -1086,6 +1163,20 @@ impl Agent {
 
         let message_text = user_message.as_concat_text();
 
+        if self
+            .hook_manager
+            .has_hooks(crate::hooks::HookEvent::UserPromptSubmit)
+        {
+            let ctx = crate::hooks::HookContext::new(
+                crate::hooks::HookEvent::UserPromptSubmit,
+                &session_config.id,
+            )
+            .with_message(message_text.clone());
+            self.hook_manager
+                .emit(crate::hooks::HookEvent::UserPromptSubmit, ctx)
+                .await;
+        }
+
         // Track custom slash command usage (don't track command name for privacy)
         if message_text.trim().starts_with('/') {
             let command = message_text.split_whitespace().next();
@@ -1323,6 +1414,7 @@ impl Agent {
             });
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
+            let mut tool_pair_summarization_done = false;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1369,13 +1461,17 @@ impl Agent {
                     .count()
                     .saturating_sub(pre_turn_tool_count);
 
-                let tool_pair_summarization_task = crate::context_mgmt::maybe_summarize_tool_pairs(
-                    self.provider().await?,
-                    session_config.id.clone(),
-                    conversation.clone(),
-                    tool_call_cut_off,
-                    current_turn_tool_count,
-                );
+                let tool_pair_summarization_task = if tool_pair_summarization_done {
+                    None
+                } else {
+                    crate::context_mgmt::maybe_summarize_tool_pairs(
+                        self.provider().await?,
+                        session_config.id.clone(),
+                        conversation.clone(),
+                        tool_call_cut_off,
+                        current_turn_tool_count,
+                    )
+                };
 
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
@@ -1845,39 +1941,40 @@ impl Agent {
                 }
 
                 if is_token_cancelled(&cancel_token) {
-                    tool_pair_summarization_task.abort();
+                    if let Some(ref task) = tool_pair_summarization_task {
+                        task.abort();
+                    }
                 }
 
-                if let Ok(summaries) = tool_pair_summarization_task.await {
-                    let mut updated_messages = conversation.messages().clone();
-
-                    for (summary_msg, tool_id) in summaries {
-                        let matching: Vec<&mut Message> = updated_messages
-                            .iter_mut()
-                            .filter(|msg| {
-                                msg.id.is_some() && msg.content.iter().any(|c| match c {
-                                    MessageContent::ToolRequest(req) => req.id == tool_id,
-                                    MessageContent::ToolResponse(resp) => resp.id == tool_id,
-                                    _ => false,
+                if let Some(task) = tool_pair_summarization_task {
+                    tool_pair_summarization_done = true;
+                    if let Ok(summaries) = task.await {
+                        for (summary_msg, tool_id) in summaries {
+                            let matching_ids: Vec<String> = conversation.messages()
+                                .iter()
+                                .filter(|msg| {
+                                    msg.id.is_some() && msg.content.iter().any(|c| match c {
+                                        MessageContent::ToolRequest(req) => req.id == tool_id,
+                                        MessageContent::ToolResponse(resp) => resp.id == tool_id,
+                                        _ => false,
+                                    })
                                 })
-                            })
-                            .collect();
+                                .filter_map(|msg| msg.id.clone())
+                                .collect();
 
-                        if matching.len() == 2 {
-                            for msg in matching {
-                                let id = msg.id.as_ref().unwrap();
-                                msg.metadata = msg.metadata.with_agent_invisible();
-                                SessionManager::update_message_metadata(&session_config.id, id, |metadata| {
-                                    metadata.with_agent_invisible()
-                                }).await?;
+                            if matching_ids.len() == 2 {
+                                for id in &matching_ids {
+                                    SessionManager::update_message_metadata(&session_config.id, id, |metadata| {
+                                        metadata.with_agent_invisible()
+                                    }).await?;
+                                }
+                                session_manager.add_message(&session_config.id, &summary_msg).await?;
+                            } else {
+                                warn!("Expected a tool request/reply pair, but found {} matching messages",
+                                    matching_ids.len());
                             }
-                            messages_to_add.push(summary_msg);
-                        } else {
-                            warn!("Expected a tool request/reply pair, but found {} matching messages",
-                                matching.len());
                         }
                     }
-                    conversation = Conversation::new_unvalidated(updated_messages);
                 }
 
                 for msg in &messages_to_add {

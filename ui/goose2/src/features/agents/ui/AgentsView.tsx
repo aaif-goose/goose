@@ -119,7 +119,8 @@ export function AgentsView() {
   );
 
   const handleDeletePersona = useCallback((persona: Persona) => {
-    if (getPersonaSource(persona) === "builtin") return;
+    if (getPersonaSource(persona) === "builtin" || persona.writable === false)
+      return;
     setDeletingPersona(persona);
   }, []);
 

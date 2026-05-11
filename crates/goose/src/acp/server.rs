@@ -23,6 +23,7 @@ use crate::providers::inventory::{
 };
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
+use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
 use agent_client_protocol::schema::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
@@ -216,6 +217,17 @@ struct AgentSetupRequest {
     prebuilt_provider: Option<Arc<dyn Provider>>,
 }
 
+pub struct GooseAcpAgentOptions {
+    pub provider_factory: AcpProviderFactory,
+    pub builtins: Vec<String>,
+    pub data_dir: std::path::PathBuf,
+    pub config_dir: std::path::PathBuf,
+    pub goose_mode: GooseMode,
+    pub disable_session_naming: bool,
+    pub goose_platform: GoosePlatform,
+    pub additional_source_roots: Vec<SourceRoot>,
+}
+
 pub struct GooseAcpAgent {
     sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
     provider_factory: AcpProviderFactory,
@@ -230,6 +242,7 @@ pub struct GooseAcpAgent {
     disable_session_naming: bool,
     provider_inventory: ProviderInventoryService,
     goose_platform: GoosePlatform,
+    additional_source_roots: Vec<SourceRoot>,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -1036,16 +1049,8 @@ impl GooseAcpAgent {
     }
 
     // TODO: goose reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
-    pub async fn new(
-        provider_factory: AcpProviderFactory,
-        builtins: Vec<String>,
-        data_dir: std::path::PathBuf,
-        config_dir: std::path::PathBuf,
-        goose_mode: GooseMode,
-        disable_session_naming: bool,
-        goose_platform: GoosePlatform,
-    ) -> Result<Self> {
-        let session_manager = Arc::new(SessionManager::new(data_dir));
+    pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
+        let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
         // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
         let storage_clone = session_manager.storage().clone();
@@ -1053,23 +1058,24 @@ impl GooseAcpAgent {
             let _ = storage_clone.pool().await;
         });
 
-        let permission_manager = Arc::new(PermissionManager::new(config_dir.clone()));
+        let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
 
         Ok(Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            provider_factory,
-            builtins,
+            provider_factory: options.provider_factory,
+            builtins: options.builtins,
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
-            config_dir,
+            config_dir: options.config_dir,
             session_manager,
             permission_manager,
-            goose_mode,
-            disable_session_naming,
+            goose_mode: options.goose_mode,
+            disable_session_naming: options.disable_session_naming,
             provider_inventory,
-            goose_platform,
+            goose_platform: options.goose_platform,
+            additional_source_roots: options.additional_source_roots,
         })
     }
 
@@ -3315,6 +3321,7 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
             data_dir: Paths::data_dir(),
             config_dir: Paths::config_dir(),
             goose_platform: GoosePlatform::GooseCli,
+            additional_source_roots: Vec::new(),
         },
     );
     let agent = server.create_agent().await?;

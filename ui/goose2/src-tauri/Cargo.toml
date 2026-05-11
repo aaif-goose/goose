@@ -29,8 +29,6 @@ dirs = "6.0.0"
 log = "0.4.29"
 tokio = { version = "1.50.0", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-serde_yaml = "0.9"
 doctor = { git = "https://github.com/block/builderbot", rev = "8e1c3ec145edc0df5f04b4427cfd758378036862" }
 ignore = "0.4.25"
 base64 = "0.22"
