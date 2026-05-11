@@ -3,12 +3,35 @@ use rmcp::model::{CallToolResult, Content, ErrorData};
 use std::fs::File;
 use std::io::Write;
 
-const LARGE_TEXT_THRESHOLD: usize = 200_000;
+const DEFAULT_LARGE_TEXT_THRESHOLD: usize = 200_000;
+const RANGE_AWARE_TOOL_THRESHOLD: usize = 50_000;
+
+fn threshold_for_tool(tool_name: &str) -> usize {
+    // Tool names vary by provider (`shell`, `developer__shell`, `platform__developer__shell`,
+    // `read`, `developer__read`, ...), so suffix-match. Tools that already self-truncate
+    // or accept range parameters get a tighter safety net; opaque extension outputs keep
+    // the default.
+    if tool_name.ends_with("shell") || tool_name.ends_with("read") {
+        RANGE_AWARE_TOOL_THRESHOLD
+    } else {
+        DEFAULT_LARGE_TEXT_THRESHOLD
+    }
+}
+
+fn redirect_message(char_count: usize, path: &str) -> String {
+    format!(
+        "Tool output was {char_count} characters and is saved to {path}. To view portions, \
+         use the `read` tool with `path: {path}` (and `line`/`limit` for ranges) if available, \
+         or `sed -n 'A,Bp' {path}` via shell. Do NOT re-run the tool to see different slices."
+    )
+}
 
 /// Process tool response and handle large text content
 pub fn process_tool_response(
     response: Result<CallToolResult, ErrorData>,
+    tool_name: &str,
 ) -> Result<CallToolResult, ErrorData> {
+    let threshold = threshold_for_tool(tool_name);
     match response {
         Ok(mut result) => {
             let mut processed_contents = Vec::new();
@@ -16,36 +39,27 @@ pub fn process_tool_response(
             for content in result.content {
                 match content.as_text() {
                     Some(text_content) => {
-                        // Check if text exceeds threshold
-                        if text_content.text.chars().count() > LARGE_TEXT_THRESHOLD {
-                            // Write to temp file
+                        let char_count = text_content.text.chars().count();
+                        if char_count > threshold {
                             match write_large_text_to_file(&text_content.text) {
                                 Ok(file_path) => {
-                                    // Create a new text content with reference to the file
-                                    let message = format!(
-                                        "The response returned from the tool call was larger ({} characters) and is stored in the file which you can use other tools to examine or search in: {}",
-                                        text_content.text.chars().count(),
-                                        file_path
-                                    );
-                                    processed_contents.push(Content::text(message));
+                                    processed_contents.push(Content::text(redirect_message(
+                                        char_count, &file_path,
+                                    )));
                                 }
                                 Err(e) => {
-                                    // If file writing fails, include original content with warning
                                     let warning = format!(
                                         "Warning: Failed to write large response to file: {}. Showing full content instead.\n\n{}",
-                                        e,
-                                        text_content.text
+                                        e, text_content.text
                                     );
                                     processed_contents.push(Content::text(warning));
                                 }
                             }
                         } else {
-                            // Keep original content for smaller texts
                             processed_contents.push(content);
                         }
                     }
                     None => {
-                        // Pass through other content types unchanged
                         processed_contents.push(content);
                     }
                 }
@@ -84,153 +98,157 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
+    fn extract_saved_path(message: &str) -> &str {
+        // Redirect message shape: "... saved to {path}. To view portions, ..."
+        // Saved filenames contain dots (microseconds + ".txt"), so split on the
+        // sentinel that follows the path, not on the first '.'.
+        let after = message
+            .split("saved to ")
+            .nth(1)
+            .expect("redirect message contains saved path");
+        after
+            .split(". To view")
+            .next()
+            .expect("path is followed by '. To view'")
+            .trim()
+    }
+
     #[test]
     fn test_small_text_response_passes_through() {
-        // Create a small text response
         let small_text = "This is a small text response";
         let content = Content::text(small_text.to_string());
 
         let response = Ok(CallToolResult::success(vec![content]));
+        let processed = process_tool_response(response, "some_extension__tool").unwrap();
 
-        // Process the response
-        let processed = process_tool_response(response).unwrap();
-
-        // Verify the response is unchanged
         assert_eq!(processed.content.len(), 1);
-        if let Some(text_content) = processed.content[0].as_text() {
-            assert_eq!(text_content.text, small_text);
-        } else {
-            panic!("Expected text content");
-        }
+        let text_content = processed.content[0]
+            .as_text()
+            .expect("expected text content");
+        assert_eq!(text_content.text, small_text);
     }
 
     #[test]
     fn test_large_text_response_redirected_to_file() {
-        // Create a text larger than the threshold
-        let large_text = "a".repeat(LARGE_TEXT_THRESHOLD + 1000);
+        let large_text = "a".repeat(DEFAULT_LARGE_TEXT_THRESHOLD + 1000);
         let content = Content::text(large_text.clone());
 
         let response = Ok(CallToolResult::success(vec![content]));
+        let processed = process_tool_response(response, "some_extension__tool").unwrap();
 
-        // Process the response
-        let processed = process_tool_response(response).unwrap();
-
-        // Verify the response contains a message about the file
         assert_eq!(processed.content.len(), 1);
-        if let Some(text_content) = processed.content[0].as_text() {
-            assert!(text_content
-                .text
-                .contains("The response returned from the tool call was larger"));
-            assert!(text_content.text.contains("characters"));
+        let text_content = processed.content[0]
+            .as_text()
+            .expect("expected text content");
+        assert!(text_content.text.contains("Tool output was"));
+        assert!(text_content.text.contains("characters"));
 
-            // Extract the file path from the message
-            if let Some(file_path) = text_content.text.split("stored in the file: ").nth(1) {
-                // Verify the file exists and contains the original text
-                let path = Path::new(file_path.trim());
-                if path.exists() {
-                    // Only check content if file exists (may not exist in CI environments)
-                    if let Ok(file_content) = fs::read_to_string(path) {
-                        assert_eq!(file_content, large_text);
-                    }
-
-                    // Clean up the file
-                    let _ = fs::remove_file(path); // Ignore errors on cleanup
-                }
-            }
-        } else {
-            panic!("Expected text content");
-        }
+        let path = Path::new(extract_saved_path(&text_content.text));
+        assert!(path.exists(), "redirect message names a file that exists");
+        let file_content = fs::read_to_string(path).expect("file is readable");
+        assert_eq!(file_content, large_text);
+        let _ = fs::remove_file(path);
     }
 
     #[test]
     fn test_image_content_passes_through() {
-        // Create an image content
         let image_content = Content::image("base64data".to_string(), "image/png".to_string());
 
         let response = Ok(CallToolResult::success(vec![image_content]));
+        let processed = process_tool_response(response, "some_extension__tool").unwrap();
 
-        // Process the response
-        let processed = process_tool_response(response).unwrap();
-
-        // Verify the response is unchanged
         assert_eq!(processed.content.len(), 1);
-        if let Some(img) = processed.content[0].as_image() {
-            assert_eq!(img.data, "base64data");
-            assert_eq!(img.mime_type, "image/png");
-        } else {
-            panic!("Expected image content");
-        }
+        let img = processed.content[0].as_image().expect("expected image");
+        assert_eq!(img.data, "base64data");
+        assert_eq!(img.mime_type, "image/png");
     }
 
     #[test]
     fn test_mixed_content_handled_correctly() {
-        // Create a response with mixed content types
         let small_text = Content::text("Small text");
-        let large_text = Content::text("a".repeat(LARGE_TEXT_THRESHOLD + 1000));
+        let large_text = Content::text("a".repeat(DEFAULT_LARGE_TEXT_THRESHOLD + 1000));
         let image = Content::image("image_data".to_string(), "image/jpeg".to_string());
 
         let response = Ok(CallToolResult::success(vec![small_text, large_text, image]));
+        let processed = process_tool_response(response, "some_extension__tool").unwrap();
 
-        // Process the response
-        let processed = process_tool_response(response).unwrap();
-
-        // Verify each item is handled correctly
         assert_eq!(processed.content.len(), 3);
 
-        // First item should be unchanged small text
-        if let Some(text_content) = processed.content[0].as_text() {
-            assert_eq!(text_content.text, "Small text");
-        } else {
-            panic!("Expected text content");
-        }
+        assert_eq!(
+            processed.content[0].as_text().expect("expected text").text,
+            "Small text"
+        );
 
-        // Second item should be a message about the file
-        if let Some(text_content) = processed.content[1].as_text() {
-            assert!(text_content
-                .text
-                .contains("The response returned from the tool call was larger"));
+        let redirect = &processed.content[1].as_text().expect("expected text").text;
+        assert!(redirect.contains("Tool output was"));
+        let path = Path::new(extract_saved_path(redirect));
+        assert!(path.exists());
+        let _ = fs::remove_file(path);
 
-            // Extract the file path and clean up
-            if let Some(file_path) = text_content.text.split("stored in the file: ").nth(1) {
-                let path = Path::new(file_path.trim());
-                if path.exists() {
-                    let _ = fs::remove_file(path); // Ignore errors on cleanup
-                }
-            }
-        } else {
-            panic!("Expected text content");
-        }
-
-        // Third item should be unchanged image
-        if let Some(img) = processed.content[2].as_image() {
-            assert_eq!(img.data, "image_data");
-            assert_eq!(img.mime_type, "image/jpeg");
-        } else {
-            panic!("Expected image content");
-        }
+        let img = processed.content[2].as_image().expect("expected image");
+        assert_eq!(img.data, "image_data");
+        assert_eq!(img.mime_type, "image/jpeg");
     }
 
     #[test]
     fn test_error_response_passes_through() {
-        // Create an error response
         let error = ErrorData {
             code: ErrorCode::INTERNAL_ERROR,
             message: Cow::from("Test error"),
             data: None,
         };
         let response: Result<CallToolResult, ErrorData> = Err(error);
+        let processed = process_tool_response(response, "shell");
 
-        // Process the response
-        let processed = process_tool_response(response);
+        let err = processed.expect_err("expected error to pass through");
+        assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
+        assert_eq!(err.message, "Test error");
+    }
 
-        // Verify the error is passed through unchanged
-        assert!(processed.is_err());
-        match processed {
-            Err(err) => {
-                assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
-                assert_eq!(err.message, "Test error");
-            }
-            _ => panic!("Expected execution error"),
-        }
+    #[test]
+    fn threshold_lower_for_shell_and_read_tools() {
+        // 60K-char output: above shell/read threshold (50K) but below default (200K).
+        let text = "a".repeat(RANGE_AWARE_TOOL_THRESHOLD + 10_000);
+        let response = Ok(CallToolResult::success(vec![Content::text(text.clone())]));
+
+        let processed_shell = process_tool_response(response, "developer__shell").unwrap();
+        let shell_msg = &processed_shell.content[0]
+            .as_text()
+            .expect("expected text")
+            .text;
+        assert!(
+            shell_msg.contains("Tool output was"),
+            "shell exceeds tight threshold and should redirect"
+        );
+        let _ = fs::remove_file(extract_saved_path(shell_msg));
+
+        let response = Ok(CallToolResult::success(vec![Content::text(text)]));
+        let processed_other = process_tool_response(response, "some_extension__tool").unwrap();
+        assert!(
+            !processed_other.content[0]
+                .as_text()
+                .expect("expected text")
+                .text
+                .contains("Tool output was"),
+            "non-range-aware tool stays under default threshold"
+        );
+    }
+
+    #[test]
+    fn redirect_message_mentions_read_tool_and_shell_fallback() {
+        let text = "a".repeat(DEFAULT_LARGE_TEXT_THRESHOLD + 1);
+        let response = Ok(CallToolResult::success(vec![Content::text(text)]));
+        let processed = process_tool_response(response, "some_extension__tool").unwrap();
+        let msg = &processed.content[0].as_text().expect("expected text").text;
+
+        assert!(msg.contains("`read` tool"), "mentions read tool");
+        assert!(msg.contains("`line`/`limit`"), "mentions range params");
+        assert!(msg.contains("sed -n"), "mentions shell fallback");
+        assert!(
+            msg.contains("Do NOT re-run"),
+            "anti-loop language is present"
+        );
+
+        let _ = fs::remove_file(extract_saved_path(msg));
     }
 }
