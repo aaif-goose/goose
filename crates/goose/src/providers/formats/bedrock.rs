@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::mcp_utils::ToolResult;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use aws_sdk_bedrockruntime::types as bedrock;
 use aws_smithy_types::{Document, Number};
 use base64::Engine;
 use chrono::Utc;
 use rmcp::model::{
-    CallToolRequestParams, Content, ErrorCode, ErrorData, RawContent, ResourceContents, Role, Tool,
-    object,
+    object, CallToolRequestParams, Content, ErrorCode, ErrorData, RawContent, ResourceContents,
+    Role, Tool,
 };
 use serde_json::Value;
 
@@ -607,12 +607,10 @@ mod tests {
         // Verify that converting a cache point results in an error
         let result = from_bedrock_content_block(&content_block);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("CachePoint blocks should have been filtered out")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("CachePoint blocks should have been filtered out"));
     }
 
     #[test]
