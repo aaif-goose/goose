@@ -18,6 +18,11 @@ pub struct ToolCallContext {
     pub session_id: String,
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
+    /// Whether the ACP client advertised `fs.readTextFile`. Tools that emit
+    /// hints to the model (e.g. shell's "output truncated" notice) use this
+    /// to decide whether to recommend the `read` tool or fall back to shell
+    /// utilities like `head`/`tail`/`sed`.
+    pub read_tool_available: bool,
 }
 
 impl ToolCallContext {
@@ -30,7 +35,13 @@ impl ToolCallContext {
             session_id,
             working_dir,
             tool_call_request_id,
+            read_tool_available: false,
         }
+    }
+
+    pub fn with_read_tool_available(mut self, value: bool) -> Self {
+        self.read_tool_available = value;
+        self
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {

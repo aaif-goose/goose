@@ -113,7 +113,8 @@ fn unix_shell() -> String {
 
 const OUTPUT_LIMIT_LINES: usize = 2000;
 pub const OUTPUT_LIMIT_BYTES: usize = 50_000;
-const OUTPUT_PREVIEW_LINES: usize = 50;
+const OUTPUT_PREVIEW_HEAD_LINES: usize = 25;
+const OUTPUT_PREVIEW_TAIL_LINES: usize = 25;
 
 const OUTPUT_SLOTS: usize = 8;
 
@@ -157,6 +158,16 @@ pub struct ShellOutput {
     /// Error reported by output collection after process exit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_collection_error: Option<String>,
+    /// Path where the full stdout was saved when truncated. Absent when stdout
+    /// fit within the preview budget.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdout_saved_path: Option<String>,
+    /// Path where the full stderr was saved when truncated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stderr_saved_path: Option<String>,
+    /// Path where the full interleaved output was saved when truncated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub combined_saved_path: Option<String>,
 }
 
 /// Resolve the user's full PATH by running a login shell.
@@ -303,13 +314,14 @@ impl ShellTool {
     }
 
     pub async fn shell(&self, params: ShellParams) -> CallToolResult {
-        self.shell_with_cwd(params, None).await
+        self.shell_with_cwd(params, None, false).await
     }
 
     pub async fn shell_with_cwd(
         &self,
         params: ShellParams,
         working_dir: Option<&std::path::Path>,
+        read_tool_available: bool,
     ) -> CallToolResult {
         if params.command.trim().is_empty() {
             return Self::error_result("Command cannot be empty.", None);
@@ -362,6 +374,23 @@ impl ShellTool {
             }
         };
 
+        let render_result = match render_output(&interleaved, &format!("output-{slot}"), output_dir)
+        {
+            Ok(r) => r,
+            Err(error) => return Self::error_result(&error, None),
+        };
+        let stdout_saved_path = stdout_result
+            .truncation
+            .as_ref()
+            .map(|t| t.path.display().to_string());
+        let stderr_saved_path = stderr_result
+            .truncation
+            .as_ref()
+            .map(|t| t.path.display().to_string());
+        let combined_saved_path = render_result
+            .truncation
+            .as_ref()
+            .map(|t| t.path.display().to_string());
         let shell_output = ShellOutput {
             stdout: stdout_result.text,
             stderr: stderr_result.text,
@@ -369,13 +398,11 @@ impl ShellTool {
             timed_out: execution.timed_out,
             output_truncated: execution.output_truncated,
             output_collection_error: execution.output_collection_error.clone(),
+            stdout_saved_path,
+            stderr_saved_path,
+            combined_saved_path,
         };
         let structured_content = serde_json::to_value(&shell_output).ok();
-        let render_result = match render_output(&interleaved, &format!("output-{slot}"), output_dir)
-        {
-            Ok(r) => r,
-            Err(error) => return Self::error_result(&error, None),
-        };
         let mut rendered = render_result.text;
 
         // Collect truncation notices from stdout, stderr, and interleaved output.
@@ -387,7 +414,10 @@ impl ShellTool {
             &render_result.truncation,
         ]
         .iter()
-        .filter_map(|t| t.as_ref().map(truncation_notice))
+        .filter_map(|t| {
+            t.as_ref()
+                .map(|info| truncation_notice(info, read_tool_available))
+        })
         .collect();
 
         let is_error = if execution.timed_out {
@@ -447,6 +477,9 @@ impl ShellTool {
             timed_out: false,
             output_truncated: false,
             output_collection_error: None,
+            stdout_saved_path: None,
+            stderr_saved_path: None,
+            combined_saved_path: None,
         };
         let mut result = CallToolResult::error(vec![Content::text(message).with_priority(0.0)]);
         result.structured_content = serde_json::to_value(&shell_output).ok();
@@ -660,20 +693,28 @@ async fn collect_tagged_lines(
 }
 
 /// Build a human-readable truncation notice with platform-appropriate commands.
-fn truncation_notice(info: &TruncationInfo) -> String {
+fn truncation_notice(info: &TruncationInfo, read_tool_available: bool) -> String {
     let path = info.path.display();
-    let commands = if cfg!(windows) {
-        "PowerShell commands like `Get-Content -TotalCount 200`, `Select-String`, or \
-         `Get-Content | Select-Object -Skip 100 -First 100`"
+    let reason = &info.reason;
+    if read_tool_available {
+        format!(
+            "[{reason} Full output saved to {path}. \
+             Use the `read` tool on that path to view any range — \
+             do NOT re-run the command to see different slices.]"
+        )
     } else {
-        "shell commands like `head`, `tail`, or `sed -n '100,200p'`"
-    };
-    format!(
-        "[{reason} Full output saved to {path}. \
-         Read it with {commands} up to {limit} lines at a time.]",
-        reason = info.reason,
-        limit = OUTPUT_LIMIT_LINES,
-    )
+        let commands = if cfg!(windows) {
+            "PowerShell commands like `Get-Content -TotalCount 200`, `Select-String`, or \
+             `Get-Content | Select-Object -Skip 100 -First 100`"
+        } else {
+            "shell commands like `cat`, `head`, `tail`, or `sed -n '100,200p'`"
+        };
+        format!(
+            "[{reason} Full output saved to {path}. \
+             Use {commands} on that path to view ranges — \
+             do NOT re-run the command to see different slices.]"
+        )
+    }
 }
 
 fn render_output(
@@ -695,9 +736,16 @@ fn truncate_output(
     label: &str,
     output_dir: &std::path::Path,
 ) -> Result<TruncateResult, String> {
-    let lines: Vec<&str> = full_output.split('\n').collect();
-    let total_lines = lines.len();
     let total_bytes = full_output.len();
+    // split('\n') yields a trailing empty element when input ends with '\n';
+    // dropping it keeps the bookended preview from picking up a blank tail line.
+    let raw_lines: Vec<&str> = full_output.split('\n').collect();
+    let lines: &[&str] = if raw_lines.last() == Some(&"") {
+        &raw_lines[..raw_lines.len() - 1]
+    } else {
+        &raw_lines[..]
+    };
+    let total_lines = lines.len();
 
     let exceeded_lines = total_lines > OUTPUT_LIMIT_LINES;
     let exceeded_bytes = total_bytes > OUTPUT_LIMIT_BYTES;
@@ -711,16 +759,26 @@ fn truncate_output(
 
     let output_path = save_full_output(full_output, label, output_dir)?;
 
-    let preview_start = total_lines.saturating_sub(OUTPUT_PREVIEW_LINES);
-    let preview = lines[preview_start..].join("\n");
+    let preview_kept = OUTPUT_PREVIEW_HEAD_LINES + OUTPUT_PREVIEW_TAIL_LINES;
+    let preview = if total_lines <= preview_kept + 1 {
+        // No elision needed — only the byte limit was the trigger and the
+        // line count fits within head + tail.
+        lines.join("\n")
+    } else {
+        let head = lines[..OUTPUT_PREVIEW_HEAD_LINES].join("\n");
+        let tail_start = total_lines - OUTPUT_PREVIEW_TAIL_LINES;
+        let tail = lines[tail_start..].join("\n");
+        let elided = total_lines - preview_kept;
+        format!(
+            "{head}\n... [{elided} lines elided — see {path} for full output] ...\n{tail}",
+            path = output_path.display(),
+        )
+    };
 
     let reason = if exceeded_lines {
         format!("Output exceeded {OUTPUT_LIMIT_LINES} line limit ({total_lines} lines total).")
     } else {
-        format!(
-            "Output exceeded {} byte limit ({total_bytes} bytes total).",
-            OUTPUT_LIMIT_BYTES
-        )
+        format!("Output exceeded {OUTPUT_LIMIT_BYTES} byte limit ({total_bytes} bytes total).")
     };
 
     Ok(TruncateResult {
@@ -803,6 +861,7 @@ mod tests {
                     timeout_secs: None,
                 },
                 Some(dir.path()),
+                false,
             )
             .await;
 
@@ -834,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn render_output_truncates_when_lines_exceeded() {
+    fn render_output_truncates_with_head_and_tail() {
         let dir = tempfile::tempdir().unwrap();
         let input = (0..2500)
             .map(|i| format!("line {}", i))
@@ -844,8 +903,17 @@ mod tests {
         let result = render_output(&input, "test_lines", dir.path()).unwrap();
         let preview = &result.text;
 
-        assert_eq!(preview.lines().count(), OUTPUT_PREVIEW_LINES);
-        assert!(preview.starts_with("line 2450"));
+        // Bookended preview: HEAD + 1 elision marker line + TAIL.
+        let expected_lines = OUTPUT_PREVIEW_HEAD_LINES + 1 + OUTPUT_PREVIEW_TAIL_LINES;
+        assert_eq!(preview.lines().count(), expected_lines);
+        assert!(preview.starts_with("line 0\n"));
+        assert!(preview.contains("line 24"));
+        let expected_elided = 2500 - OUTPUT_PREVIEW_HEAD_LINES - OUTPUT_PREVIEW_TAIL_LINES;
+        assert!(
+            preview.contains(&format!("{expected_elided} lines elided")),
+            "preview missing expected elision marker; got: {preview}"
+        );
+        assert!(preview.contains("line 2475"));
         assert!(preview.contains("line 2499"));
 
         let info = result
@@ -854,17 +922,14 @@ mod tests {
             .expect("expected truncation info");
         assert!(info.reason.contains("2000 line limit"));
         assert!(info.reason.contains("2500 lines total"));
-
-        let notice = truncation_notice(info);
-        assert!(notice.contains("Full output saved to"));
     }
 
     #[test]
-    fn render_output_truncates_when_bytes_exceeded() {
+    fn render_output_byte_limit_keeps_head_and_tail() {
         let dir = tempfile::tempdir().unwrap();
-        let long_line = "x".repeat(1000);
+        let filler = "x".repeat(990);
         let input = (0..100)
-            .map(|_| long_line.clone())
+            .map(|i| format!("line_{i:03}_{filler}"))
             .collect::<Vec<_>>()
             .join("\n");
         assert!(input.len() > OUTPUT_LIMIT_BYTES);
@@ -878,8 +943,61 @@ mod tests {
         assert!(info.reason.contains("byte limit"));
         assert!(info.reason.contains("bytes total"));
 
-        let notice = truncation_notice(info);
-        assert!(notice.contains("Full output saved to"));
+        // Preview should bookend the output even when only the byte limit
+        // triggered truncation — head AND tail must both be visible.
+        let preview = &result.text;
+        assert!(preview.contains("line_000_"), "preview missing head line 0");
+        assert!(preview.contains("line_099_"), "preview missing tail line 99");
+        let expected_elided = 100 - OUTPUT_PREVIEW_HEAD_LINES - OUTPUT_PREVIEW_TAIL_LINES;
+        assert!(
+            preview.contains(&format!("{expected_elided} lines elided")),
+            "preview missing elision marker"
+        );
+    }
+
+    #[test]
+    fn render_output_below_threshold_passes_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "line 1\nline 2\nline 3\n";
+
+        let result = render_output(input, "test_small", dir.path()).unwrap();
+        assert_eq!(result.text, input);
+        assert!(result.truncation.is_none());
+    }
+
+    #[test]
+    fn truncation_notice_recommends_read_tool_when_available() {
+        let info = TruncationInfo {
+            path: PathBuf::from("/tmp/goose-out"),
+            reason: "Output exceeded 2000 line limit (2500 lines total).".to_string(),
+        };
+        let notice = truncation_notice(&info, true);
+        assert!(notice.contains("`read` tool"));
+        assert!(notice.contains("/tmp/goose-out"));
+        assert!(notice.contains("do NOT re-run"));
+        // Make sure we no longer steer the model at shell utilities when the
+        // ACP read tool is available — that pattern caused observed retry loops.
+        assert!(!notice.contains("`head`"));
+        assert!(!notice.contains("`tail`"));
+        assert!(!notice.contains("`sed`"));
+    }
+
+    #[test]
+    fn truncation_notice_falls_back_to_shell_when_read_unavailable() {
+        let info = TruncationInfo {
+            path: PathBuf::from("/tmp/goose-out"),
+            reason: "Output exceeded 50000 byte limit (60000 bytes total).".to_string(),
+        };
+        let notice = truncation_notice(&info, false);
+        assert!(notice.contains("do NOT re-run"));
+        if cfg!(windows) {
+            assert!(notice.contains("Get-Content"));
+        } else {
+            assert!(notice.contains("`cat`"));
+            assert!(notice.contains("`head`"));
+            assert!(notice.contains("`tail`"));
+        }
+        assert!(!notice.contains("`read` tool"));
     }
 
     #[test]

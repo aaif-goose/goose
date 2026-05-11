@@ -427,8 +427,17 @@ impl McpClientTrait for AcpTools {
                 .await
                 .map(|r| r.with_acp_aware_meta()),
             _ => {
+                // Forward a ctx that carries the ACP read-tool capability so
+                // downstream tools (e.g. shell) can tailor model-facing hints
+                // about how to inspect saved output.
+                let inner_ctx = crate::agents::ToolCallContext::new(
+                    ctx.session_id.clone(),
+                    ctx.working_dir.clone(),
+                    ctx.tool_call_request_id.clone(),
+                )
+                .with_read_tool_available(self.fs_read);
                 self.inner
-                    .call_tool(ctx, name, arguments, cancellation_token)
+                    .call_tool(&inner_ctx, name, arguments, cancellation_token)
                     .await
             }
         }

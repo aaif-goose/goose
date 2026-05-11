@@ -181,7 +181,10 @@ impl McpClientTrait for DeveloperClient {
         let working_dir = ctx.working_dir.as_deref();
         match name {
             "shell" => match Self::parse_args::<ShellParams>(arguments) {
-                Ok(params) => Ok(self.shell_tool.shell_with_cwd(params, working_dir).await),
+                Ok(params) => Ok(self
+                    .shell_tool
+                    .shell_with_cwd(params, working_dir, ctx.read_tool_available)
+                    .await),
                 Err(error) => Ok(ShellTool::error_result(&format!("Error: {error}"), None)),
             },
             "write" => match Self::parse_args::<FileWriteParams>(arguments) {
