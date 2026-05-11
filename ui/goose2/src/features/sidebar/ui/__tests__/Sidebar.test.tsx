@@ -44,6 +44,34 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
 }));
 
 describe("Sidebar", () => {
+  it("shows an empty state when there are no projects or chats", async () => {
+    const user = userEvent.setup();
+    const onCreateProject = vi.fn();
+    const onNewChat = vi.fn();
+
+    mockSessions.splice(0, mockSessions.length);
+
+    render(
+      <Sidebar
+        collapsed={false}
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onCreateProject={onCreateProject}
+        onNewChat={onNewChat}
+        projects={[]}
+      />,
+    );
+
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+    expect(screen.getByText("Chats")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Create a project" }));
+    await user.click(screen.getByRole("button", { name: "Start a chat" }));
+
+    expect(onCreateProject).toHaveBeenCalledOnce();
+    expect(onNewChat).toHaveBeenCalledOnce();
+  });
+
   it("shows sessions in recents when their project is not loaded", () => {
     mockSessions.splice(0, mockSessions.length, {
       id: "session-1",

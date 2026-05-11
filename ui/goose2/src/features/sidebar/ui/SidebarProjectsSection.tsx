@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { IconEdit, IconFolderPlus } from "@tabler/icons-react";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { cn } from "@/shared/lib/cn";
@@ -19,6 +20,7 @@ interface SidebarProjectsSectionProps {
     byProject: Record<string, TabInfo[]>;
     standalone: TabInfo[];
   };
+  hasVisibleChats: boolean;
   expandedProjects: Record<string, boolean>;
   toggleProject: (projectId: string) => void;
   collapsed: boolean;
@@ -41,6 +43,7 @@ interface SidebarProjectsSectionProps {
 export function SidebarProjectsSection({
   projects,
   projectSessions,
+  hasVisibleChats,
   expandedProjects,
   toggleProject,
   collapsed,
@@ -60,6 +63,9 @@ export function SidebarProjectsSection({
   onReorderProject,
 }: SidebarProjectsSectionProps) {
   const { t } = useTranslation(["sidebar", "common"]);
+  const showEmptyState = projects.length === 0 && !hasVisibleChats;
+  const emptyActionClasses =
+    "h-8 w-full justify-start px-3 text-[13px] text-muted-foreground";
 
   return (
     <div
@@ -90,7 +96,7 @@ export function SidebarProjectsSection({
         >
           {t("sections.projects")}
         </span>
-        {!collapsed && (
+        {!collapsed && !showEmptyState && (
           <Button
             type="button"
             variant="ghost"
@@ -125,18 +131,90 @@ export function SidebarProjectsSection({
         onReorderProject={onReorderProject}
       />
 
-      <SidebarRecentsSection
-        sessions={projectSessions.standalone}
-        collapsed={collapsed}
-        labelTransition={labelTransition}
-        labelVisible={labelVisible}
-        activeSessionId={activeSessionId}
-        onNewChat={onNewChat}
-        onSelectSession={onSelectSession}
-        onArchiveChat={onArchiveChat}
-        onRenameChat={onRenameChat}
-        onMoveToProject={onMoveToProject}
-      />
+      {showEmptyState && collapsed ? (
+        <div className="flex flex-col items-center gap-1">
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            onClick={onCreateProject}
+            aria-label={t("empty.createProject")}
+            title={t("empty.createProject")}
+            className="rounded-lg"
+          >
+            <IconFolderPlus className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            onClick={onNewChat}
+            aria-label={t("empty.startChat")}
+            title={t("empty.startChat")}
+            className="rounded-lg"
+          >
+            <IconEdit className="size-4" />
+          </Button>
+        </div>
+      ) : showEmptyState ? (
+        <>
+          <div className="space-y-0.5">
+            <Button
+              type="button"
+              variant="quiet"
+              size="xs"
+              onClick={onCreateProject}
+              className={emptyActionClasses}
+              leftIcon={<IconFolderPlus className="size-3.5" />}
+            >
+              {t("empty.createProject")}
+            </Button>
+          </div>
+          <div
+            className={cn(
+              "relative flex items-center transition-all duration-300",
+              collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-5 pb-1.5",
+            )}
+          >
+            <span
+              className={cn(
+                "text-[12px] font-normal text-muted-foreground/80 flex-1 pl-3",
+                labelTransition,
+                labelVisible
+                  ? "opacity-100 w-auto"
+                  : "opacity-0 w-0 overflow-hidden",
+              )}
+            >
+              {t("sections.recents")}
+            </span>
+          </div>
+          <div className="space-y-0.5">
+            <Button
+              type="button"
+              variant="quiet"
+              size="xs"
+              onClick={onNewChat}
+              className={emptyActionClasses}
+              leftIcon={<IconEdit className="size-3.5" />}
+            >
+              {t("empty.startChat")}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <SidebarRecentsSection
+          sessions={projectSessions.standalone}
+          collapsed={collapsed}
+          labelTransition={labelTransition}
+          labelVisible={labelVisible}
+          activeSessionId={activeSessionId}
+          onNewChat={onNewChat}
+          onSelectSession={onSelectSession}
+          onArchiveChat={onArchiveChat}
+          onRenameChat={onRenameChat}
+          onMoveToProject={onMoveToProject}
+        />
+      )}
     </div>
   );
 }

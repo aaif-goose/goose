@@ -10,6 +10,10 @@
   "menu": {
     "optionsFor": "Opciones para {{label}}"
   },
+  "empty": {
+    "createProject": "Crear un proyecto",
+    "startChat": "Iniciar un chat"
+  },
   "navigation": {
     "agents": "Agentes",
     "extensions": "Extensiones",
