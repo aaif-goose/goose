@@ -9,6 +9,15 @@ import type { Avatar } from "@/shared/types/agents";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
+function filePathToFileUrl(filePath: string): string {
+  const normalizedPath = filePath.replaceAll("\\", "/");
+  const url = new URL("file://");
+  url.pathname = normalizedPath.startsWith("/")
+    ? normalizedPath
+    : `/${normalizedPath}`;
+  return url.href;
+}
+
 interface AvatarDropZoneProps {
   avatar: Avatar | null | undefined;
   onChange: (avatar: Avatar | null) => void;
@@ -78,7 +87,7 @@ export function AvatarDropZone({
 
       setIsUploading(true);
       try {
-        onChange({ type: "url", value: `file://${filePath}` });
+        onChange({ type: "url", value: filePathToFileUrl(filePath) });
       } catch (err) {
         console.error("Failed to save avatar:", err);
         setError(t("avatar.saveFailed"));
