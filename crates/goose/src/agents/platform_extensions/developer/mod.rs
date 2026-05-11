@@ -43,6 +43,13 @@ fn developer_instructions() -> &'static str {
             and file sizes. When you need to search, prefer findstr or Select-String (via shell).
             Then use type or Get-Content to gather the context you need, always reading before
             editing. Use write and edit to efficiently make changes. Test and verify as appropriate.
+
+            When modifying existing files, prefer `edit` over `write` — `edit` sends only the
+            changed region, not the whole file. Reserve `write` for new files or full rewrites.
+
+            When reading large files, fetch only the range you need (the `read` tool's `line` and
+            `limit` parameters when available, otherwise `Get-Content -TotalCount` or
+            `Select-Object -Skip/-First`). Don't re-read the same file across turns.
         "}
     } else {
         indoc! {"
@@ -57,6 +64,13 @@ fn developer_instructions() -> &'static str {
             and file sizes. When you need to search, prefer rg which correctly respects gitignored
             content. Then use cat or sed to gather the context you need, always reading before editing.
             Use write and edit to efficiently make changes. Test and verify as appropriate.
+
+            When modifying existing files, prefer `edit` over `write` — `edit` sends only the
+            changed region, not the whole file. Reserve `write` for new files or full rewrites.
+
+            When reading large files, fetch only the range you need (the `read` tool's `line` and
+            `limit` parameters when available, otherwise `sed -n 'A,Bp'`). Don't re-read the same
+            file across turns.
 
             When running Python scripts or commands, always use `python3` instead of `python`.
         "}
@@ -98,7 +112,7 @@ impl DeveloperClient {
         vec![
             Tool::new(
                 "write".to_string(),
-                "Create a new file or overwrite an existing file. Creates parent directories if needed.".to_string(),
+                "Create a new file or overwrite an existing file. Creates parent directories if needed. Prefer `edit` for modifying existing files — it sends only the changed region.".to_string(),
                 Self::schema::<FileWriteParams>(),
             )
             .annotate(ToolAnnotations::from_raw(

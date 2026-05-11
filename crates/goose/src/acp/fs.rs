@@ -83,7 +83,12 @@ fn read_tool() -> Tool {
         .as_object()
         .expect("schema should serialize to an object")
         .clone();
-    Tool::new("read", "Read a text file from disk.", schema).annotate(
+    Tool::new(
+        "read",
+        "Read a text file from disk. Pass `line` and `limit` to read a specific range; avoid reading whole large files when you only need a portion.",
+        schema,
+    )
+    .annotate(
         ToolAnnotations::with_title("Read")
             .read_only(true)
             .destructive(false)

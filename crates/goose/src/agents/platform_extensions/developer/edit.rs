@@ -11,10 +11,12 @@ const NO_MATCH_PREVIEW_LINES: usize = 20;
 pub struct FileReadParams {
     /// Absolute path to the file to read.
     pub path: String,
-    /// Line number to start reading from (1-based).
+    /// 1-based line number to start reading from. Use with `limit` to read a specific
+    /// range instead of the whole file.
     #[schemars(range(min = 1))]
     pub line: Option<u32>,
-    /// Maximum number of lines to read.
+    /// Maximum number of lines to read. Combine with `line` to fetch a specific range —
+    /// prefer this over reading whole large files.
     pub limit: Option<u32>,
 }
 

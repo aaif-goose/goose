@@ -947,7 +947,10 @@ mod tests {
         // triggered truncation — head AND tail must both be visible.
         let preview = &result.text;
         assert!(preview.contains("line_000_"), "preview missing head line 0");
-        assert!(preview.contains("line_099_"), "preview missing tail line 99");
+        assert!(
+            preview.contains("line_099_"),
+            "preview missing tail line 99"
+        );
         let expected_elided = 100 - OUTPUT_PREVIEW_HEAD_LINES - OUTPUT_PREVIEW_TAIL_LINES;
         assert!(
             preview.contains(&format!("{expected_elided} lines elided")),
