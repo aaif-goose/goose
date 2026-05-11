@@ -16,19 +16,27 @@ pub struct LoggingConfig<'a> {
     /// Optional session/run name appended to the log filename.
     pub name: Option<&'a str>,
     /// Additional `EnvFilter` directives beyond the defaults (e.g. "goose_server=info").
+    /// Only applied when `RUST_LOG` is **not** set.
     pub extra_directives: &'a [&'a str],
     /// Whether to emit a pretty console layer to stderr in addition to the file layer.
     pub console: bool,
+    /// Whether the file layer should use JSON formatting. When false, uses plain text
+    /// with source file path included.
+    pub json: bool,
 }
 
-/// Build the default `EnvFilter` for a component, merging in any extra directives.
+/// Build the `EnvFilter`. If `RUST_LOG` is set, use it as-is. Otherwise build a
+/// default filter and append the caller's extra directives.
 fn build_env_filter(extra_directives: &[&str]) -> EnvFilter {
-    let mut filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("")
-            .add_directive("mcp_client=info".parse().unwrap())
-            .add_directive("goose=info".parse().unwrap())
-            .add_directive(LevelFilter::WARN.into())
-    });
+    if let Ok(filter) = EnvFilter::try_from_default_env() {
+        return filter;
+    }
+
+    let mut filter = EnvFilter::new("")
+        .add_directive("mcp_client=info".parse().unwrap())
+        .add_directive("goose=info".parse().unwrap())
+        .add_directive(LevelFilter::WARN.into());
+
     for directive in extra_directives {
         if let Ok(d) = directive.parse() {
             filter = filter.add_directive(d);
@@ -55,17 +63,25 @@ pub fn build_logging_subscriber(
     let file_appender =
         tracing_appender::rolling::RollingFileAppender::new(Rotation::NEVER, log_dir, log_filename);
 
-    let file_layer = fmt::layer()
-        .with_target(true)
-        .with_level(true)
-        .with_writer(file_appender)
-        .with_ansi(false)
-        .json();
-
     let env_filter = build_env_filter(config.extra_directives);
 
-    let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> =
-        vec![file_layer.with_filter(env_filter.clone()).boxed()];
+    let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = if config.json {
+        let file_layer = fmt::layer()
+            .with_target(true)
+            .with_level(true)
+            .with_writer(file_appender)
+            .with_ansi(false)
+            .json();
+        vec![file_layer.with_filter(env_filter.clone()).boxed()]
+    } else {
+        let file_layer = fmt::layer()
+            .with_target(true)
+            .with_level(true)
+            .with_writer(file_appender)
+            .with_ansi(false)
+            .with_file(true);
+        vec![file_layer.with_filter(env_filter.clone()).boxed()]
+    };
 
     if config.console {
         let console_layer = fmt::layer()

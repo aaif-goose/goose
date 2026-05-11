@@ -22,6 +22,7 @@ fn setup_logging_internal(name: Option<&str>, force: bool) -> Result<()> {
                 name,
                 extra_directives: &["goose_cli=info"],
                 console: false,
+                json: true,
             };
             let subscriber = goose::logging::build_logging_subscriber(&config)?;
 
@@ -133,6 +134,7 @@ mod tests {
             name: None,
             extra_directives: &["goose_cli=info"],
             console: false,
+            json: true,
         };
         assert!(goose::logging::build_logging_subscriber(&config).is_ok());
     }

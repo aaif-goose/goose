@@ -9,6 +9,7 @@ pub fn setup_logging(name: Option<&str>) -> Result<()> {
         name,
         extra_directives: &["goose_server=info", "tower_http=info"],
         console: true,
+        json: false,
     };
     let subscriber = goose::logging::build_logging_subscriber(&config)?;
     subscriber.try_init()?;
