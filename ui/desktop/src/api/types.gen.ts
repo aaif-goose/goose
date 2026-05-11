@@ -30,6 +30,15 @@ export type AddExtensionRequest = {
     session_id: string;
 };
 
+export type AddTagsRequest = {
+    source?: string;
+    tags: Array<string>;
+};
+
+export type AllTagsResponse = {
+    tags: Array<TagCount>;
+};
+
 export type Annotations = {
     audience?: Array<Role>;
     lastModified?: string;
@@ -1325,6 +1334,18 @@ export type SessionReplyResponse = {
     request_id: string;
 };
 
+export type SessionTag = {
+    createdAt?: string | null;
+    sessionId: string;
+    source: string;
+    tag: string;
+};
+
+export type SessionTagsResponse = {
+    sessionId: string;
+    tags: Array<SessionTag>;
+};
+
 export type SessionType = 'user' | 'scheduled' | 'sub_agent' | 'hidden' | 'terminal' | 'gateway' | 'acp';
 
 export type SessionsQuery = {
@@ -1413,6 +1434,11 @@ export type SystemNotificationContent = {
 };
 
 export type SystemNotificationType = 'thinkingMessage' | 'inlineMessage' | 'creditsExhausted';
+
+export type TagCount = {
+    count: number;
+    tag: string;
+};
 
 export type TaskSupport = 'forbidden' | 'optional' | 'required';
 
@@ -4145,6 +4171,33 @@ export type SearchSessionsResponses = {
 
 export type SearchSessionsResponse = SearchSessionsResponses[keyof SearchSessionsResponses];
 
+export type GetAllTagsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/sessions/tags';
+};
+
+export type GetAllTagsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type GetAllTagsResponses = {
+    /**
+     * All unique tags with counts
+     */
+    200: AllTagsResponse;
+};
+
+export type GetAllTagsResponse = GetAllTagsResponses[keyof GetAllTagsResponses];
+
 export type SessionCancelData = {
     body: CancelRequest;
     path: {
@@ -4448,6 +4501,142 @@ export type UpdateSessionNameErrors = {
 export type UpdateSessionNameResponses = {
     /**
      * Session name updated successfully
+     */
+    200: unknown;
+};
+
+export type GetSessionTagsData = {
+    body?: never;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/tags';
+};
+
+export type GetSessionTagsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type GetSessionTagsResponses = {
+    /**
+     * Tags retrieved successfully
+     */
+    200: SessionTagsResponse;
+};
+
+export type GetSessionTagsResponse = GetSessionTagsResponses[keyof GetSessionTagsResponses];
+
+export type AddSessionTagsData = {
+    body: AddTagsRequest;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/tags';
+};
+
+export type AddSessionTagsErrors = {
+    /**
+     * Bad request - no tags provided
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type AddSessionTagsResponses = {
+    /**
+     * Tags added successfully
+     */
+    200: unknown;
+};
+
+export type AutoTagSessionData = {
+    body?: never;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/tags/auto';
+};
+
+export type AutoTagSessionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Session not found
+     */
+    404: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type AutoTagSessionResponses = {
+    /**
+     * Tags auto-generated and saved
+     */
+    200: SessionTagsResponse;
+};
+
+export type AutoTagSessionResponse = AutoTagSessionResponses[keyof AutoTagSessionResponses];
+
+export type RemoveSessionTagData = {
+    body?: never;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+        /**
+         * Tag to remove
+         */
+        tag: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/tags/{tag}';
+};
+
+export type RemoveSessionTagErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type RemoveSessionTagResponses = {
+    /**
+     * Tag removed successfully
      */
     200: unknown;
 };

@@ -10,6 +10,7 @@ import {
   Target,
   LoaderCircle,
   AlertCircle,
+  Wand2,
 } from 'lucide-react';
 import { defineMessages, useIntl } from '../../i18n';
 import { resumeSession } from '../../sessions';
@@ -34,6 +35,8 @@ import BackButton from '../ui/BackButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { Message, Session } from '../../api';
 import { useNavigation } from '../../hooks/useNavigation';
+import { getTagsForSession, autoTagSession, SessionTag } from '../../utils/tags';
+import TagInput from '../tags/TagInput';
 
 const i18n = defineMessages({
   errorLoadingDetails: {
@@ -218,6 +221,16 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
   const [isSharing, setIsSharing] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [canShare, setCanShare] = useState(false);
+  const [sessionTags, setSessionTags] = useState<SessionTag[]>([]);
+  const [isAutoTagging, setIsAutoTagging] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && session.id) {
+      getTagsForSession(session.id)
+        .then(setSessionTags)
+        .catch(() => {});
+    }
+  }, [session.id, isLoading]);
 
   const intl = useIntl();
   const messages = session.conversation || [];
@@ -273,6 +286,19 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
       });
   };
 
+  const handleAutoTag = async () => {
+    setIsAutoTagging(true);
+    try {
+      const updatedTags = await autoTagSession(session.id);
+      setSessionTags(updatedTags);
+      toast.success('Session tagged successfully');
+    } catch {
+      toast.error('Auto-tagging failed — check that a provider is configured');
+    } finally {
+      setIsAutoTagging(false);
+    }
+  };
+
   const handleResumeSession = () => {
     try {
       resumeSession(session, setView);
@@ -315,6 +341,19 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
           </TooltipContent>
         ) : null}
       </Tooltip>
+      <Button onClick={handleAutoTag} disabled={isAutoTagging} size="sm" variant="outline">
+        {isAutoTagging ? (
+          <>
+            <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+            Tagging...
+          </>
+        ) : (
+          <>
+            <Wand2 className="w-4 h-4" />
+            Auto-tag
+          </>
+        )}
+      </Button>
       <Button onClick={handleResumeSession} size="sm" variant="outline">
         <Sparkles className="w-4 h-4" />
         {intl.formatMessage(i18n.resume)}
@@ -355,6 +394,21 @@ const SessionHistoryView: React.FC<SessionHistoryViewProps> = ({
                       <Folder className="w-4 h-4 mr-1" />
                       {session.working_dir}
                     </span>
+                  </div>
+                  <div className="mt-3">
+                    <TagInput
+                      sessionId={session.id}
+                      tags={sessionTags}
+                      onTagAdded={(tag) =>
+                        setSessionTags((prev) => [
+                          ...prev,
+                          { tag, source: 'manual', created_at: new Date().toISOString() },
+                        ])
+                      }
+                      onTagRemoved={(tag) =>
+                        setSessionTags((prev) => prev.filter((t) => t.tag !== tag))
+                      }
+                    />
                   </div>
                 </>
               ) : (

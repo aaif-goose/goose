@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 12;
+pub const CURRENT_SCHEMA_VERSION: i32 = 13;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -117,6 +117,22 @@ pub struct SessionUpdateBuilder<'a> {
 pub struct SessionInsights {
     pub total_sessions: usize,
     pub total_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTag {
+    pub session_id: String,
+    pub tag: String,
+    pub source: String,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TagCount {
+    pub tag: String,
+    pub count: i64,
 }
 
 impl<'a> SessionUpdateBuilder<'a> {
@@ -457,6 +473,35 @@ impl SessionManager {
         self.storage
             .update_tool_request_meta(session_id, message_id, tool_call_id, patch)
             .await
+    }
+
+    pub async fn get_tags_for_session(&self, session_id: &str) -> Result<Vec<SessionTag>> {
+        self.storage.get_tags_for_session(session_id).await
+    }
+
+    pub async fn add_tags_to_session(
+        &self,
+        session_id: &str,
+        tags: &[String],
+        source: &str,
+    ) -> Result<()> {
+        self.storage
+            .add_tags_to_session(session_id, tags, source)
+            .await
+    }
+
+    pub async fn remove_tag_from_session(&self, session_id: &str, tag: &str) -> Result<()> {
+        self.storage
+            .remove_tag_from_session(session_id, tag)
+            .await
+    }
+
+    pub async fn get_all_tags_with_counts(&self) -> Result<Vec<TagCount>> {
+        self.storage.get_all_tags_with_counts().await
+    }
+
+    pub async fn list_sessions_by_tag(&self, tag: &str) -> Result<Vec<Session>> {
+        self.storage.list_sessions_by_tag(tag).await
     }
 }
 
@@ -1100,6 +1145,32 @@ impl SessionStorage {
                 sqlx::query("ALTER TABLE sessions DROP COLUMN thread_id")
                     .execute(&mut **tx)
                     .await?;
+            }
+            13 => {
+                sqlx::query(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS session_tags (
+                        session_id TEXT NOT NULL,
+                        tag        TEXT NOT NULL,
+                        source     TEXT NOT NULL DEFAULT 'manual',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (session_id, tag),
+                        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                    )
+                "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_session_tags_tag ON session_tags(tag)",
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_session_tags_session_id ON session_tags(session_id)",
+                )
+                .execute(&mut **tx)
+                .await?;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
@@ -1774,6 +1845,79 @@ impl SessionStorage {
 
         tx.commit().await?;
         Ok(())
+    }
+
+    pub async fn get_tags_for_session(&self, session_id: &str) -> Result<Vec<SessionTag>> {
+        let pool = self.pool().await?;
+        let rows = sqlx::query_as::<_, SessionTag>(
+            "SELECT session_id, tag, source, created_at FROM session_tags WHERE session_id = ? ORDER BY created_at",
+        )
+        .bind(session_id)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn add_tags_to_session(
+        &self,
+        session_id: &str,
+        tags: &[String],
+        source: &str,
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        for tag in tags {
+            let normalized = tag.to_lowercase();
+            let normalized = normalized.trim();
+            if normalized.is_empty() || normalized.len() > 30 {
+                continue;
+            }
+            sqlx::query(
+                "INSERT OR IGNORE INTO session_tags (session_id, tag, source) VALUES (?, ?, ?)",
+            )
+            .bind(session_id)
+            .bind(normalized)
+            .bind(source)
+            .execute(pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn remove_tag_from_session(&self, session_id: &str, tag: &str) -> Result<()> {
+        let pool = self.pool().await?;
+        sqlx::query("DELETE FROM session_tags WHERE session_id = ? AND tag = ?")
+            .bind(session_id)
+            .bind(tag)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_all_tags_with_counts(&self) -> Result<Vec<TagCount>> {
+        let pool = self.pool().await?;
+        let rows = sqlx::query_as::<_, TagCount>(
+            "SELECT tag, COUNT(*) AS count FROM session_tags GROUP BY tag ORDER BY count DESC, tag",
+        )
+        .fetch_all(pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn list_sessions_by_tag(&self, tag: &str) -> Result<Vec<Session>> {
+        let pool = self.pool().await?;
+        let session_ids: Vec<String> =
+            sqlx::query_scalar("SELECT session_id FROM session_tags WHERE tag = ?")
+                .bind(tag)
+                .fetch_all(pool)
+                .await?;
+
+        let mut sessions = Vec::new();
+        for id in &session_ids {
+            if let Ok(s) = self.get_session(id, false).await {
+                sessions.push(s);
+            }
+        }
+        Ok(sessions)
     }
 }
 

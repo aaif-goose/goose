@@ -126,3 +126,43 @@ def distinct_working_dirs(db_path_str: str, _mtime: float) -> list[str]:
 def mtime_for(db_path: Path) -> float:
     """Public helper for pages to pass a cache-invalidation key."""
     return _db_mtime_key(db_path)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_all_tags(db_path_str: str, _mtime: float) -> pd.DataFrame:
+    """Return all session_tags rows as a DataFrame. Returns empty frame if table absent."""
+    db_path = Path(db_path_str)
+    with _ro_connect(db_path) as con:
+        tables = [
+            r[0]
+            for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='session_tags'"
+            ).fetchall()
+        ]
+        if not tables:
+            return pd.DataFrame(columns=["session_id", "tag", "source", "created_at"])
+        sql = """
+        SELECT session_id, tag, source, created_at
+        FROM session_tags
+        ORDER BY created_at DESC
+        """
+        return pd.read_sql_query(sql, con)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_tags_for_session(db_path_str: str, session_id: str, _mtime: float) -> list[str]:
+    """Return tags for one session. Returns empty list if table absent."""
+    db_path = Path(db_path_str)
+    with _ro_connect(db_path) as con:
+        tables = [
+            r[0]
+            for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='session_tags'"
+            ).fetchall()
+        ]
+        if not tables:
+            return []
+        rows = con.execute(
+            "SELECT tag FROM session_tags WHERE session_id = ? ORDER BY tag", (session_id,)
+        ).fetchall()
+        return [r[0] for r in rows]

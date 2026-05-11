@@ -14,6 +14,8 @@ import {
   ExternalLink,
   Copy,
   Puzzle,
+  Wand2,
+  LoaderCircle,
 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -40,6 +42,9 @@ import {
   ExtensionConfig,
   ExtensionData,
 } from '../../api';
+import { getAllTags, autoTagSession, getTagsForSession, SessionTag, TagCount } from '../../utils/tags';
+import TagPill from '../tags/TagPill';
+import TagFilter from '../tags/TagFilter';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 import { shouldShowNewChatTitle } from '../../sessions';
@@ -270,6 +275,12 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     const [caseSensitive, setCaseSensitive] = useState(false);
     const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms debounce
 
+    // Tag state
+    const [sessionTagsMap, setSessionTagsMap] = useState<Record<string, SessionTag[]>>({});
+    const [availableTags, setAvailableTags] = useState<TagCount[]>([]);
+    const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
+    const [isAutoTaggingAll, setIsAutoTaggingAll] = useState(false);
+
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Track session to element ref
@@ -324,6 +335,22 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
           setSessions(sessions);
           setFilteredSessions(sessions);
         });
+
+        // Load tags in parallel — completely isolated so any failure never breaks sessions list
+        try {
+          const [tagCounts, ...perSessionTags] = await Promise.all([
+            getAllTags().catch(() => [] as TagCount[]),
+            ...sessions.map((s) => getTagsForSession(s.id).catch(() => [] as SessionTag[])),
+          ]);
+          const tagsMap: Record<string, SessionTag[]> = {};
+          sessions.forEach((s, i) => { tagsMap[s.id] = perSessionTags[i] as SessionTag[]; });
+          startTransition(() => {
+            setAvailableTags(tagCounts as TagCount[]);
+            setSessionTagsMap(tagsMap);
+          });
+        } catch {
+          // Tags unavailable — session list still works normally
+        }
       } catch (err) {
         console.error('Failed to load sessions:', err);
         setError('Failed to load sessions. Please try again later.');
@@ -384,9 +411,17 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
 
     // Debounced search effect - performs content search via API
     useEffect(() => {
+      const applyTagFilter = (base: Session[]) => {
+        if (selectedFilterTags.length === 0) return base;
+        return base.filter((s) => {
+          const tags = sessionTagsMap[s.id] ?? [];
+          return selectedFilterTags.every((ft) => tags.some((t) => t.tag === ft));
+        });
+      };
+
       if (!debouncedSearchTerm) {
         startTransition(() => {
-          setFilteredSessions(sessions);
+          setFilteredSessions(applyTagFilter(sessions));
           setSearchResults(null);
         });
         return;
@@ -401,7 +436,9 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         if (resp.data) {
           // Response is Vec<Session> - sessions that match the search
           const matchedSessionIds = new Set(resp.data.map((s: { id: string }) => s.id));
-          const filtered = sessions.filter((session) => matchedSessionIds.has(session.id));
+          const filtered = applyTagFilter(
+            sessions.filter((session) => matchedSessionIds.has(session.id))
+          );
 
           startTransition(() => {
             setFilteredSessions(filtered);
@@ -413,7 +450,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       };
 
       performSearch();
-    }, [debouncedSearchTerm, caseSensitive, sessions]);
+    }, [debouncedSearchTerm, caseSensitive, sessions, selectedFilterTags, sessionTagsMap]);
 
     // Handle immediate search input (updates search term for debouncing)
     const handleSearch = useCallback((term: string, caseSensitive: boolean) => {
@@ -571,6 +608,27 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       [loadSessions, intl]
     );
 
+    const handleAutoTagAll = useCallback(async () => {
+      setIsAutoTaggingAll(true);
+      let tagged = 0;
+      let failed = 0;
+      for (const session of sessions) {
+        try {
+          const tags = await autoTagSession(session.id);
+          setSessionTagsMap((prev) => ({ ...prev, [session.id]: tags }));
+          tagged++;
+        } catch {
+          failed++;
+        }
+      }
+      setIsAutoTaggingAll(false);
+      if (failed === 0) {
+        toast.success(`Auto-tagged ${tagged} session${tagged !== 1 ? 's' : ''}`);
+      } else {
+        toast.warning(`Tagged ${tagged} session${tagged !== 1 ? 's' : ''}, ${failed} failed`);
+      }
+    }, [sessions]);
+
     const handleOpenInNewWindow = useCallback((session: Session, e: React.MouseEvent) => {
       e.stopPropagation();
       window.electron.createChatWindow({
@@ -582,18 +640,22 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
 
     const SessionItem = React.memo(function SessionItem({
       session,
+      tags,
       onEditClick,
       onDuplicateClick,
       onDeleteClick,
       onExportClick,
       onOpenInNewWindow,
+      onTagClick,
     }: {
       session: Session;
+      tags: SessionTag[];
       onEditClick: (session: Session) => void;
       onDuplicateClick: (session: Session) => void;
       onDeleteClick: (session: Session) => void;
       onExportClick: (session: Session, e: React.MouseEvent) => void;
       onOpenInNewWindow: (session: Session, e: React.MouseEvent) => void;
+      onTagClick: (tag: string) => void;
     }) {
       const handleEditClick = useCallback(
         (e: React.MouseEvent) => {
@@ -700,6 +762,21 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
               )}
             </div>
           </div>
+          {tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
+              {tags.slice(0, 4).map((t) => (
+                <TagPill
+                  key={t.tag}
+                  tag={t.tag}
+                  size="sm"
+                  onClick={() => onTagClick(t.tag)}
+                />
+              ))}
+              {tags.length > 4 && (
+                <span className="text-xs text-muted-foreground self-center">+{tags.length - 4}</span>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={handleOpenInNewWindowClick}
@@ -824,11 +901,15 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
                   <SessionItem
                     key={session.id}
                     session={session}
+                    tags={sessionTagsMap[session.id] ?? []}
                     onEditClick={handleEditSession}
                     onDuplicateClick={handleDuplicateSession}
                     onDeleteClick={handleDeleteSession}
                     onExportClick={handleExportSession}
                     onOpenInNewWindow={handleOpenInNewWindow}
+                    onTagClick={(tag) => setSelectedFilterTags((prev) =>
+                      prev.includes(tag) ? prev : [...prev, tag]
+                    )}
                   />
                 ))}
               </div>
@@ -855,21 +936,48 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
               <div className="flex flex-col page-transition">
                 <div className="flex justify-between items-center mb-1">
                   <h1 className="text-4xl font-light">{intl.formatMessage(i18n.chatHistory)}</h1>
-                  <Button
-                    onClick={handleImportClick}
-                    variant="outline"
-                    size="sm"
-                    className="flex items-center gap-2"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {intl.formatMessage(i18n.importSession)}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleAutoTagAll}
+                      disabled={isAutoTaggingAll || sessions.length === 0}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      {isAutoTaggingAll ? (
+                        <>
+                          <LoaderCircle className="w-4 h-4 animate-spin" />
+                          Tagging...
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 className="w-4 h-4" />
+                          Auto-tag All
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={handleImportClick}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {intl.formatMessage(i18n.importSession)}
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-sm text-text-secondary mb-4">
                   {intl.formatMessage(i18n.chatHistoryDesc, { shortcut: getSearchShortcutText() })}
                 </p>
               </div>
             </div>
+
+            <TagFilter
+              availableTags={availableTags}
+              selectedTags={selectedFilterTags}
+              onSelectionChange={setSelectedFilterTags}
+            />
 
             <div className="flex-1 min-h-0 relative px-8">
               <ScrollArea handleScroll={handleScroll} className="h-full" data-search-scroll-area>

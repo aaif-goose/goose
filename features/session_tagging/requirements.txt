@@ -1,0 +1,5 @@
+pyyaml>=6.0
+keyring>=24.0
+openai>=1.0
+anthropic>=0.25
+google-genai>=0.5

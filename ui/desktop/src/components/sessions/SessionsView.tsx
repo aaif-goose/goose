@@ -4,7 +4,6 @@ import SessionListView from './SessionListView';
 import SessionHistoryView from './SessionHistoryView';
 import { useLocation } from 'react-router-dom';
 import { getSession, Session } from '../../api';
-import { useNavigation } from '../../hooks/useNavigation';
 
 const i18n = defineMessages({
   loading: {
@@ -25,38 +24,30 @@ const SessionsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [initialSessionId, setInitialSessionId] = useState<string | null>(null);
   const location = useLocation();
-  const setView = useNavigation();
-
-  const loadSessionDetails = async (sessionId: string) => {
-    setIsLoadingSession(true);
-    setError(null);
-    setShowSessionHistory(true);
-    try {
-      const response = await getSession<true>({
-        path: { session_id: sessionId },
-        throwOnError: true,
-      });
-      setSelectedSession(response.data);
-    } catch (err) {
-      console.error(`Failed to load session details for ${sessionId}:`, err);
-      setError(intl.formatMessage(i18n.failedToLoad));
-      // Keep the selected session null if there's an error
-      setSelectedSession(null);
-      setShowSessionHistory(false);
-    } finally {
-      setIsLoadingSession(false);
-      setInitialSessionId(null);
-    }
-  };
 
   const handleSelectSession = useCallback(
     async (sessionId: string) => {
-      setView('pair', {
-        disableAnimation: true,
-        resumeSessionId: sessionId,
-      });
+      setIsLoadingSession(true);
+      setError(null);
+      setShowSessionHistory(true);
+      setInitialSessionId(sessionId);
+      try {
+        const response = await getSession<true>({
+          path: { session_id: sessionId },
+          throwOnError: true,
+        });
+        setSelectedSession(response.data);
+      } catch (err) {
+        console.error(`Failed to load session details for ${sessionId}:`, err);
+        setError(intl.formatMessage(i18n.failedToLoad));
+        setSelectedSession(null);
+        setShowSessionHistory(false);
+      } finally {
+        setIsLoadingSession(false);
+        setInitialSessionId(null);
+      }
     },
-    [setView]
+    [intl]
   );
 
   // Check if a session ID was passed in the location state (from SessionsInsights)
@@ -79,7 +70,7 @@ const SessionsView: React.FC = () => {
 
   const handleRetryLoadSession = () => {
     if (selectedSession) {
-      loadSessionDetails(selectedSession.id);
+      handleSelectSession(selectedSession.id);
     }
   };
 

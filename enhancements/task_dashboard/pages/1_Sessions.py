@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from config import resolve_db_path
-from db import load_sessions, distinct_working_dirs, mtime_for
+from db import load_sessions, distinct_working_dirs, load_all_tags, mtime_for
 
 st.set_page_config(page_title="Sessions — Goose", page_icon="📋", layout="wide")
 st.title("📋 Sessions")
@@ -17,6 +17,17 @@ df = load_sessions(str(db_path), mtime)
 if df.empty:
     st.info("No sessions found in the database.")
     st.stop()
+
+# Load tags and build a lookup: session_id → comma-separated tag string
+tags_df = load_all_tags(str(db_path), mtime)
+tags_by_session: dict[str, str] = {}
+all_tags_list: list[str] = []
+if not tags_df.empty:
+    for sid, grp in tags_df.groupby("session_id"):
+        tags_by_session[sid] = ", ".join(sorted(grp["tag"].tolist()))
+    all_tags_list = sorted(tags_df["tag"].unique().tolist())
+
+df["tags"] = df["id"].map(tags_by_session).fillna("")
 
 # ---------- Sidebar filters ----------
 with st.sidebar:
@@ -37,6 +48,11 @@ with st.sidebar:
     types = sorted(df["session_type"].dropna().unique().tolist())
     selected_types = st.multiselect("Session type", types, default=types)
 
+    if all_tags_list:
+        selected_tags = st.multiselect("Tags", all_tags_list, default=[])
+    else:
+        selected_tags = []
+
     query = st.text_input("Search (name / description)", value="").strip().lower()
 
     if st.button("Clear filters"):
@@ -55,6 +71,12 @@ if selected_dirs:
 if selected_types:
     mask &= df["session_type"].isin(selected_types)
 
+if selected_tags:
+    def has_all_tags(tag_str: str) -> bool:
+        session_tags = {t.strip() for t in tag_str.split(",") if t.strip()}
+        return all(t in session_tags for t in selected_tags)
+    mask &= df["tags"].apply(has_all_tags)
+
 if query:
     hay = (df["name"].fillna("") + " " + df["description"].fillna("")).str.lower()
     mask &= hay.str.contains(query, regex=False)
@@ -67,6 +89,7 @@ st.caption(f"Showing **{len(filtered)}** of {len(df)} sessions.")
 display_cols = [
     "id",
     "name",
+    "tags",
     "session_type",
     "working_dir",
     "created_at",
@@ -93,6 +116,7 @@ event = st.dataframe(
     selection_mode="single-row",
     column_config={
         "id": st.column_config.TextColumn("id", width="small"),
+        "tags": st.column_config.TextColumn("tags"),
         "created_at": st.column_config.DatetimeColumn("created", format="YYYY-MM-DD HH:mm"),
         "duration_min": st.column_config.NumberColumn("dur (min)", format="%.1f"),
         "tokens": st.column_config.NumberColumn("tokens", format="%d"),

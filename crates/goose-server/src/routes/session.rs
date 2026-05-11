@@ -10,8 +10,11 @@ use axum::{
     Json, Router,
 };
 use goose::agents::ExtensionConfig;
+use goose::conversation::message::{Message as GooseMessage, MessageContent};
+use goose::model::ModelConfig;
+use goose::providers::create as create_provider;
 use goose::recipe::Recipe;
-use goose::session::session_manager::{SessionInsights, SessionType};
+use goose::session::session_manager::{SessionInsights, SessionTag, SessionType, TagCount};
 use goose::session::{EnabledExtensionsState, Session};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -498,10 +501,282 @@ async fn get_session_extensions(
     Ok(Json(SessionExtensionsResponse { extensions }))
 }
 
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTagsResponse {
+    session_id: String,
+    tags: Vec<SessionTag>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AddTagsRequest {
+    tags: Vec<String>,
+    #[serde(default = "default_tag_source")]
+    source: String,
+}
+
+fn default_tag_source() -> String {
+    "manual".to_string()
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AllTagsResponse {
+    tags: Vec<TagCount>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/sessions/{session_id}/tags",
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session")
+    ),
+    responses(
+        (status = 200, description = "Tags retrieved successfully", body = SessionTagsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(("api_key" = [])),
+    tag = "Session Management"
+)]
+async fn get_session_tags(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<SessionTagsResponse>, StatusCode> {
+    let tags = state
+        .session_manager()
+        .get_tags_for_session(&session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(SessionTagsResponse { session_id, tags }))
+}
+
+#[utoipa::path(
+    put,
+    path = "/sessions/{session_id}/tags",
+    request_body = AddTagsRequest,
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session")
+    ),
+    responses(
+        (status = 200, description = "Tags added successfully"),
+        (status = 400, description = "Bad request - no tags provided"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(("api_key" = [])),
+    tag = "Session Management"
+)]
+async fn add_session_tags(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(request): Json<AddTagsRequest>,
+) -> Result<StatusCode, StatusCode> {
+    if request.tags.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    state
+        .session_manager()
+        .add_tags_to_session(&session_id, &request.tags, &request.source)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/sessions/{session_id}/tags/{tag}",
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session"),
+        ("tag" = String, Path, description = "Tag to remove")
+    ),
+    responses(
+        (status = 200, description = "Tag removed successfully"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(("api_key" = [])),
+    tag = "Session Management"
+)]
+async fn remove_session_tag(
+    State(state): State<Arc<AppState>>,
+    Path((session_id, tag)): Path<(String, String)>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .session_manager()
+        .remove_tag_from_session(&session_id, &tag)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
+    path = "/sessions/tags",
+    responses(
+        (status = 200, description = "All unique tags with counts", body = AllTagsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(("api_key" = [])),
+    tag = "Session Management"
+)]
+async fn get_all_tags(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<AllTagsResponse>, StatusCode> {
+    let tags = state
+        .session_manager()
+        .get_all_tags_with_counts()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(AllTagsResponse { tags }))
+}
+
+const PREDEFINED_TAGS: &str = "python, javascript, typescript, rust, html-css, frontend, backend, fullstack, api, database, debugging, refactoring, testing, devops, deployment, data-analysis, machine-learning, automation, scripting, documentation, code-review, git, setup, configuration, web-scraping, game-dev, cli-tool, file-management, research, writing, general";
+
+fn extract_tags_from_response(text: &str) -> Vec<String> {
+    let start = text.find('[');
+    let end = text.rfind(']');
+    if let (Some(s), Some(e)) = (start, end) {
+        if let Ok(tags) = serde_json::from_str::<Vec<String>>(&text[s..=e]) {
+            return tags.into_iter().filter(|t| !t.trim().is_empty()).collect();
+        }
+    }
+    vec![]
+}
+
+#[utoipa::path(
+    post,
+    path = "/sessions/{session_id}/tags/auto",
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session")
+    ),
+    responses(
+        (status = 200, description = "Tags auto-generated and saved", body = SessionTagsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Session not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(("api_key" = [])),
+    tag = "Session Management"
+)]
+async fn auto_tag_session(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<SessionTagsResponse>, StatusCode> {
+    let session = state
+        .session_manager()
+        .get_session(&session_id, true)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let text_snippet: String = session
+        .conversation
+        .as_ref()
+        .map(|conv| {
+            conv.messages()
+                .iter()
+                .take(10)
+                .flat_map(|m| m.content.iter())
+                .filter_map(|c| {
+                    if let MessageContent::Text(t) = c {
+                        Some(t.text.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+
+    let text_snippet = if text_snippet.len() > 2000 {
+        text_snippet[..2000].to_string()
+    } else {
+        text_snippet
+    };
+
+    if text_snippet.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let config = goose::config::Config::global();
+    let provider_name = config
+        .get_goose_provider()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let model_name = config
+        .get_goose_model()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let model_config = ModelConfig::new(&model_name)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .with_canonical_limits(&provider_name);
+
+    let provider = create_provider(&provider_name, model_config.clone(), vec![])
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let system = format!(
+        "You are a session categorizer. Choose 1-3 relevant tags from this exact list: {}. \
+        Return ONLY a JSON array of strings with no explanation. Example: [\"rust\",\"debugging\"]",
+        PREDEFINED_TAGS
+    );
+    let user_msg = GooseMessage::user().with_text(format!(
+        "Categorize this session based on its messages:\n\n{}",
+        text_snippet
+    ));
+
+    let (response, _) = provider
+        .complete(&model_config, &session_id, &system, &[user_msg], &[])
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let response_text = response
+        .content
+        .iter()
+        .filter_map(|c| {
+            if let MessageContent::Text(t) = c {
+                Some(t.text.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let tags = extract_tags_from_response(&response_text);
+    if tags.is_empty() {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    state
+        .session_manager()
+        .add_tags_to_session(&session_id, &tags, "auto")
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let all_tags = state
+        .session_manager()
+        .get_tags_for_session(&session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(SessionTagsResponse {
+        session_id,
+        tags: all_tags,
+    }))
+}
+
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/sessions", get(list_sessions))
         .route("/sessions/search", get(search_sessions))
+        .route("/sessions/tags", get(get_all_tags))
         .route("/sessions/{session_id}", get(get_session))
         .route("/sessions/{session_id}", delete(delete_session))
         .route("/sessions/{session_id}/export", get(export_session))
@@ -519,6 +794,13 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route(
             "/sessions/{session_id}/extensions",
             get(get_session_extensions),
+        )
+        .route("/sessions/{session_id}/tags", get(get_session_tags))
+        .route("/sessions/{session_id}/tags", put(add_session_tags))
+        .route("/sessions/{session_id}/tags/auto", post(auto_tag_session))
+        .route(
+            "/sessions/{session_id}/tags/{tag}",
+            delete(remove_session_tag),
         )
         .with_state(state)
 }
