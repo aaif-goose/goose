@@ -469,7 +469,8 @@ instructions: Absolute instructions"#;
 
         let result = resolve_sub_recipe_path(absolute_path_str, parent_dir);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), absolute_path_str);
+        let expected = absolute_path.canonicalize().unwrap();
+        assert_eq!(result.unwrap(), expected.to_str().unwrap());
     }
 
     #[test]

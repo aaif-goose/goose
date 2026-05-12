@@ -1192,6 +1192,8 @@ mod tests {
             paused: false,
             current_session_id: None,
             process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
         };
 
         scheduler
