@@ -33,10 +33,11 @@ impl GooseAcpAgent {
         &self,
         req: ListSourcesRequest,
     ) -> Result<ListSourcesResponse, agent_client_protocol::Error> {
-        let sources = crate::sources::list_sources(
+        let sources = crate::sources::list_sources_with_roots(
             req.source_type,
             req.project_dir.as_deref(),
             req.include_project_sources,
+            &self.additional_source_roots,
         )?;
         Ok(ListSourcesResponse { sources })
     }
@@ -45,13 +46,16 @@ impl GooseAcpAgent {
         &self,
         req: UpdateSourceRequest,
     ) -> Result<UpdateSourceResponse, agent_client_protocol::Error> {
-        let source = crate::sources::update_source(
+        let source = crate::sources::update_source_with_roots(
             req.source_type,
             &req.path,
             &req.name,
             &req.description,
             &req.content,
-            req.properties,
+            crate::sources::UpdateSourceOptions {
+                properties: req.properties,
+                additional_roots: &self.additional_source_roots,
+            },
         )?;
         Ok(UpdateSourceResponse { source })
     }
@@ -60,7 +64,11 @@ impl GooseAcpAgent {
         &self,
         req: DeleteSourceRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        crate::sources::delete_source(req.source_type, &req.path)?;
+        crate::sources::delete_source_with_roots(
+            req.source_type,
+            &req.path,
+            &self.additional_source_roots,
+        )?;
         Ok(EmptyResponse {})
     }
 
@@ -68,7 +76,11 @@ impl GooseAcpAgent {
         &self,
         req: ExportSourceRequest,
     ) -> Result<ExportSourceResponse, agent_client_protocol::Error> {
-        let (json, filename) = crate::sources::export_source(req.source_type, &req.path)?;
+        let (json, filename) = crate::sources::export_source_with_roots(
+            req.source_type,
+            &req.path,
+            &self.additional_source_roots,
+        )?;
         Ok(ExportSourceResponse { json, filename })
     }
 

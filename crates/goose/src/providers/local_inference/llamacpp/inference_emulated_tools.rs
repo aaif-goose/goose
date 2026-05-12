@@ -28,11 +28,14 @@ use serde_json::json;
 use std::borrow::Cow;
 use uuid::Uuid;
 
+use super::super::{finalize_usage, StreamSender};
 use super::inference_engine::{
     create_and_prefill_context, create_and_prefill_multimodal, generation_loop,
     validate_and_compute_context, GenerationContext, TokenAction,
 };
-use super::{finalize_usage, StreamSender, CODE_EXECUTION_TOOL, SHELL_TOOL};
+
+const SHELL_TOOL: &str = "developer__shell";
+const CODE_EXECUTION_TOOL: &str = "code_execution__execute_typescript";
 
 const HOLD_BACK_CODE_MODE: usize = " ```execute_typescript\n".len();
 const HOLD_BACK_SHELL_ONLY: usize = "\n$".len();
@@ -373,7 +376,7 @@ pub(super) fn generate_with_emulated_tools(
     let (mut llama_ctx, prompt_token_count, effective_ctx) = if !ctx.images.is_empty() {
         create_and_prefill_multimodal(
             ctx.loaded,
-            ctx.runtime,
+            ctx.backend,
             &prompt,
             ctx.images,
             ctx.context_limit,
@@ -387,13 +390,13 @@ pub(super) fn generate_with_emulated_tools(
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
         let (ptc, ectx) = validate_and_compute_context(
             ctx.loaded,
-            ctx.runtime,
+            ctx.backend,
             tokens.len(),
             ctx.context_limit,
             ctx.settings,
         )?;
         let lctx =
-            create_and_prefill_context(ctx.loaded, ctx.runtime, &tokens, ectx, ctx.settings)?;
+            create_and_prefill_context(ctx.loaded, ctx.backend, &tokens, ectx, ctx.settings)?;
         (lctx, ptc, ectx)
     };
 

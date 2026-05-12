@@ -584,6 +584,7 @@ impl SessionStorage {
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
+            .foreign_keys(true)
             .busy_timeout(std::time::Duration::from_secs(30))
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
@@ -1085,20 +1086,6 @@ impl SessionStorage {
                         .execute(&mut **tx)
                         .await?;
                 }
-
-                // Drop thread tables and thread_id column (no longer used).
-                sqlx::query("DROP TABLE IF EXISTS thread_messages")
-                    .execute(&mut **tx)
-                    .await?;
-                sqlx::query("DROP TABLE IF EXISTS threads")
-                    .execute(&mut **tx)
-                    .await?;
-                sqlx::query("DROP INDEX IF EXISTS idx_sessions_thread")
-                    .execute(&mut **tx)
-                    .await?;
-                sqlx::query("ALTER TABLE sessions DROP COLUMN thread_id")
-                    .execute(&mut **tx)
-                    .await?;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);

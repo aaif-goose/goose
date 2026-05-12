@@ -127,6 +127,7 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
         content: body,
         path: path.to_string_lossy().into_owned(),
         global: false,
+        writable: true,
         supporting_files: Vec::new(),
         properties: std::collections::HashMap::new(),
     })
@@ -174,6 +175,7 @@ fn scan_recipes_from_dir(
                     content: recipe.instructions.clone().unwrap_or_default(),
                     path: path.to_string_lossy().into_owned(),
                     global: false,
+                    writable: true,
                     supporting_files: Vec::new(),
                     properties: std::collections::HashMap::new(),
                 });
@@ -602,6 +604,7 @@ impl SummonClient {
                 content: String::new(),
                 path: sr.path.clone(),
                 global: false,
+                writable: true,
                 supporting_files: Vec::new(),
                 properties: std::collections::HashMap::new(),
             });

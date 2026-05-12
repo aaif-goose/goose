@@ -518,11 +518,20 @@
   "cronPicker.august": {
     "defaultMessage": "August"
   },
+  "cronPicker.cronExpression": {
+    "defaultMessage": "Cron expression"
+  },
+  "cronPicker.custom": {
+    "defaultMessage": "Custom cron"
+  },
   "cronPicker.day": {
     "defaultMessage": "Day"
   },
   "cronPicker.december": {
     "defaultMessage": "December"
+  },
+  "cronPicker.emptyCronError": {
+    "defaultMessage": "Cron expression cannot be empty"
   },
   "cronPicker.every": {
     "defaultMessage": "Every"
@@ -538,6 +547,9 @@
   },
   "cronPicker.inMonth": {
     "defaultMessage": "in"
+  },
+  "cronPicker.invalidDayOfMonth": {
+    "defaultMessage": "Day must be between 1 and {max}"
   },
   "cronPicker.january": {
     "defaultMessage": "January"
@@ -557,6 +569,9 @@
   "cronPicker.minute": {
     "defaultMessage": "Minute"
   },
+  "cronPicker.mode": {
+    "defaultMessage": "Mode"
+  },
   "cronPicker.monday": {
     "defaultMessage": "Monday"
   },
@@ -575,11 +590,17 @@
   "cronPicker.onDay": {
     "defaultMessage": "on day"
   },
+  "cronPicker.quarter": {
+    "defaultMessage": "Quarter"
+  },
   "cronPicker.saturday": {
     "defaultMessage": "Saturday"
   },
   "cronPicker.september": {
     "defaultMessage": "September"
+  },
+  "cronPicker.startingMonth": {
+    "defaultMessage": "starting month"
   },
   "cronPicker.sunday": {
     "defaultMessage": "Sunday"
