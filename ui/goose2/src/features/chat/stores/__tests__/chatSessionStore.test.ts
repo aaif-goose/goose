@@ -61,7 +61,7 @@ describe("chatSessionStore", () => {
         title: "New Chat",
         providerId: "openai",
         projectId: "project-1",
-        personaId: "persona-1",
+        agentId: "persona-1",
         modelId: "gpt-4.1",
         modelName: "GPT-4.1",
         workingDir: "/tmp/project",
@@ -72,7 +72,6 @@ describe("chatSessionStore", () => {
         "/tmp/project",
         {
           projectId: "project-1",
-          personaId: "persona-1",
           modelId: "gpt-4.1",
         },
       );
@@ -81,7 +80,7 @@ describe("chatSessionStore", () => {
         title: "New Chat",
         projectId: "project-1",
         providerId: "openai",
-        personaId: "persona-1",
+        agentId: "persona-1",
         modelId: "gpt-4.1",
         modelName: "GPT-4.1",
         workingDir: "/tmp/project",
@@ -146,7 +145,6 @@ describe("chatSessionStore", () => {
           workingDir: "/tmp/project-123",
           projectId: "project-123",
           providerId: "anthropic",
-          personaId: "persona-1",
           modelId: "claude-sonnet-4",
         },
       ]);
@@ -157,7 +155,6 @@ describe("chatSessionStore", () => {
       expect(session.title).toBe("Renamed Chat");
       expect(session.projectId).toBe("project-123");
       expect(session.providerId).toBe("anthropic");
-      expect(session.personaId).toBe("persona-1");
       expect(session.createdAt).toBe("2026-03-31");
       expect(session.updatedAt).toBe("2026-04-02");
       expect(session.messageCount).toBe(7);
@@ -225,54 +222,32 @@ describe("chatSessionStore", () => {
     });
   });
 
-  describe("updateSession", () => {
-    it("updates session properties", () => {
+  describe("patchSession", () => {
+    it("patches session properties while preserving updatedAt when omitted", () => {
       const session = seedSession();
+      const originalUpdatedAt = session.updatedAt;
 
-      useChatSessionStore.getState().updateSession(session.id, {
+      useChatSessionStore.getState().patchSession(session.id, {
         title: "Updated Title",
         projectId: "new-project",
       });
 
       const updated = useChatSessionStore.getState().getSession(session.id);
-      expect(updated?.title).toBe("Updated Title");
-      expect(updated?.projectId).toBe("new-project");
-    });
-
-    it("preserves updatedAt when not explicitly provided in patch", () => {
-      const session = seedSession();
-      const originalUpdatedAt = session.updatedAt;
-
-      vi.useFakeTimers();
-      vi.advanceTimersByTime(1000);
-
-      useChatSessionStore.getState().updateSession(session.id, {
-        title: "New Title",
+      expect(updated).toMatchObject({
+        title: "Updated Title",
+        projectId: "new-project",
+        updatedAt: originalUpdatedAt,
       });
-
-      vi.useRealTimers();
-
-      const updated = useChatSessionStore.getState().getSession(session.id);
-      expect(updated?.updatedAt).toBe(originalUpdatedAt);
     });
 
     it("updates updatedAt when explicitly provided in patch", () => {
       const session = seedSession();
-      const originalUpdatedAt = session.updatedAt;
-
-      vi.useFakeTimers();
-      vi.advanceTimersByTime(1000);
-
-      const newTimestamp = new Date().toISOString();
-      useChatSessionStore.getState().updateSession(session.id, {
-        title: "New Title",
+      const newTimestamp = "2026-04-01T00:01:00.000Z";
+      useChatSessionStore.getState().patchSession(session.id, {
         updatedAt: newTimestamp,
       });
 
-      vi.useRealTimers();
-
       const updated = useChatSessionStore.getState().getSession(session.id);
-      expect(updated?.updatedAt).not.toBe(originalUpdatedAt);
       expect(updated?.updatedAt).toBe(newTimestamp);
     });
   });

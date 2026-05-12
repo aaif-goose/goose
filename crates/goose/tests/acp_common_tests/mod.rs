@@ -4,6 +4,10 @@
 
 #[path = "../acp_fixtures/mod.rs"]
 pub mod fixtures;
+use agent_client_protocol::schema::{
+    ListSessionsResponse, McpServer, McpServerHttp, ModelId, SessionInfo, SessionModeId,
+    ToolCallStatus, ToolKind,
+};
 use fixtures::{
     assert_notifications, Connection, FsFixture, Notification, OpenAiFixture, PermissionDecision,
     Session, SessionData, TerminalCall, TerminalFixture, TestConnectionConfig,
@@ -19,10 +23,6 @@ use goose::providers::base::{
 };
 use goose::providers::errors::ProviderError;
 use goose_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
-use sacp::schema::{
-    ListSessionsResponse, McpServer, McpServerHttp, ModelId, SessionInfo, SessionModeId,
-    ToolCallStatus, ToolKind,
-};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 use std::time::Duration;
@@ -108,6 +108,9 @@ pub async fn run_list_sessions<C: Connection>() {
         if let Some(ref mut meta) = s.meta {
             assert!(meta.get("createdAt").and_then(|v| v.as_str()).is_some());
             meta.remove("createdAt");
+            // Provider/model metadata varies by test fixture; not relevant here.
+            meta.remove("providerId");
+            meta.remove("modelId");
         }
     }
     let mut expected_meta = serde_json::Map::new();
@@ -230,8 +233,11 @@ pub async fn run_delete_session<C: Connection>() {
     assert!(!after.contains(session.session_id()));
 
     let err = conn.load_session(&sid, vec![]).await.unwrap_err();
-    let sacp_err = err.downcast::<sacp::Error>().unwrap();
-    assert_eq!(sacp_err.code, sacp::ErrorCode::ResourceNotFound);
+    let acp_err = err.downcast::<agent_client_protocol::Error>().unwrap();
+    assert_eq!(
+        acp_err.code,
+        agent_client_protocol::ErrorCode::ResourceNotFound
+    );
 }
 
 pub async fn run_config_mcp<C: Connection>() {
@@ -241,7 +247,7 @@ pub async fn run_config_mcp<C: Connection>() {
     let mcp = McpFixture::new(expected_session_id.clone()).await;
 
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
         mcp.url
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
@@ -291,7 +297,7 @@ pub async fn run_config_mcp<C: Connection>() {
 pub async fn run_fs_read_text_file_true<C: Connection>() {
     let temp_dir = tempfile::tempdir().unwrap();
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  developer:\n    enabled: true\n    type: platform\n    name: developer\n    description: Developer\n    display_name: Developer\n    bundled: true\n    available_tools: []\n"
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  developer:\n    enabled: true\n    type: platform\n    name: developer\n    description: Developer\n    display_name: Developer\n    bundled: true\n    available_tools: []\n"
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
 
@@ -460,7 +466,7 @@ pub async fn run_load_mode<C: Connection>() {
     let mcp = McpFixture::new(expected_session_id.clone()).await;
 
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
         mcp.url
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
@@ -625,11 +631,13 @@ pub async fn run_load_session_error<C: Connection>() {
         .await
         .unwrap_err();
 
-    let sacp_err = err.downcast::<sacp::Error>().unwrap();
+    let acp_err = err.downcast::<agent_client_protocol::Error>().unwrap();
     assert_eq!(
-        sacp_err,
-        sacp::Error::resource_not_found(Some("nonexistent-session-id".to_string()))
-            .data("Session not found: nonexistent-session-id")
+        acp_err,
+        agent_client_protocol::Error::resource_not_found(Some(
+            "nonexistent-session-id".to_string()
+        ))
+        .data("Session not found: nonexistent-session-id")
     );
 }
 
@@ -641,7 +649,7 @@ pub async fn run_config_option_set_error<C: Connection>(
     config_id: &str,
     value: &str,
     session_id_override: Option<&str>,
-    expected: sacp::Error,
+    expected: agent_client_protocol::Error,
 ) {
     let openai = OpenAiFixture::new(vec![], C::expected_session_id()).await;
     let mut conn = C::new(TestConnectionConfig::default(), openai).await;
@@ -656,21 +664,21 @@ pub async fn run_config_option_set_error<C: Connection>(
         .await
         .unwrap_err();
 
-    let sacp_err = err.downcast::<sacp::Error>().unwrap();
-    assert_eq!(sacp_err, expected);
+    let acp_err = err.downcast::<agent_client_protocol::Error>().unwrap();
+    assert_eq!(acp_err, expected);
 }
 
 #[macro_export]
 macro_rules! tests_config_option_set_error {
     ($conn:ty) => {
-        #[test_case::test_case("mode", "not_a_mode", None, sacp::Error::invalid_params().data("Invalid mode: not_a_mode") ; "invalid mode via config option")]
-        #[test_case::test_case("mode", "auto", Some("nonexistent-session-id"), sacp::Error::resource_not_found(Some("nonexistent-session-id".to_string())).data("Session not found: nonexistent-session-id") ; "session not found via config option")]
-        #[test_case::test_case("thought_level", "high", None, sacp::Error::invalid_params().data("Unsupported config option: thought_level") ; "unsupported config option")]
+        #[test_case::test_case("mode", "not_a_mode", None, agent_client_protocol::Error::invalid_params().data("Invalid mode: not_a_mode") ; "invalid mode via config option")]
+        #[test_case::test_case("mode", "auto", Some("nonexistent-session-id"), agent_client_protocol::Error::resource_not_found(Some("nonexistent-session-id".to_string())).data("Session not found: nonexistent-session-id") ; "session not found via config option")]
+        #[test_case::test_case("thought_level", "high", None, agent_client_protocol::Error::invalid_params().data("Unsupported config option: thought_level") ; "unsupported config option")]
         fn test_config_option_set_error(
             config_id: &'static str,
             value: &'static str,
             session_id: Option<&'static str>,
-            expected: sacp::Error,
+            expected: agent_client_protocol::Error,
         ) {
             common_tests::fixtures::run_test(async move {
                 common_tests::run_config_option_set_error::<$conn>(
@@ -698,7 +706,7 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
     let mcp = McpFixture::new(expected_session_id.clone()).await;
 
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
         mcp.url
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
@@ -792,7 +800,7 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
 pub async fn run_mode_set_error<C: Connection>(
     mode_id: &str,
     session_id_override: Option<&str>,
-    expected: sacp::Error,
+    expected: agent_client_protocol::Error,
 ) {
     let openai = OpenAiFixture::new(vec![], C::expected_session_id()).await;
     let mut conn = C::new(TestConnectionConfig::default(), openai).await;
@@ -807,19 +815,19 @@ pub async fn run_mode_set_error<C: Connection>(
         .await
         .unwrap_err();
 
-    let sacp_err = err.downcast::<sacp::Error>().unwrap();
-    assert_eq!(sacp_err, expected);
+    let acp_err = err.downcast::<agent_client_protocol::Error>().unwrap();
+    assert_eq!(acp_err, expected);
 }
 
 #[macro_export]
 macro_rules! tests_mode_set_error {
     ($conn:ty) => {
-        #[test_case::test_case("not_a_mode", None, sacp::Error::invalid_params().data("Invalid mode: not_a_mode") ; "invalid mode")]
-        #[test_case::test_case("auto", Some("nonexistent-session-id"), sacp::Error::resource_not_found(Some("nonexistent-session-id".to_string())).data("Session not found: nonexistent-session-id") ; "session not found")]
+        #[test_case::test_case("not_a_mode", None, agent_client_protocol::Error::invalid_params().data("Invalid mode: not_a_mode") ; "invalid mode")]
+        #[test_case::test_case("auto", Some("nonexistent-session-id"), agent_client_protocol::Error::resource_not_found(Some("nonexistent-session-id".to_string())).data("Session not found: nonexistent-session-id") ; "session not found")]
         fn test_mode_set_error(
             mode_id: &'static str,
             session_id: Option<&'static str>,
-            expected: sacp::Error,
+            expected: agent_client_protocol::Error,
         ) {
             common_tests::fixtures::run_test(async move {
                 common_tests::run_mode_set_error::<$conn>(
@@ -966,19 +974,21 @@ pub async fn run_model_set_error_session_not_found<C: Connection>() {
         .await
         .unwrap_err();
 
-    let sacp_err = err.downcast::<sacp::Error>().unwrap();
+    let acp_err = err.downcast::<agent_client_protocol::Error>().unwrap();
     assert_eq!(
-        sacp_err,
-        sacp::Error::resource_not_found(Some("nonexistent-session-id".to_string()))
-            .data("Session not found: nonexistent-session-id")
+        acp_err,
+        agent_client_protocol::Error::resource_not_found(Some(
+            "nonexistent-session-id".to_string()
+        ))
+        .data("Session not found: nonexistent-session-id")
     );
 }
 
 #[allow(dead_code)]
 pub async fn run_new_session_error(
-    cx: &sacp::ConnectionTo<sacp::Agent>,
+    cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Agent>,
     params: serde_json::Value,
-    expected: sacp::Error,
+    expected: agent_client_protocol::Error,
 ) {
     let err = fixtures::send_custom(cx, "session/new", params)
         .await
@@ -997,8 +1007,11 @@ pub async fn run_prompt_error<C: Connection>() {
         .prompt("test", PermissionDecision::Cancel)
         .await
         .unwrap_err();
-    let sacp_err = err.downcast::<sacp::Error>().unwrap();
-    assert_eq!(sacp_err.code, sacp::ErrorCode::ResourceNotFound);
+    let acp_err = err.downcast::<agent_client_protocol::Error>().unwrap();
+    assert_eq!(
+        acp_err.code,
+        agent_client_protocol::ErrorCode::ResourceNotFound
+    );
 }
 
 pub async fn run_permission_persistence<C: Connection>() {
@@ -1295,7 +1308,7 @@ pub async fn run_prompt_skill<C: Connection>() {
     .await;
 
     let config = TestConnectionConfig {
-        builtins: vec!["summon".to_string(), "skills".to_string()],
+        builtins: vec!["summon".to_string()],
         cwd: Some(cwd),
         ..Default::default()
     };

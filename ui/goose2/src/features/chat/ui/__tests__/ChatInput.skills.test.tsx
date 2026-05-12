@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChatInput } from "../ChatInput";
+import { ChatInput } from "./chatInputTestUtils";
 
 const mockVoiceDictation = {
   isEnabled: true,

@@ -69,7 +69,6 @@ describe("acpCreateSession", () => {
     await expect(
       acpCreateSession("openai", "/tmp/project", {
         projectId: "project-1",
-        personaId: "persona-1",
         modelId: "gpt-4.1",
       }),
     ).resolves.toEqual({ sessionId: "acp-session-1" });
@@ -78,7 +77,6 @@ describe("acpCreateSession", () => {
       "/tmp/project",
       "openai",
       "project-1",
-      "persona-1",
     );
     expect(mockLoadSession).not.toHaveBeenCalled();
     expect(mockSetProvider).toHaveBeenCalledWith("acp-session-1", "openai");

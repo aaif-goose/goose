@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildProjectSystemPrompt,
   composeSystemPrompt,
   getProjectArtifactRoots,
   getProjectFolderName,
@@ -8,44 +7,6 @@ import {
 } from "./chatProjectContext";
 
 describe("chatProjectContext", () => {
-  it("builds project instructions from stored project settings", () => {
-    const systemPrompt = buildProjectSystemPrompt({
-      id: "project-1",
-      name: "Goose2",
-      description: "Desktop app",
-      prompt: "Always read AGENTS.md before editing.",
-      icon: "folder",
-      color: "#000000",
-      preferredProvider: "goose",
-      preferredModel: "claude-sonnet-4",
-      workingDirs: ["/Users/wesb/dev/goose2"],
-      useWorktrees: true,
-      order: 0,
-      archivedAt: null,
-      createdAt: "now",
-      updatedAt: "now",
-    });
-
-    expect(systemPrompt).toContain("<project-settings>");
-    expect(systemPrompt).toContain("Project name: Goose2");
-    expect(systemPrompt).toContain(
-      "Working directories: /Users/wesb/dev/goose2",
-    );
-    expect(systemPrompt).toContain(
-      "Default working directory: /Users/wesb/dev/goose2",
-    );
-    expect(systemPrompt).toContain("Preferred provider: goose");
-    expect(systemPrompt).toContain(
-      "Use git worktrees for branch isolation: yes",
-    );
-    expect(systemPrompt).toContain("<project-file-policy>");
-    expect(systemPrompt).toContain(
-      "Use /Users/wesb/dev/goose2 as the default working directory for this project.",
-    );
-    expect(systemPrompt).toContain("<project-instructions>");
-    expect(systemPrompt).toContain("Always read AGENTS.md before editing.");
-  });
-
   it("combines persona and project prompts without empty sections", () => {
     expect(
       composeSystemPrompt("Persona prompt", undefined, "Project prompt"),

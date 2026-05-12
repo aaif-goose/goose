@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { ChatInput } from "../ChatInput";
+import { ChatInput } from "./chatInputTestUtils";
 import { ChatInputToolbar } from "../ChatInputToolbar";
 import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import type { Persona } from "@/shared/types/agents";
@@ -165,6 +165,26 @@ describe("ChatInput", () => {
     expect(
       screen.getByRole("button", { name: /choose agent and model/i }),
     ).toHaveTextContent("Goose");
+  });
+
+  it("shows provider label while the current model id is unresolved", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModel="opus"
+        availableModels={[]}
+        providers={[{ id: "claude-acp", label: "Claude Code" }]}
+        selectedProvider="claude-acp"
+      />,
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: /choose agent and model/i,
+    });
+    expect(trigger).toHaveTextContent("Claude Code");
+    expect(trigger).not.toHaveTextContent("opus");
   });
 
   it("shows default provider label", () => {
@@ -522,22 +542,30 @@ describe("ChatInput", () => {
   it("keeps the mic toggle enabled while recording even if voice input becomes unavailable", () => {
     render(
       <ChatInputToolbar
-        selectedPersonaId={null}
-        providers={[]}
-        selectedProvider="goose"
-        onProviderChange={vi.fn()}
-        availableModels={[]}
-        selectedProjectId={null}
-        availableProjects={[]}
-        contextTokens={0}
-        contextLimit={0}
-        canSend={false}
-        isStreaming={false}
-        hasQueuedMessage={false}
-        onSend={vi.fn()}
-        voiceEnabled={false}
-        voiceRecording
-        onVoiceToggle={vi.fn()}
+        personaPicker={{ selectedPersonaId: null }}
+        agentModelPicker={{
+          providers: [],
+          selectedProvider: "goose",
+          onProviderChange: vi.fn(),
+          availableModels: [],
+        }}
+        projectPicker={{
+          selectedProjectId: null,
+          availableProjects: [],
+        }}
+        contextUsage={{
+          contextTokens: 0,
+          contextLimit: 0,
+        }}
+        composerActions={{
+          canSend: false,
+          isStreaming: false,
+          hasQueuedMessage: false,
+          onSend: vi.fn(),
+          voiceEnabled: false,
+          voiceRecording: true,
+          onVoiceToggle: vi.fn(),
+        }}
         isCompact={false}
       />,
     );

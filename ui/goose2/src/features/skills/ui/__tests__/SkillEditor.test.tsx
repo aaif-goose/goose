@@ -244,6 +244,7 @@ describe("SkillEditor", () => {
         "my-skill",
         "A description",
         "Some instructions",
+        { projectId: undefined },
       );
     });
 

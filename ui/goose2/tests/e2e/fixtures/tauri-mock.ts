@@ -47,6 +47,7 @@ export function buildInitScript(options?: {
           defaultModel: "claude-sonnet-4-20250514",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -72,6 +73,7 @@ export function buildInitScript(options?: {
           defaultModel: "gpt-4.1",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -89,6 +91,48 @@ export function buildInitScript(options?: {
               recommended: true,
             },
           ],
+        },
+      ];
+      const PROVIDER_SETUP_CATALOG = [
+        {
+          providerId: "claude",
+          name: "Claude",
+          category: "model",
+          description: "Claude provider",
+          setupMethod: "single_api_key",
+          fields: [
+            {
+              key: "ANTHROPIC_API_KEY",
+              label: "API key",
+              secret: true,
+              required: true,
+            },
+          ],
+          group: "default",
+          showOnlyWhenInstalled: false,
+          supportsInstall: false,
+          supportsAuth: false,
+          supportsAuthStatus: false,
+        },
+        {
+          providerId: "openai",
+          name: "OpenAI",
+          category: "model",
+          description: "OpenAI provider",
+          setupMethod: "single_api_key",
+          fields: [
+            {
+              key: "OPENAI_API_KEY",
+              label: "API key",
+              secret: true,
+              required: true,
+            },
+          ],
+          group: "default",
+          showOnlyWhenInstalled: false,
+          supportsInstall: false,
+          supportsAuth: false,
+          supportsAuthStatus: false,
         },
       ];
 
@@ -117,9 +161,46 @@ export function buildInitScript(options?: {
         name: s.name,
         description: s.description,
         content: s.instructions ?? s.content ?? "",
-        directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
+        path: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
         global: s.global ?? true,
         supportingFiles: [],
+      });
+
+      const personaToSourceEntry = (p) => ({
+        type: "agent",
+        name: p.displayName ?? p.name,
+        description: p.description ?? "Agent",
+        content: p.systemPrompt ?? p.content ?? "",
+        path: p.id ?? p.path ?? ("/mock/.agents/agents/" + (p.displayName ?? p.name)),
+        global: p.global ?? true,
+        writable: p.writable ?? !p.isBuiltin,
+        supportingFiles: [],
+        properties: {
+          provider: p.provider,
+          model: p.model,
+          avatar: typeof p.avatar === "string" ? p.avatar : p.avatar?.value,
+        },
+      });
+
+      const projectToSourceEntry = (p) => ({
+        type: "project",
+        name: p.id ?? p.name?.toLowerCase(),
+        description: p.description ?? "",
+        content: p.prompt ?? "",
+        path: "/mock/.agents/projects/" + (p.id ?? p.name?.toLowerCase()),
+        global: true,
+        supportingFiles: [],
+        properties: {
+          title: p.name,
+          icon: p.icon ?? "",
+          color: p.color ?? "",
+          preferredProvider: p.preferredProvider ?? null,
+          preferredModel: p.preferredModel ?? null,
+          workingDirs: p.workingDirs ?? [],
+          useWorktrees: p.useWorktrees ?? false,
+          order: p.order ?? 0,
+          archivedAt: null,
+        },
       });
 
       function nowIso() {
@@ -203,6 +284,8 @@ export function buildInitScript(options?: {
           }
           case "_goose/providers/list":
             return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
+          case "_goose/providers/setup/catalog/list":
+            return jsonRpcResult(message.id, { providers: PROVIDER_SETUP_CATALOG });
           case "_goose/providers/inventory/refresh":
             return jsonRpcResult(message.id, { started: [], skipped: [] });
           case "_goose/defaults/read":
@@ -236,41 +319,60 @@ export function buildInitScript(options?: {
           case "_goose/working_dir/update":
           case "goose/working_dir/update":
             return jsonRpcResult(message.id, {});
-          case "_goose/sources/list":
+          case "_goose/sources/list": {
+            const sourceType = message.params?.type;
+            if (sourceType === "agent") {
+              return jsonRpcResult(message.id, { sources: PERSONAS.map(personaToSourceEntry) });
+            }
+            if (sourceType === "project") {
+              return jsonRpcResult(message.id, { sources: PROJECTS.map(projectToSourceEntry) });
+            }
             return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
-          case "_goose/sources/create":
+          }
+          case "_goose/sources/create": {
+            const sourceType = message.params?.type ?? "skill";
+            const name = message.params?.name ?? (sourceType === "agent" ? "New Agent" : "new-skill");
             return jsonRpcResult(message.id, {
               source: {
-                name: message.params?.name ?? "new-skill",
-                type: "skill",
+                name,
+                type: sourceType,
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
+                path: "/mock/.agents/" + (sourceType === "agent" ? "agents" : "skills") + "/" + name,
                 global: message.params?.global ?? true,
+                writable: true,
+                supportingFiles: [],
+                properties: message.params?.properties ?? {},
               },
             });
+          }
           case "_goose/sources/update":
           case "goose/sources/update": {
-            const path = message.params?.path ?? "/mock/.agents/skills/updated-skill";
+            const sourceType = message.params?.type ?? "skill";
+            const path =
+              message.params?.path ??
+              (sourceType === "agent" ? "/mock/.agents/agents/updated-agent" : "/mock/.agents/skills/updated-skill");
             const nextName = message.params?.name;
             const name =
               typeof nextName === "string" && nextName.length > 0
                 ? nextName
-                : String(path).split("/").filter(Boolean).at(-1) ?? "updated-skill";
+                : String(path).split("/").filter(Boolean).at(-1) ?? (sourceType === "agent" ? "updated-agent" : "updated-skill");
             const segments = String(path).split("/").filter(Boolean);
             if (segments.length > 0) {
               segments[segments.length - 1] = name;
             }
-            const directory = \`/\${segments.join("/")}\`;
+            const updatedPath = \`/\${segments.join("/")}\`;
             return jsonRpcResult(message.id, {
               source: {
                 name,
-                type: "skill",
+                type: sourceType,
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory,
+                path: updatedPath,
                 global: message.params?.global ?? true,
+                writable: true,
                 supportingFiles: [],
+                properties: message.params?.properties ?? {},
               },
             });
           }

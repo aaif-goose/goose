@@ -24,47 +24,63 @@ import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSelectionChips } from "./ChatInputSelectionChips";
 import { useChatInputSubmit } from "../hooks/useChatInputSubmit";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
+import { resolveDisplayModelLabel } from "../lib/modelDisplayLabel";
 import type { ChatInputProps, ChatSkillDraft } from "../types";
 
 export function ChatInput({
-  onSend,
-  onStop,
-  isStreaming = false,
-  disabled = false,
-  queuedMessage = null,
-  onDismissQueue,
+  composerActions,
   initialValue = "",
   onDraftChange,
   selectedSkills: selectedSkillsProp,
   onSkillsChange,
   className,
-  personas = [],
-  selectedPersonaId = null,
-  onPersonaChange,
-  providers = [],
-  providersLoading = false,
-  selectedProvider = "goose",
-  onProviderChange,
-  currentModelId = null,
-  currentModelProviderId = null,
-  currentModel,
-  availableModels = [],
-  modelsLoading = false,
-  modelStatusMessage = null,
-  onModelChange,
-  onPickerOpen,
-  selectedProjectId = null,
-  availableProjects = [],
-  onProjectChange,
-  onCreateProject,
-  contextTokens = 0,
-  contextLimit = 0,
-  isContextUsageReady,
-  onCompactContext,
-  canCompactContext = false,
-  isCompactingContext = false,
-  supportsCompactionControls,
+  personaPicker,
+  agentModelPicker,
+  projectPicker,
+  contextUsage,
 }: ChatInputProps) {
+  const {
+    onSend,
+    onStop,
+    isStreaming = false,
+    disabled = false,
+    queuedMessage = null,
+    onDismissQueue,
+  } = composerActions;
+  const {
+    personas = [],
+    selectedPersonaId = null,
+    onPersonaChange,
+  } = personaPicker ?? {};
+  const {
+    providers = [],
+    providersLoading = false,
+    selectedProvider = "goose",
+    onProviderChange,
+    currentModelId = null,
+    currentModelProviderId = null,
+    currentModel,
+    availableModels = [],
+    modelsLoading = false,
+    modelStatusMessage = null,
+    onModelChange,
+    onPickerOpen,
+  } = agentModelPicker ?? {};
+  const {
+    selectedProjectId = null,
+    availableProjects = [],
+    onProjectChange,
+    onCreateProject,
+  } = projectPicker ?? {};
+  const {
+    contextTokens = 0,
+    contextLimit = 0,
+    isContextUsageReady,
+    onCompactContext,
+    canCompactContext = false,
+    isCompactingContext = false,
+    supportsCompactionControls,
+  } = contextUsage ?? {};
   const { t } = useTranslation("chat");
   const [text, setTextRaw] = useState(initialValue);
   const [internalSelectedSkills, setInternalSelectedSkills] = useState<
@@ -339,17 +355,15 @@ export function ChatInput({
     providerDisplayName,
   );
   const resolvedCurrentModel = useMemo(() => {
-    if (currentModel) {
-      return currentModel;
-    }
-    if (!currentModelId) {
-      return undefined;
-    }
-    const selectedModel = availableModels.find(
-      (model) => model.id === currentModelId,
+    return (
+      resolveDisplayModelLabel({
+        currentModelId,
+        currentModelName: currentModel,
+        currentModelProviderId,
+        availableModels,
+      }) ?? undefined
     );
-    return selectedModel?.displayName ?? selectedModel?.name ?? currentModelId;
-  }, [availableModels, currentModel, currentModelId]);
+  }, [availableModels, currentModel, currentModelId, currentModelProviderId]);
   const inputPlaceholder = getChatInputPlaceholder(
     t,
     agentDisplayName,
@@ -457,43 +471,51 @@ export function ChatInput({
               </PopoverAnchor>
 
               <ChatInputToolbar
-                selectedPersonaId={selectedPersonaId}
-                providers={providers}
-                providersLoading={providersLoading}
-                selectedProvider={selectedProvider}
-                onProviderChange={(id) => onProviderChange?.(id)}
-                currentModelId={currentModelId}
-                currentModelProviderId={currentModelProviderId}
-                currentModel={resolvedCurrentModel}
-                availableModels={availableModels}
-                modelsLoading={modelsLoading}
-                modelStatusMessage={modelStatusMessage}
-                onModelChange={onModelChange}
-                onPickerOpen={onPickerOpen}
-                selectedProjectId={selectedProjectId}
-                availableProjects={availableProjects}
-                onProjectChange={onProjectChange}
-                onCreateProject={onCreateProject}
-                contextTokens={contextTokens}
-                contextLimit={contextLimit}
-                isContextUsageReady={isContextUsageReady}
-                onCompactContext={onCompactContext}
-                canCompactContext={canCompactContext}
-                isCompactingContext={isCompactingContext}
-                supportsCompactionControls={supportsCompactionControls}
-                canSend={canSend}
-                isStreaming={isStreaming}
-                hasQueuedMessage={hasQueuedMessage}
-                onAttachFiles={handleAttachFiles}
-                onAttachFolders={handleAttachFolders}
-                disabled={disabled}
-                onSend={handleSend}
-                onStop={onStop}
+                personaPicker={{ selectedPersonaId }}
+                agentModelPicker={{
+                  providers,
+                  providersLoading,
+                  selectedProvider,
+                  onProviderChange,
+                  currentModelId,
+                  currentModelProviderId,
+                  currentModel: resolvedCurrentModel,
+                  availableModels,
+                  modelsLoading,
+                  modelStatusMessage,
+                  onModelChange,
+                  onPickerOpen,
+                }}
+                projectPicker={{
+                  selectedProjectId,
+                  availableProjects,
+                  onProjectChange,
+                  onCreateProject,
+                }}
+                contextUsage={{
+                  contextTokens,
+                  contextLimit,
+                  isContextUsageReady,
+                  onCompactContext,
+                  canCompactContext,
+                  isCompactingContext,
+                  supportsCompactionControls,
+                }}
+                composerActions={{
+                  canSend,
+                  isStreaming,
+                  hasQueuedMessage,
+                  onAttachFiles: handleAttachFiles,
+                  onAttachFolders: handleAttachFolders,
+                  disabled,
+                  onSend: handleSend,
+                  onStop,
+                  voiceEnabled: dictation.isEnabled,
+                  voiceRecording: dictation.isRecording,
+                  voiceTranscribing: dictation.isTranscribing,
+                  onVoiceToggle: dictation.toggleRecording,
+                }}
                 isCompact={isCompact}
-                voiceEnabled={dictation.isEnabled}
-                voiceRecording={dictation.isRecording}
-                voiceTranscribing={dictation.isTranscribing}
-                onVoiceToggle={dictation.toggleRecording}
               />
             </div>
           </Popover>

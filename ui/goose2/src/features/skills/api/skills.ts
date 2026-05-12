@@ -62,8 +62,8 @@ function toSkillInfo(source: SkillSourceEntry): SkillInfo {
       name: source.name,
       description: source.description,
       instructions: source.content,
-      path: source.directory,
-      fileLocation: source.directory,
+      path: source.path,
+      fileLocation: source.path,
       sourceKind: "builtin",
       sourceLabel: "Built in",
       projectLinks: [],
@@ -71,10 +71,21 @@ function toSkillInfo(source: SkillSourceEntry): SkillInfo {
   }
 
   const sourceKind: SkillSourceKind = source.global ? "global" : "project";
+  const props = (source.properties ?? {}) as Record<string, unknown>;
+
+  // Backend tags project-scoped skills with these when listing via
+  // include_project_sources. Prefer them over path-derived values so badges
+  // show the user-visible project title.
+  const taggedProjectDir =
+    typeof props.projectDir === "string" ? props.projectDir : null;
+  const taggedProjectName =
+    typeof props.projectName === "string" ? props.projectName : null;
+
   const projectRoot = source.global
     ? null
-    : deriveProjectRoot(source.directory);
-  const projectName = projectRoot ? basename(projectRoot) : "";
+    : (taggedProjectDir ?? deriveProjectRoot(source.path));
+  const projectName =
+    taggedProjectName ?? (projectRoot ? basename(projectRoot) : "");
 
   const projectLinks: SkillProjectLink[] = projectRoot
     ? [
@@ -87,12 +98,12 @@ function toSkillInfo(source: SkillSourceEntry): SkillInfo {
     : [];
 
   return {
-    id: `${sourceKind}:${source.directory}`,
+    id: `${sourceKind}:${source.path}`,
     name: source.name,
     description: source.description,
     instructions: source.content,
-    path: source.directory,
-    fileLocation: getSkillFileLocation(source.directory),
+    path: source.path,
+    fileLocation: getSkillFileLocation(source.path),
     sourceKind,
     sourceLabel:
       sourceKind === "global" ? "Personal" : projectName || "Project",
@@ -104,10 +115,17 @@ function uniqueProjectDirs(projectDirs: string[]) {
   return [...new Set(projectDirs.map((dir) => dir.trim()).filter(Boolean))];
 }
 
+export interface CreateSkillOptions {
+  /** Project source ID (kebab slug). When set, the skill is created under
+   *  that project's first working directory. */
+  projectId?: string;
+}
+
 export async function createSkill(
   name: string,
   description: string,
   instructions: string,
+  options: CreateSkillOptions = {},
 ): Promise<void> {
   const client = await getClient();
   await client.goose.GooseSourcesCreate({
@@ -115,7 +133,8 @@ export async function createSkill(
     name,
     description,
     content: instructions,
-    global: true,
+    global: !options.projectId,
+    ...(options.projectId ? { projectId: options.projectId } : {}),
   });
 }
 
@@ -164,7 +183,7 @@ export async function listSkills(
       const key =
         source.type === BUILTIN_SKILL_SOURCE_TYPE
           ? `builtin:${source.name}`
-          : `${source.global ? "global" : "project"}:${source.directory}`;
+          : `${source.global ? "global" : "project"}:${source.path}`;
       if (seen.has(key)) {
         continue;
       }

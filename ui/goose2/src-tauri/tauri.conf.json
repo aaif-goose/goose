@@ -47,9 +47,18 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../distro": "distro"
+      "../distro": "distro",
+      "../builtin-sources": "builtin-sources"
     },
     "externalBin": ["../../../target/release/goose"],
+    "linux": {
+      "deb": {
+        "depends": ["libvulkan1"]
+      },
+      "rpm": {
+        "depends": ["vulkan-loader"]
+      }
+    },
     "macOS": {
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true

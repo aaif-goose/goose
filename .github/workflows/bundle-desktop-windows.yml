@@ -72,7 +72,7 @@ jobs:
             windows-pnpm-cache-v1-${{ runner.os }}-node24-
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: windows-msvc-desktop-${{ inputs.windows_variant }}
 
