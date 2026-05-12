@@ -1,9 +1,10 @@
 use super::base::{ConfigKey, ModelInfo, ProviderType};
 use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
+use super::catalog::ProviderSetupCategory;
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
 use crate::session::session_manager::SessionStorage;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -23,6 +24,7 @@ pub struct ProviderInventoryEntry {
     pub default_model: String,
     pub configured: bool,
     pub provider_type: ProviderType,
+    pub category: ProviderSetupCategory,
     pub config_keys: Vec<ConfigKey>,
     pub setup_steps: Vec<String>,
     pub supports_refresh: bool,
@@ -248,6 +250,7 @@ struct ProviderDescriptor {
     identity: InventoryIdentity,
     configured: bool,
     provider_type: ProviderType,
+    category: ProviderSetupCategory,
     config_keys: Vec<ConfigKey>,
     setup_steps: Vec<String>,
     supports_refresh: bool,
@@ -289,6 +292,7 @@ impl ProviderInventoryService {
             default_model: descriptor.default_model,
             configured: descriptor.configured,
             provider_type: descriptor.provider_type,
+            category: descriptor.category,
             config_keys: descriptor.config_keys,
             setup_steps: descriptor.setup_steps,
             supports_refresh: descriptor.supports_refresh,
@@ -307,9 +311,18 @@ impl ProviderInventoryService {
 
     pub async fn entries(&self, provider_ids: &[String]) -> Result<Vec<ProviderInventoryEntry>> {
         let ids = self.resolve_provider_ids(provider_ids).await;
-        let mut entries = Vec::with_capacity(ids.len());
-        for provider_id in ids {
-            if let Some(entry) = self.entry_for_provider(&provider_id).await? {
+        let handles: Vec<_> = ids
+            .into_iter()
+            .map(|id| {
+                let this = self.clone();
+                tokio::spawn(async move { this.entry_for_provider(&id).await })
+            })
+            .collect();
+        let results = futures::future::join_all(handles).await;
+        let mut entries = Vec::with_capacity(results.len());
+        for result in results {
+            let inner = result.context("provider inventory task panicked")?;
+            if let Some(entry) = inner? {
                 entries.push(entry);
             }
         }
@@ -573,6 +586,8 @@ impl ProviderInventoryService {
             identity,
             configured: entry.inventory_configured(),
             provider_type: entry.provider_type(),
+            category: crate::providers::catalog::get_provider_setup_category(&metadata.name)
+                .unwrap_or(ProviderSetupCategory::Model),
             config_keys: metadata.config_keys.clone(),
             setup_steps: metadata.setup_steps.clone(),
             supports_refresh: entry.supports_inventory_refresh(),

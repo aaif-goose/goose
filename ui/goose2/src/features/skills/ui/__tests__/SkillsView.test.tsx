@@ -26,11 +26,9 @@ const mockSkills: SkillInfo[] = [
     instructions: "Refine spacing and visual rhythm...",
     path: "/path/layout/SKILL.md",
     fileLocation: "/path/layout/SKILL.md",
-    directoryPath: "/path/layout",
     sourceKind: "global" as const,
     sourceLabel: "Personal",
     projectLinks: [],
-    editable: true,
   },
   {
     id: "global:/path/code-review",
@@ -39,11 +37,9 @@ const mockSkills: SkillInfo[] = [
     instructions: "Review the code...",
     path: "/path/code-review",
     fileLocation: "/path/code-review/SKILL.md",
-    directoryPath: "/path/code-review",
     sourceKind: "global" as const,
     sourceLabel: "Personal",
     projectLinks: [],
-    editable: true,
   },
   {
     id: "project:/tmp/alpha/.goose/skills/test-writer",
@@ -52,7 +48,6 @@ const mockSkills: SkillInfo[] = [
     instructions: "Write tests...",
     path: "/tmp/alpha/.goose/skills/test-writer",
     fileLocation: "/tmp/alpha/.goose/skills/test-writer/SKILL.md",
-    directoryPath: "/tmp/alpha/.goose/skills/test-writer",
     sourceKind: "project" as const,
     sourceLabel: "alpha",
     projectLinks: [
@@ -62,12 +57,35 @@ const mockSkills: SkillInfo[] = [
         workingDir: "/tmp/alpha",
       },
     ],
-    editable: true,
   },
 ];
 
+const builtinSkill: SkillInfo = {
+  id: "builtin:goose-doc-guide",
+  name: "goose-doc-guide",
+  description: "Reference Goose documentation",
+  instructions: "Fetch Goose docs before answering.",
+  path: "builtin://skills/goose-doc-guide",
+  fileLocation: "builtin://skills/goose-doc-guide",
+  sourceKind: "builtin" as const,
+  sourceLabel: "Built in",
+  projectLinks: [],
+};
+
 vi.mock("../../api/skills", () => ({
   listSkills: vi.fn().mockResolvedValue([]),
+  createSkill: vi.fn().mockResolvedValue(undefined),
+  updateSkill: vi.fn().mockResolvedValue({
+    id: "global:/path/renamed-review",
+    name: "renamed-review",
+    description: "Reviews code",
+    instructions: "Review the code...",
+    path: "/path/renamed-review",
+    fileLocation: "/path/renamed-review/SKILL.md",
+    sourceKind: "global",
+    sourceLabel: "Personal",
+    projectLinks: [],
+  }),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
   exportSkill: vi
     .fn()
@@ -81,11 +99,13 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
   ) => selector({ projects: mockProjects }),
 }));
 
-const { listSkills, deleteSkill } = (await import(
+const { listSkills, deleteSkill, updateSkill, exportSkill } = (await import(
   "../../api/skills"
 )) as unknown as {
   listSkills: ReturnType<typeof vi.fn>;
   deleteSkill: ReturnType<typeof vi.fn>;
+  updateSkill: ReturnType<typeof vi.fn>;
+  exportSkill: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
@@ -115,7 +135,7 @@ describe("SkillsView", () => {
     render(<SkillsView />);
     expect(screen.getByText("Skills")).toBeInTheDocument();
     expect(
-      screen.getByText(/Skills are reusable instructions/),
+      screen.getByText(/Use skills to add specific instructions/),
     ).toBeInTheDocument();
   });
 
@@ -164,7 +184,6 @@ describe("SkillsView", () => {
         name: "beta-skill",
         path: "/tmp/beta/.goose/skills/beta-skill",
         fileLocation: "/tmp/beta/.goose/skills/beta-skill/SKILL.md",
-        directoryPath: "/tmp/beta/.goose/skills/beta-skill",
         sourceLabel: "beta",
         projectLinks: [
           {
@@ -199,7 +218,6 @@ describe("SkillsView", () => {
         name: "test-writer",
         path: "/tmp/goose/.agents/skills/test-writer",
         fileLocation: "/tmp/goose/.agents/skills/test-writer/SKILL.md",
-        directoryPath: "/tmp/goose/.agents/skills/test-writer",
         sourceLabel: "goose",
         projectLinks: [
           {
@@ -239,7 +257,6 @@ describe("SkillsView", () => {
     expect(
       screen.getByText("/tmp/alpha/.goose/skills/test-writer/SKILL.md"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Quality")).toBeInTheDocument();
   });
 
   it("starts a chat with the selected skill from the list", async () => {
@@ -296,6 +313,54 @@ describe("SkillsView", () => {
     expect(screen.queryByText("code-review")).not.toBeInTheDocument();
   });
 
+  it("stays on the detail page after renaming a skill", async () => {
+    const renamedSkill: SkillInfo = {
+      ...mockSkills[1],
+      id: "global:/path/renamed-review",
+      name: "renamed-review",
+      path: "/path/renamed-review",
+      fileLocation: "/path/renamed-review/SKILL.md",
+    };
+    listSkills
+      .mockResolvedValueOnce(mockSkills)
+      .mockResolvedValueOnce([mockSkills[0], renamedSkill, mockSkills[2]]);
+    updateSkill.mockResolvedValueOnce(renamedSkill);
+    const user = userEvent.setup();
+
+    render(<SkillsView />);
+    await screen.findByText("code-review");
+
+    await user.click(
+      screen.getByRole("button", { name: "Open code-review details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const nameInput = screen.getByPlaceholderText("my-skill-name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "renamed-review");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(updateSkill).toHaveBeenCalledWith(
+        "/path/code-review",
+        "renamed-review",
+        "Reviews code",
+        "Review the code...",
+      );
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Back to skills" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "renamed-review" }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByPlaceholderText("my-skill-name"),
+    ).not.toBeInTheDocument();
+  });
+
   it("filters skills by search text", async () => {
     listSkills.mockResolvedValue(mockSkills);
     const user = userEvent.setup();
@@ -325,23 +390,31 @@ describe("SkillsView", () => {
     expect(screen.getByText("test-writer")).toBeInTheDocument();
   });
 
-  it("filters skills by inferred category from the dropdown", async () => {
-    listSkills.mockResolvedValue(mockSkills);
+  it("groups and filters built-in skills separately", async () => {
+    listSkills.mockResolvedValue([...mockSkills, builtinSkill]);
     const user = userEvent.setup();
 
     render(<SkillsView />);
-    await screen.findByText("code-review");
+    await screen.findByText("goose-doc-guide");
 
-    await user.click(
-      screen.getByRole("button", { name: "Filter by category" }),
-    );
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Design" }));
+    expect(
+      screen.getByRole("button", { name: "Built in" }),
+    ).toBeInTheDocument();
+    const sectionButtons = screen
+      .getAllByRole("button")
+      .filter((button) => /\d skill/.test(button.textContent ?? ""));
+    expect(sectionButtons.map((button) => button.textContent)).toEqual([
+      expect.stringContaining("Personal"),
+      expect.stringContaining("Built in"),
+      expect.stringContaining("alpha"),
+    ]);
 
-    expect(screen.getByText("layout")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Built in" }));
+
+    expect(screen.getByText("goose-doc-guide")).toBeInTheDocument();
     expect(screen.queryByText("code-review")).not.toBeInTheDocument();
     expect(screen.queryByText("test-writer")).not.toBeInTheDocument();
   });
-
   it("shows a delete confirmation from the detail panel", async () => {
     listSkills.mockResolvedValue(mockSkills);
     const user = userEvent.setup();
@@ -356,7 +429,9 @@ describe("SkillsView", () => {
     await user.keyboard("{Enter}");
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
-    expect(screen.getByText("Delete skill?")).toBeInTheDocument();
+    expect(
+      screen.getByText('Delete "code-review" permanently?'),
+    ).toBeInTheDocument();
 
     const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
     await user.click(deleteButtons[deleteButtons.length - 1]);
@@ -364,6 +439,46 @@ describe("SkillsView", () => {
     await waitFor(() => {
       expect(deleteSkill).toHaveBeenCalledWith("/path/code-review");
     });
+  });
+
+  it("shows built-in details without filesystem actions and still starts chat", async () => {
+    listSkills.mockResolvedValue([...mockSkills, builtinSkill]);
+    const onStartChatWithSkill = vi.fn();
+    const user = userEvent.setup();
+
+    render(<SkillsView onStartChatWithSkill={onStartChatWithSkill} />);
+    await screen.findByText("goose-doc-guide");
+
+    await user.click(
+      screen.getByRole("button", { name: "Open goose-doc-guide details" }),
+    );
+
+    expect(
+      screen.getByText("Fetch Goose docs before answering."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Location")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("builtin://skills/goose-doc-guide"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show in folder" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "More" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onStartChatWithSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "goose-doc-guide" }),
+      null,
+    );
+    expect(updateSkill).not.toHaveBeenCalled();
+    expect(deleteSkill).not.toHaveBeenCalled();
+    expect(exportSkill).not.toHaveBeenCalled();
   });
 
   it("passes saved project working directories into listSkills", async () => {
@@ -400,7 +515,6 @@ describe("SkillsView", () => {
         name: "test-writer",
         path: "/tmp/goose/.agents/skills/test-writer",
         fileLocation: "/tmp/goose/.agents/skills/test-writer/SKILL.md",
-        directoryPath: "/tmp/goose/.agents/skills/test-writer",
         sourceLabel: "goose",
         projectLinks: [
           {
@@ -416,7 +530,6 @@ describe("SkillsView", () => {
         name: "audit",
         path: "/tmp/goose-worktree/.agents/skills/audit",
         fileLocation: "/tmp/goose-worktree/.agents/skills/audit/SKILL.md",
-        directoryPath: "/tmp/goose-worktree/.agents/skills/audit",
         sourceLabel: "goose-worktree",
         projectLinks: [
           {

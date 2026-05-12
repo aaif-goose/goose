@@ -1,3 +1,4 @@
+use crate::providers::base::DEFAULT_PROVIDER_TIMEOUT_SECS;
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -278,7 +279,11 @@ pub struct ApiRequestBuilder<'a> {
 
 impl ApiClient {
     pub fn new(host: String, auth: AuthMethod) -> Result<Self> {
-        Self::with_timeout(host, auth, Duration::from_secs(600))
+        Self::with_timeout(
+            host,
+            auth,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )
     }
 
     pub fn with_timeout(host: String, auth: AuthMethod, timeout: Duration) -> Result<Self> {

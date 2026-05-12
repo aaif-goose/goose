@@ -40,15 +40,13 @@ export function buildSessionSearchResults(
 
   return sortByUpdatedAtDesc(sessions)
     .filter((session) => {
-      const acpSessionId = session.acpSessionId ?? session.id;
       return (
         metadataMatchIds.has(session.id) ||
-        messageMatchesBySessionId.has(acpSessionId)
+        messageMatchesBySessionId.has(session.id)
       );
     })
     .map((session) => {
-      const acpSessionId = session.acpSessionId ?? session.id;
-      const messageMatch = messageMatchesBySessionId.get(acpSessionId);
+      const messageMatch = messageMatchesBySessionId.get(session.id);
       if (!messageMatch) {
         return {
           session,

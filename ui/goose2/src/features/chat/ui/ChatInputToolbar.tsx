@@ -15,7 +15,6 @@ import type { AcpProvider } from "@/shared/api/acp";
 import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
-import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -27,58 +26,23 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Progress } from "@/shared/ui/progress";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/tooltip";
 import { AgentModelPicker } from "./AgentModelPicker";
-import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
-import { getCatalogEntry } from "@/features/providers/providerCatalog";
+import { getCatalogEntryFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
+import { ProjectSelectorIcon } from "./ProjectSelectorIcon";
+import type {
+  ChatInputAgentModelPicker,
+  ChatInputContextUsage,
+  ChatInputPersonaPicker,
+  ChatInputProjectPicker,
+} from "../types";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
 
-function ProjectDot({ color }: { color?: string | null }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-block size-2 rounded-full",
-        color ? "" : "bg-muted-foreground/40",
-      )}
-      style={color ? { backgroundColor: color } : undefined}
-    />
-  );
-}
-
-interface ChatInputToolbarProps {
-  selectedPersonaId: string | null;
-  // Provider
-  providers: AcpProvider[];
-  providersLoading?: boolean;
-  selectedProvider: string;
-  onProviderChange: (providerId: string) => void;
-  // Model
-  currentModelId?: string | null;
-  currentModel?: string;
-  availableModels: ModelOption[];
-  modelsLoading?: boolean;
-  modelStatusMessage?: string | null;
-  onModelChange?: (modelId: string) => void;
-  // Project
-  selectedProjectId: string | null;
-  availableProjects: ProjectOption[];
-  onProjectChange?: (projectId: string | null) => void;
-  onCreateProject?: (options?: {
-    onCreated?: (projectId: string) => void;
-  }) => void;
-  // Context
-  contextTokens: number;
-  contextLimit: number;
-  isContextUsageReady?: boolean;
-  supportsCompactionControls?: boolean;
-  // Actions
-  canCompactContext?: boolean;
-  isCompactingContext?: boolean;
-  onCompactContext?: () => Promise<unknown> | undefined;
+interface ChatInputToolbarComposerActions {
   canSend: boolean;
   isStreaming: boolean;
   hasQueuedMessage: boolean;
@@ -87,55 +51,77 @@ interface ChatInputToolbarProps {
   onAttachFiles?: () => void;
   onAttachFolders?: () => void;
   disabled?: boolean;
-  // Voice
   voiceEnabled?: boolean;
   voiceRecording?: boolean;
   voiceTranscribing?: boolean;
   onVoiceToggle?: () => void;
-  // Layout
+}
+
+interface ChatInputToolbarProps {
+  personaPicker: Pick<ChatInputPersonaPicker, "selectedPersonaId">;
+  agentModelPicker: ChatInputAgentModelPicker;
+  projectPicker: ChatInputProjectPicker;
+  contextUsage: ChatInputContextUsage;
+  composerActions: ChatInputToolbarComposerActions;
   isCompact: boolean;
 }
 
 export function ChatInputToolbar({
-  selectedPersonaId,
-  providers,
-  providersLoading,
-  selectedProvider,
-  onProviderChange,
-  currentModelId,
-  currentModel,
-  availableModels,
-  modelsLoading = false,
-  modelStatusMessage = null,
-  onModelChange,
-  selectedProjectId,
-  availableProjects,
-  onProjectChange,
-  onCreateProject,
-  contextTokens,
-  contextLimit,
-  isContextUsageReady,
-  supportsCompactionControls,
-  canCompactContext = false,
-  isCompactingContext = false,
-  onCompactContext,
-  canSend,
-  isStreaming,
-  hasQueuedMessage,
-  onSend,
-  onStop,
-  onAttachFiles,
-  onAttachFolders,
-  disabled = false,
-  voiceEnabled = false,
-  voiceRecording = false,
-  voiceTranscribing = false,
-  onVoiceToggle,
+  personaPicker,
+  agentModelPicker,
+  projectPicker,
+  contextUsage,
+  composerActions,
   isCompact,
 }: ChatInputToolbarProps) {
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
+  const { selectedPersonaId = null } = personaPicker;
+  const {
+    providers = [],
+    providersLoading,
+    selectedProvider = "goose",
+    onProviderChange,
+    currentModelId,
+    currentModelProviderId,
+    currentModel,
+    availableModels = [],
+    modelsLoading = false,
+    modelStatusMessage = null,
+    onModelChange,
+    onPickerOpen,
+  } = agentModelPicker;
+  const {
+    selectedProjectId = null,
+    availableProjects = [],
+    onProjectChange,
+    onCreateProject,
+  } = projectPicker;
+  const {
+    contextTokens = 0,
+    contextLimit = 0,
+    isContextUsageReady,
+    supportsCompactionControls,
+    canCompactContext = false,
+    isCompactingContext = false,
+    onCompactContext,
+  } = contextUsage;
+  const {
+    canSend,
+    isStreaming,
+    hasQueuedMessage,
+    onSend,
+    onStop,
+    onAttachFiles,
+    onAttachFolders,
+    disabled = false,
+    voiceEnabled = false,
+    voiceRecording = false,
+    voiceTranscribing = false,
+    onVoiceToggle,
+  } = composerActions;
   const compactionControlsSupported =
     supportsCompactionControls ??
     supportsContextCompactionControls(selectedProvider);
@@ -150,7 +136,9 @@ export function ChatInputToolbar({
       seen.add(provider.id);
       available.push({
         id: provider.id,
-        label: getCatalogEntry(provider.id)?.displayName ?? provider.label,
+        label:
+          getCatalogEntryFromEntries(catalogEntries, provider.id)
+            ?.displayName ?? provider.label,
       });
     }
     if (available.length > 0) return available;
@@ -158,11 +146,11 @@ export function ChatInputToolbar({
       {
         id: selectedProvider,
         label:
-          getCatalogEntry(selectedProvider)?.displayName ??
-          formatProviderLabel(selectedProvider),
+          getCatalogEntryFromEntries(catalogEntries, selectedProvider)
+            ?.displayName ?? formatProviderLabel(selectedProvider),
       },
     ];
-  }, [providers, selectedProvider]);
+  }, [catalogEntries, providers, selectedProvider]);
   const selectedProject = availableProjects.find(
     (project) => project.id === selectedProjectId,
   );
@@ -217,20 +205,32 @@ export function ChatInputToolbar({
   }, [isContextPopoverOpen, showContextUsage]);
 
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-2",
+        isCompact && "flex-wrap gap-y-2",
+      )}
+    >
       {/* Left side: pickers */}
-      <div className="flex items-center gap-0.5">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-0.5",
+          isCompact && "flex-1",
+        )}
+      >
         {(agentProviders.length > 0 || providersLoading) && (
           <AgentModelPicker
             agents={agentProviders}
             selectedAgentId={selectedProvider}
-            onAgentChange={onProviderChange}
+            onAgentChange={(providerId) => onProviderChange?.(providerId)}
             currentModelId={currentModelId}
+            currentModelProviderId={currentModelProviderId}
             currentModelName={currentModel ?? null}
             availableModels={availableModels}
             modelsLoading={modelsLoading}
             modelStatusMessage={modelStatusMessage}
             onModelChange={onModelChange}
+            onOpen={onPickerOpen}
             loading={providersLoading}
             isCompact={isCompact}
             showSelectedModelInTrigger={selectedPersonaId === null}
@@ -242,7 +242,7 @@ export function ChatInputToolbar({
           value={selectedProjectId ?? NO_PROJECT_VALUE}
           triggerLabel={projectLabel}
           triggerTitle={projectTitle}
-          icon={<ProjectDot color={selectedProject?.color} />}
+          icon={<ProjectSelectorIcon icon={selectedProject?.icon} />}
           triggerVariant="toolbar"
           triggerSize="sm"
           menuLabel={t("toolbar.chooseProject")}
@@ -254,7 +254,7 @@ export function ChatInputToolbar({
                   value: NO_PROJECT_VALUE,
                   label: t("toolbar.noProject"),
                   description: t("toolbar.generalChatWithoutProject"),
-                  icon: <ProjectDot />,
+                  icon: <ProjectSelectorIcon />,
                 },
                 ...availableProjects.map((project) => ({
                   value: project.id,
@@ -262,7 +262,7 @@ export function ChatInputToolbar({
                   description: project.workingDirs.length
                     ? project.workingDirs.join(", ")
                     : undefined,
-                  icon: <ProjectDot color={project.color} />,
+                  icon: <ProjectSelectorIcon icon={project.icon} />,
                 })),
               ],
             },
@@ -287,7 +287,7 @@ export function ChatInputToolbar({
       </div>
 
       {/* Right side: actions */}
-      <div className="flex items-center">
+      <div className={cn("flex shrink-0 items-center", isCompact && "ml-auto")}>
         <div className="flex items-center gap-px">
           {showContextUsage && (
             <Popover

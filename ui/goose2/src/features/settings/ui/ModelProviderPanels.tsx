@@ -33,7 +33,7 @@ export function InventorySyncMessage({
         role="status"
         className="flex items-center gap-2 text-xs text-muted-foreground"
       >
-        <IconLoader2 className="size-3 animate-spin text-accent" />
+        <IconLoader2 className="size-3 animate-spin text-brand" />
         <span>{t("providers.loadingModels")}</span>
       </p>
     );
@@ -139,7 +139,7 @@ export function ConnectedFieldsPanel({
                     field.secret &&
                     resolveFieldValue(field, fieldValueMap).isSet
                       ? getDisplayValue(field, fieldValueMap, t)
-                      : field.placeholder
+                      : (field.placeholder ?? undefined)
                   }
                   onChange={(event) =>
                     onDraftChange(field.key, event.target.value)
@@ -273,7 +273,7 @@ export function SetupFieldsPanel({
               placeholder={
                 field.secret && fieldValue.isSet
                   ? getDisplayValue(field, fieldValueMap, t)
-                  : field.placeholder
+                  : (field.placeholder ?? undefined)
               }
               onChange={(event) => onDraftChange(field.key, event.target.value)}
               disabled={saving}

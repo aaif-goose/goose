@@ -11,9 +11,25 @@ pub fn collect_elicitation_input(
         println!("\n{}", style(message).cyan());
     }
 
-    let properties = match schema.get("properties").and_then(|p| p.as_object()) {
-        Some(props) => props,
-        None => return Ok(Some(HashMap::new())),
+    let properties = schema.get("properties").and_then(|p| p.as_object());
+
+    // Schema-less (or empty-schema) elicitations are pure approval prompts —
+    // offer an explicit Y/N confirmation instead of silently auto-accepting.
+    let properties = match properties {
+        Some(props) if !props.is_empty() => props,
+        _ => {
+            let prompt = if message.is_empty() {
+                "Approve this action?"
+            } else {
+                "Approve?"
+            };
+            return match cliclack::confirm(prompt).initial_value(true).interact() {
+                Ok(true) => Ok(Some(HashMap::new())),
+                Ok(false) => Ok(None),
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => Ok(None),
+                Err(e) => Err(e),
+            };
+        }
     };
 
     let required: Vec<&str> = schema
