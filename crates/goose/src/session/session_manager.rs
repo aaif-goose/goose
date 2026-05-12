@@ -642,25 +642,39 @@ impl SessionStorage {
     }
 
     async fn create_schema(pool: &Pool<Sqlite>) -> Result<()> {
+        // Run schema creation under `BEGIN IMMEDIATE` so SQLite serializes
+        // writers across processes. Combined with `IF NOT EXISTS` on every
+        // DDL statement and `INSERT OR IGNORE` on the bootstrap version
+        // row, this makes init safe under concurrent first-run startup —
+        // the previous flow:
+        //
+        //   SELECT EXISTS('schema_version') → false
+        //   CREATE TABLE schema_version (...)
+        //
+        // raced when two processes both saw "doesn't exist" and the
+        // second one's CREATE TABLE failed with `table already exists`,
+        // which surfaced to callers as "Could not create session".
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
         sqlx::query(
             r#"
-            CREATE TABLE schema_version (
+            CREATE TABLE IF NOT EXISTS schema_version (
                 version INTEGER PRIMARY KEY,
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         "#,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
-        sqlx::query("INSERT INTO schema_version (version) VALUES (?)")
+        sqlx::query("INSERT OR IGNORE INTO schema_version (version) VALUES (?)")
             .bind(CURRENT_SCHEMA_VERSION)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
 
         sqlx::query(
             r#"
-            CREATE TABLE sessions (
+            CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '',
@@ -688,12 +702,12 @@ impl SessionStorage {
             )
         "#,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
         sqlx::query(
             r#"
-            CREATE TABLE messages (
+            CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id TEXT,
                 session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -706,24 +720,32 @@ impl SessionStorage {
             )
         "#,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
-        sqlx::query("CREATE INDEX idx_messages_session ON messages(session_id)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_messages_timestamp ON messages(timestamp)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_messages_message_id ON messages(message_id)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_sessions_updated ON sessions(updated_at DESC)")
-            .execute(pool)
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_type ON sessions(session_type)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_sessions_type ON sessions(session_type)")
-            .execute(pool)
-            .await?;
+
+        tx.commit().await?;
+
+        // The inventory tables already use `CREATE TABLE IF NOT EXISTS`
+        // and run on the shared pool, so they don't need to be inside
+        // the same transaction.
         crate::providers::inventory::create_tables(pool).await?;
 
         Ok(())
