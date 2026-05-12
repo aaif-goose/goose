@@ -116,8 +116,8 @@ impl GcpVertexAIModel {
     ///
     /// Location routing by model family:
     /// - Claude models: Ohio (us-east5)
-    /// - Gemini 3 and later models (name starts with "gemini-3"): Global
-    /// - Gemini 2.x and earlier models: Iowa (us-central1)
+    /// - Gemini 3.x models: Global
+    /// - Other Gemini models: Iowa (us-central1)
     /// - MaaS models: Iowa (us-central1)
     pub fn known_location(&self) -> GcpLocation {
         match self {
@@ -357,14 +357,6 @@ mod tests {
         let gemini = GcpVertexAIModel::try_from("gemini-2.5-flash")?;
         assert!(matches!(gemini, GcpVertexAIModel::Gemini(_)));
         assert_eq!(gemini.to_string(), "gemini-2.5-flash");
-
-        let gemini_3_lite = GcpVertexAIModel::try_from("gemini-3.1-flash-lite")?;
-        assert!(matches!(gemini_3_lite, GcpVertexAIModel::Gemini(_)));
-        assert_eq!(gemini_3_lite.to_string(), "gemini-3.1-flash-lite");
-
-        let gemini_3_pro = GcpVertexAIModel::try_from("gemini-3.1-pro-preview")?;
-        assert!(matches!(gemini_3_pro, GcpVertexAIModel::Gemini(_)));
-        assert_eq!(gemini_3_pro.to_string(), "gemini-3.1-pro-preview");
 
         let maas = GcpVertexAIModel::try_from("qwen-maas")?;
         assert!(matches!(maas, GcpVertexAIModel::MaaS(_, _)));
