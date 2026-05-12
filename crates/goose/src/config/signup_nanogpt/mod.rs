@@ -117,6 +117,6 @@ pub fn configure_nanogpt(config: &Config, api_key: String) -> Result<()> {
         config,
         crate::providers::nanogpt::NANOGPT_PROVIDER_NAME,
         "",
-    );
+    )?;
     Ok(())
 }

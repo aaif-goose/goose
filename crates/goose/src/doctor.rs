@@ -145,7 +145,7 @@ async fn save_and_set(
         config,
         provider.get_name(),
         &provider.get_model_config().model_name,
-    );
+    )?;
     agent.update_provider(provider, session_id).await
 }
 

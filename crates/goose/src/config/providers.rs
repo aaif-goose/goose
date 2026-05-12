@@ -1,4 +1,4 @@
-use super::base::Config;
+use super::base::{Config, ConfigError};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
@@ -60,12 +60,14 @@ pub fn get_provider_entry(config: &Config, name: &str) -> Option<ProviderEntry> 
 // ---------------------------------------------------------------------------
 
 /// Persist a [`ProviderEntry`] under `providers.{name}`.
-pub fn set_provider_entry(config: &Config, name: &str, entry: &ProviderEntry) {
+pub fn set_provider_entry(
+    config: &Config,
+    name: &str,
+    entry: &ProviderEntry,
+) -> Result<(), ConfigError> {
     let mut map = get_providers_map(config);
     map.insert(name.to_string(), entry.clone());
-    if let Err(e) = config.set_param(PROVIDERS_CONFIG_KEY, &map) {
-        warn!("Failed to save providers config: {}", e);
-    }
+    config.set_param(PROVIDERS_CONFIG_KEY, &map)
 }
 
 // ---------------------------------------------------------------------------
@@ -125,18 +127,14 @@ pub fn get_active_model(config: &Config) -> Option<String> {
 /// - `active_provider: {name}` at the top level
 /// - `providers.{name}` with `configured: true`, `enabled: true`, and the
 ///   supplied model.
-///
-pub fn set_active_provider(config: &Config, name: &str, model: &str) {
-    if let Err(e) = config.set_param(ACTIVE_PROVIDER_KEY, name) {
-        warn!("Failed to write {}: {}", ACTIVE_PROVIDER_KEY, e);
-    }
-
+pub fn set_active_provider(config: &Config, name: &str, model: &str) -> Result<(), ConfigError> {
+    config.set_param(ACTIVE_PROVIDER_KEY, name)?;
     let entry = ProviderEntry {
         enabled: true,
         model: model.to_string(),
         configured: true,
     };
-    set_provider_entry(config, name, &entry);
+    set_provider_entry(config, name, &entry)
 }
 
 #[cfg(test)]
@@ -158,7 +156,7 @@ mod tests {
             model: "gpt-4o".to_string(),
             configured: true,
         };
-        set_provider_entry(&config, "openai", &entry);
+        set_provider_entry(&config, "openai", &entry).unwrap();
 
         let loaded = get_provider_entry(&config, "openai").unwrap();
         assert!(loaded.enabled);
@@ -175,7 +173,7 @@ mod tests {
     #[test]
     fn test_set_active_provider_writes_structured_keys() {
         let config = new_test_config();
-        set_active_provider(&config, "claude-acp", "current");
+        set_active_provider(&config, "claude-acp", "current").unwrap();
 
         let active: String = config.get_param(ACTIVE_PROVIDER_KEY).unwrap();
         assert_eq!(active, "claude-acp");
@@ -214,7 +212,7 @@ mod tests {
     #[test]
     fn test_get_active_model_from_provider_entry() {
         let config = new_test_config();
-        set_active_provider(&config, "openai", "gpt-4o");
+        set_active_provider(&config, "openai", "gpt-4o").unwrap();
 
         let result = get_active_model(&config);
         assert_eq!(result, Some("gpt-4o".to_string()));
@@ -235,8 +233,8 @@ mod tests {
         let config = new_test_config();
 
         // Set up two providers
-        set_active_provider(&config, "openai", "gpt-4o");
-        set_active_provider(&config, "anthropic", "claude-3-opus");
+        set_active_provider(&config, "openai", "gpt-4o").unwrap();
+        set_active_provider(&config, "anthropic", "claude-3-opus").unwrap();
 
         // Both entries should exist
         let openai = get_provider_entry(&config, "openai").unwrap();

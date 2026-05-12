@@ -166,6 +166,6 @@ pub fn configure_tetrate(config: &Config, api_key: String) -> Result<()> {
         config,
         crate::providers::tetrate::TETRATE_PROVIDER_NAME,
         TETRATE_DEFAULT_MODEL,
-    );
+    )?;
     Ok(())
 }

@@ -169,6 +169,6 @@ pub fn configure_openrouter(config: &Config, api_key: String) -> Result<()> {
         config,
         crate::providers::openrouter::OPENROUTER_PROVIDER_NAME,
         OPENROUTER_DEFAULT_MODEL,
-    );
+    )?;
     Ok(())
 }

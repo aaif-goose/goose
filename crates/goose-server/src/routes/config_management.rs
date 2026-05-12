@@ -180,14 +180,14 @@ pub async fn upsert_config(
             let model = goose::config::get_provider_entry(config, name)
                 .map(|e| e.model)
                 .unwrap_or_default();
-            goose::config::set_active_provider(config, name, &model);
+            goose::config::set_active_provider(config, name, &model)?;
             return Ok(Json(Value::String(format!("Upserted key {}", query.key))));
         }
     }
     if query.key == "GOOSE_MODEL" {
         if let Some(model) = query.value.as_str() {
             if let Ok(provider) = config.get_goose_provider() {
-                goose::config::set_active_provider(config, &provider, model);
+                goose::config::set_active_provider(config, &provider, model)?;
                 return Ok(Json(Value::String(format!("Upserted key {}", query.key))));
             }
         }
@@ -219,7 +219,7 @@ pub async fn remove_config(
         let _ = config.delete("GOOSE_PROVIDER");
     } else if query.key == "GOOSE_MODEL" {
         if let Ok(provider) = config.get_goose_provider() {
-            goose::config::set_active_provider(config, &provider, "");
+            goose::config::set_active_provider(config, &provider, "")?;
         }
         let _ = config.delete("GOOSE_MODEL");
     } else {
@@ -774,9 +774,10 @@ pub async fn set_config_provider(
     // Provider validation does not use extensions.
     create_with_default_model(&provider, Vec::new())
         .await
-        .map(|_| {
+        .and_then(|_| {
             let config = Config::global();
-            goose::config::set_active_provider(config, &provider, &model);
+            goose::config::set_active_provider(config, &provider, &model)
+                .map_err(|e| anyhow::anyhow!(e))
         })
         .map_err(|err| {
             ErrorResponse::bad_request(format!(
@@ -886,7 +887,7 @@ pub async fn configure_provider_oauth(
     let config = goose::config::Config::global();
     if let Some(mut entry) = goose::config::get_provider_entry(config, &provider_name) {
         entry.configured = true;
-        goose::config::set_provider_entry(config, &provider_name, &entry);
+        goose::config::set_provider_entry(config, &provider_name, &entry)?;
     } else {
         goose::config::set_provider_entry(
             config,
@@ -896,7 +897,7 @@ pub async fn configure_provider_oauth(
                 model: String::new(),
                 configured: true,
             },
-        );
+        )?;
     }
 
     Ok(Json("OAuth configuration completed".to_string()))
